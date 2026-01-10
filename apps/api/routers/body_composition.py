@@ -13,6 +13,7 @@ from uuid import UUID
 from decimal import Decimal
 
 from core.database import get_db
+from core.auth import get_current_user
 from core.cache import invalidate_athlete_cache, invalidate_correlation_cache
 from models import Athlete, BodyComposition
 from schemas import BodyCompositionCreate, BodyCompositionResponse
@@ -83,19 +84,22 @@ def create_body_composition(
 
 @router.get("/body-composition", response_model=List[BodyCompositionResponse])
 def get_body_composition(
-    athlete_id: UUID,
+    athlete_id: Optional[UUID] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Athlete = Depends(get_current_user)
 ):
     """
-    Get body composition entries for an athlete.
+    Get body composition entries for the current user.
     
     Can filter by date range.
     BMI is included in response but may not be displayed on dashboard
     until correlations are identified.
     """
-    query = db.query(BodyComposition).filter(BodyComposition.athlete_id == athlete_id)
+    # Use current user if athlete_id not provided
+    target_id = athlete_id or current_user.id
+    query = db.query(BodyComposition).filter(BodyComposition.athlete_id == target_id)
     
     if start_date:
         query = query.filter(BodyComposition.date >= start_date)

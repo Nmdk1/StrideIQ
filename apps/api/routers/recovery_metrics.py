@@ -35,12 +35,13 @@ async def get_my_recovery_metrics(
     
     Returns cached metrics if recently calculated, otherwise calculates fresh.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     
     # Check if metrics are stale (> 24 hours old)
+    now = datetime.now(timezone.utc)
     needs_refresh = (
         current_user.last_metrics_calculation is None or
-        current_user.last_metrics_calculation < datetime.utcnow() - timedelta(hours=24)
+        current_user.last_metrics_calculation.replace(tzinfo=timezone.utc) < now - timedelta(hours=24)
     )
     
     if needs_refresh:

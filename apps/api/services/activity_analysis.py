@@ -293,7 +293,7 @@ class ActivityAnalysis:
                 Activity.is_race_candidate == True
             ),
             Activity.avg_hr.isnot(None),
-            Activity.pace_per_mile.isnot(None)
+            Activity.average_speed.isnot(None)
         ).order_by(Activity.start_time.desc()).first()
         
         if not last_race:
@@ -330,7 +330,7 @@ class ActivityAnalysis:
                 Activity.start_time >= block_start,
                 Activity.start_time < self.activity.start_time,
                 Activity.avg_hr.isnot(None),
-                Activity.pace_per_mile.isnot(None)
+                Activity.average_speed.isnot(None)
             )
             
             activities = query.all()
@@ -391,7 +391,7 @@ class ActivityAnalysis:
             Activity.athlete_id == self.athlete.id,
             Activity.start_time < self.activity.start_time,
             Activity.avg_hr.isnot(None),
-            Activity.pace_per_mile.isnot(None)
+            Activity.average_speed.isnot(None)
         )
         
         all_activities = query.all()
@@ -455,7 +455,7 @@ class ActivityAnalysis:
             Activity.start_time >= lookback_start,
             Activity.start_time <= self.activity.start_time,
             Activity.avg_hr.isnot(None),
-            Activity.pace_per_mile.isnot(None)
+            Activity.average_speed.isnot(None)
         )
         
         # Filter by run type if available

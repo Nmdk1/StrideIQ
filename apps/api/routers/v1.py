@@ -65,6 +65,43 @@ def create_athlete(athlete: AthleteCreate, db: Session = Depends(get_db)):
     return db_athlete
 
 
+@router.get("/athletes/me", response_model=AthleteResponse)
+def get_current_athlete_profile(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the current authenticated athlete's profile.
+    
+    This is the primary way athletes access their own data.
+    """
+    from services.performance_engine import calculate_age_at_date, get_age_category
+    from datetime import datetime
+    
+    age_category = None
+    if current_user.birthdate:
+        age = calculate_age_at_date(current_user.birthdate, datetime.now())
+        if age:
+            age_category = get_age_category(age)
+    
+    athlete_dict = {
+        "id": current_user.id,
+        "created_at": current_user.created_at,
+        "email": current_user.email,
+        "display_name": current_user.display_name,
+        "birthdate": current_user.birthdate,
+        "sex": current_user.sex,
+        "subscription_tier": current_user.subscription_tier,
+        "age_category": age_category,
+        "durability_index": current_user.durability_index,
+        "recovery_half_life_hours": current_user.recovery_half_life_hours,
+        "consistency_index": current_user.consistency_index,
+        "strava_athlete_id": current_user.strava_athlete_id,
+    }
+    
+    return AthleteResponse(**athlete_dict)
+
+
 @router.get("/athletes/{id}", response_model=AthleteResponse)
 def get_athlete(id: UUID, db: Session = Depends(get_db)):
     """Get an athlete by ID with Performance Physics Engine metrics"""
