@@ -87,6 +87,7 @@ export default function Navigation() {
     { href: '/coach', label: 'Coach', icon: '🤖' },
     { href: '/activities', label: 'Activities', icon: '🏃' },
     { href: '/checkin', label: 'Check-in', icon: '✓' },
+    { href: '/#tools', label: 'Calculators', icon: '🧮', isHash: true },
   ];
 
   const NavLink = ({ href, label, isHash = false, highlight = false }: { 
@@ -155,6 +156,7 @@ export default function Navigation() {
                     href={item.href} 
                     label={item.label}
                     highlight={item.highlight}
+                    isHash={item.isHash}
                   />
                 ))}
                 
@@ -247,21 +249,36 @@ export default function Navigation() {
                 /* === MOBILE AUTHENTICATED NAV === */
                 <>
                   {authNavItems.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={`px-4 py-3 rounded-lg text-base font-medium transition-colors ${
-                        pathname === item.href
-                          ? 'bg-gray-800 text-white'
-                          : item.highlight
-                            ? 'bg-green-600/10 text-green-400'
-                            : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                      }`}
-                    >
-                      <span className="mr-2">{item.icon}</span>
-                      {item.label}
-                    </Link>
+                    item.isHash ? (
+                      <a
+                        key={item.href}
+                        href={item.href}
+                        onClick={(e) => {
+                          handleHashClick(e, item.href);
+                          setMobileMenuOpen(false);
+                        }}
+                        className="px-4 py-3 rounded-lg text-base font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                      >
+                        <span className="mr-2">{item.icon}</span>
+                        {item.label}
+                      </a>
+                    ) : (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={`px-4 py-3 rounded-lg text-base font-medium transition-colors ${
+                          pathname === item.href
+                            ? 'bg-gray-800 text-white'
+                            : item.highlight
+                              ? 'bg-green-600/10 text-green-400'
+                              : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                        }`}
+                      >
+                        <span className="mr-2">{item.icon}</span>
+                        {item.label}
+                      </Link>
+                    )
                   ))}
                   <Link
                     href="/settings"
