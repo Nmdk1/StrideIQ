@@ -1,0 +1,419 @@
+{
+  "meta": {
+    "distance": "marathon",
+    "mileage_tier": "mid",
+    "days_per_week": 6,
+    "duration_weeks": 18,
+    "starting_volume_mi": 40,
+    "peak_volume_mi": 55,
+    "long_run_start_mi": 14,
+    "long_run_peak_mi": 22,
+    "cutback_frequency": 4,
+    "cutback_reduction": 0.25,
+    "taper_weeks": 2,
+    "philosophy": "Frequency and consistency build durability. One quality session per week. T-block progression. Long run is The Engine.",
+    "weekly_skeleton": {
+      "sunday": "Long Run (The Engine)",
+      "monday": "Gym + Rest (No Running)",
+      "tuesday": "Medium-Long (or MP work in build2/peak)",
+      "wednesday": "Easy",
+      "thursday": "Quality Day (Strides/T/Hills)",
+      "friday": "Easy",
+      "saturday": "Easy + Strides or Hills"
+    },
+    "sources": ["03_PLAN_GENERATION.md", "WORKOUT_LIBRARY.md", "VARIATION_LIBRARY.md", "Michael's Training Profile"],
+    "version": "2.0.0",
+    "created": "2026-01-10"
+  },
+  "phases": [
+    {
+      "name": "base",
+      "weeks": [1, 2, 3],
+      "focus": "Aerobic foundation. Frequency. Strides + short hill sprints only. NO threshold.",
+      "quality_sessions": 0,
+      "thursday_workout": "strides_hills",
+      "long_run_type": "easy",
+      "notes": "Build mechanical durability. 80-90% easy. Strides after easy runs. 8-10s hill sprints (not 90s hills). No T work yet."
+    },
+    {
+      "name": "cutback",
+      "weeks": [4],
+      "focus": "Recovery, absorption",
+      "quality_sessions": 0,
+      "thursday_workout": "easy_strides",
+      "long_run_type": "easy_short",
+      "notes": "Volume -25%. All easy. Let adaptation happen."
+    },
+    {
+      "name": "build1",
+      "weeks": [5, 6, 7],
+      "focus": "Threshold introduction. T-block begins.",
+      "quality_sessions": 1,
+      "thursday_workout": "threshold",
+      "long_run_type": "easy",
+      "notes": "T-work on Thursday. Long runs stay easy. T-block progression: 6x5min → 5x6min → 4x8min."
+    },
+    {
+      "name": "cutback",
+      "weeks": [8],
+      "focus": "Recovery before MP introduction",
+      "quality_sessions": 1,
+      "thursday_workout": "threshold_light",
+      "long_run_type": "easy_short",
+      "notes": "Volume -25%. Light T session (15 min). Long run shortened."
+    },
+    {
+      "name": "build2",
+      "weeks": [9, 10, 11],
+      "focus": "MP introduction. T-block continues.",
+      "quality_sessions": 1,
+      "thursday_workout": "threshold",
+      "long_run_type": "alternating",
+      "notes": "Week 9: T on Thu, easy long. Week 10: Easy week, long run w/ 4mi MP. Week 11: T on Thu, easy long. Intensity rule: no T + MP long same week."
+    },
+    {
+      "name": "cutback",
+      "weeks": [12],
+      "focus": "Recovery before peak",
+      "quality_sessions": 1,
+      "thursday_workout": "threshold_light",
+      "long_run_type": "easy_short",
+      "notes": "Volume -25%. Light T. Prepare for peak block."
+    },
+    {
+      "name": "peak",
+      "weeks": [13, 14, 15],
+      "focus": "Hold peak volume. Race-specific work. Confidence.",
+      "quality_sessions": 1,
+      "thursday_workout": "threshold",
+      "long_run_type": "mp_work",
+      "notes": "Week 13: Easy week + 20mi w/ 6 @ MP. Week 14: T on Thu + 22mi easy. Week 15: Easy week + 20mi w/ 8 @ MP (dress rehearsal)."
+    },
+    {
+      "name": "taper",
+      "weeks": [16, 17],
+      "focus": "Reduce fatigue. Maintain sharpness.",
+      "quality_sessions": 1,
+      "thursday_workout": "threshold_short",
+      "long_run_type": "easy_short",
+      "notes": "Volume -40-50%. Short T for sharpness. Strides maintained. Extra rest."
+    },
+    {
+      "name": "race",
+      "weeks": [18],
+      "focus": "Race week",
+      "quality_sessions": 0,
+      "thursday_workout": "shakeout_strides",
+      "long_run_type": "race",
+      "notes": "Very easy running. Strides to keep legs sharp. RACE DAY SUNDAY."
+    }
+  ],
+  "t_block_progression": {
+    "description": "Threshold progression from intervals toward continuous",
+    "week5": "6 x 5 min @ T, 2 min jog",
+    "week6": "5 x 6 min @ T, 2 min jog", 
+    "week7": "4 x 8 min @ T, 2 min jog",
+    "week8": "15 min continuous @ T (light - cutback)",
+    "week9": "3 x 10 min @ T, 2 min jog",
+    "week10": "Easy (MP long run this week)",
+    "week11": "2 x 15 min @ T, 3 min jog",
+    "week12": "15 min continuous @ T (light - cutback)",
+    "week13": "Easy (MP long run this week)",
+    "week14": "30 min continuous @ T",
+    "week15": "Easy (dress rehearsal long run)",
+    "week16": "15 min @ T (sharpening)",
+    "week17": "10 min @ T (sharpening)"
+  },
+  "long_run_progression": {
+    "week1": {"miles": 14, "type": "easy"},
+    "week2": {"miles": 15, "type": "easy"},
+    "week3": {"miles": 16, "type": "easy"},
+    "week4": {"miles": 12, "type": "easy (cutback)"},
+    "week5": {"miles": 16, "type": "easy"},
+    "week6": {"miles": 17, "type": "easy"},
+    "week7": {"miles": 18, "type": "easy"},
+    "week8": {"miles": 14, "type": "easy (cutback)"},
+    "week9": {"miles": 18, "type": "easy"},
+    "week10": {"miles": 18, "type": "w/ last 4 @ MP", "note": "No T this week"},
+    "week11": {"miles": 20, "type": "easy"},
+    "week12": {"miles": 14, "type": "easy (cutback)"},
+    "week13": {"miles": 20, "type": "w/ 6 @ MP (mid-run)", "note": "No T this week"},
+    "week14": {"miles": 22, "type": "easy (peak distance)"},
+    "week15": {"miles": 20, "type": "w/ 8 @ MP (dress rehearsal)", "note": "No T this week"},
+    "week16": {"miles": 14, "type": "easy (taper)"},
+    "week17": {"miles": 10, "type": "easy (taper)"},
+    "week18": {"miles": 26.2, "type": "MARATHON"}
+  },
+  "weeks": [
+    {
+      "week": 1,
+      "phase": "base",
+      "total_miles": 40,
+      "focus": "Aerobic foundation, frequency",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 14, "description": "Easy, conversational. The Engine."},
+        "monday": {"type": "gym", "miles": 0, "description": "Strength + mobility. No running."},
+        "tuesday": {"type": "medium_long", "miles": 8, "description": "Easy pace"},
+        "wednesday": {"type": "easy", "miles": 5, "description": "Recovery effort"},
+        "thursday": {"type": "easy_strides", "miles": 6, "description": "Easy + 6x20s strides + 4x8s hill sprints"},
+        "friday": {"type": "easy", "miles": 4, "description": "Easy"},
+        "saturday": {"type": "easy", "miles": 3, "description": "Pre-long run shakeout"}
+      }
+    },
+    {
+      "week": 2,
+      "phase": "base",
+      "total_miles": 44,
+      "focus": "Build frequency, continue aerobic",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 15, "description": "Easy, conversational"},
+        "monday": {"type": "gym", "miles": 0, "description": "Strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 9, "description": "Easy pace"},
+        "wednesday": {"type": "easy", "miles": 5, "description": "Recovery"},
+        "thursday": {"type": "easy_strides", "miles": 7, "description": "Easy + 6x20s strides + 6x8s hill sprints"},
+        "friday": {"type": "easy", "miles": 4, "description": "Easy"},
+        "saturday": {"type": "easy", "miles": 4, "description": "Pre-long run shakeout"}
+      }
+    },
+    {
+      "week": 3,
+      "phase": "base",
+      "total_miles": 48,
+      "focus": "Peak base volume, prepare for T introduction",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 16, "description": "Easy, conversational"},
+        "monday": {"type": "gym", "miles": 0, "description": "Strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 10, "description": "Easy pace"},
+        "wednesday": {"type": "easy", "miles": 6, "description": "Recovery"},
+        "thursday": {"type": "easy_strides", "miles": 7, "description": "Easy + 8x20s strides + 6x8s hill sprints"},
+        "friday": {"type": "easy", "miles": 5, "description": "Easy"},
+        "saturday": {"type": "easy", "miles": 4, "description": "Pre-long run shakeout"}
+      }
+    },
+    {
+      "week": 4,
+      "phase": "cutback",
+      "total_miles": 36,
+      "focus": "Recovery, absorption",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 12, "description": "Very easy"},
+        "monday": {"type": "gym", "miles": 0, "description": "Light strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 8, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 4, "description": "Recovery"},
+        "thursday": {"type": "easy_strides", "miles": 5, "description": "Easy + 4x20s strides"},
+        "friday": {"type": "rest", "miles": 0, "description": "Full rest"},
+        "saturday": {"type": "easy", "miles": 7, "description": "Easy"}
+      }
+    },
+    {
+      "week": 5,
+      "phase": "build1",
+      "total_miles": 48,
+      "focus": "T-block begins",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 16, "description": "Easy"},
+        "monday": {"type": "gym", "miles": 0, "description": "Strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 10, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 5, "description": "Recovery"},
+        "thursday": {"type": "threshold", "miles": 8, "description": "w/ 6x5 min T, 2 min jog recovery"},
+        "friday": {"type": "easy", "miles": 5, "description": "Easy"},
+        "saturday": {"type": "easy_strides", "miles": 4, "description": "Easy + 4x20s strides"}
+      }
+    },
+    {
+      "week": 6,
+      "phase": "build1",
+      "total_miles": 50,
+      "focus": "T-block progression",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 17, "description": "Easy"},
+        "monday": {"type": "gym", "miles": 0, "description": "Strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 10, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 5, "description": "Recovery"},
+        "thursday": {"type": "threshold", "miles": 9, "description": "w/ 5x6 min T, 2 min jog recovery"},
+        "friday": {"type": "easy", "miles": 5, "description": "Easy"},
+        "saturday": {"type": "easy_strides", "miles": 4, "description": "Easy + 4x20s strides"}
+      }
+    },
+    {
+      "week": 7,
+      "phase": "build1",
+      "total_miles": 52,
+      "focus": "T-block progression continues",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 18, "description": "Easy"},
+        "monday": {"type": "gym", "miles": 0, "description": "Strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 10, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 6, "description": "Recovery"},
+        "thursday": {"type": "threshold", "miles": 9, "description": "w/ 4x8 min T, 2 min jog recovery"},
+        "friday": {"type": "easy", "miles": 5, "description": "Easy"},
+        "saturday": {"type": "easy_strides", "miles": 4, "description": "Easy + 4x20s strides"}
+      }
+    },
+    {
+      "week": 8,
+      "phase": "cutback",
+      "total_miles": 40,
+      "focus": "Recovery before MP introduction",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 14, "description": "Very easy"},
+        "monday": {"type": "gym", "miles": 0, "description": "Light strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 8, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 5, "description": "Recovery"},
+        "thursday": {"type": "threshold", "miles": 7, "description": "w/ 15 min continuous T (light)"},
+        "friday": {"type": "rest", "miles": 0, "description": "Full rest"},
+        "saturday": {"type": "easy", "miles": 6, "description": "Easy + strides"}
+      }
+    },
+    {
+      "week": 9,
+      "phase": "build2",
+      "total_miles": 52,
+      "focus": "T-block continues, approaching MP week",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 18, "description": "Easy"},
+        "monday": {"type": "gym", "miles": 0, "description": "Strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 10, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 6, "description": "Recovery"},
+        "thursday": {"type": "threshold", "miles": 9, "description": "w/ 3x10 min T, 2 min jog recovery"},
+        "friday": {"type": "easy", "miles": 5, "description": "Easy"},
+        "saturday": {"type": "easy_strides", "miles": 4, "description": "Easy + 4x20s strides"}
+      }
+    },
+    {
+      "week": 10,
+      "phase": "build2",
+      "total_miles": 54,
+      "focus": "MP introduction in long run - NO T this week",
+      "workouts": {
+        "sunday": {"type": "long_mp", "miles": 18, "description": "w/ last 4 @ MP"},
+        "monday": {"type": "gym", "miles": 0, "description": "Strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 11, "description": "Easy (recovery from LR)"},
+        "wednesday": {"type": "easy", "miles": 6, "description": "Recovery"},
+        "thursday": {"type": "easy_strides", "miles": 8, "description": "Easy + 6x30s hill strides"},
+        "friday": {"type": "easy", "miles": 6, "description": "Easy"},
+        "saturday": {"type": "easy", "miles": 5, "description": "Pre-long run shakeout"}
+      }
+    },
+    {
+      "week": 11,
+      "phase": "build2",
+      "total_miles": 55,
+      "focus": "T-block continues, volume peaks",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 20, "description": "Easy (pure aerobic)"},
+        "monday": {"type": "gym", "miles": 0, "description": "Strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 10, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 6, "description": "Recovery"},
+        "thursday": {"type": "threshold", "miles": 10, "description": "w/ 2x15 min T, 3 min jog recovery"},
+        "friday": {"type": "easy", "miles": 5, "description": "Easy"},
+        "saturday": {"type": "easy_strides", "miles": 4, "description": "Easy + strides"}
+      }
+    },
+    {
+      "week": 12,
+      "phase": "cutback",
+      "total_miles": 42,
+      "focus": "Recovery before peak",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 14, "description": "Very easy"},
+        "monday": {"type": "gym", "miles": 0, "description": "Light strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 9, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 5, "description": "Recovery"},
+        "thursday": {"type": "threshold", "miles": 7, "description": "w/ 15 min continuous T (light)"},
+        "friday": {"type": "rest", "miles": 0, "description": "Full rest"},
+        "saturday": {"type": "easy", "miles": 7, "description": "Easy + strides"}
+      }
+    },
+    {
+      "week": 13,
+      "phase": "peak",
+      "total_miles": 55,
+      "focus": "MP in long run - NO T this week",
+      "workouts": {
+        "sunday": {"type": "long_mp", "miles": 20, "description": "w/ 6 @ MP (mid-run)"},
+        "monday": {"type": "gym", "miles": 0, "description": "Strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 10, "description": "Easy (recovery from LR)"},
+        "wednesday": {"type": "easy", "miles": 6, "description": "Recovery"},
+        "thursday": {"type": "easy_strides", "miles": 8, "description": "Easy + 6x30s hill strides"},
+        "friday": {"type": "easy", "miles": 6, "description": "Easy"},
+        "saturday": {"type": "easy", "miles": 5, "description": "Pre-long run shakeout"}
+      }
+    },
+    {
+      "week": 14,
+      "phase": "peak",
+      "total_miles": 55,
+      "focus": "Peak distance long run, T maintained",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 22, "description": "Easy (peak distance)"},
+        "monday": {"type": "gym", "miles": 0, "description": "Light strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 9, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 5, "description": "Recovery"},
+        "thursday": {"type": "threshold", "miles": 10, "description": "w/ 30 min continuous T"},
+        "friday": {"type": "easy", "miles": 5, "description": "Easy"},
+        "saturday": {"type": "easy_strides", "miles": 4, "description": "Easy + strides"}
+      }
+    },
+    {
+      "week": 15,
+      "phase": "peak",
+      "total_miles": 53,
+      "focus": "Dress rehearsal - NO T this week",
+      "workouts": {
+        "sunday": {"type": "long_mp", "miles": 20, "description": "Dress rehearsal: 8 @ MP"},
+        "monday": {"type": "gym", "miles": 0, "description": "Light strength + mobility"},
+        "tuesday": {"type": "medium_long", "miles": 10, "description": "Easy (recovery from LR)"},
+        "wednesday": {"type": "easy", "miles": 5, "description": "Recovery"},
+        "thursday": {"type": "easy_strides", "miles": 8, "description": "Easy + 6x30s strides"},
+        "friday": {"type": "easy", "miles": 5, "description": "Easy"},
+        "saturday": {"type": "easy", "miles": 5, "description": "Pre-long run shakeout"}
+      }
+    },
+    {
+      "week": 16,
+      "phase": "taper",
+      "total_miles": 44,
+      "focus": "Reduce fatigue, maintain sharpness",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 14, "description": "Easy (final long-ish)"},
+        "monday": {"type": "gym", "miles": 0, "description": "Light strength only"},
+        "tuesday": {"type": "medium_long", "miles": 8, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 5, "description": "Recovery"},
+        "thursday": {"type": "threshold", "miles": 7, "description": "w/ 15 min T (sharpening)"},
+        "friday": {"type": "rest", "miles": 0, "description": "Full rest"},
+        "saturday": {"type": "easy_strides", "miles": 10, "description": "Easy + 6x strides"}
+      }
+    },
+    {
+      "week": 17,
+      "phase": "taper",
+      "total_miles": 32,
+      "focus": "Final taper week",
+      "workouts": {
+        "sunday": {"type": "long", "miles": 10, "description": "Easy (final)"},
+        "monday": {"type": "rest", "miles": 0, "description": "Full rest"},
+        "tuesday": {"type": "easy", "miles": 6, "description": "Easy"},
+        "wednesday": {"type": "easy", "miles": 5, "description": "Easy"},
+        "thursday": {"type": "threshold", "miles": 6, "description": "w/ 10 min T (sharpening)"},
+        "friday": {"type": "rest", "miles": 0, "description": "Full rest"},
+        "saturday": {"type": "easy_strides", "miles": 5, "description": "Easy + 6x strides"}
+      }
+    },
+    {
+      "week": 18,
+      "phase": "race",
+      "total_miles": 36,
+      "focus": "Race week - trust the work",
+      "workouts": {
+        "sunday": {"type": "race", "miles": 26.2, "description": "MARATHON - Trust the work!"},
+        "monday": {"type": "rest", "miles": 0, "description": "Full rest"},
+        "tuesday": {"type": "easy", "miles": 4, "description": "Easy + 4x strides"},
+        "wednesday": {"type": "rest", "miles": 0, "description": "Light walk or rest"},
+        "thursday": {"type": "easy", "miles": 3, "description": "Shakeout + 4x strides"},
+        "friday": {"type": "easy", "miles": 2.8, "description": "Very easy"},
+        "saturday": {"type": "rest", "miles": 0, "description": "Pre-race prep, visualize"}
+      }
+    }
+  ]
+}

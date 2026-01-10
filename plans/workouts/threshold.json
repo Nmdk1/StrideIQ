@@ -1,0 +1,21 @@
+{
+  "id": "threshold",
+  "name": "Threshold Intervals",
+  "category": "threshold",
+  "intensity_zone": "threshold",
+  "description": "Cruise intervals at lactate threshold pace with short recovery.",
+  "purpose": "Extend time at threshold without accumulating excessive fatigue.",
+  "pace_reference": "threshold_pace",
+  "hr_zone": [4],
+  "rpe_range": [7, 8],
+  "variants": {
+    "cruise": {"structure": "3-4 x 1 mile at threshold with 1 min jog"},
+    "tempo_intervals": {"structure": "2-3 x 2 miles at threshold with 2 min jog"}
+  },
+  "structure": {
+    "warmup": "15-20 min easy",
+    "main": "See variant",
+    "cooldown": "10-15 min easy"
+  },
+  "notes": "Threshold is the pace you could hold for about an hour in a race. Comfortably uncomfortable."
+}

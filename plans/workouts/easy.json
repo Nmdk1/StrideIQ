@@ -1,0 +1,12 @@
+{
+  "id": "easy",
+  "name": "Easy Run",
+  "category": "aerobic",
+  "intensity_zone": "easy",
+  "description": "Conversational pace. You should be able to speak in full sentences.",
+  "purpose": "Build aerobic base, promote recovery, accumulate volume safely.",
+  "pace_reference": "easy_pace",
+  "hr_zone": [1, 2],
+  "rpe_range": [3, 4],
+  "notes": "If in doubt, go slower. The aerobic benefits are the same."
+}

@@ -1,0 +1,17 @@
+{
+  "id": "marathon_pace",
+  "name": "Marathon Pace Run",
+  "category": "race_specific",
+  "intensity_zone": "marathon",
+  "description": "Running at your goal marathon pace. Teaches pacing and fueling.",
+  "purpose": "Race simulation, pacing practice, confidence building, fueling practice.",
+  "pace_reference": "marathon_pace",
+  "hr_zone": [2, 3],
+  "rpe_range": [5, 6],
+  "structure": {
+    "warmup": "10-15 min easy",
+    "main": "4-12 miles at marathon pace",
+    "cooldown": "10-15 min easy"
+  },
+  "notes": "This should feel 'just right' - not too easy, not too hard. Practice your race day fueling."
+}

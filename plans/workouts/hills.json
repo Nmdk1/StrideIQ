@@ -1,0 +1,22 @@
+{
+  "id": "hills",
+  "name": "Hill Repeats",
+  "category": "strength",
+  "intensity_zone": "hard",
+  "description": "Short, hard uphill efforts. Builds strength and power.",
+  "purpose": "Leg strength, running economy, power development, injury prevention.",
+  "pace_reference": "hard_effort",
+  "hr_zone": [4, 5],
+  "rpe_range": [8, 9],
+  "variants": {
+    "short": {"reps": "8-12 x 60-90 seconds uphill", "recovery": "jog down"},
+    "long": {"reps": "4-6 x 2-3 min uphill", "recovery": "jog down"},
+    "rolling": {"structure": "6-8 miles on hilly terrain, attack hills"}
+  },
+  "structure": {
+    "warmup": "15 min easy",
+    "main": "See variant",
+    "cooldown": "10-15 min easy"
+  },
+  "notes": "Focus on form: short stride, quick turnover, strong arms, forward lean."
+}

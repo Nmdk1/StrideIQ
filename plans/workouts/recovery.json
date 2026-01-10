@@ -1,0 +1,12 @@
+{
+  "id": "recovery",
+  "name": "Recovery Run",
+  "category": "recovery",
+  "intensity_zone": "recovery",
+  "description": "Very easy. Slower than easy pace. Active recovery.",
+  "purpose": "Promote blood flow, aid recovery, maintain routine without stress.",
+  "pace_reference": "recovery_pace",
+  "hr_zone": [1],
+  "rpe_range": [2, 3],
+  "notes": "If you feel like you're going too slow, you're doing it right. This is not a workout - it's medicine."
+}

@@ -1,0 +1,17 @@
+{
+  "id": "long_run",
+  "name": "Long Run",
+  "category": "endurance",
+  "intensity_zone": "easy",
+  "description": "Extended aerobic effort. Start conservative, maintain steady effort.",
+  "purpose": "Build endurance, fat adaptation, mental toughness, time on feet.",
+  "pace_reference": "easy_pace",
+  "hr_zone": [1, 2],
+  "rpe_range": [4, 5],
+  "variants": {
+    "progression": "Last 20-30% at marathon pace",
+    "mp_finish": "Final 4-6 miles at marathon pace",
+    "easy": "Entire run at easy pace"
+  },
+  "notes": "The long run is sacred. Don't race it. The goal is to finish feeling like you could do more."
+}

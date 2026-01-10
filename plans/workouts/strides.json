@@ -1,0 +1,17 @@
+{
+  "id": "strides",
+  "name": "Strides",
+  "category": "speed",
+  "intensity_zone": "fast",
+  "description": "Short accelerations to near-sprint, then decelerate. 20-30 seconds each.",
+  "purpose": "Maintain leg speed, improve running economy, neuromuscular activation.",
+  "pace_reference": "fast_but_controlled",
+  "hr_zone": [4, 5],
+  "rpe_range": [6, 7],
+  "structure": {
+    "when": "After easy runs, 2-3x per week",
+    "main": "4-6 x 20-30 seconds, accelerating to ~95% max speed",
+    "recovery": "Walk 60-90 seconds between"
+  },
+  "notes": "Strides should feel smooth and fast, never strained. Think 'quick feet' not 'hard effort'."
+}

@@ -1,0 +1,17 @@
+{
+  "id": "tempo",
+  "name": "Tempo Run",
+  "category": "threshold",
+  "intensity_zone": "tempo",
+  "description": "Comfortably hard. Sustainable for 60 minutes in a race.",
+  "purpose": "Raise lactate threshold, improve running economy at faster paces.",
+  "pace_reference": "tempo_pace",
+  "hr_zone": [3, 4],
+  "rpe_range": [6, 7],
+  "structure": {
+    "warmup": "10-15 min easy",
+    "main": "20-40 min at tempo pace",
+    "cooldown": "10-15 min easy"
+  },
+  "notes": "Tempo should feel controlled, not desperate. If you're gasping, you're going too fast."
+}
