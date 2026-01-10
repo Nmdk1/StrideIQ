@@ -410,6 +410,68 @@ export default function ComparePage() {
               )}
             </div>
             
+            {/* Quick Compare Filtered Runs */}
+            {hasAnyFilter && filteredActivities.length >= 2 && filteredActivities.length <= 10 && (
+              <div className="mt-4 pt-4 border-t border-gray-700 flex items-center justify-between">
+                <div className="text-sm text-gray-400">
+                  <span className="text-orange-400 font-medium">{filteredActivities.length}</span> runs match your filters
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      const ids = filteredActivities.slice(0, 10).map((a: any) => a.id);
+                      const result = await compareSelectedMutation.mutateAsync({
+                        activityIds: ids,
+                        baselineId: undefined,
+                      });
+                      sessionStorage.setItem('strideiq_compare_results', JSON.stringify(result));
+                      router.push('/compare/results');
+                    } catch (error) {
+                      console.error('Compare failed:', error);
+                    }
+                  }}
+                  disabled={compareSelectedMutation.isPending}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  {compareSelectedMutation.isPending ? (
+                    <>
+                      <LoadingSpinner size="sm" />
+                      Comparing...
+                    </>
+                  ) : (
+                    <>
+                      ⚡ Compare All {filteredActivities.length} Filtered Runs
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+            
+            {hasAnyFilter && filteredActivities.length > 10 && (
+              <div className="mt-4 pt-4 border-t border-gray-700">
+                <div className="text-sm text-gray-400">
+                  <span className="text-orange-400 font-medium">{filteredActivities.length}</span> runs match your filters.
+                  Select up to 10 to compare, or narrow your filter.
+                </div>
+              </div>
+            )}
+            
+            {hasAnyFilter && filteredActivities.length === 1 && (
+              <div className="mt-4 pt-4 border-t border-gray-700">
+                <div className="text-sm text-gray-400">
+                  Only <span className="text-orange-400 font-medium">1</span> run matches. Broaden your filter or use &quot;Find Similar&quot; to auto-find comparison runs.
+                </div>
+              </div>
+            )}
+            
+            {hasAnyFilter && filteredActivities.length === 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-700">
+                <div className="text-sm text-amber-400">
+                  No runs match your filters. Try adjusting the ranges.
+                </div>
+              </div>
+            )}
+            
             {/* Selection Mode Instructions */}
             {selectionMode && (
               <div className="mt-4 pt-4 border-t border-gray-700">
