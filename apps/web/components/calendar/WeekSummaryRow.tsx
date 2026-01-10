@@ -85,7 +85,7 @@ export function WeekSummaryRow({ week }: WeekSummaryRowProps) {
       {/* Focus text */}
       {week.focus && (
         <div className="hidden lg:block max-w-md text-sm text-gray-400 italic truncate">
-          "{week.focus}"
+          &ldquo;{week.focus}&rdquo;
         </div>
       )}
     </div>
