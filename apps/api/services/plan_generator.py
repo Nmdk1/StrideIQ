@@ -1,61 +1,55 @@
 """
-Training Plan Generator
+Archetype-Based Training Plan Generator
 
-Generates periodized training plans based on:
-- Goal race (distance, date, target time)
-- Athlete's current fitness (VDOT, recent volume)
-- Training availability
-- Coaching methodology principles
+Generates periodized training plans from carefully designed archetypes.
 
-Philosophy: The plan is a starting point. The athlete owns it, adjusts it,
-and learns from it. We provide structure, not rigid prescription.
+Philosophy:
+- Plans are built from tested archetypes, not generic algorithms
+- Individual paces come from Training Pace Calculator (VDOT-based)
+- Athlete data informs archetype selection, not the structure itself
+- Easy must be easy. Structure must be respected.
+
+Archetypes exist for:
+- Marathon: mid-mileage (40-55 mpw), 6 days/week, 18 weeks
+- (More to be added: Half, 10K, 5K, various volumes)
+
+Each archetype contains:
+- Phase definitions with focus areas
+- Week-by-week workout structure
+- T-block progressions
+- Long run progressions with MP work
+- Cutback placement
 """
 
 from datetime import date, timedelta
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from uuid import UUID, uuid4
+from pathlib import Path
+import json
+import os
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from models import (
     Athlete, Activity, TrainingPlan, PlannedWorkout, 
-    TrainingAvailability, PersonalBest
+    PersonalBest
 )
 
 
-class PlanGenerator:
+# Path to archetypes - relative to api directory
+ARCHETYPES_DIR = Path(__file__).parent.parent.parent.parent / "plans" / "archetypes"
+
+
+class ArchetypePlanGenerator:
     """
-    Generates periodized training plans.
+    Generates training plans from archetype JSON files.
     
-    Supports:
-    - Marathon, Half Marathon, 10K, 5K plans
-    - Base building plans
-    - Periodization: Base → Build → Peak → Taper
+    The archetype contains the full structure - we just:
+    1. Map dates to the structure
+    2. Apply athlete-specific paces
+    3. Create PlannedWorkout records
     """
-    
-    # Standard race distances in meters
-    RACE_DISTANCES = {
-        '5k': 5000,
-        '10k': 10000,
-        'half_marathon': 21097,
-        'marathon': 42195,
-    }
-    
-    # Default phase distributions (as % of total plan)
-    PHASE_DISTRIBUTIONS = {
-        'marathon': {'base': 0.30, 'build': 0.40, 'peak': 0.15, 'taper': 0.15},
-        'half_marathon': {'base': 0.25, 'build': 0.45, 'peak': 0.15, 'taper': 0.15},
-        '10k': {'base': 0.20, 'build': 0.50, 'peak': 0.15, 'taper': 0.15},
-        '5k': {'base': 0.20, 'build': 0.50, 'peak': 0.15, 'taper': 0.15},
-    }
-    
-    # Minimum weeks for each plan type
-    MIN_WEEKS = {
-        'marathon': 16,
-        'half_marathon': 12,
-        '10k': 8,
-        '5k': 6,
-    }
     
     def __init__(self, db: Session):
         self.db = db
@@ -68,17 +62,19 @@ class PlanGenerator:
         goal_race_distance_m: int,
         goal_time_seconds: Optional[int] = None,
         plan_start_date: Optional[date] = None,
+        archetype_name: Optional[str] = None,
     ) -> TrainingPlan:
         """
-        Generate a complete training plan.
+        Generate a training plan from an archetype.
         
         Args:
             athlete_id: The athlete's ID
             goal_race_name: Name of the goal race
-            goal_race_date: Date of the goal race
+            goal_race_date: Date of the goal race (should be a Sunday)
             goal_race_distance_m: Race distance in meters
             goal_time_seconds: Target finish time (optional)
-            plan_start_date: When to start the plan (default: next Monday)
+            plan_start_date: When to start (default: calculated from archetype)
+            archetype_name: Specific archetype to use (auto-selected if None)
         
         Returns:
             TrainingPlan with all PlannedWorkouts created
@@ -87,31 +83,38 @@ class PlanGenerator:
         if not athlete:
             raise ValueError(f"Athlete {athlete_id} not found")
         
-        # Determine plan type
-        plan_type = self._determine_plan_type(goal_race_distance_m)
+        # Select appropriate archetype
+        if archetype_name:
+            archetype = self._load_archetype(archetype_name)
+        else:
+            archetype = self._select_archetype(athlete, goal_race_distance_m)
+        
+        meta = archetype["meta"]
         
         # Calculate plan dates
+        # Race should be on Sunday (end of final week)
+        # Plan starts on Monday, 18 weeks before race Sunday
+        duration_weeks = meta["duration_weeks"]
+        
         if plan_start_date is None:
-            # Start next Monday
-            today = date.today()
-            days_until_monday = (7 - today.weekday()) % 7
-            if days_until_monday == 0:
-                days_until_monday = 7
-            plan_start_date = today + timedelta(days=days_until_monday)
+            # Race is on goal_race_date (should be Sunday)
+            # Plan starts Monday, duration_weeks before
+            # Find the Monday that starts the plan
+            days_before_race = (duration_weeks * 7) - 1  # -1 because race is on Sunday
+            plan_start_date = goal_race_date - timedelta(days=days_before_race)
+            
+            # Adjust to Monday if needed
+            while plan_start_date.weekday() != 0:  # 0 = Monday
+                plan_start_date -= timedelta(days=1)
         
         plan_end_date = goal_race_date
-        total_days = (plan_end_date - plan_start_date).days
-        total_weeks = max(total_days // 7, self.MIN_WEEKS.get(plan_type, 8))
-        
-        # Adjust start date if needed to ensure minimum weeks
-        min_weeks = self.MIN_WEEKS.get(plan_type, 8)
-        if total_weeks < min_weeks:
-            plan_start_date = goal_race_date - timedelta(weeks=min_weeks)
-            total_weeks = min_weeks
         
         # Get athlete's baseline fitness
         baseline_vdot = athlete.vdot or self._estimate_vdot(athlete_id)
         baseline_volume = self._get_recent_weekly_volume(athlete_id)
+        
+        # Calculate training paces from VDOT
+        paces = self._calculate_training_paces(baseline_vdot)
         
         # Create the plan
         plan = TrainingPlan(
@@ -125,21 +128,23 @@ class PlanGenerator:
             goal_time_seconds=goal_time_seconds,
             plan_start_date=plan_start_date,
             plan_end_date=plan_end_date,
-            total_weeks=total_weeks,
+            total_weeks=duration_weeks,
             baseline_vdot=baseline_vdot,
             baseline_weekly_volume_km=baseline_volume,
-            plan_type=plan_type,
-            generation_method="ai",
+            plan_type=meta["distance"],
+            generation_method="archetype",
         )
         
         self.db.add(plan)
         self.db.flush()  # Get the plan ID
         
-        # Generate weekly structure
-        weeks = self._generate_week_structure(plan, athlete)
-        
-        # Generate individual workouts
-        workouts = self._generate_workouts(plan, weeks, athlete)
+        # Generate workouts from archetype weeks
+        workouts = self._generate_workouts_from_archetype(
+            plan=plan,
+            archetype=archetype,
+            paces=paces,
+            start_date=plan_start_date,
+        )
         
         for workout in workouts:
             self.db.add(workout)
@@ -148,37 +153,63 @@ class PlanGenerator:
         
         return plan
     
-    def _determine_plan_type(self, distance_m: int) -> str:
-        """Determine plan type based on race distance."""
-        if distance_m >= 40000:
-            return 'marathon'
-        elif distance_m >= 20000:
-            return 'half_marathon'
-        elif distance_m >= 9000:
-            return '10k'
-        else:
-            return '5k'
+    def _load_archetype(self, name: str) -> Dict:
+        """Load an archetype JSON file."""
+        filepath = ARCHETYPES_DIR / f"{name}.json"
+        if not filepath.exists():
+            raise ValueError(f"Archetype {name} not found at {filepath}")
+        
+        with open(filepath, "r", encoding="utf-8") as f:
+            return json.load(f)
     
-    def _estimate_vdot(self, athlete_id: UUID) -> Optional[float]:
-        """Estimate VDOT from recent activities if not set."""
-        # Look for recent race or time trial
+    def _select_archetype(self, athlete: Athlete, distance_m: int) -> Dict:
+        """
+        Select the appropriate archetype based on athlete profile and race distance.
+        
+        For now, we have:
+        - marathon_mid_6d_18w: Mid-mileage marathon (40-55 mpw, 6 days/week)
+        
+        Future: Add more archetypes and selection logic.
+        """
+        # Determine distance type
+        if distance_m >= 40000:
+            distance_type = "marathon"
+        elif distance_m >= 20000:
+            distance_type = "half"
+        elif distance_m >= 9000:
+            distance_type = "10k"
+        else:
+            distance_type = "5k"
+        
+        # For now, we only have the marathon mid archetype
+        # Future: Select based on athlete's weekly volume, days available, etc.
+        if distance_type == "marathon":
+            # Default to mid-mileage, 6 day, 18 week
+            return self._load_archetype("marathon_mid_6d_18w")
+        
+        # Fallback to generating a basic plan if no archetype exists
+        raise ValueError(f"No archetype available for {distance_type}. Using fallback.")
+    
+    def _estimate_vdot(self, athlete_id: UUID) -> float:
+        """Estimate VDOT from recent race times."""
         recent_pb = self.db.query(PersonalBest).filter(
             PersonalBest.athlete_id == athlete_id
         ).order_by(PersonalBest.achieved_at.desc()).first()
         
-        if recent_pb:
-            # Simple VDOT estimation from race time
-            # Using Daniels' formula approximation
+        if recent_pb and recent_pb.distance_meters and recent_pb.time_seconds:
+            # Use Daniels' VDOT estimation
+            # This is simplified - real implementation uses full tables
             distance_km = recent_pb.distance_meters / 1000
             time_min = recent_pb.time_seconds / 60
             
-            # Rough VDOT estimation
-            if distance_km >= 5 and distance_km <= 42.195:
-                # Very simplified - real calculation is more complex
-                vdot = 30 + (distance_km / time_min) * 10
-                return min(max(vdot, 25), 85)  # Clamp to reasonable range
+            # Rough estimation
+            if 5 <= distance_km <= 42.195:
+                velocity_km_min = distance_km / time_min
+                # Very simplified VDOT approximation
+                vdot = velocity_km_min * 25 + 10
+                return min(max(vdot, 30), 80)
         
-        return 40.0  # Default moderate fitness
+        return 45.0  # Default moderate fitness
     
     def _get_recent_weekly_volume(self, athlete_id: UUID, weeks: int = 4) -> float:
         """Get athlete's average weekly volume over recent weeks."""
@@ -192,437 +223,224 @@ class PlanGenerator:
         
         return (total_distance / 1000) / weeks  # km per week
     
-    def _generate_week_structure(
-        self, 
-        plan: TrainingPlan, 
-        athlete: Athlete
-    ) -> List[Dict]:
-        """
-        Generate the week-by-week structure with phases.
-        
-        Returns list of week definitions with:
-        - week_number
-        - phase
-        - phase_week
-        - volume_factor (relative to peak)
-        - intensity_focus
-        """
-        weeks = []
-        phase_dist = self.PHASE_DISTRIBUTIONS.get(plan.plan_type, self.PHASE_DISTRIBUTIONS['half_marathon'])
-        
-        total_weeks = plan.total_weeks
-        base_weeks = int(total_weeks * phase_dist['base'])
-        build_weeks = int(total_weeks * phase_dist['build'])
-        peak_weeks = int(total_weeks * phase_dist['peak'])
-        taper_weeks = total_weeks - base_weeks - build_weeks - peak_weeks
-        
-        week_num = 1
-        
-        # Base phase - building aerobic foundation
-        for i in range(base_weeks):
-            weeks.append({
-                'week_number': week_num,
-                'phase': 'base',
-                'phase_week': i + 1,
-                'volume_factor': 0.6 + (0.2 * i / max(base_weeks - 1, 1)),  # 60% → 80%
-                'intensity_focus': 'easy',
-                'key_workouts': ['long', 'easy', 'easy'],
-            })
-            week_num += 1
-        
-        # Build phase - increasing intensity
-        for i in range(build_weeks):
-            weeks.append({
-                'week_number': week_num,
-                'phase': 'build',
-                'phase_week': i + 1,
-                'volume_factor': 0.8 + (0.2 * i / max(build_weeks - 1, 1)),  # 80% → 100%
-                'intensity_focus': 'threshold' if i % 2 == 0 else 'intervals',
-                'key_workouts': ['long', 'tempo', 'intervals'] if plan.plan_type != '5k' else ['long', 'intervals', 'tempo'],
-            })
-            week_num += 1
-        
-        # Peak phase - race-specific work
-        for i in range(peak_weeks):
-            weeks.append({
-                'week_number': week_num,
-                'phase': 'peak',
-                'phase_week': i + 1,
-                'volume_factor': 0.95 - (0.1 * i / max(peak_weeks - 1, 1)),  # 95% → 85%
-                'intensity_focus': 'race_pace',
-                'key_workouts': ['long_with_pace', 'race_pace', 'easy'],
-            })
-            week_num += 1
-        
-        # Taper phase - reducing load
-        for i in range(taper_weeks):
-            is_race_week = (i == taper_weeks - 1)
-            weeks.append({
-                'week_number': week_num,
-                'phase': 'taper',
-                'phase_week': i + 1,
-                'volume_factor': 0.7 - (0.3 * i / max(taper_weeks - 1, 1)),  # 70% → 40%
-                'intensity_focus': 'sharpening',
-                'key_workouts': ['race'] if is_race_week else ['easy', 'strides', 'rest'],
-            })
-            week_num += 1
-        
-        return weeks
-    
-    def _generate_workouts(
-        self,
-        plan: TrainingPlan,
-        weeks: List[Dict],
-        athlete: Athlete
-    ) -> List[PlannedWorkout]:
-        """
-        Generate individual workout prescriptions for each day.
-        """
-        workouts = []
-        current_date = plan.plan_start_date
-        
-        # Get athlete's training availability
-        availability = self._get_availability(athlete.id)
-        
-        for week in weeks:
-            week_workouts = self._generate_week_workouts(
-                plan=plan,
-                week=week,
-                start_date=current_date,
-                athlete=athlete,
-                availability=availability,
-            )
-            workouts.extend(week_workouts)
-            current_date += timedelta(days=7)
-        
-        return workouts
-    
-    def _get_availability(self, athlete_id: UUID) -> Dict[int, str]:
-        """
-        Get athlete's preferred training days.
-        Returns dict of day_of_week -> preferred time.
-        """
-        availability = self.db.query(TrainingAvailability).filter(
-            TrainingAvailability.athlete_id == athlete_id,
-            TrainingAvailability.status.in_(['available', 'preferred'])
-        ).all()
-        
-        if not availability:
-            # Default: available every day
-            return {i: 'morning' for i in range(7)}
-        
-        result = {}
-        for a in availability:
-            if a.day_of_week not in result or a.status == 'preferred':
-                result[a.day_of_week] = a.time_block
-        
-        return result
-    
-    def _generate_week_workouts(
-        self,
-        plan: TrainingPlan,
-        week: Dict,
-        start_date: date,
-        athlete: Athlete,
-        availability: Dict[int, str],
-    ) -> List[PlannedWorkout]:
-        """
-        Generate workouts for a single week.
-        
-        Standard week structure:
-        - Sunday: Long run
-        - Monday: Rest or easy
-        - Tuesday: Quality workout
-        - Wednesday: Easy or recovery
-        - Thursday: Quality workout #2
-        - Friday: Rest
-        - Saturday: Easy or moderate
-        """
-        workouts = []
-        
-        # Get target paces based on VDOT
-        paces = self._calculate_training_paces(plan.baseline_vdot or 40)
-        
-        # Week template based on phase
-        if week['phase'] == 'base':
-            template = self._get_base_week_template()
-        elif week['phase'] == 'build':
-            template = self._get_build_week_template(plan.plan_type)
-        elif week['phase'] == 'peak':
-            template = self._get_peak_week_template(plan.plan_type)
-        else:  # taper
-            template = self._get_taper_week_template(week['phase_week'], plan.plan_type)
-        
-        # Check if this is race week
-        is_race_week = (start_date + timedelta(days=6) >= plan.goal_race_date)
-        
-        for day_offset, workout_def in enumerate(template):
-            workout_date = start_date + timedelta(days=day_offset)
-            
-            # If race week and this is race day
-            if is_race_week and workout_date == plan.goal_race_date:
-                workout = self._create_race_workout(plan, week, workout_date)
-            else:
-                workout = self._create_workout(
-                    plan=plan,
-                    week=week,
-                    workout_date=workout_date,
-                    workout_def=workout_def,
-                    paces=paces,
-                    volume_factor=week['volume_factor'],
-                )
-            
-            if workout:
-                workouts.append(workout)
-        
-        return workouts
-    
     def _calculate_training_paces(self, vdot: float) -> Dict[str, int]:
         """
         Calculate training paces based on VDOT.
         Returns pace per km in seconds.
         
-        Uses Daniels' training zones:
-        - Easy: 59-74% VO2max
-        - Marathon: 75-84% VO2max
-        - Threshold: 83-88% VO2max
-        - Interval: 95-100% VO2max
-        - Repetition: 105-120% VO2max
+        Based on Daniels' Running Formula zones.
         """
-        # Simplified pace calculations
-        # Real implementation would use full Daniels tables
+        # These are approximations of Daniels' tables
+        # VDOT 40 ≈ 6:00/km easy, 5:15/km marathon, 4:50/km threshold
+        # VDOT 50 ≈ 5:00/km easy, 4:25/km marathon, 4:05/km threshold
+        # VDOT 60 ≈ 4:15/km easy, 3:45/km marathon, 3:25/km threshold
         
-        # Base pace from VDOT (very simplified)
-        # VDOT 40 ≈ 5:30/km easy, VDOT 50 ≈ 4:45/km easy
-        base_easy_pace = 420 - (vdot - 40) * 6  # seconds per km
+        # Linear interpolation (simplified)
+        # Easy pace
+        if vdot <= 40:
+            easy = 360  # 6:00/km
+        elif vdot >= 60:
+            easy = 255  # 4:15/km
+        else:
+            easy = 360 - ((vdot - 40) * 5.25)  # ~5.25 sec/km per VDOT point
+        
+        # Marathon pace (roughly 88% of easy effort, actually uses race prediction)
+        marathon = easy * 0.88
+        
+        # Threshold pace (roughly 83% of easy)
+        threshold = easy * 0.82
+        
+        # Interval pace (roughly 75% of easy)
+        interval = easy * 0.75
         
         return {
-            'easy': int(base_easy_pace),
-            'long': int(base_easy_pace * 1.05),
-            'marathon': int(base_easy_pace * 0.88),
-            'threshold': int(base_easy_pace * 0.82),
-            'interval': int(base_easy_pace * 0.72),
-            'repetition': int(base_easy_pace * 0.65),
-            'recovery': int(base_easy_pace * 1.15),
+            'easy': int(easy),
+            'long': int(easy * 1.02),  # Slightly slower than easy
+            'marathon': int(marathon),
+            'threshold': int(threshold),
+            'interval': int(interval),
+            'recovery': int(easy * 1.10),  # Slower than easy
+            'strides': int(threshold * 0.85),  # Fast but controlled
         }
     
-    def _get_base_week_template(self) -> List[Dict]:
-        """Base phase week template - focus on easy volume."""
-        return [
-            {'type': 'long', 'title': 'Long Run', 'duration_factor': 1.5},
-            {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-            {'type': 'easy', 'title': 'Easy Run', 'duration_factor': 0.8},
-            {'type': 'easy', 'title': 'Easy Run', 'duration_factor': 0.8},
-            {'type': 'easy_strides', 'title': 'Easy Run with Strides', 'duration_factor': 0.9},
-            {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-            {'type': 'easy', 'title': 'Easy Run', 'duration_factor': 0.7},
-        ]
-    
-    def _get_build_week_template(self, plan_type: str) -> List[Dict]:
-        """Build phase week template - increasing quality."""
-        if plan_type in ['marathon', 'half_marathon']:
-            return [
-                {'type': 'long', 'title': 'Long Run', 'duration_factor': 1.8},
-                {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-                {'type': 'tempo', 'title': 'Tempo Run', 'duration_factor': 1.0},
-                {'type': 'easy', 'title': 'Easy Run', 'duration_factor': 0.7},
-                {'type': 'intervals', 'title': 'Interval Session', 'duration_factor': 1.0},
-                {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-                {'type': 'easy', 'title': 'Easy Run', 'duration_factor': 0.8},
-            ]
-        else:  # 5k, 10k
-            return [
-                {'type': 'long', 'title': 'Long Run', 'duration_factor': 1.4},
-                {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-                {'type': 'intervals', 'title': 'Interval Session', 'duration_factor': 1.0},
-                {'type': 'easy', 'title': 'Easy Run', 'duration_factor': 0.7},
-                {'type': 'tempo', 'title': 'Tempo Run', 'duration_factor': 1.0},
-                {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-                {'type': 'easy_strides', 'title': 'Easy Run with Strides', 'duration_factor': 0.8},
-            ]
-    
-    def _get_peak_week_template(self, plan_type: str) -> List[Dict]:
-        """Peak phase week template - race-specific work."""
-        return [
-            {'type': 'long_pace', 'title': 'Long Run with Goal Pace', 'duration_factor': 1.6},
-            {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-            {'type': 'race_pace', 'title': 'Race Pace Session', 'duration_factor': 1.0},
-            {'type': 'easy', 'title': 'Easy Run', 'duration_factor': 0.6},
-            {'type': 'threshold', 'title': 'Threshold Run', 'duration_factor': 0.9},
-            {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-            {'type': 'easy', 'title': 'Easy Run', 'duration_factor': 0.7},
-        ]
-    
-    def _get_taper_week_template(self, taper_week: int, plan_type: str) -> List[Dict]:
-        """Taper phase week template - reducing volume, maintaining intensity."""
-        if taper_week == 1:
-            return [
-                {'type': 'long', 'title': 'Moderate Long Run', 'duration_factor': 1.2},
-                {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-                {'type': 'tempo_short', 'title': 'Short Tempo', 'duration_factor': 0.7},
-                {'type': 'easy', 'title': 'Easy Run', 'duration_factor': 0.5},
-                {'type': 'strides', 'title': 'Easy with Strides', 'duration_factor': 0.6},
-                {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-                {'type': 'easy', 'title': 'Shakeout Run', 'duration_factor': 0.4},
-            ]
-        else:  # Final week
-            return [
-                {'type': 'easy', 'title': 'Easy Run', 'duration_factor': 0.5},
-                {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-                {'type': 'strides', 'title': 'Easy with Strides', 'duration_factor': 0.4},
-                {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-                {'type': 'shakeout', 'title': 'Pre-Race Shakeout', 'duration_factor': 0.3},
-                {'type': 'rest', 'title': 'Rest Day', 'duration_factor': 0},
-                {'type': 'race', 'title': 'RACE DAY', 'duration_factor': 0},
-            ]
-    
-    def _create_workout(
+    def _generate_workouts_from_archetype(
         self,
         plan: TrainingPlan,
-        week: Dict,
-        workout_date: date,
-        workout_def: Dict,
+        archetype: Dict,
         paces: Dict[str, int],
-        volume_factor: float,
-    ) -> Optional[PlannedWorkout]:
-        """Create a single PlannedWorkout from template."""
+        start_date: date,
+    ) -> List[PlannedWorkout]:
+        """
+        Generate PlannedWorkout records from archetype week definitions.
+        """
+        workouts = []
+        weeks = archetype.get("weeks", [])
         
-        workout_type = workout_def['type']
+        # Day mapping: archetype uses monday-sunday, we start on monday (weekday 0)
+        day_order = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
         
-        # Skip rest days
-        if workout_type == 'rest':
-            return PlannedWorkout(
-                id=uuid4(),
-                plan_id=plan.id,
-                athlete_id=plan.athlete_id,
-                scheduled_date=workout_date,
-                week_number=week['week_number'],
-                day_of_week=workout_date.weekday(),
-                workout_type='rest',
-                title='Rest Day',
-                description='Full rest. Recovery is when adaptation happens.',
-                phase=week['phase'],
-                phase_week=week['phase_week'],
-            )
+        for week_def in weeks:
+            week_num = week_def["week"]
+            phase = week_def["phase"]
+            focus = week_def.get("focus", "")
+            week_workouts = week_def.get("workouts", {})
+            total_miles = week_def.get("total_miles", 0)
+            
+            # Calculate week start date
+            week_start = start_date + timedelta(weeks=week_num - 1)
+            
+            for day_offset, day_name in enumerate(day_order):
+                workout_date = week_start + timedelta(days=day_offset)
+                workout_def = week_workouts.get(day_name, {})
+                
+                if not workout_def:
+                    continue
+                
+                workout_type = workout_def.get("type", "easy")
+                miles = workout_def.get("miles", 0)
+                description = workout_def.get("description", "")
+                
+                # Determine title
+                title = self._get_workout_title(workout_type, description)
+                
+                # Get target pace
+                target_pace = self._get_target_pace(workout_type, paces)
+                
+                # Calculate duration from distance and pace
+                distance_km = miles * 1.60934
+                duration_minutes = None
+                if distance_km > 0 and target_pace > 0:
+                    duration_minutes = int((distance_km * target_pace) / 60)
+                
+                # Check if this is race day
+                is_race = (workout_date == plan.goal_race_date or workout_type == "race")
+                
+                # Convert Python weekday (0=Mon) to our model (0=Sun)
+                day_of_week_model = (workout_date.weekday() + 1) % 7
+                
+                workout = PlannedWorkout(
+                    id=uuid4(),
+                    plan_id=plan.id,
+                    athlete_id=plan.athlete_id,
+                    scheduled_date=workout_date,
+                    week_number=week_num,
+                    day_of_week=day_of_week_model,
+                    workout_type=workout_type,
+                    title=f"🏁 {plan.goal_race_name}" if is_race else title,
+                    description=self._enhance_description(description, workout_type, paces) if not is_race else "RACE DAY! Trust the work.",
+                    phase=phase,
+                    phase_week=self._get_phase_week(archetype, week_num, phase),
+                    target_duration_minutes=duration_minutes,
+                    target_distance_km=round(distance_km, 1) if distance_km > 0 else None,
+                    target_pace_per_km_seconds=target_pace if workout_type not in ["rest", "gym", "race"] else None,
+                )
+                
+                workouts.append(workout)
         
-        # Calculate duration based on base duration and volume factor
-        base_duration = 45  # Base easy run in minutes
-        duration = int(base_duration * workout_def['duration_factor'] * volume_factor)
-        
-        # Get appropriate pace
-        pace_key = self._get_pace_key(workout_type)
-        target_pace = paces.get(pace_key, paces['easy'])
-        
-        # Calculate distance from duration and pace
-        target_distance = (duration * 60) / target_pace  # km
-        
-        # Generate description
-        description = self._generate_workout_description(workout_type, duration, target_pace, plan.plan_type)
-        
-        return PlannedWorkout(
-            id=uuid4(),
-            plan_id=plan.id,
-            athlete_id=plan.athlete_id,
-            scheduled_date=workout_date,
-            week_number=week['week_number'],
-            day_of_week=workout_date.weekday(),
-            workout_type=workout_type,
-            title=workout_def['title'],
-            description=description,
-            phase=week['phase'],
-            phase_week=week['phase_week'],
-            target_duration_minutes=duration,
-            target_distance_km=round(target_distance, 1),
-            target_pace_per_km_seconds=target_pace,
-            target_pace_per_km_seconds_max=int(target_pace * 1.1),  # 10% slower allowed
-        )
+        return workouts
     
-    def _create_race_workout(
-        self,
-        plan: TrainingPlan,
-        week: Dict,
-        workout_date: date,
-    ) -> PlannedWorkout:
-        """Create the race day workout."""
-        return PlannedWorkout(
-            id=uuid4(),
-            plan_id=plan.id,
-            athlete_id=plan.athlete_id,
-            scheduled_date=workout_date,
-            week_number=week['week_number'],
-            day_of_week=workout_date.weekday(),
-            workout_type='race',
-            title=f'🏁 {plan.goal_race_name}',
-            description=f'RACE DAY! Trust your training. Execute your plan. Enjoy the moment.',
-            phase='race',
-            phase_week=1,
-            target_distance_km=plan.goal_race_distance_m / 1000,
-            target_duration_minutes=plan.goal_time_seconds // 60 if plan.goal_time_seconds else None,
-        )
+    def _get_workout_title(self, workout_type: str, description: str) -> str:
+        """Generate a clean title from workout type."""
+        titles = {
+            "easy": "Easy Run",
+            "easy_strides": "Easy + Strides",
+            "long": "Long Run",
+            "long_mp": "Long Run w/ Marathon Pace",
+            "medium_long": "Medium-Long Run",
+            "medium_long_mp": "Medium-Long w/ MP",
+            "threshold": "Threshold Session",
+            "threshold_light": "Light Threshold",
+            "tempo": "Tempo Run",
+            "intervals": "Interval Session",
+            "rest": "Rest Day",
+            "gym": "Strength + Mobility",
+            "recovery": "Recovery Run",
+            "strides": "Strides",
+            "race": "Race Day",
+            "shakeout_strides": "Shakeout + Strides",
+        }
+        return titles.get(workout_type, workout_type.replace("_", " ").title())
     
-    def _get_pace_key(self, workout_type: str) -> str:
-        """Map workout type to pace zone."""
+    def _get_target_pace(self, workout_type: str, paces: Dict[str, int]) -> int:
+        """Get appropriate pace for workout type."""
         mapping = {
-            'easy': 'easy',
-            'easy_strides': 'easy',
-            'long': 'long',
-            'long_pace': 'marathon',
-            'tempo': 'threshold',
-            'tempo_short': 'threshold',
-            'threshold': 'threshold',
-            'intervals': 'interval',
-            'race_pace': 'marathon',
-            'strides': 'repetition',
-            'shakeout': 'easy',
-            'recovery': 'recovery',
+            "easy": "easy",
+            "easy_strides": "easy",
+            "easy_hills": "easy",
+            "long": "long",
+            "long_mp": "marathon",
+            "medium_long": "easy",
+            "medium_long_mp": "marathon",
+            "threshold": "threshold",
+            "threshold_light": "threshold",
+            "threshold_short": "threshold",
+            "tempo": "threshold",
+            "tempo_short": "threshold",
+            "intervals": "interval",
+            "recovery": "recovery",
+            "strides": "strides",
+            "shakeout_strides": "easy",
         }
-        return mapping.get(workout_type, 'easy')
+        pace_type = mapping.get(workout_type, "easy")
+        return paces.get(pace_type, paces["easy"])
     
-    def _generate_workout_description(
-        self,
-        workout_type: str,
-        duration: int,
-        target_pace: int,
-        plan_type: str,
-    ) -> str:
-        """Generate human-readable workout description."""
-        pace_str = f"{target_pace // 60}:{target_pace % 60:02d}/km"
+    def _get_phase_week(self, archetype: Dict, week_num: int, phase: str) -> int:
+        """Determine which week within the phase this is."""
+        phases = archetype.get("phases", [])
+        for p in phases:
+            if p["name"] == phase and week_num in p.get("weeks", []):
+                return p["weeks"].index(week_num) + 1
+        return 1
+    
+    def _enhance_description(self, description: str, workout_type: str, paces: Dict[str, int]) -> str:
+        """Enhance workout description with pace information."""
+        if not description:
+            description = self._get_default_description(workout_type)
         
-        descriptions = {
-            'easy': f"Easy run at conversational pace. Target: {pace_str} or slower. "
-                    "This should feel comfortable - if you can't hold a conversation, slow down.",
-            
-            'long': f"Long run building aerobic endurance. Start easy ({pace_str}), stay relaxed. "
-                    "Focus on time on feet, not pace. Fuel and hydrate.",
-            
-            'long_pace': f"Long run with goal pace segments. Start easy for 40%, then run "
-                         f"the middle portion at goal race pace, finish easy. Stay controlled.",
-            
-            'tempo': f"Threshold run at 'comfortably hard' pace (~{pace_str}). "
-                     "You should be able to speak in short sentences but not hold a conversation.",
-            
-            'tempo_short': f"Short tempo at threshold pace (~{pace_str}). "
-                          "Maintain form and rhythm throughout.",
-            
-            'intervals': f"Interval session: warmup, then 4-6 x (3-5 min hard / 2-3 min easy), cooldown. "
-                        f"Hard efforts around {pace_str}. Full recovery between.",
-            
-            'race_pace': f"Race pace practice. Run extended segments at your goal race pace. "
-                        "Focus on rhythm and perceived effort at this pace.",
-            
-            'strides': "Easy run with 4-6 strides (20-30 sec accelerations) at the end. "
-                      "Strides should be smooth and controlled, not sprints.",
-            
-            'easy_strides': "Easy run finishing with 4-6 strides. "
-                           "Keep the easy portion truly easy, then add strides for neuromuscular activation.",
-            
-            'shakeout': "Pre-race shakeout. Very easy, short run to stay loose. "
-                       "Don't overthink it - just get the legs moving.",
-            
-            'recovery': "Recovery run. Extremely easy pace. If in doubt, go slower.",
+        # Add pace guidance if relevant
+        if workout_type in ["easy", "easy_strides", "easy_hills", "long", "medium_long"]:
+            easy_pace = paces.get("easy", 360)
+            pace_str = f"{easy_pace // 60}:{easy_pace % 60:02d}/km"
+            if "easy" in description.lower() and "/km" not in description:
+                description += f" Target: {pace_str} or slower."
+        
+        elif workout_type in ["threshold", "threshold_light", "threshold_short", "tempo"]:
+            t_pace = paces.get("threshold", 300)
+            pace_str = f"{t_pace // 60}:{t_pace % 60:02d}/km"
+            if "/km" not in description:
+                description += f" Threshold pace: ~{pace_str}."
+        
+        elif workout_type in ["long_mp", "medium_long_mp"]:
+            mp = paces.get("marathon", 330)
+            pace_str = f"{mp // 60}:{mp % 60:02d}/km"
+            if "/km" not in description:
+                description += f" MP segments: ~{pace_str}."
+        
+        return description
+    
+    def _get_default_description(self, workout_type: str) -> str:
+        """Get default description for workout type."""
+        defaults = {
+            "easy": "Easy, conversational pace. If you can't talk, slow down.",
+            "easy_strides": "Easy run finishing with 4-6 x 20s strides. Smooth acceleration, not sprints.",
+            "long": "Long run building aerobic endurance. Start easy, stay relaxed. The Engine.",
+            "long_mp": "Long run with marathon pace segments. Practice race effort.",
+            "medium_long": "Medium-long run. Steady aerobic effort.",
+            "medium_long_mp": "Medium-long with marathon pace work. Building race-specific fitness.",
+            "threshold": "Threshold work at 'comfortably hard' pace. Should be sustainable for ~60 min in a race.",
+            "threshold_light": "Light threshold session. Maintain quality, shorter duration.",
+            "rest": "Full rest. Recovery is when adaptation happens.",
+            "gym": "Strength and mobility work. No running.",
+            "recovery": "Recovery run. Extremely easy.",
+            "strides": "Short accelerations to activate fast-twitch fibers.",
         }
-        
-        return descriptions.get(workout_type, f"Run at {pace_str} pace for {duration} minutes.")
+        return defaults.get(workout_type, "Complete as prescribed.")
+
+
+# Backwards compatibility - PlanGenerator alias
+class PlanGenerator(ArchetypePlanGenerator):
+    """Alias for backwards compatibility."""
+    pass
 
 
 def get_plan_generator(db: Session) -> PlanGenerator:
