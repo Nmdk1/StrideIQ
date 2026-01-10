@@ -54,11 +54,21 @@ class FrequencyLoop(str, Enum):
 
 
 class CausalConfidence(str, Enum):
-    """Confidence in causal relationship"""
-    HIGH = "high"           # Granger p < 0.01, strong effect
-    MODERATE = "moderate"   # Granger p < 0.05
-    SUGGESTIVE = "suggestive"  # p < 0.10, worth watching
-    INSUFFICIENT = "insufficient"  # Not enough data or p >= 0.10
+    """
+    Confidence in causal relationship.
+    
+    TIERED SYSTEM (degrades gracefully with less data):
+    - STATISTICAL: Granger p < 0.05 (gold standard, rare)
+    - PATTERN: Simple correlation + lag precedence (common)
+    - DIRECTIONAL: Input change preceded output change (easy to achieve)
+    - EARLY_SIGNAL: Just 3+ matching examples (very easy)
+    - INSUFFICIENT: Not even 3 examples
+    """
+    STATISTICAL = "statistical"  # Granger p < 0.05 (rare, requires lots of data)
+    PATTERN = "pattern"          # Correlation r > 0.25 with lag (achievable)
+    DIRECTIONAL = "directional"  # Direction matches (input ↑ before output ↑)
+    EARLY_SIGNAL = "early_signal"  # 3+ examples show pattern
+    INSUFFICIENT = "insufficient"  # Less than 3 examples or p >= 0.10
 
 
 class ImpactDirection(str, Enum):
@@ -69,41 +79,42 @@ class ImpactDirection(str, Enum):
 
 
 # Input variable configurations
+# RELAXED MINIMUMS: We want insights even with sparse data
 READINESS_INPUTS = {
     "sleep_hours": {
         "name": "Sleep Duration",
         "icon": "😴",
         "lag_range": (0, 7),
         "positive_direction": 1,  # More sleep = better
-        "min_samples": 7,
+        "min_samples": 3,  # Relaxed from 7
     },
     "hrv_rmssd": {
         "name": "HRV",
         "icon": "💓",
         "lag_range": (0, 7),
         "positive_direction": 1,  # Higher HRV = better readiness
-        "min_samples": 5,
+        "min_samples": 3,  # Relaxed from 5
     },
     "stress": {
         "name": "Stress Level",
         "icon": "😤",
         "lag_range": (0, 7),
         "positive_direction": -1,  # Lower stress = better
-        "min_samples": 5,
+        "min_samples": 3,  # Relaxed from 5
     },
     "soreness": {
         "name": "Muscle Soreness",
         "icon": "🦵",
         "lag_range": (0, 7),
         "positive_direction": -1,  # Lower soreness = better
-        "min_samples": 5,
+        "min_samples": 3,  # Relaxed from 5
     },
     "resting_hr": {
         "name": "Resting HR",
         "icon": "❤️",
         "lag_range": (0, 7),
         "positive_direction": -1,  # Lower RHR = better recovery
-        "min_samples": 5,
+        "min_samples": 3,  # Relaxed from 5
     },
 }
 
@@ -113,35 +124,35 @@ FITNESS_INPUTS = {
         "icon": "📏",
         "lag_range": (14, 42),  # Supercompensation window
         "positive_direction": 1,  # More volume = better (usually)
-        "min_samples": 4,
+        "min_samples": 3,  # Relaxed from 4
     },
     "threshold_pct": {
         "name": "Threshold Work %",
         "icon": "🔥",
         "lag_range": (14, 42),
         "positive_direction": 1,  # More quality = better
-        "min_samples": 4,
+        "min_samples": 3,  # Relaxed from 4
     },
     "long_run_pct": {
         "name": "Long Run %",
         "icon": "🛤️",
         "lag_range": (21, 42),  # Long runs take longer to manifest
         "positive_direction": 1,
-        "min_samples": 4,
+        "min_samples": 3,  # Relaxed from 4
     },
     "consistency": {
         "name": "Training Consistency",
         "icon": "📅",
         "lag_range": (14, 28),
         "positive_direction": 1,  # More consistent = better
-        "min_samples": 4,
+        "min_samples": 3,  # Relaxed from 4
     },
     "acwr": {
         "name": "Training Load (ACWR)",
         "icon": "⚡",
         "lag_range": (7, 21),  # ACWR effects are medium-term
         "positive_direction": 0,  # Neutral - depends on context
-        "min_samples": 4,
+        "min_samples": 3,  # Relaxed from 4
     },
 }
 
@@ -572,8 +583,20 @@ class CausalAttributionEngine:
         )
         
         # 4. Combine and rank top indicators
+        # Include all non-insufficient indicators, sorted by confidence tier then correlation
         all_indicators = readiness_indicators + fitness_indicators
-        all_indicators.sort(key=lambda x: x.granger_p)
+        
+        # Sort by confidence tier (STATISTICAL > PATTERN > DIRECTIONAL > EARLY_SIGNAL)
+        confidence_order = {
+            CausalConfidence.STATISTICAL: 0,
+            CausalConfidence.PATTERN: 1,
+            CausalConfidence.DIRECTIONAL: 2,
+            CausalConfidence.EARLY_SIGNAL: 3,
+            CausalConfidence.INSUFFICIENT: 4,
+        }
+        all_indicators.sort(key=lambda x: (confidence_order[x.confidence], x.granger_p))
+        
+        # Include anything that's not INSUFFICIENT
         top_indicators = [i for i in all_indicators if i.confidence != CausalConfidence.INSUFFICIENT][:5]
         
         # 5. Calculate data quality
@@ -757,15 +780,14 @@ class CausalAttributionEngine:
             else:
                 effect_direction = ImpactDirection.NEGATIVE
             
-            # Determine confidence
-            if p_value < 0.01 and abs(corr_r) >= 0.4:
-                confidence = CausalConfidence.HIGH
-            elif p_value < 0.05:
-                confidence = CausalConfidence.MODERATE
-            elif p_value < 0.10:
-                confidence = CausalConfidence.SUGGESTIVE
-            else:
-                confidence = CausalConfidence.INSUFFICIENT
+            # Determine confidence using TIERED SYSTEM
+            # This degrades gracefully - we want insights even without perfect data
+            confidence = self._determine_tiered_confidence(
+                p_value=p_value,
+                correlation=corr_r,
+                sample_size=len(x_aligned),
+                effect_direction=effect_direction,
+            )
             
             # Generate insight
             insight = self._generate_insight(
@@ -1095,6 +1117,51 @@ class CausalAttributionEngine:
         
         return TimeSeries(name="acwr", dates=dates, values=values)
     
+    def _determine_tiered_confidence(
+        self,
+        p_value: float,
+        correlation: float,
+        sample_size: int,
+        effect_direction: ImpactDirection,
+    ) -> CausalConfidence:
+        """
+        TIERED CONFIDENCE SYSTEM
+        
+        Degrades gracefully based on available data:
+        
+        Tier 1 - STATISTICAL: Granger p < 0.05 (gold standard)
+        Tier 2 - PATTERN: Correlation |r| > 0.25 (achievable with less data)
+        Tier 3 - DIRECTIONAL: Clear direction match with 5+ samples
+        Tier 4 - EARLY_SIGNAL: 3+ samples with any pattern
+        Tier 5 - INSUFFICIENT: < 3 samples
+        """
+        # Not enough data at all
+        if sample_size < 3:
+            return CausalConfidence.INSUFFICIENT
+        
+        # Tier 1: Statistical (Granger significant)
+        if p_value < 0.05 and abs(correlation) >= 0.3:
+            return CausalConfidence.STATISTICAL
+        
+        # Tier 2: Pattern (good correlation, maybe not Granger significant)
+        if abs(correlation) >= 0.25 and sample_size >= 5:
+            return CausalConfidence.PATTERN
+        
+        # Tier 3: Directional (direction is clear, even if weak correlation)
+        if effect_direction != ImpactDirection.NEUTRAL and sample_size >= 5:
+            if abs(correlation) >= 0.15:  # Very relaxed threshold
+                return CausalConfidence.DIRECTIONAL
+        
+        # Tier 4: Early signal (we have some data, any pattern)
+        if sample_size >= 3 and abs(correlation) >= 0.1:
+            return CausalConfidence.EARLY_SIGNAL
+        
+        # Tier 4: Early signal (enough samples, direction exists)
+        if sample_size >= 3 and effect_direction != ImpactDirection.NEUTRAL:
+            return CausalConfidence.EARLY_SIGNAL
+        
+        return CausalConfidence.INSUFFICIENT
+
     def _generate_insight(
         self,
         input_name: str,
@@ -1105,18 +1172,31 @@ class CausalAttributionEngine:
         loop: FrequencyLoop,
         confidence: CausalConfidence,
     ) -> str:
-        """Generate sparse, forensic insight text."""
+        """
+        Generate sparse, forensic insight text.
+        
+        Adapts language based on confidence tier:
+        - STATISTICAL: Strong language + p-value
+        - PATTERN: Moderate language + correlation
+        - DIRECTIONAL: Cautious language + direction
+        - EARLY_SIGNAL: Very cautious + "watching"
+        - INSUFFICIENT: Request more data
+        """
         
         if confidence == CausalConfidence.INSUFFICIENT:
-            return f"{input_name}: More data needed."
+            return f"{input_name}: Not enough data yet. Keep logging."
         
         # Lag description
         if lag_days == 0:
             lag_str = "same day"
         elif lag_days == 1:
             lag_str = "1 day prior"
-        else:
+        elif lag_days <= 7:
             lag_str = f"{lag_days} days prior"
+        elif lag_days <= 14:
+            lag_str = f"~{lag_days // 7} week prior"
+        else:
+            lag_str = f"~{lag_days // 7} weeks prior"
         
         # Direction description
         if direction == ImpactDirection.POSITIVE:
@@ -1124,25 +1204,31 @@ class CausalAttributionEngine:
         elif direction == ImpactDirection.NEGATIVE:
             effect = "preceded worse performance"
         else:
-            effect = "had unclear effect"
+            effect = "showed mixed effects"
         
-        # Confidence qualifier
-        if confidence == CausalConfidence.HIGH:
-            qualifier = "Data strongly suggests"
-        elif confidence == CausalConfidence.MODERATE:
-            qualifier = "Data hints"
+        # Build insight based on confidence tier
+        if confidence == CausalConfidence.STATISTICAL:
+            # Gold standard - can speak confidently
+            insight = f"Statistical evidence: {input_name} changes {lag_str} {effect}."
+            insight += f" (p={p_value:.3f}, r={correlation:.2f})"
+        
+        elif confidence == CausalConfidence.PATTERN:
+            # Good correlation, not Granger significant
+            insight = f"Pattern observed: {input_name} changes {lag_str} {effect}."
+            insight += f" (r={correlation:.2f})"
+        
+        elif confidence == CausalConfidence.DIRECTIONAL:
+            # Clear direction, weak stats
+            insight = f"Trend noted: {input_name} tends to precede performance changes."
+            insight += " Worth monitoring."
+        
+        elif confidence == CausalConfidence.EARLY_SIGNAL:
+            # Just starting to see something
+            insight = f"Early signal: {input_name} may influence performance."
+            insight += " More data will clarify."
+        
         else:
-            qualifier = "Weak signal"
-        
-        # Build insight
-        insight = f"{qualifier}: {input_name} changes {lag_str} {effect}."
-        
-        # Add statistical backing for high/moderate confidence
-        if confidence in [CausalConfidence.HIGH, CausalConfidence.MODERATE]:
-            insight += f" (Granger p={p_value:.3f})"
-        
-        if confidence == CausalConfidence.SUGGESTIVE:
-            insight += " Test it."
+            insight = f"{input_name}: Analyzing..."
         
         return insight
     
@@ -1239,11 +1325,21 @@ class CausalAttributionEngine:
         
         if top_indicators:
             for i, ind in enumerate(top_indicators, 1):
+                # Confidence tier indicator
                 confidence_emoji = {
-                    CausalConfidence.HIGH: "🟢",
-                    CausalConfidence.MODERATE: "🟡",
-                    CausalConfidence.SUGGESTIVE: "🟠",
-                    CausalConfidence.INSUFFICIENT: "⚪",
+                    CausalConfidence.STATISTICAL: "🟢",  # Strong evidence
+                    CausalConfidence.PATTERN: "🟡",      # Good pattern
+                    CausalConfidence.DIRECTIONAL: "🟠",  # Direction clear
+                    CausalConfidence.EARLY_SIGNAL: "⚪",  # Early data
+                    CausalConfidence.INSUFFICIENT: "❌",
+                }[ind.confidence]
+                
+                confidence_label = {
+                    CausalConfidence.STATISTICAL: "STAT",
+                    CausalConfidence.PATTERN: "PATTERN",
+                    CausalConfidence.DIRECTIONAL: "TREND",
+                    CausalConfidence.EARLY_SIGNAL: "EARLY",
+                    CausalConfidence.INSUFFICIENT: "?",
                 }[ind.confidence]
                 
                 direction_str = {
@@ -1253,23 +1349,181 @@ class CausalAttributionEngine:
                 }[ind.effect_direction]
                 
                 lines.append(
-                    f"{i}. {confidence_emoji} {ind.input_name} ({ind.lag_days}d lag): "
-                    f"{direction_str} | p={ind.granger_p:.3f}"
+                    f"{i}. {confidence_emoji} [{confidence_label}] {ind.input_name} "
+                    f"({ind.lag_days}d lag): {direction_str} | r={ind.correlation_r:.2f}"
                 )
         else:
-            lines.append("No statistically significant leading indicators found yet.")
-            lines.append("More data needed for causal inference.")
+            lines.append("No leading indicators detected yet.")
+            lines.append("As you log more data, patterns will emerge.")
         
         lines.append("")
-        lines.append("INTERPRETATION:")
-        lines.append("- Leading indicators show what PRECEDED performance changes")
-        lines.append("- Lower p-value = stronger statistical confidence")
-        lines.append("- Lag = how many days before the effect appeared")
+        lines.append("CONFIDENCE TIERS:")
+        lines.append("- 🟢 STAT = Statistical evidence (Granger test p<0.05)")
+        lines.append("- 🟡 PATTERN = Correlation observed (r>0.25)")
+        lines.append("- 🟠 TREND = Directional pattern (worth watching)")
+        lines.append("- ⚪ EARLY = Early signal (more data needed)")
         lines.append("")
         lines.append("=== END CAUSAL CONTEXT ===")
         
         return "\n".join(lines)
     
+    def get_simple_patterns(
+        self,
+        athlete_id: UUID,
+        min_runs: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """
+        SIMPLE PATTERN MATCHING (No Granger required)
+        
+        Compares your BEST runs to your WORST runs.
+        Finds what was different in the training leading up to each.
+        
+        Requires only 10+ activities - no daily check-ins needed.
+        Perfect for sparse data.
+        """
+        # Get all runs with efficiency data
+        activities = self.db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport.ilike("run"),
+            Activity.duration_s.isnot(None),
+            Activity.distance_m.isnot(None),
+            Activity.avg_hr.isnot(None),
+            Activity.distance_m > 1000,  # At least 1km
+        ).order_by(Activity.start_time.desc()).limit(100).all()
+        
+        if len(activities) < min_runs:
+            return []
+        
+        # Calculate efficiency for each run
+        runs_with_efficiency = []
+        for a in activities:
+            if a.distance_m and a.duration_s and a.avg_hr and a.avg_hr > 0:
+                pace = a.duration_s / (a.distance_m / 1000)
+                efficiency = pace / a.avg_hr  # Lower is better
+                runs_with_efficiency.append({
+                    "id": str(a.id),
+                    "date": a.start_time.date(),
+                    "efficiency": efficiency,
+                    "pace": pace,
+                    "avg_hr": a.avg_hr,
+                })
+        
+        if len(runs_with_efficiency) < min_runs:
+            return []
+        
+        # Sort by efficiency
+        runs_with_efficiency.sort(key=lambda x: x["efficiency"])
+        
+        # Top 20% = best runs, Bottom 20% = worst runs
+        n = len(runs_with_efficiency)
+        top_n = max(3, n // 5)
+        bottom_n = max(3, n // 5)
+        
+        best_runs = runs_with_efficiency[:top_n]
+        worst_runs = runs_with_efficiency[-bottom_n:]
+        
+        patterns = []
+        
+        # Analyze trailing volume for each group
+        best_trailing_volumes = []
+        worst_trailing_volumes = []
+        
+        for run in best_runs:
+            vol = self._get_trailing_volume(athlete_id, run["date"], 21)
+            if vol is not None:
+                best_trailing_volumes.append(vol)
+        
+        for run in worst_runs:
+            vol = self._get_trailing_volume(athlete_id, run["date"], 21)
+            if vol is not None:
+                worst_trailing_volumes.append(vol)
+        
+        if best_trailing_volumes and worst_trailing_volumes:
+            best_avg = sum(best_trailing_volumes) / len(best_trailing_volumes)
+            worst_avg = sum(worst_trailing_volumes) / len(worst_trailing_volumes)
+            
+            if best_avg > worst_avg * 1.15:  # 15% higher volume before best runs
+                patterns.append({
+                    "pattern": "Higher volume precedes your best runs",
+                    "detail": f"Your top {len(best_runs)} runs had ~{best_avg:.0f}km in trailing 3 weeks vs ~{worst_avg:.0f}km before your worst runs.",
+                    "confidence": "pattern",
+                    "icon": "📈",
+                    "direction": "positive",
+                })
+            elif worst_avg > best_avg * 1.15:  # Higher volume before worst runs
+                patterns.append({
+                    "pattern": "Lower volume precedes your best runs",
+                    "detail": f"Your top {len(best_runs)} runs came after lighter training (~{best_avg:.0f}km vs ~{worst_avg:.0f}km).",
+                    "confidence": "pattern",
+                    "icon": "🧘",
+                    "direction": "freshness",
+                })
+        
+        # Analyze trailing run count (consistency)
+        best_trailing_counts = []
+        worst_trailing_counts = []
+        
+        for run in best_runs:
+            count = self._get_trailing_run_count(athlete_id, run["date"], 14)
+            if count is not None:
+                best_trailing_counts.append(count)
+        
+        for run in worst_runs:
+            count = self._get_trailing_run_count(athlete_id, run["date"], 14)
+            if count is not None:
+                worst_trailing_counts.append(count)
+        
+        if best_trailing_counts and worst_trailing_counts:
+            best_avg = sum(best_trailing_counts) / len(best_trailing_counts)
+            worst_avg = sum(worst_trailing_counts) / len(worst_trailing_counts)
+            
+            if best_avg > worst_avg + 1:  # 1+ more runs in trailing 2 weeks
+                patterns.append({
+                    "pattern": "Consistency precedes your best runs",
+                    "detail": f"You averaged {best_avg:.1f} runs in 2 weeks before your best runs vs {worst_avg:.1f} before worst.",
+                    "confidence": "pattern",
+                    "icon": "📅",
+                    "direction": "positive",
+                })
+        
+        return patterns
+    
+    def _get_trailing_volume(
+        self, 
+        athlete_id: UUID, 
+        before_date: date, 
+        days: int
+    ) -> Optional[float]:
+        """Get total volume in trailing window."""
+        start = before_date - timedelta(days=days)
+        
+        total = self.db.query(func.sum(Activity.distance_m)).filter(
+            Activity.athlete_id == athlete_id,
+            func.date(Activity.start_time) >= start,
+            func.date(Activity.start_time) < before_date,
+            Activity.sport.ilike("run"),
+        ).scalar()
+        
+        return total / 1000 if total else None
+    
+    def _get_trailing_run_count(
+        self, 
+        athlete_id: UUID, 
+        before_date: date, 
+        days: int
+    ) -> Optional[int]:
+        """Get run count in trailing window."""
+        start = before_date - timedelta(days=days)
+        
+        count = self.db.query(func.count(Activity.id)).filter(
+            Activity.athlete_id == athlete_id,
+            func.date(Activity.start_time) >= start,
+            func.date(Activity.start_time) < before_date,
+            Activity.sport.ilike("run"),
+        ).scalar()
+        
+        return count
+
     def _empty_result(
         self,
         athlete_id: UUID,

@@ -273,3 +273,52 @@ async def get_fitness_indicators(
         for i in result.fitness_indicators
         if i.confidence != CausalConfidence.INSUFFICIENT
     ]
+
+
+@router.get("/simple-patterns")
+async def get_simple_patterns(
+    min_runs: int = Query(10, ge=5, le=50, description="Minimum runs required"),
+    db: Session = Depends(get_db),
+    current_user: Athlete = Depends(get_current_user),
+):
+    """
+    SIMPLE PATTERN MATCHING (No statistics required!)
+    
+    Compares your BEST runs to your WORST runs and finds differences.
+    Only needs 10+ activities - no daily check-ins required.
+    
+    **How it works:**
+    1. Takes your top 20% runs (by efficiency) as "best"
+    2. Takes your bottom 20% as "worst"
+    3. Compares training patterns leading up to each group
+    4. Reports what was different
+    
+    **Example output:**
+    "Your top 5 runs had ~45km in trailing 3 weeks vs ~28km before your worst runs."
+    
+    **Perfect for:**
+    - Athletes who don't log daily check-ins
+    - Quick insights from activity data alone
+    - Understanding YOUR personal patterns
+    """
+    engine = CausalAttributionEngine(db)
+    
+    patterns = engine.get_simple_patterns(
+        athlete_id=current_user.id,
+        min_runs=min_runs,
+    )
+    
+    if not patterns:
+        return {
+            "message": "Need more runs to detect patterns.",
+            "min_runs_required": min_runs,
+            "suggestion": "Keep training! Patterns emerge after 10+ runs.",
+            "patterns": [],
+        }
+    
+    return {
+        "message": "Patterns discovered from your best vs worst runs:",
+        "patterns": patterns,
+        "methodology": "Compared top 20% runs (by efficiency) to bottom 20%",
+        "note": "These are YOUR patterns - not population averages.",
+    }
