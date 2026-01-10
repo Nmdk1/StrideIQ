@@ -197,15 +197,15 @@ export default function ComparePage() {
               </div>
               <div>
                 <strong className="text-gray-200">2. Ghost Baseline</strong>
-                <p>Your similar runs are averaged to create a "ghost" — what you'd typically do under these conditions.</p>
+                <p>Your similar runs are averaged to create a &quot;ghost&quot; — what you&apos;d typically do under these conditions.</p>
               </div>
               <div>
                 <strong className="text-gray-200">3. Performance Score</strong>
                 <p>Your run is scored 0-100 based on how you performed vs the ghost average.</p>
               </div>
               <div>
-                <strong className="text-gray-200">4. The "BUT" Insight</strong>
-                <p>We explain why performance differed: "You were 5% slower, BUT it was 15°F hotter than usual."</p>
+                <strong className="text-gray-200">4. The &quot;BUT&quot; Insight</strong>
+                <p>We explain why performance differed: &quot;You were 5% slower, BUT it was 15°F hotter than usual.&quot;</p>
               </div>
             </div>
           </div>
