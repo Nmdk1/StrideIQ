@@ -133,19 +133,21 @@ function ActionBar({
   weekStats: { completed: number; planned: number; trajectory?: string } 
 }) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 px-6 py-4 z-30">
+    <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 px-4 md:px-6 py-3 md:py-4 z-30 safe-area-bottom">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-2">
-            <span className="text-gray-400">📊</span>
-            <span className="text-sm text-gray-400">
-              This week: <span className="text-white font-bold">{weekStats.completed.toFixed(0)}</span>
-              <span className="text-gray-600"> / </span>
+        {/* Stats - simplified on mobile */}
+        <div className="flex items-center gap-2 md:gap-8">
+          <div className="flex items-center gap-1 md:gap-2">
+            <span className="text-gray-400 hidden md:inline">📊</span>
+            <span className="text-xs md:text-sm text-gray-400">
+              <span className="hidden md:inline">This week: </span>
+              <span className="text-white font-bold">{weekStats.completed.toFixed(0)}</span>
+              <span className="text-gray-600">/</span>
               <span className="text-gray-400">{weekStats.planned.toFixed(0)} mi</span>
             </span>
           </div>
           {weekStats.trajectory && (
-            <div className="flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-2">
               <span className="text-gray-400">🎯</span>
               <span className="text-sm text-gray-400">
                 Trajectory: <span className="text-emerald-400 font-bold">{weekStats.trajectory}</span>
@@ -154,18 +156,21 @@ function ActionBar({
           )}
         </div>
         
-        <div className="flex items-center gap-3">
+        {/* Buttons - compact on mobile */}
+        <div className="flex items-center gap-2 md:gap-3">
           <a 
             href="/insights"
-            className="px-4 py-2 bg-gray-800 border border-gray-700 hover:border-blue-500 rounded-lg text-sm transition-colors"
+            className="px-3 md:px-4 py-2 bg-gray-800 border border-gray-700 hover:border-blue-500 rounded-lg text-xs md:text-sm transition-colors"
           >
-            📊 Weekly Summary
+            <span className="md:hidden">📊</span>
+            <span className="hidden md:inline">📊 Weekly Summary</span>
           </a>
           <a 
             href="/coach"
-            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 md:px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg text-xs md:text-sm font-medium transition-colors"
           >
-            💬 Ask Coach
+            <span className="md:hidden">💬</span>
+            <span className="hidden md:inline">💬 Ask Coach</span>
           </a>
         </div>
       </div>
@@ -343,7 +348,7 @@ export default function CalendarPage() {
           ) : (
             <>
               {/* Day headers with Weekly Totals column */}
-              <div className="grid grid-cols-[repeat(7,1fr)_140px] border-l border-t border-gray-700 bg-gray-800/50">
+              <div className="hidden md:grid grid-cols-[repeat(7,1fr)_140px] border-l border-t border-gray-700 bg-gray-800/50">
                 {DAY_NAMES.map(day => (
                   <div key={day} className="py-3 text-center text-sm font-semibold text-gray-400 border-r border-b border-gray-700">
                     {day}
@@ -352,6 +357,15 @@ export default function CalendarPage() {
                 <div className="py-3 text-center text-sm font-semibold text-gray-400 border-r border-b border-gray-700 hidden lg:block">
                   Weekly Totals
                 </div>
+              </div>
+              
+              {/* Mobile day headers - abbreviated */}
+              <div className="grid md:hidden grid-cols-7 border-l border-t border-gray-700 bg-gray-800/50">
+                {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
+                  <div key={i} className="py-2 text-center text-xs font-semibold text-gray-400 border-r border-b border-gray-700">
+                    {day}
+                  </div>
+                ))}
               </div>
               
               {/* Calendar grid with aligned weekly totals */}
@@ -365,26 +379,48 @@ export default function CalendarPage() {
                   const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
                   
                   return (
-                    <div key={weekIndex} className="grid grid-cols-[repeat(7,1fr)_140px]">
-                      {/* Days */}
-                      {week.days.map((day) => (
-                        <DayCell
-                          key={day.date}
-                          day={day}
-                          isToday={day.date === today}
-                          isSelected={day.date === selectedDate}
-                          onClick={() => handleDayClick(day.date)}
-                        />
-                      ))}
-                      
-                      {/* Weekly total cell - aligned with this week's row */}
-                      <div className="hidden lg:flex flex-col justify-center items-end p-3 border-r border-b border-gray-700/50 bg-gray-800/30 min-h-[120px]">
-                        <div className="text-right">
-                          <div className="text-white font-semibold text-sm">{weekMiles} mi</div>
-                          <div className="text-gray-500 text-xs">{timeStr}</div>
+                    <React.Fragment key={weekIndex}>
+                      {/* Desktop: 7 days + weekly totals column */}
+                      <div className="hidden md:grid grid-cols-[repeat(7,1fr)_140px]">
+                        {week.days.map((day) => (
+                          <DayCell
+                            key={day.date}
+                            day={day}
+                            isToday={day.date === today}
+                            isSelected={day.date === selectedDate}
+                            onClick={() => handleDayClick(day.date)}
+                          />
+                        ))}
+                        
+                        {/* Weekly total cell - aligned with this week's row */}
+                        <div className="hidden lg:flex flex-col justify-center items-end p-3 border-r border-b border-gray-700/50 bg-gray-800/30 min-h-[120px]">
+                          <div className="text-right">
+                            <div className="text-white font-semibold text-sm">{weekMiles} mi</div>
+                            <div className="text-gray-500 text-xs">{timeStr}</div>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                      
+                      {/* Mobile: 7 days, no weekly totals column */}
+                      <div className="grid md:hidden grid-cols-7">
+                        {week.days.map((day) => (
+                          <DayCell
+                            key={day.date}
+                            day={day}
+                            isToday={day.date === today}
+                            isSelected={day.date === selectedDate}
+                            onClick={() => handleDayClick(day.date)}
+                            compact
+                          />
+                        ))}
+                      </div>
+                      
+                      {/* Mobile week total - below the week */}
+                      <div className="md:hidden flex justify-between items-center px-3 py-2 bg-gray-800/30 border-b border-gray-700/50 text-sm">
+                        <span className="text-gray-500">Week Total</span>
+                        <span className="text-white font-medium">{weekMiles} mi • {timeStr}</span>
+                      </div>
+                    </React.Fragment>
                   );
                 })}
               </div>

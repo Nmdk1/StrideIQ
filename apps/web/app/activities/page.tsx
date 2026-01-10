@@ -97,13 +97,13 @@ export default function ActivitiesPage() {
             </p>
           </div>
         )}
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">Activities</h1>
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+          <h1 className="text-2xl md:text-3xl font-bold">Activities</h1>
+          <div className="flex flex-wrap items-center gap-2 md:gap-4">
             {/* Compare mode toggle */}
             <button
               onClick={handleToggleSelectionMode}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 selectionMode
                   ? 'bg-orange-600 text-white'
                   : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
@@ -112,7 +112,7 @@ export default function ActivitiesPage() {
               {selectionMode 
                 ? selectionCount > 0 
                   ? `${selectionCount} Selected` 
-                  : 'Select to Compare'
+                  : 'Select'
                 : '📊 Compare'}
             </button>
             {selectionMode && selectionCount > 0 && (
@@ -125,7 +125,7 @@ export default function ActivitiesPage() {
             )}
             <UnitToggle />
             {summary && !selectionMode && (
-              <div className="text-sm text-gray-400">
+              <div className="hidden md:block text-sm text-gray-400">
                 {summary.total_activities} activities in last {summary.period_days} days
               </div>
             )}

@@ -158,7 +158,8 @@ export default function DashboardPage() {
                   <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">
                     This Week • {currentWeek.phase} Phase
                   </p>
-                  <div className="grid grid-cols-7 gap-1">
+                  {/* Desktop: 7 columns */}
+                  <div className="hidden md:grid grid-cols-7 gap-1">
                     {currentWeek.workouts.slice(0, 7).map((workout, i) => (
                       <div
                         key={i}
@@ -173,6 +174,25 @@ export default function DashboardPage() {
                            workout.title.split(' ')[0]}
                         </div>
                         {workout.completed && <span className="text-green-400 text-xs">✓</span>}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Mobile: scrollable horizontal row */}
+                  <div className="md:hidden flex gap-1 overflow-x-auto pb-2 -mx-1 px-1">
+                    {currentWeek.workouts.slice(0, 7).map((workout, i) => (
+                      <div
+                        key={i}
+                        className={`flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] ${workoutTypeColors[workout.workout_type] || 'bg-gray-800'}`}
+                      >
+                        <div className="text-[10px] text-gray-400">
+                          {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'narrow' })}
+                        </div>
+                        <div className="text-xs font-medium">
+                          {workout.workout_type === 'rest' ? 'R' : 
+                           workout.target_distance_km ? formatDistance(workout.target_distance_km * 1000, 0) : 
+                           workout.title.charAt(0)}
+                        </div>
+                        {workout.completed && <span className="text-green-400 text-[10px]">✓</span>}
                       </div>
                     ))}
                   </div>

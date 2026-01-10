@@ -47,6 +47,7 @@ interface DayCellProps {
   isToday: boolean;
   isSelected: boolean;
   onClick: () => void;
+  compact?: boolean; // Mobile compact view
 }
 
 // Format pace from distance (meters) and duration (seconds)
@@ -61,7 +62,7 @@ function formatPace(distanceM: number, durationS: number, useMiles: boolean): st
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-export function DayCell({ day, isToday, isSelected, onClick }: DayCellProps) {
+export function DayCell({ day, isToday, isSelected, onClick, compact = false }: DayCellProps) {
   const { formatDistance, units } = useUnits();
   const useMiles = units === 'imperial';
   
@@ -77,6 +78,48 @@ export function DayCell({ day, isToday, isSelected, onClick }: DayCellProps) {
   const colors = workoutColors[workoutType] || workoutColors.rest;
   const statusStyle = statusStyles[day.status] || '';
   
+  // Compact mode for mobile
+  if (compact) {
+    return (
+      <div 
+        onClick={onClick}
+        className={`
+          min-h-[70px] p-1 border-b border-r border-gray-700/50 cursor-pointer
+          transition-all duration-200 active:bg-gray-800/50
+          ${isToday ? 'bg-blue-900/20' : ''}
+          ${isSelected ? 'ring-2 ring-pink-500' : ''}
+          ${statusStyle}
+        `}
+      >
+        {/* Day number */}
+        <div className={`text-xs font-medium ${isToday ? 'text-blue-400' : 'text-gray-500'}`}>
+          {dayNum}
+        </div>
+        
+        {/* Workout type indicator dot/bar */}
+        {hasPlanned && (
+          <div className={`h-1 rounded-full mt-1 ${colors.bg} ${colors.border} border`} />
+        )}
+        
+        {/* Activity indicator */}
+        {hasActivities && (
+          <div className="mt-1 text-[10px] text-emerald-400 font-medium truncate">
+            ✓ {formatDistance(day.activities[0].distance_m || 0, 0)}
+          </div>
+        )}
+        
+        {/* Indicators */}
+        {(hasNotes || hasInsights) && (
+          <div className="flex gap-0.5 mt-0.5">
+            {hasNotes && <span className="text-[8px]">📝</span>}
+            {hasInsights && <span className="text-[8px]">🔥</span>}
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  // Full desktop view
   return (
     <div 
       onClick={onClick}
