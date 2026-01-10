@@ -15,6 +15,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { useAnalyzeAttribution } from '@/lib/hooks/queries/attribution';
+import type { PerformanceDriver, AttributionResult } from '@/lib/api/services/attribution';
 import {
   LineChart,
   Line,
@@ -22,7 +24,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from 'recharts';
 
@@ -87,10 +88,155 @@ interface ComparisonResult {
 // Storage key for comparison results
 const COMPARE_STORAGE_KEY = 'strideiq_compare_results';
 
+// Key Drivers Component
+function KeyDriversSection({ 
+  attribution, 
+  isLoading 
+}: { 
+  attribution: AttributionResult | null; 
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-6 mb-8">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span>🔍</span> Analyzing Key Drivers...
+        </h3>
+        <div className="flex justify-center py-8">
+          <LoadingSpinner size="md" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!attribution || attribution.key_drivers.length === 0) {
+    return (
+      <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-6 mb-8">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span>🔍</span> Key Drivers
+        </h3>
+        <p className="text-gray-400 text-center py-4">
+          Not enough input data (sleep, weight, etc.) to identify drivers yet.
+          Keep logging to unlock the &quot;why&quot; behind your performance.
+        </p>
+      </div>
+    );
+  }
+
+  const positiveDrivers = attribution.key_drivers.filter(d => d.direction === 'positive');
+  const negativeDrivers = attribution.key_drivers.filter(d => d.direction === 'negative');
+
+  return (
+    <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-6 mb-8">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <span>🔍</span> Why This Performance?
+        </h3>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs px-2 py-1 rounded-full ${
+            attribution.overall_confidence === 'high' 
+              ? 'bg-emerald-900/50 text-emerald-400' 
+              : attribution.overall_confidence === 'moderate'
+                ? 'bg-amber-900/50 text-amber-400'
+                : 'bg-gray-700 text-gray-400'
+          }`}>
+            {attribution.overall_confidence} confidence
+          </span>
+          <span className="text-xs text-gray-500">
+            {Math.round(attribution.data_quality_score * 100)}% data coverage
+          </span>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        {attribution.summary_positive && (
+          <div className="bg-emerald-900/20 border border-emerald-700/50 rounded-lg p-4">
+            <div className="flex items-center gap-2 text-emerald-400 font-medium mb-2">
+              <span>↑</span> Helped
+            </div>
+            <p className="text-sm text-gray-300">{attribution.summary_positive}</p>
+          </div>
+        )}
+        {attribution.summary_negative && (
+          <div className="bg-rose-900/20 border border-rose-700/50 rounded-lg p-4">
+            <div className="flex items-center gap-2 text-rose-400 font-medium mb-2">
+              <span>↓</span> Potential Drags
+            </div>
+            <p className="text-sm text-gray-300">{attribution.summary_negative}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Driver Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {attribution.key_drivers.map((driver, idx) => (
+          <div 
+            key={idx}
+            className={`rounded-lg p-4 border ${
+              driver.direction === 'positive' 
+                ? 'bg-emerald-900/10 border-emerald-700/30' 
+                : driver.direction === 'negative'
+                  ? 'bg-rose-900/10 border-rose-700/30'
+                  : 'bg-gray-800/50 border-gray-700/50'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xl">{driver.icon}</span>
+              <span className="font-medium text-white">{driver.name}</span>
+              <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${
+                driver.confidence === 'high' 
+                  ? 'bg-emerald-900/50 text-emerald-400' 
+                  : driver.confidence === 'moderate'
+                    ? 'bg-amber-900/50 text-amber-400'
+                    : 'bg-gray-700 text-gray-400'
+              }`}>
+                {driver.confidence}
+              </span>
+            </div>
+            
+            <div className={`text-lg font-bold mb-1 ${
+              driver.direction === 'positive' 
+                ? 'text-emerald-400' 
+                : driver.direction === 'negative'
+                  ? 'text-rose-400'
+                  : 'text-gray-300'
+            }`}>
+              {driver.magnitude}
+            </div>
+            
+            <p className="text-xs text-gray-400">{driver.insight}</p>
+            
+            {/* Contribution bar */}
+            <div className="mt-2">
+              <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full rounded-full ${
+                    driver.direction === 'positive' 
+                      ? 'bg-emerald-500' 
+                      : driver.direction === 'negative'
+                        ? 'bg-rose-500'
+                        : 'bg-gray-500'
+                  }`}
+                  style={{ width: `${driver.contribution_score * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function CompareResultsPage() {
   const router = useRouter();
   const [comparisonData, setComparisonData] = useState<ComparisonResult | null>(null);
+  const [attributionData, setAttributionData] = useState<AttributionResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [attributionLoading, setAttributionLoading] = useState(false);
+  
+  const analyzeAttributionMutation = useAnalyzeAttribution();
 
   // Load comparison data from sessionStorage
   useEffect(() => {
@@ -104,6 +250,31 @@ export default function CompareResultsPage() {
     }
     setLoading(false);
   }, []);
+
+  // Fetch attribution once comparison data is loaded
+  useEffect(() => {
+    if (!comparisonData) return;
+    
+    const fetchAttribution = async () => {
+      setAttributionLoading(true);
+      try {
+        const result = await analyzeAttributionMutation.mutateAsync({
+          currentActivityId: comparisonData.target_run.id,
+          baselineActivityIds: comparisonData.similar_runs.map(r => r.id),
+          performanceDelta: comparisonData.performance_score?.pace_vs_baseline,
+        });
+        if (result.success && result.data) {
+          setAttributionData(result.data);
+        }
+      } catch (e) {
+        console.error('Failed to fetch attribution:', e);
+      } finally {
+        setAttributionLoading(false);
+      }
+    };
+    
+    fetchAttribution();
+  }, [comparisonData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Combine all runs for comparison
   const allRuns = useMemo(() => {
@@ -402,6 +573,12 @@ export default function CompareResultsPage() {
               )}
             </div>
           </div>
+
+          {/* Key Drivers Section - THE WHY */}
+          <KeyDriversSection 
+            attribution={attributionData} 
+            isLoading={attributionLoading} 
+          />
 
           {/* Comparison Table */}
           <div className="bg-gray-800/60 rounded-xl border border-gray-700 overflow-hidden">
