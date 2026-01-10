@@ -572,7 +572,7 @@ class VolumeAnalyzer(InputAnalyzer):
             Activity.athlete_id == self.athlete_id,
             func.date(Activity.start_time) >= start,
             func.date(Activity.start_time) <= end,
-            Activity.activity_type == "Run",
+            Activity.sport == "run",
         ).first()
         
         total_km = float(activities.total_distance) / 1000 if activities.total_distance else 0
@@ -639,7 +639,7 @@ class ConsistencyAnalyzer(InputAnalyzer):
             Activity.athlete_id == self.athlete_id,
             func.date(Activity.start_time) >= start,
             func.date(Activity.start_time) <= end,
-            Activity.activity_type == "Run",
+            Activity.sport == "run",
         ).scalar() or 0
         
         weeks = max(1, window_days / 7)
@@ -734,7 +734,7 @@ class TrainingMixAnalyzer(InputAnalyzer):
             Activity.athlete_id == self.athlete_id,
             func.date(Activity.start_time) >= start,
             func.date(Activity.start_time) <= end,
-            Activity.activity_type == "Run",
+            Activity.sport == "run",
         ).all()
         
         if not activities:
