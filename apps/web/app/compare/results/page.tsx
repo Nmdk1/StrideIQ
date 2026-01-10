@@ -233,12 +233,57 @@ function OverlayChart({
   const [showPace, setShowPace] = useState(true);
   const [showHR, setShowHR] = useState(true);
   
+  // Debug logging
+  useEffect(() => {
+    console.log('OverlayChart - allRuns:', allRuns);
+    allRuns.forEach((run, idx) => {
+      console.log(`Run ${idx} (${run.name}):`, {
+        hasSplits: !!run.splits,
+        splitsLength: run.splits?.length || 0,
+        splits: run.splits,
+        pace_per_km: run.pace_per_km,
+        avg_hr: run.avg_hr,
+      });
+    });
+  }, [allRuns]);
+  
   // Build chart data from splits
   const chartData = useMemo(() => {
     if (!allRuns.length) return [];
     
     const maxSplits = Math.max(...allRuns.map(r => r.splits?.length || 0));
-    if (maxSplits === 0) return [];
+    console.log('maxSplits:', maxSplits);
+    
+    // If no splits, create a simple 2-point chart (start/end) using run averages
+    if (maxSplits === 0) {
+      // Fallback: Create synthetic points from run-level data
+      const runsWithPace = allRuns.filter(r => r.pace_per_km);
+      const runsWithHR = allRuns.filter(r => r.avg_hr);
+      
+      if (runsWithPace.length === 0 && runsWithHR.length === 0) {
+        return [];
+      }
+      
+      // Create 2 points per run - this shows flat lines but at least visualizes the comparison
+      const data: any[] = [
+        { split: 'Start' },
+        { split: 'End' },
+      ];
+      
+      allRuns.forEach((run, runIdx) => {
+        if (run.pace_per_km) {
+          data[0][`pace_${runIdx}`] = run.pace_per_km / 60;
+          data[1][`pace_${runIdx}`] = run.pace_per_km / 60;
+        }
+        if (run.avg_hr) {
+          data[0][`hr_${runIdx}`] = run.avg_hr;
+          data[1][`hr_${runIdx}`] = run.avg_hr;
+        }
+      });
+      
+      console.log('Fallback chart data (no splits):', data);
+      return data;
+    }
     
     const data: any[] = [];
     for (let i = 0; i < maxSplits; i++) {
@@ -258,17 +303,23 @@ function OverlayChart({
       
       data.push(point);
     }
+    console.log('Chart data from splits:', data);
     return data;
   }, [allRuns]);
 
   const hasPaceData = chartData.some(d => allRuns.some((_, i) => d[`pace_${i}`]));
   const hasHRData = chartData.some(d => allRuns.some((_, i) => d[`hr_${i}`]));
+  
+  console.log('hasPaceData:', hasPaceData, 'hasHRData:', hasHRData);
 
   if (chartData.length === 0) {
     return (
       <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-8 text-center">
         <div className="text-4xl mb-4">📊</div>
-        <p className="text-gray-400">No split data available for overlay chart</p>
+        <p className="text-gray-400">No pace or heart rate data available for comparison</p>
+        <p className="text-xs text-gray-500 mt-2">
+          Runs need either split data or average metrics to display charts
+        </p>
       </div>
     );
   }
@@ -679,7 +730,12 @@ export default function CompareResultsPage() {
             </div>
           )}
 
-          {/* Section 1: Runs Listed Vertically */}
+          {/* Section 1: Overlay Chart with Toggles (ABOVE runs) */}
+          <section className="mb-8">
+            <OverlayChart allRuns={allRuns} />
+          </section>
+
+          {/* Section 2: Runs Listed Vertically */}
           <section className="mb-8">
             <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
               📋 Runs
@@ -694,11 +750,6 @@ export default function CompareResultsPage() {
                 />
               ))}
             </div>
-          </section>
-
-          {/* Section 2: Overlay Chart with Toggles */}
-          <section className="mb-8">
-            <OverlayChart allRuns={allRuns} />
           </section>
 
           {/* Section 3: The WHY */}
