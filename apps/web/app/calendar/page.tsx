@@ -44,9 +44,15 @@ function CalendarHeader({
   currentWeek?: number | null;
   currentPhase?: string | null;
 }) {
-  const daysUntilRace = activePlan?.goal_race_date 
-    ? Math.ceil((new Date(activePlan.goal_race_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-    : null;
+  // Calculate days until race without timezone issues
+  const daysUntilRace = (() => {
+    if (!activePlan?.goal_race_date) return null;
+    const [y, m, d] = activePlan.goal_race_date.split('-').map(Number);
+    const raceDate = new Date(y, m - 1, d);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.ceil((raceDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  })();
 
   return (
     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
@@ -92,16 +98,21 @@ function CalendarHeader({
 }
 
 function PlanBanner({ plan }: { plan: { name: string; goal_race_name?: string; goal_race_date?: string; total_weeks: number } }) {
-  const raceDate = plan.goal_race_date ? new Date(plan.goal_race_date) : null;
+  // Parse date without timezone issues
+  const formatRaceDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  };
   
   return (
     <div className="bg-gradient-to-r from-orange-900/30 to-gray-800 rounded-lg border border-orange-700/50 p-4 mb-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-white">{plan.name}</h2>
-          {plan.goal_race_name && raceDate && (
+          {plan.goal_race_name && plan.goal_race_date && (
             <p className="text-gray-400 text-sm">
-              {plan.goal_race_name} • {raceDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              {plan.goal_race_name} • {formatRaceDate(plan.goal_race_date)}
             </p>
           )}
         </div>
@@ -200,7 +211,14 @@ export default function CalendarPage() {
     setSelectedDate(date);
   };
   
-  const today = new Date().toISOString().split('T')[0];
+  // Get today's date in local timezone (YYYY-MM-DD format)
+  const today = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
   
   // Group days by week for display
   const weeksWithDays = useMemo(() => {

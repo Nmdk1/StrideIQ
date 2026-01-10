@@ -52,8 +52,8 @@ interface DayCellProps {
 export function DayCell({ day, isToday, isSelected, onClick }: DayCellProps) {
   const { formatDistance } = useUnits();
   
-  const dateObj = new Date(day.date);
-  const dayNum = dateObj.getDate();
+  // Parse date without timezone issues - extract day directly from YYYY-MM-DD string
+  const dayNum = parseInt(day.date.split('-')[2], 10);
   
   const hasActivities = day.activities.length > 0;
   const hasPlanned = !!day.planned_workout;
