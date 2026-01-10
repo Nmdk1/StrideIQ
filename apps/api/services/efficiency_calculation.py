@@ -24,8 +24,9 @@ def calculate_efficiency_factor_from_ngp(
     """
     Calculate Efficiency Factor (EF) from Normalized Grade Pace (NGP).
     
-    EF = NGP (seconds/mile) / HR (as % of max HR)
+    EF = NGP (minutes/mile) / HR (as % of max HR)
     
+    We convert seconds to minutes for human-readable values (typically 8-15).
     Lower EF = more efficient (faster pace at same HR, or lower HR at same pace)
     Higher EF = less efficient
     
@@ -40,18 +41,21 @@ def calculate_efficiency_factor_from_ngp(
     if ngp_seconds_per_mile <= 0 or avg_hr <= 0:
         return None
     
+    # Convert to minutes for human-readable EF values (typically 8-15)
+    ngp_minutes_per_mile = ngp_seconds_per_mile / 60.0
+    
     # Normalize HR to percentage if max HR available
     if max_hr and max_hr > 0:
         hr_percentage = avg_hr / max_hr
         if hr_percentage <= 0:
             return None
         # EF = NGP / hr_percentage (lower is better)
-        ef = ngp_seconds_per_mile / hr_percentage
+        ef = ngp_minutes_per_mile / hr_percentage
     else:
         # Use raw HR (less accurate but still meaningful)
         # Normalize by assuming typical max HR of 200 for comparison
         hr_percentage = avg_hr / 200.0
-        ef = ngp_seconds_per_mile / hr_percentage
+        ef = ngp_minutes_per_mile / hr_percentage
     
     return round(ef, 2)
 
