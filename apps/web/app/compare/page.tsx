@@ -223,9 +223,11 @@ export default function ComparePage() {
         baselineId: baselineId || undefined,
       });
       
-      // Navigate to the first selected activity's context page with the comparison
-      const firstId = baselineId || Array.from(selectedIds)[0];
-      router.push(`/compare/context/${firstId}?mode=selected`);
+      // Store comparison result for the results page
+      sessionStorage.setItem('strideiq_compare_results', JSON.stringify(result));
+      
+      // Navigate to the detailed comparison results page
+      router.push('/compare/results');
     } catch (error) {
       console.error('Compare failed:', error);
     }

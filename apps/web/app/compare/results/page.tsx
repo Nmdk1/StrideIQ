@@ -1,0 +1,528 @@
+'use client';
+
+/**
+ * Multi-Run Comparison Results Page
+ * 
+ * Shows detailed comparison of 2-10 user-selected runs:
+ * - Pace overlay chart (all runs on same chart)
+ * - HR overlay chart (all runs on same chart)
+ * - Metrics comparison table
+ * - Performance insights
+ */
+
+import React, { useEffect, useState, useMemo } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
+
+// Color palette for runs
+const RUN_COLORS = [
+  '#f97316', // Orange (baseline)
+  '#3b82f6', // Blue
+  '#10b981', // Emerald
+  '#8b5cf6', // Violet
+  '#ec4899', // Pink
+  '#06b6d4', // Cyan
+  '#f59e0b', // Amber
+  '#6366f1', // Indigo
+  '#84cc16', // Lime
+  '#ef4444', // Red
+];
+
+// Types for comparison data
+interface SplitData {
+  split: number;
+  distance_km: number;
+  pace_per_km?: number;
+  avg_hr?: number;
+}
+
+interface ComparedRun {
+  id: string;
+  name: string;
+  date: string;
+  distance_km: number;
+  duration_s: number;
+  pace_per_km?: number;
+  pace_formatted?: string;
+  avg_hr?: number;
+  max_hr?: number;
+  intensity_score?: number;
+  elevation_gain?: number;
+  temperature_f?: number;
+  similarity_score?: number;
+  splits?: SplitData[];
+}
+
+interface ComparisonResult {
+  target_run: ComparedRun;
+  similar_runs: ComparedRun[];
+  ghost_average?: {
+    avg_pace_per_km: number;
+    avg_hr?: number;
+    avg_max_hr?: number;
+    num_runs_averaged: number;
+  };
+  performance_score?: {
+    score: number;
+    rating: string;
+    pace_vs_baseline: number;
+    efficiency_vs_baseline: number;
+  };
+  headline?: string;
+  key_insight?: string;
+}
+
+// Storage key for comparison results
+const COMPARE_STORAGE_KEY = 'strideiq_compare_results';
+
+export default function CompareResultsPage() {
+  const router = useRouter();
+  const [comparisonData, setComparisonData] = useState<ComparisonResult | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Load comparison data from sessionStorage
+  useEffect(() => {
+    const storedData = sessionStorage.getItem(COMPARE_STORAGE_KEY);
+    if (storedData) {
+      try {
+        setComparisonData(JSON.parse(storedData));
+      } catch (e) {
+        console.error('Failed to parse comparison data:', e);
+      }
+    }
+    setLoading(false);
+  }, []);
+
+  // Combine all runs for comparison
+  const allRuns = useMemo(() => {
+    if (!comparisonData) return [];
+    return [comparisonData.target_run, ...comparisonData.similar_runs];
+  }, [comparisonData]);
+
+  // Build pace overlay chart data
+  const paceChartData = useMemo(() => {
+    if (!allRuns.length) return [];
+    
+    // Find max number of splits
+    const maxSplits = Math.max(...allRuns.map(r => r.splits?.length || 0));
+    if (maxSplits === 0) return [];
+    
+    const data: any[] = [];
+    for (let i = 0; i < maxSplits; i++) {
+      const point: any = { split: i + 1 };
+      allRuns.forEach((run, runIdx) => {
+        const split = run.splits?.[i];
+        if (split?.pace_per_km) {
+          // Convert to minutes for display
+          point[`run_${runIdx}`] = split.pace_per_km / 60;
+        }
+      });
+      data.push(point);
+    }
+    return data;
+  }, [allRuns]);
+
+  // Build HR overlay chart data
+  const hrChartData = useMemo(() => {
+    if (!allRuns.length) return [];
+    
+    const maxSplits = Math.max(...allRuns.map(r => r.splits?.length || 0));
+    if (maxSplits === 0) return [];
+    
+    const data: any[] = [];
+    for (let i = 0; i < maxSplits; i++) {
+      const point: any = { split: i + 1 };
+      allRuns.forEach((run, runIdx) => {
+        const split = run.splits?.[i];
+        if (split?.avg_hr) {
+          point[`run_${runIdx}`] = split.avg_hr;
+        }
+      });
+      data.push(point);
+    }
+    return data;
+  }, [allRuns]);
+
+  // Format pace for tooltip
+  const formatPaceValue = (value: number | null): string => {
+    if (!value || value <= 0) return '-';
+    const minutes = Math.floor(value);
+    const seconds = Math.round((value - minutes) * 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}/km`;
+  };
+
+  // Format duration
+  const formatDuration = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hours > 0) {
+      return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
+  if (!comparisonData) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen bg-gray-900 text-gray-100 py-12">
+          <div className="max-w-4xl mx-auto px-4 text-center">
+            <div className="text-6xl mb-6">📊</div>
+            <h1 className="text-2xl font-bold mb-4">No Comparison Data</h1>
+            <p className="text-gray-400 mb-8">
+              Select runs from the Compare page to see detailed comparison.
+            </p>
+            <Link
+              href="/compare"
+              className="inline-block px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Go to Compare
+            </Link>
+          </div>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
+  return (
+    <ProtectedRoute>
+      <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-900 to-gray-950 text-gray-100">
+        {/* Background accents */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-0 left-1/4 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl" />
+        </div>
+
+        <div className="relative z-10 max-w-6xl mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="flex items-center gap-4 mb-8">
+            <Link 
+              href="/compare"
+              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
+            >
+              ← Back
+            </Link>
+            <div>
+              <h1 className="text-2xl font-bold">Run Comparison</h1>
+              <p className="text-gray-400">
+                Comparing {allRuns.length} runs side by side
+              </p>
+            </div>
+          </div>
+
+          {/* Summary Cards */}
+          {comparisonData.performance_score && (
+            <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-6 mb-8">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="text-center">
+                  <div className="text-4xl font-bold text-orange-400">
+                    {comparisonData.performance_score.score.toFixed(0)}
+                  </div>
+                  <div className="text-sm text-gray-400">Performance Score</div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${
+                    comparisonData.performance_score.pace_vs_baseline > 0 
+                      ? 'text-emerald-400' 
+                      : comparisonData.performance_score.pace_vs_baseline < 0 
+                        ? 'text-rose-400' 
+                        : 'text-white'
+                  }`}>
+                    {comparisonData.performance_score.pace_vs_baseline > 0 ? '+' : ''}
+                    {comparisonData.performance_score.pace_vs_baseline.toFixed(1)}%
+                  </div>
+                  <div className="text-sm text-gray-400">vs Baseline Pace</div>
+                </div>
+                <div className="col-span-2">
+                  {comparisonData.headline && (
+                    <p className="text-lg font-medium text-white">{comparisonData.headline}</p>
+                  )}
+                  {comparisonData.key_insight && (
+                    <p className="text-sm text-gray-400 mt-1">{comparisonData.key_insight}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Legend - Run Colors */}
+          <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-4 mb-6">
+            <div className="flex flex-wrap gap-4">
+              {allRuns.map((run, idx) => (
+                <div key={run.id} className="flex items-center gap-2">
+                  <div 
+                    className="w-4 h-4 rounded-full" 
+                    style={{ backgroundColor: RUN_COLORS[idx] }}
+                  />
+                  <span className="text-sm">
+                    {idx === 0 && '★ '}
+                    {run.name?.slice(0, 30) || `Run ${idx + 1}`}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {new Date(run.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">★ = Baseline run</p>
+          </div>
+
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            {/* Pace Overlay Chart */}
+            <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <span>⏱️</span> Pace Comparison
+              </h3>
+              {paceChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={paceChartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis 
+                      dataKey="split" 
+                      stroke="#9CA3AF"
+                      tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                      label={{ value: 'Split', position: 'bottom', fill: '#9CA3AF', offset: 0 }}
+                    />
+                    <YAxis 
+                      stroke="#9CA3AF"
+                      tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                      tickFormatter={(v) => formatPaceValue(v)}
+                      reversed
+                      domain={['auto', 'auto']}
+                    />
+                    <Tooltip
+                      contentStyle={{ 
+                        backgroundColor: '#1F2937', 
+                        border: '1px solid #374151',
+                        borderRadius: '8px',
+                      }}
+                      labelStyle={{ color: '#F9FAFB' }}
+                      formatter={(value, name) => {
+                        if (typeof value !== 'number') return ['-', name || ''];
+                        const runIdx = parseInt(String(name).split('_')[1]);
+                        const runName = allRuns[runIdx]?.name?.slice(0, 20) || `Run ${runIdx + 1}`;
+                        return [formatPaceValue(value), runName];
+                      }}
+                    />
+                    {allRuns.map((run, idx) => (
+                      <Line
+                        key={run.id}
+                        type="monotone"
+                        dataKey={`run_${idx}`}
+                        stroke={RUN_COLORS[idx]}
+                        strokeWidth={idx === 0 ? 3 : 2}
+                        dot={{ fill: RUN_COLORS[idx], strokeWidth: 1, r: 3 }}
+                        connectNulls
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-gray-500">
+                  No splits data available
+                </div>
+              )}
+            </div>
+
+            {/* HR Overlay Chart */}
+            <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <span>❤️</span> Heart Rate Comparison
+              </h3>
+              {hrChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={hrChartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis 
+                      dataKey="split" 
+                      stroke="#9CA3AF"
+                      tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                      label={{ value: 'Split', position: 'bottom', fill: '#9CA3AF', offset: 0 }}
+                    />
+                    <YAxis 
+                      stroke="#9CA3AF"
+                      tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                      domain={['auto', 'auto']}
+                      label={{ value: 'BPM', angle: -90, position: 'insideLeft', fill: '#9CA3AF', offset: 10 }}
+                    />
+                    <Tooltip
+                      contentStyle={{ 
+                        backgroundColor: '#1F2937', 
+                        border: '1px solid #374151',
+                        borderRadius: '8px',
+                      }}
+                      labelStyle={{ color: '#F9FAFB' }}
+                      formatter={(value, name) => {
+                        if (typeof value !== 'number') return ['-', name || ''];
+                        const runIdx = parseInt(String(name).split('_')[1]);
+                        const runName = allRuns[runIdx]?.name?.slice(0, 20) || `Run ${runIdx + 1}`;
+                        return [`${value} bpm`, runName];
+                      }}
+                    />
+                    {allRuns.map((run, idx) => (
+                      <Line
+                        key={run.id}
+                        type="monotone"
+                        dataKey={`run_${idx}`}
+                        stroke={RUN_COLORS[idx]}
+                        strokeWidth={idx === 0 ? 3 : 2}
+                        dot={{ fill: RUN_COLORS[idx], strokeWidth: 1, r: 3 }}
+                        connectNulls
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-gray-500">
+                  No heart rate data available
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Comparison Table */}
+          <div className="bg-gray-800/60 rounded-xl border border-gray-700 overflow-hidden">
+            <div className="p-4 border-b border-gray-700">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <span>📊</span> Metrics Comparison
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-700">
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-400">Run</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-400">Date</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-400">Distance</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-400">Duration</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-400">Pace</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-400">Avg HR</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-400">Max HR</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-400">Elevation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allRuns.map((run, idx) => (
+                    <tr 
+                      key={run.id} 
+                      className={`border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors ${
+                        idx === 0 ? 'bg-orange-900/10' : ''
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: RUN_COLORS[idx] }}
+                          />
+                          <Link 
+                            href={`/activities/${run.id}`}
+                            className="text-white hover:text-orange-400 transition-colors truncate max-w-[200px]"
+                          >
+                            {idx === 0 && <span className="text-orange-400">★ </span>}
+                            {run.name?.slice(0, 30) || `Run ${idx + 1}`}
+                          </Link>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-400">
+                        {new Date(run.date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </td>
+                      <td className="px-4 py-3 text-right text-white">
+                        {run.distance_km?.toFixed(2)} km
+                      </td>
+                      <td className="px-4 py-3 text-right text-white">
+                        {formatDuration(run.duration_s)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-white font-medium">
+                        {run.pace_formatted || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right text-white">
+                        {run.avg_hr ? `${run.avg_hr} bpm` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right text-white">
+                        {run.max_hr ? `${run.max_hr} bpm` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right text-white">
+                        {run.elevation_gain ? `${Math.round(run.elevation_gain)}m` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Ghost Average Stats */}
+          {comparisonData.ghost_average && (
+            <div className="mt-8 bg-indigo-900/20 rounded-xl border border-indigo-700/50 p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <span>👻</span> Ghost Average (Baseline from {comparisonData.ghost_average.num_runs_averaged} runs)
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <div className="text-sm text-gray-400">Avg Pace</div>
+                  <div className="text-xl font-bold text-white">
+                    {formatPaceValue(comparisonData.ghost_average.avg_pace_per_km / 60)}
+                  </div>
+                </div>
+                {comparisonData.ghost_average.avg_hr && (
+                  <div>
+                    <div className="text-sm text-gray-400">Avg HR</div>
+                    <div className="text-xl font-bold text-white">
+                      {Math.round(comparisonData.ghost_average.avg_hr)} bpm
+                    </div>
+                  </div>
+                )}
+                {comparisonData.ghost_average.avg_max_hr && (
+                  <div>
+                    <div className="text-sm text-gray-400">Avg Max HR</div>
+                    <div className="text-xl font-bold text-white">
+                      {Math.round(comparisonData.ghost_average.avg_max_hr)} bpm
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="mt-8 flex justify-center gap-4">
+            <Link
+              href="/compare"
+              className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+            >
+              Compare Different Runs
+            </Link>
+          </div>
+        </div>
+      </div>
+    </ProtectedRoute>
+  );
+}
