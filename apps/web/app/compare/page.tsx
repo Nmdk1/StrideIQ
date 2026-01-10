@@ -4,14 +4,18 @@
  * Compare Page - Contextual Comparison Hub
  * 
  * The differentiator feature: Compare runs in context, not just by distance.
- * This is what makes StrideIQ unique - no other platform offers this.
+ * Supports both:
+ * 1. Auto-find similar runs (click any run)
+ * 2. Manual selection (select 2-10 runs to compare)
+ * 3. Filter by HR range
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useActivities } from '@/lib/hooks/queries/activities';
-import { useQuickScore } from '@/lib/hooks/queries/contextual-compare';
+import { useQuickScore, useCompareSelected } from '@/lib/hooks/queries/contextual-compare';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
@@ -36,53 +40,108 @@ function QuickScoreBadge({ activityId }: { activityId: string }) {
   };
   
   return (
-    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${getScoreColor(quickScore.score)}`}>
+    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${getScoreColor(quickScore.score)}`} title={`Performance Score: ${Math.round(quickScore.score)}`}>
       {Math.round(quickScore.score)}
     </div>
   );
 }
 
-// Activity card for comparison selection
-function ActivityCard({ 
+// Activity row with selection
+function ActivityRow({ 
   activity, 
   formatDistance, 
-  formatPace 
+  formatPace,
+  isSelected,
+  onToggleSelect,
+  selectionMode,
 }: { 
   activity: any; 
   formatDistance: (m: number, decimals?: number) => string;
   formatPace: (secPerKm: number) => string;
+  isSelected: boolean;
+  onToggleSelect: () => void;
+  selectionMode: boolean;
 }) {
-  const pacePerKm = activity.duration_s && activity.distance_m 
-    ? activity.duration_s / (activity.distance_m / 1000) 
+  // Handle both API field names (distance vs distance_m, moving_time vs duration_s)
+  const distance = activity.distance ?? activity.distance_m ?? 0;
+  const duration = activity.moving_time ?? activity.duration_s ?? 0;
+  const avgHr = activity.average_heartrate ?? activity.avg_hr;
+  const maxHr = activity.max_hr;
+  const startDate = activity.start_date ?? activity.start_time;
+  
+  const pacePerKm = duration && distance 
+    ? duration / (distance / 1000) 
     : null;
   
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 hover:border-gray-600 transition-all group">
-      <div className="flex justify-between items-start gap-4">
+    <div 
+      className={`bg-gray-800 border rounded-xl p-4 transition-all group cursor-pointer ${
+        isSelected 
+          ? 'border-orange-500 bg-orange-900/20' 
+          : 'border-gray-700 hover:border-gray-600'
+      }`}
+      onClick={selectionMode ? onToggleSelect : undefined}
+    >
+      <div className="flex items-center gap-4">
+        {/* Checkbox for selection mode */}
+        {selectionMode && (
+          <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${
+            isSelected 
+              ? 'bg-orange-500 border-orange-500' 
+              : 'border-gray-500 hover:border-gray-400'
+          }`}>
+            {isSelected && (
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </div>
+        )}
+        
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-gray-400 mb-1">
-            {new Date(activity.start_time).toLocaleDateString('en-US', { 
-              weekday: 'short', month: 'short', day: 'numeric' 
-            })}
+          <div className="flex items-center gap-3 mb-1">
+            <span className="text-sm text-gray-400">
+              {startDate ? new Date(startDate).toLocaleDateString('en-US', { 
+                weekday: 'short', month: 'short', day: 'numeric' 
+              }) : '-'}
+            </span>
+            {activity.workout_type && (
+              <span className="text-xs px-2 py-0.5 bg-gray-700 rounded-full text-gray-300">
+                {activity.workout_type.replace(/_/g, ' ')}
+              </span>
+            )}
           </div>
-          <div className="font-medium truncate mb-2">
+          <div className="font-medium truncate">
             {activity.name || 'Untitled Run'}
-          </div>
-          <div className="flex gap-4 text-sm text-gray-400">
-            <span>{formatDistance(activity.distance_m, 1)}</span>
-            {pacePerKm && <span>{formatPace(pacePerKm)}</span>}
-            {activity.avg_hr && <span>{activity.avg_hr} bpm</span>}
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
-          <QuickScoreBadge activityId={activity.id} />
-          <Link
-            href={`/compare/context/${activity.id}`}
-            className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors opacity-80 group-hover:opacity-100"
-          >
-            Compare
-          </Link>
+        <div className="flex items-center gap-6 text-sm">
+          <div className="text-right">
+            <div className="font-medium">{formatDistance(distance, 1)}</div>
+            <div className="text-gray-400">{pacePerKm ? formatPace(pacePerKm) : '-'}</div>
+          </div>
+          <div className="text-right w-16">
+            <div className="font-medium">{avgHr || '-'}</div>
+            <div className="text-gray-400 text-xs">avg bpm</div>
+          </div>
+          <div className="text-right w-16">
+            <div className="font-medium">{maxHr || '-'}</div>
+            <div className="text-gray-400 text-xs">max bpm</div>
+          </div>
+          
+          {!selectionMode && (
+            <>
+              <QuickScoreBadge activityId={activity.id} />
+              <Link
+                href={`/compare/context/${activity.id}`}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Find Similar
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -90,78 +149,240 @@ function ActivityCard({
 }
 
 export default function ComparePage() {
+  const router = useRouter();
   const [showAll, setShowAll] = useState(false);
-  const { data: activities, isLoading } = useActivities({ limit: showAll ? 50 : 10 });
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [baselineId, setBaselineId] = useState<string | null>(null);
+  
+  // Filters
+  const [minHR, setMinHR] = useState<string>('');
+  const [maxHR, setMaxHR] = useState<string>('');
+  
+  const { data: activities, isLoading } = useActivities({ limit: showAll ? 100 : 20 });
   const { formatDistance, formatPace } = useUnits();
+  const compareSelectedMutation = useCompareSelected();
+  
+  // Filter activities by HR
+  const filteredActivities = useMemo(() => {
+    if (!activities) return [];
+    
+    return activities.filter((a: any) => {
+      const hr = a.average_heartrate ?? a.avg_hr;
+      if (minHR && hr && hr < parseInt(minHR)) return false;
+      if (maxHR && hr && hr > parseInt(maxHR)) return false;
+      return true;
+    });
+  }, [activities, minHR, maxHR]);
+  
+  const toggleSelection = (id: string) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+      if (baselineId === id) setBaselineId(null);
+    } else {
+      if (newSet.size < 10) {
+        newSet.add(id);
+      }
+    }
+    setSelectedIds(newSet);
+  };
+  
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setBaselineId(null);
+  };
+  
+  const handleCompareSelected = async () => {
+    if (selectedIds.size < 2) return;
+    
+    try {
+      const result = await compareSelectedMutation.mutateAsync({
+        activityIds: Array.from(selectedIds),
+        baselineId: baselineId || undefined,
+      });
+      
+      // Navigate to the first selected activity's context page with the comparison
+      const firstId = baselineId || Array.from(selectedIds)[0];
+      router.push(`/compare/context/${firstId}?mode=selected`);
+    } catch (error) {
+      console.error('Compare failed:', error);
+    }
+  };
+  
+  const selectedCount = selectedIds.size;
   
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
-        <div className="max-w-4xl mx-auto px-4">
+        <div className="max-w-5xl mx-auto px-4">
           
-          {/* Hero Section */}
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500/10 border border-orange-500/30 rounded-full text-orange-400 text-sm font-medium mb-4">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-              </span>
-              New Feature
-            </div>
-            
-            <h1 className="text-4xl font-bold mb-4">
-              Context vs Context
-            </h1>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto mb-6">
-              Compare runs based on <span className="text-white font-medium">how similar they actually are</span> — 
-              not just distance. See your true performance accounting for conditions, intensity, and effort.
+          {/* Header */}
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold mb-2">Compare Runs</h1>
+            <p className="text-gray-400">
+              Find similar runs automatically, or select 2-10 runs to compare directly
             </p>
-            
-            {/* Feature highlights */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto mb-8">
-              <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
-                <div className="text-2xl mb-2">👻</div>
-                <div className="font-medium mb-1">Ghost Average</div>
-                <div className="text-sm text-gray-400">Compare against a baseline from similar runs</div>
-              </div>
-              <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
-                <div className="text-2xl mb-2">📊</div>
-                <div className="font-medium mb-1">Performance Score</div>
-                <div className="text-sm text-gray-400">0-100 score showing how you did vs similar efforts</div>
-              </div>
-              <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
-                <div className="text-2xl mb-2">💡</div>
-                <div className="font-medium mb-1">Context Insights</div>
-                <div className="text-sm text-gray-400">Explanations for why performance differed</div>
-              </div>
-            </div>
           </div>
           
-          {/* Activity Selection */}
+          {/* Mode Toggle + Filters */}
+          <div className="bg-gray-800 rounded-xl border border-gray-700 p-4 mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              {/* Mode Toggle */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setSelectionMode(false);
+                    clearSelection();
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    !selectionMode 
+                      ? 'bg-orange-600 text-white' 
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  🔍 Find Similar
+                </button>
+                <button
+                  onClick={() => setSelectionMode(true)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectionMode 
+                      ? 'bg-orange-600 text-white' 
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  ☑️ Select & Compare
+                </button>
+              </div>
+              
+              {/* HR Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Avg HR:</span>
+                <input
+                  type="number"
+                  placeholder="Min"
+                  value={minHR}
+                  onChange={(e) => setMinHR(e.target.value)}
+                  className="w-20 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                />
+                <span className="text-gray-500">-</span>
+                <input
+                  type="number"
+                  placeholder="Max"
+                  value={maxHR}
+                  onChange={(e) => setMaxHR(e.target.value)}
+                  className="w-20 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                />
+                <span className="text-sm text-gray-500">bpm</span>
+                {(minHR || maxHR) && (
+                  <button
+                    onClick={() => { setMinHR(''); setMaxHR(''); }}
+                    className="text-xs text-gray-400 hover:text-white"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            {/* Selection Mode Instructions */}
+            {selectionMode && (
+              <div className="mt-4 pt-4 border-t border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-400">
+                    {selectedCount === 0 && 'Click runs to select them (2-10 runs)'}
+                    {selectedCount === 1 && 'Select at least one more run to compare'}
+                    {selectedCount >= 2 && (
+                      <span className="text-orange-400">
+                        {selectedCount} runs selected
+                        {baselineId && ' (baseline set)'}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    {selectedCount > 0 && (
+                      <button
+                        onClick={clearSelection}
+                        className="px-3 py-1.5 text-sm text-gray-400 hover:text-white transition-colors"
+                      >
+                        Clear Selection
+                      </button>
+                    )}
+                    {selectedCount >= 2 && (
+                      <button
+                        onClick={handleCompareSelected}
+                        disabled={compareSelectedMutation.isPending}
+                        className="px-6 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        {compareSelectedMutation.isPending ? (
+                          <>
+                            <LoadingSpinner size="sm" />
+                            Comparing...
+                          </>
+                        ) : (
+                          <>
+                            Compare {selectedCount} Runs
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Baseline selector */}
+                {selectedCount >= 2 && (
+                  <div className="mt-3 text-sm">
+                    <span className="text-gray-400">Baseline (optional): </span>
+                    <select
+                      value={baselineId || ''}
+                      onChange={(e) => setBaselineId(e.target.value || null)}
+                      className="ml-2 px-3 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                    >
+                      <option value="">Most recent selected</option>
+                      {Array.from(selectedIds).map(id => {
+                        const activity = filteredActivities.find((a: any) => a.id === id);
+                        return (
+                          <option key={id} value={id}>
+                            {activity?.name || 'Run'}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          {/* Activity List */}
           <div className="mb-8">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <span>Select a run to compare</span>
-              <span className="text-sm font-normal text-gray-400">
-                (showing {activities?.length || 0} recent runs)
-              </span>
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">
+                {filteredActivities.length} runs
+                {(minHR || maxHR) && ' (filtered)'}
+              </h2>
+            </div>
             
             {isLoading ? (
               <div className="flex justify-center py-12">
                 <LoadingSpinner size="lg" />
               </div>
-            ) : activities && activities.length > 0 ? (
-              <div className="space-y-3">
-                {activities.map((activity: any) => (
-                  <ActivityCard
+            ) : filteredActivities.length > 0 ? (
+              <div className="space-y-2">
+                {filteredActivities.map((activity: any) => (
+                  <ActivityRow
                     key={activity.id}
                     activity={activity}
                     formatDistance={formatDistance}
                     formatPace={formatPace}
+                    isSelected={selectedIds.has(activity.id)}
+                    onToggleSelect={() => toggleSelection(activity.id)}
+                    selectionMode={selectionMode}
                   />
                 ))}
                 
-                {!showAll && activities.length >= 10 && (
+                {!showAll && activities && activities.length >= 20 && (
                   <button
                     onClick={() => setShowAll(true)}
                     className="w-full py-3 text-gray-400 hover:text-white transition-colors text-sm"
@@ -172,40 +393,50 @@ export default function ComparePage() {
               </div>
             ) : (
               <div className="bg-gray-800 rounded-xl border border-gray-700 p-8 text-center">
-                <div className="text-4xl mb-4">🏃</div>
-                <h3 className="text-xl font-semibold mb-2">No runs yet</h3>
-                <p className="text-gray-400 mb-4">
-                  Sync your Strava account to start comparing your runs
-                </p>
-                <Link
-                  href="/settings"
-                  className="inline-block px-6 py-3 bg-orange-600 hover:bg-orange-700 rounded-lg font-medium transition-colors"
-                >
-                  Connect Strava
-                </Link>
+                {(minHR || maxHR) ? (
+                  <>
+                    <div className="text-4xl mb-4">🔍</div>
+                    <h3 className="text-xl font-semibold mb-2">No runs match your filter</h3>
+                    <p className="text-gray-400">
+                      Try adjusting the HR range
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-4xl mb-4">🏃</div>
+                    <h3 className="text-xl font-semibold mb-2">No runs yet</h3>
+                    <p className="text-gray-400 mb-4">
+                      Sync your Strava account to start comparing your runs
+                    </p>
+                    <Link
+                      href="/settings"
+                      className="inline-block px-6 py-3 bg-orange-600 hover:bg-orange-700 rounded-lg font-medium transition-colors"
+                    >
+                      Connect Strava
+                    </Link>
+                  </>
+                )}
               </div>
             )}
           </div>
           
           {/* How it works */}
           <div className="bg-gray-800/30 rounded-xl border border-gray-700/50 p-6">
-            <h3 className="font-semibold mb-4 text-gray-300">How Contextual Comparison Works</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-400">
-              <div>
-                <strong className="text-gray-200">1. Smart Similarity</strong>
-                <p>We find runs that match your target using duration, intensity, heart rate, workout type, conditions, and elevation.</p>
+            <h3 className="font-semibold mb-4 text-gray-300">Two Ways to Compare</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+              <div className="bg-gray-800/50 rounded-lg p-4">
+                <div className="text-orange-400 font-medium mb-2">🔍 Find Similar (Auto)</div>
+                <p className="text-gray-400">
+                  Click &quot;Find Similar&quot; on any run. We automatically find your most similar runs 
+                  based on duration, HR, intensity, conditions, and more. Then compare against that baseline.
+                </p>
               </div>
-              <div>
-                <strong className="text-gray-200">2. Ghost Baseline</strong>
-                <p>Your similar runs are averaged to create a &quot;ghost&quot; — what you&apos;d typically do under these conditions.</p>
-              </div>
-              <div>
-                <strong className="text-gray-200">3. Performance Score</strong>
-                <p>Your run is scored 0-100 based on how you performed vs the ghost average.</p>
-              </div>
-              <div>
-                <strong className="text-gray-200">4. The &quot;BUT&quot; Insight</strong>
-                <p>We explain why performance differed: &quot;You were 5% slower, BUT it was 15°F hotter than usual.&quot;</p>
+              <div className="bg-gray-800/50 rounded-lg p-4">
+                <div className="text-orange-400 font-medium mb-2">☑️ Select & Compare (Manual)</div>
+                <p className="text-gray-400">
+                  Pick 2-10 specific runs you want to compare. Set one as the baseline, then see how the 
+                  others stack up. Great for comparing specific races or workouts.
+                </p>
               </div>
             </div>
           </div>
