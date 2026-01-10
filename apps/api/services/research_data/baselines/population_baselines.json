@@ -1,0 +1,518 @@
+{
+  "metadata": {
+    "source": "Figshare Long-Distance Running Dataset 2019-2020",
+    "total_records": 26617172,
+    "unique_athletes": 36412,
+    "generated_by": "build_research_baselines.py"
+  },
+  "weekly_volume": {
+    "M_18_34": {
+      "gender": "M",
+      "age_group": "18 - 34",
+      "sample_size": 610194,
+      "athletes": 8378,
+      "weekly_km": {
+        "mean": 40.8,
+        "median": 32.3,
+        "p10": 7.5,
+        "p25": 15.2,
+        "p75": 57.9,
+        "p90": 86.5
+      }
+    },
+    "M_35_54": {
+      "gender": "M",
+      "age_group": "35 - 54",
+      "sample_size": 1310084,
+      "athletes": 16972,
+      "weekly_km": {
+        "mean": 39.5,
+        "median": 32.9,
+        "p10": 8.2,
+        "p25": 16.5,
+        "p75": 55.3,
+        "p90": 80.0
+      }
+    },
+    "M_55+": {
+      "gender": "M",
+      "age_group": "55 +",
+      "sample_size": 176017,
+      "athletes": 2173,
+      "weekly_km": {
+        "mean": 38.1,
+        "median": 33.5,
+        "p10": 9.2,
+        "p25": 18.1,
+        "p75": 52.9,
+        "p90": 72.7
+      }
+    },
+    "F_18_34": {
+      "gender": "F",
+      "age_group": "18 - 34",
+      "sample_size": 271328,
+      "athletes": 3864,
+      "weekly_km": {
+        "mean": 34.6,
+        "median": 28.0,
+        "p10": 6.4,
+        "p25": 13.2,
+        "p75": 49.1,
+        "p90": 72.3
+      }
+    },
+    "F_35_54": {
+      "gender": "F",
+      "age_group": "35 - 54",
+      "sample_size": 362181,
+      "athletes": 4629,
+      "weekly_km": {
+        "mean": 35.9,
+        "median": 31.2,
+        "p10": 8.0,
+        "p25": 16.2,
+        "p75": 49.9,
+        "p90": 69.4
+      }
+    },
+    "F_55+": {
+      "gender": "F",
+      "age_group": "55 +",
+      "sample_size": 33175,
+      "athletes": 396,
+      "weekly_km": {
+        "mean": 37.6,
+        "median": 34.5,
+        "p10": 10.0,
+        "p25": 20.1,
+        "p75": 51.2,
+        "p90": 68.0
+      }
+    }
+  },
+  "race_times": {
+    "5K_M_18_34": {
+      "distance": "5K",
+      "gender": "M",
+      "age_group": "18 - 34",
+      "sample_size": 161522,
+      "finish_time_minutes": {
+        "mean": 26.7,
+        "median": 26.0,
+        "p10": 21.3,
+        "p25": 23.4,
+        "p50": 26.0,
+        "p75": 29.4,
+        "p90": 32.5
+      }
+    },
+    "5K_M_35_54": {
+      "distance": "5K",
+      "gender": "M",
+      "age_group": "35 - 54",
+      "sample_size": 342527,
+      "finish_time_minutes": {
+        "mean": 28.5,
+        "median": 27.9,
+        "p10": 22.8,
+        "p25": 25.0,
+        "p50": 27.9,
+        "p75": 31.0,
+        "p90": 35.0
+      }
+    },
+    "5K_M_55+": {
+      "distance": "5K",
+      "gender": "M",
+      "age_group": "55 +",
+      "sample_size": 46773,
+      "finish_time_minutes": {
+        "mean": 30.5,
+        "median": 29.9,
+        "p10": 24.1,
+        "p25": 26.7,
+        "p50": 29.9,
+        "p75": 33.2,
+        "p90": 37.9
+      }
+    },
+    "5K_F_18_34": {
+      "distance": "5K",
+      "gender": "F",
+      "age_group": "18 - 34",
+      "sample_size": 106531,
+      "finish_time_minutes": {
+        "mean": 29.7,
+        "median": 29.1,
+        "p10": 24.4,
+        "p25": 26.4,
+        "p50": 29.1,
+        "p75": 31.8,
+        "p90": 35.7
+      }
+    },
+    "5K_F_35_54": {
+      "distance": "5K",
+      "gender": "F",
+      "age_group": "35 - 54",
+      "sample_size": 129039,
+      "finish_time_minutes": {
+        "mean": 31.1,
+        "median": 30.2,
+        "p10": 25.4,
+        "p25": 27.6,
+        "p50": 30.2,
+        "p75": 33.6,
+        "p90": 38.0
+      }
+    },
+    "5K_F_55+": {
+      "distance": "5K",
+      "gender": "F",
+      "age_group": "55 +",
+      "sample_size": 12746,
+      "finish_time_minutes": {
+        "mean": 33.5,
+        "median": 32.6,
+        "p10": 27.1,
+        "p25": 29.6,
+        "p50": 32.6,
+        "p75": 36.8,
+        "p90": 41.0
+      }
+    },
+    "10K_M_18_34": {
+      "distance": "10K",
+      "gender": "M",
+      "age_group": "18 - 34",
+      "sample_size": 239594,
+      "finish_time_minutes": {
+        "mean": 50.2,
+        "median": 49.0,
+        "p10": 42.4,
+        "p25": 45.2,
+        "p50": 49.0,
+        "p75": 53.9,
+        "p90": 59.6
+      }
+    },
+    "10K_M_35_54": {
+      "distance": "10K",
+      "gender": "M",
+      "age_group": "35 - 54",
+      "sample_size": 549972,
+      "finish_time_minutes": {
+        "mean": 53.2,
+        "median": 52.0,
+        "p10": 44.8,
+        "p25": 47.9,
+        "p50": 52.0,
+        "p75": 57.3,
+        "p90": 62.0
+      }
+    },
+    "10K_M_55+": {
+      "distance": "10K",
+      "gender": "M",
+      "age_group": "55 +",
+      "sample_size": 79768,
+      "finish_time_minutes": {
+        "mean": 57.3,
+        "median": 56.0,
+        "p10": 48.4,
+        "p25": 51.7,
+        "p50": 56.0,
+        "p75": 61.0,
+        "p90": 68.0
+      }
+    },
+    "10K_F_18_34": {
+      "distance": "10K",
+      "gender": "F",
+      "age_group": "18 - 34",
+      "sample_size": 99218,
+      "finish_time_minutes": {
+        "mean": 55.2,
+        "median": 53.9,
+        "p10": 46.8,
+        "p25": 49.8,
+        "p50": 53.9,
+        "p75": 59.2,
+        "p90": 65.0
+      }
+    },
+    "10K_F_35_54": {
+      "distance": "10K",
+      "gender": "F",
+      "age_group": "35 - 54",
+      "sample_size": 150893,
+      "finish_time_minutes": {
+        "mean": 58.0,
+        "median": 56.9,
+        "p10": 49.3,
+        "p25": 52.6,
+        "p50": 56.9,
+        "p75": 61.0,
+        "p90": 68.0
+      }
+    },
+    "10K_F_55+": {
+      "distance": "10K",
+      "gender": "F",
+      "age_group": "55 +",
+      "sample_size": 14502,
+      "finish_time_minutes": {
+        "mean": 63.0,
+        "median": 60.0,
+        "p10": 53.6,
+        "p25": 56.9,
+        "p50": 60.0,
+        "p75": 68.0,
+        "p90": 75.0
+      }
+    },
+    "half_marathon_M_18_34": {
+      "distance": "half_marathon",
+      "gender": "M",
+      "age_group": "18 - 34",
+      "sample_size": 76603,
+      "finish_time_minutes": {
+        "mean": 102.1,
+        "median": 98.8,
+        "p10": 85.0,
+        "p25": 91.0,
+        "p50": 98.8,
+        "p75": 109.0,
+        "p90": 122.0
+      }
+    },
+    "half_marathon_M_35_54": {
+      "distance": "half_marathon",
+      "gender": "M",
+      "age_group": "35 - 54",
+      "sample_size": 155738,
+      "finish_time_minutes": {
+        "mean": 110.0,
+        "median": 106.8,
+        "p10": 90.0,
+        "p25": 97.0,
+        "p50": 106.8,
+        "p75": 118.7,
+        "p90": 133.0
+      }
+    },
+    "half_marathon_M_55+": {
+      "distance": "half_marathon",
+      "gender": "M",
+      "age_group": "55 +",
+      "sample_size": 19194,
+      "finish_time_minutes": {
+        "mean": 120.5,
+        "median": 117.0,
+        "p10": 99.0,
+        "p25": 107.8,
+        "p50": 117.0,
+        "p75": 130.0,
+        "p90": 146.0
+      }
+    },
+    "half_marathon_F_18_34": {
+      "distance": "half_marathon",
+      "gender": "F",
+      "age_group": "18 - 34",
+      "sample_size": 22128,
+      "finish_time_minutes": {
+        "mean": 116.3,
+        "median": 112.0,
+        "p10": 95.4,
+        "p25": 102.1,
+        "p50": 112.0,
+        "p75": 125.0,
+        "p90": 143.0
+      }
+    },
+    "half_marathon_F_35_54": {
+      "distance": "half_marathon",
+      "gender": "F",
+      "age_group": "35 - 54",
+      "sample_size": 33790,
+      "finish_time_minutes": {
+        "mean": 124.0,
+        "median": 120.0,
+        "p10": 101.2,
+        "p25": 110.0,
+        "p50": 120.0,
+        "p75": 134.0,
+        "p90": 152.0
+      }
+    },
+    "half_marathon_F_55+": {
+      "distance": "half_marathon",
+      "gender": "F",
+      "age_group": "55 +",
+      "sample_size": 3267,
+      "finish_time_minutes": {
+        "mean": 136.4,
+        "median": 131.0,
+        "p10": 112.0,
+        "p25": 120.0,
+        "p50": 131.0,
+        "p75": 149.4,
+        "p90": 169.0
+      }
+    },
+    "marathon_M_18_34": {
+      "distance": "marathon",
+      "gender": "M",
+      "age_group": "18 - 34",
+      "sample_size": 13642,
+      "finish_time_minutes": {
+        "mean": 220.9,
+        "median": 210.0,
+        "p10": 167.0,
+        "p25": 181.4,
+        "p50": 210.0,
+        "p75": 247.2,
+        "p90": 292.0
+      }
+    },
+    "marathon_M_35_54": {
+      "distance": "marathon",
+      "gender": "M",
+      "age_group": "35 - 54",
+      "sample_size": 33587,
+      "finish_time_minutes": {
+        "mean": 235.8,
+        "median": 227.0,
+        "p10": 179.0,
+        "p25": 198.0,
+        "p50": 227.0,
+        "p75": 263.0,
+        "p90": 307.0
+      }
+    },
+    "marathon_M_55+": {
+      "distance": "marathon",
+      "gender": "M",
+      "age_group": "55 +",
+      "sample_size": 4633,
+      "finish_time_minutes": {
+        "mean": 254.8,
+        "median": 244.0,
+        "p10": 203.0,
+        "p25": 219.0,
+        "p50": 244.0,
+        "p75": 279.0,
+        "p90": 327.0
+      }
+    },
+    "marathon_F_18_34": {
+      "distance": "marathon",
+      "gender": "F",
+      "age_group": "18 - 34",
+      "sample_size": 5055,
+      "finish_time_minutes": {
+        "mean": 254.1,
+        "median": 241.0,
+        "p10": 193.0,
+        "p25": 211.0,
+        "p50": 241.0,
+        "p75": 288.0,
+        "p90": 335.6
+      }
+    },
+    "marathon_F_35_54": {
+      "distance": "marathon",
+      "gender": "F",
+      "age_group": "35 - 54",
+      "sample_size": 8450,
+      "finish_time_minutes": {
+        "mean": 264.9,
+        "median": 254.0,
+        "p10": 207.0,
+        "p25": 226.0,
+        "p50": 254.0,
+        "p75": 296.0,
+        "p90": 343.0
+      }
+    },
+    "marathon_F_55+": {
+      "distance": "marathon",
+      "gender": "F",
+      "age_group": "55 +",
+      "sample_size": 931,
+      "finish_time_minutes": {
+        "mean": 284.6,
+        "median": 274.0,
+        "p10": 228.0,
+        "p25": 244.5,
+        "p50": 274.0,
+        "p75": 318.5,
+        "p90": 360.0
+      }
+    }
+  },
+  "training_consistency": {
+    "M_18_34": {
+      "gender": "M",
+      "age_group": "18 - 34",
+      "runs_per_week": {
+        "mean": 3.4,
+        "median": 3.0,
+        "p25": 2.0,
+        "p75": 5.0
+      }
+    },
+    "M_35_54": {
+      "gender": "M",
+      "age_group": "35 - 54",
+      "runs_per_week": {
+        "mean": 3.3,
+        "median": 3.0,
+        "p25": 2.0,
+        "p75": 5.0
+      }
+    },
+    "M_55+": {
+      "gender": "M",
+      "age_group": "55 +",
+      "runs_per_week": {
+        "mean": 3.3,
+        "median": 3.0,
+        "p25": 2.0,
+        "p75": 4.0
+      }
+    },
+    "F_18_34": {
+      "gender": "F",
+      "age_group": "18 - 34",
+      "runs_per_week": {
+        "mean": 3.3,
+        "median": 3.0,
+        "p25": 2.0,
+        "p75": 5.0
+      }
+    },
+    "F_35_54": {
+      "gender": "F",
+      "age_group": "35 - 54",
+      "runs_per_week": {
+        "mean": 3.4,
+        "median": 3.0,
+        "p25": 2.0,
+        "p75": 5.0
+      }
+    },
+    "F_55+": {
+      "gender": "F",
+      "age_group": "55 +",
+      "runs_per_week": {
+        "mean": 3.6,
+        "median": 4.0,
+        "p25": 2.0,
+        "p75": 5.0
+      }
+    }
+  }
+}

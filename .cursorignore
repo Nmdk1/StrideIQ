@@ -1,0 +1,38 @@
+﻿# Large binary files and installers
+*.exe
+*.msi
+*.dmg
+
+# Large data files
+*.parquet
+*.csv
+*.sqlite
+*.db
+
+# Node modules (handled by gitignore but explicit)
+node_modules/
+**/node_modules/
+
+# Build outputs
+.next/
+**/.next/
+dist/
+build/
+__pycache__/
+*.pyc
+
+# IDE caches
+.cache/
+.turbo/
+
+# Coverage and test outputs
+coverage/
+.nyc_output/
+
+# Research data
+data/research/
+
+# Temporary files
+*.log
+*.tmp
+*.temp

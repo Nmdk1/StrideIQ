@@ -1,0 +1,19 @@
+# StrideIQ
+# https://strideiq.run
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /dashboard/
+Disallow: /activities/
+Disallow: /checkin/
+Disallow: /settings/
+Disallow: /profile/
+Disallow: /onboarding/
+Disallow: /discovery/
+Disallow: /nutrition/
+Disallow: /availability/
+
+# Sitemap
+Sitemap: https://strideiq.run/sitemap.xml

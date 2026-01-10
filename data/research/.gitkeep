@@ -1,0 +1,5 @@
+# This directory contains downloaded research datasets.
+# NOT committed to git (too large).
+# Download using: python scripts/download_research_data.py
+
+
