@@ -175,7 +175,6 @@ Honest about what we know:
 
 For partnership, investment, or technical inquiries:
 - **Email:** [founder email]
-- **X:** @nomdk1
 - **Demo:** Available upon request
 
 ---
