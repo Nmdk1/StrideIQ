@@ -342,71 +342,51 @@ export default function CalendarPage() {
             </div>
           ) : (
             <>
-              {/* Calendar with sidebar layout */}
-              <div className="flex gap-4">
-                {/* Main calendar */}
-                <div className="flex-1">
-                  {/* Day headers */}
-                  <div className="grid grid-cols-7 border-l border-t border-gray-700 bg-gray-800/50">
-                    {DAY_NAMES.map(day => (
-                      <div key={day} className="py-3 text-center text-sm font-semibold text-gray-400 border-r border-b border-gray-700">
-                        {day}
-                      </div>
-                    ))}
+              {/* Day headers with Weekly Totals column */}
+              <div className="grid grid-cols-[repeat(7,1fr)_140px] border-l border-t border-gray-700 bg-gray-800/50">
+                {DAY_NAMES.map(day => (
+                  <div key={day} className="py-3 text-center text-sm font-semibold text-gray-400 border-r border-b border-gray-700">
+                    {day}
                   </div>
+                ))}
+                <div className="py-3 text-center text-sm font-semibold text-gray-400 border-r border-b border-gray-700 hidden lg:block">
+                  Weekly Totals
+                </div>
+              </div>
+              
+              {/* Calendar grid with aligned weekly totals */}
+              <div className="border-l border-gray-700">
+                {weeksWithDays.map((week, weekIndex) => {
+                  const weekDistance = week.days.reduce((sum, d) => sum + (d.total_distance_m || 0), 0);
+                  const weekDuration = week.days.reduce((sum, d) => sum + (d.total_duration_s || 0), 0);
+                  const weekMiles = (weekDistance / 1609.344).toFixed(1);
+                  const hours = Math.floor(weekDuration / 3600);
+                  const mins = Math.floor((weekDuration % 3600) / 60);
+                  const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
                   
-                  {/* Calendar grid */}
-                  <div className="border-l border-gray-700">
-                    {weeksWithDays.map((week, weekIndex) => (
-                      <React.Fragment key={weekIndex}>
-                        {/* Days grid */}
-                        <div className="grid grid-cols-7">
-                          {week.days.map((day) => (
-                            <DayCell
-                              key={day.date}
-                              day={day}
-                              isToday={day.date === today}
-                              isSelected={day.date === selectedDate}
-                              onClick={() => handleDayClick(day.date)}
-                            />
-                          ))}
+                  return (
+                    <div key={weekIndex} className="grid grid-cols-[repeat(7,1fr)_140px]">
+                      {/* Days */}
+                      {week.days.map((day) => (
+                        <DayCell
+                          key={day.date}
+                          day={day}
+                          isToday={day.date === today}
+                          isSelected={day.date === selectedDate}
+                          onClick={() => handleDayClick(day.date)}
+                        />
+                      ))}
+                      
+                      {/* Weekly total cell - aligned with this week's row */}
+                      <div className="hidden lg:flex flex-col justify-center items-end p-3 border-r border-b border-gray-700/50 bg-gray-800/30 min-h-[120px]">
+                        <div className="text-right">
+                          <div className="text-white font-semibold text-sm">{weekMiles} mi</div>
+                          <div className="text-gray-500 text-xs">{timeStr}</div>
                         </div>
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* Weekly totals sidebar */}
-                <div className="hidden lg:block w-48 flex-shrink-0">
-                  <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 sticky top-20">
-                    <h3 className="text-sm font-semibold text-gray-400 mb-3">Weekly Totals</h3>
-                    <div className="space-y-3">
-                      {weeksWithDays.map((week, idx) => {
-                        const weekDistance = week.days.reduce((sum, d) => sum + (d.total_distance_m || 0), 0);
-                        const weekDuration = week.days.reduce((sum, d) => sum + (d.total_duration_s || 0), 0);
-                        const weekMiles = (weekDistance / 1609.344).toFixed(1);
-                        const hours = Math.floor(weekDuration / 3600);
-                        const mins = Math.floor((weekDuration % 3600) / 60);
-                        const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-                        
-                        // Get first date of week for label
-                        const firstDay = week.days[0];
-                        const [, m, d] = firstDay?.date?.split('-') || [];
-                        const weekLabel = firstDay ? `${parseInt(m)}/${parseInt(d)}` : `Wk ${idx + 1}`;
-                        
-                        return (
-                          <div key={idx} className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500">{weekLabel}</span>
-                            <div className="text-right">
-                              <div className="text-white font-medium">{weekMiles} mi</div>
-                              <div className="text-gray-500">{timeStr}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
               
               {/* Month totals footer */}
