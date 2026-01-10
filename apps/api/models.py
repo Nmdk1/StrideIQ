@@ -126,7 +126,7 @@ class ActivitySplit(Base):
     __tablename__ = "activity_split"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False, index=True)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False)  # Index in __table_args__
     split_number = Column(Integer, nullable=False)
     distance = Column(Numeric, nullable=True)
     elapsed_time = Column(Integer, nullable=True)
@@ -156,7 +156,7 @@ class PersonalBest(Base):
     __tablename__ = "personal_best"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)  # Index in __table_args__
     
     # Distance category (standardized name)
     distance_category = Column(Text, nullable=False)  # '400m', '800m', 'mile', '2mile', '5k', '10k', '15k', '25k', '30k', '50k', '100k', 'half_marathon', 'marathon'
@@ -363,7 +363,7 @@ class CoachingRecommendation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)  # Index in __table_args__
     recommendation_type = Column(Text, nullable=False)  # "plan", "workout", "weekly_guidance", etc.
     
     # Recommendation details (JSON)
@@ -403,7 +403,7 @@ class RecommendationOutcome(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tracked_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    recommendation_id = Column(UUID(as_uuid=True), ForeignKey("coaching_recommendation.id"), nullable=False, index=True)
+    recommendation_id = Column(UUID(as_uuid=True), ForeignKey("coaching_recommendation.id"), nullable=False)  # Index in __table_args__
     
     outcome_type = Column(Text, nullable=False)  # "efficiency_change", "pb_achieved", "injury", "adherence", etc.
     outcome_data_json = Column(Text, nullable=False)  # JSON: outcome details
@@ -438,8 +438,8 @@ class ActivityFeedback(Base):
     __tablename__ = "activity_feedback"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False, index=True)
-    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False)  # Index in __table_args__
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)  # Index in __table_args__
     
     # Perceived exertion (RPE 1-10 scale)
     perceived_effort = Column(Integer, nullable=True)  # 1-10 scale
@@ -481,7 +481,7 @@ class InsightFeedback(Base):
     __tablename__ = "insight_feedback"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)  # Index in __table_args__
     insight_type = Column(Text, nullable=False)  # 'correlation', 'activity_insight', 'efficiency_trend', etc.
     insight_id = Column(Text, nullable=True)  # ID of the insight (correlation ID, activity ID, etc.)
     insight_text = Column(Text, nullable=False)  # The actual insight text shown to user
@@ -510,7 +510,7 @@ class TrainingPlan(Base):
     __tablename__ = "training_plan"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)  # Index in __table_args__
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
@@ -557,8 +557,8 @@ class PlannedWorkout(Base):
     __tablename__ = "planned_workout"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    plan_id = Column(UUID(as_uuid=True), ForeignKey("training_plan.id"), nullable=False, index=True)
-    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("training_plan.id"), nullable=False)  # Index in __table_args__
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)  # Index in __table_args__
     
     # Scheduling
     scheduled_date = Column(Date, nullable=False)
@@ -627,7 +627,7 @@ class TrainingAvailability(Base):
     __tablename__ = "training_availability"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)  # Index in __table_args__
     
     # Day of week: 0=Sunday, 1=Monday, ..., 6=Saturday
     day_of_week = Column(Integer, nullable=False)  # 0-6

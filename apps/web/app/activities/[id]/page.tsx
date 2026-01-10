@@ -11,6 +11,7 @@
  */
 
 import React from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -222,6 +223,23 @@ export default function ActivityDetailPage() {
               </svg>
             </a>
           )}
+          
+          {/* Context Comparison Button - The Differentiator */}
+          <div className="mt-4">
+            <Link
+              href={`/compare/context/${activityId}`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-semibold rounded-lg shadow-lg shadow-orange-500/25 transition-all hover:shadow-orange-500/40 hover:scale-[1.02]"
+            >
+              <span className="text-lg">👻</span>
+              Compare to Similar Runs
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+            <p className="text-xs text-gray-500 mt-1.5">
+              See how this run compares to your similar efforts
+            </p>
+          </div>
         </div>
 
         {/* Workout Type Classification */}
