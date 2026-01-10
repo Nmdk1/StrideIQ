@@ -277,7 +277,7 @@ def generate_html(archetype: dict, paces: dict = None) -> str:
 """
         
         # Generate each day
-        for day in ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]:
+        for day in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]:
             workout = week["workouts"][day]
             w_type = workout["type"]
             colors = WORKOUT_COLORS.get(w_type, WORKOUT_COLORS["easy"])
