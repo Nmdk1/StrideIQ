@@ -1,5 +1,115 @@
 # Version History
 
+## Version 3.18.0 - Causal Attribution Engine & IP Protection (2026-01-10)
+
+### The Moat Phase: Engineering the Intelligence
+
+This release implements the core intellectual property that differentiates StrideIQ from all competitors. We've moved from "what correlates" to "what causes" performance changes.
+
+### Module 1: Causal Attribution Engine (`causal_attribution.py`)
+
+**The Brain** - Time-lagged causal inference for athlete-specific performance attribution.
+
+**Dual-Frequency Analysis:**
+- **Readiness Loop (0-7 days):** Sleep, HRV, Stress, Soreness, Resting HR
+- **Fitness Loop (14-42 days):** Volume, Threshold %, Long Run %, Consistency, ACWR
+
+**Granger Causality Testing:**
+- Tests if input X at time t-k helps predict output Y at time t
+- Discovers optimal lag for each input-output pair per athlete
+- Provides statistical backing: "Sleep changes preceded efficiency gains by 2 days (Granger p<0.05)"
+
+**N=1 Philosophy:**
+- Population research informs questions, not answers
+- If athlete's PRs correlate with low sleep and low HRV, that's the pattern we surface
+- The athlete IS the sample
+
+**API Endpoints:**
+- `GET /v1/causal/analyze` - Full dual-frequency causal analysis
+- `POST /v1/causal/explain-trend` - "Why This Trend?" explanations
+- `GET /v1/causal/context-block` - GPT injection context
+- `GET /v1/causal/readiness` - Readiness loop indicators only
+- `GET /v1/causal/fitness` - Fitness loop indicators only
+
+### Module 2: Provisional Patent Draft (`PROVISIONAL_PATENT_DRAFT.md`)
+
+**The Shield** - IP documentation for USPTO filing.
+
+**Key Claims Documented:**
+1. N=1 Causal Inference methodology
+2. Dual-Frequency Lag Analysis (Readiness + Fitness loops)
+3. Granger Causality Detection for athletic inputs
+4. Contextual Comparison with Ghost Baseline
+5. Pattern Recognition Over Averages
+
+**Differentiators from Prior Art:**
+| Feature | Prior Art | StrideIQ |
+|---------|-----------|----------|
+| Baseline | Fixed zones, population averages | Dynamic ghost cohort |
+| Causality | Simple correlation | Granger causality with lag detection |
+| Time Analysis | Fixed 7d/28d windows | Dual-frequency with optimal lag discovery |
+| Guidance | Prescriptive | Forensic ("data suggests...") |
+
+**Filing Instructions:**
+- Provisional application ready for USPTO
+- 12-month priority window for non-provisional
+- Cost estimates included ($320 micro entity)
+
+### Module 3: Anonymized Data Export (`data_export.py`)
+
+**The Asset** - GDPR-compliant data aggregation for acquisition value.
+
+**Privacy Principles:**
+- All PII stripped (name, email, location, GPS)
+- Only mathematical relationships exported
+- Explicit opt-in required
+- GDPR Article 17 compliant (right to erasure)
+
+**Consent Management:**
+- `GET /v1/data-export/consent` - Check status
+- `POST /v1/data-export/consent` - Opt in/out
+- `POST /v1/data-export/erasure-request` - GDPR Article 17
+
+**Admin Export:**
+- `GET /v1/data-export/admin/summary` - Export preview
+- `GET /v1/data-export/admin/export` - Bulk JSON/CSV export
+- `GET /v1/data-export/admin/ml-training-data` - ML-ready format
+
+**Anonymization:**
+- Age groups, not exact ages
+- Volume categories, not exact km
+- Pattern prevalence across cohorts
+- No absolute values that could identify individuals
+
+**Tone:** "Your choice. Data stays yours."
+
+### Files Created
+
+**Services:**
+- `apps/api/services/causal_attribution.py` - Granger causality engine
+- `apps/api/services/data_export.py` - GDPR-compliant export service
+
+**Routers:**
+- `apps/api/routers/causal.py` - Causal attribution endpoints
+- `apps/api/routers/data_export.py` - Data export endpoints
+
+**Documentation:**
+- `PROVISIONAL_PATENT_DRAFT.md` - USPTO provisional patent application
+
+### Files Modified
+
+- `apps/api/main.py` - Added causal and data_export routers
+
+### Manifesto Alignment
+
+All outputs follow manifesto principles:
+- **Value-first insights:** Report what the data shows
+- **No prescriptive language:** "Data hints X preceded Y. Test it."
+- **Sparse/irreverent tone:** Forensic, not preachy
+- **Athlete-specific data only:** N=1, population research informs questions only
+
+---
+
 ## Version 3.17.0 - Security Hardening (2026-01-08)
 
 ### Security Headers Middleware

@@ -7,7 +7,7 @@ routers, and configuration for production use.
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution
+from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export
 try:
     from routers import garmin
     GARMIN_AVAILABLE = True
@@ -196,6 +196,8 @@ app.include_router(preferences.router)
 app.include_router(compare.router)
 app.include_router(contextual_compare.router)
 app.include_router(attribution.router)
+app.include_router(causal.router)
+app.include_router(data_export.router)
 app.include_router(activity_workout_type.router)
 app.include_router(athlete_insights.router)
 
