@@ -185,3 +185,119 @@ def get_quick_performance_score(
             "similar_runs_count": 0,
             "key_insight": None,
         }
+
+
+# =============================================================================
+# EXPLICIT HR SEARCH ENDPOINTS
+# These allow athletes to explicitly search/filter by heart rate.
+# Foundation for the upcoming query engine.
+# =============================================================================
+
+@router.get("/by-avg-hr/{activity_id}")
+def find_by_avg_hr(
+    activity_id: UUID,
+    tolerance: int = Query(5, ge=1, le=20, description="HR tolerance in bpm (±)"),
+    max_results: int = Query(20, ge=1, le=50),
+    days_back: int = Query(365, ge=30, le=730),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Find runs with similar average heart rate.
+    
+    Physiologically, same avg HR = same relative effort level.
+    Use this to find runs where you maintained similar effort regardless of pace.
+    
+    Example: "Show me all runs where I held ~145 bpm"
+    """
+    service = ContextualComparisonService(db)
+    
+    results = service.find_by_avg_hr(
+        activity_id=activity_id,
+        athlete_id=current_user.id,
+        hr_tolerance=tolerance,
+        max_results=max_results,
+        days_back=days_back,
+    )
+    
+    return {
+        "target_activity_id": str(activity_id),
+        "hr_tolerance": tolerance,
+        "count": len(results),
+        "activities": results,
+    }
+
+
+@router.get("/by-max-hr/{activity_id}")
+def find_by_max_hr(
+    activity_id: UUID,
+    tolerance: int = Query(5, ge=1, le=20, description="HR tolerance in bpm (±)"),
+    max_results: int = Query(20, ge=1, le=50),
+    days_back: int = Query(365, ge=30, le=730),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Find runs with similar maximum heart rate.
+    
+    Same max HR indicates similar cardiovascular peak stress.
+    Use this to find runs where you hit similar intensity peaks.
+    
+    Example: "Show me runs where I peaked at ~175 bpm"
+    """
+    service = ContextualComparisonService(db)
+    
+    results = service.find_by_max_hr(
+        activity_id=activity_id,
+        athlete_id=current_user.id,
+        hr_tolerance=tolerance,
+        max_results=max_results,
+        days_back=days_back,
+    )
+    
+    return {
+        "target_activity_id": str(activity_id),
+        "hr_tolerance": tolerance,
+        "count": len(results),
+        "activities": results,
+    }
+
+
+@router.get("/hr-range")
+def find_by_hr_range(
+    min_hr: int = Query(..., ge=60, le=220, description="Minimum average HR"),
+    max_hr: int = Query(..., ge=60, le=220, description="Maximum average HR"),
+    min_duration: Optional[int] = Query(None, ge=1, description="Minimum duration in minutes"),
+    max_results: int = Query(50, ge=1, le=100),
+    days_back: int = Query(365, ge=30, le=730),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Find all runs within an average HR range.
+    
+    Pure query endpoint - no reference activity needed.
+    Foundation primitive for the query engine.
+    
+    Example: "Show me all runs where I maintained 145-155 bpm for 30+ minutes"
+    """
+    if min_hr > max_hr:
+        raise HTTPException(status_code=400, detail="min_hr must be <= max_hr")
+    
+    service = ContextualComparisonService(db)
+    
+    results = service.find_by_hr_range(
+        athlete_id=current_user.id,
+        min_hr=min_hr,
+        max_hr=max_hr,
+        min_duration_minutes=min_duration,
+        max_results=max_results,
+        days_back=days_back,
+    )
+    
+    return {
+        "hr_range": {"min": min_hr, "max": max_hr},
+        "min_duration_minutes": min_duration,
+        "count": len(results),
+        "activities": results,
+    }

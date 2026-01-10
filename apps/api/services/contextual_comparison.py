@@ -31,7 +31,9 @@ from models import Activity, ActivitySplit, Athlete
 class SimilarityFactors:
     """Breakdown of why an activity is similar"""
     duration_score: float  # 0-1, how close in duration
-    intensity_score: float  # 0-1, how close in intensity
+    intensity_score: float  # 0-1, how close in intensity (via intensity_score metric)
+    avg_hr_score: float  # 0-1, how close in average heart rate
+    max_hr_score: float  # 0-1, how close in max heart rate
     type_score: float  # 0-1, same workout type
     conditions_score: float  # 0-1, similar conditions
     elevation_score: float  # 0-1, similar elevation profile
@@ -56,6 +58,7 @@ class GhostAverage:
     num_runs_averaged: int
     avg_pace_per_km: Optional[float]
     avg_hr: Optional[float]
+    avg_max_hr: Optional[float]  # Average of max HRs across similar runs
     avg_efficiency: Optional[float]
     avg_duration_s: Optional[float]
     avg_distance_m: Optional[float]
@@ -71,6 +74,7 @@ class GhostAverage:
             "avg_pace_per_km": self.avg_pace_per_km,
             "avg_pace_formatted": self._format_pace(self.avg_pace_per_km),
             "avg_hr": self.avg_hr,
+            "avg_max_hr": self.avg_max_hr,
             "avg_efficiency": self.avg_efficiency,
             "avg_duration_s": self.avg_duration_s,
             "avg_duration_formatted": self._format_duration(self.avg_duration_s),
@@ -138,6 +142,7 @@ class SimilarRun:
     duration_s: int
     pace_per_km: Optional[float]
     avg_hr: Optional[int]
+    max_hr: Optional[int]  # Maximum heart rate during the run
     efficiency: Optional[float]
     intensity_score: Optional[float]
     elevation_gain: Optional[float]
@@ -158,6 +163,7 @@ class SimilarRun:
             "pace_per_km": self.pace_per_km,
             "pace_formatted": self._format_pace(self.pace_per_km),
             "avg_hr": self.avg_hr,
+            "max_hr": self.max_hr,
             "efficiency": self.efficiency,
             "intensity_score": self.intensity_score,
             "elevation_gain": self.elevation_gain,
@@ -166,6 +172,8 @@ class SimilarRun:
             "similarity_breakdown": {
                 "duration": round(self.similarity_factors.duration_score, 2),
                 "intensity": round(self.similarity_factors.intensity_score, 2),
+                "avg_hr": round(self.similarity_factors.avg_hr_score, 2),
+                "max_hr": round(self.similarity_factors.max_hr_score, 2),
                 "type": round(self.similarity_factors.type_score, 2),
                 "conditions": round(self.similarity_factors.conditions_score, 2),
                 "elevation": round(self.similarity_factors.elevation_score, 2),
@@ -237,15 +245,22 @@ class SimilarityScorer:
     Scores how similar two activities are using multiple weighted factors.
     
     The goal: Find runs that are truly comparable, not just "same distance."
+    
+    HR-based similarity is a key differentiator:
+    - avg_hr: Same average HR = same relative effort regardless of pace
+    - max_hr: Same max HR = similar cardiovascular peak stress
     """
     
     # Weight configuration (sum to 1.0)
+    # HR scores are significant - same HR = physiologically comparable effort
     WEIGHTS = {
-        "duration": 0.30,  # Similar duration is very important
-        "intensity": 0.25,  # Similar effort level
-        "type": 0.20,  # Same workout type is a bonus
-        "conditions": 0.15,  # Temperature, weather
-        "elevation": 0.10,  # Similar elevation profile
+        "duration": 0.22,  # Similar duration
+        "intensity": 0.15,  # Intensity score (0-100)
+        "avg_hr": 0.18,    # NEW: Same avg HR = same effort
+        "max_hr": 0.10,    # NEW: Same max HR = similar peak stress
+        "type": 0.15,      # Same workout type
+        "conditions": 0.12, # Temperature, weather
+        "elevation": 0.08,  # Similar elevation profile
     }
     
     def score(
@@ -259,6 +274,8 @@ class SimilarityScorer:
         """
         duration_score = self._score_duration(target.duration_s, candidate.duration_s)
         intensity_score = self._score_intensity(target, candidate)
+        avg_hr_score = self._score_avg_hr(target.avg_hr, candidate.avg_hr)
+        max_hr_score = self._score_max_hr(target.max_hr, candidate.max_hr)
         type_score = self._score_type(target.workout_type, candidate.workout_type)
         conditions_score = self._score_conditions(target, candidate)
         elevation_score = self._score_elevation(target, candidate)
@@ -267,6 +284,8 @@ class SimilarityScorer:
         total = (
             duration_score * self.WEIGHTS["duration"] +
             intensity_score * self.WEIGHTS["intensity"] +
+            avg_hr_score * self.WEIGHTS["avg_hr"] +
+            max_hr_score * self.WEIGHTS["max_hr"] +
             type_score * self.WEIGHTS["type"] +
             conditions_score * self.WEIGHTS["conditions"] +
             elevation_score * self.WEIGHTS["elevation"]
@@ -275,6 +294,8 @@ class SimilarityScorer:
         factors = SimilarityFactors(
             duration_score=duration_score,
             intensity_score=intensity_score,
+            avg_hr_score=avg_hr_score,
+            max_hr_score=max_hr_score,
             type_score=type_score,
             conditions_score=conditions_score,
             elevation_score=elevation_score,
@@ -282,6 +303,57 @@ class SimilarityScorer:
         )
         
         return total, factors
+    
+    def _score_avg_hr(
+        self,
+        target_hr: Optional[int],
+        candidate_hr: Optional[int]
+    ) -> float:
+        """
+        Gaussian decay for average heart rate similarity.
+        
+        Physiologically, same avg HR = same relative effort.
+        This is powerful: an easy run at 130 bpm in heat vs cool conditions
+        is still the same physiological stress.
+        
+        - Same HR = 1.0
+        - ±5 bpm = ~0.9
+        - ±10 bpm = ~0.6
+        - ±20 bpm = ~0.1
+        """
+        if not target_hr or not candidate_hr:
+            return 0.5  # Neutral if missing
+        
+        diff = abs(target_hr - candidate_hr)
+        
+        # Gaussian decay with sigma = 8 bpm (tighter than duration)
+        sigma = 8
+        return math.exp(-(diff ** 2) / (2 * sigma ** 2))
+    
+    def _score_max_hr(
+        self,
+        target_max_hr: Optional[int],
+        candidate_max_hr: Optional[int]
+    ) -> float:
+        """
+        Gaussian decay for max heart rate similarity.
+        
+        Same max HR indicates similar peak cardiovascular stress,
+        regardless of how long it was sustained.
+        
+        - Same max HR = 1.0
+        - ±5 bpm = ~0.85
+        - ±10 bpm = ~0.5
+        - ±15 bpm = ~0.2
+        """
+        if not target_max_hr or not candidate_max_hr:
+            return 0.5  # Neutral if missing
+        
+        diff = abs(target_max_hr - candidate_max_hr)
+        
+        # Gaussian decay with sigma = 7 bpm (max HR is more variable)
+        sigma = 7
+        return math.exp(-(diff ** 2) / (2 * sigma ** 2))
     
     def _score_duration(
         self, 
@@ -492,6 +564,7 @@ class ContextualComparisonService:
                 duration_s=activity.duration_s or 0,
                 pace_per_km=pace,
                 avg_hr=activity.avg_hr,
+                max_hr=activity.max_hr,
                 efficiency=efficiency,
                 intensity_score=activity.intensity_score,
                 elevation_gain=float(activity.total_elevation_gain) if activity.total_elevation_gain else None,
@@ -614,6 +687,7 @@ class ContextualComparisonService:
                 duration_s=activity.duration_s or 0,
                 pace_per_km=pace,
                 avg_hr=activity.avg_hr,
+                max_hr=activity.max_hr,
                 efficiency=efficiency,
                 intensity_score=activity.intensity_score,
                 elevation_gain=float(activity.total_elevation_gain) if activity.total_elevation_gain else None,
@@ -711,6 +785,7 @@ class ContextualComparisonService:
                 num_runs_averaged=0,
                 avg_pace_per_km=None,
                 avg_hr=None,
+                avg_max_hr=None,
                 avg_efficiency=None,
                 avg_duration_s=None,
                 avg_distance_m=None,
@@ -723,6 +798,7 @@ class ContextualComparisonService:
         # Calculate averages
         paces = [r.pace_per_km for r in similar_runs if r.pace_per_km]
         hrs = [r.avg_hr for r in similar_runs if r.avg_hr]
+        max_hrs = [r.max_hr for r in similar_runs if r.max_hr]
         effs = [r.efficiency for r in similar_runs if r.efficiency]
         durations = [r.duration_s for r in similar_runs if r.duration_s]
         distances = [r.distance_m for r in similar_runs if r.distance_m]
@@ -737,6 +813,7 @@ class ContextualComparisonService:
             num_runs_averaged=len(similar_runs),
             avg_pace_per_km=sum(paces) / len(paces) if paces else None,
             avg_hr=sum(hrs) / len(hrs) if hrs else None,
+            avg_max_hr=sum(max_hrs) / len(max_hrs) if max_hrs else None,
             avg_efficiency=sum(effs) / len(effs) if effs else None,
             avg_duration_s=sum(durations) / len(durations) if durations else None,
             avg_distance_m=sum(distances) / len(distances) if distances else None,
@@ -1014,6 +1091,188 @@ class ContextualComparisonService:
             return f"{f.name} difference: {f.explanation}"
         
         return "Performance was close to your baseline for similar runs."
+    
+    # =========================================================================
+    # EXPLICIT HR SEARCH METHODS
+    # These provide explicit control for HR-based queries.
+    # The similarity algorithm uses these internally, but athletes can also
+    # call these directly for specific HR-based searches.
+    # =========================================================================
+    
+    def find_by_avg_hr(
+        self,
+        activity_id: UUID,
+        athlete_id: UUID,
+        hr_tolerance: int = 5,
+        max_results: int = 20,
+        days_back: int = 365,
+    ) -> List[Dict[str, Any]]:
+        """
+        Find runs with similar average heart rate.
+        
+        Args:
+            activity_id: Target activity
+            athlete_id: Athlete's ID
+            hr_tolerance: ± bpm tolerance (default 5)
+            max_results: Max runs to return
+            days_back: How far back to search
+        
+        Returns:
+            List of activities with similar avg HR, ordered by HR similarity
+        """
+        target = self.db.query(Activity).filter(
+            Activity.id == activity_id,
+            Activity.athlete_id == athlete_id,
+        ).first()
+        
+        if not target or not target.avg_hr:
+            return []
+        
+        target_hr = target.avg_hr
+        cutoff = datetime.utcnow() - timedelta(days=days_back)
+        
+        # Find activities within HR range
+        candidates = self.db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.id != activity_id,
+            Activity.start_time >= cutoff,
+            Activity.avg_hr.isnot(None),
+            Activity.avg_hr >= target_hr - hr_tolerance,
+            Activity.avg_hr <= target_hr + hr_tolerance,
+        ).order_by(
+            func.abs(Activity.avg_hr - target_hr)  # Closest HR first
+        ).limit(max_results).all()
+        
+        return self._activities_to_dicts(candidates, target_hr=target_hr)
+    
+    def find_by_max_hr(
+        self,
+        activity_id: UUID,
+        athlete_id: UUID,
+        hr_tolerance: int = 5,
+        max_results: int = 20,
+        days_back: int = 365,
+    ) -> List[Dict[str, Any]]:
+        """
+        Find runs with similar maximum heart rate.
+        
+        Args:
+            activity_id: Target activity
+            athlete_id: Athlete's ID
+            hr_tolerance: ± bpm tolerance (default 5)
+            max_results: Max runs to return
+            days_back: How far back to search
+        
+        Returns:
+            List of activities with similar max HR, ordered by HR similarity
+        """
+        target = self.db.query(Activity).filter(
+            Activity.id == activity_id,
+            Activity.athlete_id == athlete_id,
+        ).first()
+        
+        if not target or not target.max_hr:
+            return []
+        
+        target_max_hr = target.max_hr
+        cutoff = datetime.utcnow() - timedelta(days=days_back)
+        
+        # Find activities within max HR range
+        candidates = self.db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.id != activity_id,
+            Activity.start_time >= cutoff,
+            Activity.max_hr.isnot(None),
+            Activity.max_hr >= target_max_hr - hr_tolerance,
+            Activity.max_hr <= target_max_hr + hr_tolerance,
+        ).order_by(
+            func.abs(Activity.max_hr - target_max_hr)
+        ).limit(max_results).all()
+        
+        return self._activities_to_dicts(candidates, target_max_hr=target_max_hr)
+    
+    def find_by_hr_range(
+        self,
+        athlete_id: UUID,
+        min_hr: int,
+        max_hr: int,
+        min_duration_minutes: Optional[int] = None,
+        max_results: int = 50,
+        days_back: int = 365,
+    ) -> List[Dict[str, Any]]:
+        """
+        Find all runs within an average HR range.
+        
+        This is a pure query - no reference activity needed.
+        Use case: "Show me all runs where I maintained 145-155 bpm"
+        
+        Args:
+            athlete_id: Athlete's ID
+            min_hr: Minimum average HR
+            max_hr: Maximum average HR
+            min_duration_minutes: Optional minimum duration filter
+            max_results: Max runs to return
+            days_back: How far back to search
+        
+        Returns:
+            List of activities in the HR range
+        """
+        cutoff = datetime.utcnow() - timedelta(days=days_back)
+        
+        query = self.db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.start_time >= cutoff,
+            Activity.avg_hr.isnot(None),
+            Activity.avg_hr >= min_hr,
+            Activity.avg_hr <= max_hr,
+        )
+        
+        if min_duration_minutes:
+            query = query.filter(Activity.duration_s >= min_duration_minutes * 60)
+        
+        activities = query.order_by(
+            Activity.start_time.desc()
+        ).limit(max_results).all()
+        
+        return self._activities_to_dicts(activities)
+    
+    def _activities_to_dicts(
+        self,
+        activities: List[Activity],
+        target_hr: Optional[int] = None,
+        target_max_hr: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Convert activities to dictionaries with HR context"""
+        results = []
+        for activity in activities:
+            pace = activity.duration_s / (activity.distance_m / 1000) if activity.distance_m and activity.duration_s else None
+            
+            result = {
+                "id": str(activity.id),
+                "name": activity.name or f"Run on {activity.start_time.strftime('%b %d')}",
+                "date": activity.start_time.isoformat(),
+                "workout_type": activity.workout_type,
+                "distance_m": activity.distance_m,
+                "distance_km": activity.distance_m / 1000 if activity.distance_m else None,
+                "duration_s": activity.duration_s,
+                "pace_per_km": pace,
+                "pace_formatted": self._format_pace(pace),
+                "avg_hr": activity.avg_hr,
+                "max_hr": activity.max_hr,
+                "intensity_score": activity.intensity_score,
+                "temperature_f": activity.temperature_f,
+                "elevation_gain": float(activity.total_elevation_gain) if activity.total_elevation_gain else None,
+            }
+            
+            # Add HR difference context if we have a target
+            if target_hr and activity.avg_hr:
+                result["hr_diff"] = activity.avg_hr - target_hr
+            if target_max_hr and activity.max_hr:
+                result["max_hr_diff"] = activity.max_hr - target_max_hr
+            
+            results.append(result)
+        
+        return results
     
     def _format_pace(self, seconds_per_km: Optional[float]) -> Optional[str]:
         if not seconds_per_km:

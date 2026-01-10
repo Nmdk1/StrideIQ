@@ -13,6 +13,8 @@ import { apiClient } from '../client';
 export interface SimilarityBreakdown {
   duration: number;
   intensity: number;
+  avg_hr: number;
+  max_hr: number;
   type: number;
   conditions: number;
   elevation: number;
@@ -38,6 +40,7 @@ export interface SimilarRun {
   pace_per_km: number | null;
   pace_formatted: string | null;
   avg_hr: number | null;
+  max_hr: number | null;
   efficiency: number | null;
   intensity_score: number | null;
   elevation_gain: number | null;
@@ -52,6 +55,7 @@ export interface GhostAverage {
   avg_pace_per_km: number | null;
   avg_pace_formatted: string | null;
   avg_hr: number | null;
+  avg_max_hr: number | null;
   avg_efficiency: number | null;
   avg_duration_s: number | null;
   avg_duration_formatted: string | null;
@@ -182,4 +186,103 @@ export async function getQuickScore(
   activityId: string
 ): Promise<QuickScore> {
   return apiClient.get<QuickScore>(`/v1/compare/quick-score/${activityId}`);
+}
+
+// =============================================================================
+// HR-BASED SEARCH FUNCTIONS
+// Explicit heart rate based queries - foundation for query engine
+// =============================================================================
+
+export interface HRSearchActivity {
+  id: string;
+  name: string;
+  date: string;
+  workout_type: string | null;
+  distance_m: number | null;
+  distance_km: number | null;
+  duration_s: number | null;
+  pace_per_km: number | null;
+  pace_formatted: string | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  intensity_score: number | null;
+  temperature_f: number | null;
+  elevation_gain: number | null;
+  hr_diff?: number; // Difference from target avg HR
+  max_hr_diff?: number; // Difference from target max HR
+}
+
+export interface HRSearchResult {
+  target_activity_id?: string;
+  hr_tolerance?: number;
+  hr_range?: { min: number; max: number };
+  min_duration_minutes?: number | null;
+  count: number;
+  activities: HRSearchActivity[];
+}
+
+/**
+ * Find runs with similar average heart rate
+ */
+export async function findByAvgHR(
+  activityId: string,
+  options: {
+    tolerance?: number;
+    maxResults?: number;
+    daysBack?: number;
+  } = {}
+): Promise<HRSearchResult> {
+  const params = new URLSearchParams();
+  if (options.tolerance) params.set('tolerance', options.tolerance.toString());
+  if (options.maxResults) params.set('max_results', options.maxResults.toString());
+  if (options.daysBack) params.set('days_back', options.daysBack.toString());
+  
+  const queryString = params.toString();
+  const url = `/v1/compare/by-avg-hr/${activityId}${queryString ? `?${queryString}` : ''}`;
+  
+  return apiClient.get<HRSearchResult>(url);
+}
+
+/**
+ * Find runs with similar maximum heart rate
+ */
+export async function findByMaxHR(
+  activityId: string,
+  options: {
+    tolerance?: number;
+    maxResults?: number;
+    daysBack?: number;
+  } = {}
+): Promise<HRSearchResult> {
+  const params = new URLSearchParams();
+  if (options.tolerance) params.set('tolerance', options.tolerance.toString());
+  if (options.maxResults) params.set('max_results', options.maxResults.toString());
+  if (options.daysBack) params.set('days_back', options.daysBack.toString());
+  
+  const queryString = params.toString();
+  const url = `/v1/compare/by-max-hr/${activityId}${queryString ? `?${queryString}` : ''}`;
+  
+  return apiClient.get<HRSearchResult>(url);
+}
+
+/**
+ * Find all runs within an average HR range (no reference activity needed)
+ */
+export async function findByHRRange(
+  minHR: number,
+  maxHR: number,
+  options: {
+    minDuration?: number; // in minutes
+    maxResults?: number;
+    daysBack?: number;
+  } = {}
+): Promise<HRSearchResult> {
+  const params = new URLSearchParams();
+  params.set('min_hr', minHR.toString());
+  params.set('max_hr', maxHR.toString());
+  if (options.minDuration) params.set('min_duration', options.minDuration.toString());
+  if (options.maxResults) params.set('max_results', options.maxResults.toString());
+  if (options.daysBack) params.set('days_back', options.daysBack.toString());
+  
+  return apiClient.get<HRSearchResult>(`/v1/compare/hr-range?${params.toString()}`);
 }
