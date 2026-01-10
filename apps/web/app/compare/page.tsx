@@ -155,6 +155,9 @@ export default function ComparePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [baselineId, setBaselineId] = useState<string | null>(null);
   
+  // Filters - Distance
+  const [minDistance, setMinDistance] = useState<string>('');
+  const [maxDistance, setMaxDistance] = useState<string>('');
   // Filters - Average HR
   const [minAvgHR, setMinAvgHR] = useState<string>('');
   const [maxAvgHR, setMaxAvgHR] = useState<string>('');
@@ -163,20 +166,43 @@ export default function ComparePage() {
   const [maxMaxHR, setMaxMaxHR] = useState<string>('');
   
   const { data: activities, isLoading } = useActivities({ limit: showAll ? 100 : 20 });
-  const { formatDistance, formatPace } = useUnits();
+  const { formatDistance, formatPace, units, setUnits, distanceUnitShort } = useUnits();
   const compareSelectedMutation = useCompareSelected();
   
-  // Check if any HR filter is active
+  // Check if any filter is active
+  const hasDistanceFilter = minDistance || maxDistance;
   const hasAvgHRFilter = minAvgHR || maxAvgHR;
   const hasMaxHRFilter = minMaxHR || maxMaxHR;
+  const hasAnyFilter = hasDistanceFilter || hasAvgHRFilter || hasMaxHRFilter;
   
-  // Filter activities by HR
+  // Convert user's distance input to meters for comparison
+  const parseDistanceToMeters = (value: string): number | null => {
+    if (!value) return null;
+    const num = parseFloat(value);
+    if (isNaN(num)) return null;
+    // User enters in current unit (miles or km), convert to meters
+    const km = units === 'imperial' ? num * 1.60934 : num;
+    return km * 1000;
+  };
+
+  // Filter activities by distance and HR
   const filteredActivities = useMemo(() => {
     if (!activities) return [];
     
+    const minDistanceM = parseDistanceToMeters(minDistance);
+    const maxDistanceM = parseDistanceToMeters(maxDistance);
+    
     return activities.filter((a: any) => {
+      const distance = a.distance ?? a.distance_m ?? 0;
       const avgHr = a.average_heartrate ?? a.avg_hr;
       const maxHr = a.max_hr;
+      
+      // Distance filter
+      if (hasDistanceFilter) {
+        if (!distance) return false;
+        if (minDistanceM !== null && distance < minDistanceM) return false;
+        if (maxDistanceM !== null && distance > maxDistanceM) return false;
+      }
       
       // If filtering by avg HR, exclude runs without avg HR data
       if (hasAvgHRFilter) {
@@ -194,7 +220,7 @@ export default function ComparePage() {
       
       return true;
     });
-  }, [activities, minAvgHR, maxAvgHR, minMaxHR, maxMaxHR, hasAvgHRFilter, hasMaxHRFilter]);
+  }, [activities, minDistance, maxDistance, minAvgHR, maxAvgHR, minMaxHR, maxMaxHR, hasDistanceFilter, hasAvgHRFilter, hasMaxHRFilter, units]);
   
   const toggleSelection = (id: string) => {
     const newSet = new Set(selectedIds);
@@ -278,62 +304,110 @@ export default function ComparePage() {
                 </button>
               </div>
               
-              {/* HR Filters */}
-              <div className="flex flex-wrap items-center gap-4">
-                {/* Avg HR Filter */}
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-400">Avg HR:</span>
-                  <input
-                    type="number"
-                    placeholder="Min"
-                    value={minAvgHR}
-                    onChange={(e) => setMinAvgHR(e.target.value)}
-                    className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
-                  />
-                  <span className="text-gray-500">-</span>
-                  <input
-                    type="number"
-                    placeholder="Max"
-                    value={maxAvgHR}
-                    onChange={(e) => setMaxAvgHR(e.target.value)}
-                    className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
-                  />
-                </div>
-                
-                {/* Max HR Filter */}
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-400">Max HR:</span>
-                  <input
-                    type="number"
-                    placeholder="Min"
-                    value={minMaxHR}
-                    onChange={(e) => setMinMaxHR(e.target.value)}
-                    className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
-                  />
-                  <span className="text-gray-500">-</span>
-                  <input
-                    type="number"
-                    placeholder="Max"
-                    value={maxMaxHR}
-                    onChange={(e) => setMaxMaxHR(e.target.value)}
-                    className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
-                  />
-                </div>
-                
-                {(hasAvgHRFilter || hasMaxHRFilter) && (
-                  <button
-                    onClick={() => { 
-                      setMinAvgHR(''); 
-                      setMaxAvgHR(''); 
-                      setMinMaxHR(''); 
-                      setMaxMaxHR(''); 
-                    }}
-                    className="text-xs text-orange-400 hover:text-orange-300"
-                  >
-                    Clear filters
-                  </button>
-                )}
+              {/* Unit Toggle */}
+              <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-0.5">
+                <button
+                  onClick={() => setUnits('imperial')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    units === 'imperial' 
+                      ? 'bg-orange-600 text-white' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  mi
+                </button>
+                <button
+                  onClick={() => setUnits('metric')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    units === 'metric' 
+                      ? 'bg-orange-600 text-white' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  km
+                </button>
               </div>
+            </div>
+            
+            {/* Filters Row */}
+            <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-gray-700">
+              {/* Distance Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Distance ({distanceUnitShort}):</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder="Min"
+                  value={minDistance}
+                  onChange={(e) => setMinDistance(e.target.value)}
+                  className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                />
+                <span className="text-gray-500">-</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder="Max"
+                  value={maxDistance}
+                  onChange={(e) => setMaxDistance(e.target.value)}
+                  className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                />
+              </div>
+              
+              {/* Avg HR Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Avg HR:</span>
+                <input
+                  type="number"
+                  placeholder="Min"
+                  value={minAvgHR}
+                  onChange={(e) => setMinAvgHR(e.target.value)}
+                  className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                />
+                <span className="text-gray-500">-</span>
+                <input
+                  type="number"
+                  placeholder="Max"
+                  value={maxAvgHR}
+                  onChange={(e) => setMaxAvgHR(e.target.value)}
+                  className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                />
+              </div>
+              
+              {/* Max HR Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Max HR:</span>
+                <input
+                  type="number"
+                  placeholder="Min"
+                  value={minMaxHR}
+                  onChange={(e) => setMinMaxHR(e.target.value)}
+                  className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                />
+                <span className="text-gray-500">-</span>
+                <input
+                  type="number"
+                  placeholder="Max"
+                  value={maxMaxHR}
+                  onChange={(e) => setMaxMaxHR(e.target.value)}
+                  className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                />
+              </div>
+              
+              {hasAnyFilter && (
+                <button
+                  onClick={() => { 
+                    setMinDistance('');
+                    setMaxDistance('');
+                    setMinAvgHR(''); 
+                    setMaxAvgHR(''); 
+                    setMinMaxHR(''); 
+                    setMaxMaxHR(''); 
+                  }}
+                  className="text-xs text-orange-400 hover:text-orange-300"
+                >
+                  Clear all filters
+                </button>
+              )}
             </div>
             
             {/* Selection Mode Instructions */}

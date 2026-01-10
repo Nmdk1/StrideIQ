@@ -40,7 +40,7 @@ const UnitsContext = createContext<UnitsContextValue | undefined>(undefined);
 
 export function UnitsProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading: authLoading, token } = useAuth();
-  const [units, setUnitsState] = useState<UnitSystem>('metric');
+  const [units, setUnitsState] = useState<UnitSystem>('imperial'); // Default to miles
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedPrefs, setHasLoadedPrefs] = useState(false);
 
@@ -60,8 +60,8 @@ export function UnitsProvider({ children }: { children: ReactNode }) {
           setUnitsState(prefs.preferred_units);
         })
         .catch((error) => {
-          // Silently default to metric - don't spam console
-          setUnitsState('metric');
+          // Silently default to imperial (miles) - don't spam console
+          setUnitsState('imperial');
         })
         .finally(() => setIsLoading(false));
     } else if (!isAuthenticated) {
