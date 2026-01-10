@@ -1,59 +1,98 @@
-/**
- * Athlete Insights API Service
- * 
- * Service for athlete self-query and insights endpoints.
- */
-
 import { apiClient } from '../client';
 
-export interface InsightTemplate {
+// Types
+export interface Insight {
   id: string;
+  insight_type: string;
+  priority: number;
+  title: string;
+  content: string;
+  insight_date: string;
+  activity_id?: string;
+  data?: Record<string, unknown>;
+  is_dismissed: boolean;
+}
+
+export interface ActiveInsightsResponse {
+  insights: Insight[];
+  is_premium: boolean;
+  total_available: number;
+  premium_locked: number;
+}
+
+export interface KPI {
+  name: string;
+  current_value?: string;
+  start_value?: string;
+  change?: string;
+  trend?: 'up' | 'down' | 'stable';
+}
+
+export interface BuildStatusResponse {
+  has_active_plan: boolean;
+  plan_name?: string;
+  current_week?: number;
+  total_weeks?: number;
+  current_phase?: string;
+  phase_focus?: string;
+  goal_race_name?: string;
+  goal_race_date?: string;
+  days_to_race?: number;
+  progress_percent?: number;
+  kpis: KPI[];
+  projected_time?: string;
+  confidence?: string;
+  week_focus?: string;
+  key_session?: string;
+}
+
+export interface IntelligenceItem {
+  text: string;
+  source: 'n1' | 'population';
+  confidence?: number;
+}
+
+export interface Pattern {
   name: string;
   description: string;
-  category: string;
-  requires_premium: boolean;
-  params: string[];
-  available: boolean;
+  data?: Record<string, unknown>;
 }
 
-export interface InsightResult {
-  template_id: string;
-  template_name: string;
-  success: boolean;
-  data: any;
-  execution_time_ms: number;
+export interface AthleteIntelligenceResponse {
+  what_works: IntelligenceItem[];
+  what_doesnt: IntelligenceItem[];
+  patterns: Pattern[];
+  injury_patterns: IntelligenceItem[];
+  career_prs: Record<string, unknown>;
 }
 
-export interface TemplatesResponse {
-  templates: InsightTemplate[];
-  is_premium: boolean;
-}
-
+// Service
 export const insightsService = {
-  /**
-   * Get available insight templates
-   */
-  async getTemplates(): Promise<TemplatesResponse> {
-    return apiClient.get<TemplatesResponse>('/v1/athlete/insights/templates');
+  async getActiveInsights(limit = 10): Promise<ActiveInsightsResponse> {
+    return apiClient.get<ActiveInsightsResponse>(
+      `/v1/insights/active?limit=${limit}`
+    );
   },
 
-  /**
-   * Execute an insight template
-   */
-  async executeInsight(params: {
-    templateId: string;
-    days?: number;
-    weeks?: number;
-    limit?: number;
-  }): Promise<InsightResult> {
-    const queryParams = new URLSearchParams();
-    if (params.days) queryParams.append('days', params.days.toString());
-    if (params.weeks) queryParams.append('weeks', params.weeks.toString());
-    if (params.limit) queryParams.append('limit', params.limit.toString());
+  async getBuildStatus(): Promise<BuildStatusResponse> {
+    return apiClient.get<BuildStatusResponse>('/v1/insights/build-status');
+  },
 
-    const url = `/v1/athlete/insights/execute/${params.templateId}${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
-    return apiClient.post<InsightResult>(url);
+  async getAthleteIntelligence(): Promise<AthleteIntelligenceResponse> {
+    return apiClient.get<AthleteIntelligenceResponse>('/v1/insights/intelligence');
+  },
+
+  async dismissInsight(insightId: string): Promise<void> {
+    await apiClient.post(`/v1/insights/${insightId}/dismiss`);
+  },
+
+  async saveInsight(insightId: string): Promise<void> {
+    await apiClient.post(`/v1/insights/${insightId}/save`);
+  },
+
+  async generateInsights(): Promise<{ insights_generated: number; insights_saved: number }> {
+    return apiClient.post<{ insights_generated: number; insights_saved: number }>(
+      '/v1/insights/generate'
+    );
   },
 };
-
-export default insightsService;

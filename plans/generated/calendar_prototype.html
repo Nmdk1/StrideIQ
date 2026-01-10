@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StrideIQ Training Calendar</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #141414;
+            --bg-card: #1a1a1a;
+            --bg-hover: #222;
+            --text-primary: #f5f5f5;
+            --text-secondary: #a0a0a0;
+            --text-muted: #666;
+            --accent-green: #00d26a;
+            --accent-blue: #3b82f6;
+            --accent-orange: #ff7a00;
+            --accent-pink: #f91880;
+            --accent-purple: #8b5cf6;
+            --accent-yellow: #fbbf24;
+            --border: #2a2a2a;
+            --success: #00d26a;
+            --warning: #fbbf24;
+            --danger: #ef4444;
+        }
+        
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-pink), var(--accent-orange));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .build-info {
+            text-align: right;
+        }
+        
+        .build-name {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .build-phase {
+            font-size: 0.85rem;
+            color: var(--accent-orange);
+        }
+        
+        /* Calendar Header */
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .month-nav {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .month-nav button {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        
+        .month-nav button:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent-blue);
+        }
+        
+        .month-title {
+            font-size: 1.75rem;
+            font-weight: 600;
+        }
+        
+        .week-indicator {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        .week-badge {
+            background: var(--accent-blue);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        
+        .phase-badge {
+            background: rgba(255, 122, 0, 0.15);
+            color: var(--accent-orange);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border: 1px solid rgba(255, 122, 0, 0.3);
+        }
+        
+        /* Day Headers */
+        .day-headers {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .day-header {
+            text-align: center;
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            padding: 8px;
+        }
+        
+        /* Calendar Grid */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+        }
+        
+        .calendar-day {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            min-height: 140px;
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        
+        .calendar-day:hover {
+            border-color: var(--accent-blue);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+        
+        .calendar-day.today {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 1px var(--accent-blue);
+        }
+        
+        .calendar-day.selected {
+            border-color: var(--accent-pink);
+            box-shadow: 0 0 0 2px var(--accent-pink);
+        }
+        
+        .day-number {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        
+        .today .day-number {
+            color: var(--accent-blue);
+        }
+        
+        /* Workout Card inside day */
+        .workout-card {
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            padding: 8px;
+            margin-bottom: 6px;
+        }
+        
+        .workout-type {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        
+        .workout-type.easy { color: var(--accent-green); }
+        .workout-type.threshold { color: var(--accent-orange); }
+        .workout-type.long { color: var(--accent-blue); }
+        .workout-type.long-mp { color: var(--accent-pink); }
+        .workout-type.rest { color: var(--text-muted); }
+        .workout-type.medium-long { color: #38bdf8; }
+        
+        .workout-details {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        
+        .workout-miles {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        /* Status indicators */
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 6px;
+            font-size: 0.75rem;
+        }
+        
+        .status-completed {
+            color: var(--success);
+            font-weight: 600;
+        }
+        
+        .status-planned {
+            color: var(--text-muted);
+        }
+        
+        .status-modified {
+            color: var(--warning);
+            font-weight: 600;
+        }
+        
+        .status-missed {
+            color: var(--danger);
+            font-weight: 600;
+        }
+        
+        .icons {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .icon {
+            font-size: 0.7rem;
+        }
+        
+        /* Week Summary Row */
+        .week-summary {
+            grid-column: 1 / -1;
+            background: linear-gradient(90deg, var(--bg-card), var(--bg-secondary));
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 4px;
+        }
+        
+        .week-label {
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        
+        .week-stats {
+            display: flex;
+            gap: 24px;
+        }
+        
+        .stat {
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .stat-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        
+        .week-focus {
+            max-width: 400px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Day Detail Panel */
+        .day-detail {
+            position: fixed;
+            right: 0;
+            top: 0;
+            width: 420px;
+            height: 100vh;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border);
+            padding: 24px;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            z-index: 100;
+        }
+        
+        .day-detail.open {
+            transform: translateX(0);
+        }
+        
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .detail-date {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .detail-day {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        
+        .detail-section {
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+        
+        .planned-workout {
+            border-left: 3px solid var(--accent-orange);
+            padding-left: 12px;
+        }
+        
+        .planned-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .planned-desc {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+        
+        .planned-structure {
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .planned-structure div {
+            margin-bottom: 4px;
+        }
+        
+        .purpose {
+            margin-top: 12px;
+            padding: 10px;
+            background: rgba(59, 130, 246, 0.1);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: var(--accent-blue);
+        }
+        
+        .actual-workout {
+            border-left: 3px solid var(--success);
+            padding-left: 12px;
+        }
+        
+        .actual-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .actual-stat {
+            background: var(--bg-secondary);
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .actual-stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        .actual-stat-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+        
+        .insight-box {
+            background: linear-gradient(135deg, rgba(249, 24, 128, 0.1), rgba(255, 122, 0, 0.1));
+            border: 1px solid rgba(249, 24, 128, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+        }
+        
+        .insight-icon {
+            font-size: 1rem;
+            margin-bottom: 8px;
+        }
+        
+        .insight-text {
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        
+        .notes-section textarea {
+            width: 100%;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .notes-section textarea:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+        
+        .note-tags {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .note-tag {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .note-tag:hover {
+            border-color: var(--accent-blue);
+        }
+        
+        .note-tag.active {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+        
+        /* Coach Chat */
+        .coach-section {
+            background: linear-gradient(135deg, var(--bg-card), #1f1a2e);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+        }
+        
+        .coach-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        
+        .coach-avatar {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+        
+        .coach-name {
+            font-weight: 600;
+        }
+        
+        .coach-status {
+            font-size: 0.75rem;
+            color: var(--success);
+        }
+        
+        .quick-questions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .quick-q {
+            background: rgba(139, 92, 246, 0.15);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            color: var(--accent-purple);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .quick-q:hover {
+            background: rgba(139, 92, 246, 0.25);
+        }
+        
+        .chat-input {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .chat-input input {
+            flex: 1;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 10px 16px;
+            color: var(--text-primary);
+            font-family: inherit;
+        }
+        
+        .chat-input input:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+        }
+        
+        .chat-input button {
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+        
+        /* Bottom Action Bar */
+        .action-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .action-stats {
+            display: flex;
+            gap: 32px;
+        }
+        
+        .action-stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .action-stat-icon {
+            font-size: 1.2rem;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-secondary {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+        
+        .btn-secondary:hover {
+            border-color: var(--accent-blue);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+            border: none;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        
+        /* Overlay */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            z-index: 50;
+        }
+        
+        .overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .calendar-day {
+                min-height: 120px;
+            }
+            .workout-details {
+                display: none;
+            }
+        }
+        
+        /* Cutback week styling */
+        .week-summary.cutback {
+            background: linear-gradient(90deg, rgba(251, 191, 36, 0.1), var(--bg-card));
+            border-color: rgba(251, 191, 36, 0.3);
+        }
+        
+        .week-summary.peak {
+            background: linear-gradient(90deg, rgba(249, 24, 128, 0.1), var(--bg-card));
+            border-color: rgba(249, 24, 128, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">StrideIQ</div>
+            <div class="build-info">
+                <div class="build-name">Spring Marathon Build</div>
+                <div class="build-phase">Week 10 of 18 → Race: April 12</div>
+            </div>
+        </header>
+        
+        <!-- Calendar Header -->
+        <div class="calendar-header">
+            <div class="month-nav">
+                <button>◀</button>
+                <h1 class="month-title">March 2026</h1>
+                <button>▶</button>
+            </div>
+            <div class="week-indicator">
+                <span class="week-badge">Week 10</span>
+                <span class="phase-badge">Build 2: MP Introduction</span>
+            </div>
+        </div>
+        
+        <!-- Day Headers -->
+        <div class="day-headers">
+            <div class="day-header">MON</div>
+            <div class="day-header">TUE</div>
+            <div class="day-header">WED</div>
+            <div class="day-header">THU</div>
+            <div class="day-header">FRI</div>
+            <div class="day-header">SAT</div>
+            <div class="day-header">SUN</div>
+        </div>
+        
+        <!-- Calendar Grid -->
+        <div class="calendar-grid">
+            <!-- Week 9 (Previous) -->
+            <div class="calendar-day">
+                <div class="day-number">23</div>
+                <div class="workout-card">
+                    <div class="workout-type rest">Rest</div>
+                    <div class="workout-details">Gym + Mobility</div>
+                </div>
+                <div class="status-row">
+                    <span class="status-completed">✓ Done</span>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">24</div>
+                <div class="workout-card">
+                    <div class="workout-type medium-long">Med-Long</div>
+                    <div class="workout-details"><span class="workout-miles">10 mi</span></div>
+                </div>
+                <div class="status-row">
+                    <span class="status-completed">✓ 10.2 mi</span>
+                    <div class="icons"><span class="icon">📝</span></div>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">25</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy</div>
+                    <div class="workout-details"><span class="workout-miles">6 mi</span></div>
+                </div>
+                <div class="status-row">
+                    <span class="status-completed">✓ 6.1 mi</span>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">26</div>
+                <div class="workout-card">
+                    <div class="workout-type threshold">Threshold</div>
+                    <div class="workout-details"><span class="workout-miles">9 mi</span> 3×10@T</div>
+                </div>
+                <div class="status-row">
+                    <span class="status-completed">✓ 9.3 mi</span>
+                    <div class="icons"><span class="icon">🔥</span></div>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">27</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy</div>
+                    <div class="workout-details"><span class="workout-miles">5 mi</span></div>
+                </div>
+                <div class="status-row">
+                    <span class="status-completed">✓ 5.0 mi</span>
+                </div>
+            </div>
+            
+            <div class="calendar-day today">
+                <div class="day-number">28</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy + Strides</div>
+                    <div class="workout-details"><span class="workout-miles">4 mi</span></div>
+                </div>
+                <div class="status-row">
+                    <span class="status-planned">— Planned</span>
+                </div>
+            </div>
+            
+            <div class="calendar-day" onclick="openDetail()">
+                <div class="day-number">29</div>
+                <div class="workout-card">
+                    <div class="workout-type long-mp">Long + MP</div>
+                    <div class="workout-details"><span class="workout-miles">20 mi</span> w/ 8@MP</div>
+                </div>
+                <div class="status-row">
+                    <span class="status-planned">— Key Session</span>
+                </div>
+            </div>
+            
+            <!-- Week 9 Summary -->
+            <div class="week-summary">
+                <div class="week-label">WEEK 9</div>
+                <div class="week-stats">
+                    <div class="stat">
+                        <div class="stat-value">52</div>
+                        <div class="stat-label">Planned</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" style="color: var(--success)">30.6</div>
+                        <div class="stat-label">Complete</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">1/1</div>
+                        <div class="stat-label">Quality</div>
+                    </div>
+                </div>
+                <div class="week-focus">"T-block continues. Sunday's 20mi w/ 8@MP is the first real taste of race day."</div>
+            </div>
+            
+            <!-- Week 10 -->
+            <div class="calendar-day">
+                <div class="day-number">30</div>
+                <div class="workout-card">
+                    <div class="workout-type rest">Rest</div>
+                    <div class="workout-details">Gym + Mobility</div>
+                </div>
+                <div class="status-row">
+                    <span class="status-planned">—</span>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">31</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy</div>
+                    <div class="workout-details"><span class="workout-miles">11 mi</span></div>
+                </div>
+                <div class="status-row">
+                    <span class="status-planned">—</span>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">1</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy</div>
+                    <div class="workout-details"><span class="workout-miles">6 mi</span></div>
+                </div>
+                <div class="status-row">
+                    <span class="status-planned">—</span>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">2</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy + Hills</div>
+                    <div class="workout-details"><span class="workout-miles">8 mi</span> 6×30s</div>
+                </div>
+                <div class="status-row">
+                    <span class="status-planned">—</span>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">3</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy</div>
+                    <div class="workout-details"><span class="workout-miles">6 mi</span></div>
+                </div>
+                <div class="status-row">
+                    <span class="status-planned">—</span>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">4</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy</div>
+                    <div class="workout-details"><span class="workout-miles">5 mi</span> Shakeout</div>
+                </div>
+                <div class="status-row">
+                    <span class="status-planned">—</span>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">5</div>
+                <div class="workout-card">
+                    <div class="workout-type long-mp">Long + MP</div>
+                    <div class="workout-details"><span class="workout-miles">20 mi</span> w/ 8@MP</div>
+                </div>
+                <div class="status-row">
+                    <span class="status-planned">— Key Session</span>
+                </div>
+            </div>
+            
+            <!-- Week 10 Summary -->
+            <div class="week-summary">
+                <div class="week-label">WEEK 10</div>
+                <div class="week-stats">
+                    <div class="stat">
+                        <div class="stat-value">54</div>
+                        <div class="stat-label">Planned</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" style="color: var(--text-muted)">0</div>
+                        <div class="stat-label">Complete</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">0/1</div>
+                        <div class="stat-label">Quality</div>
+                    </div>
+                </div>
+                <div class="week-focus">"Easy week with MP long run. No T this week — let the legs absorb last week's work."</div>
+            </div>
+            
+            <!-- Week 11 -->
+            <div class="calendar-day">
+                <div class="day-number">6</div>
+                <div class="workout-card">
+                    <div class="workout-type rest">Rest</div>
+                    <div class="workout-details">Gym</div>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">7</div>
+                <div class="workout-card">
+                    <div class="workout-type medium-long">Med-Long + MP</div>
+                    <div class="workout-details"><span class="workout-miles">10 mi</span> 2×3@MP</div>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">8</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy</div>
+                    <div class="workout-details"><span class="workout-miles">6 mi</span></div>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">9</div>
+                <div class="workout-card">
+                    <div class="workout-type threshold">Threshold</div>
+                    <div class="workout-details"><span class="workout-miles">10 mi</span> 2×15@T</div>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">10</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy</div>
+                    <div class="workout-details"><span class="workout-miles">5 mi</span></div>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">11</div>
+                <div class="workout-card">
+                    <div class="workout-type easy">Easy + Strides</div>
+                    <div class="workout-details"><span class="workout-miles">4 mi</span></div>
+                </div>
+            </div>
+            
+            <div class="calendar-day">
+                <div class="day-number">12</div>
+                <div class="workout-card">
+                    <div class="workout-type long">Long Run</div>
+                    <div class="workout-details"><span class="workout-miles">20 mi</span> Easy</div>
+                </div>
+            </div>
+            
+            <!-- Week 11 Summary -->
+            <div class="week-summary peak">
+                <div class="week-label">WEEK 11 — Peak Volume</div>
+                <div class="week-stats">
+                    <div class="stat">
+                        <div class="stat-value">55</div>
+                        <div class="stat-label">Planned</div>
+                    </div>
+                </div>
+                <div class="week-focus">"Peak volume week. T-work returns + MP in medium-long. Then easy 20."</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Overlay -->
+    <div class="overlay" id="overlay" onclick="closeDetail()"></div>
+    
+    <!-- Day Detail Panel -->
+    <div class="day-detail" id="dayDetail">
+        <div class="detail-header">
+            <div>
+                <div class="detail-date">March 29</div>
+                <div class="detail-day">Sunday • Week 9 • Long Run Day</div>
+            </div>
+            <button class="close-btn" onclick="closeDetail()">×</button>
+        </div>
+        
+        <!-- Planned Section -->
+        <div class="detail-section">
+            <div class="section-title">Planned Workout</div>
+            <div class="planned-workout">
+                <div class="planned-title">Long Run with Marathon Pace</div>
+                <div class="planned-desc">20 miles total • 8 miles at MP</div>
+                <div class="planned-structure">
+                    <div>🏃 Warmup: 6 miles easy</div>
+                    <div>🔥 Main: 2×4mi @ MP, 1mi easy between</div>
+                    <div>🏃 Cooldown: 5 miles easy</div>
+                </div>
+                <div class="purpose">
+                    💡 Purpose: First real race simulation. Practice fueling and pacing at MP when already fatigued.
+                </div>
+            </div>
+        </div>
+        
+        <!-- Notes Section -->
+        <div class="detail-section notes-section">
+            <div class="section-title">Pre-Run Notes</div>
+            <div class="note-tags">
+                <span class="note-tag active">🛏️ 8 hrs</span>
+                <span class="note-tag active">⚡ Good</span>
+                <span class="note-tag">😰 Low</span>
+                <span class="note-tag active">☀️ 52°F</span>
+            </div>
+            <textarea placeholder="Anything on your mind before the run...">Feeling rested. Had pasta last night. Planning gel at miles 8, 12, 16.</textarea>
+        </div>
+        
+        <!-- Coach Chat Section -->
+        <div class="detail-section coach-section">
+            <div class="coach-header">
+                <div class="coach-avatar">🏃</div>
+                <div>
+                    <div class="coach-name">Coach</div>
+                    <div class="coach-status">● Available</div>
+                </div>
+            </div>
+            <div class="quick-questions">
+                <span class="quick-q">Am I ready for this?</span>
+                <span class="quick-q">What pace should I target?</span>
+                <span class="quick-q">Fueling strategy?</span>
+            </div>
+            <div class="chat-input">
+                <input type="text" placeholder="Ask about this workout...">
+                <button>→</button>
+            </div>
+        </div>
+        
+        <!-- Paces Reference -->
+        <div class="detail-section">
+            <div class="section-title">Your Training Paces</div>
+            <div class="actual-stats">
+                <div class="actual-stat">
+                    <div class="actual-stat-value">8:30-9:00</div>
+                    <div class="actual-stat-label">Easy</div>
+                </div>
+                <div class="actual-stat">
+                    <div class="actual-stat-value" style="color: var(--accent-pink)">7:25</div>
+                    <div class="actual-stat-label">MP</div>
+                </div>
+                <div class="actual-stat">
+                    <div class="actual-stat-value" style="color: var(--accent-orange)">6:45</div>
+                    <div class="actual-stat-label">Threshold</div>
+                </div>
+                <div class="actual-stat">
+                    <div class="actual-stat-value">~3:14</div>
+                    <div class="actual-stat-label">Target Race</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Action Bar -->
+    <div class="action-bar">
+        <div class="action-stats">
+            <div class="action-stat">
+                <span class="action-stat-icon">📊</span>
+                <span>Week 9: <strong>30.6 / 52 mi</strong></span>
+            </div>
+            <div class="action-stat">
+                <span class="action-stat-icon">🎯</span>
+                <span>Trajectory: <strong style="color: var(--success)">3:12-3:18</strong></span>
+            </div>
+            <div class="action-stat">
+                <span class="action-stat-icon">⏱️</span>
+                <span><strong>15 days</strong> to race</span>
+            </div>
+        </div>
+        <div class="action-buttons">
+            <button class="btn btn-secondary">📊 Week Summary</button>
+            <button class="btn btn-primary">💬 Ask Coach</button>
+        </div>
+    </div>
+
+    <script>
+        function openDetail() {
+            document.getElementById('dayDetail').classList.add('open');
+            document.getElementById('overlay').classList.add('open');
+        }
+        
+        function closeDetail() {
+            document.getElementById('dayDetail').classList.remove('open');
+            document.getElementById('overlay').classList.remove('open');
+        }
+        
+        // Click any day to open detail
+        document.querySelectorAll('.calendar-day').forEach(day => {
+            day.addEventListener('click', openDetail);
+        });
+    </script>
+</body>
+</html>

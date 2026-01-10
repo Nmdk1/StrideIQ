@@ -16,6 +16,7 @@ from services.strava_pbs import sync_strava_best_efforts
 from services.athlete_metrics import calculate_athlete_derived_signals
 from services.personal_best import update_personal_best
 from services.pace_normalization import calculate_ngp_from_split
+from services.insight_aggregator import generate_insights_for_athlete
 # Helper functions (moved from routers.strava to avoid circular imports)
 def _coerce_int(x):
     """Coerce value to int, returning None if not possible."""
@@ -90,7 +91,7 @@ def _calculate_performance_metrics(activity, athlete, db):
         if confidence > 0:
             activity.is_race_candidate = is_race
             activity.race_confidence = confidence
-from sqlalchemy import func
+from sqlalchemy import func, desc
 import time
 import traceback
 
@@ -466,6 +467,22 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         except Exception as e:
             print(f"Warning: Could not sync Strava best efforts: {e}")
         
+        # Generate insights based on new activity
+        insights_generated = 0
+        try:
+            # Get the most recent activity for insight generation context
+            most_recent = (
+                db.query(Activity)
+                .filter(Activity.athlete_id == athlete.id)
+                .order_by(Activity.start_time.desc())
+                .first()
+            )
+            insights = generate_insights_for_athlete(db, athlete, most_recent, persist=True)
+            insights_generated = len(insights)
+            print(f"DEBUG: Generated {insights_generated} insights")
+        except Exception as e:
+            print(f"Warning: Could not generate insights: {e}")
+        
         return {
             "status": "success",
             "message": "Sync completed.",
@@ -473,6 +490,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             "updated_existing": updated_existing,
             "splits_backfilled": splits_backfilled,
             "strava_pbs": strava_pb_result,
+            "insights_generated": insights_generated,
         }
         
     except Exception as e:

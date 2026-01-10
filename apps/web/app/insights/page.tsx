@@ -1,577 +1,513 @@
 'use client';
 
 /**
- * Athlete Insights Page
+ * Insights Page - The "Brain View" of Your Training
  * 
- * Guided query interface for athletes to explore their own data.
- * Pre-built templates for common questions about performance,
- * training patterns, and trends.
+ * Proactive, personalized insights that answer "WHY" not just "WHAT".
+ * Three sections:
+ * 1. Active Insights - Auto-generated, ranked by importance
+ * 2. Build Status - Phase-aware KPIs and trajectory (if active plan)
+ * 3. Athlete Intelligence - What works for YOU (premium)
  */
 
 import React, { useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { useInsightTemplates, useExecuteInsight } from '@/lib/hooks/queries/insights';
+import { 
+  useActiveInsights, 
+  useBuildStatus, 
+  useAthleteIntelligence,
+  useDismissInsight,
+  useSaveInsight,
+  useGenerateInsights,
+} from '@/lib/hooks/queries/insights';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-} from 'recharts';
+import type { Insight, KPI } from '@/lib/api/services/insights';
 
-// Category colors
-const CATEGORY_COLORS: Record<string, string> = {
-  performance: '#f97316',
-  training: '#3b82f6',
-  conditions: '#22c55e',
-  physiology: '#a855f7',
-};
-
-// Chart colors
-const CHART_COLORS = ['#f97316', '#3b82f6', '#22c55e', '#a855f7', '#ec4899', '#eab308'];
-
-// Category icons
-const CATEGORY_ICONS: Record<string, string> = {
-  performance: '🏃',
-  training: '📊',
-  conditions: '🌡️',
-  physiology: '❤️',
+// Insight type styling
+const INSIGHT_STYLES: Record<string, { bg: string; border: string; icon: string }> = {
+  trend_alert: { 
+    bg: 'bg-blue-900/30', 
+    border: 'border-blue-700/50',
+    icon: '📈'
+  },
+  breakthrough: { 
+    bg: 'bg-emerald-900/30', 
+    border: 'border-emerald-700/50',
+    icon: '✨'
+  },
+  pattern_detection: { 
+    bg: 'bg-orange-900/30', 
+    border: 'border-orange-700/50',
+    icon: '🔍'
+  },
+  fatigue_warning: { 
+    bg: 'bg-red-900/30', 
+    border: 'border-red-700/50',
+    icon: '⚠️'
+  },
+  comparison: { 
+    bg: 'bg-purple-900/30', 
+    border: 'border-purple-700/50',
+    icon: '🔥'
+  },
+  phase_specific: { 
+    bg: 'bg-cyan-900/30', 
+    border: 'border-cyan-700/50',
+    icon: '💡'
+  },
+  injury_risk: { 
+    bg: 'bg-red-900/40', 
+    border: 'border-red-600/60',
+    icon: '🛡️'
+  },
+  achievement: { 
+    bg: 'bg-yellow-900/30', 
+    border: 'border-yellow-700/50',
+    icon: '🏆'
+  },
 };
 
 function InsightCard({ 
-  template, 
-  onClick, 
-  isSelected 
+  insight, 
+  onDismiss, 
+  onSave,
+  isPending,
 }: { 
-  template: any; 
-  onClick: () => void;
-  isSelected: boolean;
+  insight: Insight; 
+  onDismiss: () => void;
+  onSave: () => void;
+  isPending: boolean;
 }) {
-  const color = CATEGORY_COLORS[template.category] || '#6b7280';
+  const [saved, setSaved] = useState(false);
+  const style = INSIGHT_STYLES[insight.insight_type] || INSIGHT_STYLES.trend_alert;
+  
+  const handleSave = () => {
+    setSaved(true);
+    onSave();
+  };
   
   return (
-    <button
-      onClick={onClick}
-      disabled={!template.available}
-      className={`p-4 rounded-lg border text-left transition-all w-full ${
-        isSelected
-          ? 'bg-orange-900/30 border-orange-600'
-          : template.available
-            ? 'bg-gray-800 border-gray-700 hover:border-gray-500'
-            : 'bg-gray-800/50 border-gray-700/50 opacity-60 cursor-not-allowed'
-      }`}
-    >
-      <div className="flex items-center gap-2 mb-2">
-        <span>{CATEGORY_ICONS[template.category] || '📈'}</span>
-        <span className="font-medium">{template.name}</span>
-        {template.requires_premium && !template.available && (
-          <span className="ml-auto px-2 py-0.5 bg-yellow-900/50 text-yellow-400 text-xs rounded">
-            Premium
-          </span>
-        )}
+    <div className={`rounded-lg border p-5 ${style.bg} ${style.border} transition-all`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 flex-1">
+          <div className="text-xl mt-0.5">{style.icon}</div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs text-gray-500 uppercase tracking-wide">
+                {insight.insight_type.replace(/_/g, ' ')}
+              </span>
+              {insight.priority >= 80 && (
+                <span className="px-1.5 py-0.5 bg-orange-600 text-white text-xs rounded">
+                  HIGH
+                </span>
+              )}
+            </div>
+            <h3 className="font-semibold text-white mb-2">{insight.title}</h3>
+            <p className="text-gray-300 text-sm leading-relaxed">{insight.content}</p>
+            
+            {/* Data visualization if available */}
+            {insight.data && typeof insight.data.change_percent === 'number' && (
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-lg">
+                  {insight.data.change_percent > 0 ? '↑' : '↓'}
+                </span>
+                <span className={`text-sm font-medium ${
+                  insight.data.change_percent > 0 ? 'text-emerald-400' : 'text-red-400'
+                }`}>
+                  {Math.abs(insight.data.change_percent)}% {insight.data.change_percent > 0 ? 'improvement' : 'decline'}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-1">
+          <button 
+            onClick={handleSave}
+            disabled={isPending || saved}
+            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors text-lg"
+            title="Save to profile"
+          >
+            {saved ? '⭐' : '☆'}
+          </button>
+          <button 
+            onClick={onDismiss}
+            disabled={isPending}
+            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors text-lg"
+            title="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
       </div>
-      <p className="text-sm text-gray-400">{template.description}</p>
-    </button>
+    </div>
   );
 }
 
-function ResultsDisplay({ result }: { result: any }) {
-  const data = result.data;
+function KPICard({ kpi }: { kpi: KPI }) {
+  const trendColor = kpi.trend === 'up' ? 'text-emerald-400' : kpi.trend === 'down' ? 'text-red-400' : 'text-gray-400';
+  const trendIcon = kpi.trend === 'up' ? '↑' : kpi.trend === 'down' ? '↓' : null;
   
-  if (!data) {
-    return (
-      <div className="text-center text-gray-400 py-8">
-        No data available
-      </div>
-    );
-  }
-
-  // Render based on template type
-  const templateId = result.template_id;
-
-  // Efficiency Trend
-  if (templateId === 'efficiency_trend') {
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-3 gap-4">
-          <div className="bg-gray-700/50 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold">{data.count}</div>
-            <div className="text-sm text-gray-400">Activities</div>
-          </div>
-          <div className="bg-gray-700/50 rounded-lg p-4 text-center">
-            <div className={`text-2xl font-bold ${
-              data.trend === 'improving' ? 'text-green-400' :
-              data.trend === 'declining' ? 'text-red-400' : 'text-gray-400'
-            }`}>
-              {data.trend === 'improving' ? '↑' : data.trend === 'declining' ? '↓' : '→'}
-              {data.change_pct}%
-            </div>
-            <div className="text-sm text-gray-400">Change</div>
-          </div>
-          <div className="bg-gray-700/50 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold capitalize">{data.trend}</div>
-            <div className="text-sm text-gray-400">Trend</div>
-          </div>
-        </div>
-        
-        {data.activities && data.activities.length > 0 && (
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={data.activities}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis 
-                dataKey="start_time" 
-                stroke="#9CA3AF"
-                tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              />
-              <YAxis stroke="#9CA3AF" />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                labelFormatter={(v) => new Date(v).toLocaleDateString()}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="efficiency" 
-                stroke="#f97316" 
-                strokeWidth={2}
-                dot={{ r: 3 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-    );
-  }
-
-  // Workout Distribution
-  if (templateId === 'workout_distribution') {
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-gray-700/50 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold">{data.total_distance_km} km</div>
-            <div className="text-sm text-gray-400">Total Distance</div>
-          </div>
-          <div className="bg-gray-700/50 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold">{data.total_time_hours} hrs</div>
-            <div className="text-sm text-gray-400">Total Time</div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ResponsiveContainer width="100%" height={250}>
-            <PieChart>
-              <Pie
-                data={data.distribution}
-                dataKey="distance_km"
-                nameKey="workout_type"
-                cx="50%"
-                cy="50%"
-                outerRadius={80}
-                label={({ name, value }) => `${String(name || '').replace(/_/g, ' ')}: ${value}km`}
-              >
-                {data.distribution?.map((entry: any, idx: number) => (
-                  <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-
-          <div className="space-y-2">
-            {data.distribution?.map((item: any, idx: number) => (
-              <div key={idx} className="flex items-center justify-between p-2 bg-gray-700/30 rounded">
-                <div className="flex items-center gap-2">
-                  <div 
-                    className="w-3 h-3 rounded-full" 
-                    style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}
-                  />
-                  <span className="capitalize">{item.workout_type?.replace(/_/g, ' ')}</span>
-                </div>
-                <div className="text-sm text-gray-400">
-                  {item.count} runs • {item.distance_km} km
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Best Performances
-  if (templateId === 'best_performances') {
-    return (
-      <div className="space-y-4">
-        {data.performances?.map((perf: any, idx: number) => (
-          <div 
-            key={perf.id || idx} 
-            className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg"
-          >
-            <div className="flex items-center gap-4">
-              <div className={`text-2xl font-bold ${idx === 0 ? 'text-yellow-400' : 'text-gray-400'}`}>
-                #{idx + 1}
-              </div>
-              <div>
-                <div className="font-medium">{perf.name}</div>
-                <div className="text-sm text-gray-400">
-                  {new Date(perf.start_time).toLocaleDateString()} • {(perf.distance_m / 1000).toFixed(1)} km
-                </div>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-lg font-semibold text-orange-400">
-                {perf.efficiency?.toFixed(4)}
-              </div>
-              <div className="text-sm text-gray-400">efficiency</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  // Weather Impact
-  if (templateId === 'weather_impact') {
-    return (
-      <div className="space-y-6">
-        {data.best_conditions && (
-          <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-4 text-center">
-            <div className="text-lg font-semibold text-green-400">
-              Best Performance Conditions: {data.best_conditions}
-            </div>
-          </div>
-        )}
-        
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={data.by_temperature}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="range" stroke="#9CA3AF" />
-            <YAxis stroke="#9CA3AF" />
-            <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
-            <Bar dataKey="avg_efficiency" fill="#f97316" name="Avg Efficiency" />
-          </BarChart>
-        </ResponsiveContainer>
-        
-        <div className="text-sm text-gray-400 text-center">
-          Based on {data.total_activities} activities
-        </div>
-      </div>
-    );
-  }
-
-  // Weekly Volume
-  if (templateId === 'weekly_volume') {
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-gray-700/50 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold">{data.avg_weekly_distance_km} km</div>
-            <div className="text-sm text-gray-400">Avg Weekly Distance</div>
-          </div>
-          <div className="bg-gray-700/50 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold">{data.avg_weekly_time_hours} hrs</div>
-            <div className="text-sm text-gray-400">Avg Weekly Time</div>
-          </div>
-        </div>
-
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={data.weeks}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis 
-              dataKey="week" 
-              stroke="#9CA3AF" 
-              tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-            />
-            <YAxis stroke="#9CA3AF" />
-            <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
-            <Bar dataKey="distance_km" fill="#3b82f6" name="Distance (km)" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  }
-
-  // Heart Rate Analysis
-  if (templateId === 'heart_rate_zones') {
-    return (
-      <div className="space-y-6">
-        <div className="text-center text-sm text-gray-400">
-          Estimated Max HR: {data.estimated_max_hr} bpm
-        </div>
-        
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={data.distribution} layout="vertical">
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis type="number" stroke="#9CA3AF" />
-            <YAxis type="category" dataKey="zone" stroke="#9CA3AF" width={120} />
-            <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
-            <Bar dataKey="time_hours" fill="#a855f7" name="Time (hours)" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  }
-
-  // Personal Records
-  if (templateId === 'personal_records') {
-    return (
-      <div className="space-y-4">
-        {data.records?.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">
-            No personal records found yet. Keep running!
-          </div>
-        ) : (
-          data.records?.map((record: any, idx: number) => (
-            <div 
-              key={idx} 
-              className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg"
-            >
-              <div className="flex items-center gap-4">
-                <span className="text-2xl">🏆</span>
-                <div>
-                  <div className="font-medium">{record.distance}</div>
-                  <div className="text-sm text-gray-400">
-                    {record.date ? new Date(record.date).toLocaleDateString() : 'Unknown date'}
-                  </div>
-                </div>
-              </div>
-              <div className="text-xl font-bold text-orange-400">
-                {record.time_formatted}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    );
-  }
-
-  // Consistency Score
-  if (templateId === 'consistency_score') {
-    const scoreColor = 
-      data.score >= 80 ? 'text-green-400' :
-      data.score >= 60 ? 'text-blue-400' :
-      data.score >= 40 ? 'text-yellow-400' : 'text-red-400';
-
-    return (
-      <div className="space-y-6">
-        <div className="text-center">
-          <div className={`text-6xl font-bold ${scoreColor}`}>{data.score}</div>
-          <div className="text-xl font-semibold mt-2">{data.rating}</div>
-          <div className="text-gray-400 mt-1">{data.message}</div>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-gray-700/50 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold">{data.avg_runs_per_week}</div>
-            <div className="text-sm text-gray-400">Avg Runs/Week</div>
-          </div>
-          <div className="bg-gray-700/50 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold">{data.avg_km_per_week} km</div>
-            <div className="text-sm text-gray-400">Avg km/Week</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Default: Show raw data
   return (
-    <div className="bg-gray-700/30 rounded p-4">
-      <pre className="text-xs overflow-x-auto max-h-96">
-        {JSON.stringify(data, null, 2)}
-      </pre>
+    <div className="bg-gray-800/50 rounded-lg border border-gray-700 p-4">
+      <div className="text-sm text-gray-400 mb-1">{kpi.name}</div>
+      <div className="flex items-end gap-2">
+        <span className="text-2xl font-bold text-white">{kpi.current_value || '—'}</span>
+        {trendIcon && <span className={`text-lg ${trendColor} mb-1`}>{trendIcon}</span>}
+      </div>
+      {kpi.start_value && (
+        <div className="text-xs text-gray-500 mt-1">
+          from {kpi.start_value} at build start
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActiveInsightsSection() {
+  const { data, isLoading, error } = useActiveInsights(10);
+  const dismissMutation = useDismissInsight();
+  const saveMutation = useSaveInsight();
+  const generateMutation = useGenerateInsights();
+  
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="text-center py-12 text-red-400">
+        Error loading insights. Please try again.
+      </div>
+    );
+  }
+  
+  const hasInsights = data?.insights && data.insights.length > 0;
+  
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <span className="text-2xl">🔥</span>
+            Active Insights
+          </h2>
+          <p className="text-gray-400 text-sm mt-1">
+            Auto-generated from your recent training
+          </p>
+        </div>
+        <button
+          onClick={() => generateMutation.mutate()}
+          disabled={generateMutation.isPending}
+          className="px-4 py-2 bg-gray-800 border border-gray-700 hover:border-gray-600 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          {generateMutation.isPending ? 'Generating...' : 'Refresh'}
+        </button>
+      </div>
+      
+      {data?.premium_locked && data.premium_locked > 0 && (
+        <div className="bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-700/50 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-purple-300 font-medium">
+                {data.premium_locked} more insights available
+              </span>
+              <span className="text-gray-400 text-sm ml-2">
+                Upgrade to see causal attribution, pattern detection, and more
+              </span>
+            </div>
+            <a 
+              href="/settings" 
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-sm font-medium"
+            >
+              Upgrade
+            </a>
+          </div>
+        </div>
+      )}
+      
+      {hasInsights ? (
+        <div className="space-y-4">
+          {data.insights.map((insight) => (
+            <InsightCard
+              key={insight.id}
+              insight={insight}
+              onDismiss={() => dismissMutation.mutate(insight.id)}
+              onSave={() => saveMutation.mutate(insight.id)}
+              isPending={dismissMutation.isPending || saveMutation.isPending}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12 bg-gray-800/50 rounded-lg border border-gray-700">
+          <div className="text-5xl mb-4">✨</div>
+          <h3 className="text-lg font-medium text-gray-300 mb-2">No active insights yet</h3>
+          <p className="text-gray-500 max-w-md mx-auto">
+            Insights are generated when you sync activities. 
+            Keep training and we&apos;ll surface patterns and trends.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BuildStatusSection() {
+  const { data, isLoading } = useBuildStatus();
+  
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-8">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+  
+  if (!data?.has_active_plan) {
+    return (
+      <div className="bg-gray-800/50 rounded-lg border border-gray-700 p-6 text-center">
+        <div className="text-4xl mb-3">📊</div>
+        <h3 className="text-lg font-medium text-gray-300 mb-2">No active training plan</h3>
+        <p className="text-gray-500 text-sm mb-4">
+          Start a training plan to see KPIs, trajectory, and phase context.
+        </p>
+        <a 
+          href="/plans" 
+          className="inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors"
+        >
+          Browse Plans
+        </a>
+      </div>
+    );
+  }
+  
+  const progressPercent = data.progress_percent || 0;
+  
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <span className="text-2xl">📊</span>
+          Build Status
+        </h2>
+        <p className="text-gray-400 text-sm mt-1">
+          {data.plan_name}
+        </p>
+      </div>
+      
+      {/* Progress bar */}
+      <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-gray-400">
+            Week {data.current_week} of {data.total_weeks}
+          </span>
+          {data.days_to_race && (
+            <span className="text-sm font-medium text-orange-400">
+              {data.days_to_race} days to race
+            </span>
+          )}
+        </div>
+        <div className="h-3 bg-gray-700 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-gradient-to-r from-blue-600 to-blue-400 rounded-full transition-all duration-500"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+        {data.current_phase && (
+          <div className="mt-2 text-sm">
+            <span className="text-gray-500">Phase:</span>{' '}
+            <span className="text-white font-medium">{data.current_phase}</span>
+          </div>
+        )}
+      </div>
+      
+      {/* KPIs */}
+      {data.kpis && data.kpis.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {data.kpis.map((kpi, idx) => (
+            <KPICard key={idx} kpi={kpi} />
+          ))}
+        </div>
+      )}
+      
+      {/* Race projection */}
+      {data.projected_time && (
+        <div className="bg-emerald-900/20 border border-emerald-700/50 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm text-emerald-400 font-medium">Race Projection</span>
+            {data.confidence && (
+              <span className={`px-2 py-0.5 rounded text-xs ${
+                data.confidence === 'high' ? 'bg-emerald-600' :
+                data.confidence === 'medium' ? 'bg-yellow-600' : 'bg-gray-600'
+              }`}>
+                {data.confidence.toUpperCase()}
+              </span>
+            )}
+          </div>
+          <div className="text-2xl font-bold text-white">{data.projected_time}</div>
+          {data.goal_race_name && (
+            <div className="text-sm text-gray-400 mt-1">{data.goal_race_name}</div>
+          )}
+        </div>
+      )}
+      
+      {/* This week's focus */}
+      {data.week_focus && (
+        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+          <div className="text-sm text-gray-400 mb-1">This Week&apos;s Focus</div>
+          <p className="text-white">{data.week_focus}</p>
+          {data.key_session && (
+            <div className="mt-2 text-sm">
+              <span className="text-gray-500">Key Session:</span>{' '}
+              <span className="text-orange-400 font-medium">{data.key_session}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AthleteIntelligenceSection() {
+  const { data, isLoading, error } = useAthleteIntelligence();
+  
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-8">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+  
+  if (error) {
+    // Premium-gated
+    return (
+      <div className="bg-gradient-to-r from-purple-900/20 to-pink-900/20 border border-purple-700/50 rounded-lg p-6 text-center">
+        <div className="text-4xl mb-3">💡</div>
+        <h3 className="text-lg font-medium text-white mb-2">Athlete Intelligence</h3>
+        <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
+          See what works for YOU — patterns, injury signals, and personalized insights 
+          from your training history.
+        </p>
+        <a 
+          href="/settings" 
+          className="inline-block px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-sm font-medium transition-colors"
+        >
+          Upgrade to Premium
+        </a>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <span className="text-2xl">💡</span>
+          Athlete Intelligence
+        </h2>
+        <p className="text-gray-400 text-sm mt-1">
+          What we&apos;ve learned about YOU from your data
+        </p>
+      </div>
+      
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* What Works */}
+        <div className="bg-emerald-900/20 border border-emerald-700/50 rounded-lg p-5">
+          <h3 className="font-semibold text-emerald-400 mb-3 flex items-center gap-2">
+            <span className="text-lg">✅</span> What Works For You
+          </h3>
+          {data?.what_works && data.what_works.length > 0 ? (
+            <ul className="space-y-2">
+              {data.what_works.map((item, idx) => (
+                <li key={idx} className="text-gray-300 text-sm flex items-start gap-2">
+                  <span className="text-emerald-500 mt-0.5">•</span>
+                  {item.text}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500 text-sm">Still learning...</p>
+          )}
+        </div>
+        
+        {/* What Doesn't Work */}
+        <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-5">
+          <h3 className="font-semibold text-red-400 mb-3 flex items-center gap-2">
+            <span className="text-lg">❌</span> What Doesn&apos;t Work
+          </h3>
+          {data?.what_doesnt && data.what_doesnt.length > 0 ? (
+            <ul className="space-y-2">
+              {data.what_doesnt.map((item, idx) => (
+                <li key={idx} className="text-gray-300 text-sm flex items-start gap-2">
+                  <span className="text-red-500 mt-0.5">•</span>
+                  {item.text}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500 text-sm">No negative patterns detected yet</p>
+          )}
+        </div>
+      </div>
+      
+      {/* Injury Patterns */}
+      {data?.injury_patterns && data.injury_patterns.length > 0 && (
+        <div className="bg-orange-900/20 border border-orange-700/50 rounded-lg p-5">
+          <h3 className="font-semibold text-orange-400 mb-3 flex items-center gap-2">
+            <span className="text-lg">🛡️</span>
+            Injury Risk Patterns
+          </h3>
+          <ul className="space-y-2">
+            {data.injury_patterns.map((item, idx) => (
+              <li key={idx} className="text-gray-300 text-sm flex items-start gap-2">
+                <span className="text-orange-500 mt-0.5">⚠</span>
+                {item.text}
+                <span className="text-gray-500 text-xs ml-1">
+                  (from {item.source === 'n1' ? 'your history' : 'population data'})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function InsightsPage() {
-  const { data: templatesData, isLoading: templatesLoading } = useInsightTemplates();
-  const executeInsight = useExecuteInsight();
-  
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [days, setDays] = useState(90);
-  const [weeks, setWeeks] = useState(12);
-  const [limit, setLimit] = useState(10);
-  const [result, setResult] = useState<any>(null);
-
-  const handleExecute = async () => {
-    if (!selectedTemplate) return;
-    
-    const template = templatesData?.templates.find(t => t.id === selectedTemplate);
-    if (!template) return;
-
-    const params: any = { templateId: selectedTemplate };
-    if (template.params.includes('days')) params.days = days;
-    if (template.params.includes('weeks')) params.weeks = weeks;
-    if (template.params.includes('limit')) params.limit = limit;
-
-    const res = await executeInsight.mutateAsync(params);
-    setResult(res);
-  };
-
-  // Group templates by category
-  const groupedTemplates = templatesData?.templates.reduce((acc, t) => {
-    if (!acc[t.category]) acc[t.category] = [];
-    acc[t.category].push(t);
-    return acc;
-  }, {} as Record<string, typeof templatesData.templates>);
-
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
-        <div className="max-w-6xl mx-auto px-4">
+        <div className="max-w-4xl mx-auto px-4">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold mb-2">📊 Insights</h1>
+            <h1 className="text-3xl font-bold mb-2">🧠 Insights</h1>
             <p className="text-gray-400">
-              Explore your training data with guided queries
+              What your training is telling you — personalized, proactive, actionable
             </p>
-            {templatesData && !templatesData.is_premium && (
-              <div className="mt-2 inline-block px-3 py-1 bg-yellow-900/30 border border-yellow-700/50 rounded text-sm text-yellow-400">
-                Upgrade to Premium for all insights
-              </div>
-            )}
           </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Templates Sidebar */}
-            <div className="lg:col-span-1 space-y-6">
-              {templatesLoading ? (
-                <div className="flex justify-center py-8">
-                  <LoadingSpinner />
-                </div>
-              ) : groupedTemplates && Object.entries(groupedTemplates).map(([category, templates]) => (
-                <div key={category} className="space-y-2">
-                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-2">
-                    {CATEGORY_ICONS[category]} {category}
-                  </h3>
-                  <div className="space-y-2">
-                    {templates.map((t) => (
-                      <InsightCard
-                        key={t.id}
-                        template={t}
-                        isSelected={selectedTemplate === t.id}
-                        onClick={() => setSelectedTemplate(t.id)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Results Panel */}
-            <div className="lg:col-span-2">
-              {selectedTemplate ? (
-                <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                  {/* Parameters */}
-                  <div className="flex flex-wrap gap-4 mb-6 pb-6 border-b border-gray-700">
-                    {templatesData?.templates.find(t => t.id === selectedTemplate)?.params.includes('days') && (
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Days</label>
-                        <select
-                          value={days}
-                          onChange={(e) => setDays(parseInt(e.target.value))}
-                          className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
-                        >
-                          <option value={30}>30 days</option>
-                          <option value={60}>60 days</option>
-                          <option value={90}>90 days</option>
-                          <option value={180}>180 days</option>
-                          <option value={365}>1 year</option>
-                        </select>
-                      </div>
-                    )}
-                    {templatesData?.templates.find(t => t.id === selectedTemplate)?.params.includes('weeks') && (
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Weeks</label>
-                        <select
-                          value={weeks}
-                          onChange={(e) => setWeeks(parseInt(e.target.value))}
-                          className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
-                        >
-                          <option value={4}>4 weeks</option>
-                          <option value={8}>8 weeks</option>
-                          <option value={12}>12 weeks</option>
-                          <option value={26}>26 weeks</option>
-                          <option value={52}>52 weeks</option>
-                        </select>
-                      </div>
-                    )}
-                    {templatesData?.templates.find(t => t.id === selectedTemplate)?.params.includes('limit') && (
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Show Top</label>
-                        <select
-                          value={limit}
-                          onChange={(e) => setLimit(parseInt(e.target.value))}
-                          className="px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
-                        >
-                          <option value={5}>5</option>
-                          <option value={10}>10</option>
-                          <option value={20}>20</option>
-                        </select>
-                      </div>
-                    )}
-                    <div className="flex items-end">
-                      <button
-                        onClick={handleExecute}
-                        disabled={executeInsight.isPending}
-                        className="px-6 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-700 rounded font-medium"
-                      >
-                        {executeInsight.isPending ? 'Loading...' : 'Run Insight'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Results */}
-                  {executeInsight.isPending && (
-                    <div className="flex justify-center py-12">
-                      <LoadingSpinner size="lg" />
-                    </div>
-                  )}
-
-                  {executeInsight.isError && (
-                    <div className="bg-red-900/30 border border-red-700 rounded-lg p-4 text-red-400">
-                      {executeInsight.error.message}
-                    </div>
-                  )}
-
-                  {result && !executeInsight.isPending && (
-                    <div>
-                      <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-semibold">{result.template_name}</h3>
-                        <span className="text-sm text-gray-400">
-                          {result.execution_time_ms}ms
-                        </span>
-                      </div>
-                      <ResultsDisplay result={result} />
-                    </div>
-                  )}
-
-                  {!result && !executeInsight.isPending && (
-                    <div className="text-center py-12 text-gray-400">
-                      <p>Click &ldquo;Run Insight&rdquo; to see your data</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="bg-gray-800 rounded-lg border border-gray-700 p-12 text-center">
-                  <div className="text-5xl mb-4">📊</div>
-                  <h2 className="text-xl font-semibold mb-2">Select an Insight</h2>
-                  <p className="text-gray-400">
-                    Choose a query from the left to explore your training data
-                  </p>
-                </div>
-              )}
-            </div>
+          
+          {/* Three sections */}
+          <div className="space-y-12">
+            {/* Section 1: Active Insights */}
+            <section>
+              <ActiveInsightsSection />
+            </section>
+            
+            {/* Section 2: Build Status */}
+            <section>
+              <BuildStatusSection />
+            </section>
+            
+            {/* Section 3: Athlete Intelligence */}
+            <section>
+              <AthleteIntelligenceSection />
+            </section>
           </div>
         </div>
       </div>
