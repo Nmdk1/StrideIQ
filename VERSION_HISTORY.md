@@ -1,5 +1,44 @@
 # Version History
 
+## Version 0.9.0 - Stable Beta Release (2026-01-10)
+
+### Stability Checkpoint
+
+This release marks the first fully-tested stable version of StrideIQ. All 15 core API endpoints pass comprehensive testing.
+
+### Key Changes
+
+**1. Tiered Confidence System**
+- Replaced binary Granger significance with graceful degradation
+- Tiers: STATISTICAL → PATTERN → TREND → EARLY_SIGNAL
+- Now provides insights even with limited data
+
+**2. Simple Pattern Matching**
+- New endpoint: `GET /v1/causal/simple-patterns`
+- Compares best 20% runs vs worst 20% runs
+- No statistical testing required—works with just 10+ runs
+
+**3. Bug Fixes**
+- Fixed timezone-aware datetime comparison in recovery metrics
+- Fixed SQLAlchemy property vs column confusion in activity analysis
+- Fixed route ordering for `/athletes/me` endpoint
+- Made `athlete_id` optional in body composition (defaults to current user)
+
+### Test Results
+```
+=== RESULTS: 15 PASSED, 0 FAILED ===
+```
+
+### Files Changed
+- `causal_attribution.py` - Tiered confidence system
+- `causal.py` - Simple patterns endpoint
+- `recovery_metrics.py` - Datetime fix
+- `activity_analysis.py` - Property/column fix
+- `v1.py` - Route ordering fix
+- `body_composition.py` - Optional athlete_id
+
+---
+
 ## Version 3.18.0 - Causal Attribution Engine & IP Protection (2026-01-10)
 
 ### The Moat Phase: Engineering the Intelligence
