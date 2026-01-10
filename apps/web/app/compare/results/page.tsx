@@ -14,8 +14,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { useAnalyzeAttribution } from '@/lib/hooks/queries/attribution';
-import type { PerformanceDriver, AttributionResult } from '@/lib/api/services/attribution';
+import { useAnalyzePatterns } from '@/lib/hooks/queries/patterns';
+import type { PatternAnalysisResult, PatternInsight, FatigueContext } from '@/lib/api/services/patterns';
 import {
   LineChart,
   Line,
@@ -522,21 +522,109 @@ function OverlayChart({
 }
 
 // =============================================================================
-// WHY SECTION (KEY DRIVERS)
+// WHY SECTION (PATTERN RECOGNITION)
 // =============================================================================
 
+function PatternInsightCard({ pattern }: { pattern: PatternInsight }) {
+  const bgClass = pattern.direction === 'higher' 
+    ? 'bg-emerald-900/20 border-emerald-800/50' 
+    : pattern.direction === 'lower'
+      ? 'bg-rose-900/20 border-rose-800/50'
+      : 'bg-gray-800/50 border-gray-700/50';
+  
+  return (
+    <div className={`p-4 rounded-lg border ${bgClass}`}>
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">{pattern.icon}</span>
+          <span className="font-semibold text-white">{pattern.display_name}</span>
+        </div>
+        <span className={`text-xs px-2 py-0.5 rounded-full ${
+          pattern.confidence === 'high' 
+            ? 'bg-emerald-900/50 text-emerald-400' 
+            : pattern.confidence === 'moderate'
+              ? 'bg-amber-900/50 text-amber-400'
+              : 'bg-gray-700 text-gray-400'
+        }`}>
+          {pattern.confidence}
+        </span>
+      </div>
+      
+      <div className="text-sm text-gray-300 mb-2">
+        <span className="text-gray-400">Pattern:</span> {pattern.pattern_value}
+        <span className="mx-2">→</span>
+        <span className="text-gray-400">Today:</span>{' '}
+        <span className={pattern.direction === 'higher' ? 'text-emerald-400' : pattern.direction === 'lower' ? 'text-rose-400' : 'text-white'}>
+          {pattern.current_value}
+        </span>
+      </div>
+      
+      <p className="text-sm text-gray-400">{pattern.insight}</p>
+      
+      <div className="mt-2 text-xs text-gray-500">
+        Seen in {pattern.consistency_str}
+      </div>
+    </div>
+  );
+}
+
+function FatigueCard({ fatigue }: { fatigue: FatigueContext }) {
+  const phaseColors: Record<string, string> = {
+    taper: 'text-emerald-400 bg-emerald-900/30 border-emerald-700/50',
+    recovery: 'text-blue-400 bg-blue-900/30 border-blue-700/50',
+    steady: 'text-gray-300 bg-gray-800/50 border-gray-700/50',
+    build: 'text-amber-400 bg-amber-900/30 border-amber-700/50',
+    overreaching: 'text-rose-400 bg-rose-900/30 border-rose-700/50',
+  };
+  
+  const colorClass = phaseColors[fatigue.phase] || phaseColors.steady;
+  
+  return (
+    <div className={`p-4 rounded-lg border ${colorClass}`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">⚡</span>
+          <span className="font-semibold">Training Load</span>
+        </div>
+        <span className="text-lg font-bold">
+          {fatigue.phase.charAt(0).toUpperCase() + fatigue.phase.slice(1)}
+        </span>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
+        <div>
+          <div className="text-gray-400">ACWR</div>
+          <div className="text-white font-medium">{fatigue.acwr.toFixed(2)}</div>
+        </div>
+        <div>
+          <div className="text-gray-400">7d Load</div>
+          <div className="text-white font-medium">{fatigue.acute_load_km.toFixed(1)}km</div>
+        </div>
+      </div>
+      
+      <p className="text-sm text-gray-300">{fatigue.explanation}</p>
+      
+      {fatigue.fatigue_delta && (
+        <p className="text-sm text-gray-400 mt-2 pt-2 border-t border-gray-700">
+          {fatigue.fatigue_delta}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function WhySection({ 
-  attribution, 
+  patterns, 
   isLoading 
 }: { 
-  attribution: AttributionResult | null; 
+  patterns: PatternAnalysisResult | null; 
   isLoading: boolean;
 }) {
   if (isLoading) {
     return (
       <div className="bg-gradient-to-br from-indigo-900/30 to-purple-900/20 rounded-xl border border-indigo-700/50 p-6">
         <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-          🔍 Analyzing the WHY...
+          🔍 Analyzing Patterns...
         </h3>
         <div className="flex justify-center py-8">
           <LoadingSpinner size="md" />
@@ -545,91 +633,95 @@ function WhySection({
     );
   }
 
-  if (!attribution || attribution.key_drivers.length === 0) {
-    return (
-      <div className="bg-gradient-to-br from-gray-800/60 to-gray-900/40 rounded-xl border border-gray-700 p-6">
-        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-          🔍 The WHY
-        </h3>
-        <p className="text-gray-400">
-          Not enough training input data to determine drivers. 
-          Log sleep, check-ins, and body composition to unlock insights.
-        </p>
-      </div>
-    );
-  }
-
-  const positiveDrivers = attribution.key_drivers.filter(d => d.direction === 'positive');
-  const negativeDrivers = attribution.key_drivers.filter(d => d.direction === 'negative');
-  const neutralDrivers = attribution.key_drivers.filter(d => d.direction === 'neutral');
+  const hasPatterns = patterns && (
+    patterns.prerequisites.length > 0 || 
+    patterns.deviations.length > 0 || 
+    patterns.common_factors.length > 0
+  );
 
   return (
     <div className="bg-gradient-to-br from-indigo-900/30 to-purple-900/20 rounded-xl border border-indigo-700/50 p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-xl font-bold text-white flex items-center gap-2">
-          🔍 The WHY
+          🔍 The WHY (Pattern Recognition)
         </h3>
-        <span className={`text-xs px-3 py-1 rounded-full ${
-          attribution.overall_confidence === 'high' 
-            ? 'bg-emerald-900/50 text-emerald-400 border border-emerald-700' 
-            : attribution.overall_confidence === 'moderate'
-              ? 'bg-amber-900/50 text-amber-400 border border-amber-700'
-              : 'bg-gray-700 text-gray-400 border border-gray-600'
-        }`}>
-          {attribution.overall_confidence} confidence
-        </span>
-      </div>
-
-      {/* Summaries */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        {attribution.summary_positive && (
-          <div className="bg-emerald-900/30 border border-emerald-700/50 rounded-lg p-4">
-            <div className="text-emerald-400 font-bold mb-1">↑ Helped</div>
-            <p className="text-gray-200">{attribution.summary_positive}</p>
-          </div>
-        )}
-        {attribution.summary_negative && (
-          <div className="bg-rose-900/30 border border-rose-700/50 rounded-lg p-4">
-            <div className="text-rose-400 font-bold mb-1">↓ Potential Drags</div>
-            <p className="text-gray-200">{attribution.summary_negative}</p>
-          </div>
+        {patterns && (
+          <span className="text-xs px-3 py-1 rounded-full bg-gray-700/50 text-gray-300">
+            {(patterns.overall_data_quality * 100).toFixed(0)}% data coverage
+          </span>
         )}
       </div>
 
-      {/* Driver Pills */}
-      <div className="space-y-3">
-        {attribution.key_drivers.slice(0, 4).map((driver, idx) => (
-          <div 
-            key={idx}
-            className={`flex items-center gap-4 p-3 rounded-lg ${
-              driver.direction === 'positive' 
-                ? 'bg-emerald-900/20 border border-emerald-800/50' 
-                : driver.direction === 'negative'
-                  ? 'bg-rose-900/20 border border-rose-800/50'
-                  : 'bg-gray-800/50 border border-gray-700/50'
-            }`}
-          >
-            <span className="text-2xl">{driver.icon}</span>
-            <div className="flex-1">
-              <div className="font-medium text-white">{driver.name}</div>
-              <div className="text-sm text-gray-400">{driver.insight}</div>
-            </div>
-            <div className={`text-lg font-bold ${
-              driver.direction === 'positive' 
-                ? 'text-emerald-400' 
-                : driver.direction === 'negative'
-                  ? 'text-rose-400'
-                  : 'text-gray-300'
-            }`}>
-              {driver.magnitude}
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Fatigue Context */}
+      {patterns?.fatigue && (
+        <div className="mb-6">
+          <FatigueCard fatigue={patterns.fatigue} />
+        </div>
+      )}
 
-      <p className="text-xs text-gray-500 mt-4">
-        Based on {attribution.data_quality_score * 100}% data coverage from trailing 4 weeks
-      </p>
+      {/* Deviations - Most important! */}
+      {patterns?.deviations && patterns.deviations.length > 0 && (
+        <div className="mb-6">
+          <h4 className="text-lg font-semibold text-rose-400 mb-3 flex items-center gap-2">
+            ⚠️ Deviations from Pattern
+          </h4>
+          <div className="space-y-3">
+            {patterns.deviations.map((pattern, idx) => (
+              <PatternInsightCard key={idx} pattern={pattern} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Prerequisites */}
+      {patterns?.prerequisites && patterns.prerequisites.length > 0 && (
+        <div className="mb-6">
+          <h4 className="text-lg font-semibold text-emerald-400 mb-3 flex items-center gap-2">
+            ✓ Prerequisites (True for 80%+ runs)
+          </h4>
+          <div className="space-y-3">
+            {patterns.prerequisites.map((pattern, idx) => (
+              <PatternInsightCard key={idx} pattern={pattern} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Common Factors */}
+      {patterns?.common_factors && patterns.common_factors.length > 0 && (
+        <div className="mb-6">
+          <h4 className="text-lg font-semibold text-amber-400 mb-3 flex items-center gap-2">
+            ~ Common Factors (60-80%)
+          </h4>
+          <div className="space-y-3">
+            {patterns.common_factors.map((pattern, idx) => (
+              <PatternInsightCard key={idx} pattern={pattern} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* No patterns found */}
+      {!hasPatterns && patterns && (
+        <div className="text-center py-8">
+          <p className="text-gray-400 mb-2">
+            No strong patterns identified with these comparison runs.
+          </p>
+          <p className="text-sm text-gray-500">
+            Try selecting more similar runs, or log more check-in data.
+          </p>
+          {patterns.data_quality_notes.map((note, idx) => (
+            <p key={idx} className="text-xs text-gray-600 mt-1">{note}</p>
+          ))}
+        </div>
+      )}
+
+      {/* No data at all */}
+      {!patterns && (
+        <p className="text-gray-400">
+          Select runs to compare and analyze patterns.
+        </p>
+      )}
     </div>
   );
 }
@@ -641,11 +733,11 @@ function WhySection({
 export default function CompareResultsPage() {
   const router = useRouter();
   const [comparisonData, setComparisonData] = useState<ComparisonResult | null>(null);
-  const [attributionData, setAttributionData] = useState<AttributionResult | null>(null);
+  const [patternData, setPatternData] = useState<PatternAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
-  const [attributionLoading, setAttributionLoading] = useState(false);
+  const [patternLoading, setPatternLoading] = useState(false);
   
-  const analyzeAttributionMutation = useAnalyzeAttribution();
+  const analyzePatternsMutation = useAnalyzePatterns();
 
   // Load comparison data from sessionStorage
   useEffect(() => {
@@ -660,29 +752,27 @@ export default function CompareResultsPage() {
     setLoading(false);
   }, []);
 
-  // Fetch attribution once comparison data is loaded
+  // Fetch pattern analysis once comparison data is loaded
   useEffect(() => {
     if (!comparisonData) return;
+    if (comparisonData.similar_runs.length < 2) return;
     
-    const fetchAttribution = async () => {
-      setAttributionLoading(true);
+    const fetchPatterns = async () => {
+      setPatternLoading(true);
       try {
-        const result = await analyzeAttributionMutation.mutateAsync({
+        const result = await analyzePatternsMutation.mutateAsync({
           currentActivityId: comparisonData.target_run.id,
-          baselineActivityIds: comparisonData.similar_runs.map(r => r.id),
-          performanceDelta: comparisonData.performance_score?.pace_vs_baseline,
+          comparisonActivityIds: comparisonData.similar_runs.map(r => r.id),
         });
-        if (result.success && result.data) {
-          setAttributionData(result.data);
-        }
+        setPatternData(result);
       } catch (e) {
-        console.error('Failed to fetch attribution:', e);
+        console.error('Failed to fetch patterns:', e);
       } finally {
-        setAttributionLoading(false);
+        setPatternLoading(false);
       }
     };
     
-    fetchAttribution();
+    fetchPatterns();
   }, [comparisonData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Combine all runs
@@ -803,11 +893,11 @@ export default function CompareResultsPage() {
             </div>
           </section>
 
-          {/* Section 3: The WHY */}
+          {/* Section 3: The WHY (Pattern Recognition) */}
           <section className="mb-8">
             <WhySection 
-              attribution={attributionData} 
-              isLoading={attributionLoading} 
+              patterns={patternData} 
+              isLoading={patternLoading} 
             />
           </section>
 
