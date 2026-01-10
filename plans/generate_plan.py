@@ -21,6 +21,7 @@ WORKOUT_COLORS = {
     "long": {"bg": "#1d9bf0", "text": "#fff"},
     "long_mp": {"bg": "#f91880", "text": "#fff"},
     "medium_long": {"bg": "#38bdf8", "text": "#000"},
+    "medium_long_mp": {"bg": "#c026d3", "text": "#fff"},
     "threshold": {"bg": "#ff7a00", "text": "#000"},
     "threshold_light": {"bg": "#ff9a40", "text": "#000"},
     "threshold_short": {"bg": "#ff9a40", "text": "#000"},
