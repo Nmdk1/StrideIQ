@@ -155,25 +155,46 @@ export default function ComparePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [baselineId, setBaselineId] = useState<string | null>(null);
   
-  // Filters
-  const [minHR, setMinHR] = useState<string>('');
-  const [maxHR, setMaxHR] = useState<string>('');
+  // Filters - Average HR
+  const [minAvgHR, setMinAvgHR] = useState<string>('');
+  const [maxAvgHR, setMaxAvgHR] = useState<string>('');
+  // Filters - Max HR
+  const [minMaxHR, setMinMaxHR] = useState<string>('');
+  const [maxMaxHR, setMaxMaxHR] = useState<string>('');
   
   const { data: activities, isLoading } = useActivities({ limit: showAll ? 100 : 20 });
   const { formatDistance, formatPace } = useUnits();
   const compareSelectedMutation = useCompareSelected();
+  
+  // Check if any HR filter is active
+  const hasAvgHRFilter = minAvgHR || maxAvgHR;
+  const hasMaxHRFilter = minMaxHR || maxMaxHR;
   
   // Filter activities by HR
   const filteredActivities = useMemo(() => {
     if (!activities) return [];
     
     return activities.filter((a: any) => {
-      const hr = a.average_heartrate ?? a.avg_hr;
-      if (minHR && hr && hr < parseInt(minHR)) return false;
-      if (maxHR && hr && hr > parseInt(maxHR)) return false;
+      const avgHr = a.average_heartrate ?? a.avg_hr;
+      const maxHr = a.max_hr;
+      
+      // If filtering by avg HR, exclude runs without avg HR data
+      if (hasAvgHRFilter) {
+        if (!avgHr) return false; // No HR data = exclude
+        if (minAvgHR && avgHr < parseInt(minAvgHR)) return false;
+        if (maxAvgHR && avgHr > parseInt(maxAvgHR)) return false;
+      }
+      
+      // If filtering by max HR, exclude runs without max HR data
+      if (hasMaxHRFilter) {
+        if (!maxHr) return false; // No max HR data = exclude
+        if (minMaxHR && maxHr < parseInt(minMaxHR)) return false;
+        if (maxMaxHR && maxHr > parseInt(maxMaxHR)) return false;
+      }
+      
       return true;
     });
-  }, [activities, minHR, maxHR]);
+  }, [activities, minAvgHR, maxAvgHR, minMaxHR, maxMaxHR, hasAvgHRFilter, hasMaxHRFilter]);
   
   const toggleSelection = (id: string) => {
     const newSet = new Set(selectedIds);
@@ -255,31 +276,59 @@ export default function ComparePage() {
                 </button>
               </div>
               
-              {/* HR Filter */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-400">Avg HR:</span>
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={minHR}
-                  onChange={(e) => setMinHR(e.target.value)}
-                  className="w-20 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
-                />
-                <span className="text-gray-500">-</span>
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={maxHR}
-                  onChange={(e) => setMaxHR(e.target.value)}
-                  className="w-20 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
-                />
-                <span className="text-sm text-gray-500">bpm</span>
-                {(minHR || maxHR) && (
+              {/* HR Filters */}
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Avg HR Filter */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400">Avg HR:</span>
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    value={minAvgHR}
+                    onChange={(e) => setMinAvgHR(e.target.value)}
+                    className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                  />
+                  <span className="text-gray-500">-</span>
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    value={maxAvgHR}
+                    onChange={(e) => setMaxAvgHR(e.target.value)}
+                    className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+                
+                {/* Max HR Filter */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400">Max HR:</span>
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    value={minMaxHR}
+                    onChange={(e) => setMinMaxHR(e.target.value)}
+                    className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                  />
+                  <span className="text-gray-500">-</span>
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    value={maxMaxHR}
+                    onChange={(e) => setMaxMaxHR(e.target.value)}
+                    className="w-16 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+                
+                {(hasAvgHRFilter || hasMaxHRFilter) && (
                   <button
-                    onClick={() => { setMinHR(''); setMaxHR(''); }}
-                    className="text-xs text-gray-400 hover:text-white"
+                    onClick={() => { 
+                      setMinAvgHR(''); 
+                      setMaxAvgHR(''); 
+                      setMinMaxHR(''); 
+                      setMaxMaxHR(''); 
+                    }}
+                    className="text-xs text-orange-400 hover:text-orange-300"
                   >
-                    Clear
+                    Clear filters
                   </button>
                 )}
               </div>
@@ -360,7 +409,7 @@ export default function ComparePage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">
                 {filteredActivities.length} runs
-                {(minHR || maxHR) && ' (filtered)'}
+                {(hasAvgHRFilter || hasMaxHRFilter) && ' (filtered)'}
               </h2>
             </div>
             
@@ -393,12 +442,12 @@ export default function ComparePage() {
               </div>
             ) : (
               <div className="bg-gray-800 rounded-xl border border-gray-700 p-8 text-center">
-                {(minHR || maxHR) ? (
+                {(hasAvgHRFilter || hasMaxHRFilter) ? (
                   <>
                     <div className="text-4xl mb-4">🔍</div>
                     <h3 className="text-xl font-semibold mb-2">No runs match your filter</h3>
                     <p className="text-gray-400">
-                      Try adjusting the HR range
+                      Try adjusting the HR range. Runs without HR data are excluded when filtering.
                     </p>
                   </>
                 ) : (
