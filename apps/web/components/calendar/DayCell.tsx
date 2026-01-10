@@ -49,8 +49,21 @@ interface DayCellProps {
   onClick: () => void;
 }
 
+// Format pace from distance (meters) and duration (seconds)
+function formatPace(distanceM: number, durationS: number, useMiles: boolean): string {
+  if (!distanceM || !durationS || distanceM === 0) return '';
+  
+  const distanceUnit = useMiles ? distanceM / 1609.344 : distanceM / 1000;
+  const paceSeconds = durationS / distanceUnit;
+  const mins = Math.floor(paceSeconds / 60);
+  const secs = Math.round(paceSeconds % 60);
+  
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
 export function DayCell({ day, isToday, isSelected, onClick }: DayCellProps) {
-  const { formatDistance } = useUnits();
+  const { formatDistance, units } = useUnits();
+  const useMiles = units === 'imperial';
   
   // Parse date without timezone issues - extract day directly from YYYY-MM-DD string
   const dayNum = parseInt(day.date.split('-')[2], 10);
@@ -101,16 +114,26 @@ export function DayCell({ day, isToday, isSelected, onClick }: DayCellProps) {
       {/* Actual activities */}
       {hasActivities && (
         <div className="space-y-1">
-          {day.activities.slice(0, 2).map((activity) => (
-            <div 
-              key={activity.id}
-              className="bg-emerald-900/30 border border-emerald-700/40 rounded px-1.5 py-0.5"
-            >
-              <div className="text-xs font-medium text-emerald-400">
-                ✓ {formatDistance(activity.distance_m || 0, 1)}
+          {day.activities.slice(0, 2).map((activity) => {
+            const pace = formatPace(activity.distance_m || 0, activity.duration_s || 0, useMiles);
+            const paceUnit = useMiles ? '/mi' : '/km';
+            
+            return (
+              <div 
+                key={activity.id}
+                className="bg-emerald-900/30 border border-emerald-700/40 rounded px-1.5 py-0.5"
+              >
+                <div className="text-xs font-medium text-emerald-400">
+                  ✓ {formatDistance(activity.distance_m || 0, 1)}
+                </div>
+                {pace && (
+                  <div className="text-[10px] text-emerald-500/70">
+                    {pace}{paceUnit}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
           {day.activities.length > 2 && (
             <div className="text-xs text-gray-500">+{day.activities.length - 2} more</div>
           )}

@@ -173,6 +173,49 @@ function ActionBar({
   );
 }
 
+function MonthTotals({ days }: { days: CalendarDay[] }) {
+  const totalDistance = days.reduce((sum, d) => sum + (d.total_distance_m || 0), 0);
+  const totalDuration = days.reduce((sum, d) => sum + (d.total_duration_s || 0), 0);
+  const totalActivities = days.reduce((sum, d) => sum + d.activities.length, 0);
+  
+  const totalMiles = (totalDistance / 1609.344).toFixed(1);
+  const hours = Math.floor(totalDuration / 3600);
+  const mins = Math.floor((totalDuration % 3600) / 60);
+  const secs = totalDuration % 60;
+  const timeStr = `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  
+  // Estimate calories (rough: ~100 cal/mile for running)
+  const estCalories = Math.round((totalDistance / 1609.344) * 100);
+  
+  if (totalActivities === 0) return null;
+  
+  return (
+    <div className="mt-4 bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <span className="text-sm text-gray-400">Month Totals</span>
+        <div className="flex items-center gap-6 text-sm">
+          <div>
+            <span className="text-gray-500">Activities: </span>
+            <span className="text-white font-semibold">{totalActivities}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Distance: </span>
+            <span className="text-white font-semibold">{totalMiles} mi</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Time: </span>
+            <span className="text-white font-semibold">{timeStr}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Calories: </span>
+            <span className="text-white font-semibold">{estCalories.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -299,39 +342,75 @@ export default function CalendarPage() {
             </div>
           ) : (
             <>
-              {/* Day headers */}
-              <div className="grid grid-cols-7 border-l border-t border-gray-700 bg-gray-800/50">
-                {DAY_NAMES.map(day => (
-                  <div key={day} className="py-3 text-center text-sm font-semibold text-gray-400 border-r border-b border-gray-700">
-                    {day}
+              {/* Calendar with sidebar layout */}
+              <div className="flex gap-4">
+                {/* Main calendar */}
+                <div className="flex-1">
+                  {/* Day headers */}
+                  <div className="grid grid-cols-7 border-l border-t border-gray-700 bg-gray-800/50">
+                    {DAY_NAMES.map(day => (
+                      <div key={day} className="py-3 text-center text-sm font-semibold text-gray-400 border-r border-b border-gray-700">
+                        {day}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                  
+                  {/* Calendar grid */}
+                  <div className="border-l border-gray-700">
+                    {weeksWithDays.map((week, weekIndex) => (
+                      <React.Fragment key={weekIndex}>
+                        {/* Days grid */}
+                        <div className="grid grid-cols-7">
+                          {week.days.map((day) => (
+                            <DayCell
+                              key={day.date}
+                              day={day}
+                              isToday={day.date === today}
+                              isSelected={day.date === selectedDate}
+                              onClick={() => handleDayClick(day.date)}
+                            />
+                          ))}
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Weekly totals sidebar */}
+                <div className="hidden lg:block w-48 flex-shrink-0">
+                  <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 sticky top-20">
+                    <h3 className="text-sm font-semibold text-gray-400 mb-3">Weekly Totals</h3>
+                    <div className="space-y-3">
+                      {weeksWithDays.map((week, idx) => {
+                        const weekDistance = week.days.reduce((sum, d) => sum + (d.total_distance_m || 0), 0);
+                        const weekDuration = week.days.reduce((sum, d) => sum + (d.total_duration_s || 0), 0);
+                        const weekMiles = (weekDistance / 1609.344).toFixed(1);
+                        const hours = Math.floor(weekDuration / 3600);
+                        const mins = Math.floor((weekDuration % 3600) / 60);
+                        const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+                        
+                        // Get first date of week for label
+                        const firstDay = week.days[0];
+                        const [, m, d] = firstDay?.date?.split('-') || [];
+                        const weekLabel = firstDay ? `${parseInt(m)}/${parseInt(d)}` : `Wk ${idx + 1}`;
+                        
+                        return (
+                          <div key={idx} className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500">{weekLabel}</span>
+                            <div className="text-right">
+                              <div className="text-white font-medium">{weekMiles} mi</div>
+                              <div className="text-gray-500">{timeStr}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               </div>
               
-              {/* Calendar grid */}
-              <div className="border-l border-gray-700">
-                {weeksWithDays.map((week, weekIndex) => (
-                  <React.Fragment key={weekIndex}>
-                    {/* Days grid */}
-                    <div className="grid grid-cols-7">
-                      {week.days.map((day) => (
-                        <DayCell
-                          key={day.date}
-                          day={day}
-                          isToday={day.date === today}
-                          isSelected={day.date === selectedDate}
-                          onClick={() => handleDayClick(day.date)}
-                        />
-                      ))}
-                    </div>
-                    
-                    {/* Week summary row */}
-                    {week.summary && (
-                      <WeekSummaryRow week={week.summary} />
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
+              {/* Month totals footer */}
+              <MonthTotals days={calendar?.days || []} />
               
               {weeksWithDays.length === 0 && (
                 <div className="text-center py-12 text-gray-400">
