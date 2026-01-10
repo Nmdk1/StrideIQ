@@ -83,7 +83,7 @@ export default function Navigation() {
     { href: '/dashboard', label: 'Dashboard', icon: '📊' },
     { href: '/calendar', label: 'Plan', icon: '📅' },
     { href: '/insights', label: 'Insights', icon: '💡' },
-    { href: '/compare', label: 'Compare', icon: '📈', highlight: true },
+    { href: '/compare', label: 'Compare', icon: '👻', highlight: true },
     { href: '/coach', label: 'Coach', icon: '🤖' },
     { href: '/activities', label: 'Activities', icon: '🏃' },
     { href: '/checkin', label: 'Check-in', icon: '✓' },

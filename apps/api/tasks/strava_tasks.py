@@ -123,17 +123,23 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         }
     """
     db: Session = get_db_sync()
+    print(f"DEBUG: Starting sync for athlete_id={athlete_id}")
     
     try:
         # Get athlete
+        print(f"DEBUG: Looking up athlete in database...")
         athlete = db.get(Athlete, athlete_id)
+        print(f"DEBUG: db.get returned: {athlete}")
         if not athlete:
+            print(f"DEBUG: Athlete not found!")
             return {
                 "status": "error",
                 "error": f"Athlete {athlete_id} not found"
             }
         
+        print(f"DEBUG: Found athlete email={athlete.email}, strava_id={athlete.strava_athlete_id}")
         if not athlete.strava_access_token:
+            print(f"DEBUG: No strava access token!")
             return {
                 "status": "error",
                 "error": f"Athlete {athlete_id} has no Strava access token"
@@ -161,13 +167,17 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 after_timestamp = int(last_sync_raw)
         
         # Poll activities from Strava
+        print(f"DEBUG: Polling activities with after_timestamp={after_timestamp}")
         strava_activities = poll_activities(athlete, after_timestamp)
+        print(f"DEBUG: Got {len(strava_activities)} activities from Strava")
         
         synced_new = 0
         updated_existing = 0
         splits_backfilled = 0
         skipped_non_runs = 0
         total_from_api = len(strava_activities)
+        
+        print(f"DEBUG: Starting to process {total_from_api} activities...")
         
         LAP_FETCH_DELAY = 2.0  # 2 second delay between lap fetches
         
@@ -354,6 +364,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 continue
             
             # Create new activity
+            print(f"DEBUG: Creating new activity {strava_activity_id} - {a.get('name')}")
             activity = Activity(
                 athlete_id=athlete.id,
                 name=a.get("name"),  # Store the activity name from Strava
@@ -373,8 +384,14 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 user_verified_race=False,
             )
             
-            db.add(activity)
-            db.flush()
+            try:
+                db.add(activity)
+                db.flush()
+                print(f"DEBUG: Activity {strava_activity_id} created with id={activity.id}")
+            except Exception as e:
+                print(f"ERROR: Failed to create activity {strava_activity_id}: {e}")
+                db.rollback()
+                continue
             
             # Fetch splits
             try:
