@@ -4,8 +4,10 @@ Attribution Engine API
 The "WHY" behind performance changes.
 
 Endpoints:
-- POST /v1/attribution/analyze - Analyze drivers for a comparison
+- POST /v1/attribution/analyze - Analyze drivers for a comparison (legacy: averages)
+- POST /v1/attribution/patterns - Pattern recognition analysis (new: per-run)
 - GET /v1/attribution/activity/{id} - Quick attribution for single activity vs history
+- GET /v1/attribution/context/{athlete_id} - Get athlete's current context profile
 """
 
 from typing import List, Optional
@@ -18,6 +20,8 @@ from core.database import get_db
 from core.auth import get_current_user
 from models import Athlete
 from services.attribution_engine import AttributionEngineService
+from services.pattern_recognition import PatternRecognitionEngine
+from services.athlete_context import AthleteContextBuilder
 
 router = APIRouter(prefix="/v1/attribution", tags=["attribution"])
 
@@ -31,6 +35,12 @@ class AttributionRequest(BaseModel):
     current_activity_id: str  # UUID as string
     baseline_activity_ids: List[str]  # UUIDs as strings
     performance_delta: Optional[float] = None  # Pre-calculated if available
+
+
+class PatternAnalysisRequest(BaseModel):
+    """Request for pattern recognition analysis"""
+    current_activity_id: str  # UUID as string
+    comparison_activity_ids: List[str]  # UUIDs as strings (2-10)
 
 
 class AttributionResponse(BaseModel):
@@ -251,3 +261,124 @@ def get_attribution_summary(
             "top_drivers": [],
             "summary": None,
         }
+
+
+# =============================================================================
+# PATTERN RECOGNITION ENDPOINTS (New Architecture)
+# =============================================================================
+
+@router.post("/patterns")
+def analyze_patterns(
+    request: PatternAnalysisRequest,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Pattern Recognition Analysis (New)
+    
+    Instead of averaging inputs across baseline runs, this:
+    1. Builds trailing context for EACH comparison run individually
+    2. Identifies patterns (what was true for 80%+ of comparison runs?)
+    3. Identifies deviations (where does current run differ from pattern?)
+    4. Includes ACWR/fatigue context
+    
+    This is the "Pattern Recognition" upgrade from simple averaging.
+    
+    Returns:
+    - prerequisites: Inputs that were consistent across comparison runs
+    - deviations: Where current run differs from the pattern
+    - fatigue: Training load context (ACWR, phase)
+    - context_block: Structured text for GPT prompt injection
+    """
+    try:
+        current_id = UUID(request.current_activity_id)
+        comparison_ids = [UUID(id_str) for id_str in request.comparison_activity_ids]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid activity ID format")
+    
+    if len(comparison_ids) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 comparison activities")
+    if len(comparison_ids) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 comparison activities")
+    
+    engine = PatternRecognitionEngine(db)
+    
+    try:
+        result = engine.analyze(
+            current_activity_id=current_id,
+            comparison_activity_ids=comparison_ids,
+            athlete_id=current_user.id,
+        )
+        
+        return {
+            "success": True,
+            "data": result.to_dict(),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Pattern analysis failed: {str(e)}")
+
+
+@router.get("/context")
+def get_athlete_context(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the athlete's current context profile.
+    
+    This is the "intelligence dossier" that gets injected into GPT prompts.
+    Contains:
+    - Current training state (ACWR, phase, volume)
+    - Recent performance trends
+    - Personal patterns (learned from their data)
+    - Data availability flags
+    
+    Use this to:
+    - Power smarter AI Coach responses
+    - Provide context for insights
+    - Show current training status on dashboard
+    """
+    builder = AthleteContextBuilder(db)
+    
+    try:
+        profile = builder.build(current_user.id)
+        
+        return {
+            "success": True,
+            "data": profile.to_dict(),
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to build context: {str(e)}")
+
+
+@router.get("/context/block")
+def get_context_block(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get just the context block for GPT prompt injection.
+    
+    This is the minimal text block you inject into AI prompts
+    to make the AI smarter about this athlete.
+    
+    Returns plain text, not JSON.
+    """
+    from fastapi.responses import PlainTextResponse
+    
+    builder = AthleteContextBuilder(db)
+    
+    try:
+        profile = builder.build(current_user.id)
+        return PlainTextResponse(
+            content=profile.context_block,
+            media_type="text/plain",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to build context: {str(e)}")
