@@ -19,12 +19,15 @@ import type { PerformanceDriver, AttributionResult } from '@/lib/api/services/at
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   Legend,
+  Cell,
 } from 'recharts';
 
 // =============================================================================
@@ -231,59 +234,17 @@ function OverlayChart({
   allRuns: ComparedRun[];
 }) {
   const [showPace, setShowPace] = useState(true);
-  const [showHR, setShowHR] = useState(true);
-  
-  // Debug logging
-  useEffect(() => {
-    console.log('OverlayChart - allRuns:', allRuns);
-    allRuns.forEach((run, idx) => {
-      console.log(`Run ${idx} (${run.name}):`, {
-        hasSplits: !!run.splits,
-        splitsLength: run.splits?.length || 0,
-        splits: run.splits,
-        pace_per_km: run.pace_per_km,
-        avg_hr: run.avg_hr,
-      });
-    });
-  }, [allRuns]);
+  const [showHR, setShowHR] = useState(false);
+  const [chartMode, setChartMode] = useState<'splits' | 'summary'>('splits');
   
   // Build chart data from splits
   const chartData = useMemo(() => {
     if (!allRuns.length) return [];
     
     const maxSplits = Math.max(...allRuns.map(r => r.splits?.length || 0));
-    console.log('maxSplits:', maxSplits);
     
-    // If no splits, create a simple 2-point chart (start/end) using run averages
-    if (maxSplits === 0) {
-      // Fallback: Create synthetic points from run-level data
-      const runsWithPace = allRuns.filter(r => r.pace_per_km);
-      const runsWithHR = allRuns.filter(r => r.avg_hr);
-      
-      if (runsWithPace.length === 0 && runsWithHR.length === 0) {
-        return [];
-      }
-      
-      // Create 2 points per run - this shows flat lines but at least visualizes the comparison
-      const data: any[] = [
-        { split: 'Start' },
-        { split: 'End' },
-      ];
-      
-      allRuns.forEach((run, runIdx) => {
-        if (run.pace_per_km) {
-          data[0][`pace_${runIdx}`] = run.pace_per_km / 60;
-          data[1][`pace_${runIdx}`] = run.pace_per_km / 60;
-        }
-        if (run.avg_hr) {
-          data[0][`hr_${runIdx}`] = run.avg_hr;
-          data[1][`hr_${runIdx}`] = run.avg_hr;
-        }
-      });
-      
-      console.log('Fallback chart data (no splits):', data);
-      return data;
-    }
+    // If no splits, return empty and we'll show summary view
+    if (maxSplits === 0) return [];
     
     const data: any[] = [];
     for (let i = 0; i < maxSplits; i++) {
@@ -303,56 +264,68 @@ function OverlayChart({
       
       data.push(point);
     }
-    console.log('Chart data from splits:', data);
     return data;
+  }, [allRuns]);
+  
+  // Summary bar chart data (always available if runs have pace)
+  const summaryData = useMemo(() => {
+    return allRuns.map((run, idx) => ({
+      name: run.name?.slice(0, 15) || `Run ${idx + 1}`,
+      pace: run.pace_per_km ? run.pace_per_km / 60 : 0, // min/km
+      hr: run.avg_hr || 0,
+      idx,
+    })).filter(d => d.pace > 0 || d.hr > 0);
   }, [allRuns]);
 
   const hasPaceData = chartData.some(d => allRuns.some((_, i) => d[`pace_${i}`]));
   const hasHRData = chartData.some(d => allRuns.some((_, i) => d[`hr_${i}`]));
-  
-  console.log('hasPaceData:', hasPaceData, 'hasHRData:', hasHRData);
+  const hasSplits = chartData.length > 0;
 
-  if (chartData.length === 0) {
+  // Default to summary if no splits
+  useEffect(() => {
+    if (!hasSplits && chartMode === 'splits') {
+      setChartMode('summary');
+    }
+  }, [hasSplits, chartMode]);
+
+  if (summaryData.length === 0) {
     return (
       <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-8 text-center">
         <div className="text-4xl mb-4">📊</div>
         <p className="text-gray-400">No pace or heart rate data available for comparison</p>
-        <p className="text-xs text-gray-500 mt-2">
-          Runs need either split data or average metrics to display charts
-        </p>
       </div>
     );
   }
 
   return (
     <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-6">
-      {/* Toggle Controls */}
+      {/* Header with Mode Toggle */}
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-white">Split-by-Split Comparison</h3>
-        <div className="flex items-center gap-4">
-          {hasPaceData && (
-            <button
-              onClick={() => setShowPace(!showPace)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                showPace 
-                  ? 'bg-orange-600 text-white' 
-                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-              }`}
-            >
-              ⏱️ Pace
-            </button>
-          )}
-          {hasHRData && (
-            <button
-              onClick={() => setShowHR(!showHR)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                showHR 
-                  ? 'bg-rose-600 text-white' 
-                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-              }`}
-            >
-              ❤️ Heart Rate
-            </button>
+        <h3 className="text-lg font-semibold text-white">Performance Comparison</h3>
+        <div className="flex items-center gap-2">
+          {hasSplits && (
+            <>
+              <button
+                onClick={() => setChartMode('splits')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  chartMode === 'splits'
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                }`}
+              >
+                Split-by-Split
+              </button>
+              <button
+                onClick={() => setChartMode('summary')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  chartMode === 'summary'
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                }`}
+              >
+                Summary
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -365,107 +338,185 @@ function OverlayChart({
               className="w-3 h-3 rounded-full"
               style={{ backgroundColor: RUN_COLORS[idx] }}
             />
-            <span className="text-gray-300 truncate max-w-[150px]">
+            <span className="text-gray-300 truncate max-w-[180px]">
               {idx === 0 && '★ '}
-              {run.name?.slice(0, 20) || `Run ${idx + 1}`}
+              {run.name?.slice(0, 25) || `Run ${idx + 1}`}
             </span>
           </div>
         ))}
       </div>
 
-      {/* Chart */}
-      <ResponsiveContainer width="100%" height={350}>
-        <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-          <XAxis 
-            dataKey="split" 
-            stroke="#9CA3AF"
-            tick={{ fill: '#9CA3AF', fontSize: 12 }}
-            label={{ value: 'Split (Mile/Km)', position: 'bottom', fill: '#9CA3AF', offset: 0 }}
-          />
-          
-          {/* Left Y-Axis for Pace */}
-          {showPace && (
-            <YAxis 
-              yAxisId="pace"
-              orientation="left"
-              stroke="#f97316"
-              tick={{ fill: '#f97316', fontSize: 11 }}
-              tickFormatter={(v) => formatPace(v * 60)}
-              reversed
-              domain={['auto', 'auto']}
-              label={{ value: 'Pace', angle: -90, position: 'insideLeft', fill: '#f97316', offset: 10 }}
-            />
-          )}
-          
-          {/* Right Y-Axis for HR */}
-          {showHR && (
-            <YAxis 
-              yAxisId="hr"
-              orientation="right"
-              stroke="#ef4444"
-              tick={{ fill: '#ef4444', fontSize: 11 }}
-              domain={['auto', 'auto']}
-              label={{ value: 'HR (bpm)', angle: 90, position: 'insideRight', fill: '#ef4444', offset: 10 }}
-            />
-          )}
-          
-          <Tooltip
-            contentStyle={{ 
-              backgroundColor: '#1F2937', 
-              border: '1px solid #374151',
-              borderRadius: '8px',
-            }}
-            labelStyle={{ color: '#F9FAFB' }}
-            formatter={(value, name) => {
-              if (typeof value !== 'number') return ['-', ''];
-              const [metric, idxStr] = String(name).split('_');
-              const runIdx = parseInt(idxStr);
-              const runName = allRuns[runIdx]?.name?.slice(0, 15) || `Run ${runIdx + 1}`;
+      {/* Summary Bar Chart */}
+      {chartMode === 'summary' && (
+        <>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={summaryData} margin={{ top: 10, right: 30, left: 10, bottom: 40 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis 
+                dataKey="name" 
+                stroke="#9CA3AF"
+                tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                angle={-20}
+                textAnchor="end"
+                height={60}
+              />
+              <YAxis 
+                stroke="#9CA3AF"
+                tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                tickFormatter={(v) => formatPace(v * 60)}
+                reversed
+                label={{ value: 'Pace (min/km)', angle: -90, position: 'insideLeft', fill: '#9CA3AF' }}
+              />
+              <Tooltip
+                contentStyle={{ 
+                  backgroundColor: '#1F2937', 
+                  border: '1px solid #374151',
+                  borderRadius: '8px',
+                }}
+                formatter={(value) => {
+                  if (typeof value !== 'number') return ['-', 'Pace'];
+                  return [formatPace(value * 60), 'Pace'];
+                }}
+              />
+              <Bar dataKey="pace" radius={[4, 4, 0, 0]}>
+                {summaryData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={RUN_COLORS[entry.idx]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs text-gray-500 text-center mt-2">
+            Average pace comparison • Lower bars = faster
+          </p>
+        </>
+      )}
+
+      {/* Split-by-Split Line Chart */}
+      {chartMode === 'splits' && hasSplits && (
+        <>
+          {/* Metric Toggle */}
+          <div className="flex items-center gap-4 mb-4">
+            {hasPaceData && (
+              <button
+                onClick={() => setShowPace(!showPace)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  showPace 
+                    ? 'bg-orange-600 text-white' 
+                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                }`}
+              >
+                ⏱️ Pace
+              </button>
+            )}
+            {hasHRData && (
+              <button
+                onClick={() => setShowHR(!showHR)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  showHR 
+                    ? 'bg-rose-600 text-white' 
+                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                }`}
+              >
+                ❤️ Heart Rate
+              </button>
+            )}
+          </div>
+
+          <ResponsiveContainer width="100%" height={350}>
+            <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis 
+                dataKey="split" 
+                stroke="#9CA3AF"
+                tick={{ fill: '#9CA3AF', fontSize: 12 }}
+                label={{ value: 'Split (Mile/Km)', position: 'bottom', fill: '#9CA3AF', offset: 0 }}
+              />
               
-              if (metric === 'pace') {
-                return [formatPace(value * 60), `${runName} Pace`];
-              }
-              return [`${value} bpm`, `${runName} HR`];
-            }}
-          />
+              {/* Left Y-Axis for Pace */}
+              {showPace && (
+                <YAxis 
+                  yAxisId="pace"
+                  orientation="left"
+                  stroke="#f97316"
+                  tick={{ fill: '#f97316', fontSize: 11 }}
+                  tickFormatter={(v) => formatPace(v * 60)}
+                  reversed
+                  domain={['auto', 'auto']}
+                  label={{ value: 'Pace', angle: -90, position: 'insideLeft', fill: '#f97316', offset: 10 }}
+                />
+              )}
+              
+              {/* Right Y-Axis for HR */}
+              {showHR && (
+                <YAxis 
+                  yAxisId="hr"
+                  orientation="right"
+                  stroke="#ef4444"
+                  tick={{ fill: '#ef4444', fontSize: 11 }}
+                  domain={['auto', 'auto']}
+                  label={{ value: 'HR (bpm)', angle: 90, position: 'insideRight', fill: '#ef4444', offset: 10 }}
+                />
+              )}
+              
+              <Tooltip
+                contentStyle={{ 
+                  backgroundColor: '#1F2937', 
+                  border: '1px solid #374151',
+                  borderRadius: '8px',
+                }}
+                labelStyle={{ color: '#F9FAFB' }}
+                formatter={(value, name) => {
+                  if (typeof value !== 'number') return ['-', ''];
+                  const [metric, idxStr] = String(name).split('_');
+                  const runIdx = parseInt(idxStr);
+                  const runName = allRuns[runIdx]?.name?.slice(0, 15) || `Run ${runIdx + 1}`;
+                  
+                  if (metric === 'pace') {
+                    return [formatPace(value * 60), `${runName} Pace`];
+                  }
+                  return [`${value} bpm`, `${runName} HR`];
+                }}
+              />
+              
+              {/* Pace lines */}
+              {showPace && allRuns.map((run, idx) => (
+                <Line
+                  key={`pace_${run.id}`}
+                  yAxisId="pace"
+                  type="monotone"
+                  dataKey={`pace_${idx}`}
+                  stroke={RUN_COLORS[idx]}
+                  strokeWidth={idx === 0 ? 3 : 2}
+                  dot={{ fill: RUN_COLORS[idx], strokeWidth: 1, r: 3 }}
+                  connectNulls
+                />
+              ))}
+              
+              {/* HR lines */}
+              {showHR && allRuns.map((run, idx) => (
+                <Line
+                  key={`hr_${run.id}`}
+                  yAxisId="hr"
+                  type="monotone"
+                  dataKey={`hr_${idx}`}
+                  stroke={RUN_COLORS[idx]}
+                  strokeWidth={idx === 0 ? 3 : 2}
+                  strokeDasharray={showPace ? "5 5" : undefined}
+                  dot={{ fill: RUN_COLORS[idx], strokeWidth: 1, r: 2 }}
+                  connectNulls
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
           
-          {/* Pace lines */}
-          {showPace && allRuns.map((run, idx) => (
-            <Line
-              key={`pace_${run.id}`}
-              yAxisId="pace"
-              type="monotone"
-              dataKey={`pace_${idx}`}
-              stroke={RUN_COLORS[idx]}
-              strokeWidth={idx === 0 ? 3 : 2}
-              dot={{ fill: RUN_COLORS[idx], strokeWidth: 1, r: 3 }}
-              connectNulls
-            />
-          ))}
-          
-          {/* HR lines */}
-          {showHR && allRuns.map((run, idx) => (
-            <Line
-              key={`hr_${run.id}`}
-              yAxisId="hr"
-              type="monotone"
-              dataKey={`hr_${idx}`}
-              stroke={RUN_COLORS[idx]}
-              strokeWidth={idx === 0 ? 3 : 2}
-              strokeDasharray={showPace ? "5 5" : undefined} // Dashed when both shown
-              dot={{ fill: RUN_COLORS[idx], strokeWidth: 1, r: 2 }}
-              connectNulls
-            />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
-      
-      <p className="text-xs text-gray-500 text-center mt-2">
-        {showPace && showHR && "Solid lines = Pace (left axis) • Dashed lines = HR (right axis)"}
-        {showPace && !showHR && "Lower is faster"}
-        {!showPace && showHR && "Heart rate across each split"}
-      </p>
+          <p className="text-xs text-gray-500 text-center mt-2">
+            {showPace && showHR && "Solid lines = Pace (left axis) • Dashed lines = HR (right axis)"}
+            {showPace && !showHR && "Lower is faster"}
+            {!showPace && showHR && "Heart rate across each split"}
+            {!showPace && !showHR && "Select a metric to display"}
+          </p>
+        </>
+      )}
     </div>
   );
 }
