@@ -75,8 +75,8 @@ books/
 apps/api/books/
 apps/api/extracted_texts/
 
-# Internal AI context (not for public repo)
-_AI_CONTEXT_/
+# Internal AI context - NOW VERSIONED (critical documentation)
+# _AI_CONTEXT_/  # Removed - this contains methodology, knowledge base, operations docs
 
 # Garmin exports
 garmin_export/

@@ -1,153 +1,178 @@
 # Knowledge Base Synthesis
 
-## Universal Agreements Across All Sources
+**Last Updated:** January 10, 2026  
+**Sources:** 8 established coaching methodologies + Michael Shaffer's data + Verde TC research  
+**Status:** ACTIVE - Informs all plan generation
 
-### 1. Easy Running Must Be Easy
-**Unanimous.** Every methodology emphasizes this.
-- 59-74% VO2max for easy runs
-- 80% of training below ventilatory threshold
-- Recovery runs are RECOVERY
-- Don't make every run "count" by pushing
+---
+
+## Source Reference Key
+
+| Code | Focus Area | Key Contribution |
+|------|------------|------------------|
+| Source A | Marathon preparation | Periodization, workout definitions, physiological reasoning |
+| Source B | Training intensities | E/M/T/I/R system, pace-based prescription, volume limits |
+| Source C | Intensity distribution | 80/20 principle, race pacing psychology |
+| Source D | Cumulative fatigue | Strategic fatigue management, consistency over heroics |
+| Source E | Adaptive training | Individualization, response-based adjustment |
+| Source F | Science integration | Bridging research and practice, challenging dogma |
+| Source G | Speed development | 5K focus, multi-faceted approach, goal setting |
+| Source H | Holistic approach | Consistency + enjoyment, sustainability |
+| Michael | Real-world data | Age philosophy, injury timing, N=1 validation |
+
+---
+
+## Universal Agreements
+
+All sources agree on these principles:
+
+### 1. Easy Must Be Easy
+- Low intensity creates conditions for hard work to be productive
+- Most runners go too hard on easy days
+- Conversation test is the gold standard
 
 ### 2. Consistency Beats Intensity
-**Unanimous.** Sustainable training > sporadic heroics.
-- Cumulative fatigue from daily running builds adaptation
-- 80/20 intensity distribution is sustainable and repeatable
-- "Improvement is always incremental"
+- Adaptation is cumulative
+- The athlete who trains year-round beats the one who trains in bursts
+- Injury prevention enables consistency
 
-### 3. Individualization is Critical
-**Unanimous.** Cookie-cutter plans fail.
-- "No two runners should train the same way"
-- Fiber type, recovery capacity, injury patterns differ
-- Same workout affects runners differently
+### 3. Every Workout Has a Purpose
+- Name the adaptation before you run
+- Random stress doesn't produce targeted results
+- "What is the purpose?" is not optional
 
-### 4. Purpose-Driven Training
-**Unanimous.** Every session should have a clear "why."
-- "What is the purpose of this workout?"
-- Each workout type targets specific adaptations
-- Know the adaptation you're seeking
+### 4. Recovery Is Training
+- Adaptation happens during rest
+- Under-recovery = under-adaptation
+- Sleep, nutrition, and rest days are not optional
 
-### 5. Recovery is Training
-**Unanimous.** Adaptation happens during rest.
-- "Without adequate recovery, athletes face diminished returns"
-- Periodic recovery weeks, sleep emphasis
-- Active recovery preferred over complete rest
+### 5. Individualization Matters
+- Same workout → different responses
+- Population averages don't predict individual outcomes
+- Response patterns must be tracked and used
 
 ---
 
-## Key Tensions Between Methodologies
+## Key Tensions (Where Sources Disagree)
 
-### 1. Intensity Distribution
+### Long Run Length
+- **Source A:** 20-23 miles for marathon specificity
+- **Source D:** 16 miles max (cumulative fatigue does the work)
+- **Source B:** Time-based (150 min max)
+- **Resolution:** Context determines. Cumulative fatigue runners benefit from shorter; fresh-legs runners need longer.
 
-| Source | Position |
-|--------|----------|
-| Source C | 80/20 strict rule |
-| Source F | No magic zones, spectrum of intensity |
-| Source D | More moderate intensity acceptable |
+### VO2max Training
+- **Source B:** Essential for raising aerobic ceiling
+- **Source F:** Overrated as performance predictor
+- **Resolution:** Useful for sharpening in peak phase, not primary driver for distance runners.
 
-**StrideIQ Position:** We favor the 80/20 principle but describe it through workout TYPES, not percentages.
+### Training Zones
+- **Most sources:** Use zones for communication
+- **Source F:** Zones are artificial boundaries on continuous spectrum
+- **Resolution:** We use workout TYPES and EFFORT descriptions, never zone numbers.
 
-### 2. Long Run Philosophy
-
-| Source | Position |
-|--------|----------|
-| Source A | Long runs to 22-23 miles |
-| Source D | Cap at 16 miles (cumulative fatigue theory) |
-| Source B | Max 150 minutes (time-based) |
-
-**StrideIQ Position:** Long run should serve the athlete's specific needs. For marathoners, 20-22 miles is typically appropriate; shorter for cumulative fatigue builds.
-
-### 3. VO2max Training
-
-| Source | Position |
-|--------|----------|
-| Source B | Critical, targets aerobic ceiling |
-| Source F | Overrated, not the primary driver |
-| Source A | Part of race preparation phase |
-
-**StrideIQ Position:** VO2max work has its place but isn't the primary driver for most distance runners.
-
-### 4. Volume vs. Intensity Debate
-
-| Source | Position |
-|--------|----------|
-| Source A | Volume primary |
-| Some researchers | High-intensity optimal |
-| Source F | Both are right in context |
-
-**StrideIQ Position:** Volume builds the base; intensity sharpens. The ratio shifts with periodization.
+### Long Run Intensity
+- **Some sources:** Always easy
+- **Others:** Progressive or with race-pace segments
+- **Resolution:** Depends on weekly context. If quality during week, long run easy. If easy week, long run can have workout.
 
 ---
 
-## The StrideIQ Corrections
+## Michael's Corrections to Conventional Wisdom
 
-Based on Michael's experience and principles:
+These insights override textbook recommendations when they conflict:
 
-### 1. Age is a Variable, Not a Limiter
-Prevailing wisdom says older = slower, less intensity, more rest.
-**Our data:** PRs at 57, beating most 41-year-olds.
-Age informs initial assumptions but individual data overrides.
+### 1. Age Is a Variable, Not a Limiter
+- PRs at 57 prove age-based decline predictions are often wrong
+- Individual data always overrides age-based assumptions
+- What matters: cumulative fatigue, recovery patterns, injury history
 
-### 2. Intervals Are Not Inherently Dangerous
-Common belief: Intervals cause injury in older runners.
-**Our finding:** Injury risk is from TIMING, not activity. Intervals in base (fresh legs) = safe. Intervals mid-build (high fatigue) = injury risk.
+### 2. Intervals: Timing > Activity
+- Intervals are NOT inherently dangerous
+- Injury occurs when intervals are introduced under high cumulative fatigue
+- Safe: Intervals in base phase (fresh legs)
+- Risky: Intervals mid-build (high volume, fatigued)
 
-### 3. Training Zones Are a Crutch
-All methodologies use zones to communicate.
-**Our position:** Zones misrepresent physiology. We use workout TYPES and effort DESCRIPTIONS instead of rigid zone classifications.
+### 3. Easy Pace Calculators Are Too Aggressive
+- Standard tables derive easy pace from race times
+- Often too fast for actual easy running
+- We emphasize the slower end of ranges
 
-### 4. Easy Paces from Standard Calculators Are Too Fast
-Standard tables calculate easy pace from race performances.
-**Our finding:** These are often too aggressive. Easy should be truly EASY - conversational, never questioned.
+### 4. Speed Work Belongs in Base Phase
+- Counterintuitive but proven by data
+- Fresh legs + speed work = adaptation without injury
+- Build phase = T-work and MP (lower injury risk)
 
----
-
-## How We Apply This Knowledge
-
-### Plan Generation
-1. Use established structure for periodization
-2. Apply 80/20 intensity distribution
-3. Individualize based on athlete data
-4. Age-adjust recovery, not structure
-5. No magic zones - workout types instead
-
-### Athlete Communication
-1. Describe effort qualitatively ("conversational," "comfortably hard")
-2. Use Training Pace Calculator for specific paces WHEN NEEDED
-3. Emphasize the WHY of each workout
-4. Track response, not just execution
-
-### Analysis
-1. Compare expected vs. actual RPE (our unique contribution)
-2. Look for patterns in individual data
-3. Override population research when individual data conflicts
-4. Track what actually works for EACH athlete
+### 5. Mid-Mileage Runners Need Frequency, Not Intensity
+- 40-55 mpw runners should prioritize 6 days/week
+- Goal: mechanical and aerobic durability
+- Build the base before adding aggressive workouts
 
 ---
 
-## Source Reference
+## The StrideIQ Philosophy
 
-| ID | Focus Area | Key Contribution |
-|----|------------|------------------|
-| Source A | Marathon preparation | Periodization, workout definitions, masters adaptations |
-| Source B | Training intensities | E/M/T/I/R system, VDOT concept, purpose-driven training |
-| Source C | Intensity distribution | 80/20 rule, ventilatory threshold |
-| Source D | Cumulative fatigue | Running on tired legs, consistency emphasis |
-| Source E | Adaptive training | Individual response, self-knowledge |
-| Source F | Physiology | Science-coach integration, no magic zones |
-| Source G | 5K training | Speed development, masters focus |
-| Source H | Holistic approach | Consistency + enjoyment, all ability levels |
+### Core Belief
+> The athlete is the experiment. The data is the truth. The methodology is the servant.
 
----
+### The Five Pillars
+1. Easy must be easy
+2. Every workout has a purpose
+3. Consistency beats intensity
+4. Recovery is training
+5. The athlete is the blueprint
 
-## Raw Source Files
-
-Full text extractions available in `/books/extracted_sources/`
-
-**Total: 2,936 pages of coaching knowledge**
+### Governing Documents
+- **TRAINING_PHILOSOPHY.md** — Complete methodology with implementation rules
+- **00_GOVERNING_PRINCIPLE.md** — Athlete-first plan design
+- **workouts/WORKOUT_LIBRARY.md** — Unified workout definitions
+- **workouts/VARIATION_LIBRARY.md** — Detailed variation attributes
 
 ---
 
-*Last Updated: January 10, 2026*
-*Rebuilt from original sources*
-*SANITIZED - No attribution for external use*
+## Application to Plan Generation
+
+### For Fixed Plans (Free/$5)
+- Follow TRAINING_PHILOSOPHY.md exactly
+- Use effort descriptions when paces unknown
+- Provide Training Pace Calculator link for personalization
+- Structure: Base → Build → Peak → Taper with cut-backs
+
+### For Custom Plans
+- Start with athlete's data (Strava/Garmin)
+- Identify response patterns
+- Blend methodologies based on individual needs
+- Adjust weekly based on actual performance
+
+### For Guided Coaching
+- Real-time adjustment
+- Phase-appropriate workout selection
+- Individual injury history integration
+- Continuous feedback loop
+
+---
+
+## What Makes Us Different
+
+| Traditional Apps | StrideIQ |
+|------------------|----------|
+| "Pick a plan" | "Here's what YOUR data says" |
+| Zone 1, Zone 2, Zone 3 | Easy, Threshold, MP (types) |
+| Age = limitation | Age = variable |
+| Cookie-cutter templates | Individual response patterns |
+| Trust the process | Trust your data |
+
+---
+
+## The Test
+
+Before any recommendation:
+> "Why does this fit THIS athlete specifically?"
+
+**Wrong answer:** "Because Source A says so"  
+**Right answer:** "Because this athlete's data shows X, and this approach addresses X"
+
+---
+
+*Synthesized from 8 coaching methodologies + real-world masters athlete data*  
+*Performance Focused Coaching — StrideIQ*
