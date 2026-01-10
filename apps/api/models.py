@@ -650,3 +650,159 @@ class TrainingAvailability(Base):
         Index("ix_training_availability_day_block", "athlete_id", "day_of_week", "time_block"),
         UniqueConstraint('athlete_id', 'day_of_week', 'time_block', name='uq_training_availability_athlete_day_block'),
     )
+
+
+# =============================================================================
+# CALENDAR SYSTEM MODELS
+# =============================================================================
+
+class CalendarNote(Base):
+    """
+    Flexible notes tied to calendar dates.
+    
+    Supports multiple note types:
+    - pre_workout: Before the run (sleep, energy, stress, weather)
+    - post_workout: After the run (feel, pain, fueling, mental)
+    - free_text: General notes
+    - voice_memo: Transcribed voice notes
+    
+    Notes are the athlete's voice in the system. They provide context
+    that numbers alone cannot capture.
+    """
+    __tablename__ = "calendar_note"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    
+    # Date this note is attached to
+    note_date = Column(Date, nullable=False)
+    
+    # Note type: 'pre_workout', 'post_workout', 'free_text', 'voice_memo'
+    note_type = Column(Text, nullable=False)
+    
+    # Structured content for pre/post workout
+    # Example pre: {"sleep_hours": 7.5, "energy": "good", "stress": "low", "weather": "52F sunny"}
+    # Example post: {"feel": "strong", "pain": null, "fueling": "gel at mile 12", "mental": "confident"}
+    structured_data = Column(JSONB, nullable=True)
+    
+    # Free text content
+    text_content = Column(Text, nullable=True)
+    
+    # Voice memo reference (if applicable)
+    voice_memo_url = Column(Text, nullable=True)
+    voice_memo_transcript = Column(Text, nullable=True)
+    
+    # Optional link to specific activity
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    __table_args__ = (
+        Index("ix_calendar_note_athlete_id", "athlete_id"),
+        Index("ix_calendar_note_date", "note_date"),
+        Index("ix_calendar_note_athlete_date", "athlete_id", "note_date"),
+    )
+
+
+class CoachChat(Base):
+    """
+    Coach conversation sessions.
+    
+    Stores conversations between athlete and GPT coach.
+    Context-aware: knows what day/week/build the athlete is asking about.
+    
+    Each session captures:
+    - Context type: day, week, build, or open
+    - Context reference: specific date, week number, or build ID
+    - Full conversation history
+    - Context snapshot (what the coach "saw" when responding)
+    """
+    __tablename__ = "coach_chat"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    
+    # Context type: 'day', 'week', 'build', 'open'
+    context_type = Column(Text, nullable=False, default='open')
+    
+    # Context references (depending on type)
+    context_date = Column(Date, nullable=True)  # For 'day' context
+    context_week = Column(Integer, nullable=True)  # For 'week' context
+    context_plan_id = Column(UUID(as_uuid=True), ForeignKey("training_plan.id"), nullable=True)  # For 'build' context
+    
+    # Session title (auto-generated or user-set)
+    title = Column(Text, nullable=True)
+    
+    # Conversation messages stored as JSONB array
+    # Format: [{"role": "user", "content": "...", "timestamp": "..."}, {"role": "coach", "content": "...", "timestamp": "..."}]
+    messages = Column(JSONB, nullable=False, default=list)
+    
+    # Context snapshot at session start (what data the coach had access to)
+    context_snapshot = Column(JSONB, nullable=True)
+    
+    # Session status
+    is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    __table_args__ = (
+        Index("ix_coach_chat_athlete_id", "athlete_id"),
+        Index("ix_coach_chat_context_type", "context_type"),
+        Index("ix_coach_chat_created_at", "created_at"),
+    )
+
+
+class CalendarInsight(Base):
+    """
+    Insights generated for specific calendar dates.
+    
+    Stores auto-generated insights tied to days/activities.
+    These appear on the calendar and in day detail views.
+    
+    Insight types:
+    - workout_comparison: How this workout compares to similar past workouts
+    - efficiency_trend: EF changes over time
+    - pattern_detected: Weekly/monthly patterns
+    - achievement: PBs, milestones, streaks
+    - warning: Recovery concerns, injury risk signals
+    """
+    __tablename__ = "calendar_insight"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    
+    # Date this insight is for
+    insight_date = Column(Date, nullable=False)
+    
+    # Insight type
+    insight_type = Column(Text, nullable=False)  # 'workout_comparison', 'efficiency_trend', 'pattern_detected', 'achievement', 'warning'
+    
+    # Priority for display (higher = more important)
+    priority = Column(Integer, default=50, nullable=False)  # 1-100
+    
+    # The insight content
+    title = Column(Text, nullable=False)  # Short title for display
+    content = Column(Text, nullable=False)  # Full insight text
+    
+    # Optional link to activity
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=True)
+    
+    # Metadata (for re-generation, tracking)
+    generation_data = Column(JSONB, nullable=True)  # Data used to generate this insight
+    
+    # Status
+    is_dismissed = Column(Boolean, default=False, nullable=False)  # User dismissed this insight
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    __table_args__ = (
+        Index("ix_calendar_insight_athlete_id", "athlete_id"),
+        Index("ix_calendar_insight_date", "insight_date"),
+        Index("ix_calendar_insight_athlete_date", "athlete_id", "insight_date"),
+        Index("ix_calendar_insight_type", "insight_type"),
+    )
