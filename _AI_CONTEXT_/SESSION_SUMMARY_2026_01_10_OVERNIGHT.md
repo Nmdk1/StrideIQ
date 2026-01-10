@@ -96,3 +96,33 @@ Already had mobile hamburger menu - no changes needed.
 3. `fix: Normalize efficiency factor to minutes-based scale`
 4. `chore: Add _AI_CONTEXT_ to version control` (69 files)
 5. `feat: Mobile responsiveness for Calendar, Dashboard, and Activities`
+6. `docs: Add overnight session summary`
+7. `fix: Mobile-responsive skeleton loader on activity detail page`
+
+---
+
+## Pages Audited for Mobile
+
+| Page | Status | Notes |
+|------|--------|-------|
+| Dashboard | ✅ Fixed | Weekly workout grid now scrolls horizontally |
+| Calendar | ✅ Fixed | Compact day cells, weekly totals below, touch-friendly action bar |
+| Activities | ✅ Fixed | Header stacks, buttons wrap |
+| Activity Detail | ✅ Good | Already had `grid-cols-2 md:grid-cols-4` |
+| Compare Results | ✅ Good | Already responsive |
+| Coach | ✅ Good | Chat interface naturally mobile-friendly |
+| Login/Register | ✅ Good | `max-w-md w-full` with padding |
+| Settings | ✅ Good | Simple layout |
+| Navigation | ✅ Good | Has hamburger menu |
+
+## Global Styles Already in Place
+
+- `safe-area-inset` for iPhone notch/home bar
+- `.safe-area-bottom` utility class  
+- Touch targets generally 44px+
+
+## Remaining Mobile Work (Future)
+
+1. **Insights Page** - Needs full redesign anyway, will build mobile-first
+2. **Compare Selection Page** - Could use larger touch targets
+3. **Consider PWA manifest** - Low priority until core product is ready
