@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { planService } from '@/lib/api/services/plans';
 
-type Step = 'distance' | 'race-date' | 'current-fitness' | 'availability' | 'experience' | 'review';
+type Step = 'distance' | 'race-date' | 'current-fitness' | 'availability' | 'recent-race' | 'experience' | 'review';
 
 interface PlanFormData {
   distance: string;
@@ -117,7 +117,7 @@ export default function CreatePlanPage() {
   };
   
   const nextStep = () => {
-    const steps: Step[] = ['distance', 'race-date', 'current-fitness', 'availability', 'experience', 'review'];
+    const steps: Step[] = ['distance', 'race-date', 'current-fitness', 'availability', 'recent-race', 'experience', 'review'];
     const currentIndex = steps.indexOf(step);
     if (currentIndex < steps.length - 1) {
       setStep(steps[currentIndex + 1]);
@@ -125,7 +125,7 @@ export default function CreatePlanPage() {
   };
   
   const prevStep = () => {
-    const steps: Step[] = ['distance', 'race-date', 'current-fitness', 'availability', 'experience', 'review'];
+    const steps: Step[] = ['distance', 'race-date', 'current-fitness', 'availability', 'recent-race', 'experience', 'review'];
     const currentIndex = steps.indexOf(step);
     if (currentIndex > 0) {
       setStep(steps[currentIndex - 1]);
@@ -133,8 +133,8 @@ export default function CreatePlanPage() {
   };
   
   // Step indicator
-  const steps: Step[] = ['distance', 'race-date', 'current-fitness', 'availability', 'experience', 'review'];
-  const stepLabels = ['Distance', 'Race Date', 'Fitness', 'Schedule', 'Experience', 'Review'];
+  const steps: Step[] = ['distance', 'race-date', 'current-fitness', 'availability', 'recent-race', 'experience', 'review'];
+  const stepLabels = ['Distance', 'Race Date', 'Fitness', 'Schedule', 'Recent Race', 'Experience', 'Review'];
   
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">
@@ -322,6 +322,94 @@ export default function CreatePlanPage() {
                   {formData.days_per_week === 6 && "6 days is ideal for most runners. One rest day for recovery."}
                   {formData.days_per_week === 7 && "7 days maximizes training stimulus. One day should be very easy."}
                 </p>
+              </div>
+            </div>
+          )}
+          
+          {/* Recent Race (for personalized paces) */}
+          {step === 'recent-race' && (
+            <div>
+              <h2 className="text-xl font-bold text-white mb-4">Do you have a recent race time?</h2>
+              <p className="text-gray-400 text-sm mb-6">
+                A recent race time (within the last 6 months) helps us calculate your personalized training paces.
+              </p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-2">Race Distance</label>
+                  <select
+                    value={formData.recent_race_distance || ''}
+                    onChange={(e) => setFormData({ ...formData, recent_race_distance: e.target.value || undefined })}
+                    className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white"
+                  >
+                    <option value="">No recent race (skip)</option>
+                    <option value="5k">5K</option>
+                    <option value="10k">10K</option>
+                    <option value="half_marathon">Half Marathon</option>
+                    <option value="marathon">Marathon</option>
+                  </select>
+                </div>
+                
+                {formData.recent_race_distance && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-2">Finish Time</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <input
+                          type="number"
+                          placeholder="Hours"
+                          min="0"
+                          max="10"
+                          className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500"
+                          onChange={(e) => {
+                            const hours = e.target.value || '0';
+                            const [_, mins, secs] = (formData.recent_race_time || '0:00:00').split(':');
+                            setFormData({ ...formData, recent_race_time: `${hours}:${mins || '00'}:${secs || '00'}` });
+                          }}
+                        />
+                        <span className="text-xs text-gray-500 mt-1">hours</span>
+                      </div>
+                      <div>
+                        <input
+                          type="number"
+                          placeholder="Minutes"
+                          min="0"
+                          max="59"
+                          className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500"
+                          onChange={(e) => {
+                            const mins = e.target.value || '00';
+                            const [hours, _, secs] = (formData.recent_race_time || '0:00:00').split(':');
+                            setFormData({ ...formData, recent_race_time: `${hours || '0'}:${mins.padStart(2, '0')}:${secs || '00'}` });
+                          }}
+                        />
+                        <span className="text-xs text-gray-500 mt-1">minutes</span>
+                      </div>
+                      <div>
+                        <input
+                          type="number"
+                          placeholder="Seconds"
+                          min="0"
+                          max="59"
+                          className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500"
+                          onChange={(e) => {
+                            const secs = e.target.value || '00';
+                            const [hours, mins, _] = (formData.recent_race_time || '0:00:00').split(':');
+                            setFormData({ ...formData, recent_race_time: `${hours || '0'}:${mins || '00'}:${secs.padStart(2, '0')}` });
+                          }}
+                        />
+                        <span className="text-xs text-gray-500 mt-1">seconds</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {!formData.recent_race_distance && (
+                  <div className="p-4 bg-blue-900/30 border border-blue-700/50 rounded-lg">
+                    <p className="text-sm text-blue-300">
+                      No problem! Your plan will use effort-based descriptions (e.g., &quot;conversational pace&quot;) instead of specific paces.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
