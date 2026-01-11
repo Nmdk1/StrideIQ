@@ -609,6 +609,53 @@ class PlannedWorkout(Base):
     )
 
 
+class PlanModificationLog(Base):
+    """
+    Audit log for all training plan modifications.
+    
+    Tracks every change made to plans and workouts with full before/after state.
+    Enables rollback, analytics, and accountability.
+    
+    Actions:
+    - 'move_workout': Workout moved to new date
+    - 'edit_workout': Workout details changed (type, distance, etc.)
+    - 'delete_workout': Workout marked as skipped
+    - 'add_workout': New workout added
+    - 'swap_workouts': Two workouts swapped
+    - 'adjust_load': Weekly load adjusted
+    - 'pause_plan': Plan paused
+    - 'resume_plan': Plan resumed
+    """
+    __tablename__ = "plan_modification_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("training_plan.id"), nullable=False)
+    workout_id = Column(UUID(as_uuid=True), ForeignKey("planned_workout.id"), nullable=True)  # Null for plan-level actions
+    
+    # Action details
+    action = Column(Text, nullable=False)  # move_workout, edit_workout, delete_workout, add_workout, etc.
+    
+    # State snapshots (for rollback capability)
+    before_state = Column(JSONB, nullable=True)  # JSON snapshot before change
+    after_state = Column(JSONB, nullable=True)   # JSON snapshot after change
+    
+    # Context
+    reason = Column(Text, nullable=True)  # Optional athlete-provided reason
+    source = Column(Text, default="web", nullable=False)  # 'web', 'mobile', 'api', 'coach'
+    
+    # Metadata
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    ip_address = Column(Text, nullable=True)  # For security auditing
+    user_agent = Column(Text, nullable=True)  # Browser/device info
+    
+    __table_args__ = (
+        Index("ix_plan_modification_log_athlete_id", "athlete_id"),
+        Index("ix_plan_modification_log_plan_id", "plan_id"),
+        Index("ix_plan_modification_log_created_at", "created_at"),
+    )
+
+
 class TrainingAvailability(Base):
     """
     Training availability grid for athletes.

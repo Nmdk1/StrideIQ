@@ -1,7 +1,7 @@
 """Add calendar system tables
 
 Revision ID: calendar_system_001
-Revises: 
+Revises: 57eb2e1473e1
 Create Date: 2026-01-10
 
 Creates tables for the calendar system:
@@ -16,7 +16,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers, used by Alembic.
 revision = 'calendar_system_001'
-down_revision = None  # Will be set by alembic
+down_revision = '57eb2e1473e1'
 branch_labels = None
 depends_on = None
 

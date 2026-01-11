@@ -11,6 +11,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { planService } from '@/lib/api/services/plans';
+import { useAuth } from '@/lib/context/AuthContext';
+import { parseTimeToSeconds } from '@/lib/utils/time';
 
 type Step = 'distance' | 'race-date' | 'current-fitness' | 'availability' | 'recent-race' | 'experience' | 'review';
 
@@ -42,6 +44,7 @@ const EXPERIENCE_LEVELS = [
 
 export default function CreatePlanPage() {
   const router = useRouter();
+  const { user, isAuthenticated: authAuthenticated } = useAuth();
   const [step, setStep] = useState<Step>('distance');
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -85,49 +88,69 @@ export default function CreatePlanPage() {
     setError(null);
     
     try {
-      // Build request body
-      const requestBody = {
-        distance: formData.distance,
-        duration_weeks: planDuration,
-        days_per_week: formData.days_per_week,
-        volume_tier: getVolumeTier(),
-        race_date: formData.race_date,
-        race_name: formData.race_name || undefined,
-      };
+      // Convert race time to seconds if provided
+      const raceTimeSeconds = formData.recent_race_time 
+        ? parseTimeToSeconds(formData.recent_race_time) 
+        : undefined;
       
-      // For authenticated users with race time, create semi-custom plan
-      // Check if they have a recent race for pace calculation
-      const hasPaceData = formData.recent_race_distance && formData.recent_race_time;
+      // Check user tier
+      const isEliteTier = user?.subscription_tier && 
+        ['elite'].includes(user.subscription_tier);
+      const isPaidTier = user?.subscription_tier && 
+        ['elite', 'pro', 'premium', 'guided', 'subscription'].includes(user.subscription_tier);
+      const hasPaceData = formData.recent_race_distance && raceTimeSeconds;
       
-      if (isAuthenticated && hasPaceData) {
-        // Semi-custom plan - requires $5 payment
-        // Check if already purchased (via session storage)
-        const purchaseData = sessionStorage.getItem('plan_purchased');
-        if (!purchaseData) {
-          // Redirect to checkout
-          const params = new URLSearchParams({
-            tier: 'semi_custom',
-            distance: formData.distance,
-            duration: planDuration.toString(),
-            days: formData.days_per_week.toString(),
-            volume: getVolumeTier(),
-          });
-          router.push(`/plans/checkout?${params.toString()}`);
-          return;
+      // Route based on tier
+      if (isAuthenticated && isEliteTier) {
+        // ELITE TIER: Fully custom plan
+        // Can use user-provided race time OR will fall back to Strava data
+        await planService.createCustom({
+          distance: formData.distance,
+          race_date: formData.race_date,
+          days_per_week: formData.days_per_week,
+          current_weekly_miles: formData.current_weekly_miles,
+          recent_race_distance: formData.recent_race_distance,
+          recent_race_time_seconds: raceTimeSeconds ?? undefined,
+        });
+      } else if (isAuthenticated && hasPaceData) {
+        // SEMI-CUSTOM: Paid tier or one-time purchase
+        if (!isPaidTier) {
+          // Check if already purchased (via session storage)
+          const purchaseData = sessionStorage.getItem('plan_purchased');
+          if (!purchaseData) {
+            // Redirect to checkout for $5 payment
+            const params = new URLSearchParams({
+              tier: 'semi_custom',
+              distance: formData.distance,
+              duration: planDuration.toString(),
+              days: formData.days_per_week.toString(),
+              volume: getVolumeTier(),
+            });
+            router.push(`/plans/checkout?${params.toString()}`);
+            return;
+          }
+          sessionStorage.removeItem('plan_purchased');
         }
         
-        // Purchase confirmed, create the plan
+        // Create semi-custom plan with personalized paces
         await planService.createSemiCustom({
-          ...requestBody,
+          distance: formData.distance,
+          race_date: formData.race_date,
+          days_per_week: formData.days_per_week,
+          current_weekly_miles: formData.current_weekly_miles,
           recent_race_distance: formData.recent_race_distance,
-          recent_race_time: formData.recent_race_time,
+          recent_race_time_seconds: raceTimeSeconds,
+          race_name: formData.race_name || undefined,
         });
-        
-        // Clear purchase data
-        sessionStorage.removeItem('plan_purchased');
       } else {
-        // Standard (free) plan
-        await planService.createStandard(requestBody);
+        // STANDARD: Free plan, effort descriptions only
+        await planService.createStandard({
+          distance: formData.distance,
+          duration_weeks: planDuration,
+          days_per_week: formData.days_per_week,
+          volume_tier: getVolumeTier(),
+          start_date: formData.race_date,
+        });
       }
       
       // Redirect to calendar to see the plan

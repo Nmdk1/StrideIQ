@@ -5,13 +5,16 @@
  * 
  * Slide-in panel showing full details for a selected day:
  * - Planned workout with structure
- * - Actual activities
+ * - Actual activities (clickable → full detail page)
  * - Notes (pre/post)
  * - Insights
  * - Coach chat
+ * 
+ * DESIGN PRINCIPLE: Every element is actionable. No dead ends.
  */
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { useCalendarDay, useAddNote, useSendCoachMessage } from '@/lib/hooks/queries/calendar';
 import type { CalendarDay, CalendarNote } from '@/lib/api/services/calendar';
@@ -133,17 +136,29 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
               </section>
             )}
             
-            {/* Actual Activities Section */}
+            {/* Actual Activities Section - CLICKABLE to full detail */}
             {dayData.activities.length > 0 && (
               <section className="bg-gray-800 rounded-lg p-4">
                 <h3 className="text-xs uppercase tracking-wider text-gray-500 mb-3">Actual</h3>
                 <div className="border-l-2 border-emerald-500 pl-3 space-y-3">
                   {dayData.activities.map((activity) => (
-                    <div key={activity.id}>
-                      <div className="font-semibold text-white">
-                        {activity.name || 'Run'}
+                    <Link 
+                      key={activity.id}
+                      href={`/activities/${activity.id}`}
+                      className="block group hover:bg-gray-700/30 rounded-lg transition-colors p-2 -m-2"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="font-semibold text-white group-hover:text-emerald-400 transition-colors">
+                          {activity.name || 'Run'}
+                        </div>
+                        <div className="text-gray-500 group-hover:text-emerald-400 transition-colors text-sm flex items-center gap-1">
+                          View Details
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 mt-2">
+                      <div className="grid grid-cols-2 gap-2">
                         <div className="bg-gray-900/50 rounded p-2 text-center">
                           <div className="text-lg font-bold text-white">
                             {formatDistance(activity.distance_m || 0, 1)}
@@ -171,7 +186,14 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                           </div>
                         )}
                       </div>
-                    </div>
+                      {/* Compare to similar runs CTA */}
+                      <div className="mt-2 pt-2 border-t border-gray-700/50">
+                        <div className="text-xs text-gray-500 flex items-center gap-1">
+                          <span>👻</span>
+                          <span className="group-hover:text-orange-400 transition-colors">Compare to similar runs →</span>
+                        </div>
+                      </div>
+                    </Link>
                   ))}
                 </div>
               </section>

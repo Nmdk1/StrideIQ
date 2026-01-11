@@ -53,6 +53,16 @@ def calculate_race_paces(vdot: float, input_distance_m: float, input_time_second
     # Get training paces for pace calculations
     training_paces = get_training_paces_from_vdot(vdot, use_closest_integer=True)
     
+    # Fallback to embedded calculator if database lookup fails
+    if not training_paces:
+        from services.vdot_calculator import calculate_training_paces
+        calc_paces = calculate_training_paces(vdot)
+        if calc_paces:
+            training_paces = {
+                "i_pace_seconds": calc_paces.get("interval_pace"),
+                "r_pace_seconds": calc_paces.get("repetition_pace"),
+            }
+    
     for name, distance_m in race_pace_distances:
         time_seconds = None
         time_formatted = None
@@ -124,7 +134,24 @@ def calculate_training_paces_enhanced(vdot: float) -> Dict:
     - Interval distances (1200m, 800m, 600m)
     - Shorter intervals (400m, 300m, 200m)
     """
+    # Try database lookup first
     training_paces = get_training_paces_from_vdot(vdot, use_closest_integer=True)
+    
+    # Fallback to embedded calculator if database lookup fails
+    if not training_paces:
+        from services.vdot_calculator import calculate_training_paces
+        calc_paces = calculate_training_paces(vdot)
+        if calc_paces:
+            # Map the calculator output to the expected format
+            # Easy pace uses FAST end as boundary ("X:XX or slower")
+            training_paces = {
+                "e_pace_seconds": calc_paces.get("easy_pace_low"),  # Fast boundary for "or slower"
+                "e_pace_slow_seconds": calc_paces.get("easy_pace_high"),  # Slow end (available if needed)
+                "m_pace_seconds": calc_paces.get("marathon_pace"),
+                "t_pace_seconds": calc_paces.get("threshold_pace"),
+                "i_pace_seconds": calc_paces.get("interval_pace"),
+                "r_pace_seconds": calc_paces.get("repetition_pace"),
+            }
     
     if not training_paces:
         return {}
@@ -151,43 +178,39 @@ def calculate_training_paces_enhanced(vdot: float) -> Dict:
         secs = seconds % 60
         return f"{mins}:{secs:02d}"
     
-    def format_pace_range(seconds: Optional[int], is_km: bool = False) -> Optional[str]:
+    def format_easy_pace(seconds: Optional[int], is_km: bool = False) -> Optional[Dict[str, str]]:
         """
-        Format Easy pace as a range (faster ~ slower).
-        Based on vdoto2.com: Easy pace range is approximately -24 to +26 seconds per mile.
+        Format Easy pace as "X:XX or slower".
+        
+        Modern coaching philosophy (80/20, Maffetone, RPE-based) emphasizes 
+        truly easy running. The pace shown is the fastest you should go - 
+        anything slower is perfectly acceptable.
         """
         if seconds is None:
             return None
         if is_km:
-            seconds_km = int(seconds / 1.60934)
-        else:
-            seconds_km = seconds
+            seconds = int(seconds / 1.60934)
         
-        # Easy pace range: approximately -24 to +26 seconds per mile
-        # For km: approximately -15 to +16 seconds
-        if is_km:
-            fast_seconds = seconds_km - 15  # Faster pace (less time)
-            slow_seconds = seconds_km + 16  # Slower pace (more time)
-        else:
-            fast_seconds = seconds - 24  # Faster pace (less time)
-            slow_seconds = seconds + 26  # Slower pace (more time)
+        mins = seconds // 60
+        secs = seconds % 60
+        pace = f"{mins}:{secs:02d}"
         
-        # Ensure non-negative
-        fast_seconds = max(0, fast_seconds)
-        slow_seconds = max(0, slow_seconds)
-        
-        fast_mins = fast_seconds // 60
-        fast_secs = fast_seconds % 60
-        slow_mins = slow_seconds // 60
-        slow_secs = slow_seconds % 60
-        
-        return f"{fast_mins}:{fast_secs:02d} ~ {slow_mins}:{slow_secs:02d}"
+        return {
+            "pace": pace,
+            "display": f"{pace} or slower"
+        }
     
     # Per mile/km training paces
+    # Easy uses "X:XX or slower" format to encourage truly easy running
+    easy_mi = format_easy_pace(e_pace_seconds, is_km=False)
+    easy_km = format_easy_pace(e_pace_seconds, is_km=True)
+    
     result["per_mile_km"] = {
         "easy": {
-            "mi": format_pace_range(e_pace_seconds, is_km=False),
-            "km": format_pace_range(e_pace_seconds, is_km=True),
+            "mi": easy_mi.get("pace") if easy_mi else None,
+            "km": easy_km.get("pace") if easy_km else None,
+            "display_mi": easy_mi.get("display") if easy_mi else None,
+            "display_km": easy_km.get("display") if easy_km else None,
         },
         "marathon": {
             "mi": format_pace(m_pace_seconds, is_km=False),
@@ -370,7 +393,11 @@ def calculate_vdot_enhanced(distance_meters: float, time_seconds: int) -> Dict:
     input_pace_mi = f"{pace_mins}:{pace_secs:02d}.{pace_decimal}"
     
     return {
-        "vdot": round(vdot, 1),
+        # RPI (Running Performance Index) - our measure of running performance
+        # Calculated using Daniels/Gilbert oxygen cost equations
+        "rpi": round(vdot, 1),
+        "fitness_score": round(vdot, 1),  # Backward compatibility
+        "vdot": round(vdot, 1),  # Backward compatibility
         "input": {
             "distance_m": distance_meters,
             "distance_name": _get_distance_name(distance_meters),

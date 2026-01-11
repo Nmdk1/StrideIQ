@@ -387,17 +387,23 @@ class PlanGenerator:
         race_date: date,
         days_per_week: int,
         athlete_id: UUID,
-        athlete_preferences: Dict[str, Any] = None
+        athlete_preferences: Dict[str, Any] = None,
+        recent_race_distance: str = None,
+        recent_race_time_seconds: int = None
     ) -> GeneratedPlan:
         """
         Generate a fully custom plan using all athlete data.
         
         This is the premium tier - uses:
+        - User-provided race time (priority 1) OR auto-detected from Strava
         - Auto-detected volume from Strava history
-        - Calculated paces from best recent efforts
         - Training history patterns
         - Athlete preferences
         - Dynamic adaptation capability
+        
+        Args:
+            recent_race_distance: User-provided race distance (e.g., "5k", "half_marathon")
+            recent_race_time_seconds: User-provided race time in seconds
         """
         logger.info(f"Generating custom plan for athlete {athlete_id}: {distance} for {race_date}")
         
@@ -446,33 +452,50 @@ class PlanGenerator:
             athlete_id=athlete_id
         )
         
-        # Find best recent race effort for pace calculation
+        # Calculate paces with priority:
+        # 1. User-provided race time (allows aspirational paces)
+        # 2. Strava race activities
+        # 3. Strava training estimate (conservative)
         vdot = None
         paces = None
-        race_activities = self.db.query(Activity).filter(
-            Activity.athlete_id == athlete_id,
-            Activity.workout_type == 'Race',
-            Activity.start_time >= race_date - td(weeks=26)  # Last 6 months
-        ).order_by(Activity.start_time.desc()).all()
+        pace_source = None
         
-        if race_activities:
-            # Use most recent race for VDOT calculation
-            best_race = race_activities[0]
-            race_distance = best_race.distance_m / 1609.344  # miles
-            race_time = best_race.moving_time_s
+        # Priority 1: User-provided race time
+        if recent_race_distance and recent_race_time_seconds:
+            paces = self.pace_engine.calculate_from_race(
+                distance=recent_race_distance,
+                time_seconds=recent_race_time_seconds
+            )
+            if paces:
+                vdot = paces.vdot
+                pace_source = "user_input"
+                logger.info(f"Calculated VDOT from user input: {vdot:.1f}")
+        
+        # Priority 2: Strava race activities
+        if not paces:
+            race_activities = self.db.query(Activity).filter(
+                Activity.athlete_id == athlete_id,
+                Activity.workout_type == 'Race',
+                Activity.start_time >= race_date - td(weeks=26)  # Last 6 months
+            ).order_by(Activity.start_time.desc()).all()
             
-            if race_distance and race_time:
-                paces = self.pace_engine.calculate_from_race(
-                    distance=self._distance_to_code(race_distance),
-                    time_seconds=race_time
-                )
-                if paces:
-                    vdot = paces.vdot
-                    logger.info(f"Calculated VDOT: {vdot:.1f}")
+            if race_activities:
+                best_race = race_activities[0]
+                race_dist_miles = best_race.distance_m / 1609.344
+                race_time = best_race.moving_time_s
+                
+                if race_dist_miles and race_time:
+                    paces = self.pace_engine.calculate_from_race(
+                        distance=self._distance_to_code(race_dist_miles),
+                        time_seconds=race_time
+                    )
+                    if paces:
+                        vdot = paces.vdot
+                        pace_source = "strava_race"
+                        logger.info(f"Calculated VDOT from Strava race: {vdot:.1f}")
         
-        # If no race, try to estimate from training
-        if not vdot and recent_activities:
-            # Use best training run for rough estimate
+        # Priority 3: Strava training estimate (conservative)
+        if not paces and recent_activities:
             best_run = max(recent_activities, key=lambda a: (a.distance_m or 0) / (a.moving_time_s or 1))
             if best_run.distance_m and best_run.moving_time_s:
                 paces = self.pace_engine.calculate_from_race(
@@ -481,7 +504,11 @@ class PlanGenerator:
                 )
                 if paces:
                     vdot = paces.vdot * 0.95  # Conservative estimate from training
-                    logger.info(f"Estimated VDOT from training: {vdot:.1f}")
+                    pace_source = "strava_training"
+                    logger.info(f"Estimated VDOT from Strava training: {vdot:.1f}")
+        
+        if pace_source:
+            logger.info(f"Pace source for plan: {pace_source}")
         
         # Calculate duration
         days_to_race = (race_date - date.today()).days

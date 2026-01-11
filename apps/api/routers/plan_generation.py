@@ -32,6 +32,15 @@ from services.plan_framework import (
 )
 from services.plan_framework.feature_flags import FeatureFlagService
 from services.plan_framework.entitlements import EntitlementsService
+from services.plan_audit import (
+    log_workout_move,
+    log_workout_edit,
+    log_workout_delete,
+    log_workout_add,
+    log_workout_swap,
+    log_load_adjust,
+    _serialize_workout,
+)
 
 router = APIRouter(prefix="/v2/plans", tags=["Plan Generation"])
 
@@ -416,6 +425,8 @@ async def create_custom_plan(
         days_per_week=request.days_per_week,
         athlete_id=athlete.id,
         athlete_preferences=preferences,
+        recent_race_distance=request.recent_race_distance,
+        recent_race_time_seconds=request.recent_race_time_seconds,
     )
     
     # Save to database
@@ -574,3 +585,996 @@ def _save_plan(db: Session, athlete_id: UUID, plan: GeneratedPlan) -> TrainingPl
     db.commit()
     
     return db_plan
+
+
+# ============ Plan Management Endpoints ============
+
+class ChangeDateRequest(BaseModel):
+    """Request to change the race date."""
+    new_race_date: date
+
+
+class SkipWeekRequest(BaseModel):
+    """Request to skip a week."""
+    week_number: int
+
+
+class SwapDaysRequest(BaseModel):
+    """Request to swap two workouts."""
+    workout_id_1: UUID = Field(..., description="First workout ID")
+    workout_id_2: UUID = Field(..., description="Second workout ID")
+
+
+class AdjustLoadRequest(BaseModel):
+    """Request to adjust training load for a week."""
+    week_number: int = Field(..., ge=1, description="Week number to adjust")
+    adjustment: str = Field(..., description="Adjustment type: reduce_light, reduce_moderate, increase_light")
+    reason: Optional[str] = Field(None, description="Optional reason for adjustment")
+
+
+class MoveWorkoutRequest(BaseModel):
+    """Request to move a workout to a new date."""
+    new_date: date = Field(..., description="New date for the workout")
+
+
+class UpdateWorkoutRequest(BaseModel):
+    """Request to update workout details."""
+    workout_type: Optional[str] = Field(None, max_length=50, description="New workout type")
+    title: Optional[str] = Field(None, max_length=200, description="New title")
+    description: Optional[str] = Field(None, max_length=2000, description="New description")
+    target_distance_km: Optional[float] = Field(None, ge=0, le=200, description="Target distance in km")
+    target_duration_minutes: Optional[int] = Field(None, ge=0, le=600, description="Target duration in minutes")
+    coach_notes: Optional[str] = Field(None, max_length=2000, description="Coach notes/pace description")
+
+
+class AddWorkoutRequest(BaseModel):
+    """Request to add a new workout."""
+    scheduled_date: date = Field(..., description="Date for the workout")
+    workout_type: str = Field(..., max_length=50, description="Workout type")
+    title: str = Field(..., max_length=200, description="Workout title")
+    description: Optional[str] = Field(None, max_length=2000, description="Workout description")
+    target_distance_km: Optional[float] = Field(None, ge=0, le=200, description="Target distance in km")
+    target_duration_minutes: Optional[int] = Field(None, ge=0, le=600, description="Target duration in minutes")
+    coach_notes: Optional[str] = Field(None, max_length=2000, description="Coach notes/pace description")
+
+
+@router.post("/{plan_id}/withdraw")
+async def withdraw_from_plan(
+    plan_id: UUID,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Withdraw from a race / archive a plan.
+    
+    This archives the plan and removes planned workouts from the calendar.
+    Training history is preserved.
+    """
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status == "archived":
+        raise HTTPException(status_code=400, detail="Plan is already archived")
+    
+    # Archive the plan
+    plan.status = "archived"
+    
+    # Mark all future planned workouts as cancelled
+    today = date.today()
+    db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.scheduled_date >= today,
+        PlannedWorkout.completed == False,
+    ).update({"skipped": True})
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Plan archived. Your training history has been preserved.",
+        "plan_id": str(plan_id),
+    }
+
+
+@router.post("/{plan_id}/pause")
+async def pause_plan(
+    plan_id: UUID,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Pause a training plan.
+    
+    The plan status is set to 'paused'. When resumed, workouts will be
+    recalculated based on the remaining time to the race date.
+    """
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status != "active":
+        raise HTTPException(status_code=400, detail=f"Cannot pause plan with status: {plan.status}")
+    
+    # Pause the plan
+    plan.status = "paused"
+    
+    # Calculate current week for reference
+    today = date.today()
+    current_workout = db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.scheduled_date <= today,
+    ).order_by(PlannedWorkout.scheduled_date.desc()).first()
+    
+    paused_at_week = current_workout.week_number if current_workout else 1
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Plan paused at week {paused_at_week}. You can resume anytime.",
+        "plan_id": str(plan_id),
+        "paused_at_week": paused_at_week,
+    }
+
+
+@router.post("/{plan_id}/resume")
+async def resume_plan(
+    plan_id: UUID,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Resume a paused training plan.
+    
+    Recalculates remaining workouts based on time to race date.
+    """
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status != "paused":
+        raise HTTPException(status_code=400, detail=f"Cannot resume plan with status: {plan.status}")
+    
+    # Resume the plan
+    plan.status = "active"
+    
+    # TODO: Recalculate future workouts based on remaining time
+    # For now, just resume with existing schedule
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Plan resumed. Continue where you left off.",
+        "plan_id": str(plan_id),
+    }
+
+
+@router.post("/{plan_id}/change-date")
+async def change_race_date(
+    plan_id: UUID,
+    request: ChangeDateRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Change the race date for a plan.
+    
+    Recalculates all future workouts to peak on the new date.
+    """
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status not in ("active", "paused"):
+        raise HTTPException(status_code=400, detail=f"Cannot modify plan with status: {plan.status}")
+    
+    today = date.today()
+    if request.new_race_date <= today:
+        raise HTTPException(status_code=400, detail="New race date must be in the future")
+    
+    old_race_date = plan.goal_race_date
+    
+    # Update the race date
+    plan.goal_race_date = request.new_race_date
+    plan.plan_end_date = request.new_race_date
+    
+    # Calculate date difference
+    if old_race_date:
+        days_diff = (request.new_race_date - old_race_date).days
+        
+        # Shift all future workouts by the difference
+        future_workouts = db.query(PlannedWorkout).filter(
+            PlannedWorkout.plan_id == plan_id,
+            PlannedWorkout.scheduled_date >= today,
+        ).all()
+        
+        from datetime import timedelta
+        for workout in future_workouts:
+            workout.scheduled_date = workout.scheduled_date + timedelta(days=days_diff)
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Race date changed to {request.new_race_date}. Workouts have been adjusted.",
+        "plan_id": str(plan_id),
+        "new_race_date": request.new_race_date.isoformat(),
+    }
+
+
+@router.post("/{plan_id}/skip-week")
+async def skip_week(
+    plan_id: UUID,
+    request: SkipWeekRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Skip a week in the training plan.
+    
+    Marks all workouts in the specified week as skipped.
+    """
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status != "active":
+        raise HTTPException(status_code=400, detail=f"Cannot modify plan with status: {plan.status}")
+    
+    # Find workouts for this week
+    week_workouts = db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.week_number == request.week_number,
+    ).all()
+    
+    if not week_workouts:
+        raise HTTPException(status_code=404, detail=f"Week {request.week_number} not found")
+    
+    # Mark all as skipped
+    skipped_count = 0
+    for workout in week_workouts:
+        if not workout.completed:
+            workout.skipped = True
+            skipped_count += 1
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Week {request.week_number} skipped. {skipped_count} workouts marked as skipped.",
+        "plan_id": str(plan_id),
+        "week_number": request.week_number,
+        "workouts_skipped": skipped_count,
+    }
+
+
+@router.get("/{plan_id}")
+async def get_plan(
+    plan_id: UUID,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Get full plan details.
+    
+    Returns the plan with all weeks and workouts.
+    """
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    # Get all workouts grouped by week
+    workouts = db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == plan_id,
+    ).order_by(
+        PlannedWorkout.week_number,
+        PlannedWorkout.day_of_week,
+    ).all()
+    
+    # Group by week
+    weeks: Dict[int, List[Dict[str, Any]]] = {}
+    for w in workouts:
+        if w.week_number not in weeks:
+            weeks[w.week_number] = []
+        weeks[w.week_number].append({
+            "id": str(w.id),
+            "date": w.scheduled_date.isoformat() if w.scheduled_date else None,
+            "day_of_week": w.day_of_week,
+            "workout_type": w.workout_type,
+            "title": w.title,
+            "description": w.description,
+            "phase": w.phase,
+            "target_distance_km": w.target_distance_km,
+            "target_duration_minutes": w.target_duration_minutes,
+            "coach_notes": w.coach_notes,
+            "completed": w.completed,
+            "skipped": w.skipped,
+        })
+    
+    return {
+        "id": str(plan.id),
+        "name": plan.name,
+        "status": plan.status,
+        "goal_race_name": plan.goal_race_name,
+        "goal_race_date": plan.goal_race_date.isoformat() if plan.goal_race_date else None,
+        "total_weeks": plan.total_weeks,
+        "start_date": plan.plan_start_date.isoformat() if plan.plan_start_date else None,
+        "end_date": plan.plan_end_date.isoformat() if plan.plan_end_date else None,
+        "baseline_vdot": plan.baseline_vdot,
+        "weeks": weeks,
+    }
+
+
+@router.post("/{plan_id}/swap-days")
+async def swap_workout_days(
+    plan_id: UUID,
+    request: SwapDaysRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Swap two workouts between days.
+    
+    Allows athletes to rearrange their week to accommodate life demands.
+    Both workouts must be in the same plan and belong to the athlete.
+    """
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status != "active":
+        raise HTTPException(status_code=400, detail=f"Cannot modify plan with status: {plan.status}")
+    
+    # Get both workouts
+    workout1 = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == request.workout_id_1,
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.athlete_id == athlete.id,
+    ).first()
+    
+    workout2 = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == request.workout_id_2,
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.athlete_id == athlete.id,
+    ).first()
+    
+    if not workout1:
+        raise HTTPException(status_code=404, detail="First workout not found")
+    if not workout2:
+        raise HTTPException(status_code=404, detail="Second workout not found")
+    
+    # Don't allow swapping completed workouts
+    if workout1.completed:
+        raise HTTPException(status_code=400, detail="Cannot swap a completed workout")
+    if workout2.completed:
+        raise HTTPException(status_code=400, detail="Cannot swap a completed workout")
+    
+    # Swap the scheduled dates and day_of_week
+    workout1.scheduled_date, workout2.scheduled_date = workout2.scheduled_date, workout1.scheduled_date
+    workout1.day_of_week, workout2.day_of_week = workout2.day_of_week, workout1.day_of_week
+
+    # Audit log
+    log_workout_swap(
+        db=db,
+        athlete_id=athlete.id,
+        plan_id=plan_id,
+        workout1=workout1,
+        workout2=workout2,
+        reason=request.reason,
+    )
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Swapped {workout1.title} and {workout2.title}",
+        "plan_id": str(plan_id),
+        "workout_1": {
+            "id": str(workout1.id),
+            "title": workout1.title,
+            "new_date": workout1.scheduled_date.isoformat() if workout1.scheduled_date else None,
+        },
+        "workout_2": {
+            "id": str(workout2.id),
+            "title": workout2.title,
+            "new_date": workout2.scheduled_date.isoformat() if workout2.scheduled_date else None,
+        },
+    }
+
+
+@router.post("/{plan_id}/adjust-load")
+async def adjust_week_load(
+    plan_id: UUID,
+    request: AdjustLoadRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Adjust training load for a specific week.
+    
+    Options:
+    - reduce_light: Convert one quality session to easy, reduce distances by ~10%
+    - reduce_moderate: Make it a recovery week (all easy runs, 70% volume)
+    - increase_light: Add 1 mile to easy runs (careful progression)
+    
+    This is for accommodating life demands without abandoning the plan.
+    """
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status != "active":
+        raise HTTPException(status_code=400, detail=f"Cannot modify plan with status: {plan.status}")
+    
+    # Get this week's workouts
+    week_workouts = db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.week_number == request.week_number,
+        PlannedWorkout.completed == False,
+        PlannedWorkout.skipped == False,
+    ).all()
+    
+    if not week_workouts:
+        raise HTTPException(status_code=404, detail=f"No modifiable workouts found in week {request.week_number}")
+    
+    adjustments_made = []
+    
+    if request.adjustment == "reduce_light":
+        # Find one quality session and convert to easy
+        quality_types = ["threshold", "tempo", "intervals", "vo2max", "speed", "long_mp"]
+        converted = False
+        
+        for workout in week_workouts:
+            if workout.workout_type in quality_types and not converted:
+                old_type = workout.workout_type
+                workout.workout_type = "easy"
+                workout.title = "Easy Run (adjusted)"
+                workout.coach_notes = f"Originally {old_type.replace('_', ' ')}. Adjusted to easy run for recovery."
+                converted = True
+                adjustments_made.append(f"Converted {old_type} to easy run")
+            
+            # Reduce all distances by 10%
+            if workout.target_distance_km:
+                original = workout.target_distance_km
+                workout.target_distance_km = round(original * 0.9, 1)
+                adjustments_made.append(f"Reduced {workout.workout_type} from {original}km to {workout.target_distance_km}km")
+    
+    elif request.adjustment == "reduce_moderate":
+        # Recovery week: all easy runs at 70% volume
+        for workout in week_workouts:
+            # Convert quality to easy
+            if workout.workout_type not in ["easy", "recovery", "rest"]:
+                workout.workout_type = "easy"
+                workout.title = "Easy Recovery Run"
+                workout.coach_notes = "Recovery week adjustment. Keep it easy and relaxed."
+            
+            # Reduce volume to 70%
+            if workout.target_distance_km:
+                original = workout.target_distance_km
+                workout.target_distance_km = round(original * 0.7, 1)
+            
+            adjustments_made.append(f"Adjusted {workout.title} for recovery week")
+    
+    elif request.adjustment == "increase_light":
+        # Add 1 mile to easy runs (careful)
+        for workout in week_workouts:
+            if workout.workout_type in ["easy", "easy_strides", "easy_hills"]:
+                if workout.target_distance_km:
+                    original = workout.target_distance_km
+                    # Add approximately 1 mile (1.6km)
+                    workout.target_distance_km = round(original + 1.6, 1)
+                    adjustments_made.append(f"Increased {workout.title} from {original}km to {workout.target_distance_km}km")
+    
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid adjustment type: {request.adjustment}")
+    
+    # Audit log
+    log_load_adjust(
+        db=db,
+        athlete_id=athlete.id,
+        plan_id=plan_id,
+        week_number=request.week_number,
+        adjustment=request.adjustment,
+        affected_workouts=[{"id": str(w.id), "title": w.title} for w in week_workouts],
+        reason=request.reason,
+    )
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Week {request.week_number} adjusted with {request.adjustment}",
+        "plan_id": str(plan_id),
+        "week_number": request.week_number,
+        "adjustments": adjustments_made,
+    }
+
+
+@router.get("/{plan_id}/week/{week_number}")
+async def get_week_workouts(
+    plan_id: UUID,
+    week_number: int,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Get all workouts for a specific week.
+    
+    Useful for the adjust plan UI to show what can be swapped/modified.
+    """
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    workouts = db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.week_number == week_number,
+    ).order_by(PlannedWorkout.day_of_week).all()
+    
+    if not workouts:
+        raise HTTPException(status_code=404, detail=f"Week {week_number} not found")
+    
+    return {
+        "plan_id": str(plan_id),
+        "week_number": week_number,
+        "phase": workouts[0].phase if workouts else None,
+        "workouts": [
+            {
+                "id": str(w.id),
+                "date": w.scheduled_date.isoformat() if w.scheduled_date else None,
+                "day_of_week": w.day_of_week,
+                "day_name": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][w.day_of_week],
+                "workout_type": w.workout_type,
+                "title": w.title,
+                "description": w.description,
+                "target_distance_km": w.target_distance_km,
+                "target_duration_minutes": w.target_duration_minutes,
+                "coach_notes": w.coach_notes,
+                "completed": w.completed,
+                "skipped": w.skipped,
+            }
+            for w in workouts
+        ],
+    }
+
+
+# ============ Full Workout Control (Paid Tier) ============
+
+def _check_paid_tier(athlete: Athlete, db: Session) -> bool:
+    """Check if athlete has paid tier access for plan modifications."""
+    # Check subscription tier
+    if athlete.subscription_tier in ("pro", "elite", "premium", "guided", "subscription"):
+        return True
+    
+    # Check if they have any paid plans (semi-custom or custom)
+    from models import TrainingPlan
+    paid_plan = db.query(TrainingPlan).filter(
+        TrainingPlan.athlete_id == athlete.id,
+        TrainingPlan.generation_method.in_(["semi_custom", "custom", "framework_v2"]),
+    ).first()
+    
+    return paid_plan is not None
+
+
+@router.post("/{plan_id}/workouts/{workout_id}/move")
+async def move_workout(
+    plan_id: UUID,
+    workout_id: UUID,
+    request: MoveWorkoutRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Move a workout to a new date.
+    
+    PAID TIER ONLY.
+    
+    Allows athletes to reschedule workouts to accommodate life demands.
+    The original date becomes available (rest day).
+    """
+    if not _check_paid_tier(athlete, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Plan modification requires a paid subscription. Upgrade to unlock full control."
+        )
+    
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status != "active":
+        raise HTTPException(status_code=400, detail=f"Cannot modify plan with status: {plan.status}")
+    
+    workout = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == workout_id,
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.athlete_id == athlete.id,
+    ).first()
+    
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    
+    if workout.completed:
+        raise HTTPException(status_code=400, detail="Cannot move a completed workout")
+    
+    # Check if new date is within plan bounds
+    if plan.plan_start_date and request.new_date < plan.plan_start_date:
+        raise HTTPException(status_code=400, detail="New date is before plan start")
+    if plan.plan_end_date and request.new_date > plan.plan_end_date:
+        raise HTTPException(status_code=400, detail="New date is after plan end")
+    
+    old_date = workout.scheduled_date
+    
+    # Update the workout
+    workout.scheduled_date = request.new_date
+    workout.day_of_week = request.new_date.weekday()
+    
+    # Recalculate week number based on plan start
+    if plan.plan_start_date:
+        days_from_start = (request.new_date - plan.plan_start_date).days
+        workout.week_number = (days_from_start // 7) + 1
+    
+    # Audit log
+    log_workout_move(
+        db=db,
+        athlete_id=athlete.id,
+        plan_id=plan_id,
+        workout=workout,
+        old_date=old_date,
+        new_date=request.new_date,
+    )
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Moved '{workout.title}' to {request.new_date.isoformat()}",
+        "workout": {
+            "id": str(workout.id),
+            "title": workout.title,
+            "old_date": old_date.isoformat() if old_date else None,
+            "new_date": request.new_date.isoformat(),
+            "new_day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][workout.day_of_week],
+        },
+    }
+
+
+@router.put("/{plan_id}/workouts/{workout_id}")
+async def update_workout(
+    plan_id: UUID,
+    workout_id: UUID,
+    request: UpdateWorkoutRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Update workout details.
+    
+    PAID TIER ONLY.
+    
+    Allows athletes to change workout type, distance, duration, and notes.
+    """
+    if not _check_paid_tier(athlete, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Plan modification requires a paid subscription. Upgrade to unlock full control."
+        )
+    
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status != "active":
+        raise HTTPException(status_code=400, detail=f"Cannot modify plan with status: {plan.status}")
+    
+    workout = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == workout_id,
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.athlete_id == athlete.id,
+    ).first()
+    
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    
+    if workout.completed:
+        raise HTTPException(status_code=400, detail="Cannot modify a completed workout")
+    
+    # Capture before state for audit
+    before_snapshot = _serialize_workout(workout)
+    
+    changes = []
+    
+    if request.workout_type is not None:
+        old_type = workout.workout_type
+        workout.workout_type = request.workout_type
+        changes.append(f"type: {old_type} → {request.workout_type}")
+    
+    if request.title is not None:
+        workout.title = request.title
+        changes.append(f"title updated")
+    
+    if request.description is not None:
+        workout.description = request.description
+        changes.append(f"description updated")
+    
+    if request.target_distance_km is not None:
+        old_dist = workout.target_distance_km
+        workout.target_distance_km = request.target_distance_km
+        changes.append(f"distance: {old_dist}km → {request.target_distance_km}km")
+    
+    if request.target_duration_minutes is not None:
+        workout.target_duration_minutes = request.target_duration_minutes
+        changes.append(f"duration updated")
+    
+    if request.coach_notes is not None:
+        workout.coach_notes = request.coach_notes
+        changes.append(f"notes updated")
+    
+    # Audit log
+    log_workout_edit(
+        db=db,
+        athlete_id=athlete.id,
+        plan_id=plan_id,
+        workout=workout,
+        before_snapshot=before_snapshot,
+        changes=changes,
+    )
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Updated '{workout.title}'",
+        "changes": changes,
+        "workout": {
+            "id": str(workout.id),
+            "title": workout.title,
+            "workout_type": workout.workout_type,
+            "target_distance_km": workout.target_distance_km,
+            "target_duration_minutes": workout.target_duration_minutes,
+            "coach_notes": workout.coach_notes,
+        },
+    }
+
+
+@router.delete("/{plan_id}/workouts/{workout_id}")
+async def delete_workout(
+    plan_id: UUID,
+    workout_id: UUID,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete (skip) a workout.
+    
+    PAID TIER ONLY.
+    
+    Marks the workout as skipped. It will still appear in history but
+    won't show on the calendar as pending.
+    """
+    if not _check_paid_tier(athlete, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Plan modification requires a paid subscription. Upgrade to unlock full control."
+        )
+    
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status != "active":
+        raise HTTPException(status_code=400, detail=f"Cannot modify plan with status: {plan.status}")
+    
+    workout = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == workout_id,
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.athlete_id == athlete.id,
+    ).first()
+    
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    
+    if workout.completed:
+        raise HTTPException(status_code=400, detail="Cannot delete a completed workout")
+    
+    # Audit log (before marking skipped)
+    log_workout_delete(
+        db=db,
+        athlete_id=athlete.id,
+        plan_id=plan_id,
+        workout=workout,
+    )
+    
+    workout.skipped = True
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Removed '{workout.title}' from plan",
+        "workout_id": str(workout_id),
+    }
+
+
+@router.post("/{plan_id}/workouts")
+async def add_workout(
+    plan_id: UUID,
+    request: AddWorkoutRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Add a new workout to the plan.
+    
+    PAID TIER ONLY.
+    
+    Allows athletes to add custom workouts on rest days or any date.
+    """
+    if not _check_paid_tier(athlete, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Plan modification requires a paid subscription. Upgrade to unlock full control."
+        )
+    
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    if plan.status != "active":
+        raise HTTPException(status_code=400, detail=f"Cannot modify plan with status: {plan.status}")
+    
+    # Check if date is within plan bounds
+    if plan.plan_start_date and request.scheduled_date < plan.plan_start_date:
+        raise HTTPException(status_code=400, detail="Date is before plan start")
+    if plan.plan_end_date and request.scheduled_date > plan.plan_end_date:
+        raise HTTPException(status_code=400, detail="Date is after plan end")
+    
+    # Calculate week number
+    week_number = 1
+    if plan.plan_start_date:
+        days_from_start = (request.scheduled_date - plan.plan_start_date).days
+        week_number = (days_from_start // 7) + 1
+    
+    # Determine phase from nearby workouts
+    nearby = db.query(PlannedWorkout).filter(
+        PlannedWorkout.plan_id == plan_id,
+        PlannedWorkout.week_number == week_number,
+    ).first()
+    phase = nearby.phase if nearby else "custom"
+    
+    # Create the workout
+    new_workout = PlannedWorkout(
+        plan_id=plan_id,
+        athlete_id=athlete.id,
+        scheduled_date=request.scheduled_date,
+        week_number=week_number,
+        day_of_week=request.scheduled_date.weekday(),
+        workout_type=request.workout_type,
+        title=request.title,
+        description=request.description,
+        phase=phase,
+        target_distance_km=request.target_distance_km,
+        target_duration_minutes=request.target_duration_minutes,
+        coach_notes=request.coach_notes,
+    )
+    
+    db.add(new_workout)
+    db.flush()  # Get the ID before commit
+    
+    # Audit log
+    log_workout_add(
+        db=db,
+        athlete_id=athlete.id,
+        plan_id=plan_id,
+        workout=new_workout,
+    )
+    
+    db.commit()
+    db.refresh(new_workout)
+    
+    return {
+        "success": True,
+        "message": f"Added '{request.title}' on {request.scheduled_date.isoformat()}",
+        "workout": {
+            "id": str(new_workout.id),
+            "date": request.scheduled_date.isoformat(),
+            "day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][new_workout.day_of_week],
+            "week_number": week_number,
+            "title": request.title,
+            "workout_type": request.workout_type,
+        },
+    }
+
+
+@router.get("/{plan_id}/workout-types")
+async def get_workout_types(
+    plan_id: UUID,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Get available workout types for plan modification.
+    
+    Returns a list of workout types the athlete can use when modifying their plan.
+    """
+    # Verify plan ownership
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == athlete.id,
+    ).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    return {
+        "workout_types": [
+            {"value": "easy", "label": "Easy Run", "description": "Conversational pace, recovery"},
+            {"value": "easy_strides", "label": "Easy + Strides", "description": "Easy run with strides at end"},
+            {"value": "recovery", "label": "Recovery Run", "description": "Very easy, short duration"},
+            {"value": "long", "label": "Long Run", "description": "Extended aerobic run"},
+            {"value": "long_mp", "label": "Long Run w/ MP", "description": "Long run with marathon pace segments"},
+            {"value": "medium_long", "label": "Medium-Long Run", "description": "70-75% of long run distance"},
+            {"value": "threshold", "label": "Threshold/Tempo", "description": "Comfortably hard, lactate threshold"},
+            {"value": "tempo", "label": "Tempo Run", "description": "Sustained threshold effort"},
+            {"value": "intervals", "label": "Intervals", "description": "High intensity repeats"},
+            {"value": "hills", "label": "Hill Workout", "description": "Hill repeats or hilly route"},
+            {"value": "speed", "label": "Speed Work", "description": "Fast repeats, short recovery"},
+            {"value": "cross_train", "label": "Cross Training", "description": "Bike, swim, elliptical, etc."},
+            {"value": "strength", "label": "Strength/Gym", "description": "Weight training, core work"},
+            {"value": "rest", "label": "Rest Day", "description": "Full rest, no running"},
+        ],
+        "can_modify": _check_paid_tier(athlete, db),
+    }

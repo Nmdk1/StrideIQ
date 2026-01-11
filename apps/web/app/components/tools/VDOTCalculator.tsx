@@ -4,6 +4,20 @@ import React, { useState } from 'react';
 
 type TabType = 'race_paces' | 'training' | 'equivalent';
 
+/**
+ * Running Pace Calculator
+ * 
+ * Calculates RPI (Running Performance Index) and training paces using the
+ * Daniels/Gilbert oxygen cost equations - peer-reviewed exercise physiology
+ * from 1979.
+ * 
+ * RPI measures your current running performance capability and predicts
+ * optimal training paces and equivalent race times.
+ * 
+ * This is the foundational science behind most running calculators and
+ * training methodologies. Results align with approaches from coaches like
+ * Pfitzinger, Hudson, Fitzgerald, and Magness.
+ */
 export default function VDOTCalculator() {
   const [raceTime, setRaceTime] = useState('');
   const [distance, setDistance] = useState('5000');
@@ -11,7 +25,8 @@ export default function VDOTCalculator() {
   const [results, setResults] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('race_paces');
+  const [activeTab, setActiveTab] = useState<TabType>('training');
+  const [showMethodology, setShowMethodology] = useState(false);
   
   // Distance options in meters
   const distanceOptions = distanceUnit === 'km' 
@@ -35,10 +50,7 @@ export default function VDOTCalculator() {
       e.stopPropagation();
     }
     
-    console.log('VDOT Calculator: handleCalculate called', { raceTime, distance });
-    
     if (!raceTime || !distance) {
-      console.log('VDOT Calculator: Missing input');
       setError('Please enter a race time');
       return;
     }
@@ -48,7 +60,6 @@ export default function VDOTCalculator() {
     setResults(null);
     
     try {
-      console.log('VDOT Calculator: Making API request...');
       // Parse time (MM:SS or HH:MM:SS)
       const timeParts = raceTime.split(':').map(Number);
       let totalSeconds = 0;
@@ -85,11 +96,10 @@ export default function VDOTCalculator() {
       }
 
       const data = await response.json();
-      console.log('VDOT Calculator: Response received', data);
       setResults(data);
-      setActiveTab('race_paces'); // Reset to first tab
+      setActiveTab('training'); // Start with Training tab
     } catch (error: any) {
-      console.error('Error calculating VDOT:', error);
+      console.error('Error calculating paces:', error);
       setError(error.message || 'Failed to connect to server. Please check your connection.');
     } finally {
       setLoading(false);
@@ -98,21 +108,44 @@ export default function VDOTCalculator() {
 
   return (
     <div className="space-y-4">
-      {/* Explanation & Disclaimer */}
-      <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 text-xs text-gray-300">
-        <div className="flex items-start gap-2">
-          <svg className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+      {/* Header with Info Toggle */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-white">Running Pace Calculator</h3>
+        <button
+          onClick={() => setShowMethodology(!showMethodology)}
+          className="flex items-center gap-1 text-xs text-gray-400 hover:text-orange-400 transition-colors"
+          title="How we calculate your paces"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
           </svg>
-          <div>
-            <span className="font-semibold text-orange-400">Fitness Score:</span> A measure of your current running fitness based on proven training principles. Enter a recent race time to get your fitness score and personalized training paces (Easy, Marathon, Threshold, Interval, Repetition) for optimal improvement.
-            <div className="mt-2 pt-2 border-t border-gray-700 text-gray-500 text-xs">
-              <div className="font-semibold mb-1">Disclaimer:</div>
-              <div>Based on publicly available formulas from Dr. Jack Daniels&rsquo; research. Not affiliated with VDOT O2 or The Run SMART Project.</div>
-            </div>
-          </div>
-        </div>
+          <span>How it works</span>
+        </button>
       </div>
+
+      {/* Methodology Explanation (Collapsible) */}
+      {showMethodology && (
+        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 text-sm text-gray-300 space-y-3">
+          <div>
+            <span className="font-semibold text-orange-400">What is RPI?</span>
+          </div>
+          <p>
+            Your <strong>RPI (Running Performance Index)</strong> is a measure of your current running 
+            performance capability, calculated from your race result. It predicts your optimal training 
+            paces and equivalent times for other race distances.
+          </p>
+          <p>
+            We calculate RPI using the <strong>Daniels/Gilbert oxygen cost equations</strong> — peer-reviewed 
+            exercise physiology published in 1979. This is the foundational science behind most running 
+            calculators and training methodologies, including approaches from coaches like Pfitzinger, 
+            Hudson, Fitzgerald, and Magness.
+          </p>
+          <p className="text-gray-400 text-xs">
+            Your paces will be consistent with other science-based training systems. The math is universal; 
+            your body&apos;s response is what makes it personal.
+          </p>
+        </div>
+      )}
 
       {/* Input Section */}
       <div>
@@ -145,9 +178,9 @@ export default function VDOTCalculator() {
         type="button"
         onClick={handleCalculate}
         disabled={loading}
-        className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2 rounded transition-colors disabled:opacity-50"
+        className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50"
       >
-        {loading ? 'Calculating...' : 'Calculate VDOT'}
+        {loading ? 'Calculating...' : 'Calculate Training Paces'}
       </button>
 
       {error && (
@@ -159,31 +192,31 @@ export default function VDOTCalculator() {
       {/* Results Section */}
       {results && (
         <div className="mt-6 pt-6 border-t border-gray-700">
-          {/* Fitness Score Display */}
-          <div className="mb-6 text-center">
-            <div className="text-4xl font-bold text-orange-500 mb-1">
-              {results.vdot?.toFixed(1)}
-            </div>
-            <div className="text-sm text-gray-400">Fitness Score</div>
-            {results.input && (
-              <div className="text-xs text-gray-500 mt-2">
-                {results.input.distance_name} {results.input.time_formatted} ({results.input.pace_mi} /mi)
+          {/* RPI Display - Prominent but Clean */}
+          <div className="mb-6 flex items-center justify-between bg-gray-800/50 rounded-lg p-4">
+            <div>
+              <div className="text-xs text-gray-400 uppercase tracking-wide">
+                <span className="font-semibold text-orange-400">RPI</span>
+                <span className="ml-1 text-gray-500">Running Performance Index</span>
               </div>
-            )}
+              {results.input && (
+                <div className="text-sm text-gray-300 mt-1">
+                  {results.input.distance_name} in {results.input.time_formatted}
+                </div>
+              )}
+            </div>
+            <div className="text-right">
+              <div className="text-3xl font-bold text-orange-500">
+                {(results.rpi || results.fitness_score || results.vdot)?.toFixed(1)}
+              </div>
+              {results.input && (
+                <div className="text-xs text-gray-500">{results.input.pace_mi}/mi</div>
+              )}
+            </div>
           </div>
 
-          {/* Tabs */}
+          {/* Tabs - Training first as primary use case */}
           <div className="flex border-b border-gray-700 mb-4">
-            <button
-              onClick={() => setActiveTab('race_paces')}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                activeTab === 'race_paces'
-                  ? 'border-b-2 border-orange-500 text-orange-500'
-                  : 'text-gray-400 hover:text-gray-300'
-              }`}
-            >
-              Race Paces
-            </button>
             <button
               onClick={() => setActiveTab('training')}
               className={`px-4 py-2 text-sm font-medium transition-colors ${
@@ -192,7 +225,7 @@ export default function VDOTCalculator() {
                   : 'text-gray-400 hover:text-gray-300'
               }`}
             >
-              Training
+              Training Paces
             </button>
             <button
               onClick={() => setActiveTab('equivalent')}
@@ -202,7 +235,17 @@ export default function VDOTCalculator() {
                   : 'text-gray-400 hover:text-gray-300'
               }`}
             >
-              Equivalent
+              Race Equivalents
+            </button>
+            <button
+              onClick={() => setActiveTab('race_paces')}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                activeTab === 'race_paces'
+                  ? 'border-b-2 border-orange-500 text-orange-500'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              Split Paces
             </button>
           </div>
 
@@ -237,11 +280,13 @@ export default function VDOTCalculator() {
                     {results.training.per_mile_km.easy && (
                       <>
                         <div className="text-gray-300">Easy</div>
-                        <div className="font-mono text-center text-orange-400">
-                          {results.training.per_mile_km.easy.mi || '--'}
+                        <div className="font-mono text-center text-green-400">
+                          {results.training.per_mile_km.easy.display_mi || 
+                           (results.training.per_mile_km.easy.mi ? `${results.training.per_mile_km.easy.mi} or slower` : '--')}
                         </div>
-                        <div className="font-mono text-center text-orange-400">
-                          {results.training.per_mile_km.easy.km || '--'}
+                        <div className="font-mono text-center text-green-400">
+                          {results.training.per_mile_km.easy.display_km || 
+                           (results.training.per_mile_km.easy.km ? `${results.training.per_mile_km.easy.km} or slower` : '--')}
                         </div>
                       </>
                     )}

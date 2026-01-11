@@ -172,7 +172,5 @@ Before any recommendation:
 **Wrong answer:** "Because Source A says so"  
 **Right answer:** "Because this athlete's data shows X, and this approach addresses X"
 
----
-
-*Synthesized from 8 coaching methodologies + real-world masters athlete data*  
+---*Synthesized from 8 coaching methodologies + real-world masters athlete data*  
 *Performance Focused Coaching — StrideIQ*

@@ -140,25 +140,10 @@ def calculate_vdot_from_race_time_lookup(distance_meters: float, time_seconds: i
     
     vdot = numerator / denominator
     
-    # Apply calibration adjustment (formula tends to calculate ~2% high)
-    # Distance-specific calibration for better accuracy:
-    # - 5K: 0.988 (minimal adjustment - formula is more accurate for shorter distances)
-    # - 10K: 0.975 (more adjustment needed)
-    # - Half/Marathon: 0.980 (standard adjustment)
-    
-    distance_km = distance_meters / 1000.0
-    
-    if distance_km <= 5.5:  # 5K and shorter
-        calibration_factor = 0.988  # Adjusted to get 50.0 for 5K in 20:00
-    elif distance_km <= 10.5:  # 10K
-        calibration_factor = 0.975
-    else:  # Half marathon and longer
-        calibration_factor = 0.980
-    
-    vdot_calibrated = vdot * calibration_factor
-    
     # Round to 1 decimal place
-    return round(vdot_calibrated, 1)
+    # Note: The Daniels formula is scientifically accurate and matches
+    # industry-standard calculators when implemented correctly
+    return round(vdot, 1)
 
 
 def get_training_paces_from_vdot(vdot: float, use_closest_integer: bool = True) -> Optional[Dict]:

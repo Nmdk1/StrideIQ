@@ -44,20 +44,36 @@ class TrainingPaces:
     repetition_pace_per_km: int
     
     def get_pace_description(self, workout_type: str) -> str:
-        """Get pace description for a workout type."""
+        """
+        Get pace description for a workout type.
+        
+        Returns pace + effort context (e.g., "9:30-10:00/mi (conversational, relaxed)")
+        """
         if workout_type in ["easy", "recovery", "easy_run"]:
-            return f"{self._format_pace(self.easy_pace_low)}-{self._format_pace(self.easy_pace_high)}/mi"
-        elif workout_type in ["long", "long_run", "medium_long"]:
-            # Long runs are easy pace
-            return f"{self._format_pace(self.easy_pace_low)}-{self._format_pace(self.easy_pace_high)}/mi"
-        elif workout_type in ["marathon", "mp", "marathon_pace"]:
-            return f"{self._format_pace(self.marathon_pace)}/mi"
+            pace = f"{self._format_pace(self.easy_pace_low)}-{self._format_pace(self.easy_pace_high)}/mi"
+            return f"{pace} (conversational, relaxed)"
+        elif workout_type in ["long", "long_run"]:
+            pace = f"{self._format_pace(self.easy_pace_low)}-{self._format_pace(self.easy_pace_high)}/mi"
+            return f"{pace} (easy, sustainable)"
+        elif workout_type in ["medium_long"]:
+            # Medium-long slightly quicker than easy
+            pace = f"{self._format_pace(self.easy_pace_low)}-{self._format_pace(self.easy_pace_high)}/mi"
+            return f"{pace} (easy to steady)"
+        elif workout_type in ["marathon", "mp", "marathon_pace", "long_mp"]:
+            pace = f"{self._format_pace(self.marathon_pace)}/mi"
+            return f"{pace} (goal race pace)"
         elif workout_type in ["threshold", "tempo", "t_run", "threshold_intervals"]:
-            return f"{self._format_pace(self.threshold_pace)}/mi"
-        elif workout_type in ["interval", "vo2max", "i_run"]:
-            return f"{self._format_pace(self.interval_pace)}/mi"
+            pace = f"{self._format_pace(self.threshold_pace)}/mi"
+            return f"{pace} (comfortably hard)"
+        elif workout_type in ["interval", "vo2max", "i_run", "intervals"]:
+            pace = f"{self._format_pace(self.interval_pace)}/mi"
+            return f"{pace} (hard effort)"
         elif workout_type in ["repetition", "reps", "strides"]:
-            return f"{self._format_pace(self.repetition_pace)}/mi"
+            pace = f"{self._format_pace(self.repetition_pace)}/mi"
+            return f"{pace} (quick, controlled)"
+        elif workout_type in ["hills"]:
+            # Hills don't have a specific pace, effort-based
+            return "strong effort uphill, controlled descent"
         else:
             return "conversational pace"
     

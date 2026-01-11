@@ -9,3 +9,4 @@ export { DayCell } from './DayCell';
 export { DayDetailPanel } from './DayDetailPanel';
 export { WeekSummaryRow } from './WeekSummaryRow';
 export { CreatePlanCTA } from './CreatePlanCTA';
+export { PlanBanner } from './PlanBanner';

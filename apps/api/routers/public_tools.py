@@ -1,8 +1,11 @@
 """
 Public Tools API Endpoints
 
-Free tools for landing page - no authentication required.
-These tools prove competence and drive acquisition.
+Free running calculators - no authentication required.
+These tools demonstrate expertise and drive user acquisition.
+
+Calculators use the Daniels/Gilbert oxygen cost equations (1979) -
+the foundational exercise physiology behind most training methodologies.
 """
 
 from fastapi import APIRouter, HTTPException
@@ -15,12 +18,88 @@ from services.performance_engine import calculate_age_graded_performance
 router = APIRouter(prefix="/v1/public", tags=["Public Tools"])
 
 
-class VDOTRequest(BaseModel):
+@router.get("/pace-calculator/about")
+def get_methodology():
+    """
+    Get information about RPI and how paces are calculated.
+    
+    Returns methodology explanation for display in UI.
+    """
+    return {
+        "title": "How We Calculate Your Paces",
+        "rpi_explanation": {
+            "name": "RPI",
+            "full_name": "Running Performance Index",
+            "description": (
+                "Your RPI is a measure of your current running performance capability, "
+                "calculated from your race result using the Daniels/Gilbert oxygen cost "
+                "equations. It predicts your optimal training paces and equivalent times "
+                "for other race distances."
+            )
+        },
+        "summary": (
+            "Your training paces are derived from the Daniels/Gilbert oxygen cost equations — "
+            "peer-reviewed exercise physiology published in 1979. This mathematical model "
+            "calculates your running performance from race results and determines precise "
+            "intensities for each training zone."
+        ),
+        "details": (
+            "This is the foundational science behind most running calculators and training "
+            "methodologies, including approaches from coaches like Pfitzinger, Hudson, "
+            "Fitzgerald, and Magness. We calculate continuous, personalized paces from your "
+            "data — not rounded values from static tables."
+        ),
+        "note": (
+            "Your paces will be consistent with other science-based training systems. "
+            "The math is universal; your body's response is what makes it personal."
+        ),
+        "training_zones": {
+            "easy": {
+                "name": "Easy",
+                "purpose": "Aerobic development, recovery",
+                "intensity": "59-74% of RPI",
+                "feel": "Conversational pace"
+            },
+            "marathon": {
+                "name": "Marathon",
+                "purpose": "Race-specific endurance",
+                "intensity": "79-88% of RPI",
+                "feel": "Controlled, sustainable"
+            },
+            "threshold": {
+                "name": "Threshold",
+                "purpose": "Lactate clearance, stamina",
+                "intensity": "85-92% of RPI",
+                "feel": "Comfortably hard"
+            },
+            "interval": {
+                "name": "Interval",
+                "purpose": "VO2max development",
+                "intensity": "95-105% of RPI",
+                "feel": "Hard, controlled"
+            },
+            "repetition": {
+                "name": "Repetition",
+                "purpose": "Speed, running economy",
+                "intensity": "105-115% of RPI",
+                "feel": "Fast, relaxed form"
+            }
+        }
+    }
+
+
+class PaceCalculatorRequest(BaseModel):
+    """Request for pace/fitness calculation from race result."""
     distance_meters: float
     time_seconds: int
 
 
+# Keep old name for backward compatibility
+VDOTRequest = PaceCalculatorRequest
+
+
 class AgeGradeRequest(BaseModel):
+    """Request for WMA age-graded performance calculation."""
     age: int
     sex: str  # "M" or "F"
     distance_meters: float
@@ -28,15 +107,19 @@ class AgeGradeRequest(BaseModel):
 
 
 @router.post("/vdot/calculate")
-def calculate_vdot_post(request: VDOTRequest):
+def calculate_paces(request: PaceCalculatorRequest):
     """
-    Calculate VDOT from race time and distance.
+    Calculate RPI (Running Performance Index) and training paces from race time.
+    
+    Uses the Daniels/Gilbert oxygen cost equations (1979) to derive:
+    - RPI: measure of current running performance capability
+    - Training Paces: Easy, Marathon, Threshold, Interval, Repetition
+    - Race Equivalents: predicted times for other distances
+    
+    This is the foundational science behind most running calculators.
+    Results align with methodologies from Pfitzinger, Hudson, Magness, etc.
     
     Free tool - no authentication required.
-    Returns comprehensive data matching vdoto2.com functionality:
-    - Race Paces tab: Paces for different distances
-    - Training tab: Training paces with ranges and interval distances
-    - Equivalent tab: Equivalent race times for all distances
     """
     if request.distance_meters <= 0:
         raise HTTPException(status_code=400, detail="Distance must be positive")

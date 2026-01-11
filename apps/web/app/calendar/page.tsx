@@ -18,7 +18,7 @@
 import React, { useState, useMemo } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useCalendarRange } from '@/lib/hooks/queries/calendar';
-import { DayCell, DayDetailPanel, WeekSummaryRow, CreatePlanCTA } from '@/components/calendar';
+import { DayCell, DayDetailPanel, WeekSummaryRow, CreatePlanCTA, PlanBanner } from '@/components/calendar';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { UnitToggle } from '@/components/ui/UnitToggle';
@@ -97,35 +97,7 @@ function CalendarHeader({
   );
 }
 
-function PlanBanner({ plan }: { plan: { name: string; goal_race_name?: string; goal_race_date?: string; total_weeks: number } }) {
-  // Parse date without timezone issues
-  const formatRaceDate = (dateStr: string) => {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const date = new Date(year, month - 1, day);
-    return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  };
-  
-  return (
-    <div className="bg-gradient-to-r from-orange-900/30 to-gray-800 rounded-lg border border-orange-700/50 p-4 mb-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-white">{plan.name}</h2>
-          {plan.goal_race_name && plan.goal_race_date && (
-            <p className="text-gray-400 text-sm">
-              {plan.goal_race_name} • {formatRaceDate(plan.goal_race_date)}
-            </p>
-          )}
-        </div>
-        <a 
-          href="/coach" 
-          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg text-sm font-medium transition-colors"
-        >
-          💬 Ask Coach
-        </a>
-      </div>
-    </div>
-  );
-}
+// PlanBanner moved to @/components/calendar/PlanBanner.tsx for reusability
 
 function ActionBar({ 
   weekStats 
@@ -334,7 +306,17 @@ export default function CalendarPage() {
           
           {/* Plan banner or Create Plan CTA */}
           {calendar?.active_plan ? (
-            <PlanBanner plan={calendar.active_plan} />
+            <PlanBanner 
+              plan={{
+                id: calendar.active_plan.id || '',
+                name: calendar.active_plan.name,
+                goal_race_name: calendar.active_plan.goal_race_name,
+                goal_race_date: calendar.active_plan.goal_race_date,
+                total_weeks: calendar.active_plan.total_weeks,
+              }}
+              currentWeek={calendar.current_week}
+              currentPhase={calendar.current_phase}
+            />
           ) : !isLoading && (
             <div className="mb-6">
               <CreatePlanCTA />

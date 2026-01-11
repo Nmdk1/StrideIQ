@@ -64,7 +64,7 @@ class PlannedWorkoutResponse(BaseModel):
     phase: str
     target_distance_km: Optional[float] = None
     target_duration_minutes: Optional[int] = None
-    segments: Optional[dict] = None
+    segments: Optional[list] = None  # List of workout segments
     completed: bool
     skipped: bool
     coach_notes: Optional[str] = None  # Pace description or guidance
@@ -73,7 +73,7 @@ class PlannedWorkoutResponse(BaseModel):
     has_option_b: bool = False
     option_b_title: Optional[str] = None
     option_b_description: Optional[str] = None
-    option_b_segments: Optional[dict] = None
+    option_b_segments: Optional[list] = None  # List of workout segments for option B
     selected_option: str = "A"  # Which option athlete has selected
 
     class Config:
@@ -290,6 +290,30 @@ def get_calendar(
             if w.scheduled_date == date.today():
                 current_week = w.week_number
                 current_phase = w.phase
+        
+        # If current_week not set (no workout today), calculate from plan dates
+        if current_week is None and active_plan.plan_start_date:
+            today = date.today()
+            if today < active_plan.plan_start_date:
+                # Plan hasn't started yet - show week 1
+                current_week = 1
+                # Get phase from first workout
+                first_workout = db.query(PlannedWorkout).filter(
+                    PlannedWorkout.plan_id == active_plan.id
+                ).order_by(PlannedWorkout.scheduled_date).first()
+                if first_workout:
+                    current_phase = first_workout.phase
+            elif today <= (active_plan.plan_end_date or today):
+                # Plan is in progress - calculate week from start date
+                days_from_start = (today - active_plan.plan_start_date).days
+                current_week = (days_from_start // 7) + 1
+                # Get phase from nearest workout in this week
+                nearest = db.query(PlannedWorkout).filter(
+                    PlannedWorkout.plan_id == active_plan.id,
+                    PlannedWorkout.week_number == current_week
+                ).first()
+                if nearest:
+                    current_phase = nearest.phase
     
     # Get activities in range
     activities_by_date = {}

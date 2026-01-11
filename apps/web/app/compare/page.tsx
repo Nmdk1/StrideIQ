@@ -175,19 +175,19 @@ export default function ComparePage() {
   const hasMaxHRFilter = minMaxHR || maxMaxHR;
   const hasAnyFilter = hasDistanceFilter || hasAvgHRFilter || hasMaxHRFilter;
   
-  // Convert user's distance input to meters for comparison
-  const parseDistanceToMeters = (value: string): number | null => {
-    if (!value) return null;
-    const num = parseFloat(value);
-    if (isNaN(num)) return null;
-    // User enters in current unit (miles or km), convert to meters
-    const km = units === 'imperial' ? num * 1.60934 : num;
-    return km * 1000;
-  };
-
   // Filter activities by distance and HR
   const filteredActivities = useMemo(() => {
     if (!activities) return [];
+    
+    // Convert user's distance input to meters for comparison
+    const parseDistanceToMeters = (value: string): number | null => {
+      if (!value) return null;
+      const num = parseFloat(value);
+      if (isNaN(num)) return null;
+      // User enters in current unit (miles or km), convert to meters
+      const km = units === 'imperial' ? num * 1.60934 : num;
+      return km * 1000;
+    };
     
     const minDistanceM = parseDistanceToMeters(minDistance);
     const maxDistanceM = parseDistanceToMeters(maxDistance);

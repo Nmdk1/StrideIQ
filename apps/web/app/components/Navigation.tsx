@@ -79,15 +79,16 @@ export default function Navigation() {
   ];
 
   // Authenticated navigation items (for logged-in users)
+  // Note: /tools is an in-app page, NOT a hash link to landing page
   const authNavItems = [
     { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-    { href: '/calendar', label: 'Plan', icon: '📅' },
+    { href: '/calendar', label: 'Calendar', icon: '📅' },
+    { href: '/plans/create', label: 'Training Plan', icon: '🎯', highlight: true },
     { href: '/insights', label: 'Insights', icon: '💡' },
-    { href: '/compare', label: 'Compare', icon: '👻', highlight: true },
+    { href: '/compare', label: 'Compare', icon: '👻' },
     { href: '/coach', label: 'Coach', icon: '🤖' },
     { href: '/activities', label: 'Activities', icon: '🏃' },
-    { href: '/checkin', label: 'Check-in', icon: '✓' },
-    { href: '/#tools', label: 'Calculators', icon: '🧮', isHash: true },
+    { href: '/tools', label: 'Tools', icon: '🧮' },
   ];
 
   const NavLink = ({ href, label, isHash = false, highlight = false }: { 
@@ -156,7 +157,6 @@ export default function Navigation() {
                     href={item.href} 
                     label={item.label}
                     highlight={item.highlight}
-                    isHash={item.isHash}
                   />
                 ))}
                 
@@ -249,20 +249,6 @@ export default function Navigation() {
                 /* === MOBILE AUTHENTICATED NAV === */
                 <>
                   {authNavItems.map((item) => (
-                    item.isHash ? (
-                      <a
-                        key={item.href}
-                        href={item.href}
-                        onClick={(e) => {
-                          handleHashClick(e, item.href);
-                          setMobileMenuOpen(false);
-                        }}
-                        className="px-4 py-3 rounded-lg text-base font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
-                      >
-                        <span className="mr-2">{item.icon}</span>
-                        {item.label}
-                      </a>
-                    ) : (
                       <Link
                         key={item.href}
                         href={item.href}
@@ -278,7 +264,6 @@ export default function Navigation() {
                         <span className="mr-2">{item.icon}</span>
                         {item.label}
                       </Link>
-                    )
                   ))}
                   <Link
                     href="/settings"

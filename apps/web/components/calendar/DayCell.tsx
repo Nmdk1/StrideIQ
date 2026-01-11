@@ -5,33 +5,57 @@
  * 
  * A single day in the calendar grid.
  * Shows planned workout + actual activity overlay.
+ * 
+ * DESIGN: Clear, readable workout display with meaningful colors
  */
 
 import React from 'react';
 import { useUnits } from '@/lib/context/UnitsContext';
 import type { CalendarDay } from '@/lib/api/services/calendar';
 
-// Workout type colors
-const workoutColors: Record<string, { bg: string; border: string; text: string }> = {
-  rest: { bg: 'bg-gray-800/50', border: 'border-gray-700', text: 'text-gray-500' },
-  gym: { bg: 'bg-gray-800/50', border: 'border-gray-700', text: 'text-gray-400' },
-  easy: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400' },
-  easy_strides: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400' },
-  easy_hills: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400' },
-  recovery: { bg: 'bg-gray-800/60', border: 'border-gray-600', text: 'text-gray-400' },
-  medium_long: { bg: 'bg-sky-900/40', border: 'border-sky-700/50', text: 'text-sky-400' },
-  medium_long_mp: { bg: 'bg-violet-900/40', border: 'border-violet-700/50', text: 'text-violet-400' },
-  long: { bg: 'bg-blue-900/40', border: 'border-blue-700/50', text: 'text-blue-400' },
-  long_mp: { bg: 'bg-pink-900/40', border: 'border-pink-700/50', text: 'text-pink-400' },
-  threshold: { bg: 'bg-orange-900/40', border: 'border-orange-700/50', text: 'text-orange-400' },
-  threshold_light: { bg: 'bg-orange-900/30', border: 'border-orange-700/40', text: 'text-orange-400' },
-  threshold_short: { bg: 'bg-orange-900/30', border: 'border-orange-700/40', text: 'text-orange-400' },
-  tempo: { bg: 'bg-orange-900/40', border: 'border-orange-700/50', text: 'text-orange-400' },
-  intervals: { bg: 'bg-red-900/40', border: 'border-red-700/50', text: 'text-red-400' },
-  race: { bg: 'bg-gradient-to-br from-pink-900/60 to-orange-900/60', border: 'border-pink-600', text: 'text-white' },
-  shakeout: { bg: 'bg-gray-800/50', border: 'border-gray-600', text: 'text-gray-400' },
-  shakeout_strides: { bg: 'bg-gray-800/50', border: 'border-gray-600', text: 'text-gray-400' },
+// Workout type colors - organized by effort category
+const workoutColors: Record<string, { bg: string; border: string; text: string; label: string }> = {
+  // Rest / Recovery
+  rest: { bg: 'bg-gray-800/50', border: 'border-gray-700', text: 'text-gray-500', label: 'Rest' },
+  gym: { bg: 'bg-gray-800/50', border: 'border-gray-700', text: 'text-gray-400', label: 'Gym' },
+  recovery: { bg: 'bg-gray-800/60', border: 'border-gray-600', text: 'text-gray-400', label: 'Recovery' },
+  
+  // Easy / Aerobic (Green family)
+  easy: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400', label: 'Easy Run' },
+  easy_strides: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400', label: 'Easy + Strides' },
+  easy_hills: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400', label: 'Easy + Hills' },
+  strides: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400', label: 'Strides' },
+  
+  // Medium Effort (Blue family)
+  medium_long: { bg: 'bg-sky-900/40', border: 'border-sky-700/50', text: 'text-sky-400', label: 'Medium Long' },
+  medium_long_mp: { bg: 'bg-violet-900/40', border: 'border-violet-700/50', text: 'text-violet-400', label: 'MLR w/ MP' },
+  aerobic: { bg: 'bg-sky-900/40', border: 'border-sky-700/50', text: 'text-sky-400', label: 'Aerobic' },
+  
+  // Long Runs (Blue family - deeper)
+  long: { bg: 'bg-blue-900/40', border: 'border-blue-700/50', text: 'text-blue-400', label: 'Long Run' },
+  long_mp: { bg: 'bg-pink-900/40', border: 'border-pink-700/50', text: 'text-pink-400', label: 'Long Run + MP' },
+  
+  // Quality - Threshold (Orange family)
+  threshold: { bg: 'bg-orange-900/40', border: 'border-orange-700/50', text: 'text-orange-400', label: 'Threshold' },
+  threshold_light: { bg: 'bg-orange-900/30', border: 'border-orange-700/40', text: 'text-orange-400', label: 'Light Threshold' },
+  threshold_short: { bg: 'bg-orange-900/30', border: 'border-orange-700/40', text: 'text-orange-400', label: 'Short Threshold' },
+  tempo: { bg: 'bg-orange-900/40', border: 'border-orange-700/50', text: 'text-orange-400', label: 'Tempo' },
+  
+  // Quality - Speed (Red family)
+  intervals: { bg: 'bg-red-900/40', border: 'border-red-700/50', text: 'text-red-400', label: 'Intervals' },
+  vo2max: { bg: 'bg-red-900/40', border: 'border-red-700/50', text: 'text-red-400', label: 'VO2max' },
+  speed: { bg: 'bg-red-900/40', border: 'border-red-700/50', text: 'text-red-400', label: 'Speed Work' },
+  
+  // Special
+  race: { bg: 'bg-gradient-to-br from-pink-900/60 to-orange-900/60', border: 'border-pink-600', text: 'text-white', label: '🏁 Race Day' },
+  shakeout: { bg: 'bg-gray-800/50', border: 'border-gray-600', text: 'text-gray-400', label: 'Shakeout' },
+  shakeout_strides: { bg: 'bg-gray-800/50', border: 'border-gray-600', text: 'text-gray-400', label: 'Shakeout + Strides' },
 };
+
+// Get human-readable label for workout type
+function getWorkoutLabel(workoutType: string): string {
+  return workoutColors[workoutType]?.label || workoutType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
 
 // Status indicator styles
 const statusStyles: Record<string, string> = {
@@ -75,10 +99,10 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
   const hasInsights = day.insights.length > 0;
   
   const workoutType = day.planned_workout?.workout_type || 'rest';
-  const colors = workoutColors[workoutType] || workoutColors.rest;
+  const colors = workoutColors[workoutType] || { bg: 'bg-gray-800/50', border: 'border-gray-700', text: 'text-gray-500', label: workoutType };
   const statusStyle = statusStyles[day.status] || '';
   
-  // Compact mode for mobile
+  // Compact mode for mobile - still readable
   if (compact) {
     return (
       <div 
@@ -96,9 +120,11 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
           {dayNum}
         </div>
         
-        {/* Workout type indicator dot/bar */}
-        {hasPlanned && (
-          <div className={`h-1 rounded-full mt-1 ${colors.bg} ${colors.border} border`} />
+        {/* Workout type indicator - abbreviated but readable */}
+        {hasPlanned && day.planned_workout && (
+          <div className={`mt-1 px-1 py-0.5 rounded text-[9px] font-medium truncate ${colors.bg} ${colors.text}`}>
+            {getWorkoutLabel(day.planned_workout.workout_type).substring(0, 8)}
+          </div>
         )}
         
         {/* Activity indicator */}
@@ -136,21 +162,28 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
         {dayNum}
       </div>
       
-      {/* Planned workout card */}
+      {/* Planned workout card - Clear, readable format */}
       {hasPlanned && day.planned_workout && (
         <div className={`
           rounded-md p-1.5 mb-1.5 border
           ${colors.bg} ${colors.border}
           ${day.status === 'completed' ? 'opacity-50' : ''}
         `}>
-          <div className={`text-xs font-semibold uppercase tracking-wide ${colors.text}`}>
-            {day.planned_workout.workout_type.replace(/_/g, ' ')}
+          {/* Workout type label - human readable */}
+          <div className={`text-xs font-semibold ${colors.text}`}>
+            {getWorkoutLabel(day.planned_workout.workout_type)}
           </div>
-          {day.planned_workout.target_distance_km && (
-            <div className="text-xs text-gray-400 mt-0.5">
+          
+          {/* Title if different from type, or distance */}
+          {day.planned_workout.title && day.planned_workout.title !== getWorkoutLabel(day.planned_workout.workout_type) ? (
+            <div className="text-[10px] text-gray-400 mt-0.5 truncate" title={day.planned_workout.title}>
+              {day.planned_workout.title}
+            </div>
+          ) : day.planned_workout.target_distance_km ? (
+            <div className="text-[10px] text-gray-400 mt-0.5">
               {formatDistance(day.planned_workout.target_distance_km * 1000, 0)}
             </div>
-          )}
+          ) : null}
         </div>
       )}
       

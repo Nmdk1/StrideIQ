@@ -75,11 +75,28 @@ export interface StandardPlanRequest {
   start_date?: string;
 }
 
-export interface SemiCustomPlanRequest extends StandardPlanRequest {
+export interface SemiCustomPlanRequest {
+  distance: string;
+  race_date: string;
+  days_per_week: number;
+  current_weekly_miles: number;
   recent_race_distance?: string;
-  recent_race_time?: string;
-  race_date?: string;
+  recent_race_time_seconds?: number;  // Seconds, not string
   race_name?: string;
+}
+
+export interface CustomPlanRequest {
+  distance: string;
+  race_date: string;
+  days_per_week: number;
+  current_weekly_miles?: number;
+  current_long_run_miles?: number;
+  recent_race_distance?: string;
+  recent_race_time_seconds?: number;
+  goal_time_seconds?: number;
+  preferred_quality_day?: number;  // 0=Mon, 6=Sun
+  preferred_long_run_day?: number;
+  injury_history?: Record<string, unknown>;
 }
 
 // =============================================================================
@@ -118,9 +135,18 @@ export const planService = {
   },
 
   /**
-   * Create a semi-custom plan ($5)
+   * Create a semi-custom plan ($5 or included with paid tier)
+   * Uses user-provided race time for pace calculation.
    */
   async createSemiCustom(request: SemiCustomPlanRequest): Promise<GeneratedPlan> {
     return apiClient.post<GeneratedPlan>('/v2/plans/semi-custom', request);
+  },
+
+  /**
+   * Create a fully custom plan (Elite tier)
+   * Uses user-provided race time OR Strava data for pace calculation.
+   */
+  async createCustom(request: CustomPlanRequest): Promise<GeneratedPlan> {
+    return apiClient.post<GeneratedPlan>('/v2/plans/custom', request);
   },
 };
