@@ -201,3 +201,34 @@ def require_tier(allowed_tiers: list[str]):
 # Alias for backward compatibility with routers using get_current_athlete
 get_current_athlete = get_current_user
 
+
+def get_current_athlete_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db)
+) -> Optional[Athlete]:
+    """
+    Get the current authenticated user if token is provided.
+    Returns None if no token or invalid token.
+    
+    Useful for endpoints that work both authenticated and unauthenticated.
+    """
+    if not credentials:
+        return None
+    
+    token = credentials.credentials
+    payload = decode_access_token(token)
+    
+    if not payload:
+        return None
+    
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    
+    try:
+        user_id_uuid = UUID(user_id)
+    except ValueError:
+        return None
+    
+    user = db.query(Athlete).filter(Athlete.id == user_id_uuid).first()
+    return user
