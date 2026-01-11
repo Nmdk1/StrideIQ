@@ -95,14 +95,38 @@ export default function CreatePlanPage() {
         race_name: formData.race_name || undefined,
       };
       
-      // Choose endpoint based on auth status
-      if (isAuthenticated) {
+      // For authenticated users with race time, create semi-custom plan
+      // Check if they have a recent race for pace calculation
+      const hasPaceData = formData.recent_race_distance && formData.recent_race_time;
+      
+      if (isAuthenticated && hasPaceData) {
+        // Semi-custom plan - requires $5 payment
+        // Check if already purchased (via session storage)
+        const purchaseData = sessionStorage.getItem('plan_purchased');
+        if (!purchaseData) {
+          // Redirect to checkout
+          const params = new URLSearchParams({
+            tier: 'semi_custom',
+            distance: formData.distance,
+            duration: planDuration.toString(),
+            days: formData.days_per_week.toString(),
+            volume: getVolumeTier(),
+          });
+          router.push(`/plans/checkout?${params.toString()}`);
+          return;
+        }
+        
+        // Purchase confirmed, create the plan
         await planService.createSemiCustom({
           ...requestBody,
           recent_race_distance: formData.recent_race_distance,
           recent_race_time: formData.recent_race_time,
         });
+        
+        // Clear purchase data
+        sessionStorage.removeItem('plan_purchased');
       } else {
+        // Standard (free) plan
         await planService.createStandard(requestBody);
       }
       
