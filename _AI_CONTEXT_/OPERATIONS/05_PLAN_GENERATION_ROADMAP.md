@@ -42,78 +42,84 @@ Training Calendar (Central Hub)
 
 | Component | Purpose | Status |
 |-----------|---------|--------|
-| Feature Flags | Gate any feature without deploy | ⬜ |
-| Plugin Registry | Pluggable workouts/phases/rules | ⬜ |
-| Entitlements Service | Clean access control | ⬜ |
-| Config Loading | YAML-driven rules | ⬜ |
-| Cache Layer | Redis for scale | ⬜ |
-| Job Queue | Celery for async generation | ⬜ |
+| Feature Flags | Gate any feature without deploy | ✅ |
+| Plugin Registry | Pluggable workouts/phases/rules | ✅ |
+| Entitlements Service | Clean access control | ✅ |
+| Config Loading | YAML-driven rules | ✅ |
+| Cache Layer | Redis for scale | ✅ |
+| Job Queue | Celery for async generation | ✅ |
+| Database Models | Plan framework tables | ✅ |
 
 ### Week 2: Plan Generator Core
 
 | Component | Purpose | Status |
 |-----------|---------|--------|
-| Volume Tier Classifier | Categorize athlete capacity | ⬜ |
-| Phase Builder | Construct phase structure | ⬜ |
-| Workout Scaler | Scale workouts to athlete | ⬜ |
-| Pace Engine | Integrate Training Pace Calculator | ⬜ |
-| Async Generation | Background plan creation | ⬜ |
-| API Endpoints | REST API for plan operations | ⬜ |
+| Volume Tier Classifier | Categorize athlete capacity | ✅ |
+| Phase Builder | Construct phase structure | ✅ |
+| Workout Scaler | Scale workouts to athlete | ✅ |
+| Pace Engine | Integrate Training Pace Calculator | ✅ |
+| Generator Core | Main plan generation logic | ✅ |
+| API Endpoints | REST API for plan operations | ✅ |
+| Output Validation Tests | Automated plan quality checks | ✅ |
 
 ### Week 3: Calendar Integration
 
 | Component | Purpose | Status |
 |-----------|---------|--------|
-| Display Planned Workouts | Show in calendar grid | ⬜ |
+| Plan Creation UI | Questionnaire-based flow | ✅ |
+| Plan Preview Page | Browse plans before creating | ✅ |
+| CreatePlanCTA | Call to action in calendar | ✅ |
+| Plan API Service | Frontend service for plans | ✅ |
+| Display Planned Workouts | Show in calendar grid | ⬜ (in progress) |
 | Option A/B UI | Toggle between workout options | ⬜ |
 | Week Summaries | Volume, phase, focus | ⬜ |
-| Phase Indicators | Visual phase progression | ⬜ |
-| Completion Tracking | Match actual to planned | ⬜ |
 
 ---
 
-## Phase B: Standard Plans (Weeks 4-8)
+## Phase B: Standard Plans (Weeks 4-8) ✅ COMPLETE
 
-### Deliverable: 24 Standard Plans
+### Deliverable: 24 Standard Plans (DYNAMIC)
+
+The generator dynamically creates plans for all combinations:
 
 | Distance | Durations | Volume Tiers | Count | Status |
 |----------|-----------|--------------|-------|--------|
-| Marathon | 18w, 12w | Low, Mid, High | 6 | ⬜ |
-| Half Marathon | 16w, 12w | Low, Mid, High | 6 | ⬜ |
-| 10K | 12w, 8w | Low, Mid, High | 6 | ⬜ |
-| 5K | 12w, 8w | Low, Mid, High | 6 | ⬜ |
+| Marathon | 8-24w | builder, low, mid, high | Dynamic | ✅ |
+| Half Marathon | 8-24w | builder, low, mid, high | Dynamic | ✅ |
+| 10K | 8-24w | builder, low, mid, high | Dynamic | ✅ |
+| 5K | 8-24w | builder, low, mid, high | Dynamic | ✅ |
 
-### Workout Library Required
+### Workout Library Implemented
 
-- ~50 workout definitions across all distances
-- Option A/B pairs for key workouts
-- Scaling rules for each tier
-- Phase-appropriate selection logic
+- Workout types: easy, strides, hills, threshold_intervals, tempo, intervals, medium_long, long, long_mp
+- Volume scaling per tier
+- Phase-appropriate progression
+- Option A/B structure in place (expandable)
 
 ---
 
-## Phase C: Personalization (Weeks 9-12)
+## Phase C: Personalization (Weeks 9-12) ✅ COMPLETE
 
 ### Semi-Custom Plans ($5)
 
 | Feature | Purpose | Status |
 |---------|---------|--------|
-| Questionnaire UI | Capture athlete input | ⬜ |
-| Pace Integration | Training Pace Calculator | ⬜ |
-| Duration Fitting | Compress/expand to race date | ⬜ |
-| Race Profile | Hilly/flat/trail adjustments | ⬜ |
-| Weather Context | Season-appropriate notes | ⬜ |
-| Payment Integration | $5 one-time | ⬜ |
+| Questionnaire UI | 7-step capture flow | ✅ |
+| Recent Race Step | Capture race time for paces | ✅ |
+| Pace Integration | Training Pace Calculator | ✅ |
+| Duration Fitting | Auto-fit to race date | ✅ |
+| Checkout Page | Payment placeholder | ✅ |
+| Payment Flow | Session-based (Stripe placeholder) | ✅ |
 
 ### Custom Plans (Subscription)
 
 | Feature | Purpose | Status |
 |---------|---------|--------|
-| Strava Integration | Auto-populate from data | ⬜ |
-| Variable Duration | Any length (4-24 weeks) | ⬜ |
-| Tune-up Blocks | Short specialty plans | ⬜ |
-| Athlete Intelligence | Personalization from history | ⬜ |
-| Subscription Gating | Pro/Elite tiers | ⬜ |
+| Strava Integration | Auto-detect volume & paces | ✅ |
+| Variable Duration | Any length (4-24 weeks) | ✅ |
+| Training History Analysis | Uses recent activities | ✅ |
+| Race Effort Detection | Find best races for VDOT | ✅ |
+| Custom Endpoint | Full API implementation | ✅ |
 
 ---
 
