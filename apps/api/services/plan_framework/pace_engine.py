@@ -90,17 +90,29 @@ class PaceEngine:
             TrainingPaces object with all pace zones
         """
         # Import the VDOT calculator
-        from services.vdot_calculator import calculate_vdot, get_training_paces
+        from services.vdot_calculator import calculate_vdot_from_race_time, calculate_training_paces
         
         try:
+            # Convert distance to meters
+            distance_meters = {
+                "5k": 5000,
+                "10k": 10000,
+                "half_marathon": 21097.5,
+                "half": 21097.5,
+                "marathon": 42195,
+            }.get(distance.lower(), 0)
+            
+            if not distance_meters:
+                return None
+            
             # Calculate VDOT
-            vdot = calculate_vdot(distance, time_seconds)
+            vdot = calculate_vdot_from_race_time(distance_meters, time_seconds)
             
             if vdot is None:
                 return None
             
             # Get training paces
-            paces = get_training_paces(vdot)
+            paces = calculate_training_paces(vdot)
             
             if not paces:
                 return None
