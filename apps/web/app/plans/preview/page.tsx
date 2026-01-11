@@ -9,34 +9,7 @@
 
 import React, { useState } from 'react';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-
-interface PlanPreview {
-  plan_tier: string;
-  distance: string;
-  duration_weeks: number;
-  volume_tier: string;
-  days_per_week: number;
-  phases: Array<{
-    name: string;
-    phase_type: string;
-    weeks: number[];
-    focus: string;
-  }>;
-  workouts: Array<{
-    week: number;
-    day: number;
-    day_name: string;
-    workout_type: string;
-    title: string;
-    description: string;
-    distance_miles?: number;
-    phase_name: string;
-  }>;
-  weekly_volumes: number[];
-  peak_volume: number;
-  total_miles: number;
-  total_quality_sessions: number;
-}
+import { planService, type GeneratedPlan } from '@/lib/api/services/plans';
 
 const DISTANCES = [
   { value: '5k', label: '5K' },
@@ -57,7 +30,7 @@ export default function PlanPreviewPage() {
   const [tier, setTier] = useState('mid');
   const [duration, setDuration] = useState(18);
   const [days, setDays] = useState(6);
-  const [preview, setPreview] = useState<PlanPreview | null>(null);
+  const [preview, setPreview] = useState<GeneratedPlan | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'phases' | 'weeks'>('phases');
@@ -67,22 +40,12 @@ export default function PlanPreviewPage() {
     setError(null);
     
     try {
-      const response = await fetch('/api/v2/plans/standard/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          distance,
-          duration_weeks: duration,
-          days_per_week: days,
-          volume_tier: tier,
-        }),
+      const data = await planService.previewStandard({
+        distance,
+        duration_weeks: duration,
+        days_per_week: days,
+        volume_tier: tier,
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to generate preview');
-      }
-      
-      const data = await response.json();
       setPreview(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load preview');

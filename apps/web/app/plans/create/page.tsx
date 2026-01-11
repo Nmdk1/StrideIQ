@@ -10,6 +10,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { planService } from '@/lib/api/services/plans';
 
 type Step = 'distance' | 'race-date' | 'current-fitness' | 'availability' | 'experience' | 'review';
 
@@ -84,8 +85,6 @@ export default function CreatePlanPage() {
     setError(null);
     
     try {
-      const token = localStorage.getItem('token');
-      
       // Build request body
       const requestBody = {
         distance: formData.distance,
@@ -97,23 +96,15 @@ export default function CreatePlanPage() {
       };
       
       // Choose endpoint based on auth status
-      const endpoint = token ? '/api/v2/plans/semi-custom' : '/api/v2/plans/standard';
-      
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(requestBody),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to create plan');
+      if (isAuthenticated) {
+        await planService.createSemiCustom({
+          ...requestBody,
+          recent_race_distance: formData.recent_race_distance,
+          recent_race_time: formData.recent_race_time,
+        });
+      } else {
+        await planService.createStandard(requestBody);
       }
-      
-      const data = await response.json();
       
       // Redirect to calendar to see the plan
       router.push('/calendar');
