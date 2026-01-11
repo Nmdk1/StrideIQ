@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marathon Training Plan - Mid Mileage | 5 Days/Week | 18 Weeks</title>
+    <style>
+        :root {
+            --bg-dark: #0f1419;
+            --bg-card: #1a1f26;
+            --bg-week: #232a33;
+            --text-primary: #e7e9ea;
+            --text-secondary: #8b98a5;
+            --text-muted: #536471;
+            --accent-blue: #1d9bf0;
+            --border: #2f3336;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.5;
+            padding: 20px;
+        }
+        
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        header {
+            text-align: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 6px; }
+        .subtitle { color: var(--text-secondary); font-size: 1rem; }
+        
+        .info-banner {
+            background: linear-gradient(135deg, #1d9bf022, #7856ff22);
+            border: 1px solid var(--accent-blue);
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+        }
+        
+        .info-banner h3 { color: var(--accent-blue); margin-bottom: 6px; font-size: 0.95rem; }
+        .info-banner p { color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 4px; }
+        
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 16px;
+            padding: 10px 14px;
+            background: var(--bg-card);
+            border-radius: 8px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.75rem;
+        }
+        
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+        
+        .calendar { display: grid; gap: 5px; }
+        
+        .week-row {
+            display: grid;
+            grid-template-columns: 80px 60px repeat(7, 1fr);
+            gap: 4px;
+            padding: 6px;
+            background: var(--bg-week);
+            border-radius: 6px;
+            border-left: 4px solid transparent;
+        }
+        
+        .week-header {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .week-num { font-weight: 700; font-size: 0.85rem; }
+        .week-phase { font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; }
+        
+        .week-mileage {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: var(--bg-card);
+            border-radius: 5px;
+            padding: 3px;
+        }
+        
+        .mileage-value { font-weight: 700; font-size: 0.95rem; color: var(--accent-blue); }
+        .mileage-label { font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; }
+        
+        .day-cell {
+            background: var(--bg-card);
+            border-radius: 4px;
+            padding: 5px;
+            min-height: 55px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        
+        .day-label { font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; }
+        
+        .workout-type {
+            font-weight: 600;
+            font-size: 0.65rem;
+            padding: 2px 4px;
+            border-radius: 3px;
+            display: inline-block;
+            width: fit-content;
+        }
+        
+        .workout-detail { font-size: 0.65rem; color: var(--text-secondary); line-height: 1.2; }
+        
+        .day-cell.rest-day {
+            background: var(--bg-dark);
+            border: 1px dashed var(--border);
+        }
+        
+        .summary {
+            margin-top: 20px;
+            padding: 14px;
+            background: var(--bg-card);
+            border-radius: 10px;
+        }
+        
+        .summary h2 { margin-bottom: 10px; color: var(--accent-blue); font-size: 1.1rem; }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+        }
+        
+        .summary-item {
+            background: var(--bg-week);
+            padding: 10px;
+            border-radius: 6px;
+        }
+        
+        .summary-item .label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; }
+        .summary-item .value { font-size: 1.1rem; font-weight: 700; }
+        
+        footer {
+            text-align: center;
+            margin-top: 20px;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏃 Marathon Training Plan</h1>
+            <p class="subtitle">Mid Mileage (35-50 mi/wk) • 5 Days/Week • 18 Weeks</p>
+        </header>
+        
+        <div class="info-banner">
+            <h3>📐 Plan Structure</h3>
+            <p><strong>Volume:</strong> 35 mi → 50 mi peak (hold 3 weeks) → Taper</p>
+            <p><strong>Cut-back:</strong> Every 4th week (25% reduction)</p>
+            <p><strong>Long Run:</strong> 14 mi start → 20 mi peak</p>
+            <p><strong>Paces:</strong> Use Training Pace Calculator to get your specific paces</p>
+        </div>
+        
+        <div class="legend">
+            <div class="legend-item"><div class="legend-color" style="background: #00ba7c;"></div><span>Easy/Strides</span></div>
+            <div class="legend-item"><div class="legend-color" style="background: #38bdf8;"></div><span>Med-Long</span></div>
+            <div class="legend-item"><div class="legend-color" style="background: #1d9bf0;"></div><span>Long Run</span></div>
+            <div class="legend-item"><div class="legend-color" style="background: #ff7a00;"></div><span>Threshold</span></div>
+            <div class="legend-item"><div class="legend-color" style="background: #f91880;"></div><span>Long+MP</span></div>
+            <div class="legend-item"><div class="legend-color" style="background: #4a5568;"></div><span>Gym</span></div>
+            <div class="legend-item"><div class="legend-color" style="background: #2f3336;"></div><span>Rest</span></div>
+        </div>
+        
+        <div class="calendar">
+
+            <div class="week-row" style="border-left-color: #00ba7c;">
+                <div class="week-header">
+                    <span class="week-num">Week 1</span>
+                    <span class="week-phase">Base</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">35</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">7 mi Easy + 4x20s strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">5 mi Easy + 4x20s strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">6 mi Easy + 6x20s strides + 4x8s hill sprints</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">3 mi Pre-long shakeout + 4x strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">14 mi Easy, conversational. The Engine.</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #00ba7c;">
+                <div class="week-header">
+                    <span class="week-num">Week 2</span>
+                    <span class="week-phase">Base</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">38</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">8 mi Easy + 4x20s strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">5 mi Easy + 4x20s strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">6 mi Easy + 6x20s strides + 6x8s hill sprints</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">4 mi Pre-long shakeout + 4x strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">15 mi Easy, conversational</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #00ba7c;">
+                <div class="week-header">
+                    <span class="week-num">Week 3</span>
+                    <span class="week-phase">Base</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">41</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #38bdf8; color: #000;">Medium Long</span>
+                    <span class="workout-detail">9 mi Easy (building toward med-long)</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">5 mi Easy + 4x20s strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">7 mi Easy + 8x20s strides + 6x8s hill sprints</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">4 mi Pre-long shakeout + strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">16 mi Easy, conversational</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #ffd400; background: linear-gradient(90deg, #ffd40011, transparent);">
+                <div class="week-header">
+                    <span class="week-num">Week 4</span>
+                    <span class="week-phase">Cutback</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">30</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">6 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">4 mi Very easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">5 mi Easy + 4x strides</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">3 mi Easy shakeout</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">12 mi Very easy</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #ff7a00;">
+                <div class="week-header">
+                    <span class="week-num">Week 5</span>
+                    <span class="week-phase">Build 1</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">41</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #38bdf8; color: #000;">Medium Long</span>
+                    <span class="workout-detail">9 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">5 mi Easy + 4x strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #ff7a00; color: #000;">Threshold</span>
+                    <span class="workout-detail">7 mi w/ 5x5 min T, 2 min jog recovery</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">4 mi Easy + strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">16 mi Easy</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #ff7a00;">
+                <div class="week-header">
+                    <span class="week-num">Week 6</span>
+                    <span class="week-phase">Build 1</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">44</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #38bdf8; color: #000;">Medium Long</span>
+                    <span class="workout-detail">10 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">5 mi Easy + 4x strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #ff7a00; color: #000;">Threshold</span>
+                    <span class="workout-detail">8 mi w/ 4x6 min T, 2 min jog recovery</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">4 mi Easy + strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">17 mi Easy</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #ff7a00;">
+                <div class="week-header">
+                    <span class="week-num">Week 7</span>
+                    <span class="week-phase">Build 1</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">47</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #38bdf8; color: #000;">Medium Long</span>
+                    <span class="workout-detail">10 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">5 mi Recovery</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #ff7a00; color: #000;">Threshold</span>
+                    <span class="workout-detail">8 mi w/ 3x8 min T, 2 min jog recovery</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">6 mi Easy + strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">18 mi Easy</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #ffd400; background: linear-gradient(90deg, #ffd40011, transparent);">
+                <div class="week-header">
+                    <span class="week-num">Week 8</span>
+                    <span class="week-phase">Cutback</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">35</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">7 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">4 mi Recovery</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #ff7a00; color: #000;">Threshold</span>
+                    <span class="workout-detail">6 mi w/ 15 min continuous T (light)</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">4 mi Easy + strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">14 mi Very easy</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #536471;">
+                <div class="week-header">
+                    <span class="week-num">Week 9</span>
+                    <span class="week-phase">Mp_Introduction</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">47</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #c026d3; color: #fff;">Medium Long Mp</span>
+                    <span class="workout-detail">10 mi w/ 2x2mi @ MP (2mi easy warmup, 2mi MP, 1mi easy, 2mi MP, 3mi easy)</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">5 mi Recovery</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #ff7a00; color: #000;">Threshold</span>
+                    <span class="workout-detail">8 mi w/ 2x10 min T, 3 min jog recovery</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">6 mi Easy + strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">18 mi Easy - save legs for MP work this week</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #536471;">
+                <div class="week-header">
+                    <span class="week-num">Week 10</span>
+                    <span class="week-phase">Mp_Introduction</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">50</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #38bdf8; color: #000;">Medium Long</span>
+                    <span class="workout-detail">10 mi Easy (recovery from MP long)</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">5 mi Recovery</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">7 mi Easy + 6x strides (no T this week - absorb MP work)</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">8 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #f91880; color: #fff;">Long Mp</span>
+                    <span class="workout-detail">20 mi w/ 6 @ MP: 4mi easy â†’ 3mi MP â†’ 1mi easy â†’ 3mi MP â†’ 9mi easy cooldown</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #536471;">
+                <div class="week-header">
+                    <span class="week-num">Week 11</span>
+                    <span class="week-phase">Mp_Introduction</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">48</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #c026d3; color: #fff;">Medium Long Mp</span>
+                    <span class="workout-detail">11 mi w/ 2x3mi @ MP (3mi easy â†’ 3mi MP â†’ 1mi easy â†’ 3mi MP â†’ 1mi easy)</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">5 mi Recovery</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #ff7a00; color: #000;">Threshold</span>
+                    <span class="workout-detail">8 mi w/ 20 min continuous T</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">6 mi Easy + strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">18 mi Easy - save MP for Tuesday</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #ffd400; background: linear-gradient(90deg, #ffd40011, transparent);">
+                <div class="week-header">
+                    <span class="week-num">Week 12</span>
+                    <span class="week-phase">Cutback</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">36</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">7 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">5 mi Recovery</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #ff7a00; color: #000;">Threshold</span>
+                    <span class="workout-detail">6 mi w/ 15 min continuous T (light)</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">4 mi Easy + strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">14 mi Very easy</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #536471;">
+                <div class="week-header">
+                    <span class="week-num">Week 13</span>
+                    <span class="week-phase">Race_Specific</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">50</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #38bdf8; color: #000;">Medium Long</span>
+                    <span class="workout-detail">10 mi Easy (recovery from MP long)</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">5 mi Recovery</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">7 mi Easy + 6x strides (no T - absorb MP work)</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">8 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #f91880; color: #fff;">Long Mp</span>
+                    <span class="workout-detail">20 mi 10 CONTINUOUS @ MP: 4mi easy â†’ 10mi @ MP â†’ 6mi easy. Race nutrition practice.</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #536471;">
+                <div class="week-header">
+                    <span class="week-num">Week 14</span>
+                    <span class="week-phase">Race_Specific</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">50</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest - you earned it</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #38bdf8; color: #000;">Medium Long</span>
+                    <span class="workout-detail">10 mi Easy (recovery from dress rehearsal)</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">5 mi Recovery</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">7 mi Easy + 6x strides (no T - absorbing dress rehearsal)</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">8 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #f91880; color: #fff;">Long Mp</span>
+                    <span class="workout-detail">20 mi DRESS REHEARSAL: 14 CONTINUOUS @ MP. 3mi easy â†’ 14mi @ MP â†’ 3mi easy. Race nutrition. Race gear. If you can't hold MP, adjust goal.</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #7856ff;">
+                <div class="week-header">
+                    <span class="week-num">Week 15</span>
+                    <span class="week-phase">Taper</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">40</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">8 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">5 mi Easy + 6x strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #ff7a00; color: #000;">Threshold</span>
+                    <span class="workout-detail">7 mi w/ 15 min T (sharpening - maintaining neuromuscular)</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">6 mi Easy + strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">14 mi Easy (final long-ish run)</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #7856ff;">
+                <div class="week-header">
+                    <span class="week-num">Week 16</span>
+                    <span class="week-phase">Taper</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">32</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">6 mi Easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">4 mi Easy + 6x strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #ff7a00; color: #000;">Threshold</span>
+                    <span class="workout-detail">6 mi w/ 12 min T (sharpening)</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">4 mi Easy + strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">12 mi Easy (moderate long run)</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #7856ff;">
+                <div class="week-header">
+                    <span class="week-num">Week 17</span>
+                    <span class="week-phase">Taper</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">24</span>
+                    <span class="mileage-label">miles</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">5 mi Easy + 4x strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy</span>
+                    <span class="workout-detail">4 mi Very easy</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #ff7a00; color: #000;">Threshold</span>
+                    <span class="workout-detail">4 mi w/ 8 min T (final sharpening)</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">3 mi Easy + 4x strides</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: #1d9bf0; color: #fff;">Long</span>
+                    <span class="workout-detail">8 mi Easy (final moderate run)</span>
+                </div>
+            </div>
+
+            <div class="week-row" style="border-left-color: #f91880;">
+                <div class="week-header">
+                    <span class="week-num">Week 18</span>
+                    <span class="week-phase">Race</span>
+                </div>
+                <div class="week-mileage">
+                    <span class="mileage-value">26.2+</span>
+                    <span class="mileage-label">race!</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Mon</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Tue</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">3 mi Easy + 4x strides</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Wed</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Light walk or full rest</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Thu</span>
+                    <span class="workout-type" style="background: #00ba7c; color: #000;">Easy Strides</span>
+                    <span class="workout-detail">2.8 mi Shakeout + 4x strides</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Fri</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Full rest</span>
+                </div>
+
+                <div class="day-cell rest-day">
+                    <span class="day-label">Sat</span>
+                    <span class="workout-type" style="background: #2f3336; color: #8b98a5;">Rest</span>
+                    <span class="workout-detail">Pre-race prep, visualize</span>
+                </div>
+
+                <div class="day-cell">
+                    <span class="day-label">Sun</span>
+                    <span class="workout-type" style="background: linear-gradient(135deg, #f91880, #ff7a00); color: #fff;">Race</span>
+                    <span class="workout-detail">MARATHON - Trust the work!</span>
+                </div>
+            </div>
+
+        </div>
+        
+        <div class="summary">
+            <h2>📊 Plan Summary</h2>
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="label">Starting Volume</div>
+                    <div class="value">35 mi</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Peak Volume</div>
+                    <div class="value">50 mi</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Longest Run</div>
+                    <div class="value">20 mi</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Cut-backs</div>
+                    <div class="value">Every 4th wk</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Taper</div>
+                    <div class="value">3 weeks</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Total Volume</div>
+                    <div class="value">~688 mi</div>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>StrideIQ Training Plan | Generated 2026-01-11</p>
+            <p>Version 1.0.0</p>
+        </footer>
+    </div>
+</body>
+</html>

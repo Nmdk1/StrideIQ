@@ -806,3 +806,231 @@ class CalendarInsight(Base):
         Index("ix_calendar_insight_athlete_date", "athlete_id", "insight_date"),
         Index("ix_calendar_insight_type", "insight_type"),
     )
+
+
+# ============================================================================
+# PLAN GENERATION FRAMEWORK MODELS
+# ============================================================================
+
+class FeatureFlag(Base):
+    """
+    Feature flags for gating any feature without deploy.
+    
+    Features can be gated by:
+    - Global enable/disable
+    - Subscription requirement
+    - Tier requirement (pro, elite)
+    - One-time payment
+    - Rollout percentage
+    - Beta tester list
+    """
+    __tablename__ = "feature_flag"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key = Column(Text, unique=True, nullable=False, index=True)  # e.g., "plan.semi_custom"
+    name = Column(Text, nullable=False)  # Human-readable name
+    description = Column(Text, nullable=True)
+    
+    # Gating options
+    enabled = Column(Boolean, default=False, nullable=False)
+    requires_subscription = Column(Boolean, default=False, nullable=False)
+    requires_tier = Column(Text, nullable=True)  # "pro", "elite", etc.
+    requires_payment = Column(Numeric(10, 2), nullable=True)  # One-time price
+    
+    # Rollout control
+    rollout_percentage = Column(Integer, default=100, nullable=False)  # 0-100
+    allowed_athlete_ids = Column(JSONB, nullable=True)  # Beta tester UUIDs
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class Purchase(Base):
+    """
+    One-time purchases (e.g., semi-custom plans).
+    """
+    __tablename__ = "purchase"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    product_key = Column(Text, nullable=False, index=True)  # e.g., "plan.semi_custom"
+    
+    # Payment details
+    amount = Column(Numeric(10, 2), nullable=False)
+    currency = Column(Text, default="USD", nullable=False)
+    status = Column(Text, default="pending", nullable=False)  # "pending", "completed", "refunded"
+    
+    # External payment reference
+    payment_provider = Column(Text, nullable=True)  # "stripe", "paypal"
+    external_payment_id = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class WorkoutDefinition(Base):
+    """
+    Workout definitions for the plugin registry.
+    
+    Allows adding new workout types without code changes.
+    """
+    __tablename__ = "workout_definition"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key = Column(Text, unique=True, nullable=False, index=True)  # e.g., "progressive_long_run"
+    name = Column(Text, nullable=False)  # "Progressive Long Run"
+    category = Column(Text, nullable=False, index=True)  # "long_run", "threshold", "easy"
+    description = Column(Text, nullable=True)
+    
+    # Applicability
+    applicable_distances = Column(JSONB, nullable=True)  # ["marathon", "half_marathon"]
+    applicable_phases = Column(JSONB, nullable=True)  # ["build", "specific"]
+    
+    # Structure
+    structure_template = Column(JSONB, nullable=True)  # Parameterized workout structure
+    scaling_rules = Column(JSONB, nullable=True)  # How to scale by tier
+    
+    # Option A/B pairing
+    option_b_key = Column(Text, nullable=True)  # Key of alternative workout
+    
+    # Metadata
+    purpose = Column(Text, nullable=True)  # Physiological purpose
+    when_to_use = Column(Text, nullable=True)  # Selection criteria
+    
+    # Status
+    active = Column(Boolean, default=True, nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class PhaseDefinition(Base):
+    """
+    Phase definitions for the plugin registry.
+    """
+    __tablename__ = "phase_definition"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key = Column(Text, unique=True, nullable=False, index=True)  # e.g., "base_speed"
+    name = Column(Text, nullable=False)  # "Base + Speed"
+    
+    # Applicability
+    applicable_distances = Column(JSONB, nullable=True)  # ["marathon", "half_marathon"]
+    
+    # Duration constraints
+    default_weeks = Column(Integer, nullable=False)
+    min_weeks = Column(Integer, nullable=False)
+    max_weeks = Column(Integer, nullable=False)
+    
+    # Training focus
+    focus = Column(Text, nullable=True)  # "aerobic_foundation", "threshold_development"
+    quality_sessions_per_week = Column(Integer, default=0, nullable=False)
+    allowed_workout_types = Column(JSONB, nullable=True)  # ["easy", "threshold", "long"]
+    
+    # Status
+    active = Column(Boolean, default=True, nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class ScalingRule(Base):
+    """
+    Scaling rules for the plugin registry.
+    """
+    __tablename__ = "scaling_rule"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key = Column(Text, unique=True, nullable=False, index=True)
+    name = Column(Text, nullable=False)
+    category = Column(Text, nullable=False, index=True)  # "scaling", "selection", "adaptation"
+    
+    # Rule logic (JSON-encoded)
+    rule_logic = Column(JSONB, nullable=True)
+    
+    # Status
+    active = Column(Boolean, default=True, nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class AthleteGoal(Base):
+    """
+    Athlete questionnaire responses for plan generation.
+    """
+    __tablename__ = "athlete_goal"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    
+    # Required fields
+    goal_distance = Column(Text, nullable=False)  # "marathon", "half_marathon", "10k", "5k"
+    goal_race_date = Column(Date, nullable=False)
+    current_weekly_miles = Column(Float, nullable=False)
+    days_per_week = Column(Integer, nullable=False)
+    
+    # For pace calculation
+    recent_race_distance = Column(Text, nullable=True)  # "5k", "10k", "half", "marathon"
+    recent_race_time_seconds = Column(Integer, nullable=True)
+    
+    # Optional target
+    goal_time_seconds = Column(Integer, nullable=True)
+    
+    # Current fitness
+    current_long_run_miles = Column(Float, nullable=True)
+    
+    # Semi-custom fields
+    race_profile = Column(Text, nullable=True)  # "flat", "hilly", "mixed", "trail"
+    race_season = Column(Text, nullable=True)  # "spring", "summer", "fall", "winter"
+    
+    # Injury history (custom only)
+    injury_history = Column(JSONB, nullable=True)
+    
+    # Preferences (custom only)
+    training_preferences = Column(JSONB, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    __table_args__ = (
+        Index("ix_athlete_goal_athlete_id", "athlete_id"),
+        Index("ix_athlete_goal_race_date", "goal_race_date"),
+    )
+
+
+class PlanTemplate(Base):
+    """
+    Base templates for standard plans.
+    """
+    __tablename__ = "plan_template"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # Identification
+    key = Column(Text, unique=True, nullable=False, index=True)  # "marathon_18w_mid"
+    name = Column(Text, nullable=False)  # "18-Week Marathon (Mid Volume)"
+    
+    # Classification
+    distance = Column(Text, nullable=False, index=True)  # "marathon", "half", "10k", "5k"
+    duration_weeks = Column(Integer, nullable=False)
+    volume_tier = Column(Text, nullable=False, index=True)  # "builder", "low", "mid", "high"
+    
+    # Volume parameters
+    starting_volume_miles = Column(Float, nullable=False)
+    peak_volume_miles = Column(Float, nullable=False)
+    long_run_start_miles = Column(Float, nullable=False)
+    long_run_peak_miles = Column(Float, nullable=False)
+    
+    # Structure
+    phases = Column(JSONB, nullable=False)  # Phase definitions for this template
+    weekly_structures = Column(JSONB, nullable=True)  # By days_per_week
+    
+    # Status
+    active = Column(Boolean, default=True, nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    __table_args__ = (
+        Index("ix_plan_template_distance_duration", "distance", "duration_weeks"),
+    )
