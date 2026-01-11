@@ -18,7 +18,7 @@
 import React, { useState, useMemo } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useCalendarRange } from '@/lib/hooks/queries/calendar';
-import { DayCell, DayDetailPanel, WeekSummaryRow } from '@/components/calendar';
+import { DayCell, DayDetailPanel, WeekSummaryRow, CreatePlanCTA } from '@/components/calendar';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { UnitToggle } from '@/components/ui/UnitToggle';
@@ -332,9 +332,13 @@ export default function CalendarPage() {
             <UnitToggle />
           </div>
           
-          {/* Plan banner */}
-          {calendar?.active_plan && (
+          {/* Plan banner or Create Plan CTA */}
+          {calendar?.active_plan ? (
             <PlanBanner plan={calendar.active_plan} />
+          ) : !isLoading && (
+            <div className="mb-6">
+              <CreatePlanCTA />
+            </div>
           )}
           
           {isLoading ? (

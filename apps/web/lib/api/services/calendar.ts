@@ -56,6 +56,14 @@ export interface PlannedWorkout {
   segments?: any;
   completed: boolean;
   skipped: boolean;
+  coach_notes?: string;
+  
+  // Option A/B support
+  has_option_b?: boolean;
+  option_b_title?: string;
+  option_b_description?: string;
+  option_b_segments?: any;
+  selected_option?: 'A' | 'B';
 }
 
 export interface ActivitySummary {

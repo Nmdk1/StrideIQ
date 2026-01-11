@@ -209,7 +209,7 @@ export default function DashboardPage() {
                 Create a training plan to get structured workouts and track your progress toward your goal race.
               </p>
               <Link 
-                href="/calendar" 
+                href="/plans/create" 
                 className="inline-block px-6 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg font-medium transition-colors"
               >
                 Create Training Plan

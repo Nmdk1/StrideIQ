@@ -67,6 +67,14 @@ class PlannedWorkoutResponse(BaseModel):
     segments: Optional[dict] = None
     completed: bool
     skipped: bool
+    coach_notes: Optional[str] = None  # Pace description or guidance
+    
+    # Option A/B support
+    has_option_b: bool = False
+    option_b_title: Optional[str] = None
+    option_b_description: Optional[str] = None
+    option_b_segments: Optional[dict] = None
+    selected_option: str = "A"  # Which option athlete has selected
 
     class Config:
         from_attributes = True
