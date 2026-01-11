@@ -371,6 +371,66 @@ async def create_semi_custom_plan(
     }
 
 
+@router.post("/custom", response_model=Dict[str, Any])
+async def create_custom_plan(
+    request: CustomPlanRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Create a fully custom plan using all athlete data.
+    
+    Requires subscription.
+    Uses:
+    - Auto-detected volume from Strava history
+    - Calculated paces from best recent efforts
+    - Training history patterns
+    """
+    # Check entitlements
+    flags = FeatureFlagService(db)
+    entitlements = EntitlementsService(db, flags)
+    access = entitlements.check_plan_access(athlete, "custom", request.distance, 18)
+    
+    if not access.allowed:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "reason": access.reason,
+                "upgrade_path": access.upgrade_path,
+            }
+        )
+    
+    # Collect athlete preferences
+    preferences = {
+        "preferred_quality_day": request.preferred_quality_day,
+        "preferred_long_run_day": request.preferred_long_run_day,
+        "injury_history": request.injury_history,
+        "goal_time_seconds": request.goal_time_seconds,
+    }
+    
+    # Generate plan
+    generator = PlanGenerator(db)
+    plan = generator.generate_custom(
+        distance=request.distance,
+        race_date=request.race_date,
+        days_per_week=request.days_per_week,
+        athlete_id=athlete.id,
+        athlete_preferences=preferences,
+    )
+    
+    # Save to database
+    saved_plan = _save_plan(db, athlete.id, plan)
+    
+    return {
+        "success": True,
+        "plan_id": str(saved_plan.id),
+        "message": f"Created fully custom {plan.duration_weeks}-week {request.distance} plan",
+        "vdot": plan.vdot,
+        "detected_weekly_miles": plan.weekly_volumes[0] if plan.weekly_volumes else None,
+        "peak_miles": plan.peak_volume,
+    }
+
+
 @router.get("/options")
 async def get_plan_options():
     """

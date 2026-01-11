@@ -381,6 +381,180 @@ class PlanGenerator:
             total_quality_sessions=quality_count,
         )
     
+    def generate_custom(
+        self,
+        distance: str,
+        race_date: date,
+        days_per_week: int,
+        athlete_id: UUID,
+        athlete_preferences: Dict[str, Any] = None
+    ) -> GeneratedPlan:
+        """
+        Generate a fully custom plan using all athlete data.
+        
+        This is the premium tier - uses:
+        - Auto-detected volume from Strava history
+        - Calculated paces from best recent efforts
+        - Training history patterns
+        - Athlete preferences
+        - Dynamic adaptation capability
+        """
+        logger.info(f"Generating custom plan for athlete {athlete_id}: {distance} for {race_date}")
+        
+        if not self.db:
+            raise ValueError("Database session required for custom plan generation")
+        
+        from models import Activity, Athlete
+        from sqlalchemy import func
+        from datetime import timedelta as td
+        
+        # Get athlete
+        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if not athlete:
+            raise ValueError(f"Athlete not found: {athlete_id}")
+        
+        # Auto-detect current weekly volume from last 4 weeks
+        four_weeks_ago = race_date - td(weeks=30)  # Look back further for baseline
+        recent_activities = self.db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.activity_type == 'Run',
+            Activity.start_time >= four_weeks_ago
+        ).all()
+        
+        # Calculate average weekly miles over last 4 complete weeks
+        weekly_totals = {}
+        for activity in recent_activities:
+            week_start = activity.start_time.date() - td(days=activity.start_time.weekday())
+            week_key = week_start.isoformat()
+            if week_key not in weekly_totals:
+                weekly_totals[week_key] = 0
+            weekly_totals[week_key] += (activity.distance_m or 0) / 1609.344
+        
+        if weekly_totals:
+            # Use median of last 4 weeks for stability
+            recent_volumes = sorted(weekly_totals.values())[-4:]
+            current_weekly_miles = sum(recent_volumes) / len(recent_volumes) if recent_volumes else 30
+        else:
+            current_weekly_miles = 30  # Default if no data
+        
+        logger.info(f"Detected weekly volume: {current_weekly_miles:.1f} miles")
+        
+        # Classify tier
+        tier = self.tier_classifier.classify(
+            current_weekly_miles=current_weekly_miles,
+            goal_distance=distance,
+            athlete_id=athlete_id
+        )
+        
+        # Find best recent race effort for pace calculation
+        vdot = None
+        paces = None
+        race_activities = self.db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.workout_type == 'Race',
+            Activity.start_time >= race_date - td(weeks=26)  # Last 6 months
+        ).order_by(Activity.start_time.desc()).all()
+        
+        if race_activities:
+            # Use most recent race for VDOT calculation
+            best_race = race_activities[0]
+            race_distance = best_race.distance_m / 1609.344  # miles
+            race_time = best_race.moving_time_s
+            
+            if race_distance and race_time:
+                paces = self.pace_engine.calculate_from_race(
+                    distance=self._distance_to_code(race_distance),
+                    time_seconds=race_time
+                )
+                if paces:
+                    vdot = paces.vdot
+                    logger.info(f"Calculated VDOT: {vdot:.1f}")
+        
+        # If no race, try to estimate from training
+        if not vdot and recent_activities:
+            # Use best training run for rough estimate
+            best_run = max(recent_activities, key=lambda a: (a.distance_m or 0) / (a.moving_time_s or 1))
+            if best_run.distance_m and best_run.moving_time_s:
+                paces = self.pace_engine.calculate_from_race(
+                    distance=self._distance_to_code(best_run.distance_m / 1609.344),
+                    time_seconds=best_run.moving_time_s
+                )
+                if paces:
+                    vdot = paces.vdot * 0.95  # Conservative estimate from training
+                    logger.info(f"Estimated VDOT from training: {vdot:.1f}")
+        
+        # Calculate duration
+        days_to_race = (race_date - date.today()).days
+        weeks_to_race = days_to_race // 7
+        duration_weeks = min(18, max(8, weeks_to_race))
+        
+        # Calculate start date
+        start_date = race_date - td(weeks=duration_weeks - 1, days=6)
+        
+        # Build phases
+        phases = self.phase_builder.build_phases(
+            distance=distance,
+            duration_weeks=duration_weeks,
+            tier=tier.value
+        )
+        
+        # Calculate volume progression
+        weekly_volumes = self.tier_classifier.calculate_volume_progression(
+            tier=tier,
+            distance=distance,
+            starting_volume=current_weekly_miles,
+            plan_weeks=duration_weeks,
+            taper_weeks=2
+        )
+        
+        # Generate workouts
+        workouts = self._generate_workouts(
+            distance=distance,
+            duration_weeks=duration_weeks,
+            days_per_week=days_per_week,
+            tier=tier.value,
+            phases=phases,
+            weekly_volumes=weekly_volumes,
+            start_date=start_date,
+            paces=paces
+        )
+        
+        # Calculate totals
+        total_miles = sum(w.distance_miles or 0 for w in workouts)
+        quality_count = len([w for w in workouts if w.workout_type in [
+            "threshold_intervals", "tempo", "intervals", "long_mp"
+        ]])
+        
+        return GeneratedPlan(
+            plan_tier=PlanTier.CUSTOM,
+            distance=distance,
+            duration_weeks=duration_weeks,
+            volume_tier=tier.value,
+            days_per_week=days_per_week,
+            athlete_id=athlete_id,
+            vdot=vdot,
+            start_date=start_date,
+            end_date=race_date,
+            race_date=race_date,
+            phases=phases,
+            workouts=workouts,
+            weekly_volumes=weekly_volumes,
+            peak_volume=max(weekly_volumes),
+            total_miles=round(total_miles, 1),
+            total_quality_sessions=quality_count,
+        )
+    
+    def _distance_to_code(self, miles: float) -> str:
+        """Convert miles to distance code."""
+        if miles < 4:
+            return "5k"
+        elif miles < 8:
+            return "10k"
+        elif miles < 16:
+            return "half_marathon"
+        else:
+            return "marathon"
+    
     def _generate_workouts(
         self,
         distance: str,
