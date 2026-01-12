@@ -82,3 +82,70 @@ export function formatPace(secondsPerMile: number): string {
   const seconds = Math.floor(secondsPerMile % 60);
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
+
+/**
+ * Format raw digit string into time display (auto-insert colons).
+ * 
+ * Used by TimeInput component for auto-formatting as user types.
+ * 
+ * Examples (hhmmss mode):
+ *   "1"     → "1"
+ *   "12"    → "12"
+ *   "123"   → "1:23"
+ *   "1234"  → "12:34"
+ *   "12345" → "1:23:45"
+ *   "123456"→ "12:34:56"
+ * 
+ * Examples (mmss mode):
+ *   "1"     → "1"
+ *   "12"    → "12"
+ *   "123"   → "1:23"
+ *   "1234"  → "12:34"
+ * 
+ * @param digits - Raw digit string (non-digits will be stripped)
+ * @param maxLength - 'mmss' (4 digits) or 'hhmmss' (6 digits)
+ * @returns Formatted time string with colons
+ */
+export function formatDigitsToTime(
+  digits: string, 
+  maxLength: 'mmss' | 'hhmmss' = 'hhmmss'
+): string {
+  // Strip non-digits and limit length
+  const cleanDigits = digits.replace(/\D/g, '');
+  const maxDigits = maxLength === 'mmss' ? 4 : 6;
+  const trimmed = cleanDigits.slice(0, maxDigits);
+  
+  if (trimmed.length === 0) return '';
+  if (trimmed.length <= 2) return trimmed;
+  
+  if (maxLength === 'mmss') {
+    // MM:SS format (max 4 digits)
+    const secs = trimmed.slice(-2);
+    const mins = trimmed.slice(0, -2);
+    return `${mins}:${secs}`;
+  } else {
+    // hhmmss format (max 6 digits)
+    if (trimmed.length <= 4) {
+      // MM:SS
+      const secs = trimmed.slice(-2);
+      const mins = trimmed.slice(0, -2);
+      return `${mins}:${secs}`;
+    } else {
+      // H:MM:SS or HH:MM:SS
+      const secs = trimmed.slice(-2);
+      const mins = trimmed.slice(-4, -2);
+      const hrs = trimmed.slice(0, -4);
+      return `${hrs}:${mins}:${secs}`;
+    }
+  }
+}
+
+/**
+ * Strip non-digit characters from a string.
+ * 
+ * @param value - Input string potentially containing colons or other chars
+ * @returns String containing only digits
+ */
+export function stripToDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}

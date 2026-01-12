@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState } from 'react';
+import TimeInput from '@/components/ui/TimeInput';
+import { isFeatureEnabled, FEATURE_FLAGS } from '@/lib/featureFlags';
 
 export default function HeatAdjustedPace() {
   const [basePace, setBasePace] = useState('');
@@ -250,17 +252,30 @@ export default function HeatAdjustedPace() {
         </p>
       </div>
 
-      {/* Pace Input */}
+      {/* Pace Input - Feature flagged between new TimeInput and legacy input */}
       <div>
-        <label className="block text-sm font-medium mb-2">Base Training Pace</label>
-        <input
-          type="text"
-          value={basePace}
-          onChange={(e) => setBasePace(e.target.value)}
-          placeholder="00:00"
-          autoComplete="off"
-          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white mb-2"
-        />
+        {isFeatureEnabled(FEATURE_FLAGS.TIME_INPUT_V2) ? (
+          <TimeInput
+            value={basePace}
+            onChange={(formatted) => setBasePace(formatted)}
+            placeholder=""
+            label="Base Training Pace"
+            className="w-full mb-2"
+            maxLength="mmss"
+          />
+        ) : (
+          <>
+            <label className="block text-sm font-medium mb-2">Base Training Pace</label>
+            <input
+              type="text"
+              value={basePace}
+              onChange={(e) => setBasePace(e.target.value)}
+              placeholder="00:00"
+              autoComplete="off"
+              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white mb-2"
+            />
+          </>
+        )}
         <div className="flex items-center justify-between p-2 bg-gray-800/50 border border-gray-700 rounded-lg">
           <label className="text-xs font-medium text-gray-300">Pace Unit</label>
           <div className="flex gap-2">

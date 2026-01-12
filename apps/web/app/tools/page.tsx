@@ -50,8 +50,8 @@ export default function ToolsPage() {
               <h2 className="text-xl font-bold text-white">Training Pace Calculator</h2>
             </div>
             <p className="text-gray-400 text-sm mb-6">
-              Enter a race time to calculate your VDOT and get personalized training paces 
-              for Easy, Marathon, Threshold, Interval, and Repetition workouts.
+              Enter a race time to get personalized training paces for Easy, Marathon, 
+              Threshold, Interval, and Repetition workouts.
             </p>
             <VDOTCalculator />
           </div>

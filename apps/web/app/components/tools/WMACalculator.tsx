@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import { API_CONFIG } from '@/lib/api/config';
+import TimeInput from '@/components/ui/TimeInput';
+import { isFeatureEnabled, FEATURE_FLAGS } from '@/lib/featureFlags';
 
 export default function WMACalculator() {
   const [age, setAge] = useState('');
@@ -58,7 +60,7 @@ export default function WMACalculator() {
         return;
       }
 
-      const response = await fetch(`${API_CONFIG.baseURL}/v1/public/age-grade/calculate`, {
+      const response = await fetch(`${API_CONFIG.baseURL}/v1/public/age-grade`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -138,16 +140,28 @@ export default function WMACalculator() {
         </select>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium mb-2">Time (MM:SS or HH:MM:SS)</label>
-        <input
-          type="text"
+      {/* Time Input - Feature flagged between new TimeInput and legacy input */}
+      {isFeatureEnabled(FEATURE_FLAGS.TIME_INPUT_V2) ? (
+        <TimeInput
           value={time}
-          onChange={(e) => setTime(e.target.value)}
-          placeholder="00:00:00"
-          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white"
+          onChange={(formatted) => setTime(formatted)}
+          placeholder=""
+          label="Time"
+          className="w-full"
+          maxLength="hhmmss"
         />
-      </div>
+      ) : (
+        <div>
+          <label className="block text-sm font-medium mb-2">Time (MM:SS or HH:MM:SS)</label>
+          <input
+            type="text"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            placeholder="00:00:00"
+            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white"
+          />
+        </div>
+      )}
 
       <button
         type="button"

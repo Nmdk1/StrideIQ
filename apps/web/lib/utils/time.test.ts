@@ -2,7 +2,13 @@
  * Tests for time conversion utilities
  */
 
-import { parseTimeToSeconds, formatSecondsToTime, formatPace } from './time';
+import { 
+  parseTimeToSeconds, 
+  formatSecondsToTime, 
+  formatPace,
+  formatDigitsToTime,
+  stripToDigits,
+} from './time';
 
 describe('parseTimeToSeconds', () => {
   it('parses H:MM:SS format correctly', () => {
@@ -79,5 +85,120 @@ describe('formatPace', () => {
     expect(formatPace(0)).toBe('--:--');
     expect(formatPace(-1)).toBe('--:--');
     expect(formatPace(Infinity)).toBe('--:--');
+  });
+});
+
+describe('formatDigitsToTime', () => {
+  describe('hhmmss mode (default)', () => {
+    it('returns empty string for empty input', () => {
+      expect(formatDigitsToTime('')).toBe('');
+    });
+
+    it('returns 1-2 digits as-is (partial seconds)', () => {
+      expect(formatDigitsToTime('1')).toBe('1');
+      expect(formatDigitsToTime('12')).toBe('12');
+    });
+
+    it('formats 3 digits as M:SS', () => {
+      expect(formatDigitsToTime('123')).toBe('1:23');
+    });
+
+    it('formats 4 digits as MM:SS', () => {
+      expect(formatDigitsToTime('1234')).toBe('12:34');
+      expect(formatDigitsToTime('1853')).toBe('18:53');
+      expect(formatDigitsToTime('0530')).toBe('05:30');
+    });
+
+    it('formats 5 digits as H:MM:SS', () => {
+      expect(formatDigitsToTime('12345')).toBe('1:23:45');
+      expect(formatDigitsToTime('30000')).toBe('3:00:00');
+    });
+
+    it('formats 6 digits as HH:MM:SS', () => {
+      expect(formatDigitsToTime('123456')).toBe('12:34:56');
+      expect(formatDigitsToTime('040000')).toBe('04:00:00');
+    });
+
+    it('truncates input beyond 6 digits', () => {
+      expect(formatDigitsToTime('1234567')).toBe('12:34:56');
+      expect(formatDigitsToTime('12345678')).toBe('12:34:56');
+    });
+
+    it('strips non-digit characters', () => {
+      expect(formatDigitsToTime('1:23:45')).toBe('1:23:45');
+      expect(formatDigitsToTime('12:34')).toBe('12:34');
+      expect(formatDigitsToTime('abc123')).toBe('1:23');
+      expect(formatDigitsToTime('1-2-3-4')).toBe('12:34');
+    });
+
+    it('handles marathon times', () => {
+      // 4:00:00 marathon
+      expect(formatDigitsToTime('40000')).toBe('4:00:00');
+      // 3:30:00 marathon
+      expect(formatDigitsToTime('33000')).toBe('3:30:00');
+      // 2:59:59 sub-3 marathon
+      expect(formatDigitsToTime('25959')).toBe('2:59:59');
+    });
+
+    it('handles 5K times', () => {
+      // 18:53 5K
+      expect(formatDigitsToTime('1853')).toBe('18:53');
+      // 25:00 5K
+      expect(formatDigitsToTime('2500')).toBe('25:00');
+    });
+  });
+
+  describe('mmss mode', () => {
+    it('returns empty string for empty input', () => {
+      expect(formatDigitsToTime('', 'mmss')).toBe('');
+    });
+
+    it('returns 1-2 digits as-is', () => {
+      expect(formatDigitsToTime('1', 'mmss')).toBe('1');
+      expect(formatDigitsToTime('12', 'mmss')).toBe('12');
+    });
+
+    it('formats 3 digits as M:SS', () => {
+      expect(formatDigitsToTime('123', 'mmss')).toBe('1:23');
+      expect(formatDigitsToTime('530', 'mmss')).toBe('5:30');
+    });
+
+    it('formats 4 digits as MM:SS', () => {
+      expect(formatDigitsToTime('1234', 'mmss')).toBe('12:34');
+      expect(formatDigitsToTime('0845', 'mmss')).toBe('08:45');
+    });
+
+    it('truncates input beyond 4 digits', () => {
+      expect(formatDigitsToTime('12345', 'mmss')).toBe('12:34');
+      expect(formatDigitsToTime('123456', 'mmss')).toBe('12:34');
+    });
+
+    it('strips non-digit characters', () => {
+      expect(formatDigitsToTime('12:34', 'mmss')).toBe('12:34');
+      expect(formatDigitsToTime('8:30', 'mmss')).toBe('8:30');
+    });
+  });
+});
+
+describe('stripToDigits', () => {
+  it('removes colons from time strings', () => {
+    expect(stripToDigits('1:23:45')).toBe('12345');
+    expect(stripToDigits('18:53')).toBe('1853');
+  });
+
+  it('removes all non-digit characters', () => {
+    expect(stripToDigits('abc123def')).toBe('123');
+    expect(stripToDigits('1-2-3-4')).toBe('1234');
+    expect(stripToDigits('  12 34  ')).toBe('1234');
+  });
+
+  it('returns empty string for no digits', () => {
+    expect(stripToDigits('')).toBe('');
+    expect(stripToDigits('abc')).toBe('');
+    expect(stripToDigits(':::---')).toBe('');
+  });
+
+  it('preserves all digits', () => {
+    expect(stripToDigits('0123456789')).toBe('0123456789');
   });
 });

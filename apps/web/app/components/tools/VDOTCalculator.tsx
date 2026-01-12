@@ -2,11 +2,13 @@
 
 import React, { useState } from 'react';
 import { API_CONFIG } from '@/lib/api/config';
+import TimeInput from '@/components/ui/TimeInput';
+import { isFeatureEnabled, FEATURE_FLAGS } from '@/lib/featureFlags';
 
 type TabType = 'race_paces' | 'training' | 'equivalent';
 
 /**
- * Running Pace Calculator
+ * Training Pace Calculator
  * 
  * Calculates RPI (Running Performance Index) and training paces using the
  * Daniels/Gilbert oxygen cost equations - peer-reviewed exercise physiology
@@ -111,7 +113,7 @@ export default function VDOTCalculator() {
     <div className="space-y-4">
       {/* Header with Info Toggle */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">Running Pace Calculator</h3>
+        <h3 className="text-lg font-semibold text-white">Training Pace Calculator</h3>
         <button
           onClick={() => setShowMethodology(!showMethodology)}
           className="flex items-center gap-1 text-xs text-gray-400 hover:text-orange-400 transition-colors"
@@ -164,16 +166,28 @@ export default function VDOTCalculator() {
         </select>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium mb-2">Race Time (MM:SS or HH:MM:SS)</label>
-        <input
-          type="text"
+      {/* Time Input - Feature flagged between new TimeInput and legacy input */}
+      {isFeatureEnabled(FEATURE_FLAGS.TIME_INPUT_V2) ? (
+        <TimeInput
           value={raceTime}
-          onChange={(e) => setRaceTime(e.target.value)}
-          placeholder="00:00:00"
-          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white"
+          onChange={(formatted) => setRaceTime(formatted)}
+          placeholder=""
+          label="Race Time"
+          className="w-full"
+          maxLength="hhmmss"
         />
-      </div>
+      ) : (
+        <div>
+          <label className="block text-sm font-medium mb-2">Race Time (MM:SS or HH:MM:SS)</label>
+          <input
+            type="text"
+            value={raceTime}
+            onChange={(e) => setRaceTime(e.target.value)}
+            placeholder="00:00:00"
+            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white"
+          />
+        </div>
+      )}
 
       <button
         type="button"

@@ -81,14 +81,13 @@ services:
       - ./apps/api:/api  # Mount API code so worker can import tasks
 
   web:
-    build:
-      context: ./apps/web
-      dockerfile: Dockerfile
+    build: ./apps/web
     container_name: running_app_web
-    environment:
-      NODE_ENV: production
+    command: npm start
     ports:
-      - "0.0.0.0:3000:3000"
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
     depends_on:
       - api
 
