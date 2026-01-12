@@ -86,8 +86,8 @@ def sync_strava_best_efforts(athlete: Athlete, db: Session, limit: int = 200) ->
         
         # Get detailed activity to access best_efforts
         # Add delay between calls to avoid rate limits
-        if activity_idx > 0:
-            time.sleep(0.5)  # Small delay between each call
+        if activity_idx > 0 and activity_idx % 10 == 0:
+            time.sleep(0.3)  # Brief delay every 10 calls
         
         try:
             details = get_activity_details(athlete, activity_id)
@@ -157,14 +157,18 @@ def sync_strava_best_efforts(athlete: Athlete, db: Session, limit: int = 200) ->
             Activity.provider == 'strava'
         ).first()
         
+        # Skip if we can't link to an activity (required field)
+        if not db_activity:
+            continue
+        
         if existing_pb:
             # Update if this Strava effort is faster
             if time_seconds < existing_pb.time_seconds:
                 existing_pb.time_seconds = time_seconds
                 existing_pb.distance_meters = int(distance_meters)
-                existing_pb.activity_id = db_activity.id if db_activity else existing_pb.activity_id
+                existing_pb.activity_id = db_activity.id
                 existing_pb.achieved_at = achieved_at
-                existing_pb.is_race = db_activity.is_race_candidate if db_activity else existing_pb.is_race
+                existing_pb.is_race = db_activity.is_race_candidate or False
                 existing_pb.age_at_achievement = calculate_age_at_date(athlete.birthdate, achieved_at) if athlete.birthdate else None
                 
                 miles = distance_meters / 1609.34
@@ -180,11 +184,10 @@ def sync_strava_best_efforts(athlete: Athlete, db: Session, limit: int = 200) ->
                 distance_category=category,
                 distance_meters=int(distance_meters),
                 time_seconds=time_seconds,
-                activity_id=db_activity.id if db_activity else None,
+                activity_id=db_activity.id,
                 achieved_at=achieved_at,
-                is_race=db_activity.is_race_candidate if db_activity else False,
+                is_race=db_activity.is_race_candidate or False,
                 age_at_achievement=calculate_age_at_date(athlete.birthdate, achieved_at) if athlete.birthdate else None,
-                source="strava_best_effort"  # Mark as Strava-sourced
             )
             
             miles = distance_meters / 1609.34
