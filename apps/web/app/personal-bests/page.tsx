@@ -87,12 +87,34 @@ function PersonalBestsContent() {
     enabled: !!profile?.id,
   });
 
-  // Recalculate mutation
-  const recalculateMutation = useMutation({
-    mutationFn: () => apiClient.post(`/v1/athletes/${profile?.id}/recalculate-pbs`),
+  interface RecalculateResponse {
+    pbs_created: number;
+    efforts_in_db: number;
+  }
+
+  // Sync from Strava mutation (fetches best efforts from API - can take 30-60s)
+  const syncMutation = useMutation({
+    mutationFn: () => apiClient.post(`/v1/athletes/${profile?.id}/sync-best-efforts?limit=100`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['personal-bests'] });
       setRecalculating(false);
+    },
+    onError: () => {
+      setRecalculating(false);
+    },
+  });
+
+  // Quick recalculate mutation (regenerates from stored efforts - instant)
+  const recalculateMutation = useMutation<RecalculateResponse, Error, void>({
+    mutationFn: () => apiClient.post(`/v1/athletes/${profile?.id}/recalculate-pbs`),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['personal-bests'] });
+      // If no PBs created and no efforts stored, we need to sync from Strava first
+      if (data.pbs_created === 0 && data.efforts_in_db === 0) {
+        syncMutation.mutate();
+      } else {
+        setRecalculating(false);
+      }
     },
     onError: () => {
       setRecalculating(false);
@@ -143,7 +165,9 @@ function PersonalBestsContent() {
             disabled={recalculating}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
-            {recalculating ? 'Recalculating...' : 'Recalculate'}
+            {recalculating 
+              ? (syncMutation.isPending ? 'Syncing from Strava...' : 'Recalculating...')
+              : 'Recalculate'}
           </button>
         </div>
 

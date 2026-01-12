@@ -301,10 +301,45 @@ def get_personal_bests_endpoint(id: UUID, db: Session = Depends(get_db)):
 @router.post("/athletes/{id}/recalculate-pbs")
 def recalculate_pbs_endpoint(id: UUID, db: Session = Depends(get_db)):
     """
-    Recalculate all personal bests for an athlete.
+    Regenerate personal bests from stored BestEffort records.
     
-    Clears existing PBs and syncs from Strava's best efforts (authoritative source).
-    Strava calculates fastest segments within activities (e.g., fastest mile within a 10k).
+    This is an instant aggregation - no external API calls.
+    Best efforts are populated during Strava sync.
+    
+    Use /athletes/{id}/sync-best-efforts to fetch new best efforts from Strava.
+    """
+    from services.best_effort_service import regenerate_personal_bests
+    from models import BestEffort
+
+    athlete = db.query(Athlete).filter(Athlete.id == id).first()
+    if not athlete:
+        raise HTTPException(status_code=404, detail="Athlete not found")
+
+    # Count stored best efforts
+    effort_count = db.query(BestEffort).filter(BestEffort.athlete_id == athlete.id).count()
+    
+    # Regenerate PBs from BestEffort table (instant aggregation)
+    result = regenerate_personal_bests(athlete, db)
+
+    return {
+        "status": "success",
+        "athlete_id": str(athlete.id),
+        "efforts_in_db": effort_count,
+        "pbs_created": result.get('created', 0),
+        "categories": result.get('categories', []),
+        "message": f"Regenerated {result.get('created', 0)} PBs from {effort_count} stored efforts"
+    }
+
+
+@router.post("/athletes/{id}/sync-best-efforts")
+def sync_best_efforts_endpoint(id: UUID, limit: int = 50, db: Session = Depends(get_db)):
+    """
+    Sync best efforts from Strava API into the BestEffort table.
+    
+    This fetches activity details from Strava - can take 30-60 seconds.
+    After syncing, PersonalBest is regenerated from the stored efforts.
+    
+    Best efforts are also synced automatically during regular Strava sync.
     """
     from services.strava_pbs import sync_strava_best_efforts
 
@@ -312,39 +347,22 @@ def recalculate_pbs_endpoint(id: UUID, db: Session = Depends(get_db)):
     if not athlete:
         raise HTTPException(status_code=404, detail="Athlete not found")
 
-    # Clear existing PBs (they may be incorrectly calculated)
-    deleted = db.query(PersonalBest).filter(PersonalBest.athlete_id == athlete.id).delete()
-    db.commit()
-    
-    strava_result = {'synced': 0, 'updated': 0, 'created': 0}
-    
-    # Sync from Strava if connected (authoritative source)
-    if athlete.strava_access_token:
-        try:
-            # Note: This can take 30-60 seconds as it fetches activity details
-            strava_result = sync_strava_best_efforts(athlete, db, limit=50)
-            db.commit()
-        except Exception as e:
-            print(f"Strava PB sync failed: {e}")
-            return {
-                "status": "partial",
-                "athlete_id": str(athlete.id),
-                "deleted": deleted,
-                "error": str(e),
-                "message": "Cleared old PBs but Strava sync failed. Try again later."
-            }
-    
-    # Count total PBs
-    total_pbs = db.query(PersonalBest).filter(PersonalBest.athlete_id == athlete.id).count()
+    if not athlete.strava_access_token:
+        raise HTTPException(status_code=400, detail="No Strava connection")
+
+    try:
+        result = sync_strava_best_efforts(athlete, db, limit=limit)
+        db.commit()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
 
     return {
         "status": "success",
         "athlete_id": str(athlete.id),
-        "deleted": deleted,
-        "strava_synced": strava_result.get('synced', 0),
-        "strava_created": strava_result.get('created', 0),
-        "total_pbs": total_pbs,
-        "message": f"Cleared {deleted} old PBs, synced {strava_result.get('synced', 0)} activities, found {total_pbs} PBs"
+        "activities_checked": result.get('activities_checked', 0),
+        "efforts_stored": result.get('efforts_stored', 0),
+        "pbs_created": result.get('pbs_created', 0),
+        "message": f"Checked {result.get('activities_checked', 0)} activities, stored {result.get('efforts_stored', 0)} efforts"
     }
 
 
