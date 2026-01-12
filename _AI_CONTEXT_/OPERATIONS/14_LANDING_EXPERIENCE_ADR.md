@@ -1,6 +1,6 @@
 # ADR 14: Landing Experience Architecture
 
-**Status:** Proposed  
+**Status:** In Progress (Phases 1-3 Complete)  
 **Date:** 2026-01-12  
 **Author:** AI Architect  
 **Stakeholder:** Founder
