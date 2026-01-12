@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { API_CONFIG } from '@/lib/api/config';
-import TimeInput from '@/components/ui/TimeInput';
 
 type TabType = 'race_paces' | 'training' | 'equivalent';
 
@@ -165,14 +164,16 @@ export default function VDOTCalculator() {
         </select>
       </div>
 
-      <TimeInput
-        value={raceTime}
-        onChange={(formatted) => setRaceTime(formatted)}
-        placeholder="0:00:00"
-        label="Race Time (just type numbers)"
-        className="w-full"
-        maxLength="hhmmss"
-      />
+      <div>
+        <label className="block text-sm font-medium mb-2">Race Time (MM:SS or HH:MM:SS)</label>
+        <input
+          type="text"
+          value={raceTime}
+          onChange={(e) => setRaceTime(e.target.value)}
+          placeholder="00:00:00"
+          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white"
+        />
+      </div>
 
       <button
         type="button"
