@@ -275,16 +275,12 @@ def calculate_equivalent_races_enhanced(vdot: float) -> List[Dict]:
     """
     Calculate equivalent race times for all standard distances.
     
-    Returns list of equivalent race performances matching vdoto2.com format.
+    Uses the Daniels formula directly - no lookup tables required.
+    Returns list of equivalent race performances.
     """
-    equivalent = get_equivalent_race_times(vdot, use_closest_integer=True)
-    
-    if not equivalent:
-        return []
-    
     equivalent_races = []
     
-    # Standard distances in order (matching vdoto2.com)
+    # Standard distances in order
     distances = [
         ("Marathon", 42195),
         ("Half Marathon", 21097.5),
@@ -300,61 +296,18 @@ def calculate_equivalent_races_enhanced(vdot: float) -> List[Dict]:
         ("1500M", 1500),
     ]
     
-    distance_map = {
-        "marathon": "Marathon",
-        "half_marathon": "Half Marathon",
-        "10K": "10K",
-        "5K": "5K",
-    }
-    
-    race_times_seconds = equivalent.get("race_times_seconds", {})
-    race_times_formatted = equivalent.get("race_times_formatted", {})
-    
     for name, distance_m in distances:
-        # Try to find matching distance
-        time_seconds = None
-        time_formatted = None
+        # Calculate using Daniels formula (no lookup dependency)
+        equiv_result = calculate_equivalent_race_time(vdot, distance_m)
         
-        # Check lookup first
-        lookup_key = None
-        if distance_m == 42195:
-            lookup_key = "marathon"
-        elif abs(distance_m - 21097.5) < 100:
-            lookup_key = "half_marathon"
-        elif distance_m == 10000:
-            lookup_key = "10K"
-        elif distance_m == 5000:
-            lookup_key = "5K"
-        
-        if lookup_key and lookup_key in race_times_seconds:
-            time_seconds = race_times_seconds[lookup_key]
-            time_formatted = race_times_formatted.get(lookup_key)
-        else:
-            # Calculate from VDOT for other distances using proper equivalent race time function
-            equiv_result = calculate_equivalent_race_time(vdot, distance_m)
-            if equiv_result:
-                time_seconds = equiv_result.get("time_seconds")
-                time_formatted = equiv_result.get("time_formatted")
-        
-        if time_seconds:
-            # Calculate pace
-            pace_seconds_per_mile = (time_seconds / distance_m) * 1609.34
-            pace_mins = int(pace_seconds_per_mile // 60)
-            pace_secs = int(pace_seconds_per_mile % 60)
-            pace_mi = f"{pace_mins}:{pace_secs:02d}"
-            
-            pace_km_seconds = time_seconds / (distance_m / 1000)
-            pace_km_mins = int(pace_km_seconds // 60)
-            pace_km_secs = int(pace_km_seconds % 60)
-            pace_km = f"{pace_km_mins}:{pace_km_secs:02d}"
-            
+        if equiv_result:
             equivalent_races.append({
                 "race": name,
                 "distance_m": distance_m,
-                "time_seconds": int(time_seconds),
-                "time_formatted": time_formatted or f"{int(time_seconds // 60)}:{int(time_seconds % 60):02d}",
-                "pace_mi": pace_mi,
-                "pace_km": pace_km,
+                "time_seconds": equiv_result.get("time_seconds"),
+                "time_formatted": equiv_result.get("time_formatted"),
+                "pace_mi": equiv_result.get("pace_mi"),
+                "pace_km": equiv_result.get("pace_km"),
             })
     
     return equivalent_races
