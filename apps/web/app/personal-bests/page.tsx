@@ -1,7 +1,19 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { API_CONFIG } from '@/lib/api/config';
+/**
+ * Personal Bests Page
+ * 
+ * Displays the athlete's personal bests across standard race distances.
+ * PBs are auto-calculated from activity history.
+ * 
+ * TONE: Data speaks. No praise, no motivation.
+ */
+
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { apiClient } from '@/lib/api/client';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 interface PersonalBest {
   id: string;
@@ -14,218 +26,167 @@ interface PersonalBest {
   age_at_achievement: number | null;
 }
 
-export default function PersonalBestsPage() {
-  const [pbs, setPbs] = useState<PersonalBest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [athleteId, setAthleteId] = useState<string | null>(null);
+interface AthleteProfile {
+  id: string;
+  display_name: string;
+}
 
-  useEffect(() => {
-    // Get all athletes and try each one until we find PBs
-    fetch('${API_CONFIG.baseURL}/v1/athletes')
-      .then(res => res.json())
-      .then(athletes => {
-        if (!athletes || athletes.length === 0) {
-          setLoading(false);
-          return;
-        }
-        
-        // Try each athlete until we find one with PBs
-        const tryAthlete = async (index: number) => {
-          if (index >= athletes.length) {
-            // No athlete with PBs found, use first athlete for recalculate
-            if (athletes.length > 0) {
-              setAthleteId(athletes[0].id);
-            }
-            setLoading(false);
-            return;
-          }
-          
-          const athlete = athletes[index];
-          const id = athlete.id;
-          
-          try {
-            const pbRes = await fetch(`${API_CONFIG.baseURL}/v1/athletes/${id}/personal-bests`);
-            const pbs = await pbRes.json();
-            if (pbs && Array.isArray(pbs) && pbs.length > 0) {
-              // Found athlete with PBs - use this one
-              setAthleteId(id);
-              setPbs(pbs);
-              setLoading(false);
-            } else {
-              // Try next athlete
-              tryAthlete(index + 1);
-            }
-          } catch (err) {
-            console.error(`Error fetching PBs for athlete ${id}:`, err);
-            // Try next athlete
-            tryAthlete(index + 1);
-          }
-        };
-        
-        tryAthlete(0);
-      })
-      .catch(err => {
-        console.error("Error fetching athletes:", err);
-        setLoading(false);
-      });
-  }, []);
+const DISTANCE_ORDER = [
+  '400m', '800m', 'mile', '2mile', '5k', '10k', '15k', 
+  'half_marathon', 'marathon', '25k', '30k', '50k', '100k'
+];
 
-  const formatDuration = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+const DISTANCE_LABELS: Record<string, string> = {
+  '400m': '400m',
+  '800m': '800m',
+  'mile': 'Mile',
+  '2mile': '2 Mile',
+  '5k': '5K',
+  '10k': '10K',
+  '15k': '15K',
+  '25k': '25K',
+  '30k': '30K',
+  '50k': '50K',
+  '100k': '100K',
+  'half_marathon': 'Half Marathon',
+  'marathon': 'Marathon',
+};
+
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.round(seconds % 60);
+  
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
+
+function formatPace(pacePerMile: number | null): string {
+  if (!pacePerMile) return '--';
+  const mins = Math.floor(pacePerMile);
+  const secs = Math.round((pacePerMile % 1) * 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}/mi`;
+}
+
+function PersonalBestsContent() {
+  const queryClient = useQueryClient();
+  const [recalculating, setRecalculating] = useState(false);
+
+  // Get current user
+  const { data: profile } = useQuery<AthleteProfile>({
+    queryKey: ['profile'],
+    queryFn: () => apiClient.get('/v1/athletes/me'),
+  });
+
+  // Get personal bests
+  const { data: pbs, isLoading, error } = useQuery<PersonalBest[]>({
+    queryKey: ['personal-bests', profile?.id],
+    queryFn: () => apiClient.get(`/v1/athletes/${profile?.id}/personal-bests`),
+    enabled: !!profile?.id,
+  });
+
+  // Recalculate mutation
+  const recalculateMutation = useMutation({
+    mutationFn: () => apiClient.post(`/v1/athletes/${profile?.id}/recalculate-pbs`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personal-bests'] });
+      setRecalculating(false);
+    },
+    onError: () => {
+      setRecalculating(false);
+    },
+  });
+
+  const handleRecalculate = () => {
+    setRecalculating(true);
+    recalculateMutation.mutate();
   };
 
-  const formatDistanceCategory = (category: string): string => {
-    const categoryMap: Record<string, string> = {
-      '400m': '400m',
-      '800m': '800m',
-      'mile': 'Mile',
-      '2mile': '2 Mile',
-      '5k': '5K',
-      '10k': '10K',
-      '15k': '15K',
-      '25k': '25K',
-      '30k': '30K',
-      '50k': '50K',
-      '100k': '100K',
-      'half_marathon': 'Half Marathon',
-      'marathon': 'Marathon',
-    };
-    return categoryMap[category] || category;
-  };
+  // Sort PBs by distance order
+  const sortedPbs = pbs?.slice().sort((a, b) => {
+    const aIdx = DISTANCE_ORDER.indexOf(a.distance_category);
+    const bIdx = DISTANCE_ORDER.indexOf(b.distance_category);
+    return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+  }) || [];
 
-  const handleRecalculate = async () => {
-    // If no athleteId set, try to get first athlete
-    let idToUse = athleteId;
-    if (!idToUse) {
-      try {
-        const athletesRes = await fetch('${API_CONFIG.baseURL}/v1/athletes');
-        const athletes = await athletesRes.json();
-        if (athletes && athletes.length > 0) {
-          idToUse = athletes[0].id;
-          setAthleteId(idToUse);
-        } else {
-          alert("No athlete found");
-          return;
-        }
-      } catch (err) {
-        console.error("Error fetching athletes:", err);
-        alert("Error fetching athletes");
-        return;
-      }
-    }
-    
-    try {
-      const res = await fetch(`${API_CONFIG.baseURL}/v1/athletes/${idToUse}/recalculate-pbs`, {
-        method: 'POST',
-      });
-      
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      
-      const result = await res.json();
-      console.log("Recalculate result:", result);
-      
-      // Refresh PBs after a short delay to ensure DB is updated
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const pbsRes = await fetch(`${API_CONFIG.baseURL}/v1/athletes/${idToUse}/personal-bests`);
-      const pbsData = await pbsRes.json();
-      setPbs(Array.isArray(pbsData) ? pbsData : []);
-      
-      // Use total_pbs from result, or count from pbsData array
-      const totalCount = result.total_pbs || (Array.isArray(pbsData) ? pbsData.length : 0);
-      alert(`Recalculated! Found ${totalCount} personal bests.`);
-    } catch (err) {
-      console.error("Error recalculating PBs:", err);
-      alert(`Error recalculating personal bests: ${err}`);
-    }
-  };
-
-  if (loading) {
+  if (isLoading) {
     return (
-      <div style={{ padding: '2rem' }}>
-        <div style={{ maxWidth: '896px', margin: '0 auto' }}>
-          <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>Personal Bests</h1>
-          <p>Loading your personal bests...</p>
-        </div>
+      <div className="flex justify-center py-12">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12 text-red-400">
+        Error loading personal bests.
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <div style={{ maxWidth: '896px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold' }}>Personal Bests</h1>
+    <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
+      <div className="max-w-4xl mx-auto px-4">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">Personal Bests</h1>
+            <p className="text-gray-400 mt-1">
+              Auto-calculated from your activity history
+            </p>
+          </div>
           <button
             onClick={handleRecalculate}
-            style={{
-              padding: '0.5rem 1rem',
-              backgroundColor: '#2563eb',
-              color: 'white',
-              borderRadius: '0.375rem',
-              border: 'none',
-              cursor: 'pointer',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#1d4ed8'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#2563eb'; }}
+            disabled={recalculating}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
-            Recalculate PBs
+            {recalculating ? 'Recalculating...' : 'Recalculate'}
           </button>
         </div>
 
-        {pbs.length === 0 ? (
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', padding: '2rem', textAlign: 'center' }}>
-            <p style={{ color: '#4b5563', marginBottom: '1rem' }}>No personal bests found.</p>
-            <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-              Personal bests are automatically calculated from your activities.
-              Click &quot;Recalculate PBs&quot; to process your activity history.
+        {/* PBs Table */}
+        {sortedPbs.length === 0 ? (
+          <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
+            <p className="text-gray-400 mb-4">No personal bests found.</p>
+            <p className="text-gray-500 text-sm">
+              Click &quot;Recalculate&quot; to scan your activity history for PBs.
             </p>
           </div>
         ) : (
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ backgroundColor: '#f3f4f6' }}>
+          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-700/50">
                 <tr>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500' }}>Distance</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500' }}>Time</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500' }}>Pace</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500' }}>Date</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500' }}>Age</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500' }}>Race</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Distance</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Time</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Pace</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Date</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Race</th>
                 </tr>
               </thead>
-              <tbody>
-                {pbs.map((pb) => (
-                  <tr key={pb.id} style={{ borderTop: '1px solid #e5e7eb' }}>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: '500' }}>
-                      {formatDistanceCategory(pb.distance_category)}
+              <tbody className="divide-y divide-gray-700">
+                {sortedPbs.map((pb) => (
+                  <tr key={pb.id} className="hover:bg-gray-700/30">
+                    <td className="px-4 py-3 font-medium text-white">
+                      {DISTANCE_LABELS[pb.distance_category] || pb.distance_category}
                     </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>{formatDuration(pb.time_seconds)}</td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      {pb.pace_per_mile
-                        ? `${Math.floor(pb.pace_per_mile)}:${Math.round((pb.pace_per_mile % 1) * 60).toString().padStart(2, '0')}/mi`
-                        : '--'}
+                    <td className="px-4 py-3 text-gray-300">
+                      {formatDuration(pb.time_seconds)}
                     </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
+                    <td className="px-4 py-3 text-gray-300">
+                      {formatPace(pb.pace_per_mile)}
+                    </td>
+                    <td className="px-4 py-3 text-gray-400">
                       {new Date(pb.achieved_at).toLocaleDateString()}
                     </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      {pb.age_at_achievement ? `${pb.age_at_achievement} years` : '--'}
-                    </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
+                    <td className="px-4 py-3">
                       {pb.is_race ? (
-                        <span style={{ color: '#16a34a', fontWeight: '600' }}>✓ Race</span>
+                        <span className="text-emerald-400 text-sm">Race</span>
                       ) : (
-                        <span style={{ color: '#9ca3af' }}>--</span>
+                        <span className="text-gray-500 text-sm">Training</span>
                       )}
                     </td>
                   </tr>
@@ -234,7 +195,22 @@ export default function PersonalBestsPage() {
             </table>
           </div>
         )}
+
+        {/* Summary */}
+        {sortedPbs.length > 0 && (
+          <div className="mt-6 text-sm text-gray-500">
+            {sortedPbs.length} personal best{sortedPbs.length !== 1 ? 's' : ''} recorded
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+export default function PersonalBestsPage() {
+  return (
+    <ProtectedRoute>
+      <PersonalBestsContent />
+    </ProtectedRoute>
   );
 }
