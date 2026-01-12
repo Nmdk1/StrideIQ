@@ -58,6 +58,8 @@ def test_activity(test_athlete):
         db.commit()
         db.refresh(activity)
         yield activity
+        # Delete feedback first (foreign key constraint)
+        db.query(ActivityFeedback).filter(ActivityFeedback.activity_id == activity.id).delete()
         db.delete(activity)
         db.commit()
     finally:

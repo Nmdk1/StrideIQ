@@ -114,51 +114,7 @@ def create_availability_slot(
     return db_slot
 
 
-@router.put("/{slot_id}", response_model=TrainingAvailabilityResponse)
-def update_availability_slot(
-    slot_id: UUID,
-    availability_update: TrainingAvailabilityUpdate,
-    current_user: Athlete = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Update an existing availability slot.
-    
-    Only updates provided fields.
-    """
-    slot = db.query(TrainingAvailability).filter(TrainingAvailability.id == slot_id).first()
-    if not slot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Availability slot {slot_id} not found"
-        )
-    
-    if slot.athlete_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to this availability slot"
-        )
-    
-    # Validate status if provided
-    if availability_update.status is not None:
-        if not validate_status(availability_update.status):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="status must be one of: available, preferred, unavailable"
-            )
-        slot.status = availability_update.status
-    
-    if availability_update.notes is not None:
-        slot.notes = availability_update.notes
-    
-    slot.updated_at = datetime.utcnow()
-    
-    db.commit()
-    db.refresh(slot)
-    
-    return slot
-
-
+# NOTE: /bulk must be defined BEFORE /{slot_id} to prevent route matching issues
 @router.put("/bulk", response_model=List[TrainingAvailabilityResponse])
 def update_availability_grid_bulk(
     slots: List[TrainingAvailabilityCreate],
@@ -222,6 +178,51 @@ def update_availability_grid_bulk(
         db.refresh(slot)
     
     return updated_slots
+
+
+@router.put("/{slot_id}", response_model=TrainingAvailabilityResponse)
+def update_availability_slot(
+    slot_id: UUID,
+    availability_update: TrainingAvailabilityUpdate,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update an existing availability slot.
+    
+    Only updates provided fields.
+    """
+    slot = db.query(TrainingAvailability).filter(TrainingAvailability.id == slot_id).first()
+    if not slot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Availability slot {slot_id} not found"
+        )
+    
+    if slot.athlete_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this availability slot"
+        )
+    
+    # Validate status if provided
+    if availability_update.status is not None:
+        if not validate_status(availability_update.status):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="status must be one of: available, preferred, unavailable"
+            )
+        slot.status = availability_update.status
+    
+    if availability_update.notes is not None:
+        slot.notes = availability_update.notes
+    
+    slot.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(slot)
+    
+    return slot
 
 
 @router.delete("/{slot_id}", status_code=204)

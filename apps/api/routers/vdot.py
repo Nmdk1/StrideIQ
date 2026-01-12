@@ -9,13 +9,67 @@ Free tool for landing page - comprehensive VDOT calculator with:
 Reference: https://vdoto2.com/calculator/
 """
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from typing import Optional
 from services.vdot_calculator import calculate_vdot_comprehensive
 
-router = APIRouter(prefix="/vdot", tags=["VDOT Calculator"])
+router = APIRouter(prefix="/v1/vdot", tags=["VDOT Calculator"])
 
 
-@router.get("/calculate")
+# Request models for POST endpoints
+class VDOTCalculateRequest(BaseModel):
+    """Request for VDOT calculation from race result."""
+    race_time_seconds: int
+    distance_meters: float
+
+
+class VDOTTrainingPacesRequest(BaseModel):
+    """Request for training paces from VDOT."""
+    vdot: float
+
+
+# POST endpoints (for test compatibility and proper API design)
+@router.post("/calculate")
+def calculate_vdot_post(request: VDOTCalculateRequest):
+    """
+    Calculate VDOT from race time and distance.
+    
+    Free tool - no authentication required.
+    """
+    if request.distance_meters <= 0:
+        raise HTTPException(status_code=400, detail="Distance must be positive")
+    if request.race_time_seconds <= 0:
+        raise HTTPException(status_code=400, detail="Time must be positive")
+    
+    result = calculate_vdot_comprehensive(
+        distance_meters=request.distance_meters,
+        time_seconds=request.race_time_seconds
+    )
+    
+    if result.get("error"):
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    return result
+
+
+@router.post("/training-paces")
+def get_training_paces_post(request: VDOTTrainingPacesRequest):
+    """
+    Get training paces for a given VDOT.
+    
+    Free tool - no authentication required.
+    """
+    if request.vdot <= 0:
+        raise HTTPException(status_code=400, detail="VDOT must be positive")
+    
+    from services.vdot_calculator import calculate_training_paces
+    
+    paces = calculate_training_paces(request.vdot)
+    
+    return paces
+
+
+@router.get("/calculate-legacy")
 def calculate_vdot(
     distance_m: Optional[float] = Query(None, description="Race distance in meters"),
     time_minutes: Optional[float] = Query(None, description="Race time in minutes (e.g., 20.5 for 20:30)"),

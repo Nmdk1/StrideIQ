@@ -150,7 +150,7 @@ def calculate_paces(request: PaceCalculatorRequest):
         return result
 
 
-@router.post("/age-grade/calculate")
+@router.post("/age-grade")
 def calculate_age_grade(request: AgeGradeRequest):
     """
     Calculate WMA age-graded performance percentage.

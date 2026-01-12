@@ -16,11 +16,12 @@ from core.database import get_db
 from core.security import decode_access_token, get_user_id_from_token
 from models import Athlete
 
-security = HTTPBearer()
+# Use auto_error=False to handle missing credentials manually and return 401 (not 403)
+security = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ) -> Athlete:
     """
@@ -28,6 +29,14 @@ def get_current_user(
     
     Raises HTTPException if token is invalid or user not found.
     """
+    # Check if credentials are missing (return 401, not 403)
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     token = credentials.credentials
     payload = decode_access_token(token)
     

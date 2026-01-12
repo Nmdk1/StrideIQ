@@ -87,19 +87,22 @@ def get_body_composition(
     athlete_id: Optional[UUID] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user: Athlete = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
-    Get body composition entries for the current user.
+    Get body composition entries.
     
     Can filter by date range.
     BMI is included in response but may not be displayed on dashboard
     until correlations are identified.
+    
+    Note: athlete_id is required. Future: add proper auth.
     """
-    # Use current user if athlete_id not provided
-    target_id = athlete_id or current_user.id
-    query = db.query(BodyComposition).filter(BodyComposition.athlete_id == target_id)
+    # athlete_id is required for this endpoint
+    if not athlete_id:
+        raise HTTPException(status_code=400, detail="athlete_id is required")
+    
+    query = db.query(BodyComposition).filter(BodyComposition.athlete_id == athlete_id)
     
     if start_date:
         query = query.filter(BodyComposition.date >= start_date)

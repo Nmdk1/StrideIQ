@@ -154,13 +154,14 @@ class TestUnitConversions:
         """Test pace unit conversions"""
         # 8:00/mile = ? min/km
         pace_per_mile_min = 8.0
-        pace_per_mile_sec = pace_per_mile_min * 60
+        pace_per_mile_sec = pace_per_mile_min * 60  # 480 sec/mile
         
         # Convert to min/km
-        pace_per_km_sec = pace_per_mile_sec * (1.60934 / 1)  # Multiply by km/mile ratio
+        # 1 mile = 1.60934 km, so pace_per_km = pace_per_mile / 1.60934
+        pace_per_km_sec = pace_per_mile_sec / 1.60934  # Divide (not multiply)
         pace_per_km_min = pace_per_km_sec / 60
         
-        # 8:00/mile ≈ 4:58/km
+        # 8:00/mile ≈ 4:58/km (4.97 min/km)
         assert abs(pace_per_km_min - 4.97) < 0.1
 
 

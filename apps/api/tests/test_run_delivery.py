@@ -61,6 +61,9 @@ def test_activity(test_athlete):
         db.commit()
         db.refresh(activity)
         yield activity
+        # Delete feedback first (foreign key constraint)
+        db.query(ActivityFeedback).filter(ActivityFeedback.activity_id == activity.id).delete()
+        db.commit()
         db.delete(activity)
         db.commit()
     finally:
@@ -397,8 +400,9 @@ class TestRunDeliveryIntegration:
             
             assert delivery["perception_prompt"]["has_feedback"] == True
             
-            # Cleanup
+            # Cleanup - must delete feedback first (foreign key constraint)
             db.delete(feedback)
+            db.commit()
             db.delete(activity)
             db.commit()
         finally:

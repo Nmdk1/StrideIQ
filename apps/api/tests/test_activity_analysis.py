@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, date
 from decimal import Decimal
 from uuid import uuid4
 from core.database import SessionLocal
-from models import Athlete, Activity, PersonalBest
+from models import Athlete, Activity, PersonalBest, BestEffort
 from services.activity_analysis import (
     ActivityAnalysis,
     EfficiencyMetrics,
@@ -37,11 +37,19 @@ def test_athlete():
         db.commit()
         db.refresh(athlete)
         yield athlete
-        # Cleanup
-        db.query(Activity).filter(Activity.athlete_id == athlete.id).delete()
-        db.query(PersonalBest).filter(PersonalBest.athlete_id == athlete.id).delete()
-        db.delete(athlete)
-        db.commit()
+        # Cleanup - delete in correct order to respect foreign keys
+        # Must commit between each to ensure order is respected
+        try:
+            db.query(PersonalBest).filter(PersonalBest.athlete_id == athlete.id).delete()
+            db.commit()
+            db.query(BestEffort).filter(BestEffort.athlete_id == athlete.id).delete()
+            db.commit()
+            db.query(Activity).filter(Activity.athlete_id == athlete.id).delete()
+            db.commit()
+            db.delete(athlete)
+            db.commit()
+        except Exception:
+            db.rollback()
     finally:
         db.close()
 
@@ -266,9 +274,11 @@ class TestBaselineCalculations:
             assert pr_baseline.pace_per_mile == pytest.approx(8.0, rel=0.1)
             assert pr_baseline.avg_heart_rate == 165
             
-            # Cleanup
+            # Cleanup - must commit between deletes for FK order
             db.delete(current_activity)
+            db.commit()
             db.delete(pb)
+            db.commit()
             db.delete(pr_activity)
             db.commit()
         finally:
@@ -506,11 +516,11 @@ class TestActivityAnalysisIntegration:
             
             # Should have efficiency metrics
             assert result.get("metrics", {}).get("efficiency_score") is not None
-            
-            # Cleanup
-            db.delete(current_activity)
-            db.query(Activity).filter(Activity.athlete_id == test_athlete.id).delete()
+
+            # Cleanup - must delete pb first (FK constraint)
             db.delete(pb)
+            db.commit()
+            db.query(Activity).filter(Activity.athlete_id == test_athlete.id).delete()
             db.commit()
         finally:
             db.close()

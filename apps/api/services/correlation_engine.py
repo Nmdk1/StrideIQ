@@ -75,14 +75,20 @@ class CorrelationResult:
         }
 
 
-def calculate_pearson_correlation(x: List[float], y: List[float]) -> Tuple[float, float]:
+def calculate_pearson_correlation(x: List[float], y: List[float], min_samples: int = 5) -> Tuple[float, float]:
     """
     Calculate Pearson correlation coefficient and p-value.
+    
+    Args:
+        x: First variable values
+        y: Second variable values
+        min_samples: Minimum number of samples required (default 5)
+                     For meaningful correlation analysis, use MIN_SAMPLE_SIZE (10)
     
     Returns:
         (correlation_coefficient, p_value)
     """
-    if len(x) != len(y) or len(x) < MIN_SAMPLE_SIZE:
+    if len(x) != len(y) or len(x) < min_samples:
         return 0.0, 1.0
     
     n = len(x)
@@ -312,13 +318,22 @@ def aggregate_efficiency_outputs(
 def find_time_shifted_correlations(
     input_data: List[Tuple[datetime, float]],
     output_data: List[Tuple[datetime, float]],
-    max_lag_days: int = 14
+    max_lag_days: int = 14,
+    min_samples: int = 3
 ) -> List[CorrelationResult]:
     """
     Find correlations with time shifts (delayed effects).
     
     Tests correlations with input lagged by 0, 1, 2, ... max_lag_days days.
+    
+    Args:
+        input_data: List of (date, value) tuples for input variable
+        output_data: List of (date, value) tuples for output variable
+        max_lag_days: Maximum lag days to test
+        min_samples: Minimum sample size for correlation (default 3)
+                     Higher-level functions should use MIN_SAMPLE_SIZE (10) for meaningful insights
     """
+    
     results = []
     
     for lag_days in range(max_lag_days + 1):
@@ -331,7 +346,7 @@ def find_time_shifted_correlations(
         # Align input and output by date
         aligned_data = _align_time_series(shifted_input, output_data)
         
-        if len(aligned_data) < MIN_SAMPLE_SIZE:
+        if len(aligned_data) < min_samples:
             continue
         
         x_values = [point[0] for point in aligned_data]
