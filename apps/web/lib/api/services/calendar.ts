@@ -77,6 +77,13 @@ export interface ActivitySummary {
   intensity_score?: number;
 }
 
+export interface InlineInsight {
+  metric: 'efficiency' | 'hr' | 'pace' | 'drift' | 'consistency' | 'distance';
+  value: string;
+  delta?: number;
+  sentiment: 'positive' | 'negative' | 'neutral';
+}
+
 export interface CalendarDay {
   date: string;
   day_of_week: number;  // 0=Monday, 6=Sunday
@@ -86,6 +93,7 @@ export interface CalendarDay {
   status: 'future' | 'completed' | 'modified' | 'missed' | 'rest';
   notes: CalendarNote[];
   insights: CalendarInsight[];
+  inline_insight?: InlineInsight;  // Single key metric for calendar cell display
   total_distance_m: number;
   total_duration_s: number;
 }

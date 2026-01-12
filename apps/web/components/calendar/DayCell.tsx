@@ -143,6 +143,17 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
           </div>
         )}
         
+        {/* Inline insight - key metric for the day */}
+        {isCompleted && day.inline_insight && (
+          <div className={`text-[10px] ${
+            day.inline_insight.sentiment === 'positive' ? 'text-emerald-400/80' :
+            day.inline_insight.sentiment === 'negative' ? 'text-orange-400/80' :
+            'text-gray-400'
+          }`}>
+            {day.inline_insight.value}
+          </div>
+        )}
+        
         {/* Planned workout - secondary if completed, primary if not */}
         {hasPlanned && day.planned_workout && (
           <div className={`${isCompleted ? 'opacity-50' : ''}`}>

@@ -106,6 +106,14 @@ class InsightResponse(BaseModel):
         from_attributes = True
 
 
+class InlineInsight(BaseModel):
+    """Single inline insight for calendar display - one per day max."""
+    metric: str  # 'efficiency', 'hr', 'pace', 'drift', 'consistency'
+    value: str  # Human-readable value
+    delta: Optional[float] = None  # % change vs baseline (if applicable)
+    sentiment: str = 'neutral'  # 'positive', 'negative', 'neutral'
+
+
 class CalendarDayResponse(BaseModel):
     date: date
     day_of_week: int  # 0=Monday, 6=Sunday
@@ -123,6 +131,9 @@ class CalendarDayResponse(BaseModel):
     # Notes and insights
     notes: List[CalendarNoteResponse] = []
     insights: List[InsightResponse] = []
+    
+    # Inline insight - single key metric for this day (for calendar cell display)
+    inline_insight: Optional[InlineInsight] = None
     
     # Summary metrics for the day
     total_distance_m: int = 0
@@ -234,6 +245,80 @@ def get_day_name(day_date: date) -> str:
 def meters_to_miles(meters: int) -> float:
     """Convert meters to miles."""
     return round(meters / 1609.344, 1)
+
+
+def generate_inline_insight(activities: List[Activity], planned: Optional[PlannedWorkout]) -> Optional[InlineInsight]:
+    """
+    Generate a single inline insight for a calendar day.
+    
+    Priority:
+    1. Efficiency delta (if available)
+    2. HR zone indicator
+    3. Pace consistency
+    
+    Tone: Data speaks. No praise.
+    """
+    if not activities:
+        return None
+    
+    # Use first/primary activity
+    activity = activities[0]
+    
+    # Check for efficiency score (stored in activity or calculated)
+    if hasattr(activity, 'efficiency_factor') and activity.efficiency_factor:
+        # Would need baseline comparison - placeholder
+        pass
+    
+    # HR-based insight
+    if activity.avg_hr:
+        if activity.avg_hr < 135:
+            return InlineInsight(
+                metric='hr',
+                value=f'HR {activity.avg_hr}',
+                sentiment='positive'
+            )
+        elif activity.avg_hr > 165:
+            return InlineInsight(
+                metric='hr',
+                value=f'HR {activity.avg_hr}',
+                sentiment='negative'
+            )
+    
+    # Pace-based insight
+    if activity.distance_m and activity.duration_s and activity.distance_m > 0:
+        pace_per_mile = activity.duration_s / (activity.distance_m / 1609.344)
+        mins = int(pace_per_mile // 60)
+        secs = int(pace_per_mile % 60)
+        pace_str = f'{mins}:{secs:02d}'
+        
+        # Compare to planned pace if available
+        if planned and planned.workout_type:
+            wt = planned.workout_type
+            if 'easy' in wt or 'recovery' in wt:
+                # Easy pace check - should be slower than 8:00 for most
+                if pace_per_mile > 480:  # > 8:00/mi
+                    return InlineInsight(
+                        metric='pace',
+                        value=f'{pace_str}/mi',
+                        sentiment='positive'
+                    )
+            elif 'threshold' in wt or 'tempo' in wt:
+                return InlineInsight(
+                    metric='pace',
+                    value=f'{pace_str}/mi',
+                    sentiment='neutral'
+                )
+    
+    # Default: just show distance completed
+    if activity.distance_m:
+        miles = round(activity.distance_m / 1609.344, 1)
+        return InlineInsight(
+            metric='distance',
+            value=f'{miles}mi',
+            sentiment='neutral'
+        )
+    
+    return None
 
 
 # =============================================================================
@@ -370,6 +455,11 @@ def get_calendar(
         total_distance = sum(a.distance_m or 0 for a in day_activities)
         total_duration = sum(a.duration_s or 0 for a in day_activities)
         
+        # Generate inline insight for completed days
+        inline_insight = None
+        if day_activities and status in ('completed', 'modified'):
+            inline_insight = generate_inline_insight(day_activities, planned)
+        
         day_response = CalendarDayResponse(
             date=current,
             day_of_week=current.weekday(),
@@ -379,6 +469,7 @@ def get_calendar(
             status=status,
             notes=[CalendarNoteResponse.model_validate(n) for n in day_notes],
             insights=[InsightResponse.model_validate(i) for i in day_insights],
+            inline_insight=inline_insight,
             total_distance_m=total_distance,
             total_duration_s=total_duration
         )

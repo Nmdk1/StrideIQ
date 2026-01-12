@@ -10,14 +10,15 @@
  * - Insights
  * - Coach chat
  * 
- * DESIGN PRINCIPLE: Every element is actionable. No dead ends.
+ * DESIGN: Every element is actionable. No dead ends.
+ * TONE: Sparse, direct. Data speaks.
  */
 
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { useCalendarDay, useAddNote, useSendCoachMessage } from '@/lib/hooks/queries/calendar';
-import type { CalendarDay, CalendarNote } from '@/lib/api/services/calendar';
+import type { CalendarDay, CalendarNote, InlineInsight } from '@/lib/api/services/calendar';
 
 interface DayDetailPanelProps {
   date: string;
@@ -68,10 +69,11 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
     setCoachMessage('');
   };
   
+  // Quick questions - sparse, data-focused
   const quickQuestions = [
-    "Am I ready for this?",
-    "What pace should I target?",
-    "How does this compare to last week?",
+    "What does the data say?",
+    "How did similar runs go?",
+    "What changed this week?",
   ];
   
   return (
@@ -116,6 +118,30 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
           </div>
         ) : dayData ? (
           <div className="p-4 space-y-4">
+            {/* Key Insight Banner - if available */}
+            {dayData.inline_insight && (
+              <div className={`rounded-lg px-4 py-3 ${
+                dayData.inline_insight.sentiment === 'positive' ? 'bg-emerald-900/30 border border-emerald-700/30' :
+                dayData.inline_insight.sentiment === 'negative' ? 'bg-orange-900/30 border border-orange-700/30' :
+                'bg-gray-800/50 border border-gray-700/30'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className={`text-sm font-medium ${
+                    dayData.inline_insight.sentiment === 'positive' ? 'text-emerald-400' :
+                    dayData.inline_insight.sentiment === 'negative' ? 'text-orange-400' :
+                    'text-gray-300'
+                  }`}>
+                    {dayData.inline_insight.value}
+                  </span>
+                  {dayData.inline_insight.delta && (
+                    <span className="text-xs text-gray-500">
+                      {dayData.inline_insight.delta > 0 ? '+' : ''}{dayData.inline_insight.delta}% vs avg
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+            
             {/* Planned Workout Section */}
             {dayData.planned_workout && (
               <section className="bg-gray-800 rounded-lg p-4">
@@ -125,6 +151,12 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                   {dayData.planned_workout.target_distance_km && (
                     <div className="text-gray-400 text-sm">
                       {formatDistance(dayData.planned_workout.target_distance_km * 1000, 1)}
+                    </div>
+                  )}
+                  {/* Pace - the key training information */}
+                  {dayData.planned_workout.coach_notes && (
+                    <div className="text-green-400 text-sm mt-2 font-semibold">
+                      {dayData.planned_workout.coach_notes}
                     </div>
                   )}
                   {dayData.planned_workout.description && (
@@ -142,58 +174,60 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                 <h3 className="text-xs uppercase tracking-wider text-gray-500 mb-3">Actual</h3>
                 <div className="border-l-2 border-emerald-500 pl-3 space-y-3">
                   {dayData.activities.map((activity) => (
-                    <Link 
-                      key={activity.id}
-                      href={`/activities/${activity.id}`}
-                      className="block group hover:bg-gray-700/30 rounded-lg transition-colors p-2 -m-2"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="font-semibold text-white group-hover:text-emerald-400 transition-colors">
-                          {activity.name || 'Run'}
-                        </div>
-                        <div className="text-gray-500 group-hover:text-emerald-400 transition-colors text-sm flex items-center gap-1">
-                          View Details
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-gray-900/50 rounded p-2 text-center">
-                          <div className="text-lg font-bold text-white">
-                            {formatDistance(activity.distance_m || 0, 1)}
+                    <div key={activity.id} className="space-y-2">
+                      <Link 
+                        href={`/activities/${activity.id}`}
+                        className="block group hover:bg-gray-700/30 rounded-lg transition-colors p-2 -m-2"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="font-semibold text-white group-hover:text-emerald-400 transition-colors">
+                            {activity.name || 'Run'}
                           </div>
-                          <div className="text-xs text-gray-500">Distance</div>
-                        </div>
-                        <div className="bg-gray-900/50 rounded p-2 text-center">
-                          <div className="text-lg font-bold text-white">
-                            {activity.duration_s ? `${Math.floor(activity.duration_s / 60)}:${String(activity.duration_s % 60).padStart(2, '0')}` : '--'}
+                          <div className="text-gray-500 group-hover:text-emerald-400 transition-colors text-sm flex items-center gap-1">
+                            View Details
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
                           </div>
-                          <div className="text-xs text-gray-500">Duration</div>
                         </div>
-                        {activity.avg_hr && (
+                        <div className="grid grid-cols-2 gap-2">
                           <div className="bg-gray-900/50 rounded p-2 text-center">
-                            <div className="text-lg font-bold text-white">{activity.avg_hr}</div>
-                            <div className="text-xs text-gray-500">Avg HR</div>
-                          </div>
-                        )}
-                        {activity.workout_type && (
-                          <div className="bg-gray-900/50 rounded p-2 text-center">
-                            <div className="text-sm font-bold text-orange-400 uppercase">
-                              {activity.workout_type.replace(/_/g, ' ')}
+                            <div className="text-lg font-bold text-white">
+                              {formatDistance(activity.distance_m || 0, 1)}
                             </div>
-                            <div className="text-xs text-gray-500">Detected</div>
+                            <div className="text-xs text-gray-500">Distance</div>
                           </div>
-                        )}
-                      </div>
-                      {/* Compare to similar runs CTA */}
-                      <div className="mt-2 pt-2 border-t border-gray-700/50">
-                        <div className="text-xs text-gray-500 flex items-center gap-1">
-                          <span>👻</span>
-                          <span className="group-hover:text-orange-400 transition-colors">Compare to similar runs →</span>
+                          <div className="bg-gray-900/50 rounded p-2 text-center">
+                            <div className="text-lg font-bold text-white">
+                              {activity.duration_s ? `${Math.floor(activity.duration_s / 60)}:${String(activity.duration_s % 60).padStart(2, '0')}` : '--'}
+                            </div>
+                            <div className="text-xs text-gray-500">Duration</div>
+                          </div>
+                          {activity.avg_hr && (
+                            <div className="bg-gray-900/50 rounded p-2 text-center">
+                              <div className="text-lg font-bold text-white">{activity.avg_hr}</div>
+                              <div className="text-xs text-gray-500">Avg HR</div>
+                            </div>
+                          )}
+                          {activity.workout_type && (
+                            <div className="bg-gray-900/50 rounded p-2 text-center">
+                              <div className="text-sm font-bold text-orange-400 uppercase">
+                                {activity.workout_type.replace(/_/g, ' ')}
+                              </div>
+                              <div className="text-xs text-gray-500">Detected</div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    </Link>
+                      </Link>
+                      {/* Compare to similar runs */}
+                      <Link
+                        href={`/compare/context/${activity.id}`}
+                        className="flex items-center justify-between p-2 bg-gray-900/50 rounded-lg text-xs text-gray-500 hover:text-orange-400 hover:bg-orange-900/20 transition-colors"
+                      >
+                        <span>👻 Compare to similar runs</span>
+                        <span>→</span>
+                      </Link>
+                    </div>
                   ))}
                 </div>
               </section>
