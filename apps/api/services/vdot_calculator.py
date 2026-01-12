@@ -372,14 +372,40 @@ def calculate_training_paces(vdot: float) -> Dict:
     }
 
 
+def _calculate_vdot_for_time(distance_meters: float, time_seconds: float) -> float:
+    """
+    Calculate VDOT for a given distance and time using Daniels formula.
+    
+    VDOT = (-4.60 + 0.182258*V + 0.000104*V²) / (0.8 + 0.1894393*e^(-0.012778*T) + 0.2989558*e^(-0.1932605*T))
+    
+    Where V = velocity in m/min, T = time in minutes
+    """
+    import math
+    
+    velocity_m_per_min = (distance_meters / time_seconds) * 60
+    time_minutes = time_seconds / 60.0
+    
+    numerator = -4.60 + 0.182258 * velocity_m_per_min + 0.000104 * (velocity_m_per_min ** 2)
+    
+    exp1 = math.exp(-0.012778 * time_minutes)
+    exp2 = math.exp(-0.1932605 * time_minutes)
+    denominator = 0.8 + 0.1894393 * exp1 + 0.2989558 * exp2
+    
+    if denominator == 0:
+        return 0
+    
+    return numerator / denominator
+
+
 def calculate_equivalent_race_time(vdot: float, target_distance_meters: float) -> Optional[Dict]:
     """
-    Calculate equivalent race time for a target distance based on VDOT.
+    Calculate equivalent race time for a target distance based on RPI/VDOT.
     
-    Uses lookup tables for accuracy. Falls back to approximation if unavailable.
+    Uses binary search to find the time that produces the target VDOT
+    for the given distance using the Daniels formula.
     
     Args:
-        vdot: VDOT score
+        vdot: RPI/VDOT score
         target_distance_meters: Target race distance in meters
         
     Returns:
@@ -388,100 +414,76 @@ def calculate_equivalent_race_time(vdot: float, target_distance_meters: float) -
     if vdot <= 0 or target_distance_meters <= 0:
         return None
     
-    # Use lookup service if available
-    if LOOKUP_AVAILABLE:
-        try:
-            # Use closest integer VDOT for exact reference values
-            equivalent = get_equivalent_race_times(vdot, use_closest_integer=True)
-            if equivalent:
-                # Map distance to lookup key
-                distance_map = {
-                    5000: "5K",
-                    10000: "10K",
-                    21097.5: "half_marathon",
-                    42195: "marathon"
-                }
-                
-                # Find closest distance
-                closest_dist = min(distance_map.keys(), key=lambda x: abs(x - target_distance_meters))
-                if abs(closest_dist - target_distance_meters) / target_distance_meters < 0.1:  # Within 10%
-                    race_time_str = equivalent.get("race_times_formatted", {}).get(distance_map[closest_dist])
-                    race_time_seconds = equivalent.get("race_times_seconds", {}).get(distance_map[closest_dist])
-                    
-                    if race_time_str and race_time_seconds:
-                        # Calculate pace from time and distance
-                        pace_seconds_per_mile = (race_time_seconds / closest_dist) * 1609.34
-                        pace_mins = int(pace_seconds_per_mile // 60)
-                        pace_secs = int(pace_seconds_per_mile % 60)
-                        pace_mi = f"{pace_mins}:{pace_secs:02d}"
-                        
-                        pace_km_seconds = race_time_seconds / (closest_dist / 1000)
-                        pace_km_mins = int(pace_km_seconds // 60)
-                        pace_km_secs = int(pace_km_seconds % 60)
-                        pace_km = f"{pace_km_mins}:{pace_km_secs:02d}"
-                        
-                        return {
-                            "distance_m": closest_dist,
-                            "distance_name": _get_distance_name(closest_dist),
-                            "time_seconds": race_time_seconds,
-                            "time_formatted": race_time_str,
-                            "pace_mi": pace_mi,
-                            "pace_km": pace_km,
-                        }
-        except Exception:
-            pass  # Fall back to approximation
+    # Use binary search to find the time that gives us this VDOT
+    # Start with reasonable bounds based on world records and slow joggers
     
-    # Fallback: Approximation using lookup table interpolation
-    # Try to interpolate from known distances in lookup table
-    if LOOKUP_AVAILABLE:
-        try:
-            equivalent = get_equivalent_race_times(vdot, use_closest_integer=True)
-            if equivalent:
-                race_times_seconds = equivalent.get("race_times_seconds", {})
-                
-                # Get 5K time as reference (most common)
-                if "5K" in race_times_seconds:
-                    ref_time_5k = race_times_seconds["5K"]
-                    ref_distance_5k = 5000
-                    
-                    # Use power law: time = a * distance^b
-                    # For running, b ≈ 1.07-1.08 (slightly faster than linear)
-                    # Calculate from 5K reference
-                    b = 1.075  # Power law exponent
-                    a = ref_time_5k / (ref_distance_5k ** b)
-                    time_seconds = a * (target_distance_meters ** b)
-                    
-                    # Format time
-                    hours = int(time_seconds // 3600)
-                    minutes = int((time_seconds % 3600) // 60)
-                    secs = int(time_seconds % 60)
-                    if hours > 0:
-                        time_formatted = f"{hours}:{minutes:02d}:{secs:02d}"
-                    else:
-                        time_formatted = f"{minutes}:{secs:02d}"
-                    
-                    # Calculate pace
-                    pace_seconds_per_mile = (time_seconds / target_distance_meters) * 1609.34
-                    pace_mins = int(pace_seconds_per_mile // 60)
-                    pace_secs = int(pace_seconds_per_mile % 60)
-                    pace_mi = f"{pace_mins}:{pace_secs:02d}"
-                    
-                    pace_km_seconds = time_seconds / (target_distance_meters / 1000)
-                    pace_km_mins = int(pace_km_seconds // 60)
-                    pace_km_secs = int(pace_km_seconds % 60)
-                    pace_km = f"{pace_km_mins}:{pace_km_secs:02d}"
-                    
-                    return {
-                        "distance_m": target_distance_meters,
-                        "distance_name": _get_distance_name(target_distance_meters),
-                        "time_seconds": int(time_seconds),
-                        "time_formatted": time_formatted,
-                        "pace_mi": pace_mi,
-                        "pace_km": pace_km,
-                    }
-        except Exception:
-            pass  # Fall back to simple approximation
+    # Estimate initial bounds based on distance
+    # World record pace is about 2.8 min/km for short, 3.0 for marathon
+    # Slow joggers might be 10+ min/km
+    min_pace_per_km = 2.5  # Elite (minutes)
+    max_pace_per_km = 12.0  # Very slow (minutes)
     
+    distance_km = target_distance_meters / 1000.0
+    
+    min_time_seconds = min_pace_per_km * 60 * distance_km
+    max_time_seconds = max_pace_per_km * 60 * distance_km
+    
+    # Binary search for the correct time
+    tolerance = 0.01  # VDOT tolerance
+    max_iterations = 50
+    
+    for _ in range(max_iterations):
+        mid_time = (min_time_seconds + max_time_seconds) / 2
+        calculated_vdot = _calculate_vdot_for_time(target_distance_meters, mid_time)
+        
+        if abs(calculated_vdot - vdot) < tolerance:
+            time_seconds = mid_time
+            break
+        
+        # Higher VDOT = faster time, so if calculated > target, we need slower time
+        if calculated_vdot > vdot:
+            min_time_seconds = mid_time  # Need slower (longer) time
+        else:
+            max_time_seconds = mid_time  # Need faster (shorter) time
+    else:
+        # Use the best approximation we found
+        time_seconds = (min_time_seconds + max_time_seconds) / 2
+    
+    time_seconds = int(round(time_seconds))
+    
+    # Format time
+    hours = time_seconds // 3600
+    minutes = (time_seconds % 3600) // 60
+    secs = time_seconds % 60
+    
+    if hours > 0:
+        time_formatted = f"{hours}:{minutes:02d}:{secs:02d}"
+    else:
+        time_formatted = f"{minutes}:{secs:02d}"
+    
+    # Calculate pace
+    pace_seconds_per_mile = (time_seconds / target_distance_meters) * 1609.34
+    pace_mins = int(pace_seconds_per_mile // 60)
+    pace_secs = int(pace_seconds_per_mile % 60)
+    pace_mi = f"{pace_mins}:{pace_secs:02d}"
+    
+    pace_km_seconds = time_seconds / (target_distance_meters / 1000)
+    pace_km_mins = int(pace_km_seconds // 60)
+    pace_km_secs = int(pace_km_seconds % 60)
+    pace_km = f"{pace_km_mins}:{pace_km_secs:02d}"
+    
+    return {
+        "distance_m": target_distance_meters,
+        "distance_name": _get_distance_name(target_distance_meters),
+        "time_seconds": time_seconds,
+        "time_formatted": time_formatted,
+        "pace_mi": pace_mi,
+        "pace_km": pace_km,
+    }
+
+
+def _old_calculate_equivalent_race_time_fallback(vdot: float, target_distance_meters: float) -> Optional[Dict]:
+    """DEPRECATED - Old fallback code kept for reference."""
     # Simple fallback: Approximation
     vo2max_pace_per_mile = (1000 / vdot) * 0.98
     
