@@ -41,6 +41,37 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# PHASE DISPLAY NAMES
+# =============================================================================
+
+PHASE_DISPLAY_NAMES = {
+    "base": "Base",
+    "base_speed": "Base + Speed",
+    "volume_build": "Volume Build",
+    "threshold": "Threshold",
+    "marathon_specific": "Marathon Specific",
+    "race_specific": "Race Specific",
+    "hold": "Maintenance",
+    "taper": "Taper",
+    "race": "Race Week",
+    "recovery": "Recovery",
+    "build": "Build",
+    "build1": "Build",
+    "build2": "Build",
+    "peak": "Peak",
+    "cutback": "Cutback",
+}
+
+
+def format_phase(phase: Optional[str]) -> str:
+    """Convert raw phase name to human-readable display name."""
+    if not phase:
+        return "Build"
+    key = phase.lower().replace(" ", "_")
+    return PHASE_DISPLAY_NAMES.get(key, phase.replace("_", " ").title())
+
+
+# =============================================================================
 # INSIGHT TYPES AND PRIORITIES
 # =============================================================================
 
@@ -147,13 +178,13 @@ class BuildStatus:
     key_session: Optional[str] = None
 
 
-@dataclass 
+@dataclass
 class AthleteIntelligence:
     """Banked learnings about what works for this athlete"""
-    what_works: List[str] = field(default_factory=list)
-    what_doesnt: List[str] = field(default_factory=list)
+    what_works: List[Dict[str, str]] = field(default_factory=list)  # [{text, source}]
+    what_doesnt: List[Dict[str, str]] = field(default_factory=list)  # [{text, source}]
     patterns: Dict[str, Any] = field(default_factory=dict)
-    injury_patterns: List[str] = field(default_factory=list)
+    injury_patterns: List[Dict[str, str]] = field(default_factory=list)  # [{text, source}]
     career_prs: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -592,20 +623,72 @@ class InsightAggregator:
             .first()
         )
         
-        if week_stats and week_stats.count and week_stats.count >= 6:
+        # Lower threshold to 3 runs (was 6)
+        if week_stats and week_stats.count and week_stats.count >= 3:
+            miles = round(week_stats.distance/1609, 1) if week_stats.distance else 0
             insights.append(GeneratedInsight(
                 insight_type=InsightType.ACHIEVEMENT,
                 priority=InsightPriority.LOW,
-                title=f"Consistent week: {week_stats.count} runs",
-                content=(
-                    f"You logged {week_stats.count} runs this week "
-                    f"({week_stats.distance/1609:.1f} miles total). "
-                    f"Consistency is the foundation of improvement."
-                ),
+                title=f"This week: {week_stats.count} runs, {miles} mi",
+                content=f"Logged {week_stats.count} runs totaling {miles} miles.",
                 data={
                     "run_count": week_stats.count,
-                    "total_miles": round(week_stats.distance/1609, 1) if week_stats.distance else 0,
+                    "total_miles": miles,
                 },
+                source="n1",
+            ))
+        
+        # Monthly volume insight
+        month_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        month_stats = (
+            self.db.query(
+                func.count(Activity.id).label("count"),
+                func.sum(Activity.distance_m).label("distance"),
+            )
+            .filter(
+                Activity.athlete_id == self.athlete.id,
+                Activity.start_time >= month_ago,
+            )
+            .first()
+        )
+        
+        if month_stats and month_stats.count and month_stats.count >= 5:
+            miles = round(month_stats.distance/1609, 1) if month_stats.distance else 0
+            insights.append(GeneratedInsight(
+                insight_type=InsightType.TREND_ALERT,
+                priority=InsightPriority.MEDIUM,
+                title=f"30-day volume: {miles} miles",
+                content=f"{month_stats.count} runs over the past 30 days. Avg {miles/4.3:.0f} mi/week.",
+                data={
+                    "run_count": month_stats.count,
+                    "total_miles": miles,
+                    "avg_weekly": round(miles/4.3, 1),
+                },
+                source="n1",
+            ))
+        
+        # Check for hard workouts in past 14 days
+        HARD_TYPES = {'race', 'threshold_run', 'tempo_run', 'vo2max_intervals', 
+                      'fartlek', 'intervals', 'threshold', 'tempo'}
+        two_weeks = datetime.now(timezone.utc) - timedelta(days=14)
+        
+        hard_count = (
+            self.db.query(func.count(Activity.id))
+            .filter(
+                Activity.athlete_id == self.athlete.id,
+                Activity.start_time >= two_weeks,
+                Activity.workout_type.in_(HARD_TYPES),
+            )
+            .scalar() or 0
+        )
+        
+        if hard_count >= 1:
+            insights.append(GeneratedInsight(
+                insight_type=InsightType.PATTERN_DETECTION,
+                priority=InsightPriority.MEDIUM,
+                title=f"{hard_count} quality session{'s' if hard_count > 1 else ''} in 14 days",
+                content=f"Tracked {hard_count} hard workout{'s' if hard_count > 1 else ''} recently. Data collection in progress.",
+                data={"hard_count": hard_count},
                 source="n1",
             ))
         
@@ -679,7 +762,7 @@ class InsightAggregator:
             plan_name=active_plan.name or "Training Plan",
             current_week=current_week,
             total_weeks=active_plan.total_weeks or 18,
-            current_phase=current_phase or "Build",
+            current_phase=format_phase(current_phase),
             phase_focus="",  # Would come from plan metadata
             goal_race_name=active_plan.goal_race_name,
             goal_race_date=active_plan.goal_race_date,
@@ -709,32 +792,46 @@ class InsightAggregator:
             .all()
         )
         
-        if len(recent) >= 10:
+        if len(recent) >= 5:
             # Check consistency pattern
             weeks_with_runs = set()
             for a in recent:
                 week_num = a.start_time.isocalendar()[1]
                 weeks_with_runs.add(week_num)
             
-            if len(weeks_with_runs) >= 10:
-                intelligence.what_works.append(
-                    f"Consistency: You've run in {len(weeks_with_runs)} of the last 12 weeks"
-                )
+            if len(weeks_with_runs) >= 8:
+                intelligence.what_works.append({
+                    "text": f"Consistency: Ran {len(weeks_with_runs)} of last 12 weeks",
+                    "source": "n1"
+                })
         
         # Volume pattern
         total_distance = sum(a.distance_m or 0 for a in recent)
-        avg_weekly = (total_distance / 90) * 7 / 1609  # miles per week
+        weeks_span = min(12, len(weeks_with_runs)) if weeks_with_runs else 12
+        avg_weekly = (total_distance / (weeks_span * 7)) * 7 / 1609  # miles per week
         
-        if avg_weekly >= 30:
-            intelligence.what_works.append(
-                f"Volume: Averaging {avg_weekly:.0f} miles/week builds your aerobic base"
-            )
+        if avg_weekly >= 20:
+            intelligence.what_works.append({
+                "text": f"Volume: ~{avg_weekly:.0f} mi/week average",
+                "source": "n1"
+            })
+        
+        # Count hard workouts
+        HARD_TYPES = {'race', 'threshold_run', 'tempo_run', 'vo2max_intervals', 
+                      'fartlek', 'intervals', 'threshold', 'tempo'}
+        hard_count = len([a for a in recent if a.workout_type in HARD_TYPES])
+        if hard_count >= 3:
+            intelligence.what_works.append({
+                "text": f"Quality: {hard_count} hard sessions in 90 days",
+                "source": "n1"
+            })
         
         # Check for injury history (would come from athlete profile in production)
-        # For now, just add a placeholder
-        intelligence.injury_patterns.append(
-            "No injury patterns detected yet (need more history)"
-        )
+        if not intelligence.injury_patterns:
+            intelligence.injury_patterns.append({
+                "text": "No injury patterns detected yet (need more history)",
+                "source": "n1"
+            })
         
         return intelligence
     
