@@ -33,6 +33,62 @@ from datetime import datetime, timedelta
 import math
 
 from models import Activity, Athlete
+import re
+
+
+def _matches_keyword(keyword: str, text: str) -> bool:
+    """
+    Check if keyword matches text as a whole word (word boundary matching).
+    
+    This avoids false positives like:
+    - "skipped intervals" matching "interval" (negated context)
+    - "easy workout" matching "workout" (different type)
+    - "recovery workout" matching "workout"
+    
+    For multi-word keywords, uses substring matching.
+    For single words, uses word boundary regex with optional plural.
+    """
+    text_lower = text.lower()
+    keyword_lower = keyword.lower()
+    
+    # For multi-word keywords, substring match is fine
+    if ' ' in keyword:
+        return keyword_lower in text_lower
+    
+    # For single words, use word boundary with optional 's' for plurals
+    # e.g., 'interval' matches 'interval' or 'intervals'
+    pattern = r'\b' + re.escape(keyword_lower) + r's?\b'
+    return bool(re.search(pattern, text_lower))
+
+
+def _has_negation_context(keyword: str, text: str) -> bool:
+    """
+    Check if keyword appears in a negated context.
+    
+    Examples:
+    - "skipped intervals" - negated
+    - "no tempo today" - negated  
+    - "cancelled track workout" - negated
+    """
+    text_lower = text.lower()
+    keyword_lower = keyword.lower()
+    
+    # Negation words that typically appear before the keyword
+    negation_patterns = [
+        f"skip(ped|ping)? {keyword_lower}",
+        f"no {keyword_lower}",
+        f"cancel(led|ling)? {keyword_lower}",
+        f"missed {keyword_lower}",
+        f"didn'?t do {keyword_lower}",
+        f"instead of {keyword_lower}",
+        f"not a {keyword_lower}",
+    ]
+    
+    for pattern in negation_patterns:
+        if re.search(pattern, text_lower):
+            return True
+    
+    return False
 
 
 class WorkoutZone(str, Enum):
@@ -292,7 +348,8 @@ class WorkoutClassifierService:
         
         # Threshold/Tempo (often named explicitly)
         threshold_keywords = ['threshold', 'tempo', 'lt run', 'lactate threshold', 'cruise']
-        if any(kw in name for kw in threshold_keywords):
+        if any(_matches_keyword(kw, name) and not _has_negation_context(kw, name) 
+               for kw in threshold_keywords):
             # Check if it mentions intervals
             is_intervals = any(x in name for x in ['interval', 'repeat', 'x ', ' x'])
             if is_intervals:
@@ -312,9 +369,15 @@ class WorkoutClassifierService:
             )
         
         # Intervals/Speed work
-        interval_keywords = ['interval', 'repeat', 'vo2', 'vo2max', 'speed', 'track', 
-                            'workout', '400s', '800s', '1000s', 'mile repeat', 'yasso']
-        if any(kw in name for kw in interval_keywords):
+        # Removed 'workout' and 'speed' as they're too generic (false positives)
+        # 'workout' could match "easy workout", "recovery workout"
+        # 'speed' could match "speed bump road" or similar
+        interval_keywords = ['interval', 'repeat', 'vo2', 'vo2max', 'track workout',
+                            '400s', '800s', '1000s', '1200s', 'mile repeat', 'yasso', 
+                            'speed work', 'speed session']
+        # Check for keyword match AND ensure no negation context
+        if any(_matches_keyword(kw, name) and not _has_negation_context(kw, name) 
+               for kw in interval_keywords):
             return WorkoutClassification(
                 workout_type=WorkoutType.VO2MAX_INTERVALS,
                 workout_zone=WorkoutZone.SPEED,
@@ -371,8 +434,11 @@ class WorkoutClassifierService:
             )
         
         # Recovery
-        recovery_keywords = ['recovery', 'easy', 'shake out', 'shakeout', 'warm up', 'cool down']
-        if any(kw in name for kw in recovery_keywords):
+        # Use word boundary matching to avoid "easy" matching "uneasy" or similar
+        recovery_keywords = ['recovery', 'easy run', 'easy jog', 'shake out', 'shakeout', 
+                            'warm up', 'cool down', 'recovery run', 'easy effort']
+        if any(_matches_keyword(kw, name) and not _has_negation_context(kw, name) 
+               for kw in recovery_keywords):
             return WorkoutClassification(
                 workout_type=WorkoutType.EASY_RUN,
                 workout_zone=WorkoutZone.ENDURANCE,
