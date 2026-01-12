@@ -24,7 +24,7 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      router.push('/activities');
+      router.push('/home');
     }
   }, [authLoading, isAuthenticated, router]);
 
@@ -35,7 +35,7 @@ export default function LoginPage() {
 
     try {
       await login({ email, password });
-      router.push('/activities');
+      router.push('/home');
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.');
     } finally {

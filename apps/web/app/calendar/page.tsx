@@ -32,67 +32,35 @@ function CalendarHeader({
   year, 
   onPrevMonth, 
   onNextMonth,
-  activePlan,
-  currentWeek,
-  currentPhase 
 }: {
   month: string;
   year: number;
   onPrevMonth: () => void;
   onNextMonth: () => void;
-  activePlan?: { name: string; goal_race_name?: string; goal_race_date?: string; total_weeks: number } | null;
-  currentWeek?: number | null;
-  currentPhase?: string | null;
 }) {
-  // Calculate days until race without timezone issues
-  const daysUntilRace = (() => {
-    if (!activePlan?.goal_race_date) return null;
-    const [y, m, d] = activePlan.goal_race_date.split('-').map(Number);
-    const raceDate = new Date(y, m - 1, d);
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return Math.ceil((raceDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  })();
-
   return (
-    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={onPrevMonth}
-          className="p-2 bg-gray-800 border border-gray-700 rounded-lg hover:border-blue-500 transition-colors"
-        >
-          ◀
-        </button>
-        <h1 className="text-2xl font-bold text-white">
-          {month} {year}
-        </h1>
-        <button 
-          onClick={onNextMonth}
-          className="p-2 bg-gray-800 border border-gray-700 rounded-lg hover:border-blue-500 transition-colors"
-        >
-          ▶
-        </button>
-      </div>
-      
-      {activePlan && (
-        <div className="flex items-center gap-4">
-          {currentWeek && (
-            <span className="px-3 py-1.5 bg-blue-600 text-white rounded-full text-sm font-medium">
-              Week {currentWeek}
-            </span>
-          )}
-          {currentPhase && (
-            <span className="px-3 py-1.5 bg-orange-900/50 text-orange-400 border border-orange-700/50 rounded-full text-sm font-medium">
-              {currentPhase}
-            </span>
-          )}
-          {daysUntilRace !== null && daysUntilRace > 0 && (
-            <span className="text-gray-400 text-sm">
-              <span className="text-white font-bold">{daysUntilRace}</span> days to race
-            </span>
-          )}
-        </div>
-      )}
+    <div className="flex items-center gap-3">
+      <button 
+        onClick={onPrevMonth}
+        className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+        aria-label="Previous month"
+      >
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+      <h1 className="text-xl font-semibold text-white min-w-[160px] text-center">
+        {month} {year}
+      </h1>
+      <button 
+        onClick={onNextMonth}
+        className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+        aria-label="Next month"
+      >
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
     </div>
   );
 }
@@ -102,47 +70,50 @@ function CalendarHeader({
 function ActionBar({ 
   weekStats 
 }: { 
-  weekStats: { completed: number; planned: number; trajectory?: string } 
+  weekStats: { completed: number; planned: number } 
 }) {
+  // Only show if there's meaningful data
+  const showProgress = weekStats.planned > 0;
+  const progressPct = showProgress ? Math.min(100, (weekStats.completed / weekStats.planned) * 100) : 0;
+  
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 px-4 md:px-6 py-3 md:py-4 z-30 safe-area-bottom">
+    <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur border-t border-gray-800 px-4 py-3 z-30">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        {/* Stats - simplified on mobile */}
-        <div className="flex items-center gap-2 md:gap-8">
-          <div className="flex items-center gap-1 md:gap-2">
-            <span className="text-gray-400 hidden md:inline">📊</span>
-            <span className="text-xs md:text-sm text-gray-400">
-              <span className="hidden md:inline">This week: </span>
-              <span className="text-white font-bold">{weekStats.completed.toFixed(0)}</span>
-              <span className="text-gray-600">/</span>
-              <span className="text-gray-400">{weekStats.planned.toFixed(0)} mi</span>
-            </span>
-          </div>
-          {weekStats.trajectory && (
-            <div className="hidden md:flex items-center gap-2">
-              <span className="text-gray-400">🎯</span>
-              <span className="text-sm text-gray-400">
-                Trajectory: <span className="text-emerald-400 font-bold">{weekStats.trajectory}</span>
-              </span>
-            </div>
+        {/* Week progress - clean minimal display */}
+        <div className="flex items-center gap-4">
+          {showProgress ? (
+            <>
+              <div className="text-sm text-gray-400">
+                This week: <span className="text-white font-medium">{weekStats.completed.toFixed(0)}</span>
+                <span className="text-gray-600">/</span>
+                <span className="text-gray-500">{weekStats.planned.toFixed(0)} mi</span>
+              </div>
+              {/* Mini progress bar */}
+              <div className="hidden sm:block w-24 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-emerald-500 rounded-full transition-all" 
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-gray-500">No planned workouts this week</div>
           )}
         </div>
         
-        {/* Buttons - compact on mobile */}
-        <div className="flex items-center gap-2 md:gap-3">
+        {/* Quick actions */}
+        <div className="flex items-center gap-2">
           <a 
             href="/insights"
-            className="px-3 md:px-4 py-2 bg-gray-800 border border-gray-700 hover:border-blue-500 rounded-lg text-xs md:text-sm transition-colors"
+            className="px-3 py-1.5 text-sm text-gray-400 hover:text-white transition-colors"
           >
-            <span className="md:hidden">📊</span>
-            <span className="hidden md:inline">📊 Weekly Summary</span>
+            Insights
           </a>
           <a 
             href="/coach"
-            className="px-3 md:px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg text-xs md:text-sm font-medium transition-colors"
+            className="px-3 py-1.5 text-sm text-gray-400 hover:text-white transition-colors"
           >
-            <span className="md:hidden">💬</span>
-            <span className="hidden md:inline">💬 Ask Coach</span>
+            Coach
           </a>
         </div>
       </div>
@@ -282,7 +253,6 @@ export default function CalendarPage() {
     return {
       completed: currentWeekSummary?.completed_miles || 0,
       planned: currentWeekSummary?.planned_miles || 0,
-      trajectory: '3:12-3:18' // TODO: Calculate from build data
     };
   }, [calendar, today]);
   
@@ -290,16 +260,13 @@ export default function CalendarPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-900 text-gray-100 pb-24">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          {/* Header */}
-          <div className="flex justify-between items-start mb-6">
+          {/* Header - clean, minimal */}
+          <div className="flex justify-between items-center mb-6">
             <CalendarHeader
               month={monthName}
               year={year}
               onPrevMonth={handlePrevMonth}
               onNextMonth={handleNextMonth}
-              activePlan={calendar?.active_plan}
-              currentWeek={calendar?.current_week}
-              currentPhase={calendar?.current_phase}
             />
             <UnitToggle />
           </div>
@@ -359,6 +326,7 @@ export default function CalendarPage() {
                 {weeksWithDays.map((week, weekIndex) => {
                   const weekDistance = week.days.reduce((sum, d) => sum + (d.total_distance_m || 0), 0);
                   const weekDuration = week.days.reduce((sum, d) => sum + (d.total_duration_s || 0), 0);
+                  const hasActivity = weekDistance > 0;
                   const weekMiles = (weekDistance / 1609.344).toFixed(1);
                   const hours = Math.floor(weekDuration / 3600);
                   const mins = Math.floor((weekDuration % 3600) / 60);
@@ -367,7 +335,7 @@ export default function CalendarPage() {
                   return (
                     <React.Fragment key={weekIndex}>
                       {/* Desktop: 7 days + weekly totals column */}
-                      <div className="hidden md:grid grid-cols-[repeat(7,1fr)_140px]">
+                      <div className="hidden md:grid grid-cols-[repeat(7,1fr)_120px]">
                         {week.days.map((day) => (
                           <DayCell
                             key={day.date}
@@ -378,12 +346,16 @@ export default function CalendarPage() {
                           />
                         ))}
                         
-                        {/* Weekly total cell - aligned with this week's row */}
-                        <div className="hidden lg:flex flex-col justify-center items-end p-3 border-r border-b border-gray-700/50 bg-gray-800/30 min-h-[120px]">
-                          <div className="text-right">
-                            <div className="text-white font-semibold text-sm">{weekMiles} mi</div>
-                            <div className="text-gray-500 text-xs">{timeStr}</div>
-                          </div>
+                        {/* Weekly total cell - only show if there's activity */}
+                        <div className="hidden lg:flex flex-col justify-center items-end p-3 border-r border-b border-gray-700/30 min-h-[120px]">
+                          {hasActivity ? (
+                            <div className="text-right">
+                              <div className="text-white font-medium text-sm">{weekMiles} mi</div>
+                              <div className="text-gray-500 text-xs">{timeStr}</div>
+                            </div>
+                          ) : (
+                            <div className="text-gray-600 text-xs">—</div>
+                          )}
                         </div>
                       </div>
                       
@@ -401,11 +373,13 @@ export default function CalendarPage() {
                         ))}
                       </div>
                       
-                      {/* Mobile week total - below the week */}
-                      <div className="md:hidden flex justify-between items-center px-3 py-2 bg-gray-800/30 border-b border-gray-700/50 text-sm">
-                        <span className="text-gray-500">Week Total</span>
-                        <span className="text-white font-medium">{weekMiles} mi • {timeStr}</span>
-                      </div>
+                      {/* Mobile week total - only show if there's activity */}
+                      {hasActivity && (
+                        <div className="md:hidden flex justify-between items-center px-3 py-2 bg-gray-800/20 border-b border-gray-700/30 text-sm">
+                          <span className="text-gray-500">Week</span>
+                          <span className="text-gray-300 font-medium">{weekMiles} mi · {timeStr}</span>
+                        </div>
+                      )}
                     </React.Fragment>
                   );
                 })}

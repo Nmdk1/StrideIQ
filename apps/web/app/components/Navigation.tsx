@@ -79,16 +79,26 @@ export default function Navigation() {
   ];
 
   // Authenticated navigation items (for logged-in users)
-  // Note: /tools is an in-app page, NOT a hash link to landing page
-  const authNavItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: '📊' },
+  // Primary: Home, Calendar, Analytics, Coach
+  // Secondary: everything else
+  const primaryNavItems = [
+    { href: '/home', label: 'Home', icon: '🏠' },
     { href: '/calendar', label: 'Calendar', icon: '📅' },
-    { href: '/plans/create', label: 'Training Plan', icon: '🎯', highlight: true },
-    { href: '/insights', label: 'Insights', icon: '💡' },
-    { href: '/compare', label: 'Compare', icon: '👻' },
+    { href: '/analytics', label: 'Analytics', icon: '📊' },
     { href: '/coach', label: 'Coach', icon: '🤖' },
+  ];
+  
+  const secondaryNavItems = [
     { href: '/activities', label: 'Activities', icon: '🏃' },
+    { href: '/compare', label: 'Compare', icon: '👻' },
+    { href: '/personal-bests', label: 'PBs', icon: '🏆' },
     { href: '/tools', label: 'Tools', icon: '🧮' },
+  ];
+  
+  // Legacy - keeping for mobile menu only
+  const authNavItems = [
+    ...primaryNavItems,
+    ...secondaryNavItems,
   ];
 
   const NavLink = ({ href, label, isHash = false, highlight = false }: { 
@@ -134,7 +144,7 @@ export default function Navigation() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <Link href={isAuthenticated ? "/dashboard" : "/"} className="text-xl font-bold text-white hover:text-orange-500 transition-colors">
+            <Link href={isAuthenticated ? "/home" : "/"} className="text-xl font-bold text-white hover:text-orange-500 transition-colors">
               StrideIQ
             </Link>
             {isAuthenticated && user && (
@@ -151,22 +161,40 @@ export default function Navigation() {
             ) : isAuthenticated ? (
               /* === AUTHENTICATED NAV === */
               <>
-                {authNavItems.map((item) => (
+                {/* Primary nav items */}
+                {primaryNavItems.map((item) => (
                   <NavLink 
                     key={item.href} 
                     href={item.href} 
                     label={item.label}
-                    highlight={item.highlight}
                   />
                 ))}
                 
-                {/* Settings dropdown or link */}
+                {/* Divider */}
+                <div className="w-px h-4 bg-gray-700 mx-1" />
+                
+                {/* Secondary nav items - smaller */}
+                {secondaryNavItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                      pathname === item.href
+                        ? 'bg-gray-800 text-white'
+                        : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+                
+                {/* Settings */}
                 <Link
                   href="/settings"
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                     pathname === '/settings'
                       ? 'bg-gray-800 text-white'
-                      : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                      : 'text-gray-500 hover:text-gray-300'
                   }`}
                 >
                   Settings
@@ -176,10 +204,10 @@ export default function Navigation() {
                 {(user?.role === 'admin' || user?.role === 'owner') && (
                   <Link
                     href="/admin"
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                       pathname === '/admin'
                         ? 'bg-gray-800 text-white'
-                        : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                        : 'text-gray-500 hover:text-gray-300'
                     }`}
                   >
                     Admin
@@ -189,7 +217,7 @@ export default function Navigation() {
                 {/* Logout */}
                 <button
                   onClick={logout}
-                  className="px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+                  className="px-3 py-1.5 rounded text-xs font-medium text-gray-500 hover:text-gray-300 transition-colors"
                 >
                   Logout
                 </button>
@@ -256,9 +284,7 @@ export default function Navigation() {
                         className={`px-4 py-3 rounded-lg text-base font-medium transition-colors ${
                           pathname === item.href
                             ? 'bg-gray-800 text-white'
-                            : item.highlight
-                              ? 'bg-green-600/10 text-green-400'
-                              : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                            : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                         }`}
                       >
                         <span className="mr-2">{item.icon}</span>

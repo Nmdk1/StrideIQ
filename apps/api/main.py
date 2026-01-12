@@ -7,7 +7,7 @@ routers, and configuration for production use.
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, plan_generation
+from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, plan_generation, home
 try:
     from routers import garmin
     GARMIN_AVAILABLE = True
@@ -26,6 +26,46 @@ import time
 setup_logging()
 logger = logging.getLogger(__name__)
 
+# Initialize Sentry for error tracking (production)
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+        from sentry_sdk.integrations.redis import RedisIntegration
+        
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            environment=settings.ENVIRONMENT,
+            traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+            profiles_sample_rate=settings.SENTRY_PROFILES_SAMPLE_RATE,
+            integrations=[
+                FastApiIntegration(transaction_style="endpoint"),
+                SqlalchemyIntegration(),
+                RedisIntegration(),
+            ],
+            # Don't send PII
+            send_default_pii=False,
+            # Filter sensitive data
+            before_send=lambda event, hint: _filter_sensitive_data(event),
+        )
+        logger.info(f"Sentry initialized for environment: {settings.ENVIRONMENT}")
+    except ImportError:
+        logger.warning("sentry-sdk not installed, error tracking disabled")
+    except Exception as e:
+        logger.error(f"Failed to initialize Sentry: {e}")
+
+
+def _filter_sensitive_data(event):
+    """Filter sensitive data before sending to Sentry."""
+    # Remove Authorization headers
+    if "request" in event and "headers" in event["request"]:
+        headers = event["request"]["headers"]
+        if isinstance(headers, dict):
+            headers.pop("authorization", None)
+            headers.pop("cookie", None)
+    return event
+
 # Create FastAPI app
 app = FastAPI(
     title="Performance Physics Engine API",
@@ -38,12 +78,13 @@ app = FastAPI(
 # CORS middleware
 # Allow localhost origins for development, or all origins if DEBUG is True
 allowed_origins = (
-    ["*"] if settings.DEBUG 
+    ["*"] if settings.DEBUG
     else [
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
+        "http://10.0.0.137:3000",  # Home network access
     ]
 )
 app.add_middleware(
@@ -142,11 +183,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 async def health():
     """
-    Health check endpoint.
+    Simple health check for load balancers and uptime monitors.
     
     Returns:
-        - 200: All systems healthy
-        - 503: Service degraded (database unavailable)
+        - 200: Core systems operational
+        - 503: Critical dependency unavailable
     """
     db_healthy = check_db_connection()
     
@@ -154,16 +195,76 @@ async def health():
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
-                "status": "degraded",
+                "status": "unhealthy",
                 "database": "unavailable",
             }
         )
     
     return {
-        "status": "ok",
-        "database": "healthy",
-        "version": "1.0.0",
+        "status": "healthy",
+        "timestamp": time.time(),
     }
+
+
+@app.get("/health/detailed")
+async def health_detailed():
+    """
+    Detailed health check for monitoring dashboards.
+    
+    Checks all dependencies and returns comprehensive status.
+    Not for load balancers (always returns 200).
+    """
+    from core.cache import get_redis_client
+    
+    checks = {
+        "database": {"status": "unknown", "latency_ms": None},
+        "redis": {"status": "unknown", "latency_ms": None},
+    }
+    
+    # Check database
+    start = time.time()
+    try:
+        db_healthy = check_db_connection()
+        checks["database"]["status"] = "healthy" if db_healthy else "unhealthy"
+        checks["database"]["latency_ms"] = round((time.time() - start) * 1000, 2)
+    except Exception as e:
+        checks["database"]["status"] = "error"
+        checks["database"]["error"] = str(e)
+    
+    # Check Redis
+    start = time.time()
+    try:
+        redis = get_redis_client()
+        if redis:
+            redis.ping()
+            checks["redis"]["status"] = "healthy"
+        else:
+            checks["redis"]["status"] = "unavailable"
+        checks["redis"]["latency_ms"] = round((time.time() - start) * 1000, 2)
+    except Exception as e:
+        checks["redis"]["status"] = "error"
+        checks["redis"]["error"] = str(e)
+    
+    # Overall status
+    all_healthy = all(c["status"] == "healthy" for c in checks.values())
+    any_error = any(c["status"] == "error" for c in checks.values())
+    
+    return {
+        "status": "healthy" if all_healthy else ("degraded" if not any_error else "unhealthy"),
+        "version": "3.0.0",
+        "environment": settings.ENVIRONMENT,
+        "timestamp": time.time(),
+        "checks": checks,
+    }
+
+
+@app.get("/ping")
+async def ping():
+    """
+    Minimal ping endpoint for uptime monitors.
+    No dependencies checked - just confirms the API is responding.
+    """
+    return {"pong": True}
 
 
 # Include routers
@@ -203,6 +304,7 @@ app.include_router(athlete_insights.router)
 app.include_router(calendar.router)
 app.include_router(insights.router)
 app.include_router(plan_generation.router)
+app.include_router(home.router)
 
 # GDPR endpoints
 try:

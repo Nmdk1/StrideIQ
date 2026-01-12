@@ -4,222 +4,172 @@
  * DayCell Component
  * 
  * A single day in the calendar grid.
- * Shows planned workout + actual activity overlay.
  * 
- * DESIGN: Clear, readable workout display with meaningful colors
+ * DESIGN PRINCIPLES:
+ * 1. Minimal - Show essentials, expand on click
+ * 2. Unified - Same visual language for planned and completed
+ * 3. Scannable - Quick visual differentiation without reading
+ * 4. Professional - Clean typography, intentional colors
  */
 
 import React from 'react';
 import { useUnits } from '@/lib/context/UnitsContext';
 import type { CalendarDay } from '@/lib/api/services/calendar';
 
-// Workout type colors - organized by effort category
-const workoutColors: Record<string, { bg: string; border: string; text: string; label: string }> = {
+// Simplified workout type display - categories, not individual types
+const WORKOUT_CATEGORIES: Record<string, { label: string; color: string }> = {
   // Rest / Recovery
-  rest: { bg: 'bg-gray-800/50', border: 'border-gray-700', text: 'text-gray-500', label: 'Rest' },
-  gym: { bg: 'bg-gray-800/50', border: 'border-gray-700', text: 'text-gray-400', label: 'Gym' },
-  recovery: { bg: 'bg-gray-800/60', border: 'border-gray-600', text: 'text-gray-400', label: 'Recovery' },
+  rest: { label: 'Rest', color: 'text-gray-500' },
+  recovery: { label: 'Recovery', color: 'text-gray-400' },
+  gym: { label: 'Gym', color: 'text-gray-400' },
   
-  // Easy / Aerobic (Green family)
-  easy: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400', label: 'Easy Run' },
-  easy_strides: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400', label: 'Easy + Strides' },
-  easy_hills: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400', label: 'Easy + Hills' },
-  strides: { bg: 'bg-emerald-900/40', border: 'border-emerald-700/50', text: 'text-emerald-400', label: 'Strides' },
+  // Easy efforts - green
+  easy: { label: 'Easy', color: 'text-emerald-400' },
+  easy_strides: { label: 'Easy', color: 'text-emerald-400' },
+  easy_hills: { label: 'Easy', color: 'text-emerald-400' },
+  strides: { label: 'Strides', color: 'text-emerald-400' },
   
-  // Medium Effort (Blue family)
-  medium_long: { bg: 'bg-sky-900/40', border: 'border-sky-700/50', text: 'text-sky-400', label: 'Medium Long' },
-  medium_long_mp: { bg: 'bg-violet-900/40', border: 'border-violet-700/50', text: 'text-violet-400', label: 'MLR w/ MP' },
-  aerobic: { bg: 'bg-sky-900/40', border: 'border-sky-700/50', text: 'text-sky-400', label: 'Aerobic' },
+  // Medium efforts - blue
+  medium_long: { label: 'Med Long', color: 'text-blue-400' },
+  medium_long_mp: { label: 'MLR+MP', color: 'text-blue-400' },
+  aerobic: { label: 'Aerobic', color: 'text-blue-400' },
+  long: { label: 'Long', color: 'text-blue-400' },
+  long_mp: { label: 'Long+MP', color: 'text-blue-400' },
   
-  // Long Runs (Blue family - deeper)
-  long: { bg: 'bg-blue-900/40', border: 'border-blue-700/50', text: 'text-blue-400', label: 'Long Run' },
-  long_mp: { bg: 'bg-pink-900/40', border: 'border-pink-700/50', text: 'text-pink-400', label: 'Long Run + MP' },
+  // Quality - orange
+  threshold: { label: 'Threshold', color: 'text-orange-400' },
+  threshold_light: { label: 'Threshold', color: 'text-orange-400' },
+  threshold_short: { label: 'Threshold', color: 'text-orange-400' },
+  tempo: { label: 'Tempo', color: 'text-orange-400' },
   
-  // Quality - Threshold (Orange family)
-  threshold: { bg: 'bg-orange-900/40', border: 'border-orange-700/50', text: 'text-orange-400', label: 'Threshold' },
-  threshold_light: { bg: 'bg-orange-900/30', border: 'border-orange-700/40', text: 'text-orange-400', label: 'Light Threshold' },
-  threshold_short: { bg: 'bg-orange-900/30', border: 'border-orange-700/40', text: 'text-orange-400', label: 'Short Threshold' },
-  tempo: { bg: 'bg-orange-900/40', border: 'border-orange-700/50', text: 'text-orange-400', label: 'Tempo' },
+  // Speed - red  
+  intervals: { label: 'Intervals', color: 'text-red-400' },
+  vo2max: { label: 'VO2max', color: 'text-red-400' },
+  speed: { label: 'Speed', color: 'text-red-400' },
   
-  // Quality - Speed (Red family)
-  intervals: { bg: 'bg-red-900/40', border: 'border-red-700/50', text: 'text-red-400', label: 'Intervals' },
-  vo2max: { bg: 'bg-red-900/40', border: 'border-red-700/50', text: 'text-red-400', label: 'VO2max' },
-  speed: { bg: 'bg-red-900/40', border: 'border-red-700/50', text: 'text-red-400', label: 'Speed Work' },
-  
-  // Special
-  race: { bg: 'bg-gradient-to-br from-pink-900/60 to-orange-900/60', border: 'border-pink-600', text: 'text-white', label: '🏁 Race Day' },
-  shakeout: { bg: 'bg-gray-800/50', border: 'border-gray-600', text: 'text-gray-400', label: 'Shakeout' },
-  shakeout_strides: { bg: 'bg-gray-800/50', border: 'border-gray-600', text: 'text-gray-400', label: 'Shakeout + Strides' },
+  // Race
+  race: { label: 'RACE', color: 'text-pink-400' },
+  shakeout: { label: 'Shakeout', color: 'text-gray-400' },
+  shakeout_strides: { label: 'Shakeout', color: 'text-gray-400' },
 };
 
-// Get human-readable label for workout type
-function getWorkoutLabel(workoutType: string): string {
-  return workoutColors[workoutType]?.label || workoutType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+function getWorkoutInfo(type: string): { label: string; color: string } {
+  return WORKOUT_CATEGORIES[type] || { 
+    label: type.replace(/_/g, ' ').substring(0, 10), 
+    color: 'text-gray-400' 
+  };
 }
-
-// Status indicator styles
-const statusStyles: Record<string, string> = {
-  completed: 'ring-2 ring-emerald-500/50',
-  modified: 'ring-2 ring-amber-500/50',
-  missed: 'ring-2 ring-red-500/30 opacity-60',
-  future: '',
-  rest: '',
-};
 
 interface DayCellProps {
   day: CalendarDay;
   isToday: boolean;
   isSelected: boolean;
   onClick: () => void;
-  compact?: boolean; // Mobile compact view
-}
-
-// Format pace from distance (meters) and duration (seconds)
-function formatPace(distanceM: number, durationS: number, useMiles: boolean): string {
-  if (!distanceM || !durationS || distanceM === 0) return '';
-  
-  const distanceUnit = useMiles ? distanceM / 1609.344 : distanceM / 1000;
-  const paceSeconds = durationS / distanceUnit;
-  const mins = Math.floor(paceSeconds / 60);
-  const secs = Math.round(paceSeconds % 60);
-  
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  compact?: boolean;
 }
 
 export function DayCell({ day, isToday, isSelected, onClick, compact = false }: DayCellProps) {
-  const { formatDistance, units } = useUnits();
-  const useMiles = units === 'imperial';
+  const { formatDistance } = useUnits();
   
-  // Parse date without timezone issues - extract day directly from YYYY-MM-DD string
   const dayNum = parseInt(day.date.split('-')[2], 10);
-  
   const hasActivities = day.activities.length > 0;
   const hasPlanned = !!day.planned_workout;
-  const hasNotes = day.notes.length > 0;
-  const hasInsights = day.insights.length > 0;
+  const isCompleted = day.status === 'completed' || hasActivities;
   
   const workoutType = day.planned_workout?.workout_type || 'rest';
-  const colors = workoutColors[workoutType] || { bg: 'bg-gray-800/50', border: 'border-gray-700', text: 'text-gray-500', label: workoutType };
-  const statusStyle = statusStyles[day.status] || '';
+  const workoutInfo = getWorkoutInfo(workoutType);
   
-  // Compact mode for mobile - still readable
+  // Calculate total distance for the day
+  const totalDistance = day.activities.reduce((sum, a) => sum + (a.distance_m || 0), 0);
+  
+  // Compact mobile view
   if (compact) {
     return (
       <div 
         onClick={onClick}
         className={`
-          min-h-[70px] p-1 border-b border-r border-gray-700/50 cursor-pointer
-          transition-all duration-200 active:bg-gray-800/50
+          min-h-[60px] p-1.5 border-b border-r border-gray-700/30 cursor-pointer
+          transition-colors active:bg-gray-800/50
           ${isToday ? 'bg-blue-900/20' : ''}
-          ${isSelected ? 'ring-2 ring-pink-500' : ''}
-          ${statusStyle}
+          ${isSelected ? 'ring-1 ring-blue-500' : ''}
         `}
       >
-        {/* Day number */}
-        <div className={`text-xs font-medium ${isToday ? 'text-blue-400' : 'text-gray-500'}`}>
+        <div className={`text-xs font-medium mb-1 ${isToday ? 'text-blue-400' : 'text-gray-500'}`}>
           {dayNum}
         </div>
         
-        {/* Workout type indicator - abbreviated but readable */}
-        {hasPlanned && day.planned_workout && (
-          <div className={`mt-1 px-1 py-0.5 rounded text-[9px] font-medium truncate ${colors.bg} ${colors.text}`}>
-            {getWorkoutLabel(day.planned_workout.workout_type).substring(0, 8)}
+        {/* Completed - show checkmark and distance */}
+        {isCompleted && (
+          <div className="text-[10px] text-emerald-400 font-medium">
+            ✓ {formatDistance(totalDistance, 0)}
           </div>
         )}
         
-        {/* Activity indicator */}
-        {hasActivities && (
-          <div className="mt-1 text-[10px] text-emerald-400 font-medium truncate">
-            ✓ {formatDistance(day.activities[0].distance_m || 0, 0)}
-          </div>
-        )}
-        
-        {/* Indicators */}
-        {(hasNotes || hasInsights) && (
-          <div className="flex gap-0.5 mt-0.5">
-            {hasNotes && <span className="text-[8px]">📝</span>}
-            {hasInsights && <span className="text-[8px]">🔥</span>}
+        {/* Planned but not completed - show workout type */}
+        {hasPlanned && !isCompleted && (
+          <div className={`text-[10px] font-medium ${workoutInfo.color}`}>
+            {workoutInfo.label}
           </div>
         )}
       </div>
     );
   }
   
-  // Full desktop view
+  // Desktop view
   return (
     <div 
       onClick={onClick}
       className={`
-        min-h-[120px] p-2 border-b border-r border-gray-700/50 cursor-pointer
-        transition-all duration-200 hover:bg-gray-800/50
-        ${isToday ? 'bg-blue-900/20' : ''}
-        ${isSelected ? 'ring-2 ring-pink-500' : ''}
-        ${statusStyle}
+        min-h-[100px] p-2 border-b border-r border-gray-700/30 cursor-pointer
+        transition-colors hover:bg-gray-800/30
+        ${isToday ? 'bg-blue-900/15' : ''}
+        ${isSelected ? 'ring-1 ring-blue-500' : ''}
       `}
     >
       {/* Day number */}
-      <div className={`text-sm mb-1.5 font-medium ${isToday ? 'text-blue-400' : 'text-gray-500'}`}>
+      <div className={`text-sm mb-2 font-medium ${isToday ? 'text-blue-400' : 'text-gray-500'}`}>
         {dayNum}
       </div>
       
-      {/* Planned workout card - Clear, readable format */}
-      {hasPlanned && day.planned_workout && (
-        <div className={`
-          rounded-md p-1.5 mb-1.5 border
-          ${colors.bg} ${colors.border}
-          ${day.status === 'completed' ? 'opacity-50' : ''}
-        `}>
-          {/* Workout type label - human readable */}
-          <div className={`text-xs font-semibold ${colors.text}`}>
-            {getWorkoutLabel(day.planned_workout.workout_type)}
+      {/* Content area */}
+      <div className="space-y-1.5">
+        {/* Completed activity - primary display */}
+        {isCompleted && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-emerald-400 text-xs">✓</span>
+            <span className="text-sm font-medium text-white">
+              {formatDistance(totalDistance, 1)}
+            </span>
           </div>
-          
-          {/* Title if different from type, or distance */}
-          {day.planned_workout.title && day.planned_workout.title !== getWorkoutLabel(day.planned_workout.workout_type) ? (
-            <div className="text-[10px] text-gray-400 mt-0.5 truncate" title={day.planned_workout.title}>
-              {day.planned_workout.title}
+        )}
+        
+        {/* Planned workout - secondary if completed, primary if not */}
+        {hasPlanned && day.planned_workout && (
+          <div className={`${isCompleted ? 'opacity-50' : ''}`}>
+            <div className={`text-xs font-medium ${workoutInfo.color}`}>
+              {workoutInfo.label}
+              {day.planned_workout.target_distance_km && !isCompleted && (
+                <span className="text-gray-500 ml-1">
+                  {formatDistance(day.planned_workout.target_distance_km * 1000, 0)}
+                </span>
+              )}
             </div>
-          ) : day.planned_workout.target_distance_km ? (
-            <div className="text-[10px] text-gray-400 mt-0.5">
-              {formatDistance(day.planned_workout.target_distance_km * 1000, 0)}
-            </div>
-          ) : null}
-        </div>
-      )}
-      
-      {/* Actual activities */}
-      {hasActivities && (
-        <div className="space-y-1">
-          {day.activities.slice(0, 2).map((activity) => {
-            const pace = formatPace(activity.distance_m || 0, activity.duration_s || 0, useMiles);
-            const paceUnit = useMiles ? '/mi' : '/km';
-            
-            return (
+            {/* Show pace hint on hover - truncated */}
+            {day.planned_workout.coach_notes && !isCompleted && (
               <div 
-                key={activity.id}
-                className="bg-emerald-900/30 border border-emerald-700/40 rounded px-1.5 py-0.5"
+                className="text-[10px] text-gray-500 truncate mt-0.5" 
+                title={day.planned_workout.coach_notes}
               >
-                <div className="text-xs font-medium text-emerald-400">
-                  ✓ {formatDistance(activity.distance_m || 0, 1)}
-                </div>
-                {pace && (
-                  <div className="text-[10px] text-emerald-500/70">
-                    {pace}{paceUnit}
-                  </div>
-                )}
+                {day.planned_workout.coach_notes.split(' ').slice(0, 2).join(' ')}
               </div>
-            );
-          })}
-          {day.activities.length > 2 && (
-            <div className="text-xs text-gray-500">+{day.activities.length - 2} more</div>
-          )}
-        </div>
-      )}
-      
-      {/* Indicators */}
-      <div className="flex gap-1 mt-1">
-        {hasNotes && <span className="text-xs" title="Has notes">📝</span>}
-        {hasInsights && <span className="text-xs" title="Has insights">🔥</span>}
+            )}
+          </div>
+        )}
+        
+        {/* Rest day indicator */}
+        {!hasPlanned && !hasActivities && (
+          <div className="text-xs text-gray-600">—</div>
+        )}
       </div>
     </div>
   );
