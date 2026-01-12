@@ -14,7 +14,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -51,8 +51,7 @@ class LeadingIndicatorResponse(BaseModel):
     confidence: str
     insight: str
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CausalAnalysisResponse(BaseModel):

@@ -18,7 +18,7 @@ from sqlalchemy import and_, func
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -50,8 +50,7 @@ class CalendarNoteResponse(BaseModel):
     activity_id: Optional[UUID] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PlannedWorkoutResponse(BaseModel):
@@ -76,8 +75,7 @@ class PlannedWorkoutResponse(BaseModel):
     option_b_segments: Optional[list] = None  # List of workout segments for option B
     selected_option: str = "A"  # Which option athlete has selected
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ActivitySummary(BaseModel):
@@ -90,8 +88,7 @@ class ActivitySummary(BaseModel):
     workout_type: Optional[str] = None
     intensity_score: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InsightResponse(BaseModel):
@@ -102,8 +99,7 @@ class InsightResponse(BaseModel):
     content: str
     activity_id: Optional[UUID] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InlineInsight(BaseModel):

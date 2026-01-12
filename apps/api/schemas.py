@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 from uuid import UUID
 from typing import Optional, List, Dict
@@ -41,8 +41,7 @@ class AthleteResponse(BaseModel):
     recovery_half_life_hours: Optional[float] = None
     consistency_index: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ActivityCreate(BaseModel):
@@ -69,8 +68,7 @@ class ActivitySplitResponse(BaseModel):
     average_cadence: Optional[float] = None
     gap_seconds_per_mile: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ActivityResponse(BaseModel):
@@ -95,8 +93,7 @@ class ActivityResponse(BaseModel):
     is_race_candidate: Optional[bool] = None
     race_confidence: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DailyCheckinCreate(BaseModel):
@@ -119,8 +116,7 @@ class DailyCheckinResponse(BaseModel):
     rpe_1_10: Optional[int]
     notes: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PersonalBestResponse(BaseModel):
@@ -136,8 +132,7 @@ class PersonalBestResponse(BaseModel):
     is_race: bool
     age_at_achievement: Optional[int]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BodyCompositionCreate(BaseModel):
@@ -165,8 +160,7 @@ class BodyCompositionResponse(BaseModel):
     notes: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NutritionEntryCreate(BaseModel):
@@ -200,8 +194,7 @@ class NutritionEntryResponse(BaseModel):
     notes: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkPatternCreate(BaseModel):
@@ -225,8 +218,7 @@ class WorkPatternResponse(BaseModel):
     notes: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IntakeQuestionnaireCreate(BaseModel):
@@ -245,8 +237,7 @@ class IntakeQuestionnaireResponse(BaseModel):
     completed_at: Optional[datetime] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ActivityFeedbackCreate(BaseModel):
@@ -277,8 +268,7 @@ class ActivityFeedbackResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ActivityFeedbackUpdate(BaseModel):
@@ -312,8 +302,7 @@ class InsightFeedbackResponse(BaseModel):
     feedback_text: Optional[str]
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TrainingAvailabilityCreate(BaseModel):
@@ -335,8 +324,7 @@ class TrainingAvailabilityResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TrainingAvailabilityUpdate(BaseModel):

@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -36,8 +36,7 @@ class TodayWorkout(BaseModel):
     week_number: Optional[int] = None
     phase: Optional[str] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class YesterdayInsight(BaseModel):
@@ -49,8 +48,7 @@ class YesterdayInsight(BaseModel):
     pace_per_mi: Optional[str] = None
     insight: Optional[str] = None  # One sparse insight
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WeekDay(BaseModel):
@@ -74,8 +72,7 @@ class WeekProgress(BaseModel):
     days: List[WeekDay]
     status: str  # "on_track", "ahead", "behind", "no_plan"
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HomeResponse(BaseModel):
@@ -84,8 +81,7 @@ class HomeResponse(BaseModel):
     yesterday: YesterdayInsight
     week: WeekProgress
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # --- Phase Display Names ---

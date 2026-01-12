@@ -18,7 +18,7 @@ from sqlalchemy import desc
 from typing import Optional, List
 from uuid import UUID
 from datetime import date, timedelta
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -49,8 +49,7 @@ class InsightResponse(BaseModel):
     data: Optional[dict] = None
     is_dismissed: bool = False
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ActiveInsightsResponse(BaseModel):

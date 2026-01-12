@@ -11,7 +11,7 @@ Endpoints for:
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from uuid import UUID
 from datetime import date, datetime, timedelta
@@ -50,8 +50,7 @@ class PlanSummary(BaseModel):
     current_week: Optional[int]
     progress_percent: float
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkoutSummary(BaseModel):
@@ -70,8 +69,7 @@ class WorkoutSummary(BaseModel):
     skipped: bool
     completed_activity_id: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CalendarDay(BaseModel):

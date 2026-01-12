@@ -11,7 +11,7 @@ Provides:
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, EmailStr, field_serializer
+from pydantic import BaseModel, EmailStr, field_serializer, ConfigDict
 from typing import Optional
 from uuid import UUID
 from datetime import timedelta
@@ -56,8 +56,7 @@ class UserResponse(BaseModel):
     role: str
     subscription_tier: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
     
     @field_serializer('id')
     def serialize_id(self, id: UUID) -> str:
@@ -71,8 +70,7 @@ class TokenResponse(BaseModel):
     expires_in: int = ACCESS_TOKEN_EXPIRE_MINUTES * 60  # seconds
     athlete: Optional[UserResponse] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

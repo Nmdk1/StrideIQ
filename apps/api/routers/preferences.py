@@ -6,7 +6,7 @@ Manages athlete preferences like units (metric/imperial), timezone, etc.
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Literal
 
 from core.database import get_db
@@ -20,8 +20,7 @@ class PreferencesResponse(BaseModel):
     """Current user preferences."""
     preferred_units: Literal["metric", "imperial"]
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UpdatePreferencesRequest(BaseModel):

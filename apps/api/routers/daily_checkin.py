@@ -8,7 +8,7 @@ Must be lightning fast - this is the data that feeds the correlation engine.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import date, datetime
 from uuid import UUID
@@ -55,8 +55,7 @@ class DailyCheckinResponse(BaseModel):
     confidence_1_5: Optional[int] = None
     motivation_1_5: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 @router.post("", response_model=DailyCheckinResponse, status_code=status.HTTP_201_CREATED)

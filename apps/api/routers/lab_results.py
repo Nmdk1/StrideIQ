@@ -11,7 +11,7 @@ from sqlalchemy import func
 from typing import List, Optional
 from datetime import date, datetime
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from core.database import get_db
 from core.auth import get_current_athlete
@@ -55,8 +55,7 @@ class BiomarkerResponse(BaseModel):
     flag: Optional[str]
     notes: Optional[str]
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LabResultResponse(BaseModel):
@@ -68,8 +67,7 @@ class LabResultResponse(BaseModel):
     biomarkers: List[BiomarkerResponse]
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BiomarkerTrendPoint(BaseModel):
