@@ -301,3 +301,27 @@ def find_by_hr_range(
         "count": len(results),
         "activities": results,
     }
+
+
+@router.get("/metric-history/{activity_id}")
+def get_metric_history(
+    activity_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get historical metric data for the interactive tile drill-down.
+    
+    Returns efficiency, cardiac drift, aerobic decoupling, and pace consistency
+    trends from similar runs to provide context for the current run's metrics.
+    """
+    service = ContextualComparisonService(db)
+    
+    try:
+        history = service.get_metric_history(
+            activity_id=activity_id,
+            athlete_id=current_user.id,
+        )
+        return history
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

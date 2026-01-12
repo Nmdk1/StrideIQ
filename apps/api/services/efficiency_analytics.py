@@ -153,6 +153,10 @@ def calculate_stability_metrics(
     Calculate stability/repeatability metrics:
     - Variance of similar-effort runs
     - Consistency score
+    
+    Uses workout_type + intensity_score for classification, NOT HR zones.
+    A half marathon PR at 152 HR is HARD. A 5K race at 175 HR is HARD.
+    Both are maximal efforts regardless of absolute HR.
     """
     if len(activities) < 3:
         return {
@@ -161,25 +165,54 @@ def calculate_stability_metrics(
             "sample_size": len(activities)
         }
     
-    # Group by similar effort (HR zones)
+    # Hard workout types (quality sessions, races)
+    # Includes both base keywords and full enum values from WorkoutClassifier
+    HARD_TYPES = {
+        'race', 'interval', 'intervals', 'tempo', 'threshold', 
+        'vo2max', 'speed', 'fartlek', 'repetition', 'cruise_intervals',
+        'race_pace', 'marathon_pace', 'half_marathon_pace',
+        # Full enum values from WorkoutClassifier
+        'threshold_run', 'tempo_run', 'tempo_intervals', 
+        'vo2max_intervals', 'track_workout', 'repetitions',
+        'hill_sprints', 'hill_repetitions', 'tune_up_race', 'race_simulation'
+    }
+    
+    # Moderate workout types (aerobic stress but not maximal)
+    MODERATE_TYPES = {'long_run', 'progression_run', 'steady_state', 
+                      'moderate_run', 'aerobic_threshold', 'medium_long_run',
+                      'fast_finish_long_run', 'negative_split_run', 'goal_pace_run'}
+    
+    # Easy workout types
+    EASY_TYPES = {'easy_run', 'recovery', 'recovery_run', 'aerobic_run', 
+                  'warm_up', 'cool_down', 'shakeout', 'strides'}
+    
     easy_runs = []
     moderate_runs = []
     hard_runs = []
     
     for activity in activities:
-        if not activity.avg_hr:
-            continue
+        wt = (activity.workout_type or '').lower().strip()
+        intensity = activity.intensity_score or 0
         
-        # Estimate max HR (use 200 as default if not available)
-        max_hr = 200  # Default assumption
-        hr_percentage = activity.avg_hr / max_hr
+        # Classification priority:
+        # 1. Intensity score >= 70 → HARD (race efforts, quality sessions)
+        # 2. Workout type in HARD_TYPES → HARD
+        # 3. Workout type in MODERATE_TYPES → MODERATE
+        # 4. Intensity score >= 50 and long_run → MODERATE
+        # 5. Everything else → EASY
         
-        if hr_percentage < 0.70:
-            easy_runs.append(activity)
-        elif hr_percentage < 0.85:
-            moderate_runs.append(activity)
-        else:
+        if intensity >= 70 or wt in HARD_TYPES:
             hard_runs.append(activity)
+        elif wt in MODERATE_TYPES or (wt == 'long_run' and intensity >= 50):
+            moderate_runs.append(activity)
+        elif wt in EASY_TYPES or intensity < 50:
+            easy_runs.append(activity)
+        else:
+            # Default: use intensity score as tiebreaker
+            if intensity >= 60:
+                moderate_runs.append(activity)
+            else:
+                easy_runs.append(activity)
     
     # Calculate variance for each effort level
     def calculate_effort_variance(runs: List[Activity], db: Session) -> Optional[float]:

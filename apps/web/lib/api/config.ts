@@ -5,8 +5,10 @@
  * or implementations without breaking the rest of the application.
  */
 export const API_CONFIG = {
-  // Hardcode for now - env vars aren't loading properly
-  baseURL: 'http://localhost:8000',
+  // Use local network IP for home testing, localhost for dev
+  baseURL: typeof window !== 'undefined' && window.location.hostname !== 'localhost' 
+    ? `http://${window.location.hostname}:8000`
+    : 'http://localhost:8000',
   timeout: 30000, // 30 seconds
   retries: 3,
   retryDelay: 1000, // 1 second

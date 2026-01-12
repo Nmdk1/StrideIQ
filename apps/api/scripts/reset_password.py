@@ -7,7 +7,7 @@ database_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@po
 engine = create_engine(database_url)
 
 email = 'mbshaf@gmail.com'
-password = 'strideiq123'
+password = 'StrideIQ2026!'
 hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 hash_str = hashed.decode('utf-8')
 

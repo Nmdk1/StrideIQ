@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import { API_CONFIG } from '@/lib/api/config';
 
 export default function WMACalculator() {
   const [age, setAge] = useState('');
@@ -57,7 +58,7 @@ export default function WMACalculator() {
         return;
       }
 
-      const response = await fetch(`http://localhost:8000/v1/public/age-grade/calculate`, {
+      const response = await fetch(`${API_CONFIG.baseURL}/v1/public/age-grade/calculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

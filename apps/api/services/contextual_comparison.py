@@ -598,15 +598,21 @@ class ContextualComparisonService:
         headline = self._generate_headline(performance_score, target)
         key_insight = self._generate_key_insight(performance_score, context_factors)
         
-        # Build target run dict
+        # Get splits and calculate advanced analytics
+        target_splits = self._get_activity_splits(target.id)
+        advanced_analytics = self._calculate_advanced_analytics(target_splits)
+        
+        # Build target run dict with comprehensive data
         target_run = {
             "id": str(target.id),
             "date": target.start_time.isoformat(),
             "name": target.name or f"Run on {target.start_time.strftime('%b %d')}",
             "workout_type": target.workout_type,
+            "workout_zone": target.workout_zone,
             "distance_m": target.distance_m,
             "distance_km": target.distance_m / 1000 if target.distance_m else 0,
             "duration_s": target.duration_s,
+            "duration_formatted": self._format_duration(target.duration_s),
             "pace_per_km": target_pace,
             "pace_formatted": self._format_pace(target_pace),
             "avg_hr": target.avg_hr,
@@ -614,10 +620,15 @@ class ContextualComparisonService:
             "efficiency": target_efficiency,
             "intensity_score": target.intensity_score,
             "elevation_gain": float(target.total_elevation_gain) if target.total_elevation_gain else None,
+            "average_speed_kmh": float(target.average_speed) * 3.6 if target.average_speed else None,
             "temperature_f": target.temperature_f,
             "humidity_pct": target.humidity_pct,
+            "weather_condition": target.weather_condition,
             "performance_percentage": target.performance_percentage,
-            "splits": self._get_activity_splits(target.id),
+            "performance_percentage_national": target.performance_percentage_national,
+            "splits": target_splits,
+            # Advanced analytics
+            "analytics": advanced_analytics,
         }
         
         return ContextualComparisonResult(
@@ -755,7 +766,7 @@ class ContextualComparisonService:
         )
     
     def _get_activity_splits(self, activity_id: UUID) -> List[Dict[str, Any]]:
-        """Get splits for an activity in chart-friendly format"""
+        """Get splits for an activity with comprehensive metrics"""
         splits = self.db.query(ActivitySplit).filter(
             ActivitySplit.activity_id == activity_id
         ).order_by(ActivitySplit.split_number).all()
@@ -769,16 +780,125 @@ class ContextualComparisonService:
             elapsed = split.moving_time or split.elapsed_time or 0
             pace = elapsed / (distance / 1000) if distance > 0 and elapsed > 0 else None
             
+            # Calculate efficiency for this split (speed / HR)
+            speed_kmh = (distance / 1000) / (elapsed / 3600) if elapsed > 0 else None
+            efficiency = speed_kmh / split.average_heartrate if speed_kmh and split.average_heartrate else None
+            
             result.append({
                 "split_number": split.split_number,
                 "distance_m": distance,
                 "elapsed_time_s": elapsed,
                 "pace_per_km": pace,
                 "avg_hr": split.average_heartrate,
+                "max_hr": split.max_heartrate,
+                "cadence": float(split.average_cadence) if split.average_cadence else None,
+                "gap_per_mile": float(split.gap_seconds_per_mile) if split.gap_seconds_per_mile else None,
+                "efficiency": round(efficiency, 4) if efficiency else None,
                 "cumulative_distance_m": cumulative_distance,
             })
         
         return result
+    
+    def _calculate_advanced_analytics(self, splits: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Calculate advanced analytics from splits data.
+        
+        These are the serious metrics coaches and physiologists use:
+        - Cardiac drift: HR increase over time at similar effort
+        - Aerobic decoupling (Pa:Hr): First vs second half efficiency ratio
+        - Pace variability: Coefficient of variation
+        - Fade analysis: First vs second half performance
+        """
+        if not splits or len(splits) < 2:
+            return {
+                "cardiac_drift_pct": None,
+                "aerobic_decoupling_pct": None,
+                "pace_variability_cv": None,
+                "fade_pct": None,
+                "first_half_pace": None,
+                "second_half_pace": None,
+                "first_half_hr": None,
+                "second_half_hr": None,
+                "first_half_efficiency": None,
+                "second_half_efficiency": None,
+                "split_type": None,  # 'negative', 'positive', 'even'
+            }
+        
+        mid_point = len(splits) // 2
+        first_half = splits[:mid_point]
+        second_half = splits[mid_point:]
+        
+        # Extract pace and HR values
+        first_paces = [s["pace_per_km"] for s in first_half if s.get("pace_per_km")]
+        second_paces = [s["pace_per_km"] for s in second_half if s.get("pace_per_km")]
+        first_hrs = [s["avg_hr"] for s in first_half if s.get("avg_hr")]
+        second_hrs = [s["avg_hr"] for s in second_half if s.get("avg_hr")]
+        
+        # Calculate averages
+        first_half_pace = sum(first_paces) / len(first_paces) if first_paces else None
+        second_half_pace = sum(second_paces) / len(second_paces) if second_paces else None
+        first_half_hr = sum(first_hrs) / len(first_hrs) if first_hrs else None
+        second_half_hr = sum(second_hrs) / len(second_hrs) if second_hrs else None
+        
+        # Cardiac Drift: % increase in HR from first to second half
+        cardiac_drift = None
+        if first_half_hr and second_half_hr and first_half_hr > 0:
+            cardiac_drift = ((second_half_hr - first_half_hr) / first_half_hr) * 100
+        
+        # Efficiency per half (speed / HR)
+        first_eff = None
+        second_eff = None
+        if first_half_pace and first_half_hr and first_half_pace > 0:
+            first_speed = 3600 / first_half_pace  # km/h from sec/km
+            first_eff = first_speed / first_half_hr
+        if second_half_pace and second_half_hr and second_half_pace > 0:
+            second_speed = 3600 / second_half_pace
+            second_eff = second_speed / second_half_hr
+        
+        # Aerobic Decoupling (Pa:Hr): % drop in efficiency from first to second half
+        # Positive = efficiency dropped (bad), Negative = efficiency improved (good)
+        aerobic_decoupling = None
+        if first_eff and second_eff and first_eff > 0:
+            aerobic_decoupling = ((first_eff - second_eff) / first_eff) * 100
+        
+        # Fade %: How much slower second half vs first half
+        fade = None
+        if first_half_pace and second_half_pace and first_half_pace > 0:
+            fade = ((second_half_pace - first_half_pace) / first_half_pace) * 100
+        
+        # Split type classification
+        split_type = None
+        if fade is not None:
+            if fade < -2:
+                split_type = "negative"  # Got faster (good)
+            elif fade > 2:
+                split_type = "positive"  # Slowed down
+            else:
+                split_type = "even"
+        
+        # Pace variability (coefficient of variation)
+        all_paces = [s["pace_per_km"] for s in splits if s.get("pace_per_km")]
+        pace_cv = None
+        if all_paces and len(all_paces) >= 2:
+            import statistics
+            mean_pace = statistics.mean(all_paces)
+            if mean_pace > 0:
+                std_pace = statistics.stdev(all_paces)
+                pace_cv = (std_pace / mean_pace) * 100
+        
+        return {
+            "cardiac_drift_pct": round(cardiac_drift, 1) if cardiac_drift is not None else None,
+            "aerobic_decoupling_pct": round(aerobic_decoupling, 1) if aerobic_decoupling is not None else None,
+            "pace_variability_cv": round(pace_cv, 1) if pace_cv is not None else None,
+            "fade_pct": round(fade, 1) if fade is not None else None,
+            "first_half_pace": round(first_half_pace, 1) if first_half_pace else None,
+            "second_half_pace": round(second_half_pace, 1) if second_half_pace else None,
+            "first_half_hr": round(first_half_hr, 1) if first_half_hr else None,
+            "second_half_hr": round(second_half_hr, 1) if second_half_hr else None,
+            "first_half_efficiency": round(first_eff, 4) if first_eff else None,
+            "second_half_efficiency": round(second_eff, 4) if second_eff else None,
+            "split_type": split_type,
+        }
     
     def _calculate_ghost_average(self, similar_runs: List[SimilarRun]) -> GhostAverage:
         """Calculate the ghost average baseline from similar runs"""
@@ -1292,3 +1412,162 @@ class ContextualComparisonService:
         if hours > 0:
             return f"{hours}:{minutes:02d}:{secs:02d}"
         return f"{minutes}:{secs:02d}"
+
+    def get_metric_history(
+        self,
+        activity_id: UUID,
+        athlete_id: UUID,
+        max_similar: int = 20,
+    ) -> Dict[str, Any]:
+        """
+        Get historical metric data for interactive tile drill-down.
+        
+        Returns trends for: efficiency, cardiac_drift, aerobic_decoupling, pace_consistency
+        """
+        # Get target activity
+        target = self.db.query(Activity).filter(
+            Activity.id == activity_id,
+            Activity.athlete_id == athlete_id,
+        ).first()
+        
+        if not target:
+            raise ValueError("Activity not found")
+        
+        # Find similar runs (same logic as find_similar_runs)
+        cutoff = datetime.utcnow() - timedelta(days=365)
+        candidates = self.db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.id != activity_id,
+            Activity.start_time >= cutoff,
+            Activity.distance_m >= 1000,
+            Activity.duration_s.isnot(None),
+        ).all()
+        
+        # Score and filter similar runs
+        similar_runs = []
+        for candidate in candidates:
+            score, _ = self.scorer.score(target, candidate)
+            if score >= 0.25:  # Lower threshold for history
+                similar_runs.append((candidate, score))
+        
+        similar_runs.sort(key=lambda x: x[1], reverse=True)
+        similar_runs = similar_runs[:max_similar]
+        
+        # Calculate metrics for each similar run
+        history = []
+        for run, score in similar_runs:
+            splits = self._get_activity_splits(run.id)
+            analytics = self._calculate_advanced_analytics(splits)
+            
+            # Calculate efficiency for this run
+            efficiency = None
+            if run.avg_hr and run.average_speed:
+                efficiency = float(run.average_speed) / run.avg_hr * 1000
+            
+            history.append({
+                "activity_id": str(run.id),
+                "date": run.start_time.isoformat(),
+                "name": run.name or f"Run on {run.start_time.strftime('%b %d')}",
+                "efficiency": efficiency,
+                "cardiac_drift": analytics.get("cardiac_drift_pct"),
+                "aerobic_decoupling": analytics.get("aerobic_decoupling_pct"),
+                "pace_consistency": analytics.get("pace_variability_cv"),
+            })
+        
+        # Calculate current run metrics
+        current_splits = self._get_activity_splits(activity_id)
+        current_analytics = self._calculate_advanced_analytics(current_splits)
+        current_efficiency = None
+        if target.avg_hr and target.average_speed:
+            current_efficiency = float(target.average_speed) / target.avg_hr * 1000
+        
+        # Calculate statistics
+        def calc_stats(values):
+            valid = [v for v in values if v is not None]
+            if not valid:
+                return {"avg": None, "best": None, "worst": None}
+            return {
+                "avg": sum(valid) / len(valid),
+                "best": max(valid),
+                "worst": min(valid),
+            }
+        
+        efficiency_values = [h["efficiency"] for h in history]
+        cardiac_values = [h["cardiac_drift"] for h in history]
+        decoupling_values = [h["aerobic_decoupling"] for h in history]
+        consistency_values = [h["pace_consistency"] for h in history]
+        
+        # Build response
+        return {
+            "activity_id": str(activity_id),
+            "history_count": len(history),
+            "current": {
+                "efficiency": current_efficiency,
+                "cardiac_drift": current_analytics.get("cardiac_drift_pct"),
+                "aerobic_decoupling": current_analytics.get("aerobic_decoupling_pct"),
+                "pace_consistency": current_analytics.get("pace_variability_cv"),
+            },
+            "statistics": {
+                "efficiency": calc_stats(efficiency_values),
+                "cardiac_drift": calc_stats(cardiac_values),
+                "aerobic_decoupling": calc_stats(decoupling_values),
+                "pace_consistency": calc_stats(consistency_values),
+            },
+            "history": history[-10:],  # Last 10 for chart
+            "insights": self._generate_metric_insights(
+                current_efficiency,
+                current_analytics,
+                calc_stats(efficiency_values),
+            ),
+        }
+
+    def _generate_metric_insights(
+        self,
+        current_efficiency: Optional[float],
+        current_analytics: Dict[str, Any],
+        efficiency_stats: Dict[str, Any],
+    ) -> Dict[str, str]:
+        """Generate plain-language insights for each metric."""
+        insights = {}
+        
+        # Efficiency insight
+        if current_efficiency and efficiency_stats.get("avg"):
+            diff_pct = ((current_efficiency - efficiency_stats["avg"]) / efficiency_stats["avg"]) * 100
+            if diff_pct > 3:
+                insights["efficiency"] = f"Your body worked more efficiently than usual—{abs(diff_pct):.1f}% better than average."
+            elif diff_pct < -3:
+                insights["efficiency"] = f"Today was {abs(diff_pct):.1f}% harder than usual. Could be heat, fatigue, or training load."
+            else:
+                insights["efficiency"] = "Your efficiency was typical for this type of effort."
+        
+        # Cardiac drift insight
+        drift = current_analytics.get("cardiac_drift_pct")
+        if drift is not None:
+            if drift < 3:
+                insights["cardiac_drift"] = "Excellent cardiac control. Heart rate stayed stable throughout."
+            elif drift < 7:
+                insights["cardiac_drift"] = "Normal drift for a steady effort. Your aerobic system handled this well."
+            else:
+                insights["cardiac_drift"] = "Elevated drift suggests harder effort as the run progressed."
+        
+        # Aerobic decoupling insight
+        decoupling = current_analytics.get("aerobic_decoupling_pct")
+        if decoupling is not None:
+            if decoupling < 5:
+                insights["aerobic_decoupling"] = "Under 5% indicates strong aerobic fitness. Race ready."
+            elif decoupling < 10:
+                insights["aerobic_decoupling"] = "Moderate decoupling. Room to build more endurance."
+            else:
+                insights["aerobic_decoupling"] = "This effort pushed your current aerobic limits."
+        
+        # Pace consistency insight  
+        cv = current_analytics.get("pace_variability_cv")
+        if cv is not None:
+            if cv < 3:
+                insights["pace_consistency"] = "Very even pacing—hallmark of experienced runners."
+            elif cv < 6:
+                insights["pace_consistency"] = "Good pacing with minor variations."
+            else:
+                insights["pace_consistency"] = "Variable pacing—terrain, strategy, or difficulty holding steady."
+        
+        return insights

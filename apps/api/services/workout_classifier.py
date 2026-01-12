@@ -172,6 +172,14 @@ class WorkoutClassifierService:
         if activity.is_race_candidate or activity.user_verified_race:
             return self._classify_race(activity, athlete_thresholds)
         
+        # =====================================================================
+        # NAME-BASED CLASSIFICATION (user-provided signal is strong)
+        # =====================================================================
+        # Athletes often name workouts descriptively - trust this signal
+        name_classification = self._classify_from_name(activity, athlete_thresholds, duration_min)
+        if name_classification:
+            return name_classification
+        
         # Check for intervals (requires splits or lap data)
         intervals_detected, num_intervals, avg_interval_duration = self._detect_intervals(activity)
         
@@ -238,6 +246,162 @@ class WorkoutClassifierService:
             marathon_pace_per_km=marathon_pace,
             easy_pace_per_km=easy_pace
         )
+    
+    def _classify_from_name(
+        self,
+        activity: Activity,
+        thresholds: AthleteThresholds,
+        duration_min: float
+    ) -> Optional[WorkoutClassification]:
+        """
+        Classify based on activity name keywords.
+        
+        Athletes often name their workouts descriptively:
+        - "35 minutes at threshold effort"
+        - "5x1mi intervals"
+        - "Tempo run"
+        - "Long run with fast finish"
+        
+        This is a strong user signal that should be trusted.
+        Returns None if no clear classification from name.
+        """
+        name = (activity.name or '').lower()
+        
+        if not name:
+            return None
+        
+        # Keywords mapped to workout types
+        # Order matters - more specific patterns first
+        
+        # Race indicators (strongest signal)
+        race_keywords = ['race', 'marathon', '5k', '10k', 'half marathon', 'pr ', 'personal best', 
+                        'time trial', 'tt ', 'pb ', 'new record']
+        if any(kw in name for kw in race_keywords) and 'pace' not in name:
+            # Avoid matching "marathon pace run"
+            return WorkoutClassification(
+                workout_type=WorkoutType.RACE,
+                workout_zone=WorkoutZone.RACE_SPECIFIC,
+                confidence=0.85,
+                reasoning=f"Name indicates race/competition: '{activity.name}'",
+                detected_intervals=False,
+                detected_progression=False,
+                avg_hr_zone=5,
+                intensity_score=95.0,
+                expected_rpe_range=self.get_expected_rpe(WorkoutType.RACE, duration_min)
+            )
+        
+        # Threshold/Tempo (often named explicitly)
+        threshold_keywords = ['threshold', 'tempo', 'lt run', 'lactate threshold', 'cruise']
+        if any(kw in name for kw in threshold_keywords):
+            # Check if it mentions intervals
+            is_intervals = any(x in name for x in ['interval', 'repeat', 'x ', ' x'])
+            if is_intervals:
+                wt = WorkoutType.CRUISE_INTERVALS
+            else:
+                wt = WorkoutType.THRESHOLD_RUN
+            return WorkoutClassification(
+                workout_type=wt,
+                workout_zone=WorkoutZone.STAMINA,
+                confidence=0.85,
+                reasoning=f"Name indicates threshold work: '{activity.name}'",
+                detected_intervals=is_intervals,
+                detected_progression=False,
+                avg_hr_zone=4,
+                intensity_score=75.0,
+                expected_rpe_range=self.get_expected_rpe(wt, duration_min, is_intervals=is_intervals)
+            )
+        
+        # Intervals/Speed work
+        interval_keywords = ['interval', 'repeat', 'vo2', 'vo2max', 'speed', 'track', 
+                            'workout', '400s', '800s', '1000s', 'mile repeat', 'yasso']
+        if any(kw in name for kw in interval_keywords):
+            return WorkoutClassification(
+                workout_type=WorkoutType.VO2MAX_INTERVALS,
+                workout_zone=WorkoutZone.SPEED,
+                confidence=0.80,
+                reasoning=f"Name indicates interval work: '{activity.name}'",
+                detected_intervals=True,
+                detected_progression=False,
+                avg_hr_zone=4,
+                intensity_score=80.0,
+                expected_rpe_range=self.get_expected_rpe(WorkoutType.VO2MAX_INTERVALS, duration_min, is_intervals=True)
+            )
+        
+        # Fartlek
+        if 'fartlek' in name:
+            return WorkoutClassification(
+                workout_type=WorkoutType.FARTLEK,
+                workout_zone=WorkoutZone.MIXED,
+                confidence=0.90,
+                reasoning=f"Name indicates fartlek: '{activity.name}'",
+                detected_intervals=True,
+                detected_progression=False,
+                avg_hr_zone=3,
+                intensity_score=65.0,
+                expected_rpe_range=self.get_expected_rpe(WorkoutType.FARTLEK, duration_min)
+            )
+        
+        # Progression
+        progression_keywords = ['progression', 'negative split', 'build', 'fast finish']
+        if any(kw in name for kw in progression_keywords):
+            return WorkoutClassification(
+                workout_type=WorkoutType.PROGRESSION_RUN,
+                workout_zone=WorkoutZone.MIXED,
+                confidence=0.85,
+                reasoning=f"Name indicates progression: '{activity.name}'",
+                detected_intervals=False,
+                detected_progression=True,
+                avg_hr_zone=3,
+                intensity_score=60.0,
+                expected_rpe_range=self.get_expected_rpe(WorkoutType.PROGRESSION_RUN, duration_min)
+            )
+        
+        # Long run
+        if 'long run' in name or 'long slow' in name or 'lsd' in name:
+            return WorkoutClassification(
+                workout_type=WorkoutType.LONG_RUN,
+                workout_zone=WorkoutZone.ENDURANCE,
+                confidence=0.85,
+                reasoning=f"Name indicates long run: '{activity.name}'",
+                detected_intervals=False,
+                detected_progression=False,
+                avg_hr_zone=2,
+                intensity_score=45.0,
+                expected_rpe_range=self.get_expected_rpe(WorkoutType.LONG_RUN, duration_min)
+            )
+        
+        # Recovery
+        recovery_keywords = ['recovery', 'easy', 'shake out', 'shakeout', 'warm up', 'cool down']
+        if any(kw in name for kw in recovery_keywords):
+            return WorkoutClassification(
+                workout_type=WorkoutType.EASY_RUN,
+                workout_zone=WorkoutZone.ENDURANCE,
+                confidence=0.75,
+                reasoning=f"Name indicates easy/recovery: '{activity.name}'",
+                detected_intervals=False,
+                detected_progression=False,
+                avg_hr_zone=1,
+                intensity_score=30.0,
+                expected_rpe_range=self.get_expected_rpe(WorkoutType.EASY_RUN, duration_min)
+            )
+        
+        # Marathon/race pace
+        pace_keywords = ['marathon pace', 'mp run', 'race pace', 'goal pace', 'half marathon pace']
+        if any(kw in name for kw in pace_keywords):
+            return WorkoutClassification(
+                workout_type=WorkoutType.MARATHON_PACE,
+                workout_zone=WorkoutZone.RACE_SPECIFIC,
+                confidence=0.80,
+                reasoning=f"Name indicates race pace work: '{activity.name}'",
+                detected_intervals=False,
+                detected_progression=False,
+                avg_hr_zone=3,
+                intensity_score=65.0,
+                expected_rpe_range=self.get_expected_rpe(WorkoutType.MARATHON_PACE, duration_min)
+            )
+        
+        # No strong signal from name
+        return None
     
     def _calculate_hr_zone(
         self, 

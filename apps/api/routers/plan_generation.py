@@ -54,6 +54,7 @@ class StandardPlanRequest(BaseModel):
     days_per_week: int = Field(6, ge=4, le=7, description="Running days per week")
     volume_tier: str = Field("mid", description="Volume tier: builder, low, mid, high")
     start_date: Optional[date] = Field(None, description="Plan start date (optional)")
+    race_name: Optional[str] = Field(None, description="Goal race name (e.g., 'Boston Marathon')")
 
 
 class SemiCustomPlanRequest(BaseModel):
@@ -61,6 +62,9 @@ class SemiCustomPlanRequest(BaseModel):
     distance: str = Field(..., description="Goal distance: 5k, 10k, half_marathon, marathon")
     race_date: date = Field(..., description="Goal race date")
     days_per_week: int = Field(6, ge=4, le=7, description="Running days per week")
+    
+    # Race info
+    race_name: Optional[str] = Field(None, description="Goal race name (e.g., 'Boston Marathon')")
     
     # Current fitness
     current_weekly_miles: float = Field(..., ge=10, le=150, description="Current weekly mileage")
@@ -81,25 +85,28 @@ class CustomPlanRequest(BaseModel):
     distance: str
     race_date: date
     days_per_week: int = Field(6, ge=4, le=7)
-    
+
+    # Race info
+    race_name: Optional[str] = Field(None, description="Goal race name (e.g., 'Boston Marathon')")
+
     # Fitness
-    current_weekly_miles: float = Field(..., ge=10, le=150)
+    current_weekly_miles: Optional[float] = Field(None, ge=10, le=150)
     current_long_run_miles: Optional[float] = None
-    
+
     # Paces
     recent_race_distance: Optional[str] = None
     recent_race_time_seconds: Optional[int] = None
-    
+
     # Goal
     goal_time_seconds: Optional[int] = None
-    
+
     # Preferences
     preferred_quality_day: Optional[int] = Field(None, ge=0, le=6, description="0=Mon, 6=Sun")
     preferred_long_run_day: Optional[int] = Field(None, ge=0, le=6)
-    
+
     # Environment
     race_profile: Optional[str] = None
-    
+
     # Training history
     injury_history: Optional[Dict[str, Any]] = None
 
@@ -280,7 +287,7 @@ async def create_standard_plan(
     )
     
     # Save to database
-    saved_plan = _save_plan(db, athlete.id, plan)
+    saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
     
     return {
         "success": True,
@@ -370,7 +377,7 @@ async def create_semi_custom_plan(
     )
     
     # Save to database
-    saved_plan = _save_plan(db, athlete.id, plan)
+    saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
     
     return {
         "success": True,
@@ -430,7 +437,7 @@ async def create_custom_plan(
     )
     
     # Save to database
-    saved_plan = _save_plan(db, athlete.id, plan)
+    saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
     
     return {
         "success": True,
@@ -525,26 +532,35 @@ def _plan_to_preview(plan: GeneratedPlan) -> PlanPreview:
     )
 
 
-def _save_plan(db: Session, athlete_id: UUID, plan: GeneratedPlan) -> TrainingPlan:
+def _save_plan(
+    db: Session,
+    athlete_id: UUID,
+    plan: GeneratedPlan,
+    race_name: Optional[str] = None,
+) -> TrainingPlan:
     """Save generated plan to database."""
     from models import TrainingPlan, PlannedWorkout
     from services.plan_framework.constants import DISTANCE_METERS
-    
+
     # Archive any existing active plans
     existing = db.query(TrainingPlan).filter(
         TrainingPlan.athlete_id == athlete_id,
         TrainingPlan.status == "active"
     ).all()
-    
+
     for p in existing:
         p.status = "archived"
-    
+
     # Create training plan
     distance_m = DISTANCE_METERS.get(Distance(plan.distance), 42195)
-    
+
+    # Use provided race name, or generate a default
+    plan_name = race_name if race_name else f"{plan.distance.replace('_', ' ').title()} - {plan.duration_weeks}w Plan"
+
     db_plan = TrainingPlan(
         athlete_id=athlete_id,
-        name=f"{plan.distance.replace('_', ' ').title()} - {plan.duration_weeks}w Plan",
+        name=plan_name,
+        goal_race_name=race_name,
         status="active",
         goal_race_date=plan.race_date or plan.end_date,
         goal_race_distance_m=distance_m,

@@ -73,6 +73,7 @@ export interface StandardPlanRequest {
   days_per_week: number;
   volume_tier: string;
   start_date?: string;
+  race_name?: string;
 }
 
 export interface SemiCustomPlanRequest {
@@ -88,6 +89,7 @@ export interface SemiCustomPlanRequest {
 export interface CustomPlanRequest {
   distance: string;
   race_date: string;
+  race_name?: string;
   days_per_week: number;
   current_weekly_miles?: number;
   current_long_run_miles?: number;

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { API_CONFIG } from '@/lib/api/config';
 
 interface PersonalBest {
   id: string;
@@ -20,7 +21,7 @@ export default function PersonalBestsPage() {
 
   useEffect(() => {
     // Get all athletes and try each one until we find PBs
-    fetch('http://localhost:8000/v1/athletes')
+    fetch('${API_CONFIG.baseURL}/v1/athletes')
       .then(res => res.json())
       .then(athletes => {
         if (!athletes || athletes.length === 0) {
@@ -43,7 +44,7 @@ export default function PersonalBestsPage() {
           const id = athlete.id;
           
           try {
-            const pbRes = await fetch(`http://localhost:8000/v1/athletes/${id}/personal-bests`);
+            const pbRes = await fetch(`${API_CONFIG.baseURL}/v1/athletes/${id}/personal-bests`);
             const pbs = await pbRes.json();
             if (pbs && Array.isArray(pbs) && pbs.length > 0) {
               // Found athlete with PBs - use this one
@@ -104,7 +105,7 @@ export default function PersonalBestsPage() {
     let idToUse = athleteId;
     if (!idToUse) {
       try {
-        const athletesRes = await fetch('http://localhost:8000/v1/athletes');
+        const athletesRes = await fetch('${API_CONFIG.baseURL}/v1/athletes');
         const athletes = await athletesRes.json();
         if (athletes && athletes.length > 0) {
           idToUse = athletes[0].id;
@@ -121,7 +122,7 @@ export default function PersonalBestsPage() {
     }
     
     try {
-      const res = await fetch(`http://localhost:8000/v1/athletes/${idToUse}/recalculate-pbs`, {
+      const res = await fetch(`${API_CONFIG.baseURL}/v1/athletes/${idToUse}/recalculate-pbs`, {
         method: 'POST',
       });
       
@@ -135,7 +136,7 @@ export default function PersonalBestsPage() {
       // Refresh PBs after a short delay to ensure DB is updated
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      const pbsRes = await fetch(`http://localhost:8000/v1/athletes/${idToUse}/personal-bests`);
+      const pbsRes = await fetch(`${API_CONFIG.baseURL}/v1/athletes/${idToUse}/personal-bests`);
       const pbsData = await pbsRes.json();
       setPbs(Array.isArray(pbsData) ? pbsData : []);
       

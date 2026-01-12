@@ -13,12 +13,14 @@
  * - Beautiful, distinctive aesthetic
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAutoCompareSimilar } from '@/lib/hooks/queries/contextual-compare';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { useUnits } from '@/lib/context/UnitsContext';
+import { UnitToggle } from '@/components/ui/UnitToggle';
 import {
   LineChart,
   Line,
@@ -36,7 +38,9 @@ import type {
   ContextFactor, 
   SimilarRun,
   GhostAverage,
+  MetricHistoryResult,
 } from '@/lib/api/services/contextual-compare';
+import { getMetricHistory } from '@/lib/api/services/contextual-compare';
 
 // =============================================================================
 // DESIGN TOKENS
@@ -271,21 +275,27 @@ function GhostOverlayChart({
   result: ContextualComparisonResult 
 }) {
   const { target_run, ghost_average } = result;
+  const { units, distanceUnitShort } = useUnits();
+  
+  // Conversion factor: pace per km to pace per mile
+  const KM_TO_MILES = 0.621371;
   
   const chartData = useMemo(() => {
     if (!target_run.splits || target_run.splits.length === 0) return null;
     
     return target_run.splits.map((split, idx) => {
       const ghostSplit = ghost_average.avg_splits[idx];
+      // Convert pace from seconds/km to minutes, adjusting for unit preference
+      const paceMultiplier = units === 'imperial' ? (1 / KM_TO_MILES) : 1;
       return {
         split: idx + 1,
-        yourPace: split.pace_per_km ? split.pace_per_km / 60 : null,
-        ghostPace: ghostSplit?.avg_pace_per_km ? ghostSplit.avg_pace_per_km / 60 : null,
+        yourPace: split.pace_per_km ? (split.pace_per_km * paceMultiplier) / 60 : null,
+        ghostPace: ghostSplit?.avg_pace_per_km ? (ghostSplit.avg_pace_per_km * paceMultiplier) / 60 : null,
         yourHR: split.avg_hr,
         ghostHR: ghostSplit?.avg_hr,
       };
     });
-  }, [target_run.splits, ghost_average.avg_splits]);
+  }, [target_run.splits, ghost_average.avg_splits, units]);
   
   if (!chartData) {
     return (
@@ -295,8 +305,8 @@ function GhostOverlayChart({
     );
   }
   
-  // Format pace for display
-  const formatPace = (value: number | null): string => {
+  // Format pace for display (already in the correct unit)
+  const formatPaceValue = (value: number | null): string => {
     if (!value || value <= 0) return '-';
     const minutes = Math.floor(value);
     const seconds = Math.round((value - minutes) * 60);
@@ -322,30 +332,30 @@ function GhostOverlayChart({
             dataKey="split" 
             stroke="#9CA3AF"
             tick={{ fill: '#9CA3AF', fontSize: 12 }}
-            label={{ value: 'Mile/Km Split', position: 'bottom', fill: '#9CA3AF', offset: -5 }}
+            label={{ value: `${distanceUnitShort === 'mi' ? 'Mile' : 'Km'} Split`, position: 'bottom', fill: '#9CA3AF', offset: -5 }}
           />
           <YAxis 
             stroke="#9CA3AF"
             tick={{ fill: '#9CA3AF', fontSize: 12 }}
-            tickFormatter={(v) => formatPace(v)}
+            tickFormatter={(v) => formatPaceValue(v)}
             reversed // Lower pace is better
             domain={['auto', 'auto']}
             label={{ value: 'Pace', angle: -90, position: 'insideLeft', fill: '#9CA3AF' }}
           />
-<Tooltip
-          contentStyle={{ 
-            backgroundColor: '#1F2937', 
-            border: '1px solid #374151',
-            borderRadius: '8px',
-          }}
-          labelStyle={{ color: '#F9FAFB' }}
-          formatter={(value, name) => {
-            if (typeof value !== 'number') return ['-', name || ''];
-            if (name === 'ghostPace') return [formatPace(value), 'Ghost Avg'];
-            if (name === 'yourPace') return [formatPace(value), 'Your Pace'];
-            return [value, name || ''];
-          }}
-        />
+          <Tooltip
+            contentStyle={{ 
+              backgroundColor: '#1F2937', 
+              border: '1px solid #374151',
+              borderRadius: '8px',
+            }}
+            labelStyle={{ color: '#F9FAFB' }}
+            formatter={(value, name) => {
+              if (typeof value !== 'number') return ['-', name || ''];
+              if (name === 'ghostPace') return [formatPaceValue(value), 'Ghost Avg'];
+              if (name === 'yourPace') return [formatPaceValue(value), 'Your Pace'];
+              return [value, name || ''];
+            }}
+          />
           <Legend 
             formatter={(value) => {
               if (value === 'ghostPace') return 'Ghost Average';
@@ -389,6 +399,22 @@ function GhostOverlayChart({
 // =============================================================================
 
 function SimilarRunCard({ run, rank }: { run: SimilarRun; rank: number }) {
+  const { formatDistance, formatPace } = useUnits();
+  
+  // Format pace from seconds per km (pace_per_km is in seconds)
+  // formatPace already includes the unit suffix (/mi or /km)
+  const formattedPace = run.pace_per_km 
+    ? formatPace(run.pace_per_km)
+    : run.pace_formatted || '—';
+  
+  // formatDistance expects meters, so convert km to meters
+  // formatDistance already includes the unit suffix (mi or km)
+  const formattedDistance = run.distance_m 
+    ? formatDistance(run.distance_m)
+    : run.distance_km 
+      ? formatDistance(run.distance_km * 1000)
+      : '—';
+  
   return (
     <Link href={`/activities/${run.id}`}>
       <div className="bg-gray-800/50 rounded-lg border border-gray-700/50 p-4 hover:bg-gray-700/50 hover:border-gray-600 transition-all cursor-pointer">
@@ -418,7 +444,7 @@ function SimilarRunCard({ run, rank }: { run: SimilarRun; rank: number }) {
         <div className="flex items-center gap-4 text-sm">
           <div>
             <span className="text-gray-400">Pace:</span>{' '}
-            <span className="text-white">{run.pace_formatted || '—'}</span>
+            <span className="text-white">{formattedPace}</span>
           </div>
           <div>
             <span className="text-gray-400">HR:</span>{' '}
@@ -426,7 +452,7 @@ function SimilarRunCard({ run, rank }: { run: SimilarRun; rank: number }) {
           </div>
           <div>
             <span className="text-gray-400">Dist:</span>{' '}
-            <span className="text-white">{run.distance_km.toFixed(1)} km</span>
+            <span className="text-white">{formattedDistance}</span>
           </div>
           {run.temperature_f && (
             <div>
@@ -451,6 +477,511 @@ function SimilarRunCard({ run, rank }: { run: SimilarRun; rank: number }) {
         </div>
       </div>
     </Link>
+  );
+}
+
+// =============================================================================
+// ADVANCED ANALYTICS SECTION
+// =============================================================================
+
+function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResult }) {
+  const { formatPace, units } = useUnits();
+  const analytics = result.target_run.analytics;
+  const ghost = result.ghost_average;
+  const [expandedTile, setExpandedTile] = useState<string | null>(null);
+  const [metricHistory, setMetricHistory] = useState<MetricHistoryResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  if (!analytics) {
+    return null;
+  }
+
+  // Fetch metric history when a tile is expanded
+  const handleTileClick = async (tileId: string) => {
+    if (expandedTile === tileId) {
+      setExpandedTile(null);
+      return;
+    }
+    
+    setExpandedTile(tileId);
+    
+    // Fetch history if not already loaded
+    if (!metricHistory) {
+      setLoading(true);
+      try {
+        const history = await getMetricHistory(result.target_run.id);
+        setMetricHistory(history);
+      } catch (err) {
+        console.error('Failed to load metric history:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  // Helper to format efficiency comparison
+  const formatEfficiencyDelta = () => {
+    if (!result.performance_score.efficiency_vs_baseline) return null;
+    const delta = result.performance_score.efficiency_vs_baseline;
+    const sign = delta > 0 ? '+' : '';
+    return `${sign}${delta.toFixed(1)}%`;
+  };
+  
+  return (
+    <div className="mt-8 space-y-6">
+      {/* What is Ghost Average - Explanation Box */}
+      <div className="bg-gradient-to-r from-indigo-900/30 to-purple-900/20 rounded-xl border border-indigo-700/40 p-5">
+        <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-3">
+          <span>👻</span> Your &quot;Ghost&quot; Baseline
+        </h3>
+        <p className="text-gray-300 text-sm leading-relaxed">
+          We found <span className="text-indigo-400 font-semibold">{ghost.num_runs_averaged} similar runs</span> in 
+          your history—runs with comparable distance, intensity, and conditions. The <span className="text-indigo-400 font-semibold">&quot;Ghost&quot;</span> is 
+          the average of those runs. It represents <span className="italic">your typical performance</span> for this type of effort, 
+          so you can see if today you ran better, worse, or the same as usual.
+        </p>
+        {ghost.avg_pace_formatted && ghost.avg_hr && (
+          <div className="mt-3 flex flex-wrap gap-4 text-sm">
+            <div className="bg-gray-800/50 rounded px-3 py-1.5">
+              <span className="text-gray-400">Ghost Pace:</span>{' '}
+              <span className="text-white font-medium">{ghost.avg_pace_formatted}</span>
+            </div>
+            <div className="bg-gray-800/50 rounded px-3 py-1.5">
+              <span className="text-gray-400">Ghost HR:</span>{' '}
+              <span className="text-white font-medium">{Math.round(ghost.avg_hr)} bpm</span>
+            </div>
+            {ghost.avg_efficiency && (
+              <div className="bg-gray-800/50 rounded px-3 py-1.5">
+                <span className="text-gray-400">Ghost Efficiency:</span>{' '}
+                <span className="text-white font-medium">{ghost.avg_efficiency.toFixed(3)}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      
+      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <span>📊</span> How Your Body Performed
+      </h3>
+      
+      {/* Key Metrics Grid - with clear explanations */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Efficiency - Expandable */}
+        <div 
+          className={`bg-gray-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'efficiency' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-gray-700/50'} p-4`}
+          onClick={() => handleTileClick('efficiency')}
+        >
+          <div className="flex justify-between items-start mb-2">
+            <div className="text-sm font-medium text-white flex items-center gap-2">
+              Running Efficiency
+              <span className="text-xs text-gray-500">{expandedTile === 'efficiency' ? '▼' : '▶'}</span>
+            </div>
+            <div className={`text-lg font-bold ${result.performance_score.efficiency_vs_baseline > 0 ? 'text-emerald-400' : result.performance_score.efficiency_vs_baseline < 0 ? 'text-rose-400' : 'text-white'}`}>
+              {formatEfficiencyDelta() || '—'}
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <span className="text-gray-300">Speed produced per heartbeat.</span> Higher = you&apos;re getting more speed for less cardiac effort.
+          </p>
+          
+          {/* Expanded Content */}
+          {expandedTile === 'efficiency' && (
+            <div className="mt-4 pt-4 border-t border-gray-700/50" onClick={(e) => e.stopPropagation()}>
+              {loading ? (
+                <div className="text-center py-4 text-gray-400">Loading history...</div>
+              ) : metricHistory ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Your Average</div>
+                      <div className="text-sm font-medium text-white">
+                        {metricHistory.statistics.efficiency.avg ? `${metricHistory.statistics.efficiency.avg.toFixed(1)}` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Today</div>
+                      <div className={`text-sm font-medium ${result.performance_score.efficiency_vs_baseline > 0 ? 'text-emerald-400' : result.performance_score.efficiency_vs_baseline < 0 ? 'text-rose-400' : 'text-white'}`}>
+                        {metricHistory.current.efficiency ? metricHistory.current.efficiency.toFixed(1) : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Best Ever</div>
+                      <div className="text-sm font-medium text-purple-400">
+                        {metricHistory.statistics.efficiency.best ? `${metricHistory.statistics.efficiency.best.toFixed(1)}` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                  {metricHistory.insights.efficiency && (
+                    <div className="bg-gray-900/50 rounded p-3 text-xs text-gray-300 leading-relaxed">
+                      💡 {metricHistory.insights.efficiency}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-gray-400">No historical data yet</div>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Cardiac Drift - Expandable */}
+        <div 
+          className={`bg-gray-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'cardiac' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-gray-700/50'} p-4`}
+          onClick={() => handleTileClick('cardiac')}
+        >
+          <div className="flex justify-between items-start mb-2">
+            <div className="text-sm font-medium text-white flex items-center gap-2">
+              Cardiac Drift
+              <span className="text-xs text-gray-500">{expandedTile === 'cardiac' ? '▼' : '▶'}</span>
+            </div>
+            <div className={`text-lg font-bold ${analytics.cardiac_drift_pct !== null && analytics.cardiac_drift_pct > 5 ? 'text-amber-400' : analytics.cardiac_drift_pct !== null && analytics.cardiac_drift_pct < 3 ? 'text-emerald-400' : 'text-white'}`}>
+              {analytics.cardiac_drift_pct !== null ? `${analytics.cardiac_drift_pct > 0 ? '+' : ''}${analytics.cardiac_drift_pct}%` : '—'}
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <span className="text-gray-300">How much your heart rate rose during the run.</span> Even at steady pace, HR naturally drifts up.
+          </p>
+          
+          {expandedTile === 'cardiac' && (
+            <div className="mt-4 pt-4 border-t border-gray-700/50" onClick={(e) => e.stopPropagation()}>
+              {loading ? (
+                <div className="text-center py-4 text-gray-400">Loading history...</div>
+              ) : metricHistory ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Your Average</div>
+                      <div className="text-sm font-medium text-white">
+                        {metricHistory.statistics.cardiac_drift.avg ? `${metricHistory.statistics.cardiac_drift.avg.toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Today</div>
+                      <div className="text-sm font-medium text-white">
+                        {metricHistory.current.cardiac_drift !== null ? `${metricHistory.current.cardiac_drift.toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Best (Lowest)</div>
+                      <div className="text-sm font-medium text-emerald-400">
+                        {metricHistory.statistics.cardiac_drift.worst !== null ? `${metricHistory.statistics.cardiac_drift.worst.toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                  {metricHistory.insights.cardiac_drift && (
+                    <div className="bg-gray-900/50 rounded p-3 text-xs text-gray-300 leading-relaxed">
+                      💡 {metricHistory.insights.cardiac_drift}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-gray-400">No historical data yet</div>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Aerobic Decoupling - Expandable */}
+        <div 
+          className={`bg-gray-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'decoupling' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-gray-700/50'} p-4`}
+          onClick={() => handleTileClick('decoupling')}
+        >
+          <div className="flex justify-between items-start mb-2">
+            <div className="text-sm font-medium text-white flex items-center gap-2">
+              Aerobic Decoupling
+              <span className="text-xs text-gray-500">{expandedTile === 'decoupling' ? '▼' : '▶'}</span>
+            </div>
+            <div className={`text-lg font-bold ${analytics.aerobic_decoupling_pct !== null && analytics.aerobic_decoupling_pct > 5 ? 'text-amber-400' : analytics.aerobic_decoupling_pct !== null && analytics.aerobic_decoupling_pct < 3 ? 'text-emerald-400' : 'text-white'}`}>
+              {analytics.aerobic_decoupling_pct !== null ? `${analytics.aerobic_decoupling_pct}%` : '—'}
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <span className="text-gray-300">Did your efficiency hold steady or fall apart?</span> First half vs second half comparison.
+          </p>
+          
+          {expandedTile === 'decoupling' && (
+            <div className="mt-4 pt-4 border-t border-gray-700/50" onClick={(e) => e.stopPropagation()}>
+              {loading ? (
+                <div className="text-center py-4 text-gray-400">Loading history...</div>
+              ) : metricHistory ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Your Average</div>
+                      <div className="text-sm font-medium text-white">
+                        {metricHistory.statistics.aerobic_decoupling.avg ? `${metricHistory.statistics.aerobic_decoupling.avg.toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Today</div>
+                      <div className="text-sm font-medium text-white">
+                        {metricHistory.current.aerobic_decoupling !== null ? `${metricHistory.current.aerobic_decoupling.toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Best (Lowest)</div>
+                      <div className="text-sm font-medium text-emerald-400">
+                        {metricHistory.statistics.aerobic_decoupling.worst !== null ? `${metricHistory.statistics.aerobic_decoupling.worst.toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                  {metricHistory.insights.aerobic_decoupling && (
+                    <div className="bg-gray-900/50 rounded p-3 text-xs text-gray-300 leading-relaxed">
+                      💡 {metricHistory.insights.aerobic_decoupling}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-gray-400">No historical data yet</div>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Pace Consistency - Expandable */}
+        <div 
+          className={`bg-gray-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'pacing' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-gray-700/50'} p-4`}
+          onClick={() => handleTileClick('pacing')}
+        >
+          <div className="flex justify-between items-start mb-2">
+            <div className="text-sm font-medium text-white flex items-center gap-2">
+              Pace Consistency
+              <span className="text-xs text-gray-500">{expandedTile === 'pacing' ? '▼' : '▶'}</span>
+            </div>
+            <div className={`text-lg font-bold ${analytics.pace_variability_cv !== null && analytics.pace_variability_cv > 5 ? 'text-amber-400' : analytics.pace_variability_cv !== null && analytics.pace_variability_cv < 3 ? 'text-emerald-400' : 'text-white'}`}>
+              {analytics.pace_variability_cv !== null ? `${analytics.pace_variability_cv}%` : '—'}
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <span className="text-gray-300">How evenly you paced the run.</span> Lower = more consistent.
+          </p>
+          
+          {expandedTile === 'pacing' && (
+            <div className="mt-4 pt-4 border-t border-gray-700/50" onClick={(e) => e.stopPropagation()}>
+              {loading ? (
+                <div className="text-center py-4 text-gray-400">Loading history...</div>
+              ) : metricHistory ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Your Average</div>
+                      <div className="text-sm font-medium text-white">
+                        {metricHistory.statistics.pace_consistency.avg ? `${metricHistory.statistics.pace_consistency.avg.toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Today</div>
+                      <div className="text-sm font-medium text-white">
+                        {metricHistory.current.pace_consistency !== null ? `${metricHistory.current.pace_consistency.toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Best (Most Even)</div>
+                      <div className="text-sm font-medium text-emerald-400">
+                        {metricHistory.statistics.pace_consistency.worst !== null ? `${metricHistory.statistics.pace_consistency.worst.toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                  {metricHistory.insights.pace_consistency && (
+                    <div className="bg-gray-900/50 rounded p-3 text-xs text-gray-300 leading-relaxed">
+                      💡 {metricHistory.insights.pace_consistency}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-gray-400">No historical data yet</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* First Half vs Second Half */}
+      <div className="bg-gray-800/50 rounded-xl border border-gray-700/50 p-6">
+        <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+          <span>⚖️</span> First Half vs Second Half
+          {analytics.split_type && (
+            <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+              analytics.split_type === 'negative' ? 'bg-emerald-900/50 text-emerald-400' :
+              analytics.split_type === 'positive' ? 'bg-amber-900/50 text-amber-400' :
+              'bg-gray-700 text-gray-300'
+            }`}>
+              {analytics.split_type === 'negative' ? 'Negative Split 🎯' :
+               analytics.split_type === 'positive' ? 'Positive Split' :
+               'Even Split'}
+            </span>
+          )}
+        </h4>
+        <p className="text-xs text-gray-400 mb-4">
+          {analytics.split_type === 'negative' 
+            ? 'You finished faster than you started—the hallmark of a well-paced run.'
+            : analytics.split_type === 'positive'
+            ? 'You slowed down in the second half. This is normal for hard efforts or learning to pace.'
+            : 'You maintained consistent pace throughout—good discipline.'}
+        </p>
+        
+        <div className="grid grid-cols-2 gap-6">
+          {/* First Half */}
+          <div className="text-center bg-gray-900/30 rounded-lg p-4">
+            <div className="text-xs text-gray-400 uppercase mb-2">First Half</div>
+            <div className="text-xl font-bold text-white">
+              {analytics.first_half_pace ? formatPace(analytics.first_half_pace) : '—'}
+            </div>
+            <div className="text-sm text-gray-400 mt-1">
+              {analytics.first_half_hr ? `${Math.round(analytics.first_half_hr)} bpm avg` : '—'}
+            </div>
+          </div>
+          
+          {/* Second Half */}
+          <div className="text-center bg-gray-900/30 rounded-lg p-4">
+            <div className="text-xs text-gray-400 uppercase mb-2">Second Half</div>
+            <div className="text-xl font-bold text-white">
+              {analytics.second_half_pace ? formatPace(analytics.second_half_pace) : '—'}
+            </div>
+            <div className="text-sm text-gray-400 mt-1">
+              {analytics.second_half_hr ? `${Math.round(analytics.second_half_hr)} bpm avg` : '—'}
+            </div>
+          </div>
+        </div>
+        
+        {/* Change summary */}
+        {analytics.fade_pct !== null && (
+          <div className="mt-4 pt-4 border-t border-gray-700/50">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-400">Pace Change:</span>
+              <span className={`font-medium ${
+                analytics.fade_pct < -2 ? 'text-emerald-400' :
+                analytics.fade_pct > 2 ? 'text-amber-400' :
+                'text-gray-300'
+              }`}>
+                {analytics.fade_pct < 0 
+                  ? `${Math.abs(analytics.fade_pct)}% faster in 2nd half`
+                  : analytics.fade_pct > 0
+                  ? `${analytics.fade_pct}% slower in 2nd half`
+                  : 'Identical pace'}
+              </span>
+            </div>
+            {analytics.cardiac_drift_pct !== null && (
+              <div className="flex justify-between items-center text-sm mt-2">
+                <span className="text-gray-400">HR Change:</span>
+                <span className={`font-medium ${
+                  analytics.cardiac_drift_pct > 5 ? 'text-amber-400' :
+                  analytics.cardiac_drift_pct < 3 ? 'text-emerald-400' :
+                  'text-gray-300'
+                }`}>
+                  {analytics.cardiac_drift_pct > 0 
+                    ? `+${analytics.cardiac_drift_pct}% (${Math.round((analytics.second_half_hr || 0) - (analytics.first_half_hr || 0))} bpm higher)`
+                    : 'Stable'}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// DETAILED SPLITS TABLE
+// =============================================================================
+
+function SplitsTable({ result }: { result: ContextualComparisonResult }) {
+  const { formatPace, formatDistance, units, distanceUnitShort } = useUnits();
+  const splits = result.target_run.splits;
+  const ghostSplits = result.ghost_average.avg_splits;
+  
+  if (!splits || splits.length === 0) {
+    return null;
+  }
+  
+  return (
+    <div className="mt-8">
+      <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+        <span>📈</span> Every {distanceUnitShort === 'mi' ? 'Mile' : 'Kilometer'}, Analyzed
+      </h3>
+      <p className="text-sm text-gray-400 mb-4">
+        Each split compared to your Ghost average. <span className="text-emerald-400">Green = faster than usual</span>, <span className="text-rose-400">Red = slower than usual</span>.
+      </p>
+      
+      <div className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-900/50 text-gray-400 text-xs">
+                <th className="px-4 py-3 text-left font-medium">{distanceUnitShort === 'mi' ? 'Mile' : 'Km'}</th>
+                <th className="px-4 py-3 text-right font-medium">Pace</th>
+                <th className="px-4 py-3 text-right font-medium">
+                  <span className="flex items-center justify-end gap-1">
+                    vs Ghost
+                    <span className="text-indigo-400">👻</span>
+                  </span>
+                </th>
+                <th className="px-4 py-3 text-right font-medium">Avg HR</th>
+                <th className="px-4 py-3 text-right font-medium">Peak HR</th>
+                <th className="px-4 py-3 text-right font-medium">
+                  <span title="Steps per minute">Cadence</span>
+                </th>
+                {splits.some(s => s.gap_per_mile) && (
+                  <th className="px-4 py-3 text-right font-medium">
+                    <span title="Grade Adjusted Pace - what your pace would be on flat ground">GAP</span>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-700/30">
+              {splits.map((split, idx) => {
+                const ghostSplit = ghostSplits[idx];
+                const paceDiff = split.pace_per_km && ghostSplit?.avg_pace_per_km
+                  ? ((split.pace_per_km - ghostSplit.avg_pace_per_km) / ghostSplit.avg_pace_per_km) * 100
+                  : null;
+                
+                return (
+                  <tr key={split.split_number} className="hover:bg-gray-700/20">
+                    <td className="px-4 py-3 font-medium text-white">{split.split_number}</td>
+                    <td className="px-4 py-3 text-right text-white font-mono">
+                      {split.pace_per_km ? formatPace(split.pace_per_km) : '—'}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-mono font-medium ${
+                      paceDiff !== null && paceDiff < -1 ? 'text-emerald-400' :
+                      paceDiff !== null && paceDiff > 1 ? 'text-rose-400' :
+                      'text-gray-400'
+                    }`}>
+                      {paceDiff !== null 
+                        ? `${paceDiff < 0 ? '' : '+'}${paceDiff.toFixed(1)}%` 
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-300">
+                      {split.avg_hr ? `${Math.round(split.avg_hr)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-400">
+                      {split.max_hr ? `${Math.round(split.max_hr)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-400">
+                      {split.cadence ? `${Math.round(split.cadence)} spm` : '—'}
+                    </td>
+                    {splits.some(s => s.gap_per_mile) && (
+                      <td className="px-4 py-3 text-right text-gray-400 font-mono">
+                        {split.gap_per_mile ? formatPace(split.gap_per_mile * 0.621371) : '—'}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        
+        {/* Legend */}
+        <div className="px-4 py-3 bg-gray-900/30 border-t border-gray-700/30 text-xs text-gray-500">
+          <span className="font-medium">Legend:</span>{' '}
+          HR = Heart Rate (bpm) · 
+          Cadence = Steps per minute · 
+          {splits.some(s => s.gap_per_mile) && 'GAP = Grade Adjusted Pace (flat equivalent) · '}
+          Ghost = Your average from {result.ghost_average.num_runs_averaged} similar runs
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -503,17 +1034,20 @@ export default function ContextualComparisonPage() {
         
         <div className="relative z-10 max-w-5xl mx-auto px-4 py-8">
           {/* Header */}
-          <div className="flex items-center gap-4 mb-6">
-            <Link 
-              href={activityId ? `/activities/${activityId}` : '/activities'}
-              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
-            >
-              ← Back
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold">Context Comparison</h1>
-              <p className="text-gray-400">How does this run compare to similar efforts?</p>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <Link 
+                href={activityId ? `/activities/${activityId}` : '/activities'}
+                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
+              >
+                ← Back
+              </Link>
+              <div>
+                <h1 className="text-2xl font-bold">Context Comparison</h1>
+                <p className="text-gray-400">How does this run compare to similar efforts?</p>
+              </div>
             </div>
+            <UnitToggle />
           </div>
           
           {/* Loading */}
@@ -545,6 +1079,9 @@ export default function ContextualComparisonPage() {
               {/* Performance Score Hero */}
               <PerformanceScoreHero result={result} />
               
+              {/* Advanced Analytics */}
+              <AdvancedAnalyticsSection result={result} />
+              
               {/* Context Factors */}
               <ContextFactorsSection factors={result.context_factors} />
               
@@ -552,6 +1089,9 @@ export default function ContextualComparisonPage() {
               <div className="mt-8">
                 <GhostOverlayChart result={result} />
               </div>
+              
+              {/* Detailed Splits Table */}
+              <SplitsTable result={result} />
               
               {/* Similar Runs */}
               <SimilarRunsSection runs={result.similar_runs} />

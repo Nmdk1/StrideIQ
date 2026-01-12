@@ -9,10 +9,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { planService } from '@/lib/api/services/plans';
 import { useAuth } from '@/lib/context/AuthContext';
 import { parseTimeToSeconds } from '@/lib/utils/time';
+import { calendarKeys } from '@/lib/hooks/queries/calendar';
 
 type Step = 'distance' | 'race-date' | 'current-fitness' | 'availability' | 'recent-race' | 'experience' | 'review';
 
@@ -44,6 +46,7 @@ const EXPERIENCE_LEVELS = [
 
 export default function CreatePlanPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, isAuthenticated: authAuthenticated } = useAuth();
   const [step, setStep] = useState<Step>('distance');
   const [isLoading, setIsLoading] = useState(false);
@@ -63,9 +66,11 @@ export default function CreatePlanPage() {
   
   // Check authentication
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('auth_token');  // Matches AuthContext key
     setIsAuthenticated(!!token);
-  }, []);
+    // Debug: Log tier info
+    console.log('[Plan Create] User tier:', user?.subscription_tier, 'User object:', user);
+  }, [user]);
   
   // Calculate weeks until race
   const weeksUntilRace = formData.race_date
@@ -100,20 +105,38 @@ export default function CreatePlanPage() {
         ['elite', 'pro', 'premium', 'guided', 'subscription'].includes(user.subscription_tier);
       const hasPaceData = formData.recent_race_distance && raceTimeSeconds;
       
+      // Use auth state from hook, not local state
+      // Note: AuthContext stores token as 'auth_token', not 'token'
+      const authValid = !!user && !!localStorage.getItem('auth_token');
+      
+      // Debug logging
+      console.log('[Plan Create] Creating plan:', {
+        tier: user?.subscription_tier,
+        isEliteTier,
+        isPaidTier,
+        hasPaceData,
+        authValid,
+        localIsAuthenticated: isAuthenticated,
+      });
+      
       // Route based on tier
-      if (isAuthenticated && isEliteTier) {
+      console.log('[Plan Create] Routing decision:', { authValid, isEliteTier, hasPaceData, isPaidTier });
+      
+      if (authValid && isEliteTier) {
         // ELITE TIER: Fully custom plan
-        // Can use user-provided race time OR will fall back to Strava data
+        console.log('[Plan Create] >>> TAKING ELITE/CUSTOM PATH');
         await planService.createCustom({
           distance: formData.distance,
           race_date: formData.race_date,
+          race_name: formData.race_name || undefined,
           days_per_week: formData.days_per_week,
           current_weekly_miles: formData.current_weekly_miles,
           recent_race_distance: formData.recent_race_distance,
           recent_race_time_seconds: raceTimeSeconds ?? undefined,
         });
-      } else if (isAuthenticated && hasPaceData) {
+      } else if (authValid && hasPaceData) {
         // SEMI-CUSTOM: Paid tier or one-time purchase
+        console.log('[Plan Create] >>> TAKING SEMI-CUSTOM PATH');
         if (!isPaidTier) {
           // Check if already purchased (via session storage)
           const purchaseData = sessionStorage.getItem('plan_purchased');
@@ -144,20 +167,35 @@ export default function CreatePlanPage() {
         });
       } else {
         // STANDARD: Free plan, effort descriptions only
+        console.log('[Plan Create] >>> TAKING STANDARD PATH (fallback)');
+        // Calculate start date from race date minus duration
+        const raceDate = new Date(formData.race_date);
+        const startDate = new Date(raceDate);
+        startDate.setDate(startDate.getDate() - (planDuration * 7) + 1);
+        const startDateStr = startDate.toISOString().split('T')[0];
+        
         await planService.createStandard({
           distance: formData.distance,
           duration_weeks: planDuration,
           days_per_week: formData.days_per_week,
           volume_tier: getVolumeTier(),
-          start_date: formData.race_date,
+          start_date: startDateStr,
+          race_name: formData.race_name || undefined,
         });
       }
+      
+      // Invalidate calendar cache so it fetches fresh data with the new plan
+      await queryClient.invalidateQueries({ queryKey: calendarKeys.all });
       
       // Redirect to calendar to see the plan
       router.push('/calendar');
       
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create plan');
+      console.error('[Plan Create] Error creating plan:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create plan';
+      setError(errorMessage);
+      // Stay on page - don't redirect
+      return;
     } finally {
       setIsLoading(false);
     }
@@ -501,7 +539,45 @@ export default function CreatePlanPage() {
           {step === 'review' && (
             <div>
               <h2 className="text-xl font-bold text-white mb-4">Review Your Plan</h2>
-              
+
+              {/* Plan Tier Indicator */}
+              <div className={`mb-6 p-4 rounded-lg border ${
+                user?.subscription_tier === 'elite' 
+                  ? 'bg-gradient-to-r from-purple-900/50 to-pink-900/50 border-purple-500'
+                  : 'bg-gray-800 border-gray-600'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-gray-400">Plan Type</div>
+                    <div className={`text-lg font-bold ${
+                      user?.subscription_tier === 'elite' ? 'text-purple-300' : 'text-gray-300'
+                    }`}>
+                      {user?.subscription_tier === 'elite' ? '✨ Elite Custom Plan' : 
+                       formData.recent_race_distance && formData.recent_race_time ? 'Semi-Custom Plan' :
+                       'Standard Plan'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-400">Your Tier</div>
+                    <div className={`text-lg font-bold ${
+                      user?.subscription_tier === 'elite' ? 'text-purple-300' : 'text-gray-400'
+                    }`}>
+                      {user?.subscription_tier || 'free'}
+                    </div>
+                  </div>
+                </div>
+                {user?.subscription_tier === 'elite' && (
+                  <div className="text-sm text-purple-200 mt-2">
+                    ✓ Personalized paces from your Strava data • ✓ Dynamic adaptation
+                  </div>
+                )}
+                {user?.subscription_tier !== 'elite' && !formData.recent_race_time && (
+                  <div className="text-sm text-amber-400 mt-2">
+                    ⚠️ Add a recent race time for personalized paces
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-gray-900 rounded-lg p-4">
@@ -510,17 +586,17 @@ export default function CreatePlanPage() {
                       {formData.distance.replace('_', ' ')}
                     </div>
                   </div>
-                  
+
                   <div className="bg-gray-900 rounded-lg p-4">
                     <div className="text-sm text-gray-400">Duration</div>
                     <div className="text-lg font-bold text-white">{planDuration} weeks</div>
                   </div>
-                  
+
                   <div className="bg-gray-900 rounded-lg p-4">
                     <div className="text-sm text-gray-400">Days/Week</div>
                     <div className="text-lg font-bold text-white">{formData.days_per_week}</div>
                   </div>
-                  
+
                   <div className="bg-gray-900 rounded-lg p-4">
                     <div className="text-sm text-gray-400">Volume Tier</div>
                     <div className="text-lg font-bold text-orange-400 capitalize">

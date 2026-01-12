@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
     DEBUG: bool = Field(default=False, env="DEBUG")
     
+    # Sentry Error Tracking
+    SENTRY_DSN: Optional[str] = Field(default=None, env="SENTRY_DSN")
+    SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.1, env="SENTRY_TRACES_SAMPLE_RATE")  # 10% of transactions
+    SENTRY_PROFILES_SAMPLE_RATE: float = Field(default=0.1, env="SENTRY_PROFILES_SAMPLE_RATE")
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

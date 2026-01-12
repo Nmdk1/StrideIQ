@@ -20,6 +20,14 @@ class Athlete(Base):
     sex = Column(Text, nullable=True)
     subscription_tier = Column(Text, default="free", nullable=False)
     
+    # Paid subscription tiers that grant access to premium features
+    PAID_TIERS = {'elite', 'pro', 'premium', 'guided', 'subscription'}
+    
+    @property
+    def has_active_subscription(self) -> bool:
+        """Check if athlete has an active paid subscription."""
+        return self.subscription_tier in self.PAID_TIERS
+    
     # User preferences
     preferred_units = Column(Text, default="metric", nullable=False)  # 'metric' (km) or 'imperial' (miles)
     

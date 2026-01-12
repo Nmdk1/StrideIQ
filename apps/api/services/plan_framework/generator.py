@@ -182,11 +182,11 @@ class PlanGenerator:
             6: "long",           # Sunday - long run
         },
         6: {
-            0: "rest",           # Monday - rest
-            1: "quality",        # Tuesday - quality session
-            2: "easy",           # Wednesday
-            3: "medium_long",    # Thursday - medium-long
-            4: "easy",           # Friday
+            0: "rest",           # Monday - rest/gym (no running)
+            1: "medium_long",    # Tuesday - medium-long (or MP work in build)
+            2: "easy",           # Wednesday - easy
+            3: "quality",        # Thursday - quality day (strides/T/hills)
+            4: "easy",           # Friday - easy
             5: "easy_strides",   # Saturday - easy with strides
             6: "long",           # Sunday - long run
         },
@@ -423,7 +423,7 @@ class PlanGenerator:
         four_weeks_ago = race_date - td(weeks=30)  # Look back further for baseline
         recent_activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
-            Activity.activity_type == 'Run',
+            Activity.distance_m >= 1000,  # At least 1km - filters out non-runs
             Activity.start_time >= four_weeks_ago
         ).all()
         
@@ -595,6 +595,15 @@ class PlanGenerator:
     ) -> List[GeneratedWorkout]:
         """Generate all workouts for the plan."""
         workouts = []
+        
+        # Ensure start_date falls on Monday (day 0 in our structure)
+        # The weekly structure assumes Monday=0, so we must align dates
+        if start_date:
+            weekday = start_date.weekday()  # 0=Monday, 6=Sunday
+            if weekday != 0:
+                # Adjust to previous Monday
+                start_date = start_date - timedelta(days=weekday)
+                logger.info(f"Adjusted start_date to Monday: {start_date}")
         
         # Get weekly structure
         structure = self.WEEKLY_STRUCTURES.get(days_per_week, self.WEEKLY_STRUCTURES[6])

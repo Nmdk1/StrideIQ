@@ -545,8 +545,8 @@ class InsightAggregator:
             return insights
         
         # Calculate current week
-        if active_plan.start_date:
-            days_in = (date.today() - active_plan.start_date).days
+        if active_plan.plan_start_date:
+            days_in = (date.today() - active_plan.plan_start_date).days
             current_week = (days_in // 7) + 1
             
             if active_plan.goal_race_date:
@@ -629,10 +629,10 @@ class InsightAggregator:
         current_week = 1
         days_to_race = None
         
-        if active_plan.start_date:
-            days_in = (date.today() - active_plan.start_date).days
+        if active_plan.plan_start_date:
+            days_in = (date.today() - active_plan.plan_start_date).days
             current_week = max(1, (days_in // 7) + 1)
-        
+
         if active_plan.goal_race_date:
             days_to_race = (active_plan.goal_race_date - date.today()).days
         
@@ -649,18 +649,37 @@ class InsightAggregator:
             .all()
         )
         
-        # Find key session
+        # Find key session and current phase from this week's workouts
         key_session = None
+        current_phase = None
+        
         for w in this_week_workouts:
+            # Get phase from first workout with a phase
+            if not current_phase and w.phase:
+                current_phase = w.phase
+            
+            # Find key session (threshold, tempo, intervals, long_mp)
             if w.workout_type and w.workout_type.lower() in ("threshold", "tempo", "long_mp", "intervals"):
                 key_session = f"{w.workout_type.replace('_', ' ').title()} - {w.title or ''}"
-                break
+        
+        # If no phase found from this week, try to get from any planned workout
+        if not current_phase:
+            any_workout = (
+                self.db.query(PlannedWorkout)
+                .filter(
+                    PlannedWorkout.plan_id == active_plan.id,
+                    PlannedWorkout.week_number == current_week,
+                )
+                .first()
+            )
+            if any_workout:
+                current_phase = any_workout.phase
         
         return BuildStatus(
             plan_name=active_plan.name or "Training Plan",
             current_week=current_week,
-            total_weeks=active_plan.duration_weeks or 18,
-            current_phase=active_plan.current_phase or "Build",
+            total_weeks=active_plan.total_weeks or 18,
+            current_phase=current_phase or "Build",
             phase_focus="",  # Would come from plan metadata
             goal_race_name=active_plan.goal_race_name,
             goal_race_date=active_plan.goal_race_date,

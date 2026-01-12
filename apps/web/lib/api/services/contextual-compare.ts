@@ -26,7 +26,25 @@ export interface SplitData {
   elapsed_time_s: number;
   pace_per_km: number | null;
   avg_hr: number | null;
+  max_hr: number | null;
+  cadence: number | null;
+  gap_per_mile: number | null;  // Grade Adjusted Pace
+  efficiency: number | null;     // speed / HR for this split
   cumulative_distance_m: number;
+}
+
+export interface AdvancedAnalytics {
+  cardiac_drift_pct: number | null;      // HR increase over run (%)
+  aerobic_decoupling_pct: number | null; // Efficiency drop first vs second half (%)
+  pace_variability_cv: number | null;    // Coefficient of variation (%)
+  fade_pct: number | null;               // Second half slower than first (%)
+  first_half_pace: number | null;        // sec/km
+  second_half_pace: number | null;       // sec/km
+  first_half_hr: number | null;          // bpm
+  second_half_hr: number | null;         // bpm
+  first_half_efficiency: number | null;
+  second_half_efficiency: number | null;
+  split_type: 'negative' | 'positive' | 'even' | null;
 }
 
 export interface SimilarRun {
@@ -97,19 +115,26 @@ export interface TargetRun {
   date: string;
   name: string;
   workout_type: string | null;
+  workout_zone: string | null;
   distance_m: number;
   distance_km: number;
   duration_s: number;
+  duration_formatted: string | null;
   pace_per_km: number | null;
   pace_formatted: string | null;
   avg_hr: number | null;
+  max_hr: number | null;
   efficiency: number | null;
   intensity_score: number | null;
   elevation_gain: number | null;
+  average_speed_kmh: number | null;
   temperature_f: number | null;
   humidity_pct: number | null;
+  weather_condition: string | null;
   performance_percentage: number | null;
+  performance_percentage_national: number | null;
   splits: SplitData[];
+  analytics: AdvancedAnalytics;
 }
 
 export interface ContextualComparisonResult {
@@ -285,4 +310,55 @@ export async function findByHRRange(
   if (options.daysBack) params.set('days_back', options.daysBack.toString());
   
   return apiClient.get<HRSearchResult>(`/v1/compare/hr-range?${params.toString()}`);
+}
+
+// =============================================================================
+// METRIC HISTORY (for interactive tiles)
+// =============================================================================
+
+export interface MetricHistoryEntry {
+  activity_id: string;
+  date: string;
+  name: string;
+  efficiency: number | null;
+  cardiac_drift: number | null;
+  aerobic_decoupling: number | null;
+  pace_consistency: number | null;
+}
+
+export interface MetricStats {
+  avg: number | null;
+  best: number | null;
+  worst: number | null;
+}
+
+export interface MetricHistoryResult {
+  activity_id: string;
+  history_count: number;
+  current: {
+    efficiency: number | null;
+    cardiac_drift: number | null;
+    aerobic_decoupling: number | null;
+    pace_consistency: number | null;
+  };
+  statistics: {
+    efficiency: MetricStats;
+    cardiac_drift: MetricStats;
+    aerobic_decoupling: MetricStats;
+    pace_consistency: MetricStats;
+  };
+  history: MetricHistoryEntry[];
+  insights: {
+    efficiency?: string;
+    cardiac_drift?: string;
+    aerobic_decoupling?: string;
+    pace_consistency?: string;
+  };
+}
+
+/**
+ * Get historical metric data for interactive tile drill-down
+ */
+export async function getMetricHistory(activityId: string): Promise<MetricHistoryResult> {
+  return apiClient.get<MetricHistoryResult>(`/v1/compare/metric-history/${activityId}`);
 }

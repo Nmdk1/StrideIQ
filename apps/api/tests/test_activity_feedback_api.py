@@ -11,7 +11,7 @@ from uuid import uuid4
 from main import app
 from core.database import SessionLocal
 from models import Athlete, Activity, ActivityFeedback
-from core.auth import create_access_token
+from core.security import create_access_token
 
 client = TestClient(app)
 

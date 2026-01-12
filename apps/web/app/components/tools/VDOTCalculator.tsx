@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import { API_CONFIG } from '@/lib/api/config';
 
 type TabType = 'race_paces' | 'training' | 'equivalent';
 
@@ -79,7 +80,7 @@ export default function VDOTCalculator() {
         return;
       }
 
-      const response = await fetch(`http://localhost:8000/v1/public/vdot/calculate`, {
+      const response = await fetch(`${API_CONFIG.baseURL}/v1/public/vdot/calculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
