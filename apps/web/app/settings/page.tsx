@@ -58,7 +58,7 @@ export default function SettingsPage() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      localStorage.removeItem('access_token');
+      localStorage.removeItem('auth_token');
       window.location.href = '/';
     } catch (err) {
       console.error('Delete failed:', err);
