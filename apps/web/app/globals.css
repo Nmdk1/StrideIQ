@@ -158,5 +158,27 @@
     -webkit-user-select: none;
     user-select: none;
   }
+
+  /* Premium fade-in animation */
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+    opacity: 0;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Staggered animation delays */
+  .animate-fade-in[style*="animation-delay"] {
+    animation-fill-mode: both;
+  }
 }
 
