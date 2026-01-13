@@ -150,7 +150,7 @@ def generate_why_context(
     elif 'interval' in workout_type or 'vo2max' in workout_type:
         contexts.append("Builds VO2max capacity.")
     elif 'easy' in workout_type or 'recovery' in workout_type:
-        contexts.append("Active recovery. Keep it easy.")
+        contexts.append("Active recovery day.")
     elif 'strides' in workout_type:
         contexts.append("Neuromuscular activation. Short and quick.")
     

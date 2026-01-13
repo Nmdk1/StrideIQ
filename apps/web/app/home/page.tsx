@@ -216,7 +216,7 @@ export default function HomePage() {
                     <div className="text-[10px] text-gray-500 mb-0.5">{day.day_abbrev}</div>
                     <div className={`text-xs font-medium ${day.completed ? 'text-emerald-400' : getWorkoutColor(day.workout_type)}`}>
                       {day.completed && day.distance_mi ? (
-                        <span>✓{day.distance_mi}</span>
+                        <span>✓ {day.distance_mi}</span>
                       ) : day.workout_type === 'rest' ? (
                         <span className="text-gray-600">—</span>
                       ) : day.distance_mi ? (
