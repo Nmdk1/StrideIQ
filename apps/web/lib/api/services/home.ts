@@ -56,6 +56,8 @@ export interface HomeData {
   today: TodayWorkout;
   yesterday: YesterdayInsight;
   week: WeekProgress;
+  strava_connected: boolean;
+  has_any_activities: boolean;
 }
 
 // --- API Functions ---

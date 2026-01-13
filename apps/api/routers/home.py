@@ -81,6 +81,8 @@ class HomeResponse(BaseModel):
     today: TodayWorkout
     yesterday: YesterdayInsight
     week: WeekProgress
+    strava_connected: bool = False  # Whether user has connected Strava
+    has_any_activities: bool = False  # Whether user has any synced activities
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -398,8 +400,19 @@ async def get_home_data(
         trajectory_sentence=trajectory_sentence
     )
     
+    # Check Strava connection and activity count
+    strava_connected = bool(current_user.strava_access_token)
+    
+    # Check if user has any activities at all
+    activity_count = db.query(Activity).filter(
+        Activity.athlete_id == current_user.id
+    ).limit(1).count()
+    has_any_activities = activity_count > 0
+    
     return HomeResponse(
         today=today_workout,
         yesterday=yesterday_insight,
-        week=week_progress
+        week=week_progress,
+        strava_connected=strava_connected,
+        has_any_activities=has_any_activities
     )

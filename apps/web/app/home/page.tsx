@@ -85,17 +85,22 @@ export default function HomePage() {
     );
   }
 
-  const { today, yesterday, week } = data;
-  const hasAnyData = yesterday.has_activity || week.completed_mi > 0;
-  const isNewUser = !hasAnyData && !today.has_workout;
+  const { today, yesterday, week, strava_connected, has_any_activities } = data;
+  
+  // Determine user state for conditional rendering
+  const isStravaConnected = strava_connected;
+  const hasAnyData = has_any_activities || yesterday.has_activity || week.completed_mi > 0;
+  
+  // Show welcome card only for users who haven't connected Strava AND have no data
+  const showWelcomeCard = !isStravaConnected && !hasAnyData;
 
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-900 text-gray-100">
         <div className="max-w-2xl mx-auto px-4 py-6 md:py-10">
           
-          {/* New User Onboarding Banner */}
-          {isNewUser && (
+          {/* New User Onboarding Banner - only for users not connected to Strava */}
+          {showWelcomeCard && (
             <section className="mb-8">
               <div className="bg-gradient-to-r from-orange-900/30 to-orange-800/20 border border-orange-700/30 rounded-lg p-5">
                 <h2 className="text-lg font-medium text-orange-300 mb-2">
@@ -177,7 +182,9 @@ export default function HomePage() {
                 <p className="text-gray-500 text-sm mb-4">
                   {hasAnyData 
                     ? "Good day for easy recovery or complete rest. Your call."
-                    : "Connect Strava or create a plan to see workouts here."
+                    : isStravaConnected
+                      ? "Create a training plan to see workouts here."
+                      : "Connect Strava or create a plan to see workouts here."
                   }
                 </p>
                 <div className="flex flex-wrap gap-3">
@@ -185,9 +192,9 @@ export default function HomePage() {
                     href="/calendar"
                     className="text-sm text-gray-400 hover:text-white transition-colors"
                   >
-                    View Calendar →
+                    {hasAnyData ? 'View Calendar →' : 'Create Plan →'}
                   </Link>
-                  {!hasAnyData && (
+                  {!isStravaConnected && !hasAnyData && (
                     <Link 
                       href="/settings"
                       className="text-sm text-orange-400 hover:text-orange-300 transition-colors"
@@ -237,7 +244,9 @@ export default function HomePage() {
                 <p className="text-sm text-gray-500">
                   {hasAnyData 
                     ? "Rest day. Cool."
-                    : "Sync an activity to see insights here."
+                    : isStravaConnected
+                      ? "Waiting for activities to sync."
+                      : "Connect Strava to see insights."
                   }
                 </p>
               </div>
@@ -291,7 +300,9 @@ export default function HomePage() {
                   <p className="text-xs text-gray-500 mb-3">
                     {week.completed_mi > 0 
                       ? `${week.completed_mi} mi logged this week. Data accruing.`
-                      : "Connect Strava to track activities, or create a plan."
+                      : isStravaConnected
+                        ? "Waiting for activities to sync, or create a plan."
+                        : "Connect Strava to track activities, or create a plan."
                     }
                   </p>
                   <div className="flex justify-center gap-4">
@@ -301,7 +312,7 @@ export default function HomePage() {
                     >
                       Create Plan →
                     </Link>
-                    {week.completed_mi === 0 && (
+                    {!isStravaConnected && week.completed_mi === 0 && (
                       <Link 
                         href="/settings"
                         className="text-xs text-orange-400 hover:text-orange-300 transition-colors"
