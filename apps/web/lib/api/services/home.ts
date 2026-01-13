@@ -49,6 +49,7 @@ export interface WeekProgress {
   progress_pct: number;
   days: WeekDay[];
   status: 'on_track' | 'ahead' | 'behind' | 'no_plan';
+  trajectory_sentence?: string;
 }
 
 export interface HomeData {

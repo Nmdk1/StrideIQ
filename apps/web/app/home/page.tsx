@@ -262,6 +262,11 @@ export default function HomePage() {
                   {week.status === 'no_plan' && 'No plan'}
                 </span>
               </div>
+              
+              {/* Trajectory sentence */}
+              {week.trajectory_sentence && (
+                <p className="text-xs text-gray-500 mt-2">{week.trajectory_sentence}</p>
+              )}
             </div>
             
             {/* Calendar Link */}

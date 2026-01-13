@@ -71,6 +71,7 @@ class WeekProgress(BaseModel):
     progress_pct: float
     days: List[WeekDay]
     status: str  # "on_track", "ahead", "behind", "no_plan"
+    trajectory_sentence: Optional[str] = None  # One sparse sentence about trajectory
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -155,6 +156,32 @@ def generate_why_context(
         contexts.append("Neuromuscular activation. Short and quick.")
     
     return " ".join(contexts) if contexts else None
+
+
+def generate_trajectory_sentence(
+    status: str, 
+    completed_mi: float, 
+    planned_mi: float,
+    quality_completed: int = 0,
+    quality_planned: int = 0
+) -> Optional[str]:
+    """
+    Generate a sparse trajectory sentence.
+    Tone: Data speaks. No praise, no prescription.
+    """
+    if status == "no_plan":
+        return None
+    
+    remaining = planned_mi - completed_mi
+    
+    if status == "ahead":
+        return f"Ahead of schedule. {completed_mi:.0f} mi done of {planned_mi:.0f} mi planned."
+    elif status == "on_track":
+        return f"On track. {remaining:.0f} mi remaining this week."
+    elif status == "behind":
+        return f"Behind schedule. {remaining:.0f} mi to go."
+    
+    return None
 
 
 def generate_yesterday_insight(activity: Activity) -> str:
@@ -353,6 +380,12 @@ async def get_home_data(
         else:
             status = "behind"
     
+    trajectory_sentence = generate_trajectory_sentence(
+        status=status,
+        completed_mi=round(completed_mi, 1),
+        planned_mi=round(planned_mi, 1)
+    )
+    
     week_progress = WeekProgress(
         week_number=current_week_number,
         total_weeks=active_plan.total_weeks if active_plan else None,
@@ -361,7 +394,8 @@ async def get_home_data(
         planned_mi=round(planned_mi, 1),
         progress_pct=round((completed_mi / planned_mi * 100) if planned_mi > 0 else 0, 0),
         days=week_days,
-        status=status
+        status=status,
+        trajectory_sentence=trajectory_sentence
     )
     
     return HomeResponse(
