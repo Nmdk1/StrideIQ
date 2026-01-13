@@ -3,6 +3,8 @@
 /**
  * Home Page - The Glance Layer
  * 
+ * Premium UI powered by shadcn/ui + Lucide + Tailwind
+ * 
  * What athletes see when they log in:
  * - Today's workout + why it matters
  * - Yesterday's insight (one key takeaway)
@@ -17,33 +19,51 @@ import Link from 'next/link';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useHomeData } from '@/lib/hooks/queries/home';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { 
+  Calendar, 
+  TrendingUp, 
+  Activity, 
+  Zap,
+  ArrowRight,
+  CheckCircle2,
+  Clock,
+  Target,
+  BarChart3,
+  MessageSquare,
+  Footprints,
+  Flame
+} from 'lucide-react';
 
-// Workout type colors - minimal palette
-const WORKOUT_COLORS: Record<string, string> = {
-  rest: 'text-gray-500',
-  recovery: 'text-gray-400',
-  easy: 'text-emerald-400',
-  easy_strides: 'text-emerald-400',
-  strides: 'text-emerald-400',
-  medium_long: 'text-blue-400',
-  long: 'text-blue-400',
-  long_mp: 'text-blue-400',
-  threshold: 'text-orange-400',
-  tempo: 'text-orange-400',
-  intervals: 'text-red-400',
-  vo2max: 'text-red-400',
-  race: 'text-pink-400',
+// Workout type colors and icons
+const WORKOUT_CONFIG: Record<string, { color: string; bgColor: string; icon: React.ReactNode }> = {
+  rest: { color: 'text-slate-400', bgColor: 'bg-slate-500/10', icon: <Clock className="w-5 h-5" /> },
+  recovery: { color: 'text-slate-400', bgColor: 'bg-slate-500/10', icon: <Clock className="w-5 h-5" /> },
+  easy: { color: 'text-emerald-400', bgColor: 'bg-emerald-500/10', icon: <Footprints className="w-5 h-5" /> },
+  easy_strides: { color: 'text-emerald-400', bgColor: 'bg-emerald-500/10', icon: <Zap className="w-5 h-5" /> },
+  strides: { color: 'text-emerald-400', bgColor: 'bg-emerald-500/10', icon: <Zap className="w-5 h-5" /> },
+  medium_long: { color: 'text-blue-400', bgColor: 'bg-blue-500/10', icon: <TrendingUp className="w-5 h-5" /> },
+  long: { color: 'text-blue-400', bgColor: 'bg-blue-500/10', icon: <TrendingUp className="w-5 h-5" /> },
+  long_mp: { color: 'text-blue-400', bgColor: 'bg-blue-500/10', icon: <Target className="w-5 h-5" /> },
+  threshold: { color: 'text-orange-400', bgColor: 'bg-orange-500/10', icon: <Flame className="w-5 h-5" /> },
+  tempo: { color: 'text-orange-400', bgColor: 'bg-orange-500/10', icon: <Flame className="w-5 h-5" /> },
+  intervals: { color: 'text-red-400', bgColor: 'bg-red-500/10', icon: <Activity className="w-5 h-5" /> },
+  vo2max: { color: 'text-red-400', bgColor: 'bg-red-500/10', icon: <Activity className="w-5 h-5" /> },
+  race: { color: 'text-pink-400', bgColor: 'bg-pink-500/10', icon: <Target className="w-5 h-5" /> },
 };
 
-function getWorkoutColor(type?: string): string {
-  if (!type) return 'text-gray-400';
-  return WORKOUT_COLORS[type] || 'text-gray-400';
+function getWorkoutConfig(type?: string) {
+  if (!type) return { color: 'text-slate-400', bgColor: 'bg-slate-500/10', icon: <Footprints className="w-5 h-5" /> };
+  return WORKOUT_CONFIG[type] || { color: 'text-slate-400', bgColor: 'bg-slate-500/10', icon: <Footprints className="w-5 h-5" /> };
 }
 
 function formatWorkoutType(type?: string): string {
   if (!type) return '';
   const labels: Record<string, string> = {
-    easy: 'Easy',
+    easy: 'Easy Run',
     easy_strides: 'Easy + Strides',
     strides: 'Strides',
     medium_long: 'Medium Long',
@@ -53,11 +73,24 @@ function formatWorkoutType(type?: string): string {
     tempo: 'Tempo',
     intervals: 'Intervals',
     vo2max: 'VO2max',
-    rest: 'Rest',
+    rest: 'Rest Day',
     recovery: 'Recovery',
-    race: 'Race',
+    race: 'Race Day',
   };
   return labels[type] || type.replace(/_/g, ' ');
+}
+
+function getStatusBadge(status: string) {
+  switch (status) {
+    case 'ahead':
+      return <Badge variant="success" className="gap-1"><TrendingUp className="w-3 h-3" /> Ahead</Badge>;
+    case 'on_track':
+      return <Badge variant="info" className="gap-1"><CheckCircle2 className="w-3 h-3" /> On Track</Badge>;
+    case 'behind':
+      return <Badge variant="warning" className="gap-1"><Clock className="w-3 h-3" /> Behind</Badge>;
+    default:
+      return null;
+  }
 }
 
 export default function HomePage() {
@@ -66,7 +99,7 @@ export default function HomePage() {
   if (isLoading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen flex items-center justify-center bg-gray-900">
+        <div className="min-h-screen flex items-center justify-center bg-background">
           <LoadingSpinner size="lg" />
         </div>
       </ProtectedRoute>
@@ -76,16 +109,20 @@ export default function HomePage() {
   if (error || !data) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-900 text-gray-100 p-4">
+        <div className="min-h-screen bg-background text-foreground p-4">
           <div className="max-w-2xl mx-auto pt-12">
-            <p className="text-gray-400">Could not load data. Try again.</p>
+            <Card className="border-destructive/50 bg-destructive/5">
+              <CardContent className="pt-6">
+                <p className="text-muted-foreground">Could not load data. Try again.</p>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </ProtectedRoute>
     );
   }
 
-  const { today, yesterday, week, strava_connected, has_any_activities, total_activities, last_sync } = data;
+  const { today, yesterday, week, strava_connected, has_any_activities, total_activities } = data;
   
   // Determine user state for conditional rendering
   const isStravaConnected = strava_connected;
@@ -97,350 +134,410 @@ export default function HomePage() {
   // Has last activity info (for showing "last ran X days ago")
   const hasLastActivity = yesterday.last_activity_date && yesterday.days_since_last !== undefined;
 
+  const workoutConfig = getWorkoutConfig(today.workout_type);
+
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100">
-        <div className="max-w-2xl mx-auto px-4 py-6 md:py-10">
+      <div className="min-h-screen bg-gradient-to-b from-background via-background to-background/95">
+        <div className="max-w-2xl mx-auto px-4 py-6 md:py-10 space-y-6">
           
-          {/* New User Onboarding Banner - only for users not connected to Strava */}
+          {/* New User Onboarding Banner */}
           {showWelcomeCard && (
-            <section className="mb-8">
-              <div className="bg-gradient-to-r from-orange-900/30 to-orange-800/20 border border-orange-700/30 rounded-lg p-5">
-                <h2 className="text-lg font-medium text-orange-300 mb-2">
-                  Welcome to StrideIQ
-                </h2>
-                <p className="text-sm text-gray-300 mb-4 leading-relaxed">
-                  Connect your Strava account to import your runs. We&apos;ll analyze your data and show you what&apos;s actually working.
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <Link 
-                    href="/settings"
-                    className="inline-flex items-center px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium rounded-lg transition-colors"
-                  >
-                    Connect Strava
-                  </Link>
-                  <Link 
-                    href="/calendar"
-                    className="inline-flex items-center px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors"
-                  >
-                    Create Training Plan
-                  </Link>
+            <Card className="border-orange-500/30 bg-gradient-to-br from-orange-950/40 via-orange-900/20 to-background overflow-hidden relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 to-transparent" />
+              <CardHeader className="relative">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-orange-500/20">
+                    <Zap className="w-5 h-5 text-orange-400" />
+                  </div>
+                  <CardTitle className="text-lg text-orange-300">Welcome to StrideIQ</CardTitle>
                 </div>
-              </div>
-            </section>
+                <CardDescription className="text-slate-300 text-sm leading-relaxed">
+                  Connect your Strava account to import your runs. We&apos;ll analyze your data and show you what&apos;s actually working.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="relative flex flex-wrap gap-3">
+                <Button asChild className="bg-orange-600 hover:bg-orange-500">
+                  <Link href="/settings">Connect Strava</Link>
+                </Button>
+                <Button asChild variant="secondary">
+                  <Link href="/calendar">Create Training Plan</Link>
+                </Button>
+              </CardContent>
+            </Card>
           )}
           
           {/* Today's Workout - Hero Section */}
-          <section className="mb-8">
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-            </p>
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Calendar className="w-4 h-4" />
+                <span className="text-xs uppercase tracking-wider font-medium">
+                  {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              {today.phase && (
+                <Badge variant="outline" className="text-orange-400 border-orange-500/30">
+                  {today.phase}
+                </Badge>
+              )}
+            </div>
             
             {today.has_workout ? (
-              <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
-                {/* Workout Header */}
-                <div className="mb-4">
-                  <h1 className={`text-2xl md:text-3xl font-semibold ${getWorkoutColor(today.workout_type)}`}>
-                    {today.title || formatWorkoutType(today.workout_type)}
-                  </h1>
-                  <p className="text-gray-400 text-base mt-2">
-                    {today.distance_mi && `${today.distance_mi} mi`}
-                    {today.distance_mi && today.pace_guidance && ' · '}
-                    {today.pace_guidance}
-                  </p>
-                </div>
-                
-                {/* Why This Workout */}
-                {today.why_context && (
-                  <div className="bg-gray-900/50 rounded-lg p-4 mb-4">
-                    <p className="text-sm text-gray-300 leading-relaxed">{today.why_context}</p>
+              <Card className={`border-l-4 ${workoutConfig.color.replace('text-', 'border-')} bg-gradient-to-br from-card via-card to-card/80`}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-3 rounded-xl ${workoutConfig.bgColor} ${workoutConfig.color}`}>
+                        {workoutConfig.icon}
+                      </div>
+                      <div>
+                        <CardTitle className={`text-2xl md:text-3xl ${workoutConfig.color}`}>
+                          {today.title || formatWorkoutType(today.workout_type)}
+                        </CardTitle>
+                        <CardDescription className="mt-1">
+                          {today.distance_mi && `${today.distance_mi} mi`}
+                          {today.distance_mi && today.pace_guidance && ' · '}
+                          {today.pace_guidance}
+                        </CardDescription>
+                      </div>
+                    </div>
                   </div>
+                </CardHeader>
+                
+                {today.why_context && (
+                  <CardContent className="pt-0 pb-4">
+                    <div className="bg-secondary/50 rounded-lg p-4 border border-border/50">
+                      <p className="text-sm text-foreground/80 leading-relaxed">{today.why_context}</p>
+                    </div>
+                  </CardContent>
                 )}
                 
-                {/* Week/Phase Context */}
-                <div className="flex items-center gap-3 text-sm text-gray-500">
-                  {today.week_number && (
-                    <span>Week {today.week_number}</span>
-                  )}
-                  {today.phase && (
-                    <span className="text-orange-400/70">{today.phase}</span>
-                  )}
-                </div>
-                
-                {/* Action */}
-                <div className="mt-4 pt-4 border-t border-gray-700/50">
-                  <Link 
-                    href="/calendar"
-                    className="text-sm text-gray-400 hover:text-white transition-colors"
-                  >
-                    View in Calendar →
-                  </Link>
-                </div>
-              </div>
+                <CardContent className="pt-0">
+                  <div className="flex items-center justify-between border-t border-border/50 pt-4">
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                      {today.week_number && (
+                        <span className="flex items-center gap-1.5">
+                          <Target className="w-4 h-4" />
+                          Week {today.week_number}
+                        </span>
+                      )}
+                    </div>
+                    <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                      <Link href="/calendar">
+                        View in Calendar <ArrowRight className="w-4 h-4 ml-1" />
+                      </Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             ) : (
-              <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
-                <h1 className="text-xl md:text-2xl font-medium text-gray-300 mb-2">
-                  No workout scheduled
-                </h1>
-                <p className="text-gray-500 text-sm mb-4">
-                  {hasAnyData 
-                    ? "Good day for easy recovery or complete rest. Your call."
-                    : isStravaConnected
-                      ? "Create a training plan to see workouts here."
-                      : "Connect Strava or create a plan to see workouts here."
-                  }
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <Link 
-                    href="/calendar"
-                    className="text-sm text-gray-400 hover:text-white transition-colors"
-                  >
-                    {hasAnyData ? 'View Calendar →' : 'Create Plan →'}
-                  </Link>
-                  {!isStravaConnected && !hasAnyData && (
-                    <Link 
-                      href="/settings"
-                      className="text-sm text-orange-400 hover:text-orange-300 transition-colors"
-                    >
-                      Connect Strava →
+              <Card className="bg-gradient-to-br from-card via-card to-secondary/20">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-xl bg-secondary">
+                      <Clock className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl md:text-2xl text-muted-foreground">
+                        No workout scheduled
+                      </CardTitle>
+                      <CardDescription className="mt-1">
+                        {hasAnyData 
+                          ? "Good day for easy recovery or complete rest. Your call."
+                          : isStravaConnected
+                            ? "Create a training plan to see workouts here."
+                            : "Connect Strava or create a plan to see workouts here."
+                        }
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 flex flex-wrap gap-3">
+                  <Button asChild variant="secondary" size="sm">
+                    <Link href="/calendar">
+                      {hasAnyData ? 'View Calendar' : 'Create Plan'} <ArrowRight className="w-4 h-4 ml-1" />
                     </Link>
+                  </Button>
+                  {!isStravaConnected && !hasAnyData && (
+                    <Button asChild variant="ghost" size="sm" className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10">
+                      <Link href="/settings">Connect Strava</Link>
+                    </Button>
                   )}
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             )}
           </section>
           
           {/* Yesterday's Insight */}
-          <section className="mb-8">
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Yesterday</p>
+          <section>
+            <div className="flex items-center gap-2 text-muted-foreground mb-3">
+              <Activity className="w-4 h-4" />
+              <span className="text-xs uppercase tracking-wider font-medium">Yesterday</span>
+            </div>
             
             {yesterday.has_activity ? (
-              <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <p className="text-base font-medium text-white">
-                      {yesterday.activity_name}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {yesterday.distance_mi && `${yesterday.distance_mi} mi`}
-                      {yesterday.distance_mi && yesterday.pace_per_mi && ' · '}
-                      {yesterday.pace_per_mi}
-                    </p>
+              <Card className="bg-gradient-to-br from-card via-card to-emerald-950/20 border-l-4 border-emerald-500/50">
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-emerald-500/10">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{yesterday.activity_name}</CardTitle>
+                        <CardDescription>
+                          {yesterday.distance_mi && `${yesterday.distance_mi} mi`}
+                          {yesterday.distance_mi && yesterday.pace_per_mi && ' · '}
+                          {yesterday.pace_per_mi}
+                        </CardDescription>
+                      </div>
+                    </div>
+                    {yesterday.activity_id && (
+                      <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+                        <Link href={`/activities/${yesterday.activity_id}`}>
+                          Details <ArrowRight className="w-4 h-4 ml-1" />
+                        </Link>
+                      </Button>
+                    )}
                   </div>
-                  {yesterday.activity_id && (
-                    <Link 
-                      href={`/activities/${yesterday.activity_id}`}
-                      className="text-sm text-gray-500 hover:text-white transition-colors"
-                    >
-                      Details →
-                    </Link>
-                  )}
-                </div>
+                </CardHeader>
                 
                 {yesterday.insight && (
-                  <p className="text-sm text-gray-300 mt-3 leading-relaxed">{yesterday.insight}</p>
+                  <CardContent className="pt-2">
+                    <p className="text-sm text-foreground/80 leading-relaxed">{yesterday.insight}</p>
+                  </CardContent>
                 )}
-              </div>
+              </Card>
             ) : (
-              <div className="bg-gray-800/30 border border-gray-700/30 rounded-lg p-4">
-                {hasLastActivity ? (
-                  /* Show last activity info for users with historical data */
-                  <>
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <p className="text-base text-gray-400">No activity yesterday</p>
-                        <p className="text-sm text-gray-500 mt-1">
-                          Last ran {yesterday.days_since_last === 1 
-                            ? 'the day before' 
-                            : `${yesterday.days_since_last} days ago`
-                          }: {yesterday.last_activity_name}
-                        </p>
+              <Card className="bg-card/50">
+                <CardContent className="py-4">
+                  {hasLastActivity ? (
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-secondary">
+                          <Footprints className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">No activity yesterday</p>
+                          <p className="text-xs text-muted-foreground/70 mt-0.5">
+                            Last ran {yesterday.days_since_last === 1 
+                              ? 'the day before' 
+                              : `${yesterday.days_since_last} days ago`
+                            }: {yesterday.last_activity_name}
+                          </p>
+                        </div>
                       </div>
                       {yesterday.last_activity_id && (
-                        <Link 
-                          href={`/activities/${yesterday.last_activity_id}`}
-                          className="text-sm text-gray-500 hover:text-white transition-colors"
-                        >
-                          View →
-                        </Link>
+                        <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+                          <Link href={`/activities/${yesterday.last_activity_id}`}>
+                            View <ArrowRight className="w-4 h-4 ml-1" />
+                          </Link>
+                        </Button>
                       )}
                     </div>
-                  </>
-                ) : (
-                  /* Empty state for users with no activities */
-                  <>
-                    <p className="text-base text-gray-400 mb-2">No activity yesterday</p>
-                    <p className="text-sm text-gray-500">
-                      {isStravaConnected
-                        ? "Waiting for activities to sync."
-                        : "Connect Strava to see insights."
-                      }
-                    </p>
-                  </>
-                )}
-              </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-secondary">
+                        <Clock className="w-5 h-5 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">No activity yesterday</p>
+                        <p className="text-xs text-muted-foreground/70 mt-0.5">
+                          {isStravaConnected
+                            ? "Waiting for activities to sync."
+                            : "Connect Strava to see insights."
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             )}
           </section>
           
           {/* Week Progress */}
-          <section className="mb-8">
+          <section>
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs text-gray-500 uppercase tracking-wider">This Week</p>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <BarChart3 className="w-4 h-4" />
+                <span className="text-xs uppercase tracking-wider font-medium">This Week</span>
+              </div>
               {week.week_number && week.total_weeks && (
-                <p className="text-xs text-gray-500">
-                  Week {week.week_number}/{week.total_weeks}
-                  {week.phase && <span className="text-orange-400/70 ml-2">{week.phase}</span>}
-                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    Week {week.week_number}/{week.total_weeks}
+                  </span>
+                  {week.phase && (
+                    <Badge variant="outline" className="text-orange-400 border-orange-500/30 text-xs">
+                      {week.phase}
+                    </Badge>
+                  )}
+                </div>
               )}
             </div>
             
-            <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-              {/* Day Pills - larger touch targets for mobile */}
-              <div className="flex justify-between gap-1 mb-4">
-                {week.days.map((day) => (
-                  <div 
-                    key={day.date}
-                    className={`
-                      flex-1 text-center py-3 px-1 rounded-lg
-                      ${day.is_today ? 'bg-blue-900/40 ring-2 ring-blue-500/50' : ''}
-                      ${day.completed ? 'bg-emerald-900/30' : 'bg-gray-800/50'}
-                    `}
-                  >
-                    <div className="text-xs text-gray-500 mb-1">{day.day_abbrev}</div>
-                    <div className={`text-sm font-medium ${day.completed ? 'text-emerald-400' : getWorkoutColor(day.workout_type)}`}>
-                      {day.completed && day.distance_mi ? (
-                        <span>✓ {day.distance_mi}</span>
-                      ) : day.workout_type === 'rest' ? (
-                        <span className="text-gray-600">—</span>
-                      ) : day.distance_mi ? (
-                        <span>{day.distance_mi}</span>
-                      ) : (
-                        <span className="text-gray-600">—</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              {week.status === 'no_plan' ? (
-                /* Empty state for no plan */
-                <div className="text-center py-2">
-                  {week.completed_mi > 0 ? (
-                    /* Has activities this week but no plan */
-                    <>
-                      <p className="text-sm text-gray-300 mb-1">
-                        {week.completed_mi} mi this week
-                      </p>
-                      {week.trajectory_sentence && (
-                        <p className="text-xs text-gray-500 mb-3">{week.trajectory_sentence}</p>
-                      )}
-                      <Link 
-                        href="/calendar"
-                        className="text-xs text-gray-400 hover:text-white transition-colors"
+            <Card className="bg-gradient-to-br from-card via-card to-secondary/10">
+              <CardContent className="pt-6">
+                {/* Day Pills - Visual week overview */}
+                <div className="flex justify-between gap-1.5 mb-6">
+                  {week.days.map((day) => {
+                    const dayConfig = getWorkoutConfig(day.workout_type);
+                    return (
+                      <div 
+                        key={day.date}
+                        className={`
+                          flex-1 text-center py-3 px-1 rounded-xl transition-all
+                          ${day.is_today ? 'ring-2 ring-primary/50 bg-primary/10' : ''}
+                          ${day.completed ? 'bg-emerald-500/15 border border-emerald-500/20' : 'bg-secondary/50 border border-transparent'}
+                        `}
                       >
-                        Create a plan to track against →
-                      </Link>
-                    </>
-                  ) : (
-                    /* No activities and no plan */
-                    <>
-                      <p className="text-sm text-gray-400 mb-2">No training plan active</p>
-                      <p className="text-xs text-gray-500 mb-3">
-                        {isStravaConnected
-                          ? total_activities > 0
-                            ? "No runs this week yet."
-                            : "Waiting for activities to sync."
-                          : "Connect Strava to track activities."
-                        }
-                      </p>
-                      <div className="flex justify-center gap-4">
-                        <Link 
-                          href="/calendar"
-                          className="text-xs text-gray-400 hover:text-white transition-colors"
-                        >
-                          Create Plan →
-                        </Link>
-                        {!isStravaConnected && (
-                          <Link 
-                            href="/settings"
-                            className="text-xs text-orange-400 hover:text-orange-300 transition-colors"
-                          >
-                            Connect Strava →
-                          </Link>
-                        )}
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
+                          {day.day_abbrev}
+                        </div>
+                        <div className={`text-sm font-semibold ${day.completed ? 'text-emerald-400' : dayConfig.color}`}>
+                          {day.completed && day.distance_mi ? (
+                            <span className="flex flex-col items-center">
+                              <CheckCircle2 className="w-4 h-4 mb-0.5" />
+                              <span className="text-xs">{day.distance_mi}</span>
+                            </span>
+                          ) : day.workout_type === 'rest' ? (
+                            <span className="text-muted-foreground/50">—</span>
+                          ) : day.distance_mi ? (
+                            <span>{day.distance_mi}</span>
+                          ) : (
+                            <span className="text-muted-foreground/50">—</span>
+                          )}
+                        </div>
                       </div>
-                    </>
-                  )}
+                    );
+                  })}
                 </div>
-              ) : (
-                <>
-                  {/* Progress Bar */}
-                  {week.planned_mi > 0 && (
-                    <div className="mb-3">
-                      <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all ${
+                
+                {week.status === 'no_plan' ? (
+                  /* Empty state for no plan */
+                  <div className="text-center py-2">
+                    {week.completed_mi > 0 ? (
+                      <>
+                        <div className="flex items-center justify-center gap-2 mb-2">
+                          <Footprints className="w-5 h-5 text-primary" />
+                          <span className="text-xl font-semibold text-foreground">
+                            {week.completed_mi} mi
+                          </span>
+                          <span className="text-sm text-muted-foreground">this week</span>
+                        </div>
+                        {week.trajectory_sentence && (
+                          <p className="text-sm text-muted-foreground mb-4">{week.trajectory_sentence}</p>
+                        )}
+                        <Button asChild variant="secondary" size="sm">
+                          <Link href="/calendar">
+                            Create a plan to track against <ArrowRight className="w-4 h-4 ml-1" />
+                          </Link>
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-muted-foreground mb-2">No training plan active</p>
+                        <p className="text-xs text-muted-foreground/70 mb-4">
+                          {isStravaConnected
+                            ? total_activities > 0
+                              ? "No runs this week yet."
+                              : "Waiting for activities to sync."
+                            : "Connect Strava to track activities."
+                          }
+                        </p>
+                        <div className="flex justify-center gap-3">
+                          <Button asChild variant="secondary" size="sm">
+                            <Link href="/calendar">Create Plan</Link>
+                          </Button>
+                          {!isStravaConnected && (
+                            <Button asChild variant="ghost" size="sm" className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10">
+                              <Link href="/settings">Connect Strava</Link>
+                            </Button>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {/* Progress Bar */}
+                    {week.planned_mi > 0 && (
+                      <div className="space-y-2 mb-4">
+                        <Progress 
+                          value={Math.min(100, week.progress_pct)} 
+                          className="h-3"
+                          indicatorClassName={
                             week.status === 'ahead' ? 'bg-emerald-500' :
                             week.status === 'on_track' ? 'bg-blue-500' :
-                            week.status === 'behind' ? 'bg-orange-500' : 'bg-gray-600'
-                          }`}
-                          style={{ width: `${Math.min(100, week.progress_pct)}%` }}
+                            week.status === 'behind' ? 'bg-orange-500' : 'bg-primary'
+                          }
                         />
                       </div>
+                    )}
+                    
+                    {/* Stats */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-semibold text-foreground">
+                          {week.completed_mi}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          / {week.planned_mi} mi
+                        </span>
+                      </div>
+                      {getStatusBadge(week.status)}
                     </div>
-                  )}
-                  
-                  {/* Stats */}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-400">
-                      {week.completed_mi} / {week.planned_mi} mi
-                    </span>
-                    <span className={`text-sm font-medium ${
-                      week.status === 'ahead' ? 'text-emerald-400' :
-                      week.status === 'on_track' ? 'text-blue-400' :
-                      week.status === 'behind' ? 'text-orange-400' :
-                      'text-gray-500'
-                    }`}>
-                      {week.status === 'ahead' && 'Ahead'}
-                      {week.status === 'on_track' && 'On track'}
-                      {week.status === 'behind' && 'Behind'}
-                    </span>
-                  </div>
-                  
-                  {/* Trajectory sentence */}
-                  {week.trajectory_sentence && (
-                    <p className="text-sm text-gray-400 mt-3">{week.trajectory_sentence}</p>
-                  )}
-                </>
-              )}
-            </div>
+                    
+                    {/* Trajectory sentence */}
+                    {week.trajectory_sentence && (
+                      <p className="text-sm text-muted-foreground mt-3 border-t border-border/50 pt-3">
+                        {week.trajectory_sentence}
+                      </p>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
             
             {/* Calendar Link */}
             <div className="mt-3 text-right">
-              <Link 
-                href="/calendar"
-                className="text-sm text-gray-500 hover:text-white transition-colors"
-              >
-                Full Calendar →
-              </Link>
+              <Button asChild variant="link" size="sm" className="text-muted-foreground hover:text-foreground p-0 h-auto">
+                <Link href="/calendar">
+                  Full Calendar <ArrowRight className="w-4 h-4 ml-1" />
+                </Link>
+              </Button>
             </div>
           </section>
           
-          {/* Quick Links - larger touch targets */}
-          <section className="grid grid-cols-2 gap-3">
-            <Link 
-              href="/analytics"
-              className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-5 hover:bg-gray-800 transition-colors active:bg-gray-700"
-            >
-              <p className="text-base font-medium text-white">Analytics</p>
-              <p className="text-sm text-gray-500 mt-1">Trends & correlations</p>
+          {/* Quick Links */}
+          <section className="grid grid-cols-2 gap-4">
+            <Link href="/analytics" className="group">
+              <Card className="h-full bg-gradient-to-br from-card via-card to-blue-950/20 border-blue-500/20 hover:border-blue-500/40 transition-all hover:shadow-lg hover:shadow-blue-500/5">
+                <CardContent className="pt-5 pb-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 rounded-lg bg-blue-500/10 group-hover:bg-blue-500/20 transition-colors">
+                      <BarChart3 className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <span className="font-medium text-foreground group-hover:text-blue-300 transition-colors">Analytics</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Trends & correlations</p>
+                </CardContent>
+              </Card>
             </Link>
-            <Link 
-              href="/coach"
-              className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-5 hover:bg-gray-800 transition-colors active:bg-gray-700"
-            >
-              <p className="text-base font-medium text-white">Coach</p>
-              <p className="text-sm text-gray-500 mt-1">Ask questions</p>
+            <Link href="/coach" className="group">
+              <Card className="h-full bg-gradient-to-br from-card via-card to-purple-950/20 border-purple-500/20 hover:border-purple-500/40 transition-all hover:shadow-lg hover:shadow-purple-500/5">
+                <CardContent className="pt-5 pb-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 rounded-lg bg-purple-500/10 group-hover:bg-purple-500/20 transition-colors">
+                      <MessageSquare className="w-5 h-5 text-purple-400" />
+                    </div>
+                    <span className="font-medium text-foreground group-hover:text-purple-300 transition-colors">Coach</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Ask questions</p>
+                </CardContent>
+              </Card>
             </Link>
           </section>
           
