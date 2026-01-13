@@ -92,14 +92,14 @@ Ask me anything about your training!`,
         };
         setMessages(prev => [...prev, assistantMessage]);
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to get response from coach');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to get response from coach');
     } finally {
       setIsLoading(false);
     }
   };
   
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -201,7 +201,7 @@ Ask me anything about your training!`,
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyDown}
               placeholder="Ask your coach anything..."
               rows={1}
               className="flex-1 px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
