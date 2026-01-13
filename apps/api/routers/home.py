@@ -47,6 +47,11 @@ class YesterdayInsight(BaseModel):
     distance_mi: Optional[float] = None
     pace_per_mi: Optional[str] = None
     insight: Optional[str] = None  # One sparse insight
+    # Fallback: most recent activity if no yesterday activity
+    last_activity_date: Optional[str] = None  # ISO date of most recent activity
+    last_activity_name: Optional[str] = None
+    last_activity_id: Optional[str] = None
+    days_since_last: Optional[int] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -83,6 +88,8 @@ class HomeResponse(BaseModel):
     week: WeekProgress
     strava_connected: bool = False  # Whether user has connected Strava
     has_any_activities: bool = False  # Whether user has any synced activities
+    total_activities: int = 0  # Total number of activities
+    last_sync: Optional[str] = None  # When Strava was last synced
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -165,16 +172,23 @@ def generate_trajectory_sentence(
     completed_mi: float, 
     planned_mi: float,
     quality_completed: int = 0,
-    quality_planned: int = 0
+    quality_planned: int = 0,
+    activities_this_week: int = 0
 ) -> Optional[str]:
     """
     Generate a sparse trajectory sentence.
     Tone: Data speaks. No praise, no prescription.
     """
-    if status == "no_plan":
-        return None
-    
     remaining = planned_mi - completed_mi
+    
+    if status == "no_plan":
+        # Still provide insight for users without a plan
+        if completed_mi > 0:
+            if activities_this_week == 1:
+                return f"{completed_mi:.0f} mi logged this week. Consistency compounds."
+            elif activities_this_week > 1:
+                return f"{completed_mi:.0f} mi across {activities_this_week} runs this week."
+        return None
     
     if status == "ahead":
         return f"Ahead of schedule. {completed_mi:.0f} mi done of {planned_mi:.0f} mi planned."
@@ -305,6 +319,21 @@ async def get_home_data(
             pace_per_mi=pace_str,
             insight=insight
         )
+    else:
+        # No yesterday activity - find most recent activity for context
+        last_activity = db.query(Activity).filter(
+            Activity.athlete_id == current_user.id
+        ).order_by(Activity.start_time.desc()).first()
+        
+        if last_activity:
+            days_ago = (today - last_activity.start_time.date()).days
+            yesterday_insight = YesterdayInsight(
+                has_activity=False,
+                last_activity_date=last_activity.start_time.date().isoformat(),
+                last_activity_name=last_activity.name or "Run",
+                last_activity_id=str(last_activity.id),
+                days_since_last=days_ago
+            )
     
     # --- Week Progress ---
     # Get Monday of current week
@@ -382,10 +411,14 @@ async def get_home_data(
         else:
             status = "behind"
     
+    # Count activities this week for trajectory
+    activities_this_week = sum(1 for day in week_days if day.completed)
+    
     trajectory_sentence = generate_trajectory_sentence(
         status=status,
         completed_mi=round(completed_mi, 1),
-        planned_mi=round(planned_mi, 1)
+        planned_mi=round(planned_mi, 1),
+        activities_this_week=activities_this_week
     )
     
     week_progress = WeekProgress(
@@ -403,16 +436,23 @@ async def get_home_data(
     # Check Strava connection and activity count
     strava_connected = bool(current_user.strava_access_token)
     
-    # Check if user has any activities at all
-    activity_count = db.query(Activity).filter(
+    # Get total activity count
+    total_activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id
-    ).limit(1).count()
-    has_any_activities = activity_count > 0
+    ).count()
+    has_any_activities = total_activities > 0
+    
+    # Last sync time
+    last_sync = None
+    if current_user.last_strava_sync:
+        last_sync = current_user.last_strava_sync.isoformat()
     
     return HomeResponse(
         today=today_workout,
         yesterday=yesterday_insight,
         week=week_progress,
         strava_connected=strava_connected,
-        has_any_activities=has_any_activities
+        has_any_activities=has_any_activities,
+        total_activities=total_activities,
+        last_sync=last_sync
     )

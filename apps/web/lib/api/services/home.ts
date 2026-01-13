@@ -29,6 +29,11 @@ export interface YesterdayInsight {
   distance_mi?: number;
   pace_per_mi?: string;
   insight?: string;
+  // Fallback: most recent activity if no yesterday activity
+  last_activity_date?: string;
+  last_activity_name?: string;
+  last_activity_id?: string;
+  days_since_last?: number;
 }
 
 export interface WeekDay {
@@ -58,6 +63,8 @@ export interface HomeData {
   week: WeekProgress;
   strava_connected: boolean;
   has_any_activities: boolean;
+  total_activities: number;
+  last_sync?: string;
 }
 
 // --- API Functions ---

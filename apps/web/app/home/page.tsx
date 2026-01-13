@@ -85,7 +85,7 @@ export default function HomePage() {
     );
   }
 
-  const { today, yesterday, week, strava_connected, has_any_activities } = data;
+  const { today, yesterday, week, strava_connected, has_any_activities, total_activities, last_sync } = data;
   
   // Determine user state for conditional rendering
   const isStravaConnected = strava_connected;
@@ -93,6 +93,9 @@ export default function HomePage() {
   
   // Show welcome card only for users who haven't connected Strava AND have no data
   const showWelcomeCard = !isStravaConnected && !hasAnyData;
+  
+  // Has last activity info (for showing "last ran X days ago")
+  const hasLastActivity = yesterday.last_activity_date && yesterday.days_since_last !== undefined;
 
   return (
     <ProtectedRoute>
@@ -240,15 +243,41 @@ export default function HomePage() {
               </div>
             ) : (
               <div className="bg-gray-800/30 border border-gray-700/30 rounded-lg p-4">
-                <p className="text-base text-gray-400 mb-2">No activity yesterday</p>
-                <p className="text-sm text-gray-500">
-                  {hasAnyData 
-                    ? "Rest day. Cool."
-                    : isStravaConnected
-                      ? "Waiting for activities to sync."
-                      : "Connect Strava to see insights."
-                  }
-                </p>
+                {hasLastActivity ? (
+                  /* Show last activity info for users with historical data */
+                  <>
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="text-base text-gray-400">No activity yesterday</p>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Last ran {yesterday.days_since_last === 1 
+                            ? 'the day before' 
+                            : `${yesterday.days_since_last} days ago`
+                          }: {yesterday.last_activity_name}
+                        </p>
+                      </div>
+                      {yesterday.last_activity_id && (
+                        <Link 
+                          href={`/activities/${yesterday.last_activity_id}`}
+                          className="text-sm text-gray-500 hover:text-white transition-colors"
+                        >
+                          View →
+                        </Link>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  /* Empty state for users with no activities */
+                  <>
+                    <p className="text-base text-gray-400 mb-2">No activity yesterday</p>
+                    <p className="text-sm text-gray-500">
+                      {isStravaConnected
+                        ? "Waiting for activities to sync."
+                        : "Connect Strava to see insights."
+                      }
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </section>
@@ -296,31 +325,52 @@ export default function HomePage() {
               {week.status === 'no_plan' ? (
                 /* Empty state for no plan */
                 <div className="text-center py-2">
-                  <p className="text-sm text-gray-400 mb-2">No training plan active</p>
-                  <p className="text-xs text-gray-500 mb-3">
-                    {week.completed_mi > 0 
-                      ? `${week.completed_mi} mi logged this week. Data accruing.`
-                      : isStravaConnected
-                        ? "Waiting for activities to sync, or create a plan."
-                        : "Connect Strava to track activities, or create a plan."
-                    }
-                  </p>
-                  <div className="flex justify-center gap-4">
-                    <Link 
-                      href="/calendar"
-                      className="text-xs text-gray-400 hover:text-white transition-colors"
-                    >
-                      Create Plan →
-                    </Link>
-                    {!isStravaConnected && week.completed_mi === 0 && (
+                  {week.completed_mi > 0 ? (
+                    /* Has activities this week but no plan */
+                    <>
+                      <p className="text-sm text-gray-300 mb-1">
+                        {week.completed_mi} mi this week
+                      </p>
+                      {week.trajectory_sentence && (
+                        <p className="text-xs text-gray-500 mb-3">{week.trajectory_sentence}</p>
+                      )}
                       <Link 
-                        href="/settings"
-                        className="text-xs text-orange-400 hover:text-orange-300 transition-colors"
+                        href="/calendar"
+                        className="text-xs text-gray-400 hover:text-white transition-colors"
                       >
-                        Connect Strava →
+                        Create a plan to track against →
                       </Link>
-                    )}
-                  </div>
+                    </>
+                  ) : (
+                    /* No activities and no plan */
+                    <>
+                      <p className="text-sm text-gray-400 mb-2">No training plan active</p>
+                      <p className="text-xs text-gray-500 mb-3">
+                        {isStravaConnected
+                          ? total_activities > 0
+                            ? "No runs this week yet."
+                            : "Waiting for activities to sync."
+                          : "Connect Strava to track activities."
+                        }
+                      </p>
+                      <div className="flex justify-center gap-4">
+                        <Link 
+                          href="/calendar"
+                          className="text-xs text-gray-400 hover:text-white transition-colors"
+                        >
+                          Create Plan →
+                        </Link>
+                        {!isStravaConnected && (
+                          <Link 
+                            href="/settings"
+                            className="text-xs text-orange-400 hover:text-orange-300 transition-colors"
+                          >
+                            Connect Strava →
+                          </Link>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <>
