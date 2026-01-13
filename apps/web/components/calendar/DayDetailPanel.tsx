@@ -100,7 +100,9 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
             <h2 className="text-lg font-semibold text-white">{formattedDate}</h2>
             {dayData?.planned_workout && (
               <p className="text-sm text-gray-400">
-                Week {dayData.planned_workout.phase} • {dayData.planned_workout.workout_type.replace(/_/g, ' ')}
+                {dayData.planned_workout.phase && `${dayData.planned_workout.phase.replace(/_/g, ' ')} phase`}
+                {dayData.planned_workout.phase && dayData.planned_workout.workout_type && ' • '}
+                {dayData.planned_workout.workout_type?.replace(/_/g, ' ')}
               </p>
             )}
           </div>
@@ -199,7 +201,11 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                           </div>
                           <div className="bg-gray-900/50 rounded p-2 text-center">
                             <div className="text-lg font-bold text-white">
-                              {activity.duration_s ? `${Math.floor(activity.duration_s / 60)}:${String(activity.duration_s % 60).padStart(2, '0')}` : '--'}
+                              {activity.duration_s ? (
+                                activity.duration_s >= 3600
+                                  ? `${Math.floor(activity.duration_s / 3600)}:${String(Math.floor((activity.duration_s % 3600) / 60)).padStart(2, '0')}:${String(activity.duration_s % 60).padStart(2, '0')}`
+                                  : `${Math.floor(activity.duration_s / 60)}:${String(activity.duration_s % 60).padStart(2, '0')}`
+                              ) : '--'}
                             </div>
                             <div className="text-xs text-gray-500">Duration</div>
                           </div>
