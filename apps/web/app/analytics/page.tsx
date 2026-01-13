@@ -111,7 +111,7 @@ export default function DashboardPage() {
               </select>
               <select
                 value={rollingWindow}
-                onChange={(e) => setRollingWindow(e.target.value as any)}
+                onChange={(e) => setRollingWindow(e.target.value as '30d' | '60d' | '90d' | '120d' | 'all')}
                 className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-base"
               >
                 <option value="30d">30-Day Trend</option>
@@ -419,4 +419,3 @@ function CorrelationItem({ correlation, positive }: { correlation: Correlation; 
     </div>
   );
 }
-
