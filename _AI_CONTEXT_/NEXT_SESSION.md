@@ -1,95 +1,136 @@
-# Next Session - Quick Start
+# Next Session Instructions
 
-*Updated: 2026-01-08 (Afternoon)*
-
----
-
-## Where We Left Off
-
-Michael went running + gym. While he was gone, completed:
-1. ✅ Garmin data import (505 days wellness)
-2. ✅ Wellness → Performance correlation analysis
-3. ✅ What drives improvement analysis
-4. ✅ Deep Analysis Report product spec
-5. ✅ Methodology sanitization (5 documents)
+**Last Updated:** 2026-01-14
+**Previous Session:** Diagnostic Report Feature + CS Model Archival
 
 ---
 
-## Key Finding from Analysis
+## Session Summary
 
-**HRV does NOT predict Michael's performance.**
+This session completed major features with full rigor:
 
-| Factor | Correlation | Verdict |
-|--------|-------------|---------|
-| HRV → Efficiency | r = -0.069 | No effect |
-| Sleep → Efficiency | r = +0.086 | No effect |
-| **Consistency Streak** | **r = +0.398** | **Works** |
-| **Cumulative Volume** | **r = +0.308** | **Works** |
-| **HR dropping over time** | **r = -0.582** | **Best signal** |
-
-Michael's PRs came on LOW HRV and SHORT sleep. This validates his skepticism.
+1. **Critical Speed Model Archival** — Removed from UI/code, archived to `archive/cs-model-2026-01` branch
+2. **On-Demand Diagnostic Report** — Full implementation with ADR, tests, frontend page
 
 ---
 
-## Documents Created Today
+## Current State
 
-### Analysis
-- `_AI_CONTEXT_/ANALYSIS_FINDINGS_2026_01_08.md` - Full analysis
-- `_AI_CONTEXT_/SESSION_SUMMARY_2026_01_08_AFTERNOON.md` - Session summary
+### Branch
+`stable-diagnostic-report-2026-01-14`
 
-### Product
-- `_AI_CONTEXT_/PRODUCT/DEEP_ANALYSIS_REPORT.md` - Report product spec
+### Docker Status
+Running. Containers: `api`, `web`, `worker`, `postgres`, `redis`
 
-### Methodology (Sanitized, No Coach Names)
-- `00_CORE_PRINCIPLES.md` - 5 pillars
-- `01_WORKOUT_TYPES.md` - 40+ workouts
-- `02_TRAINING_ZONES.md` - Zone system
-- `03_PERIODIZATION.md` - Training cycles
-- `04_INJURY_PREVENTION.md` - Recovery
-- `05_MENTAL_TRAINING.md` - Psychology
-
-### Scripts
-- `import_garmin_export.py` - Parse Garmin data
-- `correlate_wellness_to_strava.py` - Wellness analysis
-- `analyze_improvement_factors.py` - Improvement drivers
+### All Tests Passing
+- `test_athlete_diagnostic.py` — 35 tests
+- All other tests remain passing
 
 ---
 
-## Still Pending
+## New Feature: Diagnostic Report
 
-1. **Deploy to beta** - Ready when Michael is
-2. **Discuss report product** - Pricing, delivery, sections
-3. **Product name decision** - Still using "Performance Focused Coaching"
+### Files Created
+- `docs/adr/ADR-019-diagnostic-report.md`
+- `apps/api/services/athlete_diagnostic.py` (580 lines)
+- `apps/api/tests/test_athlete_diagnostic.py` (300+ lines)
+- `apps/web/app/diagnostic/page.tsx` (600+ lines)
 
----
+### Files Modified
+- `apps/api/routers/analytics.py` — added `/v1/analytics/diagnostic-report`
+- `apps/api/scripts/seed_feature_flags.py` — added `analytics.diagnostic_report`
+- `apps/api/core/rate_limit.py` — added rate limit (4/min)
+- `apps/web/app/components/Navigation.tsx` — added nav link
 
-## Discussion Topics
-
-1. **Deep Analysis Report as Product**
-   - Showed what's possible with his data
-   - Could be sold as one-time or subscription
-   - Differentiator: personalized, not generic
-
-2. **Garmin Integration**
-   - Manual upload works now
-   - API access later
-   - HRV/RHR/Sleep imported
-
-3. **Wellness Metrics**
-   - Confirm: track as correlate only, don't prescribe
-   - Build individual models over time
-   - What works for him may not work for others
-
-4. **Beta Launch**
-   - What's blocking?
-   - Ready for Vercel + Railway?
+### Access
+- URL: `/diagnostic`
+- API: `GET /v1/analytics/diagnostic-report`
+- Feature Flag: `analytics.diagnostic_report` (enabled)
 
 ---
 
-## Version: 3.16.0
+## Critical Speed Model — ARCHIVED
 
-See `VERSION_HISTORY.md` for full changelog.
+All CS code removed from main branch. Preserved in `archive/cs-model-2026-01`.
+
+### Removed Files
+- `apps/api/services/critical_speed.py`
+- `apps/web/components/tools/CriticalSpeedPredictor.tsx`
+- `apps/api/tests/test_critical_speed.py`
+- `apps/api/tests/test_cs_prediction.py`
+
+### Updated Files
+- `apps/api/routers/analytics.py` — endpoint removed
+- `apps/api/services/home_signals.py` — CS references removed
+- `apps/api/services/run_attribution.py` — CS references removed
+- `apps/api/services/trend_attribution.py` — CS references removed
+- `docs/adr/ADR-011-critical-speed-model.md` — marked ARCHIVED
+- `docs/adr/ADR-017-tools-critical-speed.md` — marked ARCHIVED
+- `DEFERRED_REFACTOR_BACKLOG.md` — CS entry added
 
 ---
 
-*Last updated: 2026-01-08 afternoon session*
+## Pending Discussion (Not Implemented)
+
+User asked about PB page redundancy with Diagnostic PB section. Recommendation given:
+- **Keep both pages** — PB page for management (sync/recalculate), Diagnostic for context
+- Optional: Add "Manage PBs →" link from Diagnostic to PB page
+
+User did NOT request implementation. Next session can implement if requested.
+
+---
+
+## Key Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| `DIAGNOSTIC_REPORT_USER1.md` | Example report for Michael's data |
+| `docs/adr/ADR-019-diagnostic-report.md` | Diagnostic feature decisions |
+| `DEFERRED_REFACTOR_BACKLOG.md` | Archived features |
+| `_AI_CONTEXT_/MICHAELS_TRAINING_PROFILE.md` | Athlete context |
+
+---
+
+## Full Rigor Checklist (For Reference)
+
+When implementing major features:
+1. ADR (Architecture Decision Record)
+2. Audit logging (if user interactions)
+3. Unit tests
+4. Integration tests
+5. Security review (input validation)
+6. Feature flag
+7. Mobile responsiveness
+8. Tone check (sparse/irreverent, manifesto alignment)
+9. Rebuild/verify
+10. Commit only when complete
+
+---
+
+## Commands to Resume
+
+```bash
+# Check status
+docker-compose ps
+docker-compose logs api --tail=50
+
+# Run tests
+docker-compose exec api python -m pytest tests/test_athlete_diagnostic.py -v
+
+# Seed feature flags (if DB reset)
+docker-compose exec api python scripts/seed_feature_flags.py
+```
+
+---
+
+## User Preferences
+
+- **Full rigor** on all major features
+- **Sparse/irreverent tone** — "Data says X. Your call."
+- **No over-engineering** — only what's requested
+- **Wait for explicit "proceed"** before moving to next item
+- **Tests must pass** before commit
+
+---
+
+*Session ended: 2026-01-14*
