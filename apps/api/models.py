@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Boolean, Float, Date, DateTime, ForeignKey, Numeric, Text, Index, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, Boolean, Float, Date, DateTime, ForeignKey, Numeric, Text, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
@@ -223,7 +223,7 @@ class BestEffort(Base):
     achieved_at = Column(DateTime(timezone=True), nullable=False)
     
     # Source tracking
-    strava_effort_id = Column(Integer, nullable=True)  # Strava's best effort ID
+    strava_effort_id = Column(BigInteger, nullable=True)  # Strava's best effort ID (BigInteger for large Strava IDs)
     
     __table_args__ = (
         Index("ix_best_effort_athlete_id", "athlete_id"),
