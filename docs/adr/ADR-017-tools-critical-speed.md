@@ -1,9 +1,9 @@
 # ADR-017: Tools Page - Critical Speed Pace Predictor
 
 ## Status
-**DEFERRED** — Hidden from UI as of 2026-01-14
+**ARCHIVED** — Removed from codebase as of 2026-01-14
 
-### Deferral Reason
+### Archive Reason
 
 After implementation and user testing, the CS + D' Predictor was found to:
 
@@ -15,12 +15,19 @@ After implementation and user testing, the CS + D' Predictor was found to:
 
 4. **Require complex data** — Needs multiple PRs correctly synced, which proved error-prone.
 
-### Current State
+### Files Removed
 
-- **Backend**: `critical_speed.py` service retained (not deleted)
-- **API**: `/v1/analytics/cs-prediction` endpoint still exists (feature-flagged)
-- **Frontend**: `CriticalSpeedPredictor.tsx` component exists but not rendered
-- **Signals**: CS removed from Home Glance, Analytics, Activity Detail
+- `apps/api/services/critical_speed.py`
+- `apps/web/components/tools/CriticalSpeedPredictor.tsx`
+- `apps/api/tests/test_critical_speed.py`, `test_cs_prediction.py`
+- `/v1/analytics/cs-prediction` endpoint
+- CS signals from Home, Analytics, Activity Detail
+
+### Preserved In
+
+Branch: `archive/cs-model-2026-01`
+
+See also: `DEFERRED_REFACTOR_BACKLOG.md`
 
 ### Future Consideration
 

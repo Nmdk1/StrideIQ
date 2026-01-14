@@ -20,7 +20,7 @@ class SignalType(str, Enum):
     TSB = "tsb"
     EFFICIENCY = "efficiency"
     FINGERPRINT = "fingerprint"
-    CRITICAL_SPEED = "critical_speed"
+    # CRITICAL_SPEED removed - archived to branch archive/cs-model-2026-01
     PACE_DECAY = "pace_decay"
 
 
@@ -72,9 +72,9 @@ class SignalsResponse:
 PRIORITY_TSB_RACE_READY = 1
 PRIORITY_FINGERPRINT_MATCH = 2
 PRIORITY_EFFICIENCY_TREND = 3
-PRIORITY_CRITICAL_SPEED = 4
-PRIORITY_PACE_DECAY = 5
-PRIORITY_TSB_WARNING = 6
+# PRIORITY_CRITICAL_SPEED removed - archived
+PRIORITY_PACE_DECAY = 4
+PRIORITY_TSB_WARNING = 5
 
 # Maximum signals to show
 MAX_SIGNALS = 4
@@ -216,58 +216,7 @@ def get_efficiency_signal(athlete_id: str, db: Session) -> Optional[Signal]:
         return None
 
 
-def get_critical_speed_signal(athlete_id: str, db: Session) -> Optional[Signal]:
-    """
-    Get Critical Speed signal if high confidence model.
-    
-    Only shows if R² > 0.95.
-    """
-    try:
-        from services.critical_speed import get_athlete_cs_profile, ConfidenceLevel
-        
-        profile = get_athlete_cs_profile(athlete_id, db)
-        
-        if not profile.model:
-            return None
-        
-        if profile.model.confidence not in [ConfidenceLevel.HIGH, ConfidenceLevel.MODERATE]:
-            return None
-        
-        cs = profile.model.critical_speed_m_s
-        if cs <= 0:
-            return None
-        
-        # Convert to pace per km
-        pace_s_per_km = 1000 / cs
-        pace_min = int(pace_s_per_km // 60)
-        pace_sec = int(pace_s_per_km % 60)
-        
-        # Find 5K prediction
-        five_k_pace = None
-        for pred in profile.predictions:
-            if "5K" in pred.distance_label:
-                pred_pace_min = int(pred.predicted_pace_per_km_s // 60)
-                pred_pace_sec = int(pred.predicted_pace_per_km_s % 60)
-                five_k_pace = f"{pred_pace_min}:{pred_pace_sec:02d}/km"
-                break
-        
-        subtitle = f"5K pace ~{five_k_pace}" if five_k_pace else f"Threshold {pace_min}:{pace_sec:02d}/km"
-        
-        return Signal(
-            id="critical_speed",
-            type=SignalType.CRITICAL_SPEED,
-            priority=PRIORITY_CRITICAL_SPEED,
-            confidence=SignalConfidence.HIGH if profile.model.confidence == ConfidenceLevel.HIGH else SignalConfidence.MODERATE,
-            icon=SignalIcon.GAUGE,
-            color="blue",
-            title=f"CS {cs:.2f} m/s",
-            subtitle=subtitle,
-            detail=f"R²={profile.model.r_squared:.2f}, D'={int(profile.model.d_prime_m)}m",
-            action_url="/tools"
-        )
-        
-    except Exception:
-        return None
+# get_critical_speed_signal REMOVED - archived to branch archive/cs-model-2026-01
 
 
 def get_fingerprint_signal(athlete_id: str, db: Session) -> Optional[Signal]:
@@ -404,11 +353,7 @@ def aggregate_signals(athlete_id: str, db: Session) -> SignalsResponse:
     if efficiency_signal:
         all_signals.append(efficiency_signal)
     
-    # CS signal hidden - redundant with Training Pace Calculator, low perceived value
-    # See ADR-017 for details
-    # cs_signal = get_critical_speed_signal(athlete_id, db)
-    # if cs_signal:
-    #     all_signals.append(cs_signal)
+    # CS signal removed - archived to branch archive/cs-model-2026-01
     
     fingerprint_signal = get_fingerprint_signal(athlete_id, db)
     if fingerprint_signal:

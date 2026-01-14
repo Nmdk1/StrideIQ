@@ -76,7 +76,7 @@ class MethodContribution:
     """Which analytics methods contributed to the attribution."""
     efficiency_trending: bool = False
     tsb_analysis: bool = False
-    critical_speed: bool = False
+    # critical_speed removed - archived to branch archive/cs-model-2026-01
     fingerprinting: bool = False
     pace_decay: bool = False
 
@@ -537,16 +537,7 @@ def get_method_contributions(
     except Exception:
         pass
     
-    # Check Critical Speed - DISABLED
-    # Reason: Redundant with Training Pace Calculator, low perceived value
-    # See ADR-017 for details
-    # try:
-    #     from services.critical_speed import get_athlete_cs_profile
-    #     profile = get_athlete_cs_profile(athlete_id, db)
-    #     if profile.model and profile.model.r_squared > 0.9:
-    #         contributions.critical_speed = True
-    # except Exception:
-    #     pass
+    # CS check removed - archived to branch archive/cs-model-2026-01
     
     # Check Fingerprinting
     try:
@@ -653,7 +644,7 @@ def attribution_result_to_dict(result: TrendAttributionResult) -> Dict[str, Any]
         "method_contributions": {
             "efficiency_trending": result.method_contributions.efficiency_trending,
             "tsb_analysis": result.method_contributions.tsb_analysis,
-            "critical_speed": result.method_contributions.critical_speed,
+            # critical_speed removed - archived
             "fingerprinting": result.method_contributions.fingerprinting,
             "pace_decay": result.method_contributions.pace_decay
         },

@@ -33,7 +33,7 @@ class AttributionSource(str, Enum):
     TSB = "tsb"
     PRE_STATE = "pre_state"
     EFFICIENCY = "efficiency"
-    CRITICAL_SPEED = "critical_speed"
+    # CRITICAL_SPEED removed - archived to branch archive/cs-model-2026-01
 
 
 class AttributionConfidence(str, Enum):
@@ -71,7 +71,7 @@ PRIORITY_PACE_DECAY = 1
 PRIORITY_TSB = 2
 PRIORITY_PRE_STATE = 3
 PRIORITY_EFFICIENCY = 4
-PRIORITY_CRITICAL_SPEED = 5
+# PRIORITY_CRITICAL_SPEED removed - archived
 
 # Maximum attributions to show
 MAX_ATTRIBUTIONS = 5
@@ -421,71 +421,7 @@ def get_efficiency_attribution(
         return None
 
 
-def get_cs_attribution(
-    activity: Activity,
-    db: Session
-) -> Optional[RunAttribution]:
-    """
-    Get Critical Speed attribution — how did effort compare to capacity?
-    """
-    try:
-        from services.critical_speed import get_athlete_cs_profile, ConfidenceLevel
-        
-        if not activity.distance_m or not activity.duration_s:
-            return None
-        
-        profile = get_athlete_cs_profile(str(activity.athlete_id), db)
-        
-        if not profile.model or profile.model.confidence == ConfidenceLevel.LOW:
-            return None
-        
-        cs = profile.model.critical_speed_m_s
-        if cs <= 0:
-            return None
-        
-        # Calculate actual pace
-        actual_speed = activity.distance_m / activity.duration_s  # m/s
-        pct_of_cs = (actual_speed / cs) * 100
-        
-        if pct_of_cs >= 105:
-            title = "Above CS"
-            insight = f"Ran at {pct_of_cs:.0f}% of Critical Speed — anaerobic contribution high."
-            color = "orange"
-            confidence = AttributionConfidence.HIGH
-        elif pct_of_cs >= 95:
-            title = "At CS"
-            insight = f"Ran at {pct_of_cs:.0f}% of CS — threshold effort. Good for fitness."
-            color = "blue"
-            confidence = AttributionConfidence.HIGH
-        elif pct_of_cs >= 85:
-            title = "Moderate Effort"
-            insight = f"Ran at {pct_of_cs:.0f}% of CS — aerobic training zone."
-            color = "green"
-            confidence = AttributionConfidence.MODERATE
-        else:
-            title = "Easy Effort"
-            insight = f"Ran at {pct_of_cs:.0f}% of CS — recovery/easy pace."
-            color = "slate"
-            confidence = AttributionConfidence.LOW
-        
-        return RunAttribution(
-            source=AttributionSource.CRITICAL_SPEED.value,
-            priority=PRIORITY_CRITICAL_SPEED,
-            confidence=confidence.value,
-            title=title,
-            insight=insight,
-            icon="zap",
-            color=color,
-            data={
-                "pct_of_cs": round(pct_of_cs, 1),
-                "critical_speed": round(cs, 2),
-                "actual_speed": round(actual_speed, 2)
-            }
-        )
-        
-    except Exception as e:
-        logger.warning(f"Error in CS attribution: {e}")
-        return None
+# get_cs_attribution REMOVED - archived to branch archive/cs-model-2026-01
 
 
 def generate_summary(attributions: List[RunAttribution]) -> Optional[str]:
@@ -575,12 +511,7 @@ def get_run_attribution(
     if eff_attr:
         attributions.append(eff_attr)
     
-    # 5. Critical Speed Comparison - DISABLED
-    # Reason: Redundant with Training Pace Calculator, low perceived value
-    # See ADR-017 for details
-    # cs_attr = get_cs_attribution(activity, db)
-    # if cs_attr:
-    #     attributions.append(cs_attr)
+    # CS attribution removed - archived to branch archive/cs-model-2026-01
     
     # Sort by priority
     attributions.sort(key=lambda a: (a.priority, a.confidence != AttributionConfidence.HIGH.value))

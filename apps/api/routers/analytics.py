@@ -11,8 +11,10 @@ from typing import Optional
 from core.database import get_db
 from core.auth import get_current_user
 from core.cache import cached, cache_key, get_cache, set_cache
+from core.feature_flags import is_feature_enabled
 from models import Athlete
 from services.efficiency_analytics import get_efficiency_trends
+from services.trend_attribution import get_trend_attribution, attribution_result_to_dict
 
 router = APIRouter(prefix="/v1/analytics", tags=["analytics"])
 
@@ -82,4 +84,81 @@ def get_efficiency_trends_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error calculating efficiency trends: {str(e)}"
         )
+
+
+@router.get("/trend-attribution")
+def get_trend_attribution_endpoint(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    metric: str = Query("efficiency", description="Metric to explain: efficiency, load, speed, pacing"),
+    days: int = Query(28, ge=7, le=90, description="Number of days to analyze"),
+):
+    """
+    Get attribution analysis for a trend - "Why This Trend?"
+    
+    Aggregates signals from all analytics methods and correlates inputs
+    (sleep, nutrition, training load, etc.) with the specified metric.
+    
+    Returns ranked attributions by contribution percentage with confidence badges.
+    
+    ADR-014: Why This Trend? Attribution Integration
+    
+    Requires feature flag: analytics.trend_attribution
+    """
+    # Check feature flag
+    flag_enabled = is_feature_enabled("analytics.trend_attribution", str(current_user.id), db)
+    
+    if not flag_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Trend attribution feature is not enabled"
+        )
+    
+    # Generate cache key
+    cache_key_str = cache_key(
+        "trend_attribution",
+        str(current_user.id),
+        metric=metric,
+        days=days
+    )
+    
+    # Try cache first
+    cached_result = get_cache(cache_key_str)
+    if cached_result is not None:
+        return cached_result
+    
+    try:
+        result = get_trend_attribution(
+            athlete_id=str(current_user.id),
+            metric=metric,
+            days=days,
+            db=db
+        )
+        
+        if not result:
+            return {
+                "trend_summary": None,
+                "attributions": [],
+                "method_contributions": {},
+                "message": "Insufficient data for attribution analysis"
+            }
+        
+        response = attribution_result_to_dict(result)
+        
+        # Cache for 30 minutes (1800 seconds)
+        set_cache(cache_key_str, response, ttl=1800)
+        
+        return response
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error calculating trend attribution: {str(e)}"
+        )
+
+
+# CS-prediction endpoint REMOVED
+# Archived to branch: archive/cs-model-2026-01
+# Reason: Redundant with Training Pace Calculator, low perceived value, user confusion
+# See ADR-011 for details
 

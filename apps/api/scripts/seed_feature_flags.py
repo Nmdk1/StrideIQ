@@ -175,16 +175,7 @@ REQUIRED_FLAGS = [
         "requires_payment": None,
         "rollout_percentage": 100,
     },
-    {
-        "key": "tools.cs_predictor",
-        "name": "Critical Speed Predictor",
-        "description": "Critical Speed pace predictor on Tools page",
-        "enabled": False,  # DISABLED - Redundant with Training Pace Calculator, low value (ADR-017)
-        "requires_subscription": False,
-        "requires_tier": None,
-        "requires_payment": None,
-        "rollout_percentage": 0,
-    },
+    # CS predictor feature flag REMOVED - feature archived to branch archive/cs-model-2026-01
 ]
 
 with engine.connect() as conn:
