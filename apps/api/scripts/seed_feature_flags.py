@@ -83,6 +83,108 @@ REQUIRED_FLAGS = [
         "requires_payment": None,
         "rollout_percentage": 100,
     },
+    # Analytics feature flags
+    {
+        "key": "analytics.efficiency_trending_v2",
+        "name": "Efficiency Trending V2",
+        "description": "Enhanced efficiency trending with statistical significance testing",
+        "enabled": True,
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "analytics.pre_race_fingerprinting",
+        "name": "Pre-Race State Fingerprinting",
+        "description": "Personal readiness signature detection before races",
+        "enabled": True,  # Enabled - ADR-009 implemented
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "analytics.training_stress_balance",
+        "name": "Training Stress Balance (TSB)",
+        "description": "CTL/ATL/TSB training load tracking with race readiness",
+        "enabled": True,  # Enabled - ADR-010 implemented
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "analytics.critical_speed",
+        "name": "Critical Speed Model",
+        "description": "Critical Speed + D' from race PRs with pace predictions",
+        "enabled": True,  # Enabled - ADR-011 implemented
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "analytics.pace_decay",
+        "name": "Pace Decay Analysis",
+        "description": "Race pacing pattern and historical comparison analysis",
+        "enabled": True,  # Enabled - ADR-012 implemented
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    # Integration feature flags
+    {
+        "key": "signals.home_banner",
+        "name": "Home Signals Banner",
+        "description": "Aggregated analytics signals on home page glance layer",
+        "enabled": True,  # Enabled - ADR-013 implemented
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "analytics.trend_attribution",
+        "name": "Trend Attribution Analysis",
+        "description": "Why This Trend? attribution on Analytics page",
+        "enabled": True,  # Enabled - ADR-014 implemented
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "analytics.run_attribution",
+        "name": "Run Attribution Analysis",
+        "description": "Why This Run? attribution on Activity Detail page",
+        "enabled": True,  # Enabled - ADR-015 implemented
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "signals.calendar_badges",
+        "name": "Calendar Signals",
+        "description": "Day badges and week trajectory on Calendar page",
+        "enabled": True,  # Enabled - ADR-016 implemented
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "tools.cs_predictor",
+        "name": "Critical Speed Predictor",
+        "description": "Critical Speed pace predictor on Tools page",
+        "enabled": False,  # DISABLED - Redundant with Training Pace Calculator, low value (ADR-017)
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 0,
+    },
 ]
 
 with engine.connect() as conn:
