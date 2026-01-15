@@ -545,3 +545,135 @@ class TestNarrativeLayerIntegration:
         
         # Should have fewer (or same if anchors changed the text)
         assert len(fresh) <= len(narratives2)
+
+
+# =============================================================================
+# ADDITIONAL EDGE CASE TESTS FOR COVERAGE
+# =============================================================================
+
+class TestNarrativeEdgeCases:
+    """Edge case tests for improved coverage."""
+    
+    def test_efficiency_no_outlier(self, mock_db, athlete_id):
+        """Efficiency with no significant outlier returns None."""
+        translator = NarrativeTranslator(mock_db, athlete_id)
+        translator.anchor_finder.find_efficiency_outlier = Mock(return_value=None)
+        
+        narrative = translator.narrate_efficiency()
+        assert narrative is None
+    
+    def test_efficiency_low_delta(self, mock_db, athlete_id):
+        """Efficiency with low delta (< 3%) returns None."""
+        translator = NarrativeTranslator(mock_db, athlete_id)
+        
+        anchor = EfficiencyAnchor(
+            activity_id=uuid4(),
+            date=date.today() - timedelta(days=5),
+            name="Easy run",
+            efficiency_score=1.5,
+            delta_from_baseline=2.0,  # Below 3% threshold
+            direction="high"
+        )
+        translator.anchor_finder.find_efficiency_outlier = Mock(return_value=anchor)
+        
+        narrative = translator.narrate_efficiency()
+        assert narrative is None
+    
+    def test_efficiency_negative_delta(self, mock_db, athlete_id):
+        """Efficiency with negative delta shows correct message."""
+        translator = NarrativeTranslator(mock_db, athlete_id)
+        
+        anchor = EfficiencyAnchor(
+            activity_id=uuid4(),
+            date=date.today() - timedelta(days=3),
+            name="Long run",
+            efficiency_score=1.2,
+            delta_from_baseline=-5.5,
+            direction="low"
+        )
+        translator.anchor_finder.find_efficiency_outlier = Mock(return_value=anchor)
+        
+        narrative = translator.narrate_efficiency()
+        assert narrative is not None
+        assert "less" in narrative.text.lower() or "off day" in narrative.text.lower()
+    
+    def test_milestone_low_percentage(self, mock_db, athlete_id):
+        """Milestone at low percentage of peak returns None."""
+        translator = NarrativeTranslator(mock_db, athlete_id)
+        translator.anchor_finder.find_similar_milestone = Mock(return_value=None)
+        
+        # 40% of 70 = 28 miles, too low to narrate
+        narrative = translator.narrate_milestone(28.0, 70.0)
+        assert narrative is None
+    
+    def test_milestone_at_peak(self, mock_db, athlete_id):
+        """Milestone at 90%+ peak generates narrative."""
+        translator = NarrativeTranslator(mock_db, athlete_id)
+        translator.anchor_finder.find_similar_milestone = Mock(return_value=None)
+        
+        # 63 miles is 90% of 70
+        narrative = translator.narrate_milestone(63.0, 70.0)
+        assert narrative is not None
+        assert "peak" in narrative.text.lower() or "90%" in narrative.text
+    
+    def test_narrative_to_dict(self, mock_db, athlete_id):
+        """Narrative to_dict returns correct structure."""
+        narrative = Narrative(
+            text="Test narrative",
+            signal_type="test",
+            priority=50,
+            hash="abc123",
+            anchors_used=["anchor1"]
+        )
+        
+        d = narrative.to_dict()
+        assert d["text"] == "Test narrative"
+        assert d["signal_type"] == "test"
+        assert d["priority"] == 50
+    
+    def test_get_narrative_translator_convenience(self, mock_db, athlete_id):
+        """Convenience function returns translator."""
+        from services.narrative_translator import get_narrative_translator
+        
+        translator = get_narrative_translator(mock_db, athlete_id)
+        assert isinstance(translator, NarrativeTranslator)
+    
+    def test_get_narrative_memory_convenience(self, mock_db, athlete_id):
+        """Convenience function returns memory."""
+        from services.narrative_memory import get_narrative_memory
+        
+        memory = get_narrative_memory(mock_db, athlete_id)
+        assert isinstance(memory, NarrativeMemory)
+
+
+class TestMemoryEdgeCases:
+    """Edge case tests for narrative memory."""
+    
+    def test_clear_old_memory_fallback(self, mock_db, athlete_id):
+        """Clear old records in memory fallback."""
+        _memory_store.clear()
+        
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
+        
+        # Add old record
+        _memory_store[str(athlete_id)] = {
+            "old_hash": datetime.utcnow() - timedelta(days=90)
+        }
+        
+        removed = memory.clear_old(days=60)
+        assert removed == 1
+        assert "old_hash" not in _memory_store.get(str(athlete_id), {})
+    
+    def test_get_stale_patterns_no_redis(self, mock_db, athlete_id):
+        """Get stale patterns without Redis returns empty."""
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
+        
+        stale = memory.get_stale_patterns(threshold=5)
+        assert stale == []
+    
+    def test_get_shown_count_no_redis(self, mock_db, athlete_id):
+        """Get shown count without Redis returns 0."""
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
+        
+        count = memory.get_shown_count("load_state", days=30)
+        assert count == 0

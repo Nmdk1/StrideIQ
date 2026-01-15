@@ -32,6 +32,7 @@ from services.anchor_finder import (
     format_date_relative,
     format_pace
 )
+from services.audit_logger import log_narrative_generated
 
 logger = logging.getLogger(__name__)
 
@@ -502,16 +503,33 @@ class NarrativeTranslator:
         candidates.sort(key=lambda n: n.priority, reverse=True)
         
         if candidates:
-            return candidates[0]
+            winner = candidates[0]
+            # Audit log
+            log_narrative_generated(
+                athlete_id=self.athlete_id,
+                surface="home_hero",
+                signal_type=winner.signal_type,
+                narrative_hash=winner.hash,
+                anchors_used=len(winner.anchors_used)
+            )
+            return winner
         
         # Fallback
-        return Narrative(
+        fallback = Narrative(
             text="Your data. Your plan. No BS.",
             signal_type="fallback",
             priority=10,
             hash=self._hash("fallback"),
             anchors_used=[]
         )
+        log_narrative_generated(
+            athlete_id=self.athlete_id,
+            surface="home_hero",
+            signal_type="fallback",
+            narrative_hash=fallback.hash,
+            anchors_used=0
+        )
+        return fallback
     
     # =========================================================================
     # BATCH NARRATIVES
