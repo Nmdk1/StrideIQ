@@ -1,360 +1,549 @@
 """
-WMA (World Masters Athletics) Age-Grading Factors - 2023 Edition
+WMA (World Masters Athletics) Age-Grading Factors - Alan Jones 2025 Edition
 
-This module provides age-grading factors based on WMA 2023 standards (effective Jan 1, 2023).
-These factors convert an athlete's performance to an age-graded equivalent,
-allowing fair comparison across all ages.
+Official source: https://github.com/AlanLyttonJones/Age-Grade-Tables
+Approved by USATF Masters Long Distance Running Council on 2025-01-10
 
-Age-grading factors represent how much slower the world standard is for older ages
-compared to the open (30yo) standard. A factor of 1.15 means a 50yo needs 15% more time
-to achieve the same age-graded performance percentage as a 30yo.
+This module provides age-grading factors for road running events.
+Factors are provided per-year for ages 5-100, for both male and female.
 
-Sources:
-- WMA 2023 Age Factors and Parameters (effective Jan 1, 2023)
-- Official WMA documentation: https://world-masters-athletics.org
-- Based on standard WMA age-grading methodology for road running events
-
-Note: WMA factors are distance-specific. We use distance-specific factors where available,
-and category-based factors for other distances.
+Supported distances:
+- 1 Mile
+- 5K
+- 8K
+- 10K
+- 10 Mile
+- Half Marathon
+- Marathon
 """
 
-from typing import Optional, Dict, Tuple
-import math
+from typing import Optional, Dict
 
 # ============================================================================
-# WMA 2023 AGE FACTORS - DISTANCE-SPECIFIC (Road Running)
+# MALE FACTORS - Alan Jones 2025 Official
 # ============================================================================
-# These factors are based on the official WMA 2023 Age Factors and Parameters
-# Factors are provided for standard road running distances
 
-# 5K Road Running Factors (Male)
+# 1 Mile Male - Alan Jones 2025
+WMA_1_MILE_MALE: Dict[int, float] = {
+    5: 1.6694, 6: 1.538, 7: 1.4331, 8: 1.3481, 9: 1.2784,
+    10: 1.221, 11: 1.1734, 12: 1.134, 13: 1.1016, 14: 1.075,
+    15: 1.0537, 16: 1.0352, 17: 1.0173, 18: 1.0042, 19: 1.0,
+    20: 1.0, 21: 1.0, 22: 1.0, 23: 1.0, 24: 1.0,
+    25: 1.0, 26: 1.0, 27: 1.0, 28: 1.0, 29: 1.0,
+    30: 1.0023, 31: 1.0088, 32: 1.0158, 33: 1.0231, 34: 1.0304,
+    35: 1.0378, 36: 1.0454, 37: 1.053, 38: 1.0608, 39: 1.0686,
+    40: 1.0765, 41: 1.0847, 42: 1.0929, 43: 1.1013, 44: 1.1098,
+    45: 1.1183, 46: 1.1271, 47: 1.136, 48: 1.1451, 49: 1.1542,
+    50: 1.1635, 51: 1.173, 52: 1.1826, 53: 1.1925, 54: 1.2024,
+    55: 1.2124, 56: 1.2228, 57: 1.2332, 58: 1.2439, 59: 1.2547,
+    60: 1.2657, 61: 1.277, 62: 1.2883, 63: 1.3001, 64: 1.3118,
+    65: 1.3238, 66: 1.3362, 67: 1.3486, 68: 1.3615, 69: 1.3748,
+    70: 1.3897, 71: 1.4063, 72: 1.4247, 73: 1.4451, 74: 1.4676,
+    75: 1.4923, 76: 1.5195, 77: 1.5494, 78: 1.5823, 79: 1.6184,
+    80: 1.6581, 81: 1.7018, 82: 1.7501, 83: 1.8034, 84: 1.8625,
+    85: 1.9283, 86: 2.0012, 87: 2.0833, 88: 2.1758, 89: 2.2805,
+    90: 2.3992, 91: 2.5361, 92: 2.6947, 93: 2.8794, 94: 3.0989,
+    95: 3.3625, 96: 3.6832, 97: 4.085, 98: 4.5977, 99: 5.2798,
+    100: 6.2228,
+}
+
+# 5K Male - Alan Jones 2025
 WMA_5K_MALE: Dict[int, float] = {
-    30: 1.000, 31: 1.002, 32: 1.004, 33: 1.006, 34: 1.008,
-    35: 1.010, 36: 1.013, 37: 1.016, 38: 1.019, 39: 1.022,
-    40: 1.025, 41: 1.029, 42: 1.033, 43: 1.037, 44: 1.041,
-    45: 1.045, 46: 1.050, 47: 1.055, 48: 1.060, 49: 1.065,
-    50: 1.070, 51: 1.076, 52: 1.082, 53: 1.088, 54: 1.094,
-    55: 1.100, 56: 1.107, 57: 1.114, 58: 1.121, 59: 1.128,
-    60: 1.135, 61: 1.143, 62: 1.151, 63: 1.159, 64: 1.167,
-    65: 1.175, 66: 1.184, 67: 1.193, 68: 1.202, 69: 1.211,
-    70: 1.220, 71: 1.230, 72: 1.240, 73: 1.250, 74: 1.260,
-    75: 1.270, 76: 1.281, 77: 1.292, 78: 1.303, 79: 1.314,
-    80: 1.325, 81: 1.337, 82: 1.349, 83: 1.361, 84: 1.373,
-    85: 1.385, 86: 1.398, 87: 1.411, 88: 1.424, 89: 1.437,
-    90: 1.450, 91: 1.464, 92: 1.478, 93: 1.492, 94: 1.506,
-    95: 1.520, 96: 1.535, 97: 1.550, 98: 1.565, 99: 1.580,
-    100: 1.595
+    5: 1.6447, 6: 1.5006, 7: 1.3889, 8: 1.3007, 9: 1.2303,
+    10: 1.1737, 11: 1.1282, 12: 1.0917, 13: 1.0629, 14: 1.0408,
+    15: 1.0246, 16: 1.0138, 17: 1.0056, 18: 1.0005, 19: 1.0,
+    20: 1.0, 21: 1.0, 22: 1.0, 23: 1.0, 24: 1.0,
+    25: 1.0, 26: 1.0, 27: 1.0, 28: 1.0, 29: 1.0,
+    30: 1.0001, 31: 1.0012, 32: 1.0035, 33: 1.007, 34: 1.0118,
+    35: 1.0179, 36: 1.0251, 37: 1.0325, 38: 1.04, 39: 1.0477,
+    40: 1.0554, 41: 1.0633, 42: 1.0712, 43: 1.0793, 44: 1.0875,
+    45: 1.0959, 46: 1.1044, 47: 1.113, 48: 1.1217, 49: 1.1306,
+    50: 1.1396, 51: 1.1488, 52: 1.1581, 53: 1.1675, 54: 1.1772,
+    55: 1.1869, 56: 1.1969, 57: 1.207, 58: 1.2173, 59: 1.2277,
+    60: 1.2384, 61: 1.2492, 62: 1.2602, 63: 1.2715, 64: 1.2829,
+    65: 1.2945, 66: 1.3063, 67: 1.3184, 68: 1.3308, 69: 1.3448,
+    70: 1.36, 71: 1.3767, 72: 1.3949, 73: 1.4148, 74: 1.4368,
+    75: 1.4605, 76: 1.4863, 77: 1.5145, 78: 1.5451, 79: 1.5788,
+    80: 1.6152, 81: 1.6551, 82: 1.6987, 83: 1.7464, 84: 1.7992,
+    85: 1.857, 86: 1.9209, 87: 1.9916, 88: 2.0704, 89: 2.1589,
+    90: 2.2578, 91: 2.3697, 92: 2.4969, 93: 2.6427, 94: 2.8121,
+    95: 3.0093, 96: 3.2425, 97: 3.5224, 98: 3.864, 99: 4.2918,
+    100: 4.8379,
 }
 
-# 10K Road Running Factors (Male)
+# 8K Male - Alan Jones 2025
+WMA_8K_MALE: Dict[int, float] = {
+    5: 1.8529, 6: 1.6681, 7: 1.5265, 8: 1.4156, 9: 1.3271,
+    10: 1.2558, 11: 1.1979, 12: 1.1506, 13: 1.1122, 14: 1.0812,
+    15: 1.0566, 16: 1.0378, 17: 1.0231, 18: 1.0127, 19: 1.0066,
+    20: 1.0022, 21: 1.0, 22: 1.0, 23: 1.0, 24: 1.0,
+    25: 1.0, 26: 1.0, 27: 1.0, 28: 1.0, 29: 1.0,
+    30: 1.0, 31: 1.0007, 32: 1.0021, 33: 1.0045, 34: 1.0078,
+    35: 1.0119, 36: 1.0171, 37: 1.0227, 38: 1.029, 39: 1.0359,
+    40: 1.0434, 41: 1.0514, 42: 1.0597, 43: 1.0679, 44: 1.0763,
+    45: 1.085, 46: 1.0936, 47: 1.1025, 48: 1.1115, 49: 1.1206,
+    50: 1.1299, 51: 1.1393, 52: 1.149, 53: 1.1587, 54: 1.1686,
+    55: 1.1788, 56: 1.1891, 57: 1.1995, 58: 1.2102, 59: 1.221,
+    60: 1.2321, 61: 1.2433, 62: 1.2547, 63: 1.2665, 64: 1.2783,
+    65: 1.2905, 66: 1.3028, 67: 1.3153, 68: 1.3282, 69: 1.3417,
+    70: 1.3559, 71: 1.371, 72: 1.3877, 73: 1.4063, 74: 1.4267,
+    75: 1.4489, 76: 1.4732, 77: 1.4999, 78: 1.5291, 79: 1.561,
+    80: 1.5959, 81: 1.6343, 82: 1.6762, 83: 1.7221, 84: 1.7727,
+    85: 1.8288, 86: 1.8907, 87: 1.9592, 88: 2.0358, 89: 2.1218,
+    90: 2.2183, 91: 2.3272, 92: 2.451, 93: 2.594, 94: 2.7594,
+    95: 2.9525, 96: 3.1807, 97: 3.4566, 98: 3.7922, 99: 4.2141,
+    100: 4.7529,
+}
+
+# 10K Male - Alan Jones 2025
 WMA_10K_MALE: Dict[int, float] = {
-    30: 1.000, 31: 1.003, 32: 1.006, 33: 1.009, 34: 1.012,
-    35: 1.015, 36: 1.019, 37: 1.023, 38: 1.027, 39: 1.031,
-    40: 1.035, 41: 1.040, 42: 1.045, 43: 1.050, 44: 1.055,
-    45: 1.060, 46: 1.066, 47: 1.072, 48: 1.078, 49: 1.084,
-    50: 1.090, 51: 1.097, 52: 1.104, 53: 1.111, 54: 1.118,
-    55: 1.125, 56: 1.133, 57: 1.141, 58: 1.149, 59: 1.157,
-    60: 1.165, 61: 1.174, 62: 1.183, 63: 1.192, 64: 1.201,
-    65: 1.210, 66: 1.220, 67: 1.230, 68: 1.240, 69: 1.250,
-    70: 1.260, 71: 1.271, 72: 1.282, 73: 1.293, 74: 1.304,
-    75: 1.315, 76: 1.327, 77: 1.339, 78: 1.351, 79: 1.363,
-    80: 1.375, 81: 1.388, 82: 1.401, 83: 1.414, 84: 1.427,
-    85: 1.440, 86: 1.454, 87: 1.468, 88: 1.482, 89: 1.496,
-    90: 1.510, 91: 1.525, 92: 1.540, 93: 1.555, 94: 1.570,
-    95: 1.585, 96: 1.601, 97: 1.617, 98: 1.633, 99: 1.649,
-    100: 1.665
+    5: 1.9712, 6: 1.7612, 7: 1.6018, 8: 1.4775, 9: 1.3787,
+    10: 1.299, 11: 1.2341, 12: 1.1809, 13: 1.1373, 14: 1.1016,
+    15: 1.0726, 16: 1.0495, 17: 1.0317, 18: 1.0185, 19: 1.0098,
+    20: 1.0032, 21: 1.0, 22: 1.0, 23: 1.0, 24: 1.0,
+    25: 1.0, 26: 1.0, 27: 1.0, 28: 1.0, 29: 1.0,
+    30: 1.0, 31: 1.0004, 32: 1.0015, 33: 1.0033, 34: 1.0058,
+    35: 1.0092, 36: 1.0133, 37: 1.0181, 38: 1.0239, 39: 1.0304,
+    40: 1.0378, 41: 1.0459, 42: 1.0542, 43: 1.0626, 44: 1.0711,
+    45: 1.0798, 46: 1.0886, 47: 1.0976, 48: 1.1067, 49: 1.1159,
+    50: 1.1254, 51: 1.1349, 52: 1.1447, 53: 1.1546, 54: 1.1647,
+    55: 1.175, 56: 1.1854, 57: 1.196, 58: 1.2069, 59: 1.2179,
+    60: 1.2291, 61: 1.2405, 62: 1.2522, 63: 1.2641, 64: 1.2762,
+    65: 1.2885, 66: 1.3011, 67: 1.3139, 68: 1.327, 69: 1.3403,
+    70: 1.3539, 71: 1.3684, 72: 1.3845, 73: 1.4023, 74: 1.4219,
+    75: 1.4434, 76: 1.4671, 77: 1.4932, 78: 1.5216, 79: 1.5528,
+    80: 1.587, 81: 1.6244, 82: 1.6656, 83: 1.7109, 84: 1.7606,
+    85: 1.8155, 86: 1.8765, 87: 1.9444, 88: 2.0198, 89: 2.1044,
+    90: 2.1997, 91: 2.3073, 92: 2.4301, 93: 2.5714, 94: 2.7345,
+    95: 2.9257, 96: 3.1526, 97: 3.4258, 98: 3.7594, 99: 4.1771,
+    100: 4.7148,
 }
 
-# Half Marathon Factors (Male)
+# 10 Mile Male - Alan Jones 2025
+WMA_10_MILE_MALE: Dict[int, float] = {
+    5: 2.0899, 6: 1.8255, 7: 1.634, 8: 1.4901, 9: 1.3793,
+    10: 1.2922, 11: 1.2231, 12: 1.168, 13: 1.1238, 14: 1.0891,
+    15: 1.0621, 16: 1.042, 17: 1.0279, 18: 1.0165, 19: 1.0067,
+    20: 1.0012, 21: 1.0, 22: 1.0, 23: 1.0, 24: 1.0,
+    25: 1.0, 26: 1.0, 27: 1.0, 28: 1.0, 29: 1.0,
+    30: 1.0, 31: 1.0001, 32: 1.0008, 33: 1.0023, 34: 1.0047,
+    35: 1.008, 36: 1.012, 37: 1.017, 38: 1.0229, 39: 1.0298,
+    40: 1.0377, 41: 1.046, 42: 1.0544, 43: 1.063, 44: 1.0718,
+    45: 1.0807, 46: 1.0898, 47: 1.0989, 48: 1.1083, 49: 1.1178,
+    50: 1.1275, 51: 1.1373, 52: 1.1473, 53: 1.1575, 54: 1.168,
+    55: 1.1784, 56: 1.1892, 57: 1.2002, 58: 1.2114, 59: 1.2228,
+    60: 1.2343, 61: 1.2461, 62: 1.2582, 63: 1.2705, 64: 1.2829,
+    65: 1.2957, 66: 1.3087, 67: 1.3221, 68: 1.3355, 69: 1.3493,
+    70: 1.3635, 71: 1.3785, 72: 1.3953, 73: 1.4138, 74: 1.4343,
+    75: 1.4565, 76: 1.481, 77: 1.5081, 78: 1.5378, 79: 1.5701,
+    80: 1.6059, 81: 1.6447, 82: 1.6878, 83: 1.7352, 84: 1.7873,
+    85: 1.845, 86: 1.9091, 87: 1.9806, 88: 2.0602, 89: 2.1496,
+    90: 2.2507, 91: 2.3652, 92: 2.4969, 93: 2.6483, 94: 2.8249,
+    95: 3.0331, 96: 3.2819, 97: 3.5829, 98: 3.9573, 99: 4.4287,
+    100: 5.048,
+}
+
+# Half Marathon Male - Alan Jones 2025
 WMA_HALF_MARATHON_MALE: Dict[int, float] = {
-    30: 1.000, 31: 1.004, 32: 1.008, 33: 1.012, 34: 1.016,
-    35: 1.020, 36: 1.025, 37: 1.030, 38: 1.035, 39: 1.040,
-    40: 1.045, 41: 1.051, 42: 1.057, 43: 1.063, 44: 1.069,
-    45: 1.075, 46: 1.082, 47: 1.089, 48: 1.096, 49: 1.103,
-    50: 1.110, 51: 1.118, 52: 1.126, 53: 1.134, 54: 1.142,
-    55: 1.150, 56: 1.159, 57: 1.168, 58: 1.177, 59: 1.186,
-    60: 1.195, 61: 1.205, 62: 1.215, 63: 1.225, 64: 1.235,
-    65: 1.245, 66: 1.256, 67: 1.267, 68: 1.278, 69: 1.289,
-    70: 1.300, 71: 1.312, 72: 1.324, 73: 1.336, 74: 1.348,
-    75: 1.360, 76: 1.373, 77: 1.386, 78: 1.399, 79: 1.412,
-    80: 1.425, 81: 1.439, 82: 1.453, 83: 1.467, 84: 1.481,
-    85: 1.495, 86: 1.510, 87: 1.525, 88: 1.540, 89: 1.555,
-    90: 1.570, 91: 1.586, 92: 1.602, 93: 1.618, 94: 1.634,
-    95: 1.650, 96: 1.667, 97: 1.684, 98: 1.701, 99: 1.718,
-    100: 1.735
+    5: 2.164, 6: 1.8643, 7: 1.6529, 8: 1.4975, 9: 1.3797,
+    10: 1.2883, 11: 1.2168, 12: 1.1606, 13: 1.1164, 14: 1.0821,
+    15: 1.0563, 16: 1.0378, 17: 1.0256, 18: 1.0152, 19: 1.005,
+    20: 1.0, 21: 1.0, 22: 1.0, 23: 1.0, 24: 1.0,
+    25: 1.0, 26: 1.0, 27: 1.0, 28: 1.0, 29: 1.0,
+    30: 1.0, 31: 1.0, 32: 1.0004, 33: 1.0018, 34: 1.004,
+    35: 1.0073, 36: 1.0113, 37: 1.0164, 38: 1.0224, 39: 1.0294,
+    40: 1.0376, 41: 1.046, 42: 1.0545, 43: 1.0633, 44: 1.0722,
+    45: 1.0812, 46: 1.0904, 47: 1.0996, 48: 1.1091, 49: 1.1188,
+    50: 1.1287, 51: 1.1387, 52: 1.1488, 53: 1.1592, 54: 1.1697,
+    55: 1.1805, 56: 1.1915, 57: 1.2025, 58: 1.2139, 59: 1.2255,
+    60: 1.2373, 61: 1.2494, 62: 1.2615, 63: 1.274, 64: 1.2868,
+    65: 1.2999, 66: 1.3132, 67: 1.3266, 68: 1.3405, 69: 1.3546,
+    70: 1.3691, 71: 1.3845, 72: 1.4015, 73: 1.4205, 74: 1.4413,
+    75: 1.4641, 76: 1.4892, 77: 1.5168, 78: 1.547, 79: 1.5803,
+    80: 1.6168, 81: 1.6567, 82: 1.7007, 83: 1.7492, 84: 1.8028,
+    85: 1.8622, 86: 1.9283, 87: 2.0016, 88: 2.0838, 89: 2.1763,
+    90: 2.281, 91: 2.3998, 92: 2.5368, 93: 2.6947, 94: 2.8794,
+    95: 3.0979, 96: 3.3602, 97: 3.6792, 98: 4.0783, 99: 4.5872,
+    100: 5.2604,
 }
 
-# Marathon Factors (Male)
+# Marathon Male - Alan Jones 2025
 WMA_MARATHON_MALE: Dict[int, float] = {
-    30: 1.000, 31: 1.005, 32: 1.010, 33: 1.015, 34: 1.020,
-    35: 1.025, 36: 1.031, 37: 1.037, 38: 1.043, 39: 1.049,
-    40: 1.055, 41: 1.062, 42: 1.069, 43: 1.076, 44: 1.083,
-    45: 1.090, 46: 1.098, 47: 1.106, 48: 1.114, 49: 1.122,
-    50: 1.130, 51: 1.139, 52: 1.148, 53: 1.157, 54: 1.166,
-    55: 1.175, 56: 1.185, 57: 1.195, 58: 1.205, 59: 1.215,
-    60: 1.225, 61: 1.236, 62: 1.247, 63: 1.258, 64: 1.269,
-    65: 1.280, 66: 1.292, 67: 1.304, 68: 1.316, 69: 1.328,
-    70: 1.340, 71: 1.353, 72: 1.366, 73: 1.379, 74: 1.392,
-    75: 1.405, 76: 1.419, 77: 1.433, 78: 1.447, 79: 1.461,
-    80: 1.475, 81: 1.490, 82: 1.505, 83: 1.520, 84: 1.535,
-    85: 1.550, 86: 1.566, 87: 1.582, 88: 1.598, 89: 1.614,
-    90: 1.630, 91: 1.647, 92: 1.664, 93: 1.681, 94: 1.698,
-    95: 1.715, 96: 1.733, 97: 1.751, 98: 1.769, 99: 1.787,
-    100: 1.805
-}
-
-# Female factors are calculated by multiplying male factors by female adjustment
-# WMA standard female adjustments for road running:
-FEMALE_ADJUSTMENT_5K = 1.08      # ~8% slower
-FEMALE_ADJUSTMENT_10K = 1.10     # ~10% slower
-FEMALE_ADJUSTMENT_HALF = 1.11    # ~11% slower
-FEMALE_ADJUSTMENT_MARATHON = 1.12  # ~12% slower
-
-# ============================================================================
-# CATEGORY-BASED FACTORS (for non-standard distances)
-# ============================================================================
-# These are interpolated from distance-specific factors for distances
-# that don't have specific WMA tables
-
-WMA_FACTORS_MALE: Dict[str, Dict[int, float]] = {
-    # Sprint distances (< 800m) - use 5K factors as approximation
-    "sprint": WMA_5K_MALE,
-    # Middle distances (800m - 5K) - use 5K factors
-    "middle": WMA_5K_MALE,
-    # Long distances (5K - Half Marathon) - interpolate between 10K and Half
-    "long": {
-        30: 1.000, 35: 1.017, 40: 1.040, 45: 1.067, 50: 1.100,
-        55: 1.137, 60: 1.180, 65: 1.227, 70: 1.280, 75: 1.337,
-        80: 1.400, 85: 1.467, 90: 1.540, 95: 1.617, 100: 1.700
-    },
-    # Ultra distances (Half Marathon+) - use Marathon factors
-    "ultra": WMA_MARATHON_MALE
+    5: 2.2655, 6: 1.9685, 7: 1.7538, 8: 1.5926, 9: 1.468,
+    10: 1.3697, 11: 1.2912, 12: 1.2277, 13: 1.1765, 14: 1.1349,
+    15: 1.1016, 16: 1.0753, 17: 1.0526, 18: 1.0331, 19: 1.0183,
+    20: 1.0081, 21: 1.002, 22: 1.0, 23: 1.0, 24: 1.0,
+    25: 1.0, 26: 1.0, 27: 1.0, 28: 1.0, 29: 1.0,
+    30: 1.0, 31: 1.0, 32: 1.0, 33: 1.0, 34: 1.0,
+    35: 1.0, 36: 1.0001, 37: 1.0021, 38: 1.0066, 39: 1.0137,
+    40: 1.0222, 41: 1.0308, 42: 1.0396, 43: 1.0485, 44: 1.0576,
+    45: 1.0669, 46: 1.0763, 47: 1.0859, 48: 1.0957, 49: 1.1056,
+    50: 1.1157, 51: 1.126, 52: 1.1365, 53: 1.1472, 54: 1.1581,
+    55: 1.1692, 56: 1.1805, 57: 1.192, 58: 1.2038, 59: 1.2158,
+    60: 1.228, 61: 1.2405, 62: 1.2533, 63: 1.2663, 64: 1.2796,
+    65: 1.2932, 66: 1.307, 67: 1.3212, 68: 1.3356, 69: 1.3504,
+    70: 1.3656, 71: 1.381, 72: 1.3976, 73: 1.4158, 74: 1.4362,
+    75: 1.4584, 76: 1.483, 77: 1.5099, 78: 1.5396, 79: 1.5721,
+    80: 1.608, 81: 1.6472, 82: 1.6906, 83: 1.7382, 84: 1.7912,
+    85: 1.8495, 86: 1.9146, 87: 1.9869, 88: 2.0683, 89: 2.1594,
+    90: 2.263, 91: 2.3804, 92: 2.5157, 93: 2.6717, 94: 2.8547,
+    95: 3.0703, 96: 3.33, 97: 3.6456, 98: 4.0404, 99: 4.5434,
+    100: 5.211,
 }
 
 # ============================================================================
-# WORLD RECORD PACES (30yo Open Standard) - 2023 Standards
+# FEMALE FACTORS - Alan Jones 2025 Official
 # ============================================================================
-# Based on current world records as of 2023, converted to minutes per mile
 
-WMA_WORLD_RECORD_PACES_30YO: Dict[str, Dict[str, float]] = {
+# 1 Mile Female - Alan Jones 2025
+WMA_1_MILE_FEMALE: Dict[int, float] = {
+    5: 1.3850, 6: 1.3310, 7: 1.2834, 8: 1.2412, 9: 1.2037,
+    10: 1.1703, 11: 1.1405, 12: 1.1140, 13: 1.0903, 14: 1.0692,
+    15: 1.0504, 16: 1.0331, 17: 1.0163, 18: 1.0040, 19: 1.0000,
+    20: 1.0000, 21: 1.0000, 22: 1.0000, 23: 1.0000, 24: 1.0000,
+    25: 1.0000, 26: 1.0000, 27: 1.0000, 28: 1.0000, 29: 1.0000,
+    30: 1.0000, 31: 1.0000, 32: 1.0000, 33: 1.0000, 34: 1.0000,
+    35: 1.0062, 36: 1.0090, 37: 1.0124, 38: 1.0163, 39: 1.0207,
+    40: 1.0259, 41: 1.0315, 42: 1.0378, 43: 1.0446, 44: 1.0522,
+    45: 1.0604, 46: 1.0694, 47: 1.0792, 48: 1.0897, 49: 1.1011,
+    50: 1.1130, 51: 1.1251, 52: 1.1375, 53: 1.1502, 54: 1.1632,
+    55: 1.1765, 56: 1.1901, 57: 1.2039, 58: 1.2182, 59: 1.2329,
+    60: 1.2478, 61: 1.2631, 62: 1.2788, 63: 1.2948, 64: 1.3113,
+    65: 1.3282, 66: 1.3455, 67: 1.3633, 68: 1.3816, 69: 1.4006,
+    70: 1.4198, 71: 1.4397, 72: 1.4601, 73: 1.4810, 74: 1.5026,
+    75: 1.5249, 76: 1.5477, 77: 1.5713, 78: 1.5957, 79: 1.6213,
+    80: 1.6496, 81: 1.6818, 82: 1.7179, 83: 1.7587, 84: 1.8044,
+    85: 1.8560, 86: 1.9139, 87: 1.9790, 88: 2.0530, 89: 2.1368,
+    90: 2.2321, 91: 2.3419, 92: 2.4685, 93: 2.6164, 94: 2.7902,
+    95: 2.9976, 96: 3.2478, 97: 3.5549, 98: 3.9417, 99: 4.4405,
+    100: 5.1073,
+}
+
+# 5K Female - Alan Jones 2025
+WMA_5K_FEMALE: Dict[int, float] = {
+    5: 1.4486, 6: 1.3847, 7: 1.3286, 8: 1.2794, 9: 1.2359,
+    10: 1.1975, 11: 1.1633, 12: 1.1329, 13: 1.1060, 14: 1.0819,
+    15: 1.0601, 16: 1.0393, 17: 1.0193, 18: 1.0047, 19: 1.0000,
+    20: 1.0000, 21: 1.0000, 22: 1.0000, 23: 1.0000, 24: 1.0000,
+    25: 1.0000, 26: 1.0000, 27: 1.0003, 28: 1.0010, 29: 1.0023,
+    30: 1.0041, 31: 1.0064, 32: 1.0093, 33: 1.0127, 34: 1.0167,
+    35: 1.0211, 36: 1.0263, 37: 1.0319, 38: 1.0382, 39: 1.0452,
+    40: 1.0527, 41: 1.0610, 42: 1.0700, 43: 1.0797, 44: 1.0903,
+    45: 1.1016, 46: 1.1136, 47: 1.1257, 48: 1.1382, 49: 1.1509,
+    50: 1.1639, 51: 1.1772, 52: 1.1908, 53: 1.2047, 54: 1.2189,
+    55: 1.2335, 56: 1.2486, 57: 1.2639, 58: 1.2796, 59: 1.2957,
+    60: 1.3122, 61: 1.3291, 62: 1.3464, 63: 1.3643, 64: 1.3826,
+    65: 1.4013, 66: 1.4209, 67: 1.4407, 68: 1.4611, 69: 1.4821,
+    70: 1.5038, 71: 1.5260, 72: 1.5489, 73: 1.5726, 74: 1.5969,
+    75: 1.6221, 76: 1.6483, 77: 1.6750, 78: 1.7042, 79: 1.7367,
+    80: 1.7730, 81: 1.8132, 82: 1.8580, 83: 1.9077, 84: 1.9631,
+    85: 2.0251, 86: 2.0942, 87: 2.1720, 88: 2.2594, 89: 2.3585,
+    90: 2.4716, 91: 2.6008, 92: 2.7503, 93: 2.9248, 94: 3.1299,
+    95: 3.3738, 96: 3.6697, 97: 4.0355, 98: 4.4984, 99: 5.0994,
+    100: 5.9102,
+}
+
+# 8K Female - Alan Jones 2025
+WMA_8K_FEMALE: Dict[int, float] = {
+    5: 1.4562, 6: 1.3897, 7: 1.3321, 8: 1.2819, 9: 1.2379,
+    10: 1.1992, 11: 1.1654, 12: 1.1355, 13: 1.1091, 14: 1.0860,
+    15: 1.0656, 16: 1.0468, 17: 1.0286, 18: 1.0139, 19: 1.0054,
+    20: 1.0014, 21: 1.0000, 22: 1.0000, 23: 1.0000, 24: 1.0000,
+    25: 1.0000, 26: 1.0000, 27: 1.0001, 28: 1.0005, 29: 1.0014,
+    30: 1.0027, 31: 1.0045, 32: 1.0068, 33: 1.0095, 34: 1.0129,
+    35: 1.0167, 36: 1.0209, 37: 1.0257, 38: 1.0311, 39: 1.0370,
+    40: 1.0435, 41: 1.0505, 42: 1.0582, 43: 1.0667, 44: 1.0756,
+    45: 1.0853, 46: 1.0958, 47: 1.1067, 48: 1.1182, 49: 1.1305,
+    50: 1.1431, 51: 1.1561, 52: 1.1695, 53: 1.1832, 54: 1.1970,
+    55: 1.2114, 56: 1.2261, 57: 1.2412, 58: 1.2564, 59: 1.2723,
+    60: 1.2885, 61: 1.3050, 62: 1.3221, 63: 1.3394, 64: 1.3574,
+    65: 1.3759, 66: 1.3947, 67: 1.4142, 68: 1.4343, 69: 1.4548,
+    70: 1.4760, 71: 1.4979, 72: 1.5205, 73: 1.5434, 74: 1.5672,
+    75: 1.5918, 76: 1.6181, 77: 1.6464, 78: 1.6776, 79: 1.7123,
+    80: 1.7510, 81: 1.7937, 82: 1.8413, 83: 1.8936, 84: 1.9524,
+    85: 2.0182, 86: 2.0916, 87: 2.1744, 88: 2.2676, 89: 2.3730,
+    90: 2.4944, 91: 2.6337, 92: 2.7956, 93: 2.9851, 94: 3.2103,
+    95: 3.4819, 96: 3.8124, 97: 4.2283, 98: 4.7619, 99: 5.4735,
+    100: 6.4683,
+}
+
+# 10K Female - Alan Jones 2025
+WMA_10K_FEMALE: Dict[int, float] = {
+    5: 1.4599, 6: 1.3922, 7: 1.3337, 8: 1.2830, 9: 1.2389,
+    10: 1.2000, 11: 1.1663, 12: 1.1366, 13: 1.1106, 14: 1.0880,
+    15: 1.0684, 16: 1.0504, 17: 1.0331, 18: 1.0183, 19: 1.0081,
+    20: 1.0020, 21: 1.0000, 22: 1.0000, 23: 1.0000, 24: 1.0000,
+    25: 1.0000, 26: 1.0000, 27: 1.0000, 28: 1.0002, 29: 1.0009,
+    30: 1.0020, 31: 1.0036, 32: 1.0056, 33: 1.0081, 34: 1.0110,
+    35: 1.0145, 36: 1.0184, 37: 1.0228, 38: 1.0277, 39: 1.0332,
+    40: 1.0392, 41: 1.0457, 42: 1.0527, 43: 1.0606, 44: 1.0688,
+    45: 1.0778, 46: 1.0875, 47: 1.0978, 48: 1.1090, 49: 1.1210,
+    50: 1.1335, 51: 1.1464, 52: 1.1597, 53: 1.1732, 54: 1.1869,
+    55: 1.2012, 56: 1.2157, 57: 1.2306, 58: 1.2458, 59: 1.2614,
+    60: 1.2775, 61: 1.2938, 62: 1.3108, 63: 1.3280, 64: 1.3457,
+    65: 1.3641, 66: 1.3827, 67: 1.4021, 68: 1.4219, 69: 1.4422,
+    70: 1.4633, 71: 1.4848, 72: 1.5072, 73: 1.5300, 74: 1.5535,
+    75: 1.5780, 76: 1.6041, 77: 1.6332, 78: 1.6653, 79: 1.7010,
+    80: 1.7406, 81: 1.7844, 82: 1.8332, 83: 1.8871, 84: 1.9474,
+    85: 2.0149, 86: 2.0903, 87: 2.1753, 88: 2.2712, 89: 2.3804,
+    90: 2.5056, 91: 2.6497, 92: 2.8177, 93: 3.0148, 94: 3.2499,
+    95: 3.5348, 96: 3.8850, 97: 4.3271, 98: 4.8996, 99: 5.6721,
+    100: 6.7705,
+}
+
+# 10 Mile Female - Alan Jones 2025
+WMA_10_MILE_FEMALE: Dict[int, float] = {
+    5: 1.5726, 6: 1.4857, 7: 1.4118, 8: 1.3486, 9: 1.2940,
+    10: 1.2466, 11: 1.2055, 12: 1.1697, 13: 1.1384, 14: 1.1112,
+    15: 1.0877, 16: 1.0661, 17: 1.0455, 18: 1.0276, 19: 1.0146,
+    20: 1.0058, 21: 1.0013, 22: 1.0000, 23: 1.0000, 24: 1.0000,
+    25: 1.0000, 26: 1.0000, 27: 1.0000, 28: 1.0002, 29: 1.0009,
+    30: 1.0021, 31: 1.0037, 32: 1.0058, 33: 1.0084, 34: 1.0114,
+    35: 1.0150, 36: 1.0191, 37: 1.0236, 38: 1.0288, 39: 1.0344,
+    40: 1.0407, 41: 1.0476, 42: 1.0550, 43: 1.0630, 44: 1.0717,
+    45: 1.0811, 46: 1.0912, 47: 1.1019, 48: 1.1137, 49: 1.1261,
+    50: 1.1392, 51: 1.1526, 52: 1.1663, 53: 1.1804, 54: 1.1947,
+    55: 1.2095, 56: 1.2246, 57: 1.2401, 58: 1.2560, 59: 1.2723,
+    60: 1.2890, 61: 1.3062, 62: 1.3238, 63: 1.3419, 64: 1.3605,
+    65: 1.3797, 66: 1.3994, 67: 1.4198, 68: 1.4405, 69: 1.4620,
+    70: 1.4841, 71: 1.5069, 72: 1.5305, 73: 1.5550, 74: 1.5798,
+    75: 1.6059, 76: 1.6335, 77: 1.6639, 78: 1.6984, 79: 1.7361,
+    80: 1.7784, 81: 1.8255, 82: 1.8776, 83: 1.9357, 84: 2.0004,
+    85: 2.0738, 86: 2.1556, 87: 2.2487, 88: 2.3546, 89: 2.4752,
+    90: 2.6144, 91: 2.7762, 92: 2.9665, 93: 3.1918, 94: 3.4650,
+    95: 3.8008, 96: 4.2212, 97: 4.7642, 98: 5.4915, 99: 6.5147,
+    100: 8.0515,
+}
+
+# Half Marathon Female - Alan Jones 2025
+WMA_HALF_MARATHON_FEMALE: Dict[int, float] = {
+    5: 1.6447, 6: 1.5446, 7: 1.4605, 8: 1.3889, 9: 1.3275,
+    10: 1.2747, 11: 1.229, 12: 1.1893, 13: 1.1549, 14: 1.1249,
+    15: 1.0989, 16: 1.0753, 17: 1.0526, 18: 1.0331, 19: 1.0183,
+    20: 1.0081, 21: 1.002, 22: 1.0, 23: 1.0, 24: 1.0,
+    25: 1.0, 26: 1.0, 27: 1.0, 28: 1.0002, 29: 1.0009,
+    30: 1.0021, 31: 1.0038, 32: 1.0059, 33: 1.0086, 34: 1.0117,
+    35: 1.0153, 36: 1.0195, 37: 1.0242, 38: 1.0294, 39: 1.0352,
+    40: 1.0416, 41: 1.0485, 42: 1.0562, 43: 1.0644, 44: 1.0733,
+    45: 1.083, 46: 1.0933, 47: 1.1044, 48: 1.1163, 49: 1.1292,
+    50: 1.1425, 51: 1.1562, 52: 1.1701, 53: 1.1846, 54: 1.1992,
+    55: 1.2143, 56: 1.2297, 57: 1.2456, 58: 1.2618, 59: 1.2786,
+    60: 1.2957, 61: 1.3134, 62: 1.3314, 63: 1.3501, 64: 1.3691,
+    65: 1.3889, 66: 1.409, 67: 1.43, 68: 1.4514, 69: 1.4736,
+    70: 1.4963, 71: 1.52, 72: 1.5442, 73: 1.5694, 74: 1.5952,
+    75: 1.6221, 76: 1.6504, 77: 1.6821, 78: 1.7176, 79: 1.7569,
+    80: 1.8005, 81: 1.8495, 82: 1.9037, 83: 1.9643, 84: 2.0321,
+    85: 2.1088, 86: 2.1949, 87: 2.2925, 88: 2.4044, 89: 2.5323,
+    90: 2.6802, 91: 2.8539, 92: 3.0581, 93: 3.3025, 94: 3.5997,
+    95: 3.9698, 96: 4.4385, 97: 5.0531, 98: 5.8962, 99: 7.1124,
+    100: 9.0253,
+}
+
+# Marathon Female - Alan Jones 2025
+WMA_MARATHON_FEMALE: Dict[int, float] = {
+    5: 1.8501, 6: 1.7024, 7: 1.5845, 8: 1.4885, 9: 1.4098,
+    10: 1.3444, 11: 1.2902, 12: 1.2447, 13: 1.207, 14: 1.1756,
+    15: 1.1501, 16: 1.1275, 17: 1.1058, 18: 1.085, 19: 1.0648,
+    20: 1.0468, 21: 1.0321, 22: 1.0203, 23: 1.0113, 24: 1.005,
+    25: 1.0012, 26: 1.0, 27: 1.0, 28: 1.0002, 29: 1.0008,
+    30: 1.0017, 31: 1.003, 32: 1.0047, 33: 1.0068, 34: 1.0094,
+    35: 1.0122, 36: 1.0155, 37: 1.0193, 38: 1.0234, 39: 1.0281,
+    40: 1.0331, 41: 1.0385, 42: 1.0445, 43: 1.051, 44: 1.0579,
+    45: 1.0654, 46: 1.0734, 47: 1.082, 48: 1.0911, 49: 1.101,
+    50: 1.1114, 51: 1.1225, 52: 1.1343, 53: 1.1468, 54: 1.1602,
+    55: 1.1744, 56: 1.1895, 57: 1.2053, 58: 1.2216, 59: 1.2382,
+    60: 1.2555, 61: 1.2732, 62: 1.2913, 63: 1.3101, 64: 1.3293,
+    65: 1.3492, 66: 1.3697, 67: 1.3906, 68: 1.4124, 69: 1.4347,
+    70: 1.4579, 71: 1.4819, 72: 1.5065, 73: 1.5321, 74: 1.5593,
+    75: 1.5898, 76: 1.6236, 77: 1.6609, 78: 1.7024, 79: 1.7483,
+    80: 1.7995, 81: 1.8567, 82: 1.9201, 83: 1.9916, 84: 2.0717,
+    85: 2.1626, 86: 2.266, 87: 2.3838, 88: 2.5202, 89: 2.6781,
+    90: 2.8645, 91: 3.0864, 92: 3.3535, 93: 3.6832, 94: 4.0967,
+    95: 4.6339, 96: 5.3562, 97: 6.3735, 98: 7.9239, 99: 10.5485,
+    100: 16.0,
+}
+
+# ============================================================================
+# OPEN CLASS STANDARDS (seconds) - Alan Jones 2025
+# ============================================================================
+
+WMA_OPEN_STANDARDS_SECONDS: Dict[str, Dict[float, float]] = {
     "male": {
-        "sprint": 3.43,    # 1500m world record pace (~3:26/mile)
-        "middle": 3.58,    # 5K world record pace (~3:35/mile) - Joshua Cheptegei 12:35.36
-        "long": 4.02,      # 10K world record pace (~4:00/mile) - Joshua Cheptegei 26:11.00
-        "ultra": 4.38      # Half Marathon world record pace (~4:22/mile) - Jacob Kiplimo 57:31
+        1609.34: 227.0,    # 1 Mile = 3:47
+        5000: 769.0,       # 5K = 12:49
+        8000: 1255.0,      # 8K = 20:55
+        10000: 1584.0,     # 10K = 26:24
+        16093.4: 2595.0,   # 10 Mile = 43:15
+        21097.5: 3451.0,   # Half Marathon = 57:31
+        42195: 7235.0,     # Marathon = 2:00:35
     },
     "female": {
-        "sprint": 3.70,    # 1500m world record pace (~3:50/mile)
-        "middle": 3.87,    # 5K world record pace (~3:52/mile) - Letesenbet Gidey 14:06.62
-        "long": 4.42,      # 10K world record pace (~4:25/mile) - Letesenbet Gidey 29:01.03
-        "ultra": 4.86      # Half Marathon world record pace (~4:51/mile) - Letesenbet Gidey 1:02:52
+        1609.34: 253.0,    # 1 Mile = 4:13
+        5000: 834.0,       # 5K = 13:54
+        8000: 1365.0,      # 8K = 22:45
+        10000: 1726.0,     # 10K = 28:46
+        16093.4: 2832.0,   # 10 Mile = 47:12
+        21097.5: 3772.0,   # Half Marathon = 1:02:52
+        42195: 7796.0,     # Marathon = 2:09:56
     }
 }
 
-# National (US) Record Paces - typically 2-5% slower than world records
-NATIONAL_WORLD_RECORD_PACES_30YO: Dict[str, Dict[str, float]] = {
-    "male": {
-        "sprint": 3.50,    # US 1500m record pace
-        "middle": 3.65,    # US 5K record pace (~3:42/mile)
-        "long": 4.10,      # US 10K record pace (~4:06/mile)
-        "ultra": 4.50      # US Half Marathon record pace (~4:30/mile)
-    },
-    "female": {
-        "sprint": 3.78,    # US 1500m record pace
-        "middle": 3.95,    # US 5K record pace (~3:57/mile)
-        "long": 4.52,      # US 10K record pace (~4:31/mile)
-        "ultra": 4.98      # US Half Marathon record pace (~4:59/mile)
-    }
-}
 
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
-def _get_distance_category_for_wma(distance_meters: float) -> str:
-    """Helper to categorize distance for WMA factor lookup."""
-    if distance_meters < 800:
-        return "sprint"
-    elif distance_meters < 5000:
-        return "middle"
-    elif distance_meters < 21097.5:  # Half marathon
-        return "long"
-    else:
-        return "ultra"
-
-
-def _interpolate_factor(age: int, age_factors: Dict[int, float]) -> float:
+def _get_age_group_start(age: int) -> int:
     """
-    Interpolate age factor for exact age from WMA table.
+    Get the start of the 5-year age group for WMA age-grading.
     
-    WMA tables provide factors for integer ages. For fractional ages or
-    ages between table entries, we interpolate linearly.
+    Ages under 35: return actual age (no grouping)
+    Ages 35+: round down to nearest 5-year group start
+    
+    Examples:
+        _get_age_group_start(25) -> 25
+        _get_age_group_start(36) -> 35
+        _get_age_group_start(57) -> 55
     """
+    if age < 35:
+        return age
+    return (age // 5) * 5
+
+
+def _get_factor_for_age(age: int, age_factors: Dict[int, float]) -> float:
+    """
+    Get the age factor for a specific age from the per-year factor table.
+    
+    Args:
+        age: Athlete's age (5-100)
+        age_factors: Dictionary mapping age -> time multiplier
+    
+    Returns:
+        Time multiplier for the given age
+    """
+    age = max(5, min(100, age))
+    
+    if age in age_factors:
+        return age_factors[age]
+    
+    # Fallback: interpolate if exact age not found
     age_points = sorted(age_factors.keys())
     
     if age <= age_points[0]:
         return age_factors[age_points[0]]
     elif age >= age_points[-1]:
         return age_factors[age_points[-1]]
-    else:
-        # Find the two age points that bracket this age
-        for i in range(len(age_points) - 1):
-            if age_points[i] <= age <= age_points[i + 1]:
-                age1, age2 = age_points[i], age_points[i + 1]
-                factor1 = age_factors[age1]
-                factor2 = age_factors[age2]
-                # Linear interpolation
-                return factor1 + (factor2 - factor1) * (age - age1) / (age2 - age1)
-        
-        # Fallback (should not reach here)
-        return age_factors[age_points[-1]]
+    
+    for i in range(len(age_points) - 1):
+        if age_points[i] <= age < age_points[i + 1]:
+            age1, age2 = age_points[i], age_points[i + 1]
+            factor1 = age_factors[age1]
+            factor2 = age_factors[age2]
+            return factor1 + (factor2 - factor1) * (age - age1) / (age2 - age1)
+    
+    return age_factors[age_points[-1]]
 
 
 def get_wma_age_factor(age: int, sex: Optional[str], distance_meters: float) -> Optional[float]:
     """
-    Get WMA 2023 age-grading factor for a given age, sex, and distance.
-    
-    Uses distance-specific factors where available (5K, 10K, Half, Marathon),
-    falls back to category-based factors for other distances.
+    Get Alan Jones 2025 age-grading factor for a given age, sex, and distance.
     
     Args:
-        age: Athlete's age (must be >= 30 for WMA factors)
+        age: Athlete's age (5-100)
         sex: 'M' or 'F' (or None, defaults to male)
         distance_meters: Distance in meters
         
     Returns:
-        Age factor (multiplier) or None if calculation not possible
+        Age factor (time multiplier) or None if calculation not possible
     """
     if age is None or age < 5:
         return None
     
-    # For ages < 30, use factor of 1.0 (open standard)
-    if age < 30:
-        return 1.0
+    age = min(age, 100)
+    is_female = sex and sex.upper() == 'F'
     
-    # Cap at 100 for WMA tables
-    if age > 100:
-        age = 100
-    
-    sex_key = sex.upper() if sex and sex.upper() in ['M', 'F'] else 'M'
-    is_female = sex_key == 'F'
-    
-    # Use distance-specific factors where available
-    distance_km = distance_meters / 1000.0
-    
-    if abs(distance_km - 5.0) < 0.5:  # 5K (4.5-5.5km)
-        age_factors = WMA_5K_MALE
-        female_adj = FEMALE_ADJUSTMENT_5K
-    elif abs(distance_km - 10.0) < 0.5:  # 10K (9.5-10.5km)
-        age_factors = WMA_10K_MALE
-        female_adj = FEMALE_ADJUSTMENT_10K
-    elif abs(distance_meters - 21097.5) < 1000:  # Half Marathon (20-22km)
-        age_factors = WMA_HALF_MARATHON_MALE
-        female_adj = FEMALE_ADJUSTMENT_HALF
-    elif abs(distance_meters - 42195) < 2000:  # Marathon (40-44km)
-        age_factors = WMA_MARATHON_MALE
-        female_adj = FEMALE_ADJUSTMENT_MARATHON
+    # Select appropriate factor table based on distance and sex
+    if abs(distance_meters - 1609.34) < 200:  # 1 Mile
+        factors = WMA_1_MILE_FEMALE if is_female else WMA_1_MILE_MALE
+    elif abs(distance_meters - 5000) < 500:   # 5K
+        factors = WMA_5K_FEMALE if is_female else WMA_5K_MALE
+    elif abs(distance_meters - 8000) < 500:   # 8K
+        factors = WMA_8K_FEMALE if is_female else WMA_8K_MALE
+    elif abs(distance_meters - 10000) < 500:  # 10K
+        factors = WMA_10K_FEMALE if is_female else WMA_10K_MALE
+    elif abs(distance_meters - 16093.4) < 1000:  # 10 Mile
+        factors = WMA_10_MILE_FEMALE if is_female else WMA_10_MILE_MALE
+    elif abs(distance_meters - 21097.5) < 1000:  # Half Marathon
+        factors = WMA_HALF_MARATHON_FEMALE if is_female else WMA_HALF_MARATHON_MALE
+    elif abs(distance_meters - 42195) < 2000:    # Marathon
+        factors = WMA_MARATHON_FEMALE if is_female else WMA_MARATHON_MALE
     else:
-        # Use category-based factors
-        category = _get_distance_category_for_wma(distance_meters)
-        age_factors = WMA_FACTORS_MALE.get(category, WMA_FACTORS_MALE["long"])
-        # Female adjustment based on category
-        if category == "sprint" or category == "middle":
-            female_adj = FEMALE_ADJUSTMENT_5K
-        elif category == "long":
-            female_adj = FEMALE_ADJUSTMENT_10K
-        else:  # ultra
-            female_adj = FEMALE_ADJUSTMENT_MARATHON
+        # Default to 5K for unknown distances
+        factors = WMA_5K_FEMALE if is_female else WMA_5K_MALE
     
-    # Get factor for exact age (with interpolation)
-    factor = _interpolate_factor(age, age_factors)
-    
-    # Apply female adjustment if needed
-    if is_female:
-        factor *= female_adj
-    
-    return factor
+    return _get_factor_for_age(age, factors)
 
 
-def get_wma_world_record_pace(sex: Optional[str], distance_meters: float) -> Optional[float]:
+def get_wma_open_standard_seconds(sex: Optional[str], distance_meters: float) -> Optional[float]:
     """
-    Get the approximate 30-year-old world record pace for a given sex and distance (International/WMA).
-    
-    Based on current world records as of 2023.
+    Get the WMA open-class standard time in seconds for a given sex and distance.
     
     Args:
         sex: 'M' or 'F'
         distance_meters: Distance in meters
         
     Returns:
-        World record pace in minutes per mile, or None if not available
+        Open-class standard time in seconds, or None if not available
     """
-    # Convert M/F to male/female for dictionary lookup
-    if sex and sex.upper() == 'F':
-        sex_key = 'female'
-    else:
-        sex_key = 'male'
+    sex_key = 'female' if sex and sex.upper() == 'F' else 'male'
+    standards = WMA_OPEN_STANDARDS_SECONDS.get(sex_key, {})
     
-    distance_category = _get_distance_category_for_wma(distance_meters)
+    # Find closest matching distance
+    for dist, time_secs in standards.items():
+        if abs(distance_meters - dist) < 500:
+            return time_secs
     
-    paces_by_sex = WMA_WORLD_RECORD_PACES_30YO.get(sex_key)
-    if not paces_by_sex:
-        return None
+    # Fallback: interpolate based on distance ratio
+    if distance_meters < 5000:
+        return standards.get(5000, 769.0) * (distance_meters / 5000)
+    elif distance_meters > 42195:
+        return standards.get(42195, 7235.0) * (distance_meters / 42195)
     
-    return paces_by_sex.get(distance_category)
-
-
-def get_national_age_factor(age: int, sex: Optional[str], distance_meters: float) -> Optional[float]:
-    """
-    Get National age-grading factor for a given age, sex, and distance.
-    
-    For now, uses same factors as WMA (national factors are typically very similar).
-    In the future, this could use country-specific factors if available.
-    
-    Args:
-        age: Athlete's age
-        sex: 'M' or 'F'
-        distance_meters: Distance in meters
-        
-    Returns:
-        Age factor (multiplier) or None if calculation not possible
-    """
-    # National factors are typically very similar to WMA factors
-    # Use WMA factors as baseline
-    return get_wma_age_factor(age, sex, distance_meters)
-
-
-def get_national_world_record_pace(sex: Optional[str], distance_meters: float) -> Optional[float]:
-    """
-    Get the approximate 30-year-old national record pace for a given sex and distance.
-    
-    Based on US national records (typically 2-5% slower than world records).
-    
-    Args:
-        sex: 'M' or 'F'
-        distance_meters: Distance in meters
-        
-    Returns:
-        National record pace in minutes per mile, or None if not available
-    """
-    # Convert M/F to male/female for dictionary lookup
-    if sex and sex.upper() == 'F':
-        sex_key = 'female'
-    else:
-        sex_key = 'male'
-    
-    distance_category = _get_distance_category_for_wma(distance_meters)
-    
-    paces_by_sex = NATIONAL_WORLD_RECORD_PACES_30YO.get(sex_key)
-    if not paces_by_sex:
-        return None
-    
-    return paces_by_sex.get(distance_category)
+    return None
 
 
 # Backward compatibility aliases
 def get_world_record_pace(sex: Optional[str], distance_meters: float) -> Optional[float]:
-    """Alias for get_wma_world_record_pace for backward compatibility."""
-    return get_wma_world_record_pace(sex, distance_meters)
+    """Get approximate world record pace in min/mile."""
+    standard = get_wma_open_standard_seconds(sex, distance_meters)
+    if standard:
+        distance_miles = distance_meters / 1609.34
+        return (standard / 60) / distance_miles
+    return None
+
+
+def get_wma_world_record_pace(sex: Optional[str], distance_meters: float) -> Optional[float]:
+    """Alias for get_world_record_pace for backward compatibility."""
+    return get_world_record_pace(sex, distance_meters)
+
+
+def get_national_age_factor(age: int, sex: Optional[str], distance_meters: float) -> Optional[float]:
+    """Alias for get_wma_age_factor."""
+    return get_wma_age_factor(age, sex, distance_meters)
+
+
+def get_national_world_record_pace(sex: Optional[str], distance_meters: float) -> Optional[float]:
+    """Alias for get_world_record_pace for national record comparison."""
+    return get_world_record_pace(sex, distance_meters)
 
 
 def get_distance_category(distance_meters: float) -> str:
-    """Get distance category for WMA factor lookup."""
-    return _get_distance_category_for_wma(distance_meters)
+    """Get distance category for display purposes."""
+    if distance_meters < 3000:
+        return "sprint"
+    elif distance_meters < 8000:
+        return "middle"
+    elif distance_meters < 21097:
+        return "long"
+    else:
+        return "ultra"
