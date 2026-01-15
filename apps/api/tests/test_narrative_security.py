@@ -19,12 +19,14 @@ class TestIDORProtection:
     
     def test_activity_endpoint_filters_by_user_id(self):
         """Activity endpoint must filter by current_user.id."""
-        # Verified by code review:
-        # activity = db.query(Activity).filter(
-        #     Activity.id == activity_id,
-        #     Activity.athlete_id == current_user.id  <-- IDOR protection
-        # ).first()
-        assert True
+        from routers.activities import get_activity
+        import inspect
+        
+        source = inspect.getsource(get_activity)
+        
+        # Must filter by athlete_id == current_user.id for IDOR protection
+        assert "athlete_id" in source
+        assert "current_user" in source
     
     def test_narrative_translator_uses_authenticated_user(self):
         """Narrative translator uses athlete_id from authenticated user."""
@@ -67,29 +69,45 @@ class TestAuthenticationRequired:
     
     def test_home_endpoint_requires_auth(self):
         """Home endpoint requires authentication."""
-        # Verified by code review:
-        # current_user: Athlete = Depends(get_current_user)
-        # 
-        # get_current_user raises 401 if not authenticated
-        assert True
+        from routers.home import get_home_data
+        import inspect
+        
+        sig = inspect.signature(get_home_data)
+        params = list(sig.parameters.keys())
+        
+        # Must have current_user parameter (authentication dependency)
+        assert "current_user" in params
     
     def test_activity_endpoint_requires_auth(self):
         """Activity detail endpoint requires authentication."""
-        # Verified by code review:
-        # current_user: Athlete = Depends(get_current_user)
-        assert True
+        from routers.activities import get_activity
+        import inspect
+        
+        sig = inspect.signature(get_activity)
+        params = list(sig.parameters.keys())
+        
+        assert "current_user" in params
     
     def test_plan_preview_requires_auth(self):
         """Constraint-aware plan preview requires authentication."""
-        # Verified by code review:
-        # athlete: Athlete = Depends(get_current_athlete)
-        assert True
+        from routers.plan_generation import preview_constraint_aware_plan
+        import inspect
+        
+        sig = inspect.signature(preview_constraint_aware_plan)
+        params = list(sig.parameters.keys())
+        
+        # Uses "athlete" parameter for authentication
+        assert "athlete" in params
     
     def test_diagnostic_endpoint_requires_auth(self):
         """Diagnostic report requires authentication."""
-        # Verified by code review:
-        # current_user: Athlete = Depends(get_current_user)
-        assert True
+        from routers.analytics import get_diagnostic_report_endpoint
+        import inspect
+        
+        sig = inspect.signature(get_diagnostic_report_endpoint)
+        params = list(sig.parameters.keys())
+        
+        assert "current_user" in params
 
 
 class TestInputValidation:
@@ -199,10 +217,14 @@ class TestFeatureFlagSecurity:
     
     def test_narrative_feature_requires_flag(self):
         """Narrative generation should check feature flag."""
-        # Verified by code review:
-        # if is_feature_enabled("narrative.translation_enabled", str(current_user.id), db):
-        #     # generate narrative
-        assert True
+        from routers.home import get_home_data
+        import inspect
+        
+        source = inspect.getsource(get_home_data)
+        
+        # Must check feature flag before generating narrative
+        assert "is_feature_enabled" in source
+        assert "narrative.translation_enabled" in source
     
     def test_flag_check_includes_athlete_id(self):
         """Feature flag check should include athlete ID for rollout."""

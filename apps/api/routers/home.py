@@ -191,7 +191,7 @@ def get_correlation_context(
         return None, None
         
     except Exception as e:
-        logger.debug(f"Correlation context lookup failed: {e}")
+        logger.warning(f"Correlation context lookup failed: {type(e).__name__}: {e}")
         return None, None
 
 
@@ -240,7 +240,7 @@ def get_tsb_context(athlete_id: str, db: Session) -> Optional[tuple[str, str, st
         return None, None, None
         
     except Exception as e:
-        logger.debug(f"TSB context lookup failed: {e}")
+        logger.warning(f"TSB context lookup failed: {type(e).__name__}: {e}")
         return None, None, None
 
 
