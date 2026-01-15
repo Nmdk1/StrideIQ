@@ -91,7 +91,7 @@ def get_trend_attribution_endpoint(
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
     metric: str = Query("efficiency", description="Metric to explain: efficiency, load, speed, pacing"),
-    days: int = Query(28, ge=7, le=90, description="Number of days to analyze"),
+    days: int = Query(28, ge=7, le=365, description="Number of days to analyze"),
 ):
     """
     Get attribution analysis for a trend - "Why This Trend?"
