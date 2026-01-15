@@ -22,7 +22,7 @@ const STATUS_ORDER: Array<'unavailable' | 'available' | 'preferred'> = [
 ];
 
 const STATUS_COLORS = {
-  unavailable: 'bg-gray-800 border-gray-700',
+  unavailable: 'bg-slate-800 border-slate-700/50',
   available: 'bg-blue-900/30 border-blue-700/50',
   preferred: 'bg-green-900/30 border-green-700/50',
 };
@@ -54,7 +54,7 @@ function AvailabilityCell({ slot, onToggle }: AvailabilityCellProps) {
       title={`Click to change to ${STATUS_LABELS[nextStatus]}`}
     >
       <div className="font-medium mb-1">{STATUS_LABELS[slot.status]}</div>
-      <div className="text-xs text-gray-400 capitalize">{slot.time_block}</div>
+      <div className="text-xs text-slate-400 capitalize">{slot.time_block}</div>
     </button>
   );
 }
@@ -72,7 +72,7 @@ export function AvailabilityGrid() {
   }
 
   if (!gridData) {
-    return <p className="text-gray-400">No availability data</p>;
+    return <p className="text-slate-400">No availability data</p>;
   }
 
   const handleToggle = (slot: TrainingAvailability) => {
@@ -91,27 +91,27 @@ export function AvailabilityGrid() {
   return (
     <div className="space-y-6">
       {/* Summary */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-4">
         <h3 className="text-lg font-semibold mb-2">Summary</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
-            <p className="text-gray-400">Total Slots</p>
+            <p className="text-slate-400">Total Slots</p>
             <p className="text-xl font-semibold">{gridData.summary.total_slots}</p>
           </div>
           <div>
-            <p className="text-gray-400">Available</p>
+            <p className="text-slate-400">Available</p>
             <p className="text-xl font-semibold text-blue-400">
               {gridData.summary.available_slots}
             </p>
           </div>
           <div>
-            <p className="text-gray-400">Preferred</p>
+            <p className="text-slate-400">Preferred</p>
             <p className="text-xl font-semibold text-green-400">
               {gridData.summary.preferred_slots}
             </p>
           </div>
           <div>
-            <p className="text-gray-400">Total Available</p>
+            <p className="text-slate-400">Total Available</p>
             <p className="text-xl font-semibold">
               {gridData.summary.total_available_slots} (
               {gridData.summary.total_available_percentage.toFixed(1)}%)
@@ -121,7 +121,7 @@ export function AvailabilityGrid() {
       </div>
 
       {/* Grid */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+      <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
         <h3 className="text-lg font-semibold mb-4">Availability Grid</h3>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -139,7 +139,7 @@ export function AvailabilityGrid() {
               {DAY_NAMES.map((dayName, dayIndex) => {
                 const daySlots = gridData.grid.filter((s) => s.day_of_week === dayIndex);
                 return (
-                  <tr key={dayIndex} className="border-t border-gray-700">
+                  <tr key={dayIndex} className="border-t border-slate-700/50">
                     <td className="p-2 font-medium">{dayName}</td>
                     {TIME_BLOCKS.map((block) => {
                       const slot = daySlots.find((s) => s.time_block === block);

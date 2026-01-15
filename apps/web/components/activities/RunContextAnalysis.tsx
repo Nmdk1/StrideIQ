@@ -120,11 +120,11 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
 
   if (isLoading) {
     return (
-      <div className="bg-gray-800/50 rounded-lg p-6">
+      <div className="bg-slate-800/50 rounded-lg p-6">
         <div className="animate-pulse space-y-4">
-          <div className="h-6 bg-gray-700 rounded w-1/3"></div>
-          <div className="h-4 bg-gray-700 rounded w-full"></div>
-          <div className="h-4 bg-gray-700 rounded w-2/3"></div>
+          <div className="h-6 bg-slate-700 rounded w-1/3"></div>
+          <div className="h-4 bg-slate-700 rounded w-full"></div>
+          <div className="h-4 bg-slate-700 rounded w-2/3"></div>
         </div>
       </div>
     );
@@ -132,7 +132,7 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
 
   if (error || !analysis) {
     return (
-      <div className="bg-gray-800/50 rounded-lg p-6 text-gray-400">
+      <div className="bg-slate-800/50 rounded-lg p-6 text-slate-400">
         Analysis unavailable for this run.
       </div>
     );
@@ -141,7 +141,7 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
   return (
     <div className="space-y-6">
       {/* Insights Header */}
-      <div className="bg-gradient-to-r from-gray-800 to-gray-900 rounded-lg p-6 border border-gray-700">
+      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-lg p-6 border border-slate-700">
         <h3 className="text-xl font-bold text-white mb-4">Run Analysis</h3>
         
         {/* Workout Classification */}
@@ -149,7 +149,7 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
           <span className="px-3 py-1 bg-orange-600/20 text-orange-400 rounded-full text-sm font-medium capitalize">
             {analysis.context.workout_type.replace('_', ' ')}
           </span>
-          <span className="text-gray-500 text-sm">
+          <span className="text-slate-500 text-sm">
             {Math.round(analysis.context.confidence * 100)}% confidence
           </span>
         </div>
@@ -158,7 +158,7 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
         {analysis.insights.length > 0 && (
           <div className="space-y-2">
             {analysis.insights.map((insight, i) => (
-              <p key={i} className="text-gray-300 text-sm flex items-start gap-2">
+              <p key={i} className="text-slate-300 text-sm flex items-start gap-2">
                 <span className="text-orange-400">→</span>
                 {insight}
               </p>
@@ -179,7 +179,7 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
                 </svg>
                 <span className="font-medium">Outlier</span>
               </div>
-              <p className="text-gray-300 text-sm">{analysis.outlier_reason}</p>
+              <p className="text-slate-300 text-sm">{analysis.outlier_reason}</p>
             </div>
           )}
           {analysis.is_red_flag && (
@@ -191,7 +191,7 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
                 </svg>
                 <span className="font-medium">Attention</span>
               </div>
-              <p className="text-gray-300 text-sm">{analysis.red_flag_reason}</p>
+              <p className="text-slate-300 text-sm">{analysis.red_flag_reason}</p>
             </div>
           )}
         </div>
@@ -200,32 +200,32 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
       {/* Context Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Comparison to Similar */}
-        <div className="bg-gray-800/50 rounded-lg p-4">
-          <h4 className="text-gray-400 text-sm mb-2">vs. Similar Runs</h4>
+        <div className="bg-slate-800/50 rounded-lg p-4">
+          <h4 className="text-slate-400 text-sm mb-2">vs. Similar Runs</h4>
           {analysis.context.percentile_vs_similar !== null ? (
             <>
               <p className="text-2xl font-bold text-white">
                 {Math.round(analysis.context.percentile_vs_similar)}th
-                <span className="text-base font-normal text-gray-400 ml-1">percentile</span>
+                <span className="text-base font-normal text-slate-400 ml-1">percentile</span>
               </p>
-              <p className="text-gray-500 text-sm mt-1">
+              <p className="text-slate-500 text-sm mt-1">
                 Out of {analysis.context.similar_workouts_count} similar {analysis.context.workout_type.replace('_', ' ')} runs
               </p>
             </>
           ) : (
-            <p className="text-gray-500">Not enough similar runs yet</p>
+            <p className="text-slate-500">Not enough similar runs yet</p>
           )}
         </div>
 
         {/* This Week Context */}
         {analysis.context.context_this_week && (
-          <div className="bg-gray-800/50 rounded-lg p-4">
-            <h4 className="text-gray-400 text-sm mb-2">This Week</h4>
+          <div className="bg-slate-800/50 rounded-lg p-4">
+            <h4 className="text-slate-400 text-sm mb-2">This Week</h4>
             <p className="text-2xl font-bold text-white">
               {analysis.context.context_this_week.runs_so_far}
-              <span className="text-base font-normal text-gray-400 ml-1">runs</span>
+              <span className="text-base font-normal text-slate-400 ml-1">runs</span>
             </p>
-            <p className="text-gray-500 text-sm mt-1">
+            <p className="text-slate-500 text-sm mt-1">
               {formatDistance(analysis.context.context_this_week.volume_km * 1000, 1)} total
             </p>
           </div>
@@ -233,13 +233,13 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
 
         {/* This Month Context */}
         {analysis.context.context_this_month && (
-          <div className="bg-gray-800/50 rounded-lg p-4">
-            <h4 className="text-gray-400 text-sm mb-2">This Month</h4>
+          <div className="bg-slate-800/50 rounded-lg p-4">
+            <h4 className="text-slate-400 text-sm mb-2">This Month</h4>
             <p className="text-2xl font-bold text-white">
               {analysis.context.context_this_month.runs_so_far}
-              <span className="text-base font-normal text-gray-400 ml-1">runs</span>
+              <span className="text-base font-normal text-slate-400 ml-1">runs</span>
             </p>
-            <p className="text-gray-500 text-sm mt-1">
+            <p className="text-slate-500 text-sm mt-1">
               {formatDistance(analysis.context.context_this_month.volume_km * 1000, 1)} total
             </p>
           </div>
@@ -265,7 +265,7 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
 
       {/* Root Cause Analysis */}
       {analysis.root_cause_hypotheses.length > 0 && (
-        <div className="bg-gray-800/50 rounded-lg p-6">
+        <div className="bg-slate-800/50 rounded-lg p-6">
           <h4 className="text-white font-medium mb-4">Possible Factors</h4>
           <div className="space-y-3">
             {analysis.root_cause_hypotheses.map((hypothesis, i) => (
@@ -274,12 +274,12 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
                   className={`w-2 h-2 rounded-full mt-2 ${
                     Math.abs(hypothesis.correlation_strength) > 0.5 
                       ? 'bg-orange-400' 
-                      : 'bg-gray-500'
+                      : 'bg-slate-500'
                   }`}
                 />
                 <div>
-                  <p className="text-gray-300">{hypothesis.explanation}</p>
-                  <p className="text-gray-500 text-sm mt-1">
+                  <p className="text-slate-300">{hypothesis.explanation}</p>
+                  <p className="text-slate-500 text-sm mt-1">
                     {Math.round(hypothesis.confidence * 100)}% confidence
                   </p>
                 </div>
@@ -290,8 +290,8 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
       )}
 
       {/* Input Snapshot */}
-      <details className="bg-gray-800/30 rounded-lg">
-        <summary className="p-4 cursor-pointer text-gray-400 hover:text-white transition-colors">
+      <details className="bg-slate-800/30 rounded-lg">
+        <summary className="p-4 cursor-pointer text-slate-400 hover:text-white transition-colors">
           Pre-Run State Details
         </summary>
         <div className="p-4 pt-0 grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -360,11 +360,11 @@ function TrendCard({
   goodDirection: 'improving' | 'stable';
 }) {
   const getDirectionColor = () => {
-    if (trend.direction === 'insufficient_data') return 'text-gray-500';
-    if (trend.direction === 'stable') return 'text-gray-400';
+    if (trend.direction === 'insufficient_data') return 'text-slate-500';
+    if (trend.direction === 'stable') return 'text-slate-400';
     if (trend.direction === goodDirection) return 'text-green-400';
     if (trend.direction === 'declining') return 'text-orange-400';
-    return 'text-gray-400';
+    return 'text-slate-400';
   };
 
   const getArrow = () => {
@@ -375,8 +375,8 @@ function TrendCard({
   };
 
   return (
-    <div className="bg-gray-800/50 rounded-lg p-4">
-      <h4 className="text-gray-400 text-sm mb-2">{title}</h4>
+    <div className="bg-slate-800/50 rounded-lg p-4">
+      <h4 className="text-slate-400 text-sm mb-2">{title}</h4>
       <div className="flex items-baseline gap-2">
         <span className={`text-2xl font-bold ${getDirectionColor()}`}>
           {getArrow()} {trend.direction.replace('_', ' ')}
@@ -388,12 +388,12 @@ function TrendCard({
         )}
       </div>
       {trend.magnitude !== null && trend.direction !== 'insufficient_data' && (
-        <p className="text-gray-500 text-sm mt-1">
+        <p className="text-slate-500 text-sm mt-1">
           {Math.abs(trend.magnitude).toFixed(1)}% over {trend.period_days} days
         </p>
       )}
       {trend.direction === 'insufficient_data' && (
-        <p className="text-gray-500 text-sm mt-1">
+        <p className="text-slate-500 text-sm mt-1">
           Need more data points ({trend.data_points} available)
         </p>
       )}
@@ -418,8 +418,8 @@ function InputItem({
   if (value === null || value === undefined) {
     return (
       <div>
-        <p className="text-gray-500 text-xs mb-1">{label}</p>
-        <p className="text-gray-600">—</p>
+        <p className="text-slate-500 text-xs mb-1">{label}</p>
+        <p className="text-slate-600">—</p>
       </div>
     );
   }
@@ -442,10 +442,10 @@ function InputItem({
 
   return (
     <div>
-      <p className="text-gray-500 text-xs mb-1">{label}</p>
-      <p className="text-gray-200">
+      <p className="text-slate-500 text-xs mb-1">{label}</p>
+      <p className="text-slate-200">
         {typeof value === 'number' ? value.toFixed(value % 1 === 0 ? 0 : 1) : value}
-        <span className="text-gray-500 text-sm">{unit}</span>
+        <span className="text-slate-500 text-sm">{unit}</span>
         {getComparisonIndicator()}
       </p>
     </div>

@@ -9,7 +9,7 @@
 export function InfoIcon({ className = '' }: { className?: string }) {
   return (
     <svg
-      className={`w-4 h-4 text-gray-400 ${className}`}
+      className={`w-4 h-4 text-slate-400 ${className}`}
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"

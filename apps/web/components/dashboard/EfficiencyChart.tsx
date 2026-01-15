@@ -52,27 +52,27 @@ export function EfficiencyChart({
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-lg">
+        <div className="bg-slate-800 border border-slate-700/50 rounded-lg p-3 shadow-lg">
           <p className="text-sm font-semibold mb-2">{data.date}</p>
           <div className="space-y-1 text-xs">
             <p>
-              <span className="text-gray-400">Efficiency:</span>{' '}
+              <span className="text-slate-400">Efficiency:</span>{' '}
               <span className="text-white font-medium">{data.efficiency.toFixed(2)}</span>
             </p>
             {data.rolling30d && (
               <p>
-                <span className="text-gray-400">30d Avg:</span>{' '}
+                <span className="text-slate-400">30d Avg:</span>{' '}
                 <span className="text-white">{data.rolling30d.toFixed(2)}</span>
               </p>
             )}
             {data.rolling60d && (
               <p>
-                <span className="text-gray-400">60d Avg:</span>{' '}
+                <span className="text-slate-400">60d Avg:</span>{' '}
                 <span className="text-white">{data.rolling60d.toFixed(2)}</span>
               </p>
             )}
             <p>
-              <span className="text-gray-400">Pace:</span>{' '}
+              <span className="text-slate-400">Pace:</span>{' '}
               <span className="text-white">
                 {Math.floor(data.pace)}:{Math.round((data.pace % 1) * 60)
                   .toString()
@@ -81,7 +81,7 @@ export function EfficiencyChart({
               </span>
             </p>
             <p>
-              <span className="text-gray-400">HR:</span>{' '}
+              <span className="text-slate-400">HR:</span>{' '}
               <span className="text-white">{data.hr} bpm</span>
             </p>
           </div>
@@ -92,9 +92,9 @@ export function EfficiencyChart({
   };
 
   return (
-    <div className={`bg-gray-800 rounded-lg border border-gray-700 p-6 ${className}`}>
+    <div className={`bg-slate-800 rounded-lg border border-slate-700/50 p-6 ${className}`}>
       <h3 className="text-lg font-semibold mb-4">Efficiency Trend</h3>
-      <p className="text-sm text-gray-400 mb-4">
+      <p className="text-sm text-slate-400 mb-4">
         Lower efficiency factor = more efficient (faster pace at same HR, or lower HR at same pace).
         Rolling averages show meaningful fitness trends over training cycles (30-120 days).
       </p>

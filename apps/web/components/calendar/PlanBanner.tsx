@@ -76,14 +76,14 @@ export function PlanBanner({ plan, currentWeek, currentPhase }: PlanBannerProps)
   return (
     <>
       {/* Clean, minimal banner - no badge soup */}
-      <div className="bg-gray-800/80 border border-gray-700 rounded-lg p-4 mb-6">
+      <div className="bg-slate-800/80 border border-slate-700/50 rounded-lg p-4 mb-6">
         <div className="flex items-center justify-between">
           {/* Left: Plan info - clean hierarchy */}
           <div className="flex items-center gap-6">
             {/* Primary info */}
             <div>
               <h2 className="text-base font-semibold text-white">{displayName}</h2>
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-slate-400">
                 {currentWeek && `Week ${currentWeek} of ${plan.total_weeks}`}
                 {currentWeek && currentPhase && ' · '}
                 {currentPhase && formatPhase(currentPhase)}
@@ -99,7 +99,7 @@ export function PlanBanner({ plan, currentWeek, currentPhase }: PlanBannerProps)
           <div className="flex items-center gap-2">
             <Link
               href={`/plans/${plan.id}`}
-              className="px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              className="px-3 py-1.5 text-sm text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors"
             >
               View Plan
             </Link>
@@ -108,7 +108,7 @@ export function PlanBanner({ plan, currentWeek, currentPhase }: PlanBannerProps)
             <div className="relative">
               <button
                 onClick={() => setShowMenu(!showMenu)}
-                className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
                 aria-label="Plan options"
               >
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -119,22 +119,22 @@ export function PlanBanner({ plan, currentWeek, currentPhase }: PlanBannerProps)
               {showMenu && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20 py-1">
+                  <div className="absolute right-0 top-full mt-1 w-48 bg-slate-800 border border-slate-700/50 rounded-lg shadow-xl z-20 py-1">
                     <button
                       onClick={() => { setShowMenu(false); setShowManagement(true); }}
-                      className="w-full px-4 py-2 text-sm text-left text-gray-300 hover:bg-gray-700 hover:text-white"
+                      className="w-full px-4 py-2 text-sm text-left text-slate-300 hover:bg-slate-700 hover:text-white"
                     >
                       Manage Plan
                     </button>
                     <button
                       onClick={() => { setShowMenu(false); setShowManagement(true); }}
-                      className="w-full px-4 py-2 text-sm text-left text-amber-400 hover:bg-gray-700"
+                      className="w-full px-4 py-2 text-sm text-left text-amber-400 hover:bg-slate-700"
                     >
                       Pause Plan
                     </button>
                     <button
                       onClick={() => { setShowMenu(false); setShowManagement(true); }}
-                      className="w-full px-4 py-2 text-sm text-left text-red-400 hover:bg-gray-700"
+                      className="w-full px-4 py-2 text-sm text-left text-red-400 hover:bg-slate-700"
                     >
                       Withdraw
                     </button>

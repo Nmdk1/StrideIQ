@@ -98,23 +98,23 @@ export default function OnboardingPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
         <div className="max-w-2xl mx-auto px-4">
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-2">Welcome</h1>
-            <p className="text-gray-400">Let&apos;s get you set up. Everything is optional except basics.</p>
+            <p className="text-slate-400">Let&apos;s get you set up. Everything is optional except basics.</p>
           </div>
 
           {/* Progress Indicator */}
           <div className="mb-8">
-            <div className="flex items-center justify-between text-sm text-gray-400">
+            <div className="flex items-center justify-between text-sm text-slate-400">
               <span className={currentStage !== 'initial' ? 'text-white' : ''}>Basics</span>
               <span className={['basic_profile', 'goals', 'connect_strava', 'nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Profile</span>
               <span className={['goals', 'connect_strava', 'nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Goals</span>
               <span className={['connect_strava', 'nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Connect</span>
               <span className={['nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Optional</span>
             </div>
-            <div className="h-1 bg-gray-800 rounded-full mt-2">
+            <div className="h-1 bg-slate-800 rounded-full mt-2">
               <div 
                 className="h-1 bg-blue-600 rounded-full transition-all"
                 style={{ width: `${(['initial', 'basic_profile', 'goals', 'connect_strava', 'nutrition_setup', 'work_setup', 'complete'].indexOf(currentStage) + 1) * 16.67}%` }}
@@ -185,9 +185,9 @@ function InitialStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: 
   const [displayName, setDisplayName] = useState(data.display_name || '');
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
       <h2 className="text-xl font-semibold mb-4">Let&apos;s Start</h2>
-      <p className="text-gray-400 mb-6">What should we call you?</p>
+      <p className="text-slate-400 mb-6">What should we call you?</p>
       
       <div className="space-y-4">
         <div>
@@ -196,7 +196,7 @@ function InitialStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: 
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+            className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
             placeholder="Your name"
           />
         </div>
@@ -210,7 +210,7 @@ function InitialStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: 
           </button>
           <button
             onClick={onSkip}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 font-medium"
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
           >
             Skip
           </button>
@@ -240,9 +240,9 @@ function BasicProfileStage({
   });
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
       <h2 className="text-xl font-semibold mb-4">Basic Profile</h2>
-      <p className="text-gray-400 mb-6">Help us calculate age-graded performance. (Optional)</p>
+      <p className="text-slate-400 mb-6">Help us calculate age-graded performance. (Optional)</p>
       
       <div className="space-y-4">
         <div>
@@ -251,7 +251,7 @@ function BasicProfileStage({
             type="date"
             value={formData.birthdate}
             onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
-            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+            className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
           />
         </div>
 
@@ -260,7 +260,7 @@ function BasicProfileStage({
           <select
             value={formData.sex}
             onChange={(e) => setFormData({ ...formData, sex: e.target.value })}
-            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+            className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
           >
             <option value="">Select...</option>
             <option value="M">Male</option>
@@ -275,24 +275,24 @@ function BasicProfileStage({
             step="0.1"
             value={formData.height_cm}
             onChange={(e) => setFormData({ ...formData, height_cm: parseFloat(e.target.value) || undefined })}
-            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+            className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
             placeholder="e.g., 175.0"
           />
-          <p className="text-xs text-gray-500 mt-1">Required for BMI calculation</p>
+          <p className="text-xs text-slate-500 mt-1">Required for BMI calculation</p>
         </div>
 
         <div className="flex gap-2">
           <button
             onClick={() => onNext(formData)}
             disabled={saving}
-            className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white font-medium"
+            className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-white font-medium"
           >
             {saving ? <LoadingSpinner size="sm" /> : 'Next'}
           </button>
           <button
             onClick={onSkip}
             disabled={saving}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-gray-300 font-medium"
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-slate-300 font-medium"
           >
             Skip
           </button>
@@ -323,9 +323,9 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
       <h2 className="text-xl font-semibold mb-4">Goals</h2>
-      <p className="text-gray-400 mb-6">What are you working toward? (Optional)</p>
+      <p className="text-slate-400 mb-6">What are you working toward? (Optional)</p>
       
       <div className="space-y-3 mb-6">
         {goalOptions.map((goal) => (
@@ -334,9 +334,9 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
               type="checkbox"
               checked={goals.includes(goal)}
               onChange={() => toggleGoal(goal)}
-              className="w-4 h-4 text-blue-600 bg-gray-900 border-gray-700 rounded"
+              className="w-4 h-4 text-blue-600 bg-[#0a0a0f] border-slate-700/50 rounded"
             />
-            <span className="ml-3 text-gray-300">{goal}</span>
+            <span className="ml-3 text-slate-300">{goal}</span>
           </label>
         ))}
       </div>
@@ -350,7 +350,7 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
         </button>
         <button
           onClick={onSkip}
-          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 font-medium"
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
         >
           Skip
         </button>
@@ -361,17 +361,17 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
 
 function NutritionSetupStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d: OnboardingData) => void; onSkip: () => void }) {
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
       <h2 className="text-xl font-semibold mb-4">Nutrition</h2>
-      <p className="text-gray-400 mb-6">
+      <p className="text-slate-400 mb-6">
         Optional. Helps spot patterns when you log.
       </p>
       
       <div className="space-y-4 mb-6">
-        <p className="text-sm text-gray-300">
+        <p className="text-sm text-slate-300">
           Pre-run fuel, post-run recovery, daily intake — log what you want, when convenient.
         </p>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-slate-500">
           You can set this up anytime from the Nutrition page.
         </p>
       </div>
@@ -385,7 +385,7 @@ function NutritionSetupStage({ data, onNext, onSkip }: { data: OnboardingData; o
         </button>
         <button
           onClick={onSkip}
-          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 font-medium"
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
         >
           Skip
         </button>
@@ -401,21 +401,21 @@ function ConnectStravaStage({ onNext, onSkip }: { onNext: () => void; onSkip: ()
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
       <h2 className="text-xl font-semibold mb-4">Connect Strava</h2>
-      <p className="text-gray-400 mb-6">
+      <p className="text-slate-400 mb-6">
         Import your activities automatically.
       </p>
       
       <div className="space-y-4 mb-6">
-        <div className="bg-gray-900 rounded p-4">
+        <div className="bg-[#0a0a0f] rounded p-4">
           <div className="flex items-center gap-3 mb-3">
             <svg className="w-8 h-8 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
               <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/>
             </svg>
             <div>
               <p className="font-medium text-white">Strava</p>
-              <p className="text-sm text-gray-400">Sync activities, analyze efficiency</p>
+              <p className="text-sm text-slate-400">Sync activities, analyze efficiency</p>
             </div>
           </div>
           <button
@@ -425,7 +425,7 @@ function ConnectStravaStage({ onNext, onSkip }: { onNext: () => void; onSkip: ()
             Connect Strava
           </button>
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-slate-500">
           You can connect anytime from Settings.
         </p>
       </div>
@@ -433,13 +433,13 @@ function ConnectStravaStage({ onNext, onSkip }: { onNext: () => void; onSkip: ()
       <div className="flex gap-2">
         <button
           onClick={onNext}
-          className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white font-medium"
+          className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-white font-medium"
         >
           Continue Without Connecting
         </button>
         <button
           onClick={onSkip}
-          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 font-medium"
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
         >
           Skip
         </button>
@@ -450,17 +450,17 @@ function ConnectStravaStage({ onNext, onSkip }: { onNext: () => void; onSkip: ()
 
 function WorkSetupStage({ data, onComplete, onSkip }: { data: OnboardingData; onComplete: () => void; onSkip: () => void }) {
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
       <h2 className="text-xl font-semibold mb-4">Work Patterns</h2>
-      <p className="text-gray-400 mb-6">
+      <p className="text-slate-400 mb-6">
         Optional. Helps identify work-performance correlations.
       </p>
       
       <div className="space-y-4 mb-6">
-        <p className="text-sm text-gray-300">
+        <p className="text-sm text-slate-300">
           Log work hours and stress levels to see how they affect your running.
         </p>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-slate-500">
           Set up anytime from Settings.
         </p>
       </div>
@@ -474,7 +474,7 @@ function WorkSetupStage({ data, onComplete, onSkip }: { data: OnboardingData; on
         </button>
         <button
           onClick={onSkip}
-          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 font-medium"
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
         >
           Skip to Dashboard
         </button>

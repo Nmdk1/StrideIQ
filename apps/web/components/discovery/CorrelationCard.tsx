@@ -54,9 +54,9 @@ function getStrengthColor(strength: string): string {
     case 'moderate':
       return 'text-yellow-400';
     case 'weak':
-      return 'text-gray-400';
+      return 'text-slate-400';
     default:
-      return 'text-gray-400';
+      return 'text-slate-400';
   }
 }
 
@@ -66,14 +66,14 @@ export function CorrelationCard({ correlation, className = '' }: CorrelationCard
   
   return (
     <div
-      className={`bg-gray-800 rounded-lg border border-gray-700 p-6 ${className}`}
+      className={`bg-slate-800 rounded-lg border border-slate-700/50 p-6 ${className}`}
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
           <h3 className="text-lg font-semibold mb-1">
             {formatInputName(correlation.input_name, correlation.time_lag_days)}
           </h3>
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-slate-400">
             {interpretation}
           </p>
         </div>
@@ -88,8 +88,8 @@ export function CorrelationCard({ correlation, className = '' }: CorrelationCard
         </div>
       </div>
       
-      <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-700">
-        <div className="flex items-center gap-4 text-xs text-gray-500">
+      <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700/50">
+        <div className="flex items-center gap-4 text-xs text-slate-500">
           <span>
             p = {correlation.p_value.toFixed(3)}
           </span>

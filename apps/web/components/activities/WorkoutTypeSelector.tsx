@@ -37,7 +37,7 @@ interface WorkoutTypeSelectorProps {
 
 // Effort category colors - used for visual grouping only (NOT "zones")
 const EFFORT_COLORS: Record<string, string> = {
-  recovery: 'bg-gray-600',
+  recovery: 'bg-slate-600',
   endurance: 'bg-green-600',
   stamina: 'bg-orange-600',
   speed: 'bg-red-600',
@@ -118,7 +118,7 @@ export function WorkoutTypeSelector({
 
   const options = optionsData?.options || [];
   const currentOption = options.find(o => o.value === selectedType);
-  const effortColor = currentOption ? EFFORT_COLORS[currentOption.zone] : 'bg-gray-700';
+  const effortColor = currentOption ? EFFORT_COLORS[currentOption.zone] : 'bg-slate-700';
 
   const handleSave = () => {
     if (selectedType) {
@@ -127,7 +127,7 @@ export function WorkoutTypeSelector({
   };
 
   if (isLoading) {
-    return <div className="text-gray-500 text-sm">Loading...</div>;
+    return <div className="text-slate-500 text-sm">Loading...</div>;
   }
 
   // Compact display mode
@@ -147,9 +147,9 @@ export function WorkoutTypeSelector({
   // Full display mode
   if (!isEditing) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-medium text-gray-400">Workout Type</h3>
+          <h3 className="text-sm font-medium text-slate-400">Workout Type</h3>
           <button
             onClick={() => setIsEditing(true)}
             className="text-xs text-orange-400 hover:text-orange-300"
@@ -163,7 +163,7 @@ export function WorkoutTypeSelector({
             <span className={`px-2 py-1 rounded text-sm font-medium ${effortColor} text-white`}>
               {currentOption.label}
             </span>
-            <span className="text-sm text-gray-400">
+            <span className="text-sm text-slate-400">
               {currentOption.description}
             </span>
             {currentType?.is_user_override && (
@@ -171,7 +171,7 @@ export function WorkoutTypeSelector({
             )}
           </div>
         ) : (
-          <div className="text-gray-400">
+          <div className="text-slate-400">
             <span className="text-sm">Not classified</span>
             <button
               onClick={() => setIsEditing(true)}
@@ -187,7 +187,7 @@ export function WorkoutTypeSelector({
 
   // Editing mode
   return (
-    <div className="bg-gray-800 rounded-lg border border-orange-600/50 p-4">
+    <div className="bg-slate-800 rounded-lg border border-orange-600/50 p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium text-white">Select Workout Type</h3>
         <button
@@ -195,7 +195,7 @@ export function WorkoutTypeSelector({
             setIsEditing(false);
             setSelectedType(currentType?.workout_type || null);
           }}
-          className="text-xs text-gray-400 hover:text-white"
+          className="text-xs text-slate-400 hover:text-white"
         >
           Cancel
         </button>
@@ -220,11 +220,11 @@ export function WorkoutTypeSelector({
                     className={`text-left p-2 rounded text-sm transition-colors ${
                       selectedType === option.value
                         ? 'bg-orange-600/30 border border-orange-500 text-white'
-                        : 'bg-gray-700/50 border border-transparent text-gray-300 hover:bg-gray-700'
+                        : 'bg-slate-700/50 border border-transparent text-slate-300 hover:bg-slate-700'
                     }`}
                   >
                     <div className="font-medium">{option.label}</div>
-                    <div className="text-xs text-gray-400 truncate">{option.description}</div>
+                    <div className="text-xs text-slate-400 truncate">{option.description}</div>
                   </button>
                 ))}
               </div>
@@ -237,7 +237,7 @@ export function WorkoutTypeSelector({
         <button
           onClick={handleSave}
           disabled={!selectedType || updateMutation.isPending}
-          className="flex-1 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+          className="flex-1 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
         >
           {updateMutation.isPending ? 'Saving...' : 'Save'}
         </button>

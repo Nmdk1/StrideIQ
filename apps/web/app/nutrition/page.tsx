@@ -86,25 +86,25 @@ export default function NutritionPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
         <div className="max-w-4xl mx-auto px-4">
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-2">Nutrition</h1>
-            <p className="text-gray-400">
+            <p className="text-slate-400">
               Log nutrition to spot patterns. Completely optional. Log when convenient.
             </p>
           </div>
 
           {/* Quick Presets */}
           {!showForm && (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 mb-6">
+            <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6 mb-6">
               <h2 className="text-lg font-semibold mb-4">Quick Add</h2>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                 {NUTRITION_PRESETS.map((preset) => (
                   <button
                     key={preset.name}
                     onClick={() => handlePreset(preset)}
-                    className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm text-gray-300 transition-colors"
+                    className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm text-slate-300 transition-colors"
                   >
                     {preset.name}
                   </button>
@@ -121,7 +121,7 @@ export default function NutritionPage() {
 
           {/* Entry Form */}
           {showForm && (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 mb-6">
+            <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6 mb-6">
               <h2 className="text-lg font-semibold mb-4">Log Nutrition</h2>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -130,7 +130,7 @@ export default function NutritionPage() {
                     <select
                       value={formData.entry_type}
                       onChange={(e) => setFormData({ ...formData, entry_type: e.target.value as any })}
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                     >
                       <option value="daily">Daily</option>
                       <option value="pre_activity">Pre-Run</option>
@@ -144,7 +144,7 @@ export default function NutritionPage() {
                       type="date"
                       value={formData.date}
                       onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                     />
                   </div>
                 </div>
@@ -156,7 +156,7 @@ export default function NutritionPage() {
                       type="number"
                       value={formData.calories || ''}
                       onChange={(e) => setFormData({ ...formData, calories: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                       placeholder="Optional"
                     />
                   </div>
@@ -167,7 +167,7 @@ export default function NutritionPage() {
                       step="0.1"
                       value={formData.protein_g || ''}
                       onChange={(e) => setFormData({ ...formData, protein_g: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                       placeholder="Optional"
                     />
                   </div>
@@ -178,7 +178,7 @@ export default function NutritionPage() {
                       step="0.1"
                       value={formData.carbs_g || ''}
                       onChange={(e) => setFormData({ ...formData, carbs_g: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                       placeholder="Optional"
                     />
                   </div>
@@ -189,7 +189,7 @@ export default function NutritionPage() {
                       step="0.1"
                       value={formData.fat_g || ''}
                       onChange={(e) => setFormData({ ...formData, fat_g: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                       placeholder="Optional"
                     />
                   </div>
@@ -201,7 +201,7 @@ export default function NutritionPage() {
                     value={formData.notes || ''}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     rows={2}
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                     placeholder="e.g., Pre-run fuel"
                   />
                 </div>
@@ -212,7 +212,7 @@ export default function NutritionPage() {
                   <button
                     type="submit"
                     disabled={createEntry.isPending}
-                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white font-medium"
+                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-white font-medium"
                   >
                     {createEntry.isPending ? <LoadingSpinner size="sm" /> : 'Log Entry'}
                   </button>
@@ -232,7 +232,7 @@ export default function NutritionPage() {
                         notes: '',
                       });
                     }}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 font-medium"
+                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
                   >
                     Cancel
                   </button>
@@ -243,23 +243,23 @@ export default function NutritionPage() {
 
           {/* Today&apos;s Entries */}
           {entries && entries.length > 0 && (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
               <h2 className="text-lg font-semibold mb-4">Today&apos;s Entries</h2>
               <div className="space-y-3">
                 {entries.map((entry) => (
-                  <div key={entry.id} className="bg-gray-900 rounded p-4">
+                  <div key={entry.id} className="bg-[#0a0a0f] rounded p-4">
                     <div className="flex justify-between items-start mb-2">
                       <span className="text-sm font-medium capitalize">{entry.entry_type.replace('_', ' ')}</span>
-                      {entry.calories && <span className="text-sm text-gray-400">{entry.calories} cal</span>}
+                      {entry.calories && <span className="text-sm text-slate-400">{entry.calories} cal</span>}
                     </div>
                     {(entry.protein_g || entry.carbs_g || entry.fat_g) && (
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs text-slate-400">
                         {entry.protein_g && `P: ${entry.protein_g}g `}
                         {entry.carbs_g && `C: ${entry.carbs_g}g `}
                         {entry.fat_g && `F: ${entry.fat_g}g`}
                       </div>
                     )}
-                    {entry.notes && <p className="text-sm text-gray-300 mt-2">{entry.notes}</p>}
+                    {entry.notes && <p className="text-sm text-slate-300 mt-2">{entry.notes}</p>}
                   </div>
                 ))}
               </div>
@@ -267,8 +267,8 @@ export default function NutritionPage() {
           )}
 
           {entries && entries.length === 0 && !showForm && (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 text-center">
-              <p className="text-gray-400">No entries today. Log when convenient.</p>
+            <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6 text-center">
+              <p className="text-slate-400">No entries today. Log when convenient.</p>
             </div>
           )}
         </div>

@@ -1,6 +1,7 @@
 /**
  * Settings Page
  * 
+ * Enhanced with shadcn/ui + Lucide.
  * User settings including integrations, preferences, and data management.
  * Tone: Sparse, direct, empowering.
  */
@@ -14,6 +15,10 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { API_CONFIG } from '@/lib/api/config';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Settings, Link2, Watch, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight } from 'lucide-react';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -67,145 +72,198 @@ export default function SettingsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
         <div className="max-w-4xl mx-auto px-4">
-          <h1 className="text-3xl font-bold mb-8">Settings</h1>
+          <div className="flex items-center gap-3 mb-8">
+            <div className="p-2.5 rounded-xl bg-orange-500/20 ring-1 ring-orange-500/30">
+              <Settings className="w-6 h-6 text-orange-500" />
+            </div>
+            <h1 className="text-3xl font-bold">Settings</h1>
+          </div>
 
-          <div className="space-y-8">
+          <div className="space-y-6">
             {/* Integrations */}
-            <section>
-              <h2 className="text-xl font-semibold mb-4">Integrations</h2>
-              <StravaConnection />
-              
-              {/* Future integrations placeholder */}
-              <div className="mt-4 bg-gray-800 rounded-lg border border-gray-700 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gray-700 rounded flex items-center justify-center text-gray-500">G</div>
-                    <div>
-                      <p className="font-medium text-gray-400">Garmin Connect</p>
-                      <p className="text-sm text-gray-500">Coming soon</p>
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Link2 className="w-5 h-5 text-orange-500" />
+                  Integrations
+                </CardTitle>
+                <CardDescription>Connect your fitness platforms</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <StravaConnection />
+                
+                {/* Future integrations placeholder */}
+                <Card className="bg-slate-700/50 border-slate-600">
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-slate-600/50 rounded-lg">
+                          <Watch className="w-5 h-5 text-slate-400" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-300">Garmin Connect</p>
+                          <p className="text-sm text-slate-500">Direct sync from your Garmin device</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="text-slate-400 border-slate-500">Coming Soon</Badge>
                     </div>
-                  </div>
-                  <span className="text-xs text-gray-500 bg-gray-700 px-2 py-1 rounded">Pending</span>
-                </div>
-              </div>
-            </section>
+                  </CardContent>
+                </Card>
+              </CardContent>
+            </Card>
 
             {/* Preferences */}
-            <section>
-              <h2 className="text-xl font-semibold mb-4">Preferences</h2>
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Gauge className="w-5 h-5 text-blue-500" />
+                  Preferences
+                </CardTitle>
+                <CardDescription>Customize your experience</CardDescription>
+              </CardHeader>
+              <CardContent>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium">Distance Units</p>
-                    <p className="text-sm text-gray-400">Choose kilometers or miles for displaying distances</p>
+                    <p className="text-sm text-slate-400">Choose kilometers or miles for displaying distances</p>
                   </div>
-                  <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1">
-                    <button
+                  <div className="flex items-center gap-1 bg-slate-900 rounded-lg p-1 border border-slate-700">
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => setUnits('metric')}
-                      className={`px-4 py-2 text-sm rounded-md transition-colors ${
-                        units === 'metric'
-                          ? 'bg-orange-600 text-white'
-                          : 'text-gray-400 hover:text-white'
-                      }`}
+                      className={units === 'metric' ? 'bg-orange-600 text-white hover:bg-orange-600' : 'text-slate-400 hover:text-white'}
                     >
                       Kilometers (km)
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => setUnits('imperial')}
-                      className={`px-4 py-2 text-sm rounded-md transition-colors ${
-                        units === 'imperial'
-                          ? 'bg-orange-600 text-white'
-                          : 'text-gray-400 hover:text-white'
-                      }`}
+                      className={units === 'imperial' ? 'bg-orange-600 text-white hover:bg-orange-600' : 'text-slate-400 hover:text-white'}
                     >
                       Miles (mi)
-                    </button>
+                    </Button>
                   </div>
                 </div>
-              </div>
-            </section>
+              </CardContent>
+            </Card>
 
             {/* Subscription */}
-            <section>
-              <h2 className="text-xl font-semibold mb-4">Subscription</h2>
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-purple-500" />
+                  Subscription
+                </CardTitle>
+                <CardDescription>Manage your plan</CardDescription>
+              </CardHeader>
+              <CardContent>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium capitalize">{user?.subscription_tier || 'Free'} Plan</p>
-                    <p className="text-sm text-gray-400">Current subscription tier</p>
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <p className="font-medium flex items-center gap-2">
+                        {user?.subscription_tier || 'Free'} Plan
+                        <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Active</Badge>
+                      </p>
+                      <p className="text-sm text-slate-400">Current subscription tier</p>
+                    </div>
                   </div>
-                  <button
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm font-medium transition-colors"
-                  >
-                    Upgrade
-                  </button>
+                  <Button className="bg-orange-600 hover:bg-orange-500">
+                    Upgrade <ArrowUpRight className="w-4 h-4 ml-1" />
+                  </Button>
                 </div>
-              </div>
-            </section>
+              </CardContent>
+            </Card>
 
             {/* Data Management */}
-            <section>
-              <h2 className="text-xl font-semibold mb-4">Data Management</h2>
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-4">
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Download className="w-5 h-5 text-cyan-500" />
+                  Data Management
+                </CardTitle>
+                <CardDescription>Export or delete your data</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 {/* Export */}
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between p-4 bg-slate-700/30 rounded-lg border border-slate-600">
                   <div>
                     <p className="font-medium">Export Your Data</p>
-                    <p className="text-sm text-gray-400">Download all your data as JSON</p>
+                    <p className="text-sm text-slate-400">Download all your data as JSON</p>
                   </div>
-                  <button
+                  <Button
+                    variant="outline"
                     onClick={handleExportData}
                     disabled={exporting}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white text-sm font-medium transition-colors"
+                    className="border-slate-600 hover:bg-slate-700"
                   >
-                    {exporting ? <LoadingSpinner size="sm" /> : 'Export'}
-                  </button>
+                    {exporting ? <LoadingSpinner size="sm" /> : (
+                      <>
+                        <Download className="w-4 h-4 mr-1.5" />
+                        Export
+                      </>
+                    )}
+                  </Button>
                 </div>
 
                 {/* Delete Account */}
-                <div className="border-t border-gray-700 pt-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-red-400">Delete Account</p>
-                      <p className="text-sm text-gray-400">Permanently delete all your data</p>
-                    </div>
-                    <button
-                      onClick={() => setShowDeleteConfirm(true)}
-                      className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-600/50 rounded text-red-400 text-sm font-medium transition-colors"
-                    >
-                      Delete
-                    </button>
+                <div className="flex items-center justify-between p-4 bg-red-900/20 rounded-lg border border-red-900/50">
+                  <div>
+                    <p className="font-medium text-red-400 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" />
+                      Delete Account
+                    </p>
+                    <p className="text-sm text-slate-400">Permanently delete all your data</p>
                   </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="border-red-600/50 text-red-400 hover:bg-red-600/20"
+                  >
+                    <Trash2 className="w-4 h-4 mr-1.5" />
+                    Delete
+                  </Button>
                 </div>
-              </div>
-            </section>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Delete Confirmation Modal */}
           {showDeleteConfirm && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-md mx-4">
-                <h3 className="text-xl font-semibold mb-4">Delete Account</h3>
-                <p className="text-gray-400 mb-6">
-                  This will permanently delete your account and all associated data. This action cannot be undone.
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleDeleteAccount}
-                    className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white font-medium"
-                  >
-                    Yes, Delete Everything
-                  </button>
-                  <button
-                    onClick={() => setShowDeleteConfirm(false)}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 font-medium"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+              <Card className="bg-slate-800 border-slate-700 max-w-md mx-4">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-red-400">
+                    <AlertTriangle className="w-5 h-5" />
+                    Delete Account
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-slate-400 mb-6">
+                    This will permanently delete your account and all associated data. This action cannot be undone.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleDeleteAccount}
+                      className="flex-1 bg-red-600 hover:bg-red-700"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1.5" />
+                      Yes, Delete Everything
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="border-slate-600 hover:bg-slate-700"
+                    >
+                      <X className="w-4 h-4 mr-1.5" />
+                      Cancel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>
@@ -213,4 +271,3 @@ export default function SettingsPage() {
     </ProtectedRoute>
   );
 }
-

@@ -22,7 +22,7 @@ export default function Hero() {
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
       {/* Gradient background with subtle pattern */}
-      <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
         {/* Subtle grid pattern overlay */}
         <div 
           className="absolute inset-0 opacity-5"
@@ -52,13 +52,13 @@ export default function Hero() {
         </p>
         
         {/* Value prop */}
-        <p className="text-lg md:text-xl mb-8 text-gray-300 max-w-2xl mx-auto leading-relaxed">
+        <p className="text-lg md:text-xl mb-8 text-slate-300 max-w-2xl mx-auto leading-relaxed">
           Discover what actually improves <em className="text-orange-400 not-italic font-medium">your</em> running. 
           We analyze your data to reveal insights unique to you—not generic advice.
         </p>
 
         {/* Trust indicators */}
-        <div className="flex flex-wrap justify-center gap-6 mb-10 text-sm text-gray-400">
+        <div className="flex flex-wrap justify-center gap-6 mb-10 text-sm text-slate-400">
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -102,7 +102,7 @@ export default function Hero() {
 
         {/* Founder quote */}
         <blockquote className="max-w-xl mx-auto">
-          <p className="text-gray-400 italic text-lg">
+          <p className="text-slate-400 italic text-lg">
             &ldquo;We are commonly bound by our uncommon ability to embrace and overcome discomfort.&rdquo;
           </p>
           <footer className="mt-3 text-orange-400 font-medium">
@@ -115,7 +115,7 @@ export default function Hero() {
           <a 
             href="#tools" 
             onClick={(e) => handleHashClick(e, 'tools')}
-            className="flex flex-col items-center text-gray-500 hover:text-orange-400 transition-colors"
+            className="flex flex-col items-center text-slate-500 hover:text-orange-400 transition-colors"
           >
             <span className="text-xs uppercase tracking-widest mb-2">Explore</span>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

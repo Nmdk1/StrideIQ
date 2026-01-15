@@ -75,7 +75,7 @@ export default function CheckinPage() {
   if (submitted) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-900 text-gray-100 flex items-center justify-center">
+        <div className="min-h-screen bg-[#0a0a0f] text-slate-100 flex items-center justify-center">
           <div className="text-center">
             <div className="text-4xl mb-4">✓</div>
             <p className="text-xl font-medium">Logged.</p>
@@ -87,12 +87,12 @@ export default function CheckinPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100 py-6 px-4">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-6 px-4">
         <div className="max-w-md mx-auto">
           {/* Header - minimal */}
           <div className="mb-8 text-center">
             <h1 className="text-2xl font-bold">Check-in</h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-slate-500 mt-1">
               {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
             </p>
           </div>
@@ -110,9 +110,9 @@ export default function CheckinPage() {
               step="0.5"
               value={sleep}
               onChange={(e) => setSleep(parseFloat(e.target.value))}
-              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb"
+              className="w-full h-3 bg-slate-700 rounded-lg appearance-none cursor-pointer slider-thumb"
             />
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
+            <div className="flex justify-between text-xs text-slate-500 mt-1">
               <span>0h</span>
               <span>12h</span>
             </div>
@@ -131,9 +131,9 @@ export default function CheckinPage() {
               step="1"
               value={stress}
               onChange={(e) => setStress(parseInt(e.target.value))}
-              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              className="w-full h-3 bg-slate-700 rounded-lg appearance-none cursor-pointer"
             />
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
+            <div className="flex justify-between text-xs text-slate-500 mt-1">
               <span>Low</span>
               <span>High</span>
             </div>
@@ -152,9 +152,9 @@ export default function CheckinPage() {
               step="1"
               value={soreness}
               onChange={(e) => setSoreness(parseInt(e.target.value))}
-              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              className="w-full h-3 bg-slate-700 rounded-lg appearance-none cursor-pointer"
             />
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
+            <div className="flex justify-between text-xs text-slate-500 mt-1">
               <span>Fresh</span>
               <span>Very sore</span>
             </div>
@@ -169,9 +169,9 @@ export default function CheckinPage() {
                 value={hrv}
                 onChange={(e) => setHrv(e.target.value)}
                 placeholder="--"
-                className="w-full px-3 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-center text-lg font-medium"
+                className="w-full px-3 py-3 bg-slate-800 border border-slate-700/50 rounded-lg text-white text-center text-lg font-medium"
               />
-              <p className="text-xs text-gray-500 mt-1 text-center">Optional</p>
+              <p className="text-xs text-slate-500 mt-1 text-center">Optional</p>
             </div>
             <div>
               <label className="text-sm font-medium mb-2 block">Resting HR</label>
@@ -180,9 +180,9 @@ export default function CheckinPage() {
                 value={restingHr}
                 onChange={(e) => setRestingHr(e.target.value)}
                 placeholder="--"
-                className="w-full px-3 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-center text-lg font-medium"
+                className="w-full px-3 py-3 bg-slate-800 border border-slate-700/50 rounded-lg text-white text-center text-lg font-medium"
               />
-              <p className="text-xs text-gray-500 mt-1 text-center">Optional</p>
+              <p className="text-xs text-slate-500 mt-1 text-center">Optional</p>
             </div>
           </div>
 
@@ -191,14 +191,14 @@ export default function CheckinPage() {
             <button
               type="button"
               onClick={() => setShowMindset(!showMindset)}
-              className="flex items-center justify-between w-full py-2 text-sm text-gray-400 hover:text-gray-300"
+              className="flex items-center justify-between w-full py-2 text-sm text-slate-400 hover:text-slate-300"
             >
               <span>🧠 Mindset check (optional)</span>
               <span>{showMindset ? '−' : '+'}</span>
             </button>
             
             {showMindset && (
-              <div className="mt-4 space-y-4 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+              <div className="mt-4 space-y-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
                 {/* Enjoyment */}
                 <div>
                   <div className="flex justify-between items-center mb-2">
@@ -216,14 +216,14 @@ export default function CheckinPage() {
                         className={`flex-1 py-2 rounded ${
                           enjoyment === n 
                             ? 'bg-green-600 text-white' 
-                            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                            : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
                         }`}
                       >
                         {n}
                       </button>
                     ))}
                   </div>
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <div className="flex justify-between text-xs text-slate-500 mt-1">
                     <span>Dreading</span>
                     <span>Loving it</span>
                   </div>
@@ -246,14 +246,14 @@ export default function CheckinPage() {
                         className={`flex-1 py-2 rounded ${
                           confidence === n 
                             ? 'bg-purple-600 text-white' 
-                            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                            : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
                         }`}
                       >
                         {n}
                       </button>
                     ))}
                   </div>
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <div className="flex justify-between text-xs text-slate-500 mt-1">
                     <span>Doubtful</span>
                     <span>Unstoppable</span>
                   </div>
@@ -276,14 +276,14 @@ export default function CheckinPage() {
                         className={`flex-1 py-2 rounded ${
                           motivation === n 
                             ? 'bg-orange-600 text-white' 
-                            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                            : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
                         }`}
                       >
                         {n}
                       </button>
                     ))}
                   </div>
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <div className="flex justify-between text-xs text-slate-500 mt-1">
                     <span>Forcing it</span>
                     <span>Fired up</span>
                   </div>
@@ -296,7 +296,7 @@ export default function CheckinPage() {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="w-full py-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg text-white text-lg font-bold transition-colors"
+            className="w-full py-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded-lg text-white text-lg font-bold transition-colors"
           >
             {submitting ? 'Saving...' : 'Done'}
           </button>
@@ -304,7 +304,7 @@ export default function CheckinPage() {
           {/* Skip link */}
           <button
             onClick={() => router.push('/dashboard')}
-            className="w-full mt-4 py-2 text-gray-500 hover:text-gray-400 text-sm"
+            className="w-full mt-4 py-2 text-slate-500 hover:text-slate-400 text-sm"
           >
             Skip for today
           </button>

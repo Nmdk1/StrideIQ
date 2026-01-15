@@ -39,9 +39,9 @@ export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
 
   if (chartData.length === 0) {
     return (
-      <div className={`bg-gray-800 rounded-lg border border-gray-700 p-6 ${className}`}>
+      <div className={`bg-slate-800 rounded-lg border border-slate-700/50 p-6 ${className}`}>
         <h3 className="text-lg font-semibold mb-4">Age-Graded Trajectory</h3>
-        <p className="text-gray-400 text-sm">
+        <p className="text-slate-400 text-sm">
           Age-graded data not available. Age-grading requires race activities with distance and time.
         </p>
       </div>
@@ -64,19 +64,19 @@ export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-lg">
+        <div className="bg-slate-800 border border-slate-700/50 rounded-lg p-3 shadow-lg">
           <p className="text-sm font-semibold mb-2">{data.date}</p>
           <div className="space-y-1 text-xs">
             <p>
-              <span className="text-gray-400">Age-Graded:</span>{' '}
+              <span className="text-slate-400">Age-Graded:</span>{' '}
               <span className="text-white font-medium">{data.ageGraded.toFixed(1)}%</span>
             </p>
             <p>
-              <span className="text-gray-400">Efficiency:</span>{' '}
+              <span className="text-slate-400">Efficiency:</span>{' '}
               <span className="text-white">{data.efficiency.toFixed(2)}</span>
             </p>
             <p>
-              <span className="text-gray-400">Pace:</span>{' '}
+              <span className="text-slate-400">Pace:</span>{' '}
               <span className="text-white">
                 {Math.floor(data.pace)}:{Math.round((data.pace % 1) * 60)
                   .toString()
@@ -92,23 +92,23 @@ export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
   };
 
   return (
-    <div className={`bg-gray-800 rounded-lg border border-gray-700 p-6 ${className}`}>
+    <div className={`bg-slate-800 rounded-lg border border-slate-700/50 p-6 ${className}`}>
       <div className="flex justify-between items-start mb-4">
         <div>
           <h3 className="text-lg font-semibold">Age-Graded Trajectory</h3>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-slate-400 mt-1">
             Personal slope: Are you adapting or just aging?
           </p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-gray-400">Trend</p>
+          <p className="text-xs text-slate-400">Trend</p>
           <p
             className={`text-lg font-semibold capitalize ${
               trend === 'improving'
                 ? 'text-green-400'
                 : trend === 'declining'
                 ? 'text-red-400'
-                : 'text-gray-400'
+                : 'text-slate-400'
             }`}
           >
             {trend}
@@ -165,7 +165,7 @@ export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
         </LineChart>
       </ResponsiveContainer>
 
-      <div className="mt-4 text-xs text-gray-400">
+      <div className="mt-4 text-xs text-slate-400">
         <p>
           Current: {chartData[chartData.length - 1]?.ageGraded.toFixed(1)}% | Average:{' '}
           {(chartData.reduce((sum, p) => sum + p.ageGraded, 0) / chartData.length).toFixed(1)}%

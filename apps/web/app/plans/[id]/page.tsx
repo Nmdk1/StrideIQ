@@ -50,11 +50,11 @@ interface PlanDetail {
 
 // Workout type styling
 const workoutStyles: Record<string, { bg: string; text: string }> = {
-  rest: { bg: 'bg-gray-800', text: 'text-gray-500' },
+  rest: { bg: 'bg-slate-800', text: 'text-slate-500' },
   easy: { bg: 'bg-emerald-900/40', text: 'text-emerald-400' },
   easy_strides: { bg: 'bg-emerald-900/40', text: 'text-emerald-400' },
   easy_hills: { bg: 'bg-emerald-900/40', text: 'text-emerald-400' },
-  recovery: { bg: 'bg-gray-800', text: 'text-gray-400' },
+  recovery: { bg: 'bg-slate-800', text: 'text-slate-400' },
   medium_long: { bg: 'bg-sky-900/40', text: 'text-sky-400' },
   long: { bg: 'bg-blue-900/40', text: 'text-blue-400' },
   long_mp: { bg: 'bg-pink-900/40', text: 'text-pink-400' },
@@ -107,7 +107,7 @@ export default function PlanOverviewPage() {
       taper: 'text-blue-400',
       race: 'text-white',
     };
-    return phases[phase.toLowerCase()] || 'text-gray-400';
+    return phases[phase.toLowerCase()] || 'text-slate-400';
   };
   
   // Format date
@@ -119,13 +119,13 @@ export default function PlanOverviewPage() {
   
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
         <div className="max-w-6xl mx-auto px-4 py-8">
           {/* Header */}
           <div className="mb-8">
             <button
               onClick={() => router.push('/calendar')}
-              className="text-gray-400 hover:text-white mb-4 flex items-center gap-2 transition-colors"
+              className="text-slate-400 hover:text-white mb-4 flex items-center gap-2 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -135,15 +135,15 @@ export default function PlanOverviewPage() {
             
             {isLoading ? (
               <div className="animate-pulse">
-                <div className="h-10 bg-gray-800 rounded w-2/3 mb-4"></div>
-                <div className="h-6 bg-gray-800 rounded w-1/3"></div>
+                <div className="h-10 bg-slate-800 rounded w-2/3 mb-4"></div>
+                <div className="h-6 bg-slate-800 rounded w-1/3"></div>
               </div>
             ) : plan ? (
               <>
                 <h1 className="text-3xl font-bold text-white mb-2">{plan.name}</h1>
                 <div className="flex flex-wrap items-center gap-4 text-sm">
                   {plan.goal_race_name && plan.goal_race_date && (
-                    <span className="text-gray-400">
+                    <span className="text-slate-400">
                       🏁 {plan.goal_race_name} • {formatDate(plan.goal_race_date)}
                     </span>
                   )}
@@ -155,10 +155,10 @@ export default function PlanOverviewPage() {
                       VDOT {plan.baseline_vdot}
                     </span>
                   )}
-                  <span className={`px-2 py-1 rounded text-xs ${
+                    <span className={`px-2 py-1 rounded text-xs ${
                     plan.status === 'active' ? 'bg-emerald-600/30 text-emerald-300' :
                     plan.status === 'paused' ? 'bg-amber-600/30 text-amber-300' :
-                    'bg-gray-600/30 text-gray-300'
+                    'bg-slate-600/30 text-slate-300'
                   }`}>
                     {plan.status}
                   </span>
@@ -170,7 +170,7 @@ export default function PlanOverviewPage() {
           {error && (
             <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-6">
               <h2 className="text-xl font-bold text-red-400 mb-2">Plan Not Found</h2>
-              <p className="text-gray-400">This plan could not be loaded.</p>
+              <p className="text-slate-400">This plan could not be loaded.</p>
             </div>
           )}
           
@@ -201,14 +201,14 @@ export default function PlanOverviewPage() {
                     return (
                       <div 
                         key={weekNum}
-                        className={`bg-gray-800/50 rounded-lg border ${
-                          isCurrentWeek ? 'border-blue-500' : 'border-gray-700'
+                        className={`bg-slate-800/50 rounded-lg border ${
+                          isCurrentWeek ? 'border-blue-500' : 'border-slate-700/50'
                         }`}
                       >
                         {/* Week Header - Clickable */}
                         <button
                           onClick={() => setExpandedWeek(isExpanded ? null : weekNumber)}
-                          className="w-full p-4 flex items-center justify-between hover:bg-gray-800/70 transition-colors rounded-lg"
+                          className="w-full p-4 flex items-center justify-between hover:bg-slate-800/70 transition-colors rounded-lg"
                         >
                           <div className="flex items-center gap-4">
                             <div className="text-lg font-bold text-white">
@@ -227,7 +227,7 @@ export default function PlanOverviewPage() {
                           <div className="flex items-center gap-6">
                             <div className="text-right">
                               <div className="text-white font-semibold">{volumeMiles} mi</div>
-                              <div className="text-xs text-gray-500">
+                              <div className="text-xs text-slate-500">
                                 {qualitySessions} quality • {completedCount}/{workouts.length} done
                               </div>
                             </div>
@@ -250,7 +250,7 @@ export default function PlanOverviewPage() {
                             </div>
                             
                             <svg 
-                              className={`w-5 h-5 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                              className={`w-5 h-5 text-slate-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                               fill="none" viewBox="0 0 24 24" stroke="currentColor"
                             >
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -260,7 +260,7 @@ export default function PlanOverviewPage() {
                         
                         {/* Expanded Week Detail */}
                         {isExpanded && (
-                          <div className="px-4 pb-4 border-t border-gray-700 mt-2 pt-4">
+                          <div className="px-4 pb-4 border-t border-slate-700/50 mt-2 pt-4">
                             <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
                               {DAY_NAMES.map((dayName, dayIndex) => {
                                 const dayWorkout = workouts.find(w => w.day_of_week === dayIndex);
@@ -271,12 +271,12 @@ export default function PlanOverviewPage() {
                                 return (
                                   <div 
                                     key={dayIndex}
-                                    className={`p-3 rounded-lg border border-gray-700 ${style.bg} ${
+                                    className={`p-3 rounded-lg border border-slate-700/50 ${style.bg} ${
                                       dayWorkout?.completed ? 'ring-1 ring-emerald-500' :
                                       dayWorkout?.skipped ? 'opacity-50' : ''
                                     }`}
                                   >
-                                    <div className="text-xs text-gray-500 mb-1">
+                                    <div className="text-xs text-slate-500 mb-1">
                                       {dayName}
                                       {dayWorkout?.date && (
                                         <span className="ml-1">{formatDate(dayWorkout.date)}</span>
@@ -289,12 +289,12 @@ export default function PlanOverviewPage() {
                                           {dayWorkout.title}
                                         </div>
                                         {dayWorkout.target_distance_km && (
-                                          <div className="text-xs text-gray-400 mt-1">
+                                          <div className="text-xs text-slate-400 mt-1">
                                             {(dayWorkout.target_distance_km * 0.621371).toFixed(1)} mi
                                           </div>
                                         )}
                                         {dayWorkout.coach_notes && (
-                                          <div className="text-xs text-gray-500 mt-1 truncate" title={dayWorkout.coach_notes}>
+                                          <div className="text-xs text-slate-500 mt-1 truncate" title={dayWorkout.coach_notes}>
                                             {dayWorkout.coach_notes}
                                           </div>
                                         )}
@@ -302,11 +302,11 @@ export default function PlanOverviewPage() {
                                           <div className="text-xs text-emerald-400 mt-1">✓ Completed</div>
                                         )}
                                         {dayWorkout.skipped && (
-                                          <div className="text-xs text-gray-500 mt-1">Skipped</div>
+                                          <div className="text-xs text-slate-500 mt-1">Skipped</div>
                                         )}
                                       </>
                                     ) : (
-                                      <div className="text-gray-600 text-sm">Rest</div>
+                                      <div className="text-slate-600 text-sm">Rest</div>
                                     )}
                                   </div>
                                 );
@@ -320,8 +320,8 @@ export default function PlanOverviewPage() {
               </div>
               
               {/* Legend */}
-              <div className="mt-8 p-4 bg-gray-800/30 rounded-lg">
-                <h3 className="text-sm font-semibold text-gray-400 mb-3">Workout Types</h3>
+              <div className="mt-8 p-4 bg-slate-800/30 rounded-lg">
+                <h3 className="text-sm font-semibold text-slate-400 mb-3">Workout Types</h3>
                 <div className="flex flex-wrap gap-3">
                   {[
                     { type: 'easy', label: 'Easy' },

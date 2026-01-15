@@ -87,18 +87,18 @@ export default function ProfilePage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
         <div className="max-w-4xl mx-auto px-4">
           <h1 className="text-3xl font-bold mb-8">Profile</h1>
 
           {/* Personal Information */}
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 mb-6">
+          <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6 mb-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">Personal Information</h2>
               {!editing && (
                 <button
                   onClick={() => setEditing(true)}
-                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition-colors"
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors"
                 >
                   Edit
                 </button>
@@ -113,7 +113,7 @@ export default function ProfilePage() {
                     type="text"
                     value={formData.display_name}
                     onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                   />
                 </div>
 
@@ -123,7 +123,7 @@ export default function ProfilePage() {
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                   />
                 </div>
 
@@ -133,7 +133,7 @@ export default function ProfilePage() {
                     type="date"
                     value={formData.birthdate}
                     onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                   />
                 </div>
 
@@ -142,7 +142,7 @@ export default function ProfilePage() {
                   <select
                     value={formData.sex}
                     onChange={(e) => setFormData({ ...formData, sex: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                   >
                     <option value="">Select...</option>
                     <option value="M">Male</option>
@@ -157,7 +157,7 @@ export default function ProfilePage() {
                     step="0.1"
                     value={formData.height_cm}
                     onChange={(e) => setFormData({ ...formData, height_cm: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
                     placeholder="e.g., 175.0"
                   />
                 </div>
@@ -168,7 +168,7 @@ export default function ProfilePage() {
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white font-medium"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-white font-medium"
                   >
                     {saving ? <LoadingSpinner size="sm" /> : 'Save'}
                   </button>
@@ -185,7 +185,7 @@ export default function ProfilePage() {
                       });
                       setError(null);
                     }}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white font-medium"
+                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-white font-medium"
                   >
                     Cancel
                   </button>
@@ -194,15 +194,15 @@ export default function ProfilePage() {
             ) : (
               <div className="space-y-3">
                 <div>
-                  <span className="text-sm text-gray-400">Display Name:</span>
+                  <span className="text-sm text-slate-400">Display Name:</span>
                   <p className="font-medium">{user.display_name || '--'}</p>
                 </div>
                 <div>
-                  <span className="text-sm text-gray-400">Email:</span>
+                  <span className="text-sm text-slate-400">Email:</span>
                   <p className="font-medium">{user.email || '--'}</p>
                 </div>
                 <div>
-                  <span className="text-sm text-gray-400">Birthdate:</span>
+                  <span className="text-sm text-slate-400">Birthdate:</span>
                   <p className="font-medium">
                     {user.birthdate
                       ? new Date(user.birthdate).toLocaleDateString()
@@ -211,23 +211,23 @@ export default function ProfilePage() {
                 </div>
                 {age && (
                   <div>
-                    <span className="text-sm text-gray-400">Age:</span>
+                    <span className="text-sm text-slate-400">Age:</span>
                     <p className="font-medium">{age} years</p>
                   </div>
                 )}
                 <div>
-                  <span className="text-sm text-gray-400">Sex:</span>
+                  <span className="text-sm text-slate-400">Sex:</span>
                   <p className="font-medium">{user.sex || '--'}</p>
                 </div>
                 {user.age_category && (
                   <div>
-                    <span className="text-sm text-gray-400">Age Category:</span>
+                    <span className="text-sm text-slate-400">Age Category:</span>
                     <p className="font-medium">{user.age_category}</p>
                   </div>
                 )}
                 {user.height_cm && (
                   <div>
-                    <span className="text-sm text-gray-400">Height:</span>
+                    <span className="text-sm text-slate-400">Height:</span>
                     <p className="font-medium">{user.height_cm} cm</p>
                   </div>
                 )}
@@ -239,24 +239,24 @@ export default function ProfilePage() {
           {(user.durability_index != null || 
             user.recovery_half_life_hours != null || 
             user.consistency_index != null) && (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
               <h2 className="text-xl font-semibold mb-4">Performance Metrics</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {user.durability_index != null && (
                   <div>
-                    <p className="text-sm text-gray-400">Durability Index</p>
+                    <p className="text-sm text-slate-400">Durability Index</p>
                     <p className="text-2xl font-bold">{user.durability_index.toFixed(1)}</p>
                   </div>
                 )}
                 {user.recovery_half_life_hours != null && (
                   <div>
-                    <p className="text-sm text-gray-400">Recovery Half-Life</p>
+                    <p className="text-sm text-slate-400">Recovery Half-Life</p>
                     <p className="text-2xl font-bold">{user.recovery_half_life_hours.toFixed(1)} hrs</p>
                   </div>
                 )}
                 {user.consistency_index != null && (
                   <div>
-                    <p className="text-sm text-gray-400">Consistency Index</p>
+                    <p className="text-sm text-slate-400">Consistency Index</p>
                     <p className="text-2xl font-bold">{user.consistency_index.toFixed(1)}</p>
                   </div>
                 )}

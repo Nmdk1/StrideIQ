@@ -52,22 +52,22 @@ export function LoadResponseChart({ data, className = '' }: LoadResponseChartPro
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-lg">
+        <div className="bg-slate-800 border border-slate-700/50 rounded-lg p-3 shadow-lg">
           <p className="text-sm font-semibold mb-2">{data.week}</p>
           <div className="space-y-1 text-xs">
             <p>
-              <span className="text-gray-400">Distance:</span>{' '}
+              <span className="text-slate-400">Distance:</span>{' '}
               <span className="text-white">{formatDistance(data.distanceMeters, 1)}</span>
             </p>
             <p>
-              <span className="text-gray-400">Efficiency Δ:</span>{' '}
+              <span className="text-slate-400">Efficiency Δ:</span>{' '}
               <span
                 className={
                   data.efficiencyDelta < 0
                     ? 'text-green-400'
                     : data.efficiencyDelta > 0
                     ? 'text-red-400'
-                    : 'text-gray-400'
+                    : 'text-slate-400'
                 }
               >
                 {data.efficiencyDelta > 0 ? '+' : ''}
@@ -75,7 +75,7 @@ export function LoadResponseChart({ data, className = '' }: LoadResponseChartPro
               </span>
             </p>
             <p>
-              <span className="text-gray-400">Load Type:</span>{' '}
+              <span className="text-slate-400">Load Type:</span>{' '}
               <span
                 className="text-white capitalize"
                 style={{ color: LOAD_TYPE_COLORS[data.loadType as keyof typeof LOAD_TYPE_COLORS] }}
@@ -84,7 +84,7 @@ export function LoadResponseChart({ data, className = '' }: LoadResponseChartPro
               </span>
             </p>
             <p>
-              <span className="text-gray-400">Activities:</span>{' '}
+              <span className="text-slate-400">Activities:</span>{' '}
               <span className="text-white">{data.activityCount}</span>
             </p>
           </div>
@@ -95,9 +95,9 @@ export function LoadResponseChart({ data, className = '' }: LoadResponseChartPro
   };
 
   return (
-    <div className={`bg-gray-800 rounded-lg border border-gray-700 p-6 ${className}`}>
+    <div className={`bg-slate-800 rounded-lg border border-slate-700/50 p-6 ${className}`}>
       <h3 className="text-lg font-semibold mb-4">Load → Response</h3>
-      <p className="text-sm text-gray-400 mb-4">
+      <p className="text-sm text-slate-400 mb-4">
         Weekly distance vs efficiency change. Negative delta = improvement (more efficient).
       </p>
       <ResponsiveContainer width="100%" height={300}>
@@ -131,19 +131,19 @@ export function LoadResponseChart({ data, className = '' }: LoadResponseChartPro
       <div className="mt-4 flex gap-4 text-xs">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded" style={{ backgroundColor: LOAD_TYPE_COLORS.productive }} />
-          <span className="text-gray-400">Productive</span>
+          <span className="text-slate-400">Productive</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded" style={{ backgroundColor: LOAD_TYPE_COLORS.neutral }} />
-          <span className="text-gray-400">Neutral</span>
+          <span className="text-slate-400">Neutral</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded" style={{ backgroundColor: LOAD_TYPE_COLORS.wasted }} />
-          <span className="text-gray-400">Wasted</span>
+          <span className="text-slate-400">Wasted</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded" style={{ backgroundColor: LOAD_TYPE_COLORS.harmful }} />
-          <span className="text-gray-400">Harmful</span>
+          <span className="text-slate-400">Harmful</span>
         </div>
       </div>
     </div>

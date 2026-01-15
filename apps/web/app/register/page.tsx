@@ -62,11 +62,11 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 flex items-center justify-center py-12 px-4">
+    <div className="min-h-screen bg-[#0a0a0f] text-slate-100 flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full">
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-8">
+        <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-8">
           <h1 className="text-3xl font-bold mb-2">Create Account</h1>
-          <p className="text-gray-400 mb-6">Get started.</p>
+          <p className="text-slate-400 mb-6">Get started.</p>
 
           {error && <ErrorMessage error={error} className="mb-6" />}
 
@@ -80,7 +80,7 @@ export default function RegisterPage() {
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="Your name"
               />
             </div>
@@ -95,7 +95,7 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="you@example.com"
               />
             </div>
@@ -111,7 +111,7 @@ export default function RegisterPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={8}
-                className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="At least 8 characters"
               />
             </div>
@@ -126,7 +126,7 @@ export default function RegisterPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="••••••••"
               />
             </div>
@@ -134,14 +134,14 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white font-medium transition-colors"
+              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-white font-medium transition-colors"
             >
               {isSubmitting ? <LoadingSpinner size="sm" /> : 'Create Account'}
             </button>
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-slate-400">
               Already have an account?{' '}
               <Link href="/login" className="text-blue-400 hover:text-blue-300">
                 Sign in

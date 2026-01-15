@@ -66,11 +66,11 @@ export function StravaConnection() {
   const isSyncing = syncStatus?.status === 'pending' || syncStatus?.status === 'started';
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
       <div className="flex justify-between items-start mb-4">
         <div>
           <h3 className="text-lg font-semibold">Strava Integration</h3>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-slate-400 mt-1">
             Connect your Strava account to automatically sync activities
           </p>
         </div>
@@ -89,7 +89,7 @@ export function StravaConnection() {
           >
             Connect Strava
           </button>
-          <p className="text-xs text-gray-500 mt-2 text-center">
+          <p className="text-xs text-slate-500 mt-2 text-center">
             You&apos;ll be redirected to Strava to authorize access
           </p>
         </div>
@@ -97,7 +97,7 @@ export function StravaConnection() {
         <div className="space-y-4">
           {status?.last_sync && (
             <div className="text-sm">
-              <span className="text-gray-400">Last sync:</span>{' '}
+              <span className="text-slate-400">Last sync:</span>{' '}
               <span className="text-white">
                 {new Date(status.last_sync).toLocaleString()}
               </span>
@@ -105,7 +105,7 @@ export function StravaConnection() {
           )}
 
           {syncStatus && (
-            <div className="bg-gray-900 rounded p-3">
+            <div className="bg-[#0a0a0f] rounded p-3">
               <div className="flex items-center gap-2">
                 {isSyncing && <LoadingSpinner size="sm" />}
                 <span className="text-sm">
@@ -116,7 +116,7 @@ export function StravaConnection() {
                 </span>
               </div>
               {syncStatus.result && (
-                <div className="text-xs text-gray-400 mt-2">
+                <div className="text-xs text-slate-400 mt-2">
                   {JSON.stringify(syncStatus.result, null, 2)}
                 </div>
               )}
@@ -126,7 +126,7 @@ export function StravaConnection() {
           <button
             onClick={handleSync}
             disabled={isSyncing || triggerSync.isPending}
-            className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white font-medium transition-colors"
+            className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-white font-medium transition-colors"
           >
             {isSyncing || triggerSync.isPending ? (
               <>
@@ -140,7 +140,7 @@ export function StravaConnection() {
 
           <button
             onClick={handleConnect}
-            className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white font-medium transition-colors"
+            className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-white font-medium transition-colors"
           >
             Reconnect Strava
           </button>

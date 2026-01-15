@@ -72,7 +72,7 @@ const RATING_STYLES = {
     label: 'Solid',
   },
   average: {
-    bg: 'bg-gradient-to-br from-slate-800/40 to-gray-900/30',
+    bg: 'bg-gradient-to-br from-slate-800/40 to-slate-900/30',
     border: 'border-slate-500/50',
     text: 'text-slate-300',
     glow: 'shadow-slate-500/10',
@@ -135,7 +135,7 @@ function PerformanceScoreHero({
             <Link href={`/activities/${target_run.id}`} className="hover:opacity-80 transition-opacity">
               <h2 className="text-xl font-semibold text-white">{target_run.name}</h2>
             </Link>
-            <p className="text-sm text-gray-400 mt-1">
+            <p className="text-sm text-slate-400 mt-1">
               {new Date(target_run.date).toLocaleDateString('en-US', {
                 weekday: 'long',
                 month: 'long',
@@ -145,7 +145,7 @@ function PerformanceScoreHero({
             </p>
           </div>
           <div className="text-right">
-            <div className="text-sm text-gray-400">Compared to</div>
+            <div className="text-sm text-slate-400">Compared to</div>
             <div className="text-lg font-medium text-white">
               {result.ghost_average.num_runs_averaged} similar runs
             </div>
@@ -159,7 +159,7 @@ function PerformanceScoreHero({
             <div className={`text-7xl font-black ${style.text} tracking-tight`}>
               {performance_score.score.toFixed(0)}
             </div>
-            <div className="text-sm text-gray-400 text-center">out of 100</div>
+            <div className="text-sm text-slate-400 text-center">out of 100</div>
           </div>
           
           {/* Rating badge */}
@@ -170,7 +170,7 @@ function PerformanceScoreHero({
             </div>
             
             {/* Percentile */}
-            <div className="mt-3 text-sm text-gray-300">
+            <div className="mt-3 text-sm text-slate-300">
               Better than <span className="font-bold text-white">{performance_score.percentile.toFixed(0)}%</span> of your similar runs
             </div>
           </div>
@@ -180,24 +180,24 @@ function PerformanceScoreHero({
         <h1 className="text-2xl font-bold text-white mb-3">{headline}</h1>
         
         {/* Key insight (the "BUT" explanation) */}
-        <p className="text-lg text-gray-300 leading-relaxed">{key_insight}</p>
+        <p className="text-lg text-slate-300 leading-relaxed">{key_insight}</p>
         
         {/* Quick stats */}
         <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/10">
           <div>
-            <div className="text-sm text-gray-400">Pace vs Baseline</div>
+            <div className="text-sm text-slate-400">Pace vs Baseline</div>
             <div className={`text-xl font-bold ${performance_score.pace_vs_baseline > 0 ? 'text-emerald-400' : performance_score.pace_vs_baseline < 0 ? 'text-rose-400' : 'text-white'}`}>
               {performance_score.pace_vs_baseline > 0 ? '+' : ''}{performance_score.pace_vs_baseline.toFixed(1)}%
             </div>
           </div>
           <div>
-            <div className="text-sm text-gray-400">Efficiency vs Baseline</div>
+            <div className="text-sm text-slate-400">Efficiency vs Baseline</div>
             <div className={`text-xl font-bold ${performance_score.efficiency_vs_baseline > 0 ? 'text-emerald-400' : performance_score.efficiency_vs_baseline < 0 ? 'text-rose-400' : 'text-white'}`}>
               {performance_score.efficiency_vs_baseline > 0 ? '+' : ''}{performance_score.efficiency_vs_baseline.toFixed(1)}%
             </div>
           </div>
           <div>
-            <div className="text-sm text-gray-400">Age-Graded</div>
+            <div className="text-sm text-slate-400">Age-Graded</div>
             <div className="text-xl font-bold text-white">
               {performance_score.age_graded_performance 
                 ? `${performance_score.age_graded_performance.toFixed(1)}%` 
@@ -223,15 +223,15 @@ function ContextFactorCard({ factor }: { factor: ContextFactor }) {
       </div>
       
       <div className="flex items-center gap-4 mb-3">
-        <div>
-          <div className="text-xs text-gray-400">This run</div>
-          <div className="text-lg font-bold">{factor.this_run_value}</div>
-        </div>
-        <div className="text-2xl text-gray-500">→</div>
-        <div>
-          <div className="text-xs text-gray-400">Average</div>
-          <div className="text-lg font-medium text-gray-300">{factor.baseline_value}</div>
-        </div>
+      <div>
+        <div className="text-xs text-slate-400">This run</div>
+        <div className="text-lg font-bold">{factor.this_run_value}</div>
+      </div>
+      <div className="text-2xl text-slate-500">→</div>
+      <div>
+        <div className="text-xs text-slate-400">Average</div>
+        <div className="text-lg font-medium text-slate-300">{factor.baseline_value}</div>
+      </div>
         <div className={`ml-auto px-3 py-1 rounded-full text-sm font-bold ${
           factor.impact === 'positive' ? 'bg-emerald-900/50 text-emerald-300' :
           factor.impact === 'negative' ? 'bg-rose-900/50 text-rose-300' :
@@ -241,7 +241,7 @@ function ContextFactorCard({ factor }: { factor: ContextFactor }) {
         </div>
       </div>
       
-      <p className="text-sm text-gray-400 leading-relaxed">{factor.explanation}</p>
+      <p className="text-sm text-slate-400 leading-relaxed">{factor.explanation}</p>
     </div>
   );
 }
@@ -299,7 +299,7 @@ function GhostOverlayChart({
   
   if (!chartData) {
     return (
-      <div className="h-64 flex items-center justify-center text-gray-500 bg-gray-800/50 rounded-xl">
+      <div className="h-64 flex items-center justify-center text-slate-500 bg-slate-800/50 rounded-xl">
         <p>No splits data available</p>
       </div>
     );
@@ -314,7 +314,7 @@ function GhostOverlayChart({
   };
   
   return (
-    <div className="bg-gray-800/50 rounded-xl border border-gray-700/50 p-6">
+    <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
       <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
         <span>👻</span> Your Run vs Ghost Average
       </h3>
@@ -387,7 +387,7 @@ function GhostOverlayChart({
         </ComposedChart>
       </ResponsiveContainer>
       
-      <p className="text-sm text-gray-400 mt-4 text-center">
+      <p className="text-sm text-slate-400 mt-4 text-center">
         The ghost (purple area) represents the average of your {ghost_average.num_runs_averaged} most similar runs
       </p>
     </div>
@@ -417,15 +417,15 @@ function SimilarRunCard({ run, rank }: { run: SimilarRun; rank: number }) {
   
   return (
     <Link href={`/activities/${run.id}`}>
-      <div className="bg-gray-800/50 rounded-lg border border-gray-700/50 p-4 hover:bg-gray-700/50 hover:border-gray-600 transition-all cursor-pointer">
+      <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4 hover:bg-slate-700/50 hover:border-slate-600 transition-all cursor-pointer">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold text-gray-300">
+            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold text-slate-300">
               {rank}
             </div>
             <div>
               <div className="font-medium text-white truncate max-w-[200px]">{run.name}</div>
-              <div className="text-xs text-gray-400">
+              <div className="text-xs text-slate-400">
                 {new Date(run.date).toLocaleDateString('en-US', { 
                   month: 'short', 
                   day: 'numeric',
@@ -443,20 +443,20 @@ function SimilarRunCard({ run, rank }: { run: SimilarRun; rank: number }) {
         
         <div className="flex items-center gap-4 text-sm">
           <div>
-            <span className="text-gray-400">Pace:</span>{' '}
+            <span className="text-slate-400">Pace:</span>{' '}
             <span className="text-white">{formattedPace}</span>
           </div>
           <div>
-            <span className="text-gray-400">HR:</span>{' '}
+            <span className="text-slate-400">HR:</span>{' '}
             <span className="text-white">{run.avg_hr || '—'}</span>
           </div>
           <div>
-            <span className="text-gray-400">Dist:</span>{' '}
+            <span className="text-slate-400">Dist:</span>{' '}
             <span className="text-white">{formattedDistance}</span>
           </div>
           {run.temperature_f && (
             <div>
-              <span className="text-gray-400">Temp:</span>{' '}
+              <span className="text-slate-400">Temp:</span>{' '}
               <span className="text-white">{run.temperature_f}°F</span>
             </div>
           )}
@@ -466,7 +466,7 @@ function SimilarRunCard({ run, rank }: { run: SimilarRun; rank: number }) {
         <div className="mt-3 flex gap-1">
           {Object.entries(run.similarity_breakdown).map(([key, value]) => (
             <div key={key} className="flex-1" title={`${key}: ${(value * 100).toFixed(0)}%`}>
-              <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+              <div className="h-1 bg-slate-700 rounded-full overflow-hidden">
                 <div 
                   className="h-full bg-amber-500/70 rounded-full"
                   style={{ width: `${value * 100}%` }}
@@ -534,7 +534,7 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
         <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-3">
           <span>👻</span> Your &quot;Ghost&quot; Baseline
         </h3>
-        <p className="text-gray-300 text-sm leading-relaxed">
+        <p className="text-slate-300 text-sm leading-relaxed">
           We found <span className="text-indigo-400 font-semibold">{ghost.num_runs_averaged} similar runs</span> in 
           your history—runs with comparable distance, intensity, and conditions. The <span className="text-indigo-400 font-semibold">&quot;Ghost&quot;</span> is 
           the average of those runs. It represents <span className="italic">your typical performance</span> for this type of effort, 
@@ -542,17 +542,17 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
         </p>
         {ghost.avg_pace_formatted && ghost.avg_hr && (
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
-            <div className="bg-gray-800/50 rounded px-3 py-1.5">
-              <span className="text-gray-400">Ghost Pace:</span>{' '}
+            <div className="bg-slate-800/50 rounded px-3 py-1.5">
+              <span className="text-slate-400">Ghost Pace:</span>{' '}
               <span className="text-white font-medium">{ghost.avg_pace_formatted}</span>
             </div>
-            <div className="bg-gray-800/50 rounded px-3 py-1.5">
-              <span className="text-gray-400">Ghost HR:</span>{' '}
+            <div className="bg-slate-800/50 rounded px-3 py-1.5">
+              <span className="text-slate-400">Ghost HR:</span>{' '}
               <span className="text-white font-medium">{Math.round(ghost.avg_hr)} bpm</span>
             </div>
             {ghost.avg_efficiency && (
-              <div className="bg-gray-800/50 rounded px-3 py-1.5">
-                <span className="text-gray-400">Ghost Efficiency:</span>{' '}
+              <div className="bg-slate-800/50 rounded px-3 py-1.5">
+                <span className="text-slate-400">Ghost Efficiency:</span>{' '}
                 <span className="text-white font-medium">{ghost.avg_efficiency.toFixed(3)}</span>
               </div>
             )}
@@ -568,57 +568,57 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Efficiency - Expandable */}
         <div 
-          className={`bg-gray-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'efficiency' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-gray-700/50'} p-4`}
+          className={`bg-slate-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'efficiency' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-slate-700/50'} p-4`}
           onClick={() => handleTileClick('efficiency')}
         >
           <div className="flex justify-between items-start mb-2">
             <div className="text-sm font-medium text-white flex items-center gap-2">
               Running Efficiency
-              <span className="text-xs text-gray-500">{expandedTile === 'efficiency' ? '▼' : '▶'}</span>
+              <span className="text-xs text-slate-500">{expandedTile === 'efficiency' ? '▼' : '▶'}</span>
             </div>
             <div className={`text-lg font-bold ${result.performance_score.efficiency_vs_baseline > 0 ? 'text-emerald-400' : result.performance_score.efficiency_vs_baseline < 0 ? 'text-rose-400' : 'text-white'}`}>
               {formatEfficiencyDelta() || '—'}
             </div>
           </div>
-          <p className="text-xs text-gray-400 leading-relaxed">
-            <span className="text-gray-300">Speed produced per heartbeat.</span> Higher = you&apos;re getting more speed for less cardiac effort.
+          <p className="text-xs text-slate-400 leading-relaxed">
+            <span className="text-slate-300">Speed produced per heartbeat.</span> Higher = you&apos;re getting more speed for less cardiac effort.
           </p>
           
           {/* Expanded Content */}
           {expandedTile === 'efficiency' && (
-            <div className="mt-4 pt-4 border-t border-gray-700/50" onClick={(e) => e.stopPropagation()}>
+            <div className="mt-4 pt-4 border-t border-slate-700/50" onClick={(e) => e.stopPropagation()}>
               {loading ? (
-                <div className="text-center py-4 text-gray-400">Loading history...</div>
+                <div className="text-center py-4 text-slate-400">Loading history...</div>
               ) : metricHistory ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Your Average</div>
+                      <div className="text-xs text-slate-500 mb-1">Your Average</div>
                       <div className="text-sm font-medium text-white">
                         {metricHistory.statistics.efficiency.avg ? `${metricHistory.statistics.efficiency.avg.toFixed(1)}` : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Today</div>
+                      <div className="text-xs text-slate-500 mb-1">Today</div>
                       <div className={`text-sm font-medium ${result.performance_score.efficiency_vs_baseline > 0 ? 'text-emerald-400' : result.performance_score.efficiency_vs_baseline < 0 ? 'text-rose-400' : 'text-white'}`}>
                         {metricHistory.current.efficiency ? metricHistory.current.efficiency.toFixed(1) : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Best Ever</div>
+                      <div className="text-xs text-slate-500 mb-1">Best Ever</div>
                       <div className="text-sm font-medium text-purple-400">
                         {metricHistory.statistics.efficiency.best ? `${metricHistory.statistics.efficiency.best.toFixed(1)}` : '—'}
                       </div>
                     </div>
                   </div>
                   {metricHistory.insights.efficiency && (
-                    <div className="bg-gray-900/50 rounded p-3 text-xs text-gray-300 leading-relaxed">
+                    <div className="bg-slate-900/50 rounded p-3 text-xs text-slate-300 leading-relaxed">
                       💡 {metricHistory.insights.efficiency}
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="text-center py-4 text-gray-400">No historical data yet</div>
+                <div className="text-center py-4 text-slate-400">No historical data yet</div>
               )}
             </div>
           )}
@@ -626,56 +626,56 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
         
         {/* Cardiac Drift - Expandable */}
         <div 
-          className={`bg-gray-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'cardiac' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-gray-700/50'} p-4`}
+          className={`bg-slate-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'cardiac' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-slate-700/50'} p-4`}
           onClick={() => handleTileClick('cardiac')}
         >
           <div className="flex justify-between items-start mb-2">
             <div className="text-sm font-medium text-white flex items-center gap-2">
               Cardiac Drift
-              <span className="text-xs text-gray-500">{expandedTile === 'cardiac' ? '▼' : '▶'}</span>
+              <span className="text-xs text-slate-500">{expandedTile === 'cardiac' ? '▼' : '▶'}</span>
             </div>
             <div className={`text-lg font-bold ${analytics.cardiac_drift_pct !== null && analytics.cardiac_drift_pct > 5 ? 'text-amber-400' : analytics.cardiac_drift_pct !== null && analytics.cardiac_drift_pct < 3 ? 'text-emerald-400' : 'text-white'}`}>
               {analytics.cardiac_drift_pct !== null ? `${analytics.cardiac_drift_pct > 0 ? '+' : ''}${analytics.cardiac_drift_pct}%` : '—'}
             </div>
           </div>
-          <p className="text-xs text-gray-400 leading-relaxed">
-            <span className="text-gray-300">How much your heart rate rose during the run.</span> Even at steady pace, HR naturally drifts up.
+          <p className="text-xs text-slate-400 leading-relaxed">
+            <span className="text-slate-300">How much your heart rate rose during the run.</span> Even at steady pace, HR naturally drifts up.
           </p>
           
           {expandedTile === 'cardiac' && (
-            <div className="mt-4 pt-4 border-t border-gray-700/50" onClick={(e) => e.stopPropagation()}>
+            <div className="mt-4 pt-4 border-t border-slate-700/50" onClick={(e) => e.stopPropagation()}>
               {loading ? (
-                <div className="text-center py-4 text-gray-400">Loading history...</div>
+                <div className="text-center py-4 text-slate-400">Loading history...</div>
               ) : metricHistory ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Your Average</div>
+                      <div className="text-xs text-slate-500 mb-1">Your Average</div>
                       <div className="text-sm font-medium text-white">
                         {metricHistory.statistics.cardiac_drift.avg ? `${metricHistory.statistics.cardiac_drift.avg.toFixed(1)}%` : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Today</div>
+                      <div className="text-xs text-slate-500 mb-1">Today</div>
                       <div className="text-sm font-medium text-white">
                         {metricHistory.current.cardiac_drift !== null ? `${metricHistory.current.cardiac_drift.toFixed(1)}%` : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Best (Lowest)</div>
+                      <div className="text-xs text-slate-500 mb-1">Best (Lowest)</div>
                       <div className="text-sm font-medium text-emerald-400">
                         {metricHistory.statistics.cardiac_drift.worst !== null ? `${metricHistory.statistics.cardiac_drift.worst.toFixed(1)}%` : '—'}
                       </div>
                     </div>
                   </div>
                   {metricHistory.insights.cardiac_drift && (
-                    <div className="bg-gray-900/50 rounded p-3 text-xs text-gray-300 leading-relaxed">
+                    <div className="bg-slate-900/50 rounded p-3 text-xs text-slate-300 leading-relaxed">
                       💡 {metricHistory.insights.cardiac_drift}
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="text-center py-4 text-gray-400">No historical data yet</div>
+                <div className="text-center py-4 text-slate-400">No historical data yet</div>
               )}
             </div>
           )}
@@ -683,56 +683,56 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
         
         {/* Aerobic Decoupling - Expandable */}
         <div 
-          className={`bg-gray-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'decoupling' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-gray-700/50'} p-4`}
+          className={`bg-slate-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'decoupling' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-slate-700/50'} p-4`}
           onClick={() => handleTileClick('decoupling')}
         >
           <div className="flex justify-between items-start mb-2">
             <div className="text-sm font-medium text-white flex items-center gap-2">
               Aerobic Decoupling
-              <span className="text-xs text-gray-500">{expandedTile === 'decoupling' ? '▼' : '▶'}</span>
+              <span className="text-xs text-slate-500">{expandedTile === 'decoupling' ? '▼' : '▶'}</span>
             </div>
             <div className={`text-lg font-bold ${analytics.aerobic_decoupling_pct !== null && analytics.aerobic_decoupling_pct > 5 ? 'text-amber-400' : analytics.aerobic_decoupling_pct !== null && analytics.aerobic_decoupling_pct < 3 ? 'text-emerald-400' : 'text-white'}`}>
               {analytics.aerobic_decoupling_pct !== null ? `${analytics.aerobic_decoupling_pct}%` : '—'}
             </div>
           </div>
-          <p className="text-xs text-gray-400 leading-relaxed">
-            <span className="text-gray-300">Did your efficiency hold steady or fall apart?</span> First half vs second half comparison.
+          <p className="text-xs text-slate-400 leading-relaxed">
+            <span className="text-slate-300">Did your efficiency hold steady or fall apart?</span> First half vs second half comparison.
           </p>
           
           {expandedTile === 'decoupling' && (
-            <div className="mt-4 pt-4 border-t border-gray-700/50" onClick={(e) => e.stopPropagation()}>
+            <div className="mt-4 pt-4 border-t border-slate-700/50" onClick={(e) => e.stopPropagation()}>
               {loading ? (
-                <div className="text-center py-4 text-gray-400">Loading history...</div>
+                <div className="text-center py-4 text-slate-400">Loading history...</div>
               ) : metricHistory ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Your Average</div>
+                      <div className="text-xs text-slate-500 mb-1">Your Average</div>
                       <div className="text-sm font-medium text-white">
                         {metricHistory.statistics.aerobic_decoupling.avg ? `${metricHistory.statistics.aerobic_decoupling.avg.toFixed(1)}%` : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Today</div>
+                      <div className="text-xs text-slate-500 mb-1">Today</div>
                       <div className="text-sm font-medium text-white">
                         {metricHistory.current.aerobic_decoupling !== null ? `${metricHistory.current.aerobic_decoupling.toFixed(1)}%` : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Best (Lowest)</div>
+                      <div className="text-xs text-slate-500 mb-1">Best (Lowest)</div>
                       <div className="text-sm font-medium text-emerald-400">
                         {metricHistory.statistics.aerobic_decoupling.worst !== null ? `${metricHistory.statistics.aerobic_decoupling.worst.toFixed(1)}%` : '—'}
                       </div>
                     </div>
                   </div>
                   {metricHistory.insights.aerobic_decoupling && (
-                    <div className="bg-gray-900/50 rounded p-3 text-xs text-gray-300 leading-relaxed">
+                    <div className="bg-slate-900/50 rounded p-3 text-xs text-slate-300 leading-relaxed">
                       💡 {metricHistory.insights.aerobic_decoupling}
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="text-center py-4 text-gray-400">No historical data yet</div>
+                <div className="text-center py-4 text-slate-400">No historical data yet</div>
               )}
             </div>
           )}
@@ -740,56 +740,56 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
         
         {/* Pace Consistency - Expandable */}
         <div 
-          className={`bg-gray-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'pacing' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-gray-700/50'} p-4`}
+          className={`bg-slate-800/50 rounded-lg border transition-all cursor-pointer hover:border-purple-500/50 ${expandedTile === 'pacing' ? 'border-purple-500/70 col-span-1 md:col-span-2' : 'border-slate-700/50'} p-4`}
           onClick={() => handleTileClick('pacing')}
         >
           <div className="flex justify-between items-start mb-2">
             <div className="text-sm font-medium text-white flex items-center gap-2">
               Pace Consistency
-              <span className="text-xs text-gray-500">{expandedTile === 'pacing' ? '▼' : '▶'}</span>
+              <span className="text-xs text-slate-500">{expandedTile === 'pacing' ? '▼' : '▶'}</span>
             </div>
             <div className={`text-lg font-bold ${analytics.pace_variability_cv !== null && analytics.pace_variability_cv > 5 ? 'text-amber-400' : analytics.pace_variability_cv !== null && analytics.pace_variability_cv < 3 ? 'text-emerald-400' : 'text-white'}`}>
               {analytics.pace_variability_cv !== null ? `${analytics.pace_variability_cv}%` : '—'}
             </div>
           </div>
-          <p className="text-xs text-gray-400 leading-relaxed">
-            <span className="text-gray-300">How evenly you paced the run.</span> Lower = more consistent.
+          <p className="text-xs text-slate-400 leading-relaxed">
+            <span className="text-slate-300">How evenly you paced the run.</span> Lower = more consistent.
           </p>
           
           {expandedTile === 'pacing' && (
-            <div className="mt-4 pt-4 border-t border-gray-700/50" onClick={(e) => e.stopPropagation()}>
+            <div className="mt-4 pt-4 border-t border-slate-700/50" onClick={(e) => e.stopPropagation()}>
               {loading ? (
-                <div className="text-center py-4 text-gray-400">Loading history...</div>
+                <div className="text-center py-4 text-slate-400">Loading history...</div>
               ) : metricHistory ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Your Average</div>
+                      <div className="text-xs text-slate-500 mb-1">Your Average</div>
                       <div className="text-sm font-medium text-white">
                         {metricHistory.statistics.pace_consistency.avg ? `${metricHistory.statistics.pace_consistency.avg.toFixed(1)}%` : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Today</div>
+                      <div className="text-xs text-slate-500 mb-1">Today</div>
                       <div className="text-sm font-medium text-white">
                         {metricHistory.current.pace_consistency !== null ? `${metricHistory.current.pace_consistency.toFixed(1)}%` : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Best (Most Even)</div>
+                      <div className="text-xs text-slate-500 mb-1">Best (Most Even)</div>
                       <div className="text-sm font-medium text-emerald-400">
                         {metricHistory.statistics.pace_consistency.worst !== null ? `${metricHistory.statistics.pace_consistency.worst.toFixed(1)}%` : '—'}
                       </div>
                     </div>
                   </div>
                   {metricHistory.insights.pace_consistency && (
-                    <div className="bg-gray-900/50 rounded p-3 text-xs text-gray-300 leading-relaxed">
+                    <div className="bg-slate-900/50 rounded p-3 text-xs text-slate-300 leading-relaxed">
                       💡 {metricHistory.insights.pace_consistency}
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="text-center py-4 text-gray-400">No historical data yet</div>
+                <div className="text-center py-4 text-slate-400">No historical data yet</div>
               )}
             </div>
           )}
@@ -797,14 +797,14 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
       </div>
       
       {/* First Half vs Second Half */}
-      <div className="bg-gray-800/50 rounded-xl border border-gray-700/50 p-6">
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
         <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
           <span>⚖️</span> First Half vs Second Half
           {analytics.split_type && (
             <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
               analytics.split_type === 'negative' ? 'bg-emerald-900/50 text-emerald-400' :
               analytics.split_type === 'positive' ? 'bg-amber-900/50 text-amber-400' :
-              'bg-gray-700 text-gray-300'
+              'bg-slate-700 text-slate-300'
             }`}>
               {analytics.split_type === 'negative' ? 'Negative Split 🎯' :
                analytics.split_type === 'positive' ? 'Positive Split' :
@@ -812,7 +812,7 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
             </span>
           )}
         </h4>
-        <p className="text-xs text-gray-400 mb-4">
+        <p className="text-xs text-slate-400 mb-4">
           {analytics.split_type === 'negative' 
             ? 'You finished faster than you started—the hallmark of a well-paced run.'
             : analytics.split_type === 'positive'
@@ -822,23 +822,23 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
         
         <div className="grid grid-cols-2 gap-6">
           {/* First Half */}
-          <div className="text-center bg-gray-900/30 rounded-lg p-4">
-            <div className="text-xs text-gray-400 uppercase mb-2">First Half</div>
+          <div className="text-center bg-slate-900/30 rounded-lg p-4">
+            <div className="text-xs text-slate-400 uppercase mb-2">First Half</div>
             <div className="text-xl font-bold text-white">
               {analytics.first_half_pace ? formatPace(analytics.first_half_pace) : '—'}
             </div>
-            <div className="text-sm text-gray-400 mt-1">
+            <div className="text-sm text-slate-400 mt-1">
               {analytics.first_half_hr ? `${Math.round(analytics.first_half_hr)} bpm avg` : '—'}
             </div>
           </div>
           
           {/* Second Half */}
-          <div className="text-center bg-gray-900/30 rounded-lg p-4">
-            <div className="text-xs text-gray-400 uppercase mb-2">Second Half</div>
+          <div className="text-center bg-slate-900/30 rounded-lg p-4">
+            <div className="text-xs text-slate-400 uppercase mb-2">Second Half</div>
             <div className="text-xl font-bold text-white">
               {analytics.second_half_pace ? formatPace(analytics.second_half_pace) : '—'}
             </div>
-            <div className="text-sm text-gray-400 mt-1">
+            <div className="text-sm text-slate-400 mt-1">
               {analytics.second_half_hr ? `${Math.round(analytics.second_half_hr)} bpm avg` : '—'}
             </div>
           </div>
@@ -846,13 +846,13 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
         
         {/* Change summary */}
         {analytics.fade_pct !== null && (
-          <div className="mt-4 pt-4 border-t border-gray-700/50">
+          <div className="mt-4 pt-4 border-t border-slate-700/50">
             <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-400">Pace Change:</span>
+              <span className="text-slate-400">Pace Change:</span>
               <span className={`font-medium ${
                 analytics.fade_pct < -2 ? 'text-emerald-400' :
                 analytics.fade_pct > 2 ? 'text-amber-400' :
-                'text-gray-300'
+                'text-slate-300'
               }`}>
                 {analytics.fade_pct < 0 
                   ? `${Math.abs(analytics.fade_pct)}% faster in 2nd half`
@@ -863,11 +863,11 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
             </div>
             {analytics.cardiac_drift_pct !== null && (
               <div className="flex justify-between items-center text-sm mt-2">
-                <span className="text-gray-400">HR Change:</span>
+                <span className="text-slate-400">HR Change:</span>
                 <span className={`font-medium ${
                   analytics.cardiac_drift_pct > 5 ? 'text-amber-400' :
                   analytics.cardiac_drift_pct < 3 ? 'text-emerald-400' :
-                  'text-gray-300'
+                  'text-slate-300'
                 }`}>
                   {analytics.cardiac_drift_pct > 0 
                     ? `+${analytics.cardiac_drift_pct}% (${Math.round((analytics.second_half_hr || 0) - (analytics.first_half_hr || 0))} bpm higher)`
@@ -900,15 +900,15 @@ function SplitsTable({ result }: { result: ContextualComparisonResult }) {
       <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
         <span>📈</span> Every {distanceUnitShort === 'mi' ? 'Mile' : 'Kilometer'}, Analyzed
       </h3>
-      <p className="text-sm text-gray-400 mb-4">
+      <p className="text-sm text-slate-400 mb-4">
         Each split compared to your Ghost average. <span className="text-emerald-400">Green = faster than usual</span>, <span className="text-rose-400">Red = slower than usual</span>.
       </p>
       
-      <div className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-900/50 text-gray-400 text-xs">
+              <tr className="bg-slate-900/50 text-slate-400 text-xs">
                 <th className="px-4 py-3 text-left font-medium">{distanceUnitShort === 'mi' ? 'Mile' : 'Km'}</th>
                 <th className="px-4 py-3 text-right font-medium">Pace</th>
                 <th className="px-4 py-3 text-right font-medium">
@@ -929,7 +929,7 @@ function SplitsTable({ result }: { result: ContextualComparisonResult }) {
                 )}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-700/30">
+            <tbody className="divide-y divide-slate-700/30">
               {splits.map((split, idx) => {
                 const ghostSplit = ghostSplits[idx];
                 const paceDiff = split.pace_per_km && ghostSplit?.avg_pace_per_km
@@ -937,7 +937,7 @@ function SplitsTable({ result }: { result: ContextualComparisonResult }) {
                   : null;
                 
                 return (
-                  <tr key={split.split_number} className="hover:bg-gray-700/20">
+                  <tr key={split.split_number} className="hover:bg-slate-700/20">
                     <td className="px-4 py-3 font-medium text-white">{split.split_number}</td>
                     <td className="px-4 py-3 text-right text-white font-mono">
                       {split.pace_per_km ? formatPace(split.pace_per_km) : '—'}
@@ -945,23 +945,23 @@ function SplitsTable({ result }: { result: ContextualComparisonResult }) {
                     <td className={`px-4 py-3 text-right font-mono font-medium ${
                       paceDiff !== null && paceDiff < -1 ? 'text-emerald-400' :
                       paceDiff !== null && paceDiff > 1 ? 'text-rose-400' :
-                      'text-gray-400'
+                      'text-slate-400'
                     }`}>
                       {paceDiff !== null 
                         ? `${paceDiff < 0 ? '' : '+'}${paceDiff.toFixed(1)}%` 
                         : '—'}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-300">
+                    <td className="px-4 py-3 text-right text-slate-300">
                       {split.avg_hr ? `${Math.round(split.avg_hr)}` : '—'}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-400">
+                    <td className="px-4 py-3 text-right text-slate-400">
                       {split.max_hr ? `${Math.round(split.max_hr)}` : '—'}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-400">
+                    <td className="px-4 py-3 text-right text-slate-400">
                       {split.cadence ? `${Math.round(split.cadence)} spm` : '—'}
                     </td>
                     {splits.some(s => s.gap_per_mile) && (
-                      <td className="px-4 py-3 text-right text-gray-400 font-mono">
+                      <td className="px-4 py-3 text-right text-slate-400 font-mono">
                         {split.gap_per_mile ? formatPace(split.gap_per_mile * 0.621371) : '—'}
                       </td>
                     )}
@@ -973,7 +973,7 @@ function SplitsTable({ result }: { result: ContextualComparisonResult }) {
         </div>
         
         {/* Legend */}
-        <div className="px-4 py-3 bg-gray-900/30 border-t border-gray-700/30 text-xs text-gray-500">
+        <div className="px-4 py-3 bg-slate-900/30 border-t border-slate-700/30 text-xs text-slate-500">
           <span className="font-medium">Legend:</span>{' '}
           HR = Heart Rate (bpm) · 
           Cadence = Steps per minute · 
@@ -988,7 +988,7 @@ function SplitsTable({ result }: { result: ContextualComparisonResult }) {
 function SimilarRunsSection({ runs }: { runs: SimilarRun[] }) {
   if (!runs || runs.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-400">
+      <div className="text-center py-8 text-slate-400">
         No similar runs found. Keep training to build your comparison base!
       </div>
     );
@@ -1005,7 +1005,7 @@ function SimilarRunsSection({ runs }: { runs: SimilarRun[] }) {
         ))}
       </div>
       {runs.length > 6 && (
-        <p className="text-sm text-gray-400 mt-4 text-center">
+        <p className="text-sm text-slate-400 mt-4 text-center">
           + {runs.length - 6} more similar runs
         </p>
       )}
@@ -1025,9 +1025,10 @@ export default function ContextualComparisonPage() {
   
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-900 to-gray-950 text-gray-100">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
         {/* Background accents */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 via-transparent to-black/50" />
           <div className="absolute top-0 left-1/4 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl" />
           <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl" />
         </div>
@@ -1038,13 +1039,13 @@ export default function ContextualComparisonPage() {
             <div className="flex items-center gap-4">
               <Link 
                 href={activityId ? `/activities/${activityId}` : '/activities'}
-                className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors"
               >
                 ← Back
               </Link>
               <div>
                 <h1 className="text-2xl font-bold">Context Comparison</h1>
-                <p className="text-gray-400">How does this run compare to similar efforts?</p>
+                <p className="text-slate-400">How does this run compare to similar efforts?</p>
               </div>
             </div>
             <UnitToggle />
@@ -1054,7 +1055,7 @@ export default function ContextualComparisonPage() {
           {isLoading && (
             <div className="flex flex-col items-center justify-center py-20">
               <LoadingSpinner size="lg" />
-              <p className="mt-4 text-gray-400">Finding similar runs...</p>
+              <p className="mt-4 text-slate-400">Finding similar runs...</p>
             </div>
           )}
           
@@ -1066,7 +1067,7 @@ export default function ContextualComparisonPage() {
               </p>
               <Link
                 href="/activities"
-                className="inline-block mt-4 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm"
+                className="inline-block mt-4 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
               >
                 Back to Activities
               </Link>

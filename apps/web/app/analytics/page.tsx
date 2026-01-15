@@ -25,10 +25,16 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { correlationsService, type Correlation } from '@/lib/api/services/correlations';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { BarChart3, TrendingUp, TrendingDown, Minus, Target, Calendar, ArrowRight, Activity, Zap, AlertTriangle } from 'lucide-react';
+import { WhyThisTrend } from '@/components/analytics/WhyThisTrend';
 
 // Helper to format workout type for display
 const workoutTypeColors: Record<string, string> = {
-  rest: 'bg-gray-700 text-gray-400',
+  rest: 'bg-slate-700 text-slate-400',
   easy: 'bg-green-900/50 text-green-400',
   easy_strides: 'bg-green-900/50 text-green-400',
   long: 'bg-blue-900/50 text-blue-400',
@@ -69,13 +75,13 @@ export default function DashboardPage() {
   if (!data || dataWithError?.error) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
+        <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
           <div className="max-w-6xl mx-auto px-4">
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 text-center">
-              <p className="text-gray-400">
+            <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 text-center">
+              <p className="text-slate-400">
                 {dataWithError?.error ?? 'Insufficient data to calculate efficiency trends'}
               </p>
-              <p className="text-sm text-gray-500 mt-2">
+              <p className="text-sm text-slate-500 mt-2">
                 Need at least 3 quality activities with pace and heart rate data.
               </p>
             </div>
@@ -87,78 +93,88 @@ export default function DashboardPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
         <div className="max-w-6xl mx-auto px-4">
           <div className="mb-8">
             <div className="mb-4">
-              <h1 className="text-2xl md:text-3xl font-bold">Analytics</h1>
-              <p className="text-gray-400 mt-1 text-sm md:text-base">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 rounded-xl bg-orange-500/20 ring-1 ring-orange-500/30">
+                  <BarChart3 className="w-6 h-6 text-orange-500" />
+                </div>
+                <h1 className="text-2xl md:text-3xl font-bold">Analytics</h1>
+              </div>
+              <p className="text-slate-400 text-sm md:text-base">
                 Efficiency trends, load response, correlations.
               </p>
             </div>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <select
-                value={days}
-                onChange={(e) => setDays(parseInt(e.target.value))}
-                className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-base"
-              >
-                <option value="30">Last 30 days</option>
-                <option value="60">Last 60 days</option>
-                <option value="90">Last 90 days</option>
-                <option value="120">Last 120 days</option>
-                <option value="180">Last 6 months</option>
-                <option value="365">Last year</option>
-              </select>
-              <select
-                value={rollingWindow}
-                onChange={(e) => setRollingWindow(e.target.value as '30d' | '60d' | '90d' | '120d' | 'all')}
-                className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-base"
-              >
-                <option value="30d">30-Day Trend</option>
-                <option value="60d">60-Day Trend</option>
-                <option value="90d">90-Day Trend</option>
-                <option value="120d">120-Day Trend</option>
-                <option value="all">All Trends</option>
-              </select>
-            </div>
+            <Card className="bg-slate-800 border-slate-700">
+              <CardContent className="py-4">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <select
+                    value={days}
+                    onChange={(e) => setDays(parseInt(e.target.value))}
+                    className="flex-1 px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white text-base focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="30">Last 30 days</option>
+                    <option value="60">Last 60 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="120">Last 120 days</option>
+                    <option value="180">Last 6 months</option>
+                    <option value="365">Last year</option>
+                  </select>
+                  <select
+                    value={rollingWindow}
+                    onChange={(e) => setRollingWindow(e.target.value as '30d' | '60d' | '90d' | '120d' | 'all')}
+                    className="flex-1 px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white text-base focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="30d">30-Day Trend</option>
+                    <option value="60d">60-Day Trend</option>
+                    <option value="90d">90-Day Trend</option>
+                    <option value="120d">120-Day Trend</option>
+                    <option value="all">All Trends</option>
+                  </select>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Training Plan Quick View */}
           {!planLoading && plan && (
-            <div className="bg-gradient-to-r from-orange-900/30 to-gray-800 rounded-lg border border-orange-700/50 p-4 mb-6">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h2 className="text-lg font-bold text-white">{plan.name}</h2>
-                  <p className="text-sm text-gray-400">
-                    {plan.goal_race_name} • {new Date(plan.goal_race_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  </p>
+            <Card className="bg-gradient-to-r from-orange-900/30 to-slate-800 border-orange-700/50 mb-6">
+              <CardContent className="pt-5 pb-5">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-orange-500/20 ring-1 ring-orange-500/30">
+                      <Target className="w-5 h-5 text-orange-500" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-white">{plan.name}</h2>
+                      <p className="text-sm text-slate-400 flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5" />
+                        {plan.goal_race_name} • {new Date(plan.goal_race_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" asChild className="text-orange-400 hover:text-orange-300">
+                    <Link href="/calendar">
+                      View Plan <ArrowRight className="w-4 h-4 ml-1" />
+                    </Link>
+                  </Button>
                 </div>
-                <Link 
-                  href="/calendar" 
-                  className="text-sm text-orange-400 hover:text-orange-300"
-                >
-                  View Full Plan →
-                </Link>
-              </div>
               
-              {/* Progress bar */}
-              <div className="mb-3">
-                <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-orange-500 transition-all"
-                    style={{ width: `${plan.progress_percent}%` }}
-                  />
+                {/* Progress bar */}
+                <div className="mb-3">
+                  <Progress value={plan.progress_percent} className="h-2" indicatorClassName="bg-orange-500" />
+                  <div className="flex justify-between text-xs text-slate-400 mt-1">
+                    <span>Week {plan.current_week || 0} of {plan.total_weeks}</span>
+                    <Badge variant="outline" className="text-orange-400 border-orange-500/30">{plan.progress_percent}%</Badge>
+                  </div>
                 </div>
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>Week {plan.current_week || 0} of {plan.total_weeks}</span>
-                  <span>{plan.progress_percent}%</span>
-                </div>
-              </div>
               
               {/* This week's workouts */}
               {!weekLoading && currentWeek && (
                 <div>
-                  <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">
+                  <p className="text-xs text-slate-400 mb-2 uppercase tracking-wide">
                     This Week • {currentWeek.phase} Phase
                   </p>
                   {/* Desktop: 7 columns */}
@@ -166,9 +182,9 @@ export default function DashboardPage() {
                     {currentWeek.workouts.slice(0, 7).map((workout, i) => (
                       <div
                         key={i}
-                        className={`text-center py-2 px-1 rounded ${workoutTypeColors[workout.workout_type] || 'bg-gray-800'}`}
+                        className={`text-center py-2 px-1 rounded ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
                       >
-                        <div className="text-[10px] text-gray-400">
+                        <div className="text-[10px] text-slate-400">
                           {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'short' })}
                         </div>
                         <div className="text-xs font-medium truncate" title={workout.title}>
@@ -185,9 +201,9 @@ export default function DashboardPage() {
                     {currentWeek.workouts.slice(0, 7).map((workout, i) => (
                       <div
                         key={i}
-                        className={`flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] ${workoutTypeColors[workout.workout_type] || 'bg-gray-800'}`}
+                        className={`flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
                       >
-                        <div className="text-[10px] text-gray-400">
+                        <div className="text-[10px] text-slate-400">
                           {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'narrow' })}
                         </div>
                         <div className="text-xs font-medium">
@@ -201,90 +217,115 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
-            </div>
+              </CardContent>
+            </Card>
           )}
           
           {/* No plan - subtle prompt */}
           {!planLoading && !plan && (
-            <div className="bg-gray-800/50 rounded-lg border border-gray-700/50 p-4 mb-6">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-400">No active plan.</p>
-                <Link 
-                  href="/plans/create" 
-                  className="text-sm text-orange-400 hover:text-orange-300"
-                >
-                  Create →
-                </Link>
-              </div>
-            </div>
+            <Card className="bg-slate-800/50 border-slate-700/50 mb-6">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-slate-400 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    No active plan.
+                  </p>
+                  <Button variant="ghost" size="sm" asChild className="text-orange-400 hover:text-orange-300">
+                    <Link href="/plans/create">
+                      Create <ArrowRight className="w-4 h-4 ml-1" />
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {/* Summary Stats - Sparse, data-driven */}
           {data.summary && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-              <div className="bg-gray-800/50 rounded-lg p-4">
-                <p className="text-xs text-gray-500 mb-1">Current EF</p>
-                <p className="text-xl font-semibold">{data.summary.current_efficiency}</p>
-              </div>
-              <div className="bg-gray-800/50 rounded-lg p-4">
-                <p className="text-xs text-gray-500 mb-1">{days}d Avg</p>
-                <p className="text-xl font-semibold">{data.summary.average_efficiency}</p>
-              </div>
-              <div className="bg-gray-800/50 rounded-lg p-4">
-                <p className="text-xs text-gray-500 mb-1">Best</p>
-                <p className="text-xl font-semibold text-emerald-400">
-                  {data.summary.best_efficiency}
-                </p>
-              </div>
-              <div className="bg-gray-800/50 rounded-lg p-4">
-                <p className="text-xs text-gray-500 mb-1">Trend</p>
-                <p className={`text-xl font-semibold ${
-                  data.summary.trend_direction === 'improving' ? 'text-emerald-400' :
-                  data.summary.trend_direction === 'declining' ? 'text-orange-400' :
-                  'text-gray-400'
-                }`}>
-                  {data.summary.trend_direction === 'improving' ? '↑' :
-                   data.summary.trend_direction === 'declining' ? '↓' : '→'}
-                  {data.summary.trend_magnitude && ` ${Math.abs(data.summary.trend_magnitude).toFixed(1)}%`}
-                </p>
-              </div>
+              <Card className="bg-slate-800 border-slate-700">
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-xs text-slate-500 mb-1">Current EF</p>
+                  <p className="text-xl font-semibold">{data.summary.current_efficiency}</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-slate-800 border-slate-700">
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-xs text-slate-500 mb-1">{days}d Avg</p>
+                  <p className="text-xl font-semibold">{data.summary.average_efficiency}</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-slate-800 border-slate-700">
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-xs text-slate-500 mb-1">Best</p>
+                  <p className="text-xl font-semibold text-emerald-400">
+                    {data.summary.best_efficiency}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="bg-slate-800 border-slate-700">
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-xs text-slate-500 mb-1">Trend</p>
+                  <p className={`text-xl font-semibold flex items-center gap-1 ${
+                    data.summary.trend_direction === 'improving' ? 'text-emerald-400' :
+                    data.summary.trend_direction === 'declining' ? 'text-orange-400' :
+                    'text-slate-400'
+                  }`}>
+                    {data.summary.trend_direction === 'improving' ? <TrendingUp className="w-5 h-5" /> :
+                     data.summary.trend_direction === 'declining' ? <TrendingDown className="w-5 h-5" /> : <Minus className="w-5 h-5" />}
+                    {data.summary.trend_magnitude && ` ${Math.abs(data.summary.trend_magnitude).toFixed(1)}%`}
+                  </p>
+                </CardContent>
+              </Card>
             </div>
           )}
 
           {/* Stability Metrics */}
           {data.stability && data.stability.consistency_score !== null && (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-6">
-              <h3 className="text-lg font-semibold mb-2">Stability Metrics</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-xs text-gray-400">Consistency Score</p>
-                  <p className="text-xl font-semibold">
-                    {data.stability.consistency_score?.toFixed(1)}/100
-                  </p>
+            <Card className="bg-slate-800 border-slate-700 mb-6">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-orange-500" />
+                  Stability Metrics
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-xs text-slate-400">Consistency Score</p>
+                    <p className="text-xl font-semibold">
+                      {data.stability.consistency_score?.toFixed(1)}/100
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Easy Runs</p>
+                    <p className="text-xl font-semibold text-emerald-400">{data.stability.easy_runs}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Moderate Runs</p>
+                    <p className="text-xl font-semibold text-blue-400">{data.stability.moderate_runs}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Hard Runs</p>
+                    <p className="text-xl font-semibold text-orange-400">{data.stability.hard_runs}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-400">Easy Runs</p>
-                  <p className="text-xl font-semibold">{data.stability.easy_runs}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400">Moderate Runs</p>
-                  <p className="text-xl font-semibold">{data.stability.moderate_runs}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400">Hard Runs</p>
-                  <p className="text-xl font-semibold">{data.stability.hard_runs}</p>
-                </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           )}
 
           {/* Efficiency Trend Chart */}
           {data.time_series && data.time_series.length > 0 && (
-            <EfficiencyChart
-              data={data.time_series}
-              rollingWindow={rollingWindow}
-              className="mb-6"
-            />
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-slate-200">Efficiency Trend</h2>
+                <WhyThisTrend metric="efficiency" days={days} />
+              </div>
+              <EfficiencyChart
+                data={data.time_series}
+                rollingWindow={rollingWindow}
+              />
+            </div>
           )}
 
           {/* Age-Graded Trajectory */}
@@ -328,11 +369,13 @@ function CorrelationExplorer({ days }: { days: number }) {
   
   if (isLoading) {
     return (
-      <div className="mt-6 bg-gray-800 rounded-lg border border-gray-700 p-6">
-        <div className="flex justify-center py-8">
-          <LoadingSpinner />
-        </div>
-      </div>
+      <Card className="mt-6 bg-slate-800 border-slate-700">
+        <CardContent className="py-8">
+          <div className="flex justify-center">
+            <LoadingSpinner />
+          </div>
+        </CardContent>
+      </Card>
     );
   }
   
@@ -340,48 +383,65 @@ function CorrelationExplorer({ days }: { days: number }) {
   
   if (!hasData) {
     return (
-      <div className="mt-6 bg-gray-800 rounded-lg border border-gray-700 p-6">
-        <h3 className="text-lg font-semibold mb-2">Correlation Explorer</h3>
-        <p className="text-gray-500 text-sm">
-          Not enough data yet. Log more inputs (sleep, nutrition, stress) to discover patterns.
-        </p>
-      </div>
+      <Card className="mt-6 bg-slate-800 border-slate-700">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Zap className="w-5 h-5 text-orange-500" />
+            Correlation Explorer
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <p className="text-slate-500 text-sm">
+            Not enough data yet. Log more inputs (sleep, nutrition, stress) to discover patterns.
+          </p>
+        </CardContent>
+      </Card>
     );
   }
   
   return (
     <div className="mt-6 grid md:grid-cols-2 gap-4">
       {/* What's Working */}
-      <div className="bg-gray-800 rounded-lg border border-emerald-700/30 p-4">
-        <h3 className="text-sm font-semibold text-emerald-400 mb-3">
-          What Correlates with Better Efficiency
-        </h3>
-        {whatWorks?.what_works && whatWorks.what_works.length > 0 ? (
-          <div className="space-y-2">
-            {whatWorks.what_works.slice(0, 5).map((c, i) => (
-              <CorrelationItem key={i} correlation={c} positive />
-            ))}
-          </div>
-        ) : (
-          <p className="text-gray-500 text-sm">No significant patterns yet.</p>
-        )}
-      </div>
+      <Card className="bg-slate-800 border-emerald-700/30">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-emerald-400 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4" />
+            What Correlates with Better Efficiency
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {whatWorks?.what_works && whatWorks.what_works.length > 0 ? (
+            <div className="space-y-2">
+              {whatWorks.what_works.slice(0, 5).map((c, i) => (
+                <CorrelationItem key={i} correlation={c} positive />
+              ))}
+            </div>
+          ) : (
+            <p className="text-slate-500 text-sm">No significant patterns yet.</p>
+          )}
+        </CardContent>
+      </Card>
       
       {/* What's Not Working */}
-      <div className="bg-gray-800 rounded-lg border border-orange-700/30 p-4">
-        <h3 className="text-sm font-semibold text-orange-400 mb-3">
-          What Correlates with Worse Efficiency
-        </h3>
-        {whatDoesntWork?.what_doesnt_work && whatDoesntWork.what_doesnt_work.length > 0 ? (
-          <div className="space-y-2">
-            {whatDoesntWork.what_doesnt_work.slice(0, 5).map((c, i) => (
-              <CorrelationItem key={i} correlation={c} positive={false} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-gray-500 text-sm">No significant patterns yet.</p>
-        )}
-      </div>
+      <Card className="bg-slate-800 border-orange-700/30">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-orange-400 flex items-center gap-2">
+            <TrendingDown className="w-4 h-4" />
+            What Correlates with Worse Efficiency
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {whatDoesntWork?.what_doesnt_work && whatDoesntWork.what_doesnt_work.length > 0 ? (
+            <div className="space-y-2">
+              {whatDoesntWork.what_doesnt_work.slice(0, 5).map((c, i) => (
+                <CorrelationItem key={i} correlation={c} positive={false} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-slate-500 text-sm">No significant patterns yet.</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -398,12 +458,12 @@ function CorrelationItem({ correlation, positive }: { correlation: Correlation; 
     : 'not significant';
   
   return (
-    <div className="flex items-center justify-between py-2 border-b border-gray-700/50 last:border-0">
+    <div className="flex items-center justify-between py-2 border-b border-slate-700/50 last:border-0">
       <div className="flex-1">
         <div className="text-sm text-white">
           {correlation.input_name.replace(/_/g, ' ')}
         </div>
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-slate-500">
           {correlation.sample_size} samples · {confidenceText}
           {correlation.time_lag_days > 0 && ` · ${correlation.time_lag_days}d lag`}
         </div>
@@ -412,7 +472,7 @@ function CorrelationItem({ correlation, positive }: { correlation: Correlation; 
         <div className={`text-xs ${positive ? 'text-emerald-400' : 'text-orange-400'}`}>
           {strengthLabel}
         </div>
-        <div className="text-[10px] text-gray-500">
+        <div className="text-[10px] text-slate-500">
           r={correlation.correlation_coefficient.toFixed(2)}
         </div>
       </div>

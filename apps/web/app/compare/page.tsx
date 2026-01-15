@@ -102,7 +102,7 @@ function ActivityRow({
       className={`transition-all duration-200 cursor-pointer group ${
         isSelected 
           ? 'border-orange-500 bg-orange-950/30 shadow-lg shadow-orange-500/10' 
-          : 'border-slate-700/50 hover:border-slate-600 hover:bg-slate-800/50'
+          : 'bg-slate-800 border-slate-700 hover:border-slate-600'
       }`}
       onClick={selectionMode ? onToggleSelect : undefined}
     >
@@ -302,27 +302,24 @@ export default function ComparePage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
-        {/* Subtle gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 via-transparent to-black/50 pointer-events-none" />
-        
-        <div className="relative max-w-5xl mx-auto px-4 py-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100">
+        <div className="max-w-5xl mx-auto px-4 py-8">
           
           {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-orange-500/10 ring-1 ring-orange-500/30">
-                <Activity className="w-6 h-6 text-orange-400" />
-              </div>
-              Compare Runs
-            </h1>
-            <p className="text-slate-400">
-              Find similar runs automatically, or select 2-10 runs to compare directly
-            </p>
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2.5 rounded-xl bg-orange-500/20 ring-1 ring-orange-500/30">
+              <Activity className="w-6 h-6 text-orange-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Compare Runs</h1>
+              <p className="text-sm text-slate-400">
+                Find similar runs automatically, or select 2-10 runs to compare directly
+              </p>
+            </div>
           </div>
           
           {/* Mode Toggle + Filters Card */}
-          <Card className="mb-6 bg-slate-900/80 border-slate-700/50">
+          <Card className="mb-6 bg-slate-800 border-slate-700">
             <CardContent className="pt-5 pb-5">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 {/* Mode Toggle */}
@@ -606,7 +603,7 @@ export default function ComparePage() {
                 )}
               </div>
             ) : (
-              <Card className="border-slate-700/50 bg-slate-900/50">
+              <Card className="bg-slate-800 border-slate-700">
                 <CardContent className="py-12 text-center">
                   {hasAnyFilter ? (
                     <>
@@ -634,7 +631,7 @@ export default function ComparePage() {
           </div>
           
           {/* How it works */}
-          <Card className="bg-slate-900/50 border-slate-700/30">
+          <Card className="bg-slate-800 border-slate-700">
             <CardHeader className="pb-4">
               <CardTitle className="text-base font-semibold text-slate-300 flex items-center gap-2">
                 <Info className="w-4 h-4 text-slate-400" />
@@ -643,7 +640,7 @@ export default function ComparePage() {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="bg-slate-800/50 border-slate-700/50">
+                <Card className="bg-slate-700/50 border-slate-600">
                   <CardContent className="pt-4 pb-4">
                     <div className="text-orange-400 font-medium mb-2 flex items-center gap-2">
                       <Search className="w-4 h-4" />
@@ -655,7 +652,7 @@ export default function ComparePage() {
                     </CardDescription>
                   </CardContent>
                 </Card>
-                <Card className="bg-slate-800/50 border-slate-700/50">
+                <Card className="bg-slate-700/50 border-slate-600">
                   <CardContent className="pt-4 pb-4">
                     <div className="text-orange-400 font-medium mb-2 flex items-center gap-2">
                       <CheckSquare className="w-4 h-4" />
@@ -672,7 +669,7 @@ export default function ComparePage() {
           </Card>
           
         </div>
-      </div>
+        </div>
     </ProtectedRoute>
   );
 }

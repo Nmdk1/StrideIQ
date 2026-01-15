@@ -19,7 +19,7 @@ export function EfficiencyComparisons({ analysis, className = '' }: EfficiencyCo
   }
 
   return (
-    <div className={`bg-gray-800 rounded-lg border border-gray-700 p-6 ${className}`}>
+    <div className={`bg-slate-800 rounded-lg border border-slate-700 p-6 ${className}`}>
       <h3 className="text-lg font-semibold mb-4">Efficiency Comparisons</h3>
       <div className="space-y-4">
         {analysis.comparisons.map((comparison, index) => {
@@ -29,14 +29,14 @@ export function EfficiencyComparisons({ analysis, className = '' }: EfficiencyCo
           return (
             <div
               key={index}
-              className="bg-gray-900 rounded border border-gray-700 p-4"
+              className="bg-slate-900 rounded border border-slate-700 p-4"
             >
               <div className="flex justify-between items-start mb-2">
                 <div>
                   <h4 className="font-medium capitalize">
                     {comparison.baseline_type.replace('_', ' ')}
                   </h4>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-slate-400">
                     Baseline: {comparison.baseline_pace.toFixed(2)} min/mi @{' '}
                     {comparison.baseline_hr} bpm
                   </p>
@@ -48,7 +48,7 @@ export function EfficiencyComparisons({ analysis, className = '' }: EfficiencyCo
                         ? 'text-green-400'
                         : !isImprovement && comparison.is_meaningful
                         ? 'text-red-400'
-                        : 'text-gray-400'
+                        : 'text-slate-400'
                     }`}
                   >
                     {isImprovement ? '-' : '+'}
@@ -60,7 +60,7 @@ export function EfficiencyComparisons({ analysis, className = '' }: EfficiencyCo
                 </div>
               </div>
               {comparison.trend_avg_improvement && (
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-slate-400">
                   Avg improvement over {comparison.sample_size} runs:{' '}
                   {comparison.trend_avg_improvement.toFixed(1)}%
                 </p>

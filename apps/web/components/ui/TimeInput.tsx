@@ -232,7 +232,7 @@ export default function TimeInput({
       {label && (
         <label 
           htmlFor={inputId}
-          className="block text-sm font-medium mb-2 text-gray-300"
+          className="block text-sm font-medium mb-2 text-slate-300"
         >
           {label}
           {required && <span className="text-red-400 ml-1">*</span>}
@@ -257,10 +257,10 @@ export default function TimeInput({
           [ariaDescribedBy, errorId].filter(Boolean).join(' ') || undefined
         }
         className={`
-          bg-gray-800 border rounded px-3 py-2 text-white font-mono
+          bg-slate-800 border rounded px-3 py-2 text-white font-mono
           transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500
           ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
-          ${error ? 'border-red-500' : 'border-gray-700'}
+          ${error ? 'border-red-500' : 'border-slate-700/50'}
           ${className}
         `.trim()}
       />

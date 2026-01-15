@@ -245,7 +245,7 @@ export default function HeatAdjustedPace() {
   return (
     <div className="space-y-4">
       {/* Disclaimer */}
-      <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 text-sm text-gray-300">
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4 text-sm text-slate-300">
         <p className="font-semibold text-orange-400 mb-2">Important:</p>
         <p>
           Pace adjustments are estimates based on research. Conditions vary — trust perceived effort and heart rate as the true guide in heat.
@@ -272,12 +272,12 @@ export default function HeatAdjustedPace() {
               onChange={(e) => setBasePace(e.target.value)}
               placeholder="00:00"
               autoComplete="off"
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white mb-2"
+              className="w-full bg-slate-800 border border-slate-700/50 rounded px-3 py-2 text-white mb-2"
             />
           </>
         )}
-        <div className="flex items-center justify-between p-2 bg-gray-800/50 border border-gray-700 rounded-lg">
-          <label className="text-xs font-medium text-gray-300">Pace Unit</label>
+        <div className="flex items-center justify-between p-2 bg-slate-800/50 border border-slate-700/50 rounded-lg">
+          <label className="text-xs font-medium text-slate-300">Pace Unit</label>
           <div className="flex gap-2">
             <button
               type="button"
@@ -285,7 +285,7 @@ export default function HeatAdjustedPace() {
               className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                 paceUnit === 'min_mile'
                   ? 'bg-orange-600 text-white'
-                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
               }`}
             >
               /mile
@@ -296,14 +296,14 @@ export default function HeatAdjustedPace() {
               className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                 paceUnit === 'min_km'
                   ? 'bg-orange-600 text-white'
-                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
               }`}
             >
               /km
             </button>
           </div>
         </div>
-        <p className="text-xs text-gray-500 mt-1">Format: MM:SS (e.g., 8:00) or decimal minutes (e.g., 8.5)</p>
+        <p className="text-xs text-slate-500 mt-1">Format: MM:SS (e.g., 8:00) or decimal minutes (e.g., 8.5)</p>
       </div>
 
       {/* Temperature */}
@@ -316,10 +316,10 @@ export default function HeatAdjustedPace() {
           onChange={(e) => setTemperature(e.target.value)}
           placeholder="0"
           autoComplete="off"
-          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white mb-2"
+          className="w-full bg-slate-800 border border-slate-700/50 rounded px-3 py-2 text-white mb-2"
         />
-        <div className="flex items-center justify-between p-2 bg-gray-800/50 border border-gray-700 rounded-lg">
-          <label className="text-xs font-medium text-gray-300">Temperature Unit</label>
+        <div className="flex items-center justify-between p-2 bg-slate-800/50 border border-slate-700/50 rounded-lg">
+          <label className="text-xs font-medium text-slate-300">Temperature Unit</label>
           <div className="flex gap-2">
             <button
               type="button"
@@ -327,7 +327,7 @@ export default function HeatAdjustedPace() {
               className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                 tempUnit === 'F'
                   ? 'bg-orange-600 text-white'
-                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
               }`}
             >
               °F
@@ -338,7 +338,7 @@ export default function HeatAdjustedPace() {
               className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                 tempUnit === 'C'
                   ? 'bg-orange-600 text-white'
-                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
               }`}
             >
               °C
@@ -348,13 +348,13 @@ export default function HeatAdjustedPace() {
       </div>
 
       {/* Dew Point / Humidity Toggle */}
-      <div className="border border-gray-700 rounded-lg p-4">
+      <div className="border border-slate-700/50 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <div className="font-semibold text-sm text-gray-300">
+            <div className="font-semibold text-sm text-slate-300">
               Humidity Data (Optional but Recommended)
             </div>
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-slate-500 mt-1">
               More accurate with dew point or humidity
             </div>
           </div>
@@ -367,7 +367,7 @@ export default function HeatAdjustedPace() {
             className={`px-3 py-1 rounded text-sm transition-colors ${
               hasDewPoint
                 ? 'bg-orange-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
             }`}
           >
             {hasDewPoint ? 'Remove' : 'Add'}
@@ -375,7 +375,7 @@ export default function HeatAdjustedPace() {
         </div>
 
         {hasDewPoint && (
-          <div className="space-y-3 pt-3 border-t border-gray-700">
+          <div className="space-y-3 pt-3 border-t border-slate-700/50">
             <div>
               <label className="block text-xs font-medium mb-1">Dew Point ({tempUnit === 'F' ? '°F' : '°C'})</label>
               <input
@@ -387,10 +387,10 @@ export default function HeatAdjustedPace() {
                   setHumidity(''); // Clear humidity if dew point entered
                 }}
                 placeholder="0"
-                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+                className="w-full bg-slate-800 border border-slate-700/50 rounded px-3 py-2 text-sm text-white"
               />
             </div>
-            <div className="text-xs text-gray-500 text-center">OR</div>
+            <div className="text-xs text-slate-500 text-center">OR</div>
             <div>
               <label className="block text-xs font-medium mb-1">Relative Humidity (%)</label>
               <input
@@ -404,9 +404,9 @@ export default function HeatAdjustedPace() {
                   setDewPoint(''); // Clear dew point if humidity entered
                 }}
                 placeholder="0"
-                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+                className="w-full bg-slate-800 border border-slate-700/50 rounded px-3 py-2 text-sm text-white"
               />
-              <p className="text-xs text-gray-500 mt-1">Dew point will be calculated automatically</p>
+              <p className="text-xs text-slate-500 mt-1">Dew point will be calculated automatically</p>
             </div>
           </div>
         )}
@@ -426,7 +426,7 @@ export default function HeatAdjustedPace() {
       </button>
 
       {results && (
-        <div className="mt-6 pt-6 border-t border-gray-700 space-y-4">
+        <div className="mt-6 pt-6 border-t border-slate-700/50 space-y-4">
           <div className={`p-4 rounded-lg border ${
             results.severity === 'high' ? 'bg-red-900/20 border-red-800' :
             results.severity === 'moderate' ? 'bg-yellow-900/20 border-yellow-800' :
@@ -435,34 +435,34 @@ export default function HeatAdjustedPace() {
           }`}>
             <div className="space-y-3">
               <div className="text-center">
-                <div className="text-xs text-gray-500 mb-1">Base Pace</div>
+                <div className="text-xs text-slate-500 mb-1">Base Pace</div>
                 <div className="text-2xl font-bold text-orange-400">{results.basePace}</div>
               </div>
               
-              <div className="text-center text-gray-400">↓</div>
+              <div className="text-center text-slate-400">↓</div>
               
               <div className="text-center">
-                <div className="text-xs text-gray-500 mb-1">Heat-Adjusted Pace</div>
+                <div className="text-xs text-slate-500 mb-1">Heat-Adjusted Pace</div>
                 <div className="text-2xl font-bold text-orange-400">{results.adjustedPace}</div>
               </div>
 
-              <div className="pt-3 border-t border-gray-700">
+              <div className="pt-3 border-t border-slate-700/50">
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <div className="text-gray-500 text-xs">Total Slowdown</div>
-                    <div className="text-lg font-semibold text-gray-300">{results.slowdown}%</div>
+                    <div className="text-slate-500 text-xs">Total Slowdown</div>
+                    <div className="text-lg font-semibold text-slate-300">{results.slowdown}%</div>
                   </div>
                   <div>
-                    <div className="text-gray-500 text-xs">Conditions</div>
-                    <div className="text-lg font-semibold text-gray-300">
+                    <div className="text-slate-500 text-xs">Conditions</div>
+                    <div className="text-lg font-semibold text-slate-300">
                       {results.temp}°{results.tempUnit} / {results.dewPoint}°{results.tempUnit} DP
                     </div>
                   </div>
                 </div>
                 {results.elevationAdjustment !== null && (
-                  <div className="mt-3 pt-3 border-t border-gray-700">
-                    <div className="text-xs text-gray-500 mb-1">Breakdown:</div>
-                    <div className="text-sm text-gray-400">
+                  <div className="mt-3 pt-3 border-t border-slate-700/50">
+                    <div className="text-xs text-slate-500 mb-1">Breakdown:</div>
+                    <div className="text-sm text-slate-400">
                       Heat: {results.heatAdjustment}%
                       {results.elevationDetails && ` • Elevation: ${results.elevationDetails}`}
                     </div>
@@ -470,25 +470,25 @@ export default function HeatAdjustedPace() {
                 )}
               </div>
 
-              <div className={`pt-3 border-t border-gray-700 p-3 rounded ${
+              <div className={`pt-3 border-t border-slate-700/50 p-3 rounded ${
                 results.severity === 'high' ? 'bg-red-900/30' :
                 results.severity === 'moderate' ? 'bg-yellow-900/30' :
                 results.severity === 'low' ? 'bg-blue-900/30' :
                 'bg-green-900/30'
               }`}>
-                <div className="text-sm text-gray-300 leading-relaxed">
+                <div className="text-sm text-slate-300 leading-relaxed">
                   {results.severityMessage}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 text-xs text-gray-400">
-            <p className="font-semibold text-gray-300 mb-2">Interpretation:</p>
+          <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4 text-xs text-slate-400">
+            <p className="font-semibold text-slate-300 mb-2">Interpretation:</p>
             <p className="mb-2">
               Your normal <strong className="text-orange-400">{results.basePace}</strong> pace becomes approximately <strong className="text-orange-400">{results.adjustedPace}</strong> equivalent effort in {results.temp}°{results.tempUnit} with {results.dewPoint}°{results.tempUnit} dew point.
             </p>
-            <p className="mt-2 pt-2 border-t border-gray-700">
+            <p className="mt-2 pt-2 border-t border-slate-700/50">
               <strong>Remember:</strong> Use perceived effort or heart rate as the true guide in heat. This adjustment helps maintain physiological effort, not raw pace.
             </p>
           </div>

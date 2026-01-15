@@ -17,16 +17,16 @@ interface EmptyStateProps {
 
 export function EmptyNutritionState({ className = '' }: EmptyStateProps) {
   return (
-    <div className={`bg-gray-800/50 border border-gray-700 rounded-lg p-6 text-center ${className}`}>
+    <div className={`bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 text-center ${className}`}>
       <div className="text-4xl mb-4">🍽️</div>
-      <h3 className="text-lg font-semibold text-gray-200 mb-2">
+      <h3 className="text-lg font-semibold text-slate-200 mb-2">
         No meals logged yet
       </h3>
-      <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
+      <p className="text-slate-400 text-sm mb-4 max-w-md mx-auto">
         When you log what you eat, we can find patterns like: 
         <span className="text-orange-400"> &quot;Your pace improves 3% when you eat carbs 2 hours before running.&quot;</span>
       </p>
-      <p className="text-gray-500 text-xs mb-4">
+      <p className="text-slate-500 text-xs mb-4">
         Just log when you remember. Partial data still reveals patterns.
       </p>
       <Link
@@ -41,16 +41,16 @@ export function EmptyNutritionState({ className = '' }: EmptyStateProps) {
 
 export function EmptyCheckinState({ className = '' }: EmptyStateProps) {
   return (
-    <div className={`bg-gray-800/50 border border-gray-700 rounded-lg p-6 text-center ${className}`}>
+    <div className={`bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 text-center ${className}`}>
       <div className="text-4xl mb-4">😴</div>
-      <h3 className="text-lg font-semibold text-gray-200 mb-2">
+      <h3 className="text-lg font-semibold text-slate-200 mb-2">
         No check-ins yet
       </h3>
-      <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
+      <p className="text-slate-400 text-sm mb-4 max-w-md mx-auto">
         A 5-second morning check-in lets us find patterns like:
         <span className="text-orange-400"> &quot;You run 8% faster after 7+ hours of sleep.&quot;</span>
       </p>
-      <p className="text-gray-500 text-xs mb-4">
+      <p className="text-slate-500 text-xs mb-4">
         Sleep, stress, soreness. Three sliders. Done.
       </p>
       <Link
@@ -65,16 +65,16 @@ export function EmptyCheckinState({ className = '' }: EmptyStateProps) {
 
 export function EmptyCorrelationsState({ className = '' }: EmptyStateProps) {
   return (
-    <div className={`bg-gray-800/50 border border-gray-700 rounded-lg p-6 text-center ${className}`}>
+    <div className={`bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 text-center ${className}`}>
       <div className="text-4xl mb-4">🔍</div>
-      <h3 className="text-lg font-semibold text-gray-200 mb-2">
+      <h3 className="text-lg font-semibold text-slate-200 mb-2">
         Not enough data for correlations yet
       </h3>
-      <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
+      <p className="text-slate-400 text-sm mb-4 max-w-md mx-auto">
         We need about <span className="text-orange-400">2-3 weeks of logging</span> to find what actually works for you.
         Keep logging sleep, nutrition, and letting Strava sync your runs.
       </p>
-      <div className="text-gray-500 text-xs space-y-1">
+      <div className="text-slate-500 text-xs space-y-1">
         <p>✓ Strava activities syncing</p>
         <p>○ Morning check-ins (sleep, stress, soreness)</p>
         <p>○ Nutrition logging (when convenient)</p>
@@ -85,12 +85,12 @@ export function EmptyCorrelationsState({ className = '' }: EmptyStateProps) {
 
 export function EmptyActivitiesState({ className = '' }: EmptyStateProps) {
   return (
-    <div className={`bg-gray-800/50 border border-gray-700 rounded-lg p-6 text-center ${className}`}>
+    <div className={`bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 text-center ${className}`}>
       <div className="text-4xl mb-4">🏃</div>
-      <h3 className="text-lg font-semibold text-gray-200 mb-2">
+      <h3 className="text-lg font-semibold text-slate-200 mb-2">
         No activities synced yet
       </h3>
-      <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
+      <p className="text-slate-400 text-sm mb-4 max-w-md mx-auto">
         Connect Strava to automatically sync your runs. 
         We analyze pace, heart rate, and efficiency—not just distance.
       </p>
@@ -106,16 +106,16 @@ export function EmptyActivitiesState({ className = '' }: EmptyStateProps) {
 
 export function EmptyLabResultsState({ className = '' }: EmptyStateProps) {
   return (
-    <div className={`bg-gray-800/50 border border-gray-700 rounded-lg p-6 text-center ${className}`}>
+    <div className={`bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 text-center ${className}`}>
       <div className="text-4xl mb-4">🧪</div>
-      <h3 className="text-lg font-semibold text-gray-200 mb-2">
+      <h3 className="text-lg font-semibold text-slate-200 mb-2">
         No lab results yet
       </h3>
-      <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
+      <p className="text-slate-400 text-sm mb-4 max-w-md mx-auto">
         Add your blood work to find patterns like:
         <span className="text-orange-400"> &quot;Your efficiency dropped when ferritin fell below 50.&quot;</span>
       </p>
-      <p className="text-gray-500 text-xs mb-4">
+      <p className="text-slate-500 text-xs mb-4">
         We track: ferritin, vitamin D, hemoglobin, thyroid, and more.
       </p>
       <Link
@@ -149,9 +149,9 @@ export function DataQualityIndicator({
   const hasEnoughData = activitiesCount >= 10 && checkinsCount >= 14;
   
   return (
-    <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+    <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-medium text-gray-300">Data Quality</h4>
+        <h4 className="text-sm font-medium text-slate-300">Data Quality</h4>
         <span className={`text-xs px-2 py-1 rounded ${hasEnoughData ? 'bg-green-900/50 text-green-400' : 'bg-yellow-900/50 text-yellow-400'}`}>
           {hasEnoughData ? 'Ready for insights' : 'Building patterns...'}
         </span>
@@ -159,29 +159,29 @@ export function DataQualityIndicator({
       
       <div className="space-y-2 text-sm">
         <div className="flex justify-between items-center">
-          <span className="text-gray-400">Activities</span>
-          <span className={activitiesCount >= 10 ? 'text-green-400' : 'text-gray-500'}>
+          <span className="text-slate-400">Activities</span>
+          <span className={activitiesCount >= 10 ? 'text-green-400' : 'text-slate-500'}>
             {activitiesCount} {activitiesCount >= 10 ? '✓' : `(need ${10 - activitiesCount} more)`}
           </span>
         </div>
         
         <div className="flex justify-between items-center">
-          <span className="text-gray-400">Check-ins</span>
-          <span className={checkinsPercent >= 70 ? 'text-green-400' : 'text-gray-500'}>
+          <span className="text-slate-400">Check-ins</span>
+          <span className={checkinsPercent >= 70 ? 'text-green-400' : 'text-slate-500'}>
             {checkinsCount}/{daysTracked} days ({Math.round(checkinsPercent)}%)
           </span>
         </div>
         
         <div className="flex justify-between items-center">
-          <span className="text-gray-400">Nutrition logs</span>
-          <span className="text-gray-500">
+          <span className="text-slate-400">Nutrition logs</span>
+          <span className="text-slate-500">
             {nutritionCount} entries
           </span>
         </div>
       </div>
       
       {!hasEnoughData && (
-        <p className="mt-3 text-xs text-gray-500 border-t border-gray-700 pt-3">
+        <p className="mt-3 text-xs text-slate-500 border-t border-slate-700/50 pt-3">
           The more consistently you log, the more patterns we can find. 
           Even 3-4 days/week reveals insights.
         </p>

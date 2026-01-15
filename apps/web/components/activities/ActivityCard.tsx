@@ -24,7 +24,7 @@ interface ActivityCardProps {
 
 // Workout type badge colors
 const WORKOUT_TYPE_COLORS: Record<string, string> = {
-  recovery_run: 'bg-gray-600',
+  recovery_run: 'bg-slate-600',
   easy_run: 'bg-green-700',
   aerobic_run: 'bg-green-600',
   long_run: 'bg-blue-700',
@@ -93,10 +93,10 @@ export function ActivityCard({
   const cardContent = (
     <div
       className={`
-        bg-gray-800 border rounded-lg p-4 transition-colors cursor-pointer
+        bg-slate-800 border rounded-lg p-4 transition-colors cursor-pointer
         ${isSelected 
           ? 'border-orange-500 bg-orange-900/10' 
-          : 'border-gray-700 hover:border-blue-600'}
+          : 'border-slate-700 hover:border-blue-600'}
         ${className}
       `}
     >
@@ -110,8 +110,8 @@ export function ActivityCard({
                 isSelected 
                   ? 'bg-orange-600 border-orange-600' 
                   : canSelect 
-                    ? 'border-gray-500 hover:border-orange-500' 
-                    : 'border-gray-700 cursor-not-allowed opacity-50'
+                    ? 'border-slate-500 hover:border-orange-500' 
+                    : 'border-slate-700 cursor-not-allowed opacity-50'
               }`}
               disabled={!canSelect && !isSelected}
               title={!canSelect && !isSelected ? 'Maximum 10 activities selected' : undefined}
@@ -125,14 +125,14 @@ export function ActivityCard({
           )}
           <div>
             <h3 className="font-semibold text-lg">{activity.name}</h3>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-slate-400">
               {formattedDate} at {formattedTime}
             </p>
           </div>
         </div>
         <div className="flex gap-2">
           {activity.workout_type && (
-            <span className={`px-2 py-1 rounded text-xs text-white ${WORKOUT_TYPE_COLORS[activity.workout_type] || 'bg-gray-600'}`}>
+            <span className={`px-2 py-1 rounded text-xs text-white ${WORKOUT_TYPE_COLORS[activity.workout_type] || 'bg-slate-600'}`}>
               {WORKOUT_TYPE_LABELS[activity.workout_type] || activity.workout_type}
             </span>
           )}
@@ -147,36 +147,36 @@ export function ActivityCard({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
         {activity.distance > 0 && (
           <div>
-            <p className="text-xs text-gray-400">Distance</p>
+            <p className="text-xs text-slate-400">Distance</p>
             <p className="font-semibold">{formattedDistancePrimary}</p>
           </div>
         )}
 
         {activity.pace_per_mile && (
           <div>
-            <p className="text-xs text-gray-400">Pace</p>
+            <p className="text-xs text-slate-400">Pace</p>
             <p className="font-semibold">{activity.pace_per_mile}</p>
           </div>
         )}
 
         {activity.duration_formatted && (
           <div>
-            <p className="text-xs text-gray-400">Duration</p>
+            <p className="text-xs text-slate-400">Duration</p>
             <p className="font-semibold">{activity.duration_formatted}</p>
           </div>
         )}
 
         {activity.average_heartrate && (
           <div>
-            <p className="text-xs text-gray-400">Avg HR</p>
+            <p className="text-xs text-slate-400">Avg HR</p>
             <p className="font-semibold">{activity.average_heartrate} bpm</p>
           </div>
         )}
       </div>
 
       {showInsights && activity.performance_percentage && (
-        <div className="mt-4 pt-4 border-t border-gray-700">
-          <p className="text-xs text-gray-400">
+        <div className="mt-4 pt-4 border-t border-slate-700">
+          <p className="text-xs text-slate-400">
             Age-Graded: {activity.performance_percentage.toFixed(1)}%
           </p>
         </div>

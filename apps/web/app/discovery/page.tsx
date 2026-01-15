@@ -45,13 +45,13 @@ export default function DiscoveryPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
         <div className="max-w-6xl mx-auto px-4">
           {/* Header */}
           <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-bold">Discovery</h1>
-              <p className="text-gray-400 mt-2">
+              <p className="text-slate-400 mt-2">
                 What inputs lead to efficiency improvements? The data speaks.
               </p>
             </div>
@@ -59,7 +59,7 @@ export default function DiscoveryPage() {
               <select
                 value={days}
                 onChange={(e) => setDays(parseInt(e.target.value))}
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white"
+                className="px-4 py-2 bg-slate-800 border border-slate-700/50 rounded text-white"
               >
                 <option value="30">Last 30 days</option>
                 <option value="60">Last 60 days</option>
@@ -84,7 +84,7 @@ export default function DiscoveryPage() {
 
           {/* Analysis Period Info */}
           {whatWorks?.analysis_period && (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 text-sm text-gray-400">
+            <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-4 text-sm text-slate-400">
               <p>
                 Analysis period: {new Date(whatWorks.analysis_period.start).toLocaleDateString()} -{' '}
                 {new Date(whatWorks.analysis_period.end).toLocaleDateString()} ({whatWorks.analysis_period.days} days)

@@ -401,32 +401,32 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div 
-          className="bg-gray-900 border border-gray-700 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+          className="bg-[#0a0a0f] border border-slate-700/50 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="p-6 border-b border-gray-700">
+          <div className="p-6 border-b border-slate-700/50">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-white">Manage Plan</h2>
-                <p className="text-gray-400 text-sm mt-1">{plan.name}</p>
+                <p className="text-slate-400 text-sm mt-1">{plan.name}</p>
               </div>
               <button 
                 onClick={() => {
                   onClose();
                   setSelectedAction(null);
                 }}
-                className="text-gray-400 hover:text-white text-2xl"
+                className="text-slate-400 hover:text-white text-2xl"
               >
                 ×
               </button>
             </div>
             
             {plan.goal_race_name && plan.goal_race_date && (
-              <div className="mt-4 bg-gray-800/50 rounded-lg p-3">
-                <div className="text-sm text-gray-400">Target Race</div>
+              <div className="mt-4 bg-slate-800/50 rounded-lg p-3">
+                <div className="text-sm text-slate-400">Target Race</div>
                 <div className="text-white font-semibold">{plan.goal_race_name}</div>
-                <div className="text-gray-400 text-sm">{formatDate(plan.goal_race_date)}</div>
+                <div className="text-slate-400 text-sm">{formatDate(plan.goal_race_date)}</div>
               </div>
             )}
           </div>
@@ -438,14 +438,14 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                 {/* View Full Plan */}
                 <button
                   onClick={() => router.push(`/plans/${plan.id}`)}
-                  className="w-full p-4 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-left transition-colors group"
+                  className="w-full p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-left transition-colors group"
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="font-semibold text-white">View Full Plan</div>
-                      <div className="text-sm text-gray-400">See all {plan.total_weeks} weeks at a glance</div>
+                      <div className="text-sm text-slate-400">See all {plan.total_weeks} weeks at a glance</div>
                     </div>
-                    <svg className="w-5 h-5 text-gray-500 group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-5 h-5 text-slate-500 group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>
@@ -454,10 +454,10 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                 {/* Change Race Date */}
                 <button
                   onClick={() => setSelectedAction('change-date')}
-                  className="w-full p-4 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-left transition-colors"
+                  className="w-full p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-left transition-colors"
                 >
                   <div className="font-semibold text-white">Change Race Date</div>
-                  <div className="text-sm text-gray-400">Recalculate your plan for a new race date</div>
+                  <div className="text-sm text-slate-400">Recalculate your plan for a new race date</div>
                 </button>
                 
                 {/* Adjust Plan - NEW */}
@@ -470,7 +470,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                     className="w-full p-4 bg-blue-900/30 hover:bg-blue-900/50 border border-blue-700/50 rounded-lg text-left transition-colors"
                   >
                     <div className="font-semibold text-blue-400">Adjust This Week</div>
-                    <div className="text-sm text-gray-400">Swap workout days or adjust training load</div>
+                    <div className="text-sm text-slate-400">Swap workout days or adjust training load</div>
                   </button>
                 )}
                 
@@ -478,10 +478,10 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                 {currentWeek && (
                   <button
                     onClick={() => setSelectedAction('skip-week')}
-                    className="w-full p-4 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-left transition-colors"
+                    className="w-full p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-left transition-colors"
                   >
                     <div className="font-semibold text-white">Skip Week {currentWeek}</div>
-                    <div className="text-sm text-gray-400">Mark this week as skipped and adjust</div>
+                    <div className="text-sm text-slate-400">Mark this week as skipped and adjust</div>
                   </button>
                 )}
                 
@@ -491,7 +491,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                   className="w-full p-4 bg-amber-900/30 hover:bg-amber-900/50 border border-amber-700/50 rounded-lg text-left transition-colors"
                 >
                   <div className="font-semibold text-amber-400">Pause Plan</div>
-                  <div className="text-sm text-gray-400">Freeze your plan temporarily (injury, travel, life)</div>
+                  <div className="text-sm text-slate-400">Freeze your plan temporarily (injury, travel, life)</div>
                 </button>
                 
                 {/* Withdraw */}
@@ -500,28 +500,28 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                   className="w-full p-4 bg-red-900/30 hover:bg-red-900/50 border border-red-700/50 rounded-lg text-left transition-colors"
                 >
                   <div className="font-semibold text-red-400">Withdraw from Race</div>
-                  <div className="text-sm text-gray-400">Archive this plan and clear your calendar</div>
+                  <div className="text-sm text-slate-400">Archive this plan and clear your calendar</div>
                 </button>
               </div>
             ) : selectedAction === 'withdraw' ? (
               <div>
                 <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-4 mb-4">
                   <div className="text-red-400 font-semibold mb-2">⚠️ This cannot be undone</div>
-                  <div className="text-sm text-gray-300">
+                  <div className="text-sm text-slate-300">
                     Withdrawing will archive your training plan and remove all planned workouts from your calendar.
                     Your training history will be preserved.
                   </div>
                 </div>
                 
                 <div className="mb-4">
-                  <label className="block text-sm text-gray-400 mb-2">
+                  <label className="block text-sm text-slate-400 mb-2">
                     Type &quot;withdraw&quot; to confirm:
                   </label>
                   <input
                     type="text"
                     value={confirmText}
                     onChange={(e) => setConfirmText(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-red-500"
                     placeholder="withdraw"
                   />
                 </div>
@@ -532,14 +532,14 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                       setSelectedAction(null);
                       setConfirmText('');
                     }}
-                    className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                    className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleWithdraw}
                     disabled={confirmText.toLowerCase() !== 'withdraw' || planAction.isPending}
-                    className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
+                    className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 disabled:text-slate-500 rounded-lg font-semibold transition-colors"
                   >
                     {planAction.isPending ? 'Withdrawing...' : 'Withdraw'}
                   </button>
@@ -549,7 +549,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
               <div>
                 <div className="bg-amber-900/20 border border-amber-700/50 rounded-lg p-4 mb-4">
                   <div className="text-amber-400 font-semibold mb-2">⏸️ Pause Your Training</div>
-                  <div className="text-sm text-gray-300">
+                  <div className="text-sm text-slate-300">
                     Your plan will be frozen at Week {currentWeek}. When you resume, 
                     workouts will be recalculated from your current week to your race date.
                   </div>
@@ -558,14 +558,14 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                 <div className="flex gap-3">
                   <button
                     onClick={() => setSelectedAction(null)}
-                    className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                    className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handlePause}
                     disabled={planAction.isPending}
-                    className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-700 rounded-lg font-semibold transition-colors"
+                    className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-700 rounded-lg font-semibold transition-colors"
                   >
                     {planAction.isPending ? 'Pausing...' : 'Pause Plan'}
                   </button>
@@ -573,9 +573,9 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
               </div>
             ) : selectedAction === 'skip-week' ? (
               <div>
-                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+                <div className="bg-slate-800 border border-slate-700/50 rounded-lg p-4 mb-4">
                   <div className="text-white font-semibold mb-2">Skip Week {currentWeek}</div>
-                  <div className="text-sm text-gray-300">
+                  <div className="text-sm text-slate-300">
                     This week&apos;s workouts will be marked as skipped. Your plan will continue 
                     from next week. This is useful if you&apos;re traveling, sick, or need extra rest.
                   </div>
@@ -584,14 +584,14 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                 <div className="flex gap-3">
                   <button
                     onClick={() => setSelectedAction(null)}
-                    className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                    className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSkipWeek}
                     disabled={planAction.isPending}
-                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 rounded-lg font-semibold transition-colors"
+                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg font-semibold transition-colors"
                   >
                     {planAction.isPending ? 'Skipping...' : 'Skip This Week'}
                   </button>
@@ -600,20 +600,20 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
             ) : selectedAction === 'change-date' ? (
               <div>
                 <div className="mb-4">
-                  <label className="block text-sm text-gray-400 mb-2">
+                  <label className="block text-sm text-slate-400 mb-2">
                     New Race Date
                   </label>
                   <input
                     type="date"
                     value={newRaceDate}
                     onChange={(e) => setNewRaceDate(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                     min={new Date().toISOString().split('T')[0]}
                   />
                 </div>
                 
-                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-                  <div className="text-sm text-gray-300">
+                <div className="bg-slate-800 border border-slate-700/50 rounded-lg p-4 mb-4">
+                  <div className="text-sm text-slate-300">
                     Your plan will be recalculated to peak on your new race date. 
                     Workouts already completed will be preserved.
                   </div>
@@ -622,14 +622,14 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                 <div className="flex gap-3">
                   <button
                     onClick={() => setSelectedAction(null)}
-                    className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                    className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleChangeDate}
                     disabled={!newRaceDate || planAction.isPending}
-                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
+                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 rounded-lg font-semibold transition-colors"
                   >
                     {planAction.isPending ? 'Updating...' : 'Update Race Date'}
                   </button>
@@ -653,41 +653,41 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                     
                     <button
                       onClick={() => setAdjustMode('swap')}
-                      className="w-full p-4 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-left transition-colors"
+                      className="w-full p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-left transition-colors"
                     >
                       <div className="font-semibold text-white">🔄 Swap Workout Days</div>
-                      <div className="text-sm text-gray-400">Swap two workouts with each other</div>
+                      <div className="text-sm text-slate-400">Swap two workouts with each other</div>
                     </button>
                     
                     <button
                       onClick={() => setAdjustMode('load')}
-                      className="w-full p-4 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-left transition-colors"
+                      className="w-full p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-left transition-colors"
                     >
                       <div className="font-semibold text-white">📊 Adjust Training Load</div>
-                      <div className="text-sm text-gray-400">Make this week easier or slightly harder</div>
+                      <div className="text-sm text-slate-400">Make this week easier or slightly harder</div>
                     </button>
                     
                     {/* Full control options - paid tier only */}
                     {canModify ? (
                       <>
-                        <div className="border-t border-gray-700 pt-3 mt-3">
-                          <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Full Control</div>
+                        <div className="border-t border-slate-700/50 pt-3 mt-3">
+                          <div className="text-xs text-slate-500 uppercase tracking-wide mb-2">Full Control</div>
                         </div>
                         
                         <button
                           onClick={() => setAdjustMode('move')}
-                          className="w-full p-4 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-left transition-colors"
+                          className="w-full p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-left transition-colors"
                         >
                           <div className="font-semibold text-white">📅 Move Workout</div>
-                          <div className="text-sm text-gray-400">Reschedule any workout to a different date</div>
+                          <div className="text-sm text-slate-400">Reschedule any workout to a different date</div>
                         </button>
                         
                         <button
                           onClick={() => setAdjustMode('edit')}
-                          className="w-full p-4 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-left transition-colors"
+                          className="w-full p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-left transition-colors"
                         >
                           <div className="font-semibold text-white">✏️ Edit Workout</div>
-                          <div className="text-sm text-gray-400">Change type, distance, or details</div>
+                          <div className="text-sm text-slate-400">Change type, distance, or details</div>
                         </button>
                         
                         <button
@@ -695,13 +695,13 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                           className="w-full p-4 bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-700/50 rounded-lg text-left transition-colors"
                         >
                           <div className="font-semibold text-emerald-400">➕ Add Workout</div>
-                          <div className="text-sm text-gray-400">Add a new workout on any day</div>
+                          <div className="text-sm text-slate-400">Add a new workout on any day</div>
                         </button>
                       </>
                     ) : (
-                      <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 text-center">
-                        <div className="text-gray-400 text-sm mb-2">Want full control?</div>
-                        <div className="text-xs text-gray-500">
+                      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4 text-center">
+                        <div className="text-slate-400 text-sm mb-2">Want full control?</div>
+                        <div className="text-xs text-slate-500">
                           Upgrade to move, edit, add, or remove any workout
                         </div>
                       </div>
@@ -709,7 +709,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                     
                     <button
                       onClick={() => setSelectedAction(null)}
-                      className="w-full px-4 py-2 bg-gray-800/50 hover:bg-gray-700 rounded-lg transition-colors text-gray-400"
+                      className="w-full px-4 py-2 bg-slate-800/50 hover:bg-slate-700 rounded-lg transition-colors text-slate-400"
                     >
                       ← Back
                     </button>
@@ -721,13 +721,13 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                   <div>
                     <div className="mb-4">
                       <div className="text-white font-semibold mb-2">🔄 Swap Workout Days</div>
-                      <div className="text-sm text-gray-400">
+                      <div className="text-sm text-slate-400">
                         Select two workouts to swap their days. Tap to select.
                       </div>
                     </div>
                     
                     {weekLoading ? (
-                      <div className="text-center py-8 text-gray-500">Loading workouts...</div>
+                      <div className="text-center py-8 text-slate-500">Loading workouts...</div>
                     ) : weekData?.workouts?.length > 0 ? (
                       <div className="space-y-2 mb-4">
                         {(weekData.workouts as WeekWorkout[]).filter((w: WeekWorkout) => !w.completed && !w.skipped).map((workout: WeekWorkout) => {
@@ -744,17 +744,17 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                               className={`w-full p-3 rounded-lg text-left transition-all ${
                                 isSelected 
                                   ? 'bg-blue-600 border-2 border-blue-400 ring-2 ring-blue-400/50' 
-                                  : 'bg-gray-800 border border-gray-700 hover:border-gray-600'
+                                  : 'bg-slate-800 border border-slate-700/50 hover:border-slate-600'
                               }`}
                             >
                               <div className="flex items-center justify-between">
                                 <div>
-                                  <div className="text-xs text-gray-400 mb-0.5">{workout.day_name}</div>
-                                  <div className={`font-semibold ${isSelected ? 'text-white' : 'text-gray-200'}`}>
+                                  <div className="text-xs text-slate-400 mb-0.5">{workout.day_name}</div>
+                                  <div className={`font-semibold ${isSelected ? 'text-white' : 'text-slate-200'}`}>
                                     {workout.title}
                                   </div>
                                   {distanceMiles && (
-                                    <div className="text-xs text-gray-400 mt-0.5">{distanceMiles} mi</div>
+                                    <div className="text-xs text-slate-400 mt-0.5">{distanceMiles} mi</div>
                                   )}
                                 </div>
                                 {isSelected && (
@@ -768,7 +768,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                         })}
                       </div>
                     ) : (
-                      <div className="text-center py-8 text-gray-500">No workouts available to swap</div>
+                      <div className="text-center py-8 text-slate-500">No workouts available to swap</div>
                     )}
                     
                     {swapSelection.length === 1 && (
@@ -799,7 +799,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                           setAdjustMode('menu');
                           setSwapSelection([]);
                         }}
-                        className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                        className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                       >
                         ← Back
                       </button>
@@ -812,7 +812,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                   <div>
                     <div className="mb-4">
                       <div className="text-white font-semibold mb-2">📊 Adjust Training Load</div>
-                      <div className="text-sm text-gray-400">
+                      <div className="text-sm text-slate-400">
                         Choose how to adjust Week {currentWeek}&apos;s training:
                       </div>
                     </div>
@@ -824,11 +824,11 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                         className={`w-full p-4 rounded-lg text-left transition-all ${
                           selectedLoadAdjustment === 'reduce_light'
                             ? 'bg-blue-600 border-2 border-blue-400'
-                            : 'bg-gray-800 border border-gray-700 hover:border-gray-600'
+                            : 'bg-slate-800 border border-slate-700/50 hover:border-slate-600'
                         }`}
                       >
                         <div className="font-semibold text-white">🟡 Reduce Light</div>
-                        <div className="text-sm text-gray-400">
+                        <div className="text-sm text-slate-400">
                           Convert one quality session to easy, reduce all distances by 10%
                         </div>
                       </button>
@@ -843,7 +843,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                         }`}
                       >
                         <div className="font-semibold text-amber-400">🟠 Recovery Week</div>
-                        <div className="text-sm text-gray-400">
+                        <div className="text-sm text-slate-400">
                           All easy runs at 70% volume — good for illness, travel, or extra recovery
                         </div>
                       </button>
@@ -858,7 +858,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                         }`}
                       >
                         <div className="font-semibold text-emerald-400">🟢 Increase Light</div>
-                        <div className="text-sm text-gray-400">
+                        <div className="text-sm text-slate-400">
                           Add ~1 mile to easy runs — feeling good and want a bit more
                         </div>
                       </button>
@@ -886,7 +886,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                           setAdjustMode('menu');
                           setSelectedLoadAdjustment('');
                         }}
-                        className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                        className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                       >
                         ← Back
                       </button>
@@ -899,7 +899,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                   <div>
                     <div className="mb-4">
                       <div className="text-white font-semibold mb-2">📅 Move Workout</div>
-                      <div className="text-sm text-gray-400">
+                      <div className="text-sm text-slate-400">
                         {selectedWorkout ? 'Choose a new date' : 'Select a workout to move'}
                       </div>
                     </div>
@@ -907,21 +907,21 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                     {!selectedWorkout ? (
                       <>
                         {weekLoading ? (
-                          <div className="text-center py-8 text-gray-500">Loading workouts...</div>
+                          <div className="text-center py-8 text-slate-500">Loading workouts...</div>
                         ) : weekData?.workouts?.length > 0 ? (
                           <div className="space-y-2 mb-4">
                             {(weekData.workouts as WeekWorkout[]).filter((w: WeekWorkout) => !w.completed && !w.skipped).map((workout: WeekWorkout) => (
                               <button
                                 key={workout.id}
                                 onClick={() => handleStartMove(workout)}
-                                className="w-full p-3 rounded-lg text-left bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all"
+                                className="w-full p-3 rounded-lg text-left bg-slate-800 border border-slate-700/50 hover:border-blue-500 transition-all"
                               >
                                 <div className="flex items-center justify-between">
                                   <div>
-                                    <div className="text-xs text-gray-400 mb-0.5">{workout.day_name}</div>
-                                    <div className="font-semibold text-gray-200">{workout.title}</div>
+                                    <div className="text-xs text-slate-400 mb-0.5">{workout.day_name}</div>
+                                    <div className="font-semibold text-slate-200">{workout.title}</div>
                                   </div>
-                                  <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                   </svg>
                                 </div>
@@ -929,30 +929,30 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                             ))}
                           </div>
                         ) : (
-                          <div className="text-center py-8 text-gray-500">No workouts to move</div>
+                          <div className="text-center py-8 text-slate-500">No workouts to move</div>
                         )}
                       </>
                     ) : (
                       <div className="space-y-4">
                         <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3">
                           <div className="text-sm text-blue-300">Moving: {selectedWorkout.title}</div>
-                          <div className="text-xs text-gray-400">Currently on {selectedWorkout.day_name}</div>
+                          <div className="text-xs text-slate-400">Currently on {selectedWorkout.day_name}</div>
                         </div>
                         
                         <div>
-                          <label className="block text-sm text-gray-400 mb-2">New Date</label>
+                          <label className="block text-sm text-slate-400 mb-2">New Date</label>
                           <input
                             type="date"
                             value={moveDate}
                             onChange={(e) => setMoveDate(e.target.value)}
-                            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                            className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                           />
                         </div>
                         
                         <button
                           onClick={() => moveWorkout.mutate({ workoutId: selectedWorkout.id, newDate: moveDate })}
                           disabled={!moveDate || moveWorkout.isPending}
-                          className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
+                          className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 rounded-lg font-semibold transition-colors"
                         >
                           {moveWorkout.isPending ? 'Moving...' : 'Move Workout'}
                         </button>
@@ -972,7 +972,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                           setSelectedWorkout(null);
                           setMoveDate('');
                         }}
-                        className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                        className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                       >
                         ← Back
                       </button>
@@ -985,7 +985,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                   <div>
                     <div className="mb-4">
                       <div className="text-white font-semibold mb-2">✏️ Edit Workout</div>
-                      <div className="text-sm text-gray-400">
+                      <div className="text-sm text-slate-400">
                         {selectedWorkout ? 'Update workout details' : 'Select a workout to edit'}
                       </div>
                     </div>
@@ -993,24 +993,24 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                     {!selectedWorkout ? (
                       <>
                         {weekLoading ? (
-                          <div className="text-center py-8 text-gray-500">Loading workouts...</div>
+                          <div className="text-center py-8 text-slate-500">Loading workouts...</div>
                         ) : weekData?.workouts?.length > 0 ? (
                           <div className="space-y-2 mb-4">
                             {(weekData.workouts as WeekWorkout[]).filter((w: WeekWorkout) => !w.completed && !w.skipped).map((workout: WeekWorkout) => (
                               <button
                                 key={workout.id}
                                 onClick={() => handleStartEdit(workout)}
-                                className="w-full p-3 rounded-lg text-left bg-gray-800 border border-gray-700 hover:border-blue-500 transition-all"
+                                className="w-full p-3 rounded-lg text-left bg-slate-800 border border-slate-700/50 hover:border-blue-500 transition-all"
                               >
                                 <div className="flex items-center justify-between">
                                   <div>
-                                    <div className="text-xs text-gray-400 mb-0.5">{workout.day_name} · {workout.workout_type}</div>
-                                    <div className="font-semibold text-gray-200">{workout.title}</div>
+                                    <div className="text-xs text-slate-400 mb-0.5">{workout.day_name} · {workout.workout_type}</div>
+                                    <div className="font-semibold text-slate-200">{workout.title}</div>
                                     {workout.target_distance_km && (
-                                      <div className="text-xs text-gray-500">{(workout.target_distance_km * 0.621371).toFixed(1)} mi</div>
+                                      <div className="text-xs text-slate-500">{(workout.target_distance_km * 0.621371).toFixed(1)} mi</div>
                                     )}
                                   </div>
-                                  <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                   </svg>
                                 </div>
@@ -1018,13 +1018,13 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                             ))}
                           </div>
                         ) : (
-                          <div className="text-center py-8 text-gray-500">No workouts to edit</div>
+                          <div className="text-center py-8 text-slate-500">No workouts to edit</div>
                         )}
                         
                         {/* Delete option */}
                         {weekData?.workouts?.length > 0 && (
-                          <div className="border-t border-gray-700 pt-4 mt-4">
-                            <div className="text-xs text-gray-500 mb-2">Or remove a workout:</div>
+                          <div className="border-t border-slate-700/50 pt-4 mt-4">
+                            <div className="text-xs text-slate-500 mb-2">Or remove a workout:</div>
                             <div className="space-y-2">
                               {(weekData.workouts as WeekWorkout[]).filter((w: WeekWorkout) => !w.completed && !w.skipped).map((workout: WeekWorkout) => (
                                 <button
@@ -1048,15 +1048,15 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                       <div className="space-y-4">
                         <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3">
                           <div className="text-sm text-blue-300">Editing: {selectedWorkout.title}</div>
-                          <div className="text-xs text-gray-400">{selectedWorkout.day_name}</div>
+                          <div className="text-xs text-slate-400">{selectedWorkout.day_name}</div>
                         </div>
                         
                         <div>
-                          <label className="block text-sm text-gray-400 mb-2">Workout Type</label>
+                          <label className="block text-sm text-slate-400 mb-2">Workout Type</label>
                           <select
                             value={editForm.workout_type}
                             onChange={(e) => setEditForm({ ...editForm, workout_type: e.target.value })}
-                            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                            className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                           >
                             {workoutTypesData?.workout_types?.map((type: WorkoutType) => (
                               <option key={type.value} value={type.value}>{type.label}</option>
@@ -1065,23 +1065,23 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                         </div>
                         
                         <div>
-                          <label className="block text-sm text-gray-400 mb-2">Title</label>
+                          <label className="block text-sm text-slate-400 mb-2">Title</label>
                           <input
                             type="text"
                             value={editForm.title}
                             onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                            className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                           />
                         </div>
                         
                         <div>
-                          <label className="block text-sm text-gray-400 mb-2">Distance (km)</label>
+                          <label className="block text-sm text-slate-400 mb-2">Distance (km)</label>
                           <input
                             type="number"
                             step="0.1"
                             value={editForm.target_distance_km}
                             onChange={(e) => setEditForm({ ...editForm, target_distance_km: e.target.value })}
-                            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                            className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                             placeholder="e.g., 10.5"
                           />
                         </div>
@@ -1096,7 +1096,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                             },
                           })}
                           disabled={editWorkout.isPending}
-                          className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
+                          className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 rounded-lg font-semibold transition-colors"
                         >
                           {editWorkout.isPending ? 'Saving...' : 'Save Changes'}
                         </button>
@@ -1115,7 +1115,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                           setAdjustMode('menu');
                           setSelectedWorkout(null);
                         }}
-                        className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                        className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                       >
                         ← Back
                       </button>
@@ -1128,26 +1128,26 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                   <div>
                     <div className="mb-4">
                       <div className="text-white font-semibold mb-2">➕ Add Workout</div>
-                      <div className="text-sm text-gray-400">Add a new workout to your plan</div>
+                      <div className="text-sm text-slate-400">Add a new workout to your plan</div>
                     </div>
                     
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-sm text-gray-400 mb-2">Date</label>
+                        <label className="block text-sm text-slate-400 mb-2">Date</label>
                         <input
                           type="date"
                           value={newWorkout.scheduled_date}
                           onChange={(e) => setNewWorkout({ ...newWorkout, scheduled_date: e.target.value })}
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                          className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                         />
                       </div>
                       
                       <div>
-                        <label className="block text-sm text-gray-400 mb-2">Workout Type</label>
+                        <label className="block text-sm text-slate-400 mb-2">Workout Type</label>
                         <select
                           value={newWorkout.workout_type}
                           onChange={(e) => setNewWorkout({ ...newWorkout, workout_type: e.target.value })}
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                          className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                         >
                           {workoutTypesData?.workout_types?.map((type: WorkoutType) => (
                             <option key={type.value} value={type.value}>{type.label}</option>
@@ -1156,24 +1156,24 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                       </div>
                       
                       <div>
-                        <label className="block text-sm text-gray-400 mb-2">Title (optional)</label>
+                        <label className="block text-sm text-slate-400 mb-2">Title (optional)</label>
                         <input
                           type="text"
                           value={newWorkout.title}
                           onChange={(e) => setNewWorkout({ ...newWorkout, title: e.target.value })}
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                          className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                           placeholder="e.g., Easy Recovery Run"
                         />
                       </div>
                       
                       <div>
-                        <label className="block text-sm text-gray-400 mb-2">Distance (km, optional)</label>
+                        <label className="block text-sm text-slate-400 mb-2">Distance (km, optional)</label>
                         <input
                           type="number"
                           step="0.1"
                           value={newWorkout.target_distance_km}
                           onChange={(e) => setNewWorkout({ ...newWorkout, target_distance_km: e.target.value })}
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                          className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
                           placeholder="e.g., 8.0"
                         />
                       </div>
@@ -1181,7 +1181,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                       <button
                         onClick={() => addWorkout.mutate(newWorkout)}
                         disabled={!newWorkout.scheduled_date || !newWorkout.workout_type || addWorkout.isPending}
-                        className="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
+                        className="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 rounded-lg font-semibold transition-colors"
                       >
                         {addWorkout.isPending ? 'Adding...' : 'Add Workout'}
                       </button>
@@ -1205,7 +1205,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                           setAdjustMode('menu');
                           setNewWorkout({ scheduled_date: '', workout_type: 'easy', title: '', target_distance_km: '', coach_notes: '' });
                         }}
-                        className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                        className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                       >
                         ← Back
                       </button>

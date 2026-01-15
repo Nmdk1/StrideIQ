@@ -93,6 +93,7 @@ export default function Navigation() {
     { href: '/compare', label: 'Compare', icon: '👻' },
     { href: '/personal-bests', label: 'PBs', icon: '🏆' },
     { href: '/tools', label: 'Tools', icon: '🧮' },
+    { href: '/diagnostic', label: 'Diagnostic', icon: '📋' },
   ];
   
   // Legacy - keeping for mobile menu only
@@ -111,10 +112,10 @@ export default function Navigation() {
     const baseClasses = `px-4 py-2 rounded-lg text-sm font-medium transition-colors`;
     const activeClasses = highlight 
       ? 'bg-green-600/20 text-green-400'
-      : 'bg-gray-800 text-white';
+      : 'bg-slate-800 text-white';
     const inactiveClasses = highlight
       ? 'bg-green-600/10 text-green-400 hover:bg-green-600/20'
-      : 'text-gray-300 hover:bg-gray-800 hover:text-white';
+      : 'text-slate-300 hover:bg-slate-800 hover:text-white';
 
     if (isHash) {
       return (
@@ -139,7 +140,7 @@ export default function Navigation() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800 shadow-lg">
+    <nav className="sticky top-0 z-50 bg-[#0a0a0f]/95 backdrop-blur-sm border-b border-slate-800 shadow-lg">
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
@@ -148,7 +149,7 @@ export default function Navigation() {
               StrideIQ
             </Link>
             {isAuthenticated && user && (
-              <span className="hidden sm:inline text-sm text-gray-500">
+              <span className="hidden sm:inline text-sm text-slate-500">
                 {user.display_name}
               </span>
             )}
@@ -157,7 +158,7 @@ export default function Navigation() {
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-1">
             {isLoading ? (
-              <div className="text-gray-500 text-sm">Loading...</div>
+              <div className="text-slate-500 text-sm">Loading...</div>
             ) : isAuthenticated ? (
               /* === AUTHENTICATED NAV === */
               <>
@@ -171,7 +172,7 @@ export default function Navigation() {
                 ))}
                 
                 {/* Divider */}
-                <div className="w-px h-4 bg-gray-700 mx-1" />
+                <div className="w-px h-4 bg-slate-700 mx-1" />
                 
                 {/* Secondary nav items - smaller */}
                 {secondaryNavItems.map((item) => (
@@ -180,8 +181,8 @@ export default function Navigation() {
                     href={item.href}
                     className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                       pathname === item.href
-                        ? 'bg-gray-800 text-white'
-                        : 'text-gray-500 hover:text-gray-300'
+                        ? 'bg-slate-800 text-white'
+                        : 'text-slate-500 hover:text-slate-300'
                     }`}
                   >
                     {item.label}
@@ -193,8 +194,8 @@ export default function Navigation() {
                   href="/settings"
                   className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                     pathname === '/settings'
-                      ? 'bg-gray-800 text-white'
-                      : 'text-gray-500 hover:text-gray-300'
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-500 hover:text-slate-300'
                   }`}
                 >
                   Settings
@@ -206,8 +207,8 @@ export default function Navigation() {
                     href="/admin"
                     className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                       pathname === '/admin'
-                        ? 'bg-gray-800 text-white'
-                        : 'text-gray-500 hover:text-gray-300'
+                        ? 'bg-slate-800 text-white'
+                        : 'text-slate-500 hover:text-slate-300'
                     }`}
                   >
                     Admin
@@ -217,7 +218,7 @@ export default function Navigation() {
                 {/* Logout */}
                 <button
                   onClick={logout}
-                  className="px-3 py-1.5 rounded text-xs font-medium text-gray-500 hover:text-gray-300 transition-colors"
+                  className="px-3 py-1.5 rounded text-xs font-medium text-slate-500 hover:text-slate-300 transition-colors"
                 >
                   Logout
                 </button>
@@ -237,8 +238,8 @@ export default function Navigation() {
                   href="/login"
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     pathname === '/login'
-                      ? 'bg-gray-800 text-white'
-                      : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
                   Login
@@ -256,7 +257,7 @@ export default function Navigation() {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden text-gray-300 hover:text-white focus:outline-none focus:text-white"
+            className="md:hidden text-slate-300 hover:text-white focus:outline-none focus:text-white"
             aria-label="Toggle menu"
           >
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -283,8 +284,8 @@ export default function Navigation() {
                         onClick={() => setMobileMenuOpen(false)}
                         className={`px-4 py-3 rounded-lg text-base font-medium transition-colors ${
                           pathname === item.href
-                            ? 'bg-gray-800 text-white'
-                            : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                            ? 'bg-slate-800 text-white'
+                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                         }`}
                       >
                         <span className="mr-2">{item.icon}</span>
@@ -296,8 +297,8 @@ export default function Navigation() {
                     onClick={() => setMobileMenuOpen(false)}
                     className={`px-4 py-3 rounded-lg text-base font-medium transition-colors ${
                       pathname === '/settings'
-                        ? 'bg-gray-800 text-white'
-                        : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                        ? 'bg-slate-800 text-white'
+                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
                   >
                     ⚙️ Settings
@@ -307,7 +308,7 @@ export default function Navigation() {
                       logout();
                       setMobileMenuOpen(false);
                     }}
-                    className="px-4 py-3 rounded-lg text-base font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-colors text-left"
+                    className="px-4 py-3 rounded-lg text-base font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-colors text-left"
                   >
                     🚪 Logout
                   </button>
@@ -324,7 +325,7 @@ export default function Navigation() {
                           handleHashClick(e, item.href);
                           setMobileMenuOpen(false);
                         }}
-                        className="px-4 py-3 rounded-lg text-base font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                        className="px-4 py-3 rounded-lg text-base font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
                       >
                         {item.label}
                       </a>
@@ -335,8 +336,8 @@ export default function Navigation() {
                         onClick={() => setMobileMenuOpen(false)}
                         className={`px-4 py-3 rounded-lg text-base font-medium transition-colors ${
                           pathname === item.href
-                            ? 'bg-gray-800 text-white'
-                            : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                            ? 'bg-slate-800 text-white'
+                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                         }`}
                       >
                         {item.label}
@@ -346,7 +347,7 @@ export default function Navigation() {
                   <Link
                     href="/login"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="px-4 py-3 rounded-lg text-base font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                    className="px-4 py-3 rounded-lg text-base font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
                   >
                     Login
                   </Link>

@@ -46,18 +46,18 @@ export default function LoginPage() {
   // Show loading while checking auth or redirecting
   if (authLoading || isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900">
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f]">
         <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 flex items-center justify-center py-12 px-4">
+    <div className="min-h-screen bg-[#0a0a0f] text-slate-100 flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full">
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-8">
+        <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-8">
           <h1 className="text-3xl font-bold mb-2">Login</h1>
-          <p className="text-gray-400 mb-6">Sign in to your account</p>
+          <p className="text-slate-400 mb-6">Sign in to your account</p>
 
           {error && <ErrorMessage error={error} className="mb-6" />}
 
@@ -72,7 +72,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="you@example.com"
               />
             </div>
@@ -87,7 +87,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="••••••••"
               />
             </div>
@@ -95,14 +95,14 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white font-medium transition-colors"
+              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-white font-medium transition-colors"
             >
               {isSubmitting ? <LoadingSpinner size="sm" /> : 'Login'}
             </button>
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-slate-400">
               Don&apos;t have an account?{' '}
               <Link href="/register" className="text-blue-400 hover:text-blue-300">
                 Sign up

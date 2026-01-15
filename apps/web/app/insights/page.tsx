@@ -93,7 +93,7 @@ function InsightCard({
           <div className="text-xl mt-0.5">{style.icon}</div>
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs text-gray-500 uppercase tracking-wide">
+              <span className="text-xs text-slate-500 uppercase tracking-wide">
                 {insight.insight_type.replace(/_/g, ' ')}
               </span>
               {insight.priority >= 80 && (
@@ -103,7 +103,7 @@ function InsightCard({
               )}
             </div>
             <h3 className="font-semibold text-white mb-2">{insight.title}</h3>
-            <p className="text-gray-300 text-sm leading-relaxed">{insight.content}</p>
+            <p className="text-slate-300 text-sm leading-relaxed">{insight.content}</p>
             
             {/* Data visualization if available */}
             {insight.data && typeof insight.data.change_percent === 'number' && (
@@ -125,7 +125,7 @@ function InsightCard({
           <button 
             onClick={handleSave}
             disabled={isPending || saved}
-            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors text-lg"
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors text-lg"
             title="Save to profile"
           >
             {saved ? '⭐' : '☆'}
@@ -133,7 +133,7 @@ function InsightCard({
           <button 
             onClick={onDismiss}
             disabled={isPending}
-            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors text-lg"
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors text-lg"
             title="Dismiss"
           >
             ✕
@@ -145,18 +145,18 @@ function InsightCard({
 }
 
 function KPICard({ kpi }: { kpi: KPI }) {
-  const trendColor = kpi.trend === 'up' ? 'text-emerald-400' : kpi.trend === 'down' ? 'text-red-400' : 'text-gray-400';
+  const trendColor = kpi.trend === 'up' ? 'text-emerald-400' : kpi.trend === 'down' ? 'text-red-400' : 'text-slate-400';
   const trendIcon = kpi.trend === 'up' ? '↑' : kpi.trend === 'down' ? '↓' : null;
   
   return (
-    <div className="bg-gray-800/50 rounded-lg border border-gray-700 p-4">
-      <div className="text-sm text-gray-400 mb-1">{kpi.name}</div>
+    <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
+      <div className="text-sm text-slate-400 mb-1">{kpi.name}</div>
       <div className="flex items-end gap-2">
         <span className="text-2xl font-bold text-white">{kpi.current_value || '—'}</span>
         {trendIcon && <span className={`text-lg ${trendColor} mb-1`}>{trendIcon}</span>}
       </div>
       {kpi.start_value && (
-        <div className="text-xs text-gray-500 mt-1">
+        <div className="text-xs text-slate-500 mt-1">
           from {kpi.start_value} at build start
         </div>
       )}
@@ -196,14 +196,14 @@ function ActiveInsightsSection() {
             <span className="text-2xl">🔥</span>
             Active Insights
           </h2>
-          <p className="text-gray-400 text-sm mt-1">
+          <p className="text-slate-400 text-sm mt-1">
             Auto-generated from your recent training
           </p>
         </div>
         <button
           onClick={() => generateMutation.mutate()}
           disabled={generateMutation.isPending}
-          className="px-4 py-2 bg-gray-800 border border-gray-700 hover:border-gray-600 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+          className="px-4 py-2 bg-slate-800 border border-slate-700/50 hover:border-slate-600 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
         >
           {generateMutation.isPending ? 'Generating...' : 'Refresh'}
         </button>
@@ -216,7 +216,7 @@ function ActiveInsightsSection() {
               <span className="text-purple-300 font-medium">
                 {data.premium_locked} more insights available
               </span>
-              <span className="text-gray-400 text-sm ml-2">
+              <span className="text-slate-400 text-sm ml-2">
                 Upgrade to see causal attribution, pattern detection, and more
               </span>
             </div>
@@ -243,10 +243,10 @@ function ActiveInsightsSection() {
           ))}
         </div>
       ) : (
-        <div className="text-center py-12 bg-gray-800/50 rounded-lg border border-gray-700">
+        <div className="text-center py-12 bg-slate-800/50 rounded-lg border border-slate-700/50">
           <div className="text-5xl mb-4">✨</div>
-          <h3 className="text-lg font-medium text-gray-300 mb-2">No active insights yet</h3>
-          <p className="text-gray-500 max-w-md mx-auto">
+          <h3 className="text-lg font-medium text-slate-300 mb-2">No active insights yet</h3>
+          <p className="text-slate-500 max-w-md mx-auto">
             Insights are generated when you sync activities. 
             Keep training and we&apos;ll surface patterns and trends.
           </p>
@@ -269,10 +269,10 @@ function BuildStatusSection() {
   
   if (!data?.has_active_plan) {
     return (
-      <div className="bg-gray-800/50 rounded-lg border border-gray-700 p-6 text-center">
+      <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-6 text-center">
         <div className="text-4xl mb-3">📊</div>
-        <h3 className="text-lg font-medium text-gray-300 mb-2">No active training plan</h3>
-        <p className="text-gray-500 text-sm mb-4">
+        <h3 className="text-lg font-medium text-slate-300 mb-2">No active training plan</h3>
+        <p className="text-slate-500 text-sm mb-4">
           Start a training plan to see KPIs, trajectory, and phase context.
         </p>
         <a 
@@ -294,15 +294,15 @@ function BuildStatusSection() {
           <span className="text-2xl">📊</span>
           Build Status
         </h2>
-        <p className="text-gray-400 text-sm mt-1">
+        <p className="text-slate-400 text-sm mt-1">
           {data.plan_name}
         </p>
       </div>
       
       {/* Progress bar */}
-      <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700/50">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-gray-400">
+          <span className="text-sm text-slate-400">
             Week {data.current_week} of {data.total_weeks}
           </span>
           {data.days_to_race && (
@@ -311,7 +311,7 @@ function BuildStatusSection() {
             </span>
           )}
         </div>
-        <div className="h-3 bg-gray-700 rounded-full overflow-hidden">
+        <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
           <div 
             className="h-full bg-gradient-to-r from-blue-600 to-blue-400 rounded-full transition-all duration-500"
             style={{ width: `${progressPercent}%` }}
@@ -319,7 +319,7 @@ function BuildStatusSection() {
         </div>
         {data.current_phase && (
           <div className="mt-2 text-sm">
-            <span className="text-gray-500">Phase:</span>{' '}
+            <span className="text-slate-500">Phase:</span>{' '}
             <span className="text-white font-medium">{data.current_phase}</span>
           </div>
         )}
@@ -342,7 +342,7 @@ function BuildStatusSection() {
             {data.confidence && (
               <span className={`px-2 py-0.5 rounded text-xs ${
                 data.confidence === 'high' ? 'bg-emerald-600' :
-                data.confidence === 'medium' ? 'bg-yellow-600' : 'bg-gray-600'
+                data.confidence === 'medium' ? 'bg-yellow-600' : 'bg-slate-600'
               }`}>
                 {data.confidence.toUpperCase()}
               </span>
@@ -350,19 +350,19 @@ function BuildStatusSection() {
           </div>
           <div className="text-2xl font-bold text-white">{data.projected_time}</div>
           {data.goal_race_name && (
-            <div className="text-sm text-gray-400 mt-1">{data.goal_race_name}</div>
+            <div className="text-sm text-slate-400 mt-1">{data.goal_race_name}</div>
           )}
         </div>
       )}
       
       {/* This week's focus */}
       {data.week_focus && (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-          <div className="text-sm text-gray-400 mb-1">This Week&apos;s Focus</div>
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4">
+          <div className="text-sm text-slate-400 mb-1">This Week&apos;s Focus</div>
           <p className="text-white">{data.week_focus}</p>
           {data.key_session && (
             <div className="mt-2 text-sm">
-              <span className="text-gray-500">Key Session:</span>{' '}
+              <span className="text-slate-500">Key Session:</span>{' '}
               <span className="text-orange-400 font-medium">{data.key_session}</span>
             </div>
           )}
@@ -389,7 +389,7 @@ function AthleteIntelligenceSection() {
       <div className="bg-gradient-to-r from-purple-900/20 to-pink-900/20 border border-purple-700/50 rounded-lg p-6 text-center">
         <div className="text-4xl mb-3">💡</div>
         <h3 className="text-lg font-medium text-white mb-2">Athlete Intelligence</h3>
-        <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">
+        <p className="text-slate-400 text-sm mb-4 max-w-md mx-auto">
           See what works for YOU — patterns, injury signals, and personalized insights 
           from your training history.
         </p>
@@ -410,7 +410,7 @@ function AthleteIntelligenceSection() {
           <span className="text-2xl">💡</span>
           Athlete Intelligence
         </h2>
-        <p className="text-gray-400 text-sm mt-1">
+        <p className="text-slate-400 text-sm mt-1">
           What we&apos;ve learned about YOU from your data
         </p>
       </div>
@@ -424,14 +424,14 @@ function AthleteIntelligenceSection() {
           {data?.what_works && data.what_works.length > 0 ? (
             <ul className="space-y-2">
               {data.what_works.map((item, idx) => (
-                <li key={idx} className="text-gray-300 text-sm flex items-start gap-2">
+                <li key={idx} className="text-slate-300 text-sm flex items-start gap-2">
                   <span className="text-emerald-500 mt-0.5">•</span>
                   {item.text}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-gray-500 text-sm">Still learning...</p>
+            <p className="text-slate-500 text-sm">Still learning...</p>
           )}
         </div>
         
@@ -443,14 +443,14 @@ function AthleteIntelligenceSection() {
           {data?.what_doesnt && data.what_doesnt.length > 0 ? (
             <ul className="space-y-2">
               {data.what_doesnt.map((item, idx) => (
-                <li key={idx} className="text-gray-300 text-sm flex items-start gap-2">
+                <li key={idx} className="text-slate-300 text-sm flex items-start gap-2">
                   <span className="text-red-500 mt-0.5">•</span>
                   {item.text}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-gray-500 text-sm">No negative patterns detected yet</p>
+            <p className="text-slate-500 text-sm">No negative patterns detected yet</p>
           )}
         </div>
       </div>
@@ -464,10 +464,10 @@ function AthleteIntelligenceSection() {
           </h3>
           <ul className="space-y-2">
             {data.injury_patterns.map((item, idx) => (
-              <li key={idx} className="text-gray-300 text-sm flex items-start gap-2">
+              <li key={idx} className="text-slate-300 text-sm flex items-start gap-2">
                 <span className="text-orange-500 mt-0.5">⚠</span>
                 {item.text}
-                <span className="text-gray-500 text-xs ml-1">
+                <span className="text-slate-500 text-xs ml-1">
                   (from {item.source === 'n1' ? 'your history' : 'population data'})
                 </span>
               </li>
@@ -482,12 +482,12 @@ function AthleteIntelligenceSection() {
 export default function InsightsPage() {
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
         <div className="max-w-4xl mx-auto px-4">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-2">🧠 Insights</h1>
-            <p className="text-gray-400">
+            <p className="text-slate-400">
               What your training is telling you — personalized, proactive, actionable
             </p>
           </div>

@@ -18,9 +18,9 @@ interface WhatDoesntWorkSectionProps {
 export function WhatDoesntWorkSection({ correlations, className = '' }: WhatDoesntWorkSectionProps) {
   if (correlations.length === 0) {
     return (
-      <div className={`bg-gray-800 rounded-lg border border-gray-700 p-6 ${className}`}>
+      <div className={`bg-slate-800 rounded-lg border border-slate-700/50 p-6 ${className}`}>
         <h2 className="text-xl font-semibold mb-2">What Doesn&apos;t Work</h2>
-        <p className="text-gray-400">
+        <p className="text-slate-400">
           No negative patterns detected. Keep going.
         </p>
       </div>
@@ -31,7 +31,7 @@ export function WhatDoesntWorkSection({ correlations, className = '' }: WhatDoes
     <div className={className}>
       <div className="mb-4">
         <h2 className="text-2xl font-bold mb-2">What Doesn&apos;t Work</h2>
-        <p className="text-gray-400 text-sm">
+        <p className="text-slate-400 text-sm">
           Inputs that correlate with worse efficiency. Statistically significant.
         </p>
       </div>

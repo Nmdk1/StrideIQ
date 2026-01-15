@@ -85,12 +85,12 @@ export default function TrainingLoadPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
+    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Training Load</h1>
-          <p className="text-gray-400">
+          <p className="text-slate-400">
             Fitness, Fatigue, and Form — the complete picture.
           </p>
         </div>
@@ -104,7 +104,7 @@ export default function TrainingLoadPage() {
               className={`px-4 py-2 rounded-lg transition-colors ${
                 days === d
                   ? 'bg-orange-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
+                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
               }`}
             >
               {d < 90 ? `${d} days` : d < 365 ? `${d / 30}mo` : '1 year'}
@@ -115,7 +115,7 @@ export default function TrainingLoadPage() {
         {isLoading ? (
           <div className="space-y-6">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="animate-pulse bg-gray-800/50 rounded-lg h-32"></div>
+              <div key={i} className="animate-pulse bg-slate-800/50 rounded-lg h-32"></div>
             ))}
           </div>
         ) : error ? (
@@ -155,7 +155,7 @@ export default function TrainingLoadPage() {
             </div>
 
             {/* Performance Management Chart */}
-            <div className="bg-gray-800/50 rounded-lg p-6 mb-8">
+            <div className="bg-slate-800/50 rounded-lg p-6 mb-8">
               <h2 className="text-xl font-bold text-white mb-4">Performance Management Chart</h2>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
@@ -236,7 +236,7 @@ export default function TrainingLoadPage() {
             </div>
 
             {/* Daily TSS Chart */}
-            <div className="bg-gray-800/50 rounded-lg p-6 mb-8">
+            <div className="bg-slate-800/50 rounded-lg p-6 mb-8">
               <h2 className="text-xl font-bold text-white mb-4">Daily Training Stress</h2>
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
@@ -282,7 +282,7 @@ export default function TrainingLoadPage() {
             </div>
 
             {/* Education Section */}
-            <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700/50">
+            <div className="bg-slate-800/30 rounded-lg p-6 border border-slate-700/50/50">
               <h3 className="text-lg font-medium text-white mb-4">Understanding Your Training Load</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
                 <div>
@@ -290,7 +290,7 @@ export default function TrainingLoadPage() {
                     <div className="w-3 h-3 rounded-full bg-blue-500"></div>
                     <span className="font-medium text-white">Fitness (CTL)</span>
                   </div>
-                  <p className="text-gray-400">
+                  <p className="text-slate-400">
                     Your 42-day exponential average of training stress. 
                     Represents accumulated fitness from consistent training.
                     Higher = more fit.
@@ -301,7 +301,7 @@ export default function TrainingLoadPage() {
                     <div className="w-3 h-3 rounded-full bg-orange-500"></div>
                     <span className="font-medium text-white">Fatigue (ATL)</span>
                   </div>
-                  <p className="text-gray-400">
+                  <p className="text-slate-400">
                     Your 7-day exponential average of training stress.
                     Represents recent accumulated fatigue.
                     Higher = more tired.
@@ -312,7 +312,7 @@ export default function TrainingLoadPage() {
                     <div className="w-3 h-3 rounded-full bg-green-500"></div>
                     <span className="font-medium text-white">Form (TSB)</span>
                   </div>
-                  <p className="text-gray-400">
+                  <p className="text-slate-400">
                     Fitness minus Fatigue. Positive = fresh and ready.
                     Negative = fatigued but potentially building fitness.
                     Target +5 to +25 for races.
@@ -361,8 +361,8 @@ function MetricCard({
 
   return (
     <div className={`rounded-lg p-4 border ${colorClasses[color]}`}>
-      <p className="text-gray-400 text-sm mb-1">{label}</p>
-      <p className="text-gray-500 text-xs mb-2">{sublabel}</p>
+      <p className="text-slate-400 text-sm mb-1">{label}</p>
+      <p className="text-slate-500 text-xs mb-2">{sublabel}</p>
       <div className="flex items-baseline gap-2">
         <span className={`text-3xl font-bold ${colorClasses[color].split(' ')[0]}`}>
           {displayValue}
@@ -391,9 +391,9 @@ function PhaseCard({
       case 'recovering':
         return 'border-blue-700/50 bg-blue-900/20';
       case 'maintaining':
-        return 'border-gray-700/50 bg-gray-800/50';
+        return 'border-slate-700/50/50 bg-slate-800/50';
       default:
-        return 'border-gray-700/50 bg-gray-800/50';
+        return 'border-slate-700/50/50 bg-slate-800/50';
     }
   };
 
@@ -414,12 +414,12 @@ function PhaseCard({
 
   return (
     <div className={`rounded-lg p-4 border ${getPhaseColor()}`}>
-      <p className="text-gray-400 text-sm mb-1">Training Phase</p>
+      <p className="text-slate-400 text-sm mb-1">Training Phase</p>
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">{getPhaseIcon()}</span>
         <span className="text-xl font-bold text-white capitalize">{phase}</span>
       </div>
-      <p className="text-gray-400 text-xs">{recommendation}</p>
+      <p className="text-slate-400 text-xs">{recommendation}</p>
     </div>
   );
 }

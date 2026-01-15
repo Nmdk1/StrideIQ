@@ -66,10 +66,10 @@ function CheckoutContent() {
   
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gray-900 text-gray-100 flex items-center justify-center">
-        <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 max-w-md w-full text-center">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 flex items-center justify-center">
+        <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-8 max-w-md w-full text-center">
           <h1 className="text-2xl font-bold text-white mb-4">Sign In Required</h1>
-          <p className="text-gray-400 mb-6">
+          <p className="text-slate-400 mb-6">
             Please sign in to purchase a training plan.
           </p>
           <a
@@ -84,37 +84,37 @@ function CheckoutContent() {
   }
   
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 py-12">
+    <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-12">
       <div className="max-w-lg mx-auto px-4">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Complete Your Purchase</h1>
-          <p className="text-gray-400">Get your personalized training plan</p>
+          <p className="text-slate-400">Get your personalized training plan</p>
         </div>
         
         {/* Order Summary */}
-        <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-6">
+        <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 mb-6">
           <h2 className="text-lg font-bold text-white mb-4">Order Summary</h2>
           
           <div className="space-y-4">
             <div className="flex justify-between">
-              <span className="text-gray-400">Plan Type</span>
+              <span className="text-slate-400">Plan Type</span>
               <span className="text-white capitalize">{planTier.replace('_', '-')} Plan</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">Distance</span>
+              <span className="text-slate-400">Distance</span>
               <span className="text-white capitalize">{distance.replace('_', ' ')}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">Duration</span>
+              <span className="text-slate-400">Duration</span>
               <span className="text-white">{duration} weeks</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">Days/Week</span>
+              <span className="text-slate-400">Days/Week</span>
               <span className="text-white">{daysPerWeek} days</span>
             </div>
             
-            <div className="border-t border-gray-700 pt-4 mt-4">
+            <div className="border-t border-slate-700/50 pt-4 mt-4">
               <div className="flex justify-between text-lg">
                 <span className="font-semibold text-white">Total</span>
                 <span className="font-bold text-orange-400">{planPrice.label}</span>
@@ -128,7 +128,7 @@ function CheckoutContent() {
           <h3 className="text-sm font-semibold text-pink-400 uppercase tracking-wider mb-3">
             What You Get
           </h3>
-          <ul className="space-y-2 text-sm text-gray-300">
+          <ul className="space-y-2 text-sm text-slate-300">
             <li className="flex items-center gap-2">
               <span className="text-green-400">✓</span>
               Personalized training paces based on your fitness
@@ -177,7 +177,7 @@ function CheckoutContent() {
         </button>
         
         {/* Security Notice */}
-        <p className="text-center text-xs text-gray-500 mt-4">
+        <p className="text-center text-xs text-slate-500 mt-4">
           🔒 Secure payment powered by Stripe
         </p>
         
@@ -185,7 +185,7 @@ function CheckoutContent() {
         <div className="text-center mt-6">
           <a
             href="/plans/create"
-            className="text-sm text-gray-400 hover:text-pink-400"
+            className="text-sm text-slate-400 hover:text-pink-400"
           >
             ← Back to plan configuration
           </a>
@@ -198,7 +198,7 @@ function CheckoutContent() {
 export default function CheckoutPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     }>

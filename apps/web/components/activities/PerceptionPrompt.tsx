@@ -101,7 +101,7 @@ export function PerceptionPrompt({
   };
 
   return (
-    <div className={`bg-gray-800 rounded-lg border border-gray-700 p-6 ${className}`}>
+    <div className={`bg-slate-800 rounded-lg border border-slate-700 p-6 ${className}`}>
       <h3 className="text-lg font-semibold mb-4">
         {existingFeedback ? 'Update Feedback' : prompt.prompt_text}
       </h3>
@@ -116,12 +116,12 @@ export function PerceptionPrompt({
             
             {/* Expected RPE hint */}
             {expectedRpeRange && !existingFeedback && (
-              <div className="mb-2 p-2 bg-gray-900/50 border border-gray-700 rounded text-sm">
-                <span className="text-gray-400">Expected for </span>
+              <div className="mb-2 p-2 bg-slate-900/50 border border-slate-700 rounded text-sm">
+                <span className="text-slate-400">Expected for </span>
                 <span className="text-orange-400 font-medium">
                   {workoutType?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'this workout'}
                 </span>
-                <span className="text-gray-400">: </span>
+                <span className="text-slate-400">: </span>
                 <span className="text-green-400 font-semibold">
                   RPE {expectedRpeRange[0]}-{expectedRpeRange[1]}
                 </span>
@@ -143,10 +143,10 @@ export function PerceptionPrompt({
                     className={`
                       w-8 h-8 rounded-full text-sm font-medium transition-all
                       ${isSelected 
-                        ? 'bg-orange-500 text-white ring-2 ring-orange-400 ring-offset-1 ring-offset-gray-800' 
+                        ? 'bg-orange-500 text-white ring-2 ring-orange-400 ring-offset-1 ring-offset-slate-800' 
                         : isInExpectedRange
                           ? 'bg-green-900/30 text-green-400 hover:bg-green-800/50'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}
                     `}
                   >
                     {value}
@@ -156,7 +156,7 @@ export function PerceptionPrompt({
             </div>
             
             {/* RPE labels */}
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
+            <div className="flex justify-between text-xs text-slate-500 mt-1">
               <span>Very Easy</span>
               <span>Moderate</span>
               <span>Maximum</span>
@@ -195,7 +195,7 @@ export function PerceptionPrompt({
             <select
               value={formData.leg_feel || ''}
               onChange={(e) => setFormData({ ...formData, leg_feel: e.target.value as any || undefined })}
-              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded text-white"
               required={isRequired('leg_feel')}
             >
               <option value="">Select...</option>
@@ -221,7 +221,7 @@ export function PerceptionPrompt({
               max="10"
               value={formData.energy_post || ''}
               onChange={(e) => setFormData({ ...formData, energy_post: parseInt(e.target.value) || undefined })}
-              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded text-white"
               required={isRequired('energy_post')}
             />
           </div>
@@ -235,7 +235,7 @@ export function PerceptionPrompt({
               value={formData.notes || ''}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded text-white"
             />
           </div>
         )}
@@ -247,7 +247,7 @@ export function PerceptionPrompt({
         <button
           type="submit"
           disabled={createFeedback.isPending || updateFeedback.isPending}
-          className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white font-medium"
+          className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-white font-medium"
         >
           {createFeedback.isPending || updateFeedback.isPending ? (
             <LoadingSpinner size="sm" />

@@ -116,7 +116,7 @@ export default function VDOTCalculator() {
         <h3 className="text-lg font-semibold text-white">Training Pace Calculator</h3>
         <button
           onClick={() => setShowMethodology(!showMethodology)}
-          className="flex items-center gap-1 text-xs text-gray-400 hover:text-orange-400 transition-colors"
+          className="flex items-center gap-1 text-xs text-slate-400 hover:text-orange-400 transition-colors"
           title="How we calculate your paces"
         >
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -128,7 +128,7 @@ export default function VDOTCalculator() {
 
       {/* Methodology Explanation (Collapsible) */}
       {showMethodology && (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 text-sm text-gray-300 space-y-3">
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4 text-sm text-slate-300 space-y-3">
           <div>
             <span className="font-semibold text-orange-400">What is RPI?</span>
           </div>
@@ -143,7 +143,7 @@ export default function VDOTCalculator() {
             calculators and training methodologies, including approaches from coaches like Pfitzinger, 
             Hudson, Fitzgerald, and Magness.
           </p>
-          <p className="text-gray-400 text-xs">
+          <p className="text-slate-400 text-xs">
             Your paces will be consistent with other science-based training systems. The math is universal; 
             your body&apos;s response is what makes it personal.
           </p>
@@ -156,7 +156,7 @@ export default function VDOTCalculator() {
         <select
           value={distance}
           onChange={(e) => setDistance(e.target.value)}
-          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white"
+          className="w-full bg-slate-800 border border-slate-700/50 rounded px-3 py-2 text-white"
         >
           <option value="1609.34">One Mile</option>
           <option value="5000">5K</option>
@@ -184,7 +184,7 @@ export default function VDOTCalculator() {
             value={raceTime}
             onChange={(e) => setRaceTime(e.target.value)}
             placeholder="00:00:00"
-            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white"
+            className="w-full bg-slate-800 border border-slate-700/50 rounded px-3 py-2 text-white"
           />
         </div>
       )}
@@ -206,16 +206,16 @@ export default function VDOTCalculator() {
 
       {/* Results Section */}
       {results && (
-        <div className="mt-6 pt-6 border-t border-gray-700">
+        <div className="mt-6 pt-6 border-t border-slate-700/50">
           {/* RPI Display - Prominent but Clean */}
-          <div className="mb-6 flex items-center justify-between bg-gray-800/50 rounded-lg p-4">
+          <div className="mb-6 flex items-center justify-between bg-slate-800/50 rounded-lg p-4">
             <div>
-              <div className="text-xs text-gray-400 uppercase tracking-wide">
+              <div className="text-xs text-slate-400 uppercase tracking-wide">
                 <span className="font-semibold text-orange-400">RPI</span>
-                <span className="ml-1 text-gray-500">Running Performance Index</span>
+                <span className="ml-1 text-slate-500">Running Performance Index</span>
               </div>
               {results.input && (
-                <div className="text-sm text-gray-300 mt-1">
+                <div className="text-sm text-slate-300 mt-1">
                   {results.input.distance_name} in {results.input.time_formatted}
                 </div>
               )}
@@ -225,19 +225,19 @@ export default function VDOTCalculator() {
                 {(results.rpi || results.fitness_score || results.vdot)?.toFixed(1)}
               </div>
               {results.input && (
-                <div className="text-xs text-gray-500">{results.input.pace_mi}/mi</div>
+                <div className="text-xs text-slate-500">{results.input.pace_mi}/mi</div>
               )}
             </div>
           </div>
 
           {/* Tabs - Training first as primary use case */}
-          <div className="flex border-b border-gray-700 mb-4">
+          <div className="flex border-b border-slate-700/50 mb-4">
             <button
               onClick={() => setActiveTab('training')}
               className={`px-4 py-2 text-sm font-medium transition-colors ${
                 activeTab === 'training'
                   ? 'border-b-2 border-orange-500 text-orange-500'
-                  : 'text-gray-400 hover:text-gray-300'
+                  : 'text-slate-400 hover:text-slate-300'
               }`}
             >
               Training Paces
@@ -247,7 +247,7 @@ export default function VDOTCalculator() {
               className={`px-4 py-2 text-sm font-medium transition-colors ${
                 activeTab === 'equivalent'
                   ? 'border-b-2 border-orange-500 text-orange-500'
-                  : 'text-gray-400 hover:text-gray-300'
+                  : 'text-slate-400 hover:text-slate-300'
               }`}
             >
               Race Equivalents
@@ -257,7 +257,7 @@ export default function VDOTCalculator() {
               className={`px-4 py-2 text-sm font-medium transition-colors ${
                 activeTab === 'race_paces'
                   ? 'border-b-2 border-orange-500 text-orange-500'
-                  : 'text-gray-400 hover:text-gray-300'
+                  : 'text-slate-400 hover:text-slate-300'
               }`}
             >
               Split Paces
@@ -268,11 +268,11 @@ export default function VDOTCalculator() {
           {activeTab === 'race_paces' && results.race_paces && results.race_paces.length > 0 && (
             <div className="space-y-2">
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="font-semibold text-gray-400">Distance</div>
-                <div className="font-semibold text-gray-400">Pace</div>
+                <div className="font-semibold text-slate-400">Distance</div>
+                <div className="font-semibold text-slate-400">Pace</div>
                 {results.race_paces.map((race: any) => (
                   <React.Fragment key={race.distance}>
-                    <div className="text-gray-300">{race.distance}</div>
+                    <div className="text-slate-300">{race.distance}</div>
                     <div className="font-mono text-orange-400">{race.pace_mi} /mi</div>
                   </React.Fragment>
                 ))}
@@ -286,15 +286,15 @@ export default function VDOTCalculator() {
               {/* Per Mile/Km Training Paces */}
               {results.training.per_mile_km && Object.keys(results.training.per_mile_km).length > 0 && (
                 <div>
-                  <div className="text-xs font-semibold text-gray-400 mb-2">Type</div>
+                  <div className="text-xs font-semibold text-slate-400 mb-2">Type</div>
                   <div className="grid grid-cols-3 gap-3 text-xs">
-                    <div className="text-gray-500"></div>
-                    <div className="text-center text-gray-400 font-semibold">1 Mi</div>
-                    <div className="text-center text-gray-400 font-semibold">1 Km</div>
+                    <div className="text-slate-500"></div>
+                    <div className="text-center text-slate-400 font-semibold">1 Mi</div>
+                    <div className="text-center text-slate-400 font-semibold">1 Km</div>
                     
                     {results.training.per_mile_km.easy && (
                       <>
-                        <div className="text-gray-300">Easy</div>
+                        <div className="text-slate-300">Easy</div>
                         <div className="font-mono text-center text-green-400">
                           {results.training.per_mile_km.easy.display_mi || 
                            (results.training.per_mile_km.easy.mi ? `${results.training.per_mile_km.easy.mi} or slower` : '--')}
@@ -308,7 +308,7 @@ export default function VDOTCalculator() {
                     
                     {results.training.per_mile_km.marathon && (
                       <>
-                        <div className="text-gray-300">Marathon</div>
+                        <div className="text-slate-300">Marathon</div>
                         <div className="font-mono text-center text-orange-400">
                           {results.training.per_mile_km.marathon.mi || '--'}
                         </div>
@@ -320,7 +320,7 @@ export default function VDOTCalculator() {
                     
                     {results.training.per_mile_km.threshold && (
                       <>
-                        <div className="text-gray-300">Threshold</div>
+                        <div className="text-slate-300">Threshold</div>
                         <div className="font-mono text-center text-orange-400">
                           {results.training.per_mile_km.threshold.mi || '--'}
                         </div>
@@ -332,7 +332,7 @@ export default function VDOTCalculator() {
                     
                     {results.training.per_mile_km.interval && (
                       <>
-                        <div className="text-gray-300">Interval</div>
+                        <div className="text-slate-300">Interval</div>
                         <div className="font-mono text-center text-orange-400">
                           {results.training.per_mile_km.interval.mi || '--'}
                         </div>
@@ -344,7 +344,7 @@ export default function VDOTCalculator() {
                     
                     {results.training.per_mile_km.repetition && (
                       <>
-                        <div className="text-gray-300">Repetition</div>
+                        <div className="text-slate-300">Repetition</div>
                         <div className="font-mono text-center text-orange-400">
                           {results.training.per_mile_km.repetition.mi || '--'}
                         </div>
@@ -360,16 +360,16 @@ export default function VDOTCalculator() {
               {/* Interval Distances (1200m, 800m, 600m) */}
               {results.training.interval_distances && Object.keys(results.training.interval_distances).length > 0 && (
                 <div>
-                  <div className="text-xs font-semibold text-gray-400 mb-2">Type</div>
+                  <div className="text-xs font-semibold text-slate-400 mb-2">Type</div>
                   <div className="grid grid-cols-4 gap-2 text-xs">
-                    <div className="text-gray-500"></div>
-                    <div className="text-center text-gray-400 font-semibold">1200m</div>
-                    <div className="text-center text-gray-400 font-semibold">800m</div>
-                    <div className="text-center text-gray-400 font-semibold">600m</div>
+                    <div className="text-slate-500"></div>
+                    <div className="text-center text-slate-400 font-semibold">1200m</div>
+                    <div className="text-center text-slate-400 font-semibold">800m</div>
+                    <div className="text-center text-slate-400 font-semibold">600m</div>
                     
                     {results.training.interval_distances.threshold && (
                       <>
-                        <div className="text-gray-300">Threshold</div>
+                        <div className="text-slate-300">Threshold</div>
                         <div className="font-mono text-center text-orange-400">
                           {results.training.interval_distances.threshold['1200m'] || '--'}
                         </div>
@@ -384,7 +384,7 @@ export default function VDOTCalculator() {
                     
                     {results.training.interval_distances.interval && (
                       <>
-                        <div className="text-gray-300">Interval</div>
+                        <div className="text-slate-300">Interval</div>
                         <div className="font-mono text-center text-orange-400">
                           {results.training.interval_distances.interval['1200m'] || '--'}
                         </div>
@@ -399,7 +399,7 @@ export default function VDOTCalculator() {
                     
                     {results.training.interval_distances.repetition && (
                       <>
-                        <div className="text-gray-300">Repetition</div>
+                        <div className="text-slate-300">Repetition</div>
                         <div className="font-mono text-center text-orange-400">
                           {results.training.interval_distances.repetition['1200m'] || '--'}
                         </div>
@@ -418,16 +418,16 @@ export default function VDOTCalculator() {
               {/* Short Intervals (400m, 300m, 200m) */}
               {results.training.short_intervals && Object.keys(results.training.short_intervals).length > 0 && (
                 <div>
-                  <div className="text-xs font-semibold text-gray-400 mb-2">Type</div>
+                  <div className="text-xs font-semibold text-slate-400 mb-2">Type</div>
                   <div className="grid grid-cols-4 gap-2 text-xs">
-                    <div className="text-gray-500"></div>
-                    <div className="text-center text-gray-400 font-semibold">400m</div>
-                    <div className="text-center text-gray-400 font-semibold">300m</div>
-                    <div className="text-center text-gray-400 font-semibold">200m</div>
+                    <div className="text-slate-500"></div>
+                    <div className="text-center text-slate-400 font-semibold">400m</div>
+                    <div className="text-center text-slate-400 font-semibold">300m</div>
+                    <div className="text-center text-slate-400 font-semibold">200m</div>
                     
                     {results.training.short_intervals.interval && (
                       <>
-                        <div className="text-gray-300">Interval</div>
+                        <div className="text-slate-300">Interval</div>
                         <div className="font-mono text-center text-orange-400">
                           {results.training.short_intervals.interval['400m'] || '--'}
                         </div>
@@ -442,7 +442,7 @@ export default function VDOTCalculator() {
                     
                     {results.training.short_intervals.repetition && (
                       <>
-                        <div className="text-gray-300">Repetition</div>
+                        <div className="text-slate-300">Repetition</div>
                         <div className="font-mono text-center text-orange-400">
                           {results.training.short_intervals.repetition['400m'] || '--'}
                         </div>
@@ -457,7 +457,7 @@ export default function VDOTCalculator() {
                     
                     {results.training.short_intervals.fast_reps && (
                       <>
-                        <div className="text-gray-300">Fast Reps</div>
+                        <div className="text-slate-300">Fast Reps</div>
                         <div className="font-mono text-center text-orange-400">
                           {results.training.short_intervals.fast_reps['400m'] || '--'}
                         </div>
@@ -479,12 +479,12 @@ export default function VDOTCalculator() {
           {activeTab === 'equivalent' && results.equivalent && results.equivalent.length > 0 && (
             <div className="space-y-2">
               <div className="grid grid-cols-3 gap-3 text-xs">
-                <div className="font-semibold text-gray-400">Race</div>
-                <div className="font-semibold text-gray-400">Time</div>
-                <div className="font-semibold text-gray-400">Pace/Mi</div>
+                <div className="font-semibold text-slate-400">Race</div>
+                <div className="font-semibold text-slate-400">Time</div>
+                <div className="font-semibold text-slate-400">Pace/Mi</div>
                 {results.equivalent.map((race: any) => (
                   <React.Fragment key={race.race}>
-                    <div className="text-gray-300">{race.race}</div>
+                    <div className="text-slate-300">{race.race}</div>
                     <div className="font-mono text-orange-400">{race.time_formatted}</div>
                     <div className="font-mono text-orange-400">{race.pace_mi}</div>
                   </React.Fragment>

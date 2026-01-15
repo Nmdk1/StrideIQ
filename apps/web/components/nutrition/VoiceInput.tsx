@@ -106,7 +106,7 @@ export function VoiceInput({
 
   if (!isSupported) {
     return (
-      <div className={`text-gray-500 text-sm ${className}`}>
+      <div className={`text-slate-500 text-sm ${className}`}>
         Voice input not available in this browser.
         Try Chrome or Edge for voice support.
       </div>
@@ -117,8 +117,8 @@ export function VoiceInput({
     <div className={`relative ${className}`}>
       {/* Transcript display */}
       {transcript && (
-        <div className="mb-3 p-3 bg-gray-800 rounded-lg text-gray-300 text-sm">
-          <span className="text-gray-500 text-xs block mb-1">I heard:</span>
+        <div className="mb-3 p-3 bg-slate-800 rounded-lg text-slate-300 text-sm">
+          <span className="text-slate-500 text-xs block mb-1">I heard:</span>
           {transcript}
         </div>
       )}
@@ -132,7 +132,7 @@ export function VoiceInput({
           font-medium transition-all
           ${isListening 
             ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' 
-            : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+            : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
           }
         `}
       >
@@ -157,7 +157,7 @@ export function VoiceInput({
       )}
 
       {/* Usage hint */}
-      <p className="mt-2 text-gray-500 text-xs text-center">
+      <p className="mt-2 text-slate-500 text-xs text-center">
         Say something like &quot;Had oatmeal with banana for breakfast&quot;
       </p>
     </div>

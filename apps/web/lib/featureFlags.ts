@@ -24,6 +24,7 @@
  */
 const ENABLED_BY_DEFAULT: string[] = [
   'time_input_v2',  // Enabled - auto-formatting time input
+  'age_grade_v2',   // Enabled - enhanced age-grading results display
 ];
 
 /**
@@ -93,4 +94,5 @@ export function resetFeature(flag: string): void {
 // Feature flag constants
 export const FEATURE_FLAGS = {
   TIME_INPUT_V2: 'time_input_v2',
+  AGE_GRADE_V2: 'age_grade_v2',  // Enhanced age-grading calculator with detailed results
 } as const;

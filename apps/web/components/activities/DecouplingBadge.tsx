@@ -65,7 +65,7 @@ export function DecouplingBadge({
       
       {/* Exact Percentage */}
       <div className="flex items-center gap-1">
-        <span className="text-sm text-gray-400">Decoupling:</span>
+        <span className="text-sm text-slate-400">Decoupling:</span>
         <span className={`text-sm font-semibold ${config.textColor}`}>
           {decouplingPercent > 0 ? '+' : ''}
           {decouplingPercent.toFixed(1)}%

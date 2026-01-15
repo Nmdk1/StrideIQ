@@ -111,12 +111,12 @@ export default function TrendsPage() {
   const isLoading = efficiencyLoading || volumeLoading || causesLoading;
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
+    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Trends</h1>
-          <p className="text-gray-400">
+          <p className="text-slate-400">
             Signal, not noise. Patterns over time, not reactions to single workouts.
           </p>
         </div>
@@ -130,7 +130,7 @@ export default function TrendsPage() {
               className={`px-4 py-2 rounded-lg transition-colors ${
                 days === d
                   ? 'bg-orange-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
+                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
               }`}
             >
               {d < 90 ? `${d} days` : `${d / 30} months`}
@@ -141,7 +141,7 @@ export default function TrendsPage() {
         {isLoading ? (
           <div className="space-y-6">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="animate-pulse bg-gray-800/50 rounded-lg h-48"></div>
+              <div key={i} className="animate-pulse bg-slate-800/50 rounded-lg h-48"></div>
             ))}
           </div>
         ) : (
@@ -166,35 +166,35 @@ export default function TrendsPage() {
 
             {/* Interpretation */}
             {efficiencyTrend?.interpretation && (
-              <div className="bg-gray-800/50 rounded-lg p-6 border-l-4 border-orange-500">
+              <div className="bg-slate-800/50 rounded-lg p-6 border-l-4 border-orange-500">
                 <h3 className="text-lg font-medium text-white mb-2">What This Means</h3>
-                <p className="text-gray-300">{efficiencyTrend.interpretation}</p>
+                <p className="text-slate-300">{efficiencyTrend.interpretation}</p>
               </div>
             )}
 
             {/* Root Cause Analysis */}
             {rootCauses && (
-              <div className="bg-gray-800/30 rounded-lg p-6">
+              <div className="bg-slate-800/30 rounded-lg p-6">
                 <h2 className="text-xl font-bold text-white mb-4">Root Cause Analysis</h2>
                 
                 {rootCauses.status === 'no_significant_trend' ? (
-                  <div className="text-gray-400">
+                  <div className="text-slate-400">
                     <p>{rootCauses.message}</p>
-                    <p className="mt-2 text-sm text-gray-500">
+                    <p className="mt-2 text-sm text-slate-500">
                       Root cause analysis activates when significant trends are detected.
                       This is by design — we don&apos;t react to noise.
                     </p>
                   </div>
                 ) : rootCauses.hypotheses.length === 0 ? (
-                  <div className="text-gray-400">
+                  <div className="text-slate-400">
                     <p>Trend detected but no clear root causes identified.</p>
-                    <p className="mt-2 text-sm text-gray-500">
+                    <p className="mt-2 text-sm text-slate-500">
                       Consider logging more input data (sleep, stress, soreness) to improve analysis.
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <p className="text-gray-400 text-sm mb-4">
+                    <p className="text-slate-400 text-sm mb-4">
                       Factors potentially contributing to your{' '}
                       <span className={
                         rootCauses.trend?.direction === 'declining' 
@@ -209,13 +209,13 @@ export default function TrendsPage() {
                     {rootCauses.hypotheses.map((hypothesis, i) => (
                       <div
                         key={i}
-                        className="flex items-start gap-4 p-4 bg-gray-800/50 rounded-lg"
+                        className="flex items-start gap-4 p-4 bg-slate-800/50 rounded-lg"
                       >
                         <div
                           className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${
                             Math.abs(hypothesis.correlation) > 0.5
                               ? 'bg-orange-600/20 text-orange-400'
-                              : 'bg-gray-700/50 text-gray-400'
+                              : 'bg-slate-700/50 text-slate-400'
                           }`}
                         >
                           {getFactorIcon(hypothesis.factor)}
@@ -227,8 +227,8 @@ export default function TrendsPage() {
                             </h4>
                             <CorrelationBadge correlation={hypothesis.correlation} />
                           </div>
-                          <p className="text-gray-300 text-sm">{hypothesis.explanation}</p>
-                          <p className="text-gray-500 text-xs mt-1">
+                          <p className="text-slate-300 text-sm">{hypothesis.explanation}</p>
+                          <p className="text-slate-500 text-xs mt-1">
                             {Math.round(hypothesis.confidence * 100)}% confidence
                           </p>
                         </div>
@@ -240,10 +240,10 @@ export default function TrendsPage() {
             )}
 
             {/* Data Quality Notice */}
-            <div className="bg-gray-800/20 rounded-lg p-4 border border-gray-700/50">
+            <div className="bg-slate-800/20 rounded-lg p-4 border border-slate-700/50/50">
               <div className="flex items-start gap-3">
                 <svg
-                  className="w-5 h-5 text-gray-500 mt-0.5"
+                  className="w-5 h-5 text-slate-500 mt-0.5"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -255,8 +255,8 @@ export default function TrendsPage() {
                     d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <div className="text-sm text-gray-400">
-                  <p className="font-medium text-gray-300 mb-1">About This Analysis</p>
+                <div className="text-sm text-slate-400">
+                  <p className="font-medium text-slate-300 mb-1">About This Analysis</p>
                   <p>
                     Trends require data over time. The more consistently you log your runs
                     and daily check-ins, the more accurate this analysis becomes.
@@ -287,17 +287,17 @@ function TrendCard({
 }) {
   if (!trend) {
     return (
-      <div className="bg-gray-800/50 rounded-lg p-6">
+      <div className="bg-slate-800/50 rounded-lg p-6">
         <h3 className="text-lg font-medium text-white mb-1">{title}</h3>
-        <p className="text-gray-500 text-sm mb-4">{subtitle}</p>
-        <p className="text-gray-400">Loading...</p>
+        <p className="text-slate-500 text-sm mb-4">{subtitle}</p>
+        <p className="text-slate-400">Loading...</p>
       </div>
     );
   }
 
   const getDirectionColor = () => {
-    if (trend.direction === 'insufficient_data') return 'text-gray-500';
-    if (trend.direction === 'stable') return 'text-gray-400';
+    if (trend.direction === 'insufficient_data') return 'text-slate-500';
+    if (trend.direction === 'stable') return 'text-slate-400';
     
     const isGood = invertGood
       ? trend.direction === 'declining'
@@ -314,24 +314,24 @@ function TrendCard({
   };
 
   const getBackgroundGradient = () => {
-    if (trend.direction === 'insufficient_data') return 'from-gray-800/50 to-gray-800/30';
-    if (!trend.is_significant) return 'from-gray-800/50 to-gray-800/30';
+    if (trend.direction === 'insufficient_data') return 'from-slate-800/50 to-slate-800/30';
+    if (!trend.is_significant) return 'from-slate-800/50 to-slate-800/30';
     
     const isGood = invertGood
       ? trend.direction === 'declining'
       : trend.direction === 'improving';
     
     return isGood 
-      ? 'from-green-900/30 to-gray-800/30' 
-      : 'from-orange-900/30 to-gray-800/30';
+      ? 'from-green-900/30 to-slate-800/30' 
+      : 'from-orange-900/30 to-slate-800/30';
   };
 
   return (
-    <div className={`bg-gradient-to-br ${getBackgroundGradient()} rounded-lg p-6 border border-gray-700/50`}>
+    <div className={`bg-gradient-to-br ${getBackgroundGradient()} rounded-lg p-6 border border-slate-700/50/50`}>
       <div className="flex justify-between items-start mb-4">
         <div>
           <h3 className="text-lg font-medium text-white mb-1">{title}</h3>
-          <p className="text-gray-500 text-sm">{subtitle}</p>
+          <p className="text-slate-500 text-sm">{subtitle}</p>
         </div>
         {trend.is_significant && (
           <span className="px-2 py-1 bg-orange-600/20 text-orange-400 text-xs rounded">
@@ -352,22 +352,22 @@ function TrendCard({
       {trend.direction !== 'insufficient_data' && trend.magnitude_percent !== null && (
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
-            <span className="text-gray-400">Change</span>
+            <span className="text-slate-400">Change</span>
             <span className="text-white">{Math.abs(trend.magnitude_percent).toFixed(1)}%</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-400">Confidence</span>
+            <span className="text-slate-400">Confidence</span>
             <span className="text-white">{Math.round(trend.confidence * 100)}%</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-400">Based on</span>
+            <span className="text-slate-400">Based on</span>
             <span className="text-white">{trend.data_points} data points</span>
           </div>
         </div>
       )}
 
       {trend.direction === 'insufficient_data' && (
-        <p className="text-gray-400 text-sm">
+        <p className="text-slate-400 text-sm">
           Need at least 5 runs to calculate trend.
           Currently have {trend.data_points}.
         </p>
@@ -389,7 +389,7 @@ function CorrelationBadge({ correlation }: { correlation: number }) {
     color = 'bg-yellow-600/20 text-yellow-400';
   } else {
     label = 'Weak';
-    color = 'bg-gray-600/20 text-gray-400';
+    color = 'bg-slate-600/20 text-slate-400';
   }
 
   return (

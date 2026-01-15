@@ -2,6 +2,7 @@
  * Splits Chart Component
  * 
  * Visualizes mile splits with pace and heart rate.
+ * Pace displayed in standard running format: MM:SS/mi
  * Tone: Sparse, data-driven.
  */
 
@@ -25,6 +26,42 @@ interface SplitsChartProps {
   className?: string;
 }
 
+// Format pace seconds to MM:SS string
+function formatPaceToMinSec(seconds: number | null): string {
+  if (!seconds || seconds <= 0) return 'N/A';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Custom tooltip for the chart
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload || !payload.length) return null;
+  
+  return (
+    <div className="bg-slate-800 border border-slate-600 rounded-lg p-3 shadow-lg">
+      <p className="text-slate-300 text-sm font-medium mb-2">Mile {label}</p>
+      {payload.map((entry: any, index: number) => {
+        if (entry.dataKey === 'paceSeconds') {
+          return (
+            <p key={index} className="text-sm" style={{ color: entry.color }}>
+              Pace: {formatPaceToMinSec(entry.value)}/mi
+            </p>
+          );
+        }
+        if (entry.dataKey === 'hr') {
+          return (
+            <p key={index} className="text-sm" style={{ color: entry.color }}>
+              HR: {entry.value} bpm
+            </p>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
 export function SplitsChart({ splits, className = '' }: SplitsChartProps) {
   if (!splits || splits.length === 0) {
     return null;
@@ -39,18 +76,9 @@ export function SplitsChart({ splits, className = '' }: SplitsChartProps) {
       ? (time / distance) * 1609.34 
       : null;
     
-    // Format pace as mm:ss
-    const formatPace = (seconds: number | null): string => {
-      if (!seconds) return 'N/A';
-      const mins = Math.floor(seconds / 60);
-      const secs = Math.round(seconds % 60);
-      return `${mins}:${secs.toString().padStart(2, '0')}/mi`;
-    };
-    
     return {
       split: split.split_number,
       paceSeconds: paceSecondsPerMile,
-      paceFormatted: formatPace(paceSecondsPerMile),
       hr: split.average_heartrate || null,
       distance: distance,
     };
@@ -60,8 +88,13 @@ export function SplitsChart({ splits, className = '' }: SplitsChartProps) {
     return null;
   }
 
+  // Calculate min/max pace for Y-axis domain (with some padding)
+  const paceValues = chartData.map(d => d.paceSeconds).filter(Boolean) as number[];
+  const minPace = Math.floor(Math.min(...paceValues) / 60) * 60; // Round down to nearest minute
+  const maxPace = Math.ceil(Math.max(...paceValues) / 60) * 60; // Round up to nearest minute
+
   return (
-    <div className={`bg-gray-800 rounded-lg border border-gray-700 p-6 ${className}`}>
+    <div className={`bg-slate-800 rounded-lg border border-slate-700 p-6 ${className}`}>
       <h3 className="text-lg font-semibold mb-4">Splits</h3>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData}>
@@ -73,8 +106,11 @@ export function SplitsChart({ splits, className = '' }: SplitsChartProps) {
           />
           <YAxis 
             yAxisId="pace"
-            label={{ value: 'Pace (seconds)', angle: -90, position: 'insideLeft' }}
+            domain={[minPace, maxPace]}
+            tickFormatter={(value) => formatPaceToMinSec(value)}
+            label={{ value: 'Pace (min/mi)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle' } }}
             stroke="#9CA3AF"
+            width={55}
           />
           <YAxis 
             yAxisId="hr"
@@ -82,10 +118,13 @@ export function SplitsChart({ splits, className = '' }: SplitsChartProps) {
             label={{ value: 'HR (bpm)', angle: 90, position: 'insideRight' }}
             stroke="#9CA3AF"
           />
-          <Tooltip
-            contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: '8px' }}
+          <Tooltip content={<CustomTooltip />} />
+          <Legend 
+            formatter={(value) => {
+              if (value === 'paceSeconds') return 'Pace';
+              return value;
+            }}
           />
-          <Legend />
           <Line
             yAxisId="pace"
             type="monotone"

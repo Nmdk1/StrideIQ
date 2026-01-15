@@ -112,20 +112,20 @@ function Tooltip({ step, onNext, onSkip, currentStep, totalSteps }: TooltipProps
       
       {/* Tooltip */}
       <div
-        className="fixed z-[9999] w-80 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-4 animate-fade-in"
+        className="fixed z-[9999] w-80 bg-slate-800 border border-slate-700/50 rounded-lg shadow-xl p-4 animate-fade-in"
         style={{ top: position.top, left: position.left }}
       >
         <div className="flex items-start justify-between mb-2">
           <h3 className="text-lg font-bold text-orange-400">{step.title}</h3>
-          <span className="text-xs text-gray-500">{currentStep + 1}/{totalSteps}</span>
+          <span className="text-xs text-slate-500">{currentStep + 1}/{totalSteps}</span>
         </div>
         
-        <p className="text-gray-300 text-sm mb-4">{step.content}</p>
+        <p className="text-slate-300 text-sm mb-4">{step.content}</p>
         
         <div className="flex justify-between items-center">
           <button
             onClick={onSkip}
-            className="text-sm text-gray-500 hover:text-gray-400"
+            className="text-sm text-slate-500 hover:text-slate-400"
           >
             Skip tour
           </button>

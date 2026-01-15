@@ -21,7 +21,7 @@ export function ActivityInsights({ delivery, className = '' }: ActivityInsightsP
 
   const toneClasses = {
     irreverent: 'border-orange-500/50 bg-orange-900/20',
-    sparse: 'border-gray-600/50 bg-gray-800/50',
+    sparse: 'border-slate-600/50 bg-slate-800/50',
   };
 
   return (
@@ -37,8 +37,8 @@ export function ActivityInsights({ delivery, className = '' }: ActivityInsightsP
         ))}
       </ul>
       {delivery.metrics.efficiency_score && (
-        <div className="mt-4 pt-4 border-t border-gray-700/50">
-          <p className="text-xs text-gray-400">
+        <div className="mt-4 pt-4 border-t border-slate-700/50">
+          <p className="text-xs text-slate-400">
             Efficiency Score: {delivery.metrics.efficiency_score.toFixed(4)}
           </p>
         </div>

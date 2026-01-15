@@ -47,7 +47,7 @@ export function InsightFeedback({
 
   if (helpful !== null) {
     return (
-      <div className={`text-xs text-gray-500 ${className}`}>
+      <div className={`text-xs text-slate-500 ${className}`}>
         {helpful ? 'Thanks for the feedback.' : 'Noted.'}
       </div>
     );
@@ -57,7 +57,7 @@ export function InsightFeedback({
     return (
       <button
         onClick={() => setShowFeedback(true)}
-        className={`text-xs text-gray-500 hover:text-gray-400 ${className}`}
+        className={`text-xs text-slate-500 hover:text-slate-400 ${className}`}
       >
         Was this helpful?
       </button>
@@ -86,7 +86,7 @@ export function InsightFeedback({
             setShowFeedback(false);
             setFeedbackText('');
           }}
-          className="px-3 py-1 text-xs text-gray-500 hover:text-gray-400"
+          className="px-3 py-1 text-xs text-slate-500 hover:text-slate-400"
         >
           Cancel
         </button>
@@ -96,7 +96,7 @@ export function InsightFeedback({
         onChange={(e) => setFeedbackText(e.target.value)}
         placeholder="Optional comment"
         rows={2}
-        className="w-full px-2 py-1 text-xs bg-gray-900 border border-gray-700 rounded text-white"
+        className="w-full px-2 py-1 text-xs bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
       />
     </div>
   );

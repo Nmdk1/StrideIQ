@@ -3,8 +3,8 @@
 /**
  * Personal Bests Page
  * 
+ * Enhanced with shadcn/ui + Lucide.
  * Displays the athlete's personal bests across standard race distances.
- * PBs are auto-calculated from activity history.
  * 
  * TONE: Data speaks. No praise, no motivation.
  */
@@ -14,6 +14,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { apiClient } from '@/lib/api/client';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Trophy, RefreshCw, Clock, Activity, Calendar, Medal } from 'lucide-react';
 
 interface PersonalBest {
   id: string;
@@ -143,86 +147,120 @@ function PersonalBestsContent() {
 
   if (error) {
     return (
-      <div className="text-center py-12 text-red-400">
-        Error loading personal bests.
-      </div>
+      <Card className="bg-red-900/30 border-red-700">
+        <CardContent className="py-8 text-center text-red-400">
+          Error loading personal bests.
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 py-8">
+    <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
       <div className="max-w-4xl mx-auto px-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold">Personal Bests</h1>
-            <p className="text-gray-400 mt-1">
-              Auto-calculated from your activity history
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-orange-500/20 ring-1 ring-orange-500/30">
+              <Trophy className="w-6 h-6 text-orange-500" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Personal Bests</h1>
+              <p className="text-slate-400 mt-1">
+                Auto-calculated from your activity history
+              </p>
+            </div>
           </div>
-          <button
+          <Button
             onClick={handleRecalculate}
             disabled={recalculating}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            className="bg-orange-600 hover:bg-orange-500"
           >
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${recalculating ? 'animate-spin' : ''}`} />
             {recalculating 
-              ? (syncMutation.isPending ? 'Syncing from Strava...' : 'Recalculating...')
+              ? (syncMutation.isPending ? 'Syncing...' : 'Recalculating...')
               : 'Recalculate'}
-          </button>
+          </Button>
         </div>
 
         {/* PBs Table */}
         {sortedPbs.length === 0 ? (
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
-            <p className="text-gray-400 mb-4">No personal bests found.</p>
-            <p className="text-gray-500 text-sm">
-              Click &quot;Recalculate&quot; to scan your activity history for PBs.
-            </p>
-          </div>
+          <Card className="bg-slate-800 border-slate-700">
+            <CardContent className="py-12 text-center">
+              <Trophy className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+              <p className="text-slate-400 mb-2">No personal bests found.</p>
+              <p className="text-slate-500 text-sm">
+                Click &quot;Recalculate&quot; to scan your activity history for PBs.
+              </p>
+            </CardContent>
+          </Card>
         ) : (
-          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-700/50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Distance</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Time</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Pace</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Date</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Race</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700">
-                {sortedPbs.map((pb) => (
-                  <tr key={pb.id} className="hover:bg-gray-700/30">
-                    <td className="px-4 py-3 font-medium text-white">
-                      {DISTANCE_LABELS[pb.distance_category] || pb.distance_category}
-                    </td>
-                    <td className="px-4 py-3 text-gray-300">
-                      {formatDuration(pb.time_seconds)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-300">
-                      {formatPace(pb.pace_per_mile)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">
-                      {new Date(pb.achieved_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      {pb.is_race ? (
-                        <span className="text-emerald-400 text-sm">Race</span>
-                      ) : (
-                        <span className="text-gray-500 text-sm">Training</span>
-                      )}
-                    </td>
+          <Card className="bg-slate-800 border-slate-700 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-slate-700/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">
+                      <span className="flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-orange-500" />
+                        Distance
+                      </span>
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">
+                      <span className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-blue-500" />
+                        Time
+                      </span>
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Pace</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">
+                      <span className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-purple-500" />
+                        Date
+                      </span>
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Type</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-700">
+                  {sortedPbs.map((pb) => (
+                    <tr key={pb.id} className="hover:bg-slate-700/30 transition-colors">
+                      <td className="px-4 py-4 font-medium text-white">
+                        {DISTANCE_LABELS[pb.distance_category] || pb.distance_category}
+                      </td>
+                      <td className="px-4 py-4 text-slate-300 font-mono">
+                        {formatDuration(pb.time_seconds)}
+                      </td>
+                      <td className="px-4 py-4 text-slate-300 font-mono">
+                        {formatPace(pb.pace_per_mile)}
+                      </td>
+                      <td className="px-4 py-4 text-slate-400">
+                        {new Date(pb.achieved_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-4">
+                        {pb.is_race ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                            <Medal className="w-3 h-3 mr-1" />
+                            Race
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-slate-400 border-slate-600">
+                            Training
+                          </Badge>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         )}
 
         {/* Summary */}
         {sortedPbs.length > 0 && (
-          <div className="mt-6 text-sm text-gray-500">
+          <div className="mt-6 text-sm text-slate-500 flex items-center gap-2">
+            <Trophy className="w-4 h-4" />
             {sortedPbs.length} personal best{sortedPbs.length !== 1 ? 's' : ''} recorded
           </div>
         )}

@@ -147,8 +147,8 @@ function RunCard({
     <div 
       className={`rounded-xl border-2 p-5 transition-all ${
         isBaseline 
-          ? 'bg-gradient-to-r from-orange-900/20 to-gray-800/60 border-orange-500/50' 
-          : 'bg-gray-800/60 border-gray-700 hover:border-gray-600'
+          ? 'bg-gradient-to-r from-orange-900/20 to-slate-800/60 border-orange-500/50' 
+          : 'bg-slate-800/60 border-slate-700/50 hover:border-slate-600'
       }`}
     >
       {/* Header */}
@@ -171,7 +171,7 @@ function RunCard({
               {run.name || 'Untitled Run'}
             </Link>
           </div>
-          <div className="text-sm text-gray-400">
+          <div className="text-sm text-slate-400">
             {new Date(run.date).toLocaleDateString('en-US', {
               weekday: 'short',
               month: 'short',
@@ -179,7 +179,7 @@ function RunCard({
               year: 'numeric',
             })}
             {run.workout_type && (
-              <span className="ml-2 text-gray-500">• {run.workout_type.replace(/_/g, ' ')}</span>
+              <span className="ml-2 text-slate-500">• {run.workout_type.replace(/_/g, ' ')}</span>
             )}
           </div>
         </div>
@@ -188,33 +188,33 @@ function RunCard({
       {/* Metrics Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Distance</div>
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Distance</div>
           <div className="text-lg font-bold text-white">
             {formatDistance(run.distance_m || (run.distance_km ? run.distance_km * 1000 : undefined))}
           </div>
         </div>
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Time</div>
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Time</div>
           <div className="text-lg font-bold text-white">{formatDuration(run.duration_s)}</div>
         </div>
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Pace</div>
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Pace</div>
           <div className="text-lg font-bold text-white">{run.pace_formatted || formatPace(run.pace_per_km)}</div>
         </div>
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Avg HR</div>
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Avg HR</div>
           <div className="text-lg font-bold text-white">
             {run.avg_hr ? `${run.avg_hr} bpm` : '—'}
           </div>
         </div>
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Max HR</div>
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Max HR</div>
           <div className="text-lg font-bold text-white">
             {run.max_hr ? `${run.max_hr} bpm` : '—'}
           </div>
         </div>
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Elevation</div>
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Elevation</div>
           <div className="text-lg font-bold text-white">
             {run.elevation_gain ? `${Math.round(run.elevation_gain)}m` : '—'}
           </div>
@@ -290,15 +290,15 @@ function OverlayChart({
 
   if (summaryData.length === 0) {
     return (
-      <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-8 text-center">
+      <div className="bg-slate-800/60 rounded-xl border border-slate-700/50 p-8 text-center">
         <div className="text-4xl mb-4">📊</div>
-        <p className="text-gray-400">No pace or heart rate data available for comparison</p>
+        <p className="text-slate-400">No pace or heart rate data available for comparison</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-6">
+    <div className="bg-slate-800/60 rounded-xl border border-slate-700/50 p-6">
       {/* Header with Mode Toggle */}
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-white">Performance Comparison</h3>
@@ -310,7 +310,7 @@ function OverlayChart({
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   chartMode === 'splits'
                     ? 'bg-orange-600 text-white'
-                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
                 }`}
               >
                 Split-by-Split
@@ -320,7 +320,7 @@ function OverlayChart({
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   chartMode === 'summary'
                     ? 'bg-orange-600 text-white'
-                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
                 }`}
               >
                 Summary
@@ -338,7 +338,7 @@ function OverlayChart({
               className="w-3 h-3 rounded-full"
               style={{ backgroundColor: RUN_COLORS[idx] }}
             />
-            <span className="text-gray-300 truncate max-w-[180px]">
+            <span className="text-slate-300 truncate max-w-[180px]">
               {idx === 0 && '★ '}
               {run.name?.slice(0, 25) || `Run ${idx + 1}`}
             </span>
@@ -385,7 +385,7 @@ function OverlayChart({
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          <p className="text-xs text-gray-500 text-center mt-2">
+          <p className="text-xs text-slate-500 text-center mt-2">
             Average pace comparison • Lower bars = faster
           </p>
         </>
@@ -402,7 +402,7 @@ function OverlayChart({
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   showPace 
                     ? 'bg-orange-600 text-white' 
-                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
                 }`}
               >
                 ⏱️ Pace
@@ -414,7 +414,7 @@ function OverlayChart({
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   showHR 
                     ? 'bg-rose-600 text-white' 
-                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
                 }`}
               >
                 ❤️ Heart Rate
@@ -509,7 +509,7 @@ function OverlayChart({
             </LineChart>
           </ResponsiveContainer>
           
-          <p className="text-xs text-gray-500 text-center mt-2">
+          <p className="text-xs text-slate-500 text-center mt-2">
             {showPace && showHR && "Solid lines = Pace (left axis) • Dashed lines = HR (right axis)"}
             {showPace && !showHR && "Lower is faster"}
             {!showPace && showHR && "Heart rate across each split"}
@@ -530,7 +530,7 @@ function PatternInsightCard({ pattern }: { pattern: PatternInsight }) {
     ? 'bg-emerald-900/20 border-emerald-800/50' 
     : pattern.direction === 'lower'
       ? 'bg-rose-900/20 border-rose-800/50'
-      : 'bg-gray-800/50 border-gray-700/50';
+      : 'bg-slate-800/50 border-slate-700/50/50';
   
   return (
     <div className={`p-4 rounded-lg border ${bgClass}`}>
@@ -544,24 +544,24 @@ function PatternInsightCard({ pattern }: { pattern: PatternInsight }) {
             ? 'bg-emerald-900/50 text-emerald-400' 
             : pattern.confidence === 'moderate'
               ? 'bg-amber-900/50 text-amber-400'
-              : 'bg-gray-700 text-gray-400'
+              : 'bg-slate-700 text-slate-400'
         }`}>
           {pattern.confidence}
         </span>
       </div>
       
-      <div className="text-sm text-gray-300 mb-2">
-        <span className="text-gray-400">Pattern:</span> {pattern.pattern_value}
+      <div className="text-sm text-slate-300 mb-2">
+        <span className="text-slate-400">Pattern:</span> {pattern.pattern_value}
         <span className="mx-2">→</span>
-        <span className="text-gray-400">Today:</span>{' '}
+        <span className="text-slate-400">Today:</span>{' '}
         <span className={pattern.direction === 'higher' ? 'text-emerald-400' : pattern.direction === 'lower' ? 'text-rose-400' : 'text-white'}>
           {pattern.current_value}
         </span>
       </div>
       
-      <p className="text-sm text-gray-400">{pattern.insight}</p>
+      <p className="text-sm text-slate-400">{pattern.insight}</p>
       
-      <div className="mt-2 text-xs text-gray-500">
+      <div className="mt-2 text-xs text-slate-500">
         Seen in {pattern.consistency_str}
       </div>
     </div>
@@ -572,7 +572,7 @@ function FatigueCard({ fatigue }: { fatigue: FatigueContext }) {
   const phaseColors: Record<string, string> = {
     taper: 'text-emerald-400 bg-emerald-900/30 border-emerald-700/50',
     recovery: 'text-blue-400 bg-blue-900/30 border-blue-700/50',
-    steady: 'text-gray-300 bg-gray-800/50 border-gray-700/50',
+    steady: 'text-slate-300 bg-slate-800/50 border-slate-700/50/50',
     build: 'text-amber-400 bg-amber-900/30 border-amber-700/50',
     overreaching: 'text-rose-400 bg-rose-900/30 border-rose-700/50',
   };
@@ -593,19 +593,19 @@ function FatigueCard({ fatigue }: { fatigue: FatigueContext }) {
       
       <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
         <div>
-          <div className="text-gray-400">ACWR</div>
+          <div className="text-slate-400">ACWR</div>
           <div className="text-white font-medium">{fatigue.acwr.toFixed(2)}</div>
         </div>
         <div>
-          <div className="text-gray-400">7d Load</div>
+          <div className="text-slate-400">7d Load</div>
           <div className="text-white font-medium">{fatigue.acute_load_km.toFixed(1)}km</div>
         </div>
       </div>
       
-      <p className="text-sm text-gray-300">{fatigue.explanation}</p>
+      <p className="text-sm text-slate-300">{fatigue.explanation}</p>
       
       {fatigue.fatigue_delta && (
-        <p className="text-sm text-gray-400 mt-2 pt-2 border-t border-gray-700">
+        <p className="text-sm text-slate-400 mt-2 pt-2 border-t border-slate-700/50">
           {fatigue.fatigue_delta}
         </p>
       )}
@@ -646,7 +646,7 @@ function WhySection({
           🔍 The WHY (Pattern Recognition)
         </h3>
         {patterns && (
-          <span className="text-xs px-3 py-1 rounded-full bg-gray-700/50 text-gray-300">
+          <span className="text-xs px-3 py-1 rounded-full bg-slate-700/50 text-slate-300">
             {(patterns.overall_data_quality * 100).toFixed(0)}% data coverage
           </span>
         )}
@@ -704,21 +704,21 @@ function WhySection({
       {/* No patterns found */}
       {!hasPatterns && patterns && (
         <div className="text-center py-8">
-          <p className="text-gray-400 mb-2">
+          <p className="text-slate-400 mb-2">
             No strong patterns identified with these comparison runs.
           </p>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-slate-500">
             Try selecting more similar runs, or log more check-in data.
           </p>
           {patterns.data_quality_notes.map((note, idx) => (
-            <p key={idx} className="text-xs text-gray-600 mt-1">{note}</p>
+            <p key={idx} className="text-xs text-slate-600 mt-1">{note}</p>
           ))}
         </div>
       )}
 
       {/* No data at all */}
       {!patterns && (
-        <p className="text-gray-400">
+        <p className="text-slate-400">
           Select runs to compare and analyze patterns.
         </p>
       )}
@@ -784,7 +784,7 @@ export default function CompareResultsPage() {
   if (loading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
           <LoadingSpinner size="lg" />
         </div>
       </ProtectedRoute>
@@ -794,11 +794,11 @@ export default function CompareResultsPage() {
   if (!comparisonData) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-900 text-gray-100 py-12">
+        <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-12">
           <div className="max-w-4xl mx-auto px-4 text-center">
             <div className="text-6xl mb-6">📊</div>
             <h1 className="text-2xl font-bold mb-4">No Comparison Data</h1>
-            <p className="text-gray-400 mb-8">
+            <p className="text-slate-400 mb-8">
               Select runs from the Compare page to see detailed comparison.
             </p>
             <Link
@@ -815,7 +815,7 @@ export default function CompareResultsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-900 to-gray-950 text-gray-100">
+      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-100">
         {/* Background */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-0 left-1/4 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl" />
@@ -827,13 +827,13 @@ export default function CompareResultsPage() {
           <div className="flex items-center gap-4 mb-8">
             <Link 
               href="/compare"
-              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
+              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors"
             >
               ← Back
             </Link>
             <div>
               <h1 className="text-2xl font-bold">Run Comparison</h1>
-              <p className="text-gray-400">
+              <p className="text-slate-400">
                 Comparing {allRuns.length} runs
               </p>
             </div>
@@ -841,16 +841,16 @@ export default function CompareResultsPage() {
 
           {/* Quick Stats Bar */}
           {comparisonData.performance_score && (
-            <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-4 mb-6 flex items-center justify-between">
+            <div className="bg-slate-800/60 rounded-xl border border-slate-700/50 p-4 mb-6 flex items-center justify-between">
               <div className="flex items-center gap-6">
                 <div>
-                  <div className="text-xs text-gray-500 uppercase">Performance</div>
+                  <div className="text-xs text-slate-500 uppercase">Performance</div>
                   <div className="text-2xl font-bold text-orange-400">
                     {comparisonData.performance_score.score.toFixed(0)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500 uppercase">vs Baseline</div>
+                  <div className="text-xs text-slate-500 uppercase">vs Baseline</div>
                   <div className={`text-xl font-bold ${
                     comparisonData.performance_score.pace_vs_baseline > 0 
                       ? 'text-emerald-400' 
@@ -864,7 +864,7 @@ export default function CompareResultsPage() {
                 </div>
               </div>
               {comparisonData.headline && (
-                <div className="text-right text-gray-300 max-w-md">
+                <div className="text-right text-slate-300 max-w-md">
                   {comparisonData.headline}
                 </div>
               )}
@@ -904,23 +904,23 @@ export default function CompareResultsPage() {
           {/* Ghost Average */}
           {comparisonData.ghost_average && (
             <section className="mb-8">
-              <div className="bg-gray-800/40 rounded-xl border border-gray-700/50 p-5">
+              <div className="bg-slate-800/40 rounded-xl border border-slate-700/50/50 p-5">
                 <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                   👻 Ghost Average
-                  <span className="text-sm font-normal text-gray-400">
+                  <span className="text-sm font-normal text-slate-400">
                     (baseline from {comparisonData.ghost_average.num_runs_averaged} runs)
                   </span>
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
-                    <div className="text-xs text-gray-500 uppercase">Avg Pace</div>
+                    <div className="text-xs text-slate-500 uppercase">Avg Pace</div>
                     <div className="text-lg font-bold text-white">
                       {comparisonData.ghost_average.avg_pace_formatted || formatPace(comparisonData.ghost_average.avg_pace_per_km)}
                     </div>
                   </div>
                   {comparisonData.ghost_average.avg_hr && (
                     <div>
-                      <div className="text-xs text-gray-500 uppercase">Avg HR</div>
+                      <div className="text-xs text-slate-500 uppercase">Avg HR</div>
                       <div className="text-lg font-bold text-white">
                         {Math.round(comparisonData.ghost_average.avg_hr)} bpm
                       </div>
@@ -928,7 +928,7 @@ export default function CompareResultsPage() {
                   )}
                   {comparisonData.ghost_average.avg_max_hr && (
                     <div>
-                      <div className="text-xs text-gray-500 uppercase">Avg Max HR</div>
+                      <div className="text-xs text-slate-500 uppercase">Avg Max HR</div>
                       <div className="text-lg font-bold text-white">
                         {Math.round(comparisonData.ghost_average.avg_max_hr)} bpm
                       </div>
@@ -943,7 +943,7 @@ export default function CompareResultsPage() {
           <div className="flex justify-center gap-4">
             <Link
               href="/compare"
-              className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+              className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors"
             >
               Compare Different Runs
             </Link>

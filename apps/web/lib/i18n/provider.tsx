@@ -146,7 +146,7 @@ export function LanguageSelector() {
     <select
       value={locale}
       onChange={(e) => setLocale(e.target.value as SupportedLocale)}
-      className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-300"
+      className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-300"
       aria-label="Select language"
     >
       {i18nConfig.supportedLocales.map((loc) => (

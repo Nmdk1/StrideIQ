@@ -29,9 +29,9 @@ export function ErrorMessage({ error, title = 'Error', className = '' }: ErrorMe
   return (
     <div className={`bg-red-900/50 border border-red-500/50 rounded-lg p-4 ${className}`}>
       <h3 className="text-red-400 font-semibold mb-2">{title}</h3>
-      <p className="text-gray-300 text-sm">{message}</p>
+      <p className="text-slate-300 text-sm">{message}</p>
       {status && (
-        <p className="text-gray-400 text-xs mt-2">Status: {status}</p>
+        <p className="text-slate-400 text-xs mt-2">Status: {status}</p>
       )}
     </div>
   );

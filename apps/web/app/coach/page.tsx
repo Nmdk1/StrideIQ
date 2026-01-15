@@ -3,15 +3,18 @@
 /**
  * AI Coach Chat Page
  * 
+ * Enhanced with shadcn/ui + Lucide.
  * Provides a chat interface to the AI running coach.
- * The coach has access to the athlete's training data and
- * provides personalized, data-driven advice.
  */
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { aiCoachService } from '@/lib/api/services/ai-coach';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { MessageSquare, Send, Sparkles, Activity, BedDouble, Target, TrendingUp } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface Message {
@@ -22,11 +25,11 @@ interface Message {
 }
 
 const SUGGESTED_QUESTIONS = [
-  "How is my training going this week?",
-  "Am I ready for a hard workout tomorrow?",
-  "What should I focus on in my next long run?",
-  "How does my current fitness compare to a month ago?",
-  "What's the most important thing I should do this week?",
+  { text: "How is my training going this week?", icon: Activity },
+  { text: "Am I ready for a hard workout tomorrow?", icon: Sparkles },
+  { text: "What should I focus on in my next long run?", icon: Target },
+  { text: "How does my current fitness compare to a month ago?", icon: TrendingUp },
+  { text: "What's the most important thing I should do this week?", icon: BedDouble },
 ];
 
 export default function CoachPage() {
@@ -108,16 +111,19 @@ Ask me anything about your training!`,
   
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col">
+      <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
         {/* Header */}
-        <div className="border-b border-gray-700 bg-gray-800/50 px-4 py-3">
+        <div className="border-b border-slate-700 bg-slate-800/50 px-4 py-3">
           <div className="max-w-4xl mx-auto flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white font-bold text-lg">
-              AI
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 ring-2 ring-orange-500/30">
+              <MessageSquare className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="font-semibold">StrideIQ Coach</h1>
-              <p className="text-xs text-gray-400">AI-powered training guidance</p>
+              <h1 className="font-semibold flex items-center gap-2">
+                StrideIQ Coach
+                <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs">AI</Badge>
+              </h1>
+              <p className="text-xs text-slate-400">Data-driven training guidance</p>
             </div>
           </div>
         </div>
@@ -130,43 +136,49 @@ Ask me anything about your training!`,
                 key={message.id}
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <div
-                  className={`max-w-[85%] rounded-lg px-4 py-3 ${
+                <Card
+                  className={`max-w-[85%] ${
                     message.role === 'user'
-                      ? 'bg-orange-600 text-white'
-                      : 'bg-gray-800 border border-gray-700'
+                      ? 'bg-orange-600 border-orange-500 text-white'
+                      : 'bg-slate-800 border-slate-700'
                   }`}
                 >
-                  {message.role === 'assistant' ? (
-                    <div className="prose prose-invert prose-sm max-w-none">
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
-                    </div>
-                  ) : (
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                  )}
-                  <p className={`text-xs mt-2 ${message.role === 'user' ? 'text-orange-200' : 'text-gray-500'}`}>
-                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </div>
+                  <CardContent className="py-3 px-4">
+                    {message.role === 'assistant' ? (
+                      <div className="prose prose-invert prose-sm max-w-none">
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    )}
+                    <p className={`text-xs mt-2 ${message.role === 'user' ? 'text-orange-200' : 'text-slate-500'}`}>
+                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </CardContent>
+                </Card>
               </div>
             ))}
             
             {isLoading && (
               <div className="flex justify-start">
-                <div className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <LoadingSpinner size="sm" />
-                    <span className="text-gray-400">Thinking...</span>
-                  </div>
-                </div>
+                <Card className="bg-slate-800 border-slate-700">
+                  <CardContent className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <LoadingSpinner size="sm" />
+                      <span className="text-slate-400">Thinking...</span>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
             
             {error && (
               <div className="flex justify-center">
-                <div className="bg-red-900/50 border border-red-700 rounded-lg px-4 py-3 text-red-300">
-                  {error}
-                </div>
+                <Card className="bg-red-900/50 border-red-700">
+                  <CardContent className="py-3 px-4 text-red-300">
+                    {error}
+                  </CardContent>
+                </Card>
               </div>
             )}
             
@@ -178,17 +190,23 @@ Ask me anything about your training!`,
         {messages.length <= 1 && (
           <div className="px-4 pb-4">
             <div className="max-w-4xl mx-auto">
-              <p className="text-xs text-gray-400 mb-2">Suggested questions:</p>
+              <p className="text-xs text-slate-400 mb-2 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-orange-500" />
+                Suggested questions:
+              </p>
               <div className="flex flex-wrap gap-2">
                 {SUGGESTED_QUESTIONS.map((q, i) => (
-                  <button
+                  <Button
                     key={i}
-                    onClick={() => handleSend(q)}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSend(q.text)}
                     disabled={isLoading}
-                    className="text-sm px-3 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors disabled:opacity-50"
+                    className="border-slate-700 hover:border-orange-500/50 hover:bg-slate-800 text-slate-300"
                   >
-                    {q}
-                  </button>
+                    <q.icon className="w-3.5 h-3.5 mr-1.5 text-orange-500" />
+                    {q.text}
+                  </Button>
                 ))}
               </div>
             </div>
@@ -196,7 +214,7 @@ Ask me anything about your training!`,
         )}
         
         {/* Input */}
-        <div className="border-t border-gray-700 bg-gray-800/50 px-4 py-4">
+        <div className="border-t border-slate-700 bg-slate-800/50 px-4 py-4">
           <div className="max-w-4xl mx-auto flex gap-3">
             <textarea
               value={input}
@@ -204,17 +222,18 @@ Ask me anything about your training!`,
               onKeyDown={handleKeyDown}
               placeholder="Ask your coach anything..."
               rows={1}
-              className="flex-1 px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="flex-1 px-4 py-3 bg-slate-900 border border-slate-600 rounded-xl text-white resize-none focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
-            <button
+            <Button
               onClick={() => handleSend()}
               disabled={!input.trim() || isLoading}
-              className="px-6 py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg font-medium transition-colors"
+              className="px-6 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
             >
+              <Send className="w-4 h-4 mr-1.5" />
               Send
-            </button>
+            </Button>
           </div>
-          <p className="text-xs text-gray-500 text-center mt-2">
+          <p className="text-xs text-slate-500 text-center mt-2">
             The coach uses your actual training data to provide personalized advice.
           </p>
         </div>

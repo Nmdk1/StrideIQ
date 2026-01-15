@@ -23,26 +23,26 @@ export function ComparisonBasket() {
   if (selectionCount === 0) return null;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-800 border-t border-gray-700 shadow-lg">
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-800 border-t border-slate-700/50 shadow-lg">
       <div className="max-w-6xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
           {/* Selected activities */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            <span className="text-sm text-gray-400 whitespace-nowrap">
+            <span className="text-sm text-slate-400 whitespace-nowrap">
               Compare ({selectionCount}/{MAX_SELECTION}):
             </span>
             <div className="flex gap-2">
               {selectedActivities.map((activity) => (
                 <div
                   key={activity.id}
-                  className="flex items-center gap-1 bg-gray-700 rounded-full px-3 py-1 text-sm"
+                  className="flex items-center gap-1 bg-slate-700 rounded-full px-3 py-1 text-sm"
                 >
                   <span className="max-w-[100px] truncate">
                     {activity.name || new Date(activity.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </span>
                   <button
                     onClick={() => removeFromSelection(activity.id)}
-                    className="text-gray-400 hover:text-white ml-1"
+                    className="text-slate-400 hover:text-white ml-1"
                     aria-label={`Remove ${activity.name} from comparison`}
                   >
                     ×
@@ -56,7 +56,7 @@ export function ComparisonBasket() {
           <div className="flex items-center gap-3 ml-4">
             <button
               onClick={clearSelection}
-              className="text-sm text-gray-400 hover:text-white"
+              className="text-sm text-slate-400 hover:text-white"
             >
               Clear
             </button>
@@ -65,7 +65,7 @@ export function ComparisonBasket() {
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 selectionCount >= 2
                   ? 'bg-orange-600 hover:bg-orange-700 text-white'
-                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  : 'bg-slate-600 text-slate-400 cursor-not-allowed'
               }`}
               onClick={(e) => {
                 if (selectionCount < 2) {

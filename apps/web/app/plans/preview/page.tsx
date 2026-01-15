@@ -57,7 +57,7 @@ export default function PlanPreviewPage() {
   // Workout type colors
   const getWorkoutColor = (type: string) => {
     const colors: Record<string, string> = {
-      rest: 'bg-gray-700 text-gray-400',
+      rest: 'bg-slate-700 text-slate-400',
       easy: 'bg-emerald-900/50 text-emerald-400',
       strides: 'bg-emerald-900/50 text-emerald-400',
       hills: 'bg-emerald-900/50 text-emerald-400',
@@ -68,27 +68,27 @@ export default function PlanPreviewPage() {
       tempo: 'bg-orange-900/50 text-orange-400',
       intervals: 'bg-red-900/50 text-red-400',
     };
-    return colors[type] || 'bg-gray-800 text-gray-400';
+    return colors[type] || 'bg-slate-800 text-slate-400';
   };
   
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
+    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Preview Training Plans</h1>
-          <p className="text-gray-400">Explore our periodized training plans before you commit</p>
+          <p className="text-slate-400">Explore our periodized training plans before you commit</p>
         </div>
         
         {/* Configuration */}
-        <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-8">
+        <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 mb-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Distance</label>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Distance</label>
               <select
                 value={distance}
                 onChange={(e) => setDistance(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
+                className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
               >
                 {DISTANCES.map(d => (
                   <option key={d.value} value={d.value}>{d.label}</option>
@@ -97,11 +97,11 @@ export default function PlanPreviewPage() {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Volume Tier</label>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Volume Tier</label>
               <select
                 value={tier}
                 onChange={(e) => setTier(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
+                className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
               >
                 {TIERS.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -110,11 +110,11 @@ export default function PlanPreviewPage() {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Duration</label>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Duration</label>
               <select
                 value={duration}
                 onChange={(e) => setDuration(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
+                className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
               >
                 <option value={8}>8 weeks</option>
                 <option value={12}>12 weeks</option>
@@ -124,11 +124,11 @@ export default function PlanPreviewPage() {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Days/Week</label>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Days/Week</label>
               <select
                 value={days}
                 onChange={(e) => setDays(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
+                className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
               >
                 <option value={5}>5 days</option>
                 <option value={6}>6 days</option>
@@ -163,42 +163,42 @@ export default function PlanPreviewPage() {
         {preview && (
           <div className="space-y-8">
             {/* Summary */}
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6">
               <h2 className="text-xl font-bold text-white mb-4">Plan Summary</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-gray-900 rounded-lg p-4">
+                <div className="bg-[#0a0a0f] rounded-lg p-4">
                   <div className="text-3xl font-bold text-white">{preview.duration_weeks}</div>
-                  <div className="text-sm text-gray-400">Weeks</div>
+                  <div className="text-sm text-slate-400">Weeks</div>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-4">
+                <div className="bg-[#0a0a0f] rounded-lg p-4">
                   <div className="text-3xl font-bold text-emerald-400">{preview.total_miles.toFixed(0)}</div>
-                  <div className="text-sm text-gray-400">Total Miles</div>
+                  <div className="text-sm text-slate-400">Total Miles</div>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-4">
+                <div className="bg-[#0a0a0f] rounded-lg p-4">
                   <div className="text-3xl font-bold text-blue-400">{preview.peak_volume.toFixed(0)}</div>
-                  <div className="text-sm text-gray-400">Peak Miles/Week</div>
+                  <div className="text-sm text-slate-400">Peak Miles/Week</div>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-4">
+                <div className="bg-[#0a0a0f] rounded-lg p-4">
                   <div className="text-3xl font-bold text-orange-400">{preview.total_quality_sessions}</div>
-                  <div className="text-sm text-gray-400">Quality Sessions</div>
+                  <div className="text-sm text-slate-400">Quality Sessions</div>
                 </div>
               </div>
             </div>
             
             {/* Phases */}
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6">
               <h2 className="text-xl font-bold text-white mb-4">Training Phases</h2>
               <div className="space-y-3">
                 {preview.phases.map((phase, i) => (
-                  <div key={i} className="flex items-center gap-4 p-4 bg-gray-900 rounded-lg">
-                    <div className="w-20 text-sm text-gray-500">
+                  <div key={i} className="flex items-center gap-4 p-4 bg-[#0a0a0f] rounded-lg">
+                    <div className="w-20 text-sm text-slate-500">
                       Wk {phase.weeks[0]}-{phase.weeks[phase.weeks.length - 1]}
                     </div>
                     <div className="flex-1">
                       <div className="font-semibold text-white">{phase.name}</div>
-                      <div className="text-sm text-gray-400">{phase.focus}</div>
+                      <div className="text-sm text-slate-400">{phase.focus}</div>
                     </div>
-                    <div className="text-sm text-gray-500">{phase.weeks.length} weeks</div>
+                    <div className="text-sm text-slate-500">{phase.weeks.length} weeks</div>
                   </div>
                 ))}
               </div>
@@ -211,7 +211,7 @@ export default function PlanPreviewPage() {
                 className={`px-4 py-2 rounded-lg font-medium ${
                   viewMode === 'phases' 
                     ? 'bg-pink-600 text-white' 
-                    : 'bg-gray-800 text-gray-400 hover:text-white'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
                 By Phase
@@ -221,7 +221,7 @@ export default function PlanPreviewPage() {
                 className={`px-4 py-2 rounded-lg font-medium ${
                   viewMode === 'weeks' 
                     ? 'bg-pink-600 text-white' 
-                    : 'bg-gray-800 text-gray-400 hover:text-white'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
                 Week by Week
@@ -237,14 +237,14 @@ export default function PlanPreviewPage() {
                   const volume = preview.weekly_volumes[week - 1] || 0;
                   
                   return (
-                    <div key={week} className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-                      <div className="p-4 bg-gray-900 border-b border-gray-700 flex items-center justify-between">
+                    <div key={week} className="bg-slate-800 border border-slate-700/50 rounded-xl overflow-hidden">
+                      <div className="p-4 bg-[#0a0a0f] border-b border-slate-700/50 flex items-center justify-between">
                         <div>
                           <span className="text-white font-bold">Week {week}</span>
-                          <span className="text-gray-500 mx-2">•</span>
+                          <span className="text-slate-500 mx-2">•</span>
                           <span className="text-orange-400">{phase?.name}</span>
                         </div>
-                        <span className="text-gray-400">{volume.toFixed(0)} mi</span>
+                        <span className="text-slate-400">{volume.toFixed(0)} mi</span>
                       </div>
                       <div className="grid grid-cols-7 gap-1 p-2">
                         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, dayIndex) => {
@@ -255,7 +255,7 @@ export default function PlanPreviewPage() {
                               className="p-2 min-h-[80px]"
                               title={workout?.description}
                             >
-                              <div className="text-xs text-gray-500 mb-1">{day}</div>
+                              <div className="text-xs text-slate-500 mb-1">{day}</div>
                               {workout && (
                                 <div className={`rounded p-1.5 text-xs ${getWorkoutColor(workout.workout_type)}`}>
                                   <div className="font-semibold truncate uppercase">
@@ -280,19 +280,19 @@ export default function PlanPreviewPage() {
             {viewMode === 'phases' && (
               <div className="space-y-6">
                 {preview.phases.map((phase, phaseIndex) => (
-                  <div key={phaseIndex} className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-                    <div className="p-4 bg-gradient-to-r from-orange-900/30 to-gray-800 border-b border-gray-700">
+                  <div key={phaseIndex} className="bg-slate-800 border border-slate-700/50 rounded-xl overflow-hidden">
+                    <div className="p-4 bg-gradient-to-r from-orange-900/30 to-slate-800 border-b border-slate-700/50">
                       <h3 className="text-lg font-bold text-white">{phase.name}</h3>
-                      <p className="text-sm text-gray-400">{phase.focus}</p>
-                      <p className="text-xs text-gray-500 mt-1">Weeks {phase.weeks.join(', ')}</p>
+                      <p className="text-sm text-slate-400">{phase.focus}</p>
+                      <p className="text-xs text-slate-500 mt-1">Weeks {phase.weeks.join(', ')}</p>
                     </div>
                     
                     <div className="p-4 space-y-3">
                       {phase.weeks.slice(0, 2).map(week => {
                         const weekWorkouts = preview.workouts.filter(w => w.week === week);
                         return (
-                          <div key={week} className="bg-gray-900 rounded-lg p-3">
-                            <div className="text-sm text-gray-400 mb-2">Week {week}</div>
+                          <div key={week} className="bg-[#0a0a0f] rounded-lg p-3">
+                            <div className="text-sm text-slate-400 mb-2">Week {week}</div>
                             <div className="flex flex-wrap gap-2">
                               {weekWorkouts.map((w, i) => (
                                 <span 
@@ -307,7 +307,7 @@ export default function PlanPreviewPage() {
                         );
                       })}
                       {phase.weeks.length > 2 && (
-                        <div className="text-center text-sm text-gray-500">
+                        <div className="text-center text-sm text-slate-500">
                           +{phase.weeks.length - 2} more weeks
                         </div>
                       )}
@@ -320,7 +320,7 @@ export default function PlanPreviewPage() {
             {/* CTA */}
             <div className="bg-gradient-to-r from-pink-900/30 to-orange-900/30 border border-pink-700/50 rounded-xl p-6 text-center">
               <h3 className="text-xl font-bold text-white mb-2">Ready to Start Training?</h3>
-              <p className="text-gray-400 mb-4">
+              <p className="text-slate-400 mb-4">
                 Create this plan personalized to your fitness and race date.
               </p>
               <a

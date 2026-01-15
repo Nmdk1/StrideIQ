@@ -11,7 +11,7 @@ import Footer from './components/Footer';
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
+    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
       <Hero />
       <QuickValue />
       <FreeTools />

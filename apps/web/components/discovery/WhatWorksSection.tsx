@@ -18,9 +18,9 @@ interface WhatWorksSectionProps {
 export function WhatWorksSection({ correlations, className = '' }: WhatWorksSectionProps) {
   if (correlations.length === 0) {
     return (
-      <div className={`bg-gray-800 rounded-lg border border-gray-700 p-6 ${className}`}>
+      <div className={`bg-slate-800 rounded-lg border border-slate-700/50 p-6 ${className}`}>
         <h2 className="text-xl font-semibold mb-2">What&apos;s Working</h2>
-        <p className="text-gray-400">
+        <p className="text-slate-400">
           Not enough data yet. Log 10 more runs to see patterns.
         </p>
       </div>
@@ -31,7 +31,7 @@ export function WhatWorksSection({ correlations, className = '' }: WhatWorksSect
     <div className={className}>
       <div className="mb-4">
         <h2 className="text-2xl font-bold mb-2">What&apos;s Working</h2>
-        <p className="text-gray-400 text-sm">
+        <p className="text-slate-400 text-sm">
           Inputs that correlate with better efficiency. Pattern holds over {correlations[0]?.sample_size || 0} runs.
         </p>
       </div>
