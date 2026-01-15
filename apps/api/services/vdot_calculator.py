@@ -482,6 +482,25 @@ def calculate_equivalent_race_time(vdot: float, target_distance_meters: float) -
     }
 
 
+def calculate_race_time_from_vdot(vdot: float, distance_meters: float) -> Optional[int]:
+    """
+    Calculate race time in seconds from VDOT and distance.
+    
+    Simple wrapper around calculate_equivalent_race_time that returns just the time.
+    
+    Args:
+        vdot: RPI/VDOT score
+        distance_meters: Race distance in meters
+        
+    Returns:
+        Time in seconds, or None if calculation fails
+    """
+    result = calculate_equivalent_race_time(vdot, distance_meters)
+    if result is None:
+        return None
+    return result.get("time_seconds")
+
+
 def _old_calculate_equivalent_race_time_fallback(vdot: float, target_distance_meters: float) -> Optional[Dict]:
     """DEPRECATED - Old fallback code kept for reference."""
     # Simple fallback: Approximation

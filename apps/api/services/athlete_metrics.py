@@ -322,4 +322,3 @@ def auto_estimate_athlete_thresholds(
         'max_hr_source': max_hr_source,
         'vdot_source': vdot_source
     }
-

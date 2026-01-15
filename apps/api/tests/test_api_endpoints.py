@@ -108,6 +108,86 @@ class TestAgeGradingEndpoint:
         )
         # Should return error
         assert response.status_code in [400, 422]
+    
+    def test_age_grading_enhanced_response(self):
+        """Test enhanced age-grading response includes all new fields"""
+        response = client.post(
+            "/v1/public/age-grade",
+            json={
+                "age": 55,
+                "sex": "M",
+                "distance_meters": 5000,  # 5K
+                "time_seconds": 18 * 60 + 53  # 18:53
+            }
+        )
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Core fields (backwards compatible)
+        assert "performance_percentage" in data
+        assert "equivalent_time" in data
+        assert "equivalent_time_seconds" in data
+        
+        # Enhanced fields (new in v2)
+        assert "open_class_standard_seconds" in data
+        assert "open_class_standard_formatted" in data
+        assert "age_standard_seconds" in data
+        assert "age_standard_formatted" in data
+        assert "age_factor" in data
+        assert "age_graded_time_seconds" in data
+        assert "age_graded_time_formatted" in data
+        assert "classification" in data
+        assert "equivalent_performances" in data
+        assert "close_performances" in data
+        
+        # Validate classification structure
+        classification = data["classification"]
+        assert "level" in classification
+        assert "label" in classification
+        assert "color" in classification
+        
+        # Validate equivalent performances
+        equiv = data["equivalent_performances"]
+        assert len(equiv) > 0
+        assert "distance" in equiv[0]
+        assert "time_formatted" in equiv[0]
+        
+        # Validate close performances
+        close = data["close_performances"]
+        assert len(close) > 0
+        assert "percentage" in close[0]
+        assert "time_formatted" in close[0]
+    
+    def test_age_grading_age_factor_increases_with_age(self):
+        """Test that age factor increases with age"""
+        response_55 = client.post(
+            "/v1/public/age-grade",
+            json={"age": 55, "sex": "M", "distance_meters": 5000, "time_seconds": 1200}
+        )
+        response_65 = client.post(
+            "/v1/public/age-grade",
+            json={"age": 65, "sex": "M", "distance_meters": 5000, "time_seconds": 1200}
+        )
+        
+        assert response_55.status_code == 200
+        assert response_65.status_code == 200
+        
+        # Older age should have higher age factor
+        assert response_65.json()["age_factor"] > response_55.json()["age_factor"]
+    
+    def test_age_grading_classification_levels(self):
+        """Test classification levels based on percentage"""
+        # Fast time should be higher classification
+        response = client.post(
+            "/v1/public/age-grade",
+            json={"age": 30, "sex": "M", "distance_meters": 5000, "time_seconds": 15 * 60}  # 15:00 5K
+        )
+        assert response.status_code == 200
+        data = response.json()
+        
+        # 15:00 5K for 30yo male should be quite good (regional+ class)
+        assert data["performance_percentage"] >= 70
+        assert data["classification"]["level"] in ["world_class", "national_class", "regional_class"]
 
 
 class TestInputValidation:

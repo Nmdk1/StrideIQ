@@ -150,13 +150,54 @@ def calculate_paces(request: PaceCalculatorRequest):
         return result
 
 
+def _format_time(seconds: float) -> str:
+    """Format seconds to HH:MM:SS or MM:SS.t string."""
+    if seconds <= 0:
+        return "0:00"
+    hours = int(seconds // 3600)
+    mins = int((seconds % 3600) // 60)
+    secs = seconds % 60
+    
+    if hours > 0:
+        return f"{hours}:{mins:02d}:{int(secs):02d}"
+    elif secs == int(secs):
+        return f"{mins}:{int(secs):02d}"
+    else:
+        # Show tenths for sub-minute precision
+        return f"{mins}:{secs:04.1f}"
+
+
+def _get_classification(pct: float) -> dict:
+    """Get performance classification based on age-grading percentage."""
+    if pct >= 100:
+        return {"level": "world_record", "label": "World Record", "color": "gold"}
+    elif pct >= 90:
+        return {"level": "world_class", "label": "World Class", "color": "purple"}
+    elif pct >= 80:
+        return {"level": "national_class", "label": "National Class", "color": "blue"}
+    elif pct >= 70:
+        return {"level": "regional_class", "label": "Regional Class", "color": "green"}
+    elif pct >= 60:
+        return {"level": "local_class", "label": "Local Class", "color": "teal"}
+    else:
+        return {"level": "recreational", "label": "Recreational", "color": "slate"}
+
+
 @router.post("/age-grade")
 def calculate_age_grade(request: AgeGradeRequest):
     """
     Calculate WMA age-graded performance percentage.
     
     Free tool - no authentication required.
-    Returns age-graded % and equivalent open performance.
+    Returns comprehensive age-grading analysis including:
+    - Performance percentage
+    - Open-class standard (world record for distance/sex)
+    - Age standard (world record for age/sex/distance)
+    - Age factor
+    - Age-graded time
+    - Equivalent performances at other distances
+    - Close performances (nearby percentage levels)
+    - Classification
     """
     if request.age < 0 or request.age > 120:
         raise HTTPException(status_code=400, detail="Age must be between 0 and 120")
@@ -167,61 +208,140 @@ def calculate_age_grade(request: AgeGradeRequest):
     if request.time_seconds <= 0:
         raise HTTPException(status_code=400, detail="Time must be positive")
     
+    from services.performance_engine import get_wma_age_factor
+    from services.wma_age_factors import get_wma_open_standard_seconds, get_wma_world_record_pace
+    
     # Calculate pace per mile from time and distance
     distance_miles = request.distance_meters / 1609.34
     pace_per_mile = request.time_seconds / 60 / distance_miles
     
-    # Calculate age-graded performance (international/WMA standard)
-    performance_pct = calculate_age_graded_performance(
-        actual_pace_per_mile=pace_per_mile,
-        age=request.age,
-        sex=request.sex,
-        distance_meters=request.distance_meters,
-        use_national=False
-    )
-    
-    if performance_pct is None:
-        raise HTTPException(status_code=400, detail="Could not calculate age-graded performance")
-    
-    # Calculate equivalent open performance
-    # Age-grading formula: equivalent_open_time = actual_time / age_factor
-    # This gives the time a 30yo would need to run to achieve the same age-graded percentage
-    from services.performance_engine import get_wma_age_factor
+    # Get age factor
     age_factor = get_wma_age_factor(request.age, request.sex, request.distance_meters)
+    if age_factor is None or age_factor <= 0:
+        age_factor = 1.0
     
-    if age_factor and age_factor > 0:
-        # Equivalent open time = actual_time / age_factor
-        # This is the time a 30yo would need to run to get the same percentage
-        equivalent_time_seconds = request.time_seconds / age_factor
-    else:
-        # Fallback: use performance percentage
-        # Equivalent time = (record_pace_30yo / performance_pct) * 100 * distance_miles * 60
-        from services.wma_age_factors import get_wma_world_record_pace
+    # Get open-class standard (WMA world record time for this distance)
+    open_class_standard_seconds = get_wma_open_standard_seconds(request.sex, request.distance_meters)
+    
+    if open_class_standard_seconds is None:
+        # Fallback to pace-based calculation
         record_pace_30yo = get_wma_world_record_pace(request.sex, request.distance_meters)
         if record_pace_30yo:
-            equivalent_pace_per_mile = (record_pace_30yo / performance_pct) * 100
-            equivalent_time_seconds = (equivalent_pace_per_mile * distance_miles) * 60
+            open_class_standard_seconds = record_pace_30yo * distance_miles * 60
         else:
             # Last resort fallback
-            equivalent_time_seconds = request.time_seconds / (performance_pct / 100)
+            open_class_standard_seconds = request.time_seconds * 0.7
     
-    # Format equivalent time
-    hours = int(equivalent_time_seconds // 3600)
-    minutes = int((equivalent_time_seconds % 3600) // 60)
-    seconds = int(equivalent_time_seconds % 60)
+    # Calculate age standard (world record for this age)
+    # age_standard = open_class_standard * age_factor
+    age_standard_seconds = open_class_standard_seconds * age_factor
     
-    if hours > 0:
-        equivalent_time = f"{hours}:{minutes:02d}:{seconds:02d}"
-    else:
-        equivalent_time = f"{minutes}:{seconds:02d}"
+    # Calculate age-graded time (athlete time adjusted to open equivalent)
+    # age_graded_time = actual_time / age_factor
+    age_graded_time_seconds = request.time_seconds / age_factor
+    
+    # Calculate performance percentage
+    # performance_pct = age_standard / actual_time * 100
+    performance_pct = (age_standard_seconds / request.time_seconds) * 100
+    
+    # Get classification
+    classification = _get_classification(performance_pct)
+    
+    # Calculate equivalent performances at other distances
+    # For same age-grading %, time = age_standard / (pct/100)
+    equivalent_distances = [
+        {"name": "5K", "meters": 5000},
+        {"name": "10K", "meters": 10000},
+        {"name": "10 Miles", "meters": 16093.4},
+        {"name": "Half Marathon", "meters": 21097.5},
+        {"name": "Marathon", "meters": 42195},
+    ]
+    
+    equivalent_performances = []
+    for dist in equivalent_distances:
+        dist_open_standard = get_wma_open_standard_seconds(request.sex, dist["meters"])
+        dist_age_factor = get_wma_age_factor(request.age, request.sex, dist["meters"]) or 1.0
+        
+        if dist_open_standard is None:
+            # Fallback to pace-based calculation
+            dist_miles = dist["meters"] / 1609.34
+            dist_record_pace = get_wma_world_record_pace(request.sex, dist["meters"])
+            if dist_record_pace:
+                dist_open_standard = dist_record_pace * dist_miles * 60
+        
+        if dist_open_standard:
+            dist_age_standard = dist_open_standard * dist_age_factor
+            # Time to achieve same percentage at this distance
+            equiv_time = dist_age_standard / (performance_pct / 100)
+            equivalent_performances.append({
+                "distance": dist["name"],
+                "distance_meters": dist["meters"],
+                "time_seconds": round(equiv_time),
+                "time_formatted": _format_time(equiv_time)
+            })
+    
+    # Calculate close performances (times for nearby percentages)
+    close_performances = []
+    for target_pct in [84, 83, 82, 81, 80, 79, 78, 77]:
+        # Time for target percentage = age_standard / (target_pct/100)
+        target_time = age_standard_seconds / (target_pct / 100)
+        close_performances.append({
+            "percentage": target_pct,
+            "time_seconds": round(target_time, 1),
+            "time_formatted": _format_time(target_time),
+            "is_current": abs(target_pct - performance_pct) < 0.5
+        })
+    
+    # Insert actual performance in the right place
+    actual_entry = {
+        "percentage": round(performance_pct, 2),
+        "time_seconds": request.time_seconds,
+        "time_formatted": _format_time(request.time_seconds),
+        "is_current": True
+    }
+    
+    # Find insertion point and add actual
+    inserted = False
+    for i, entry in enumerate(close_performances):
+        if performance_pct > entry["percentage"]:
+            close_performances.insert(i, actual_entry)
+            inserted = True
+            break
+        elif entry.get("is_current"):
+            # Replace the placeholder
+            close_performances[i] = actual_entry
+            inserted = True
+            break
+    if not inserted:
+        close_performances.append(actual_entry)
+    
+    # Remove duplicate is_current flags
+    seen_current = False
+    for entry in close_performances:
+        if entry.get("is_current") and entry["percentage"] != round(performance_pct, 2):
+            entry["is_current"] = False
     
     return {
+        # Core results (backwards compatible)
         "performance_percentage": round(performance_pct, 2),
-        "equivalent_time": equivalent_time,
-        "equivalent_time_seconds": int(equivalent_time_seconds),
+        "equivalent_time": _format_time(age_graded_time_seconds),
+        "equivalent_time_seconds": int(age_graded_time_seconds),
         "age": request.age,
         "sex": request.sex,
         "distance_meters": request.distance_meters,
-        "actual_time_seconds": request.time_seconds
+        "actual_time_seconds": request.time_seconds,
+        
+        # Enhanced results (new in v2)
+        "athlete_time_formatted": _format_time(request.time_seconds),
+        "open_class_standard_seconds": round(open_class_standard_seconds, 1),
+        "open_class_standard_formatted": _format_time(open_class_standard_seconds),
+        "age_standard_seconds": round(age_standard_seconds, 1),
+        "age_standard_formatted": _format_time(age_standard_seconds),
+        "age_factor": round(age_factor, 4),
+        "age_graded_time_seconds": round(age_graded_time_seconds, 1),
+        "age_graded_time_formatted": _format_time(age_graded_time_seconds),
+        "classification": classification,
+        "equivalent_performances": equivalent_performances,
+        "close_performances": close_performances[:9],  # Limit to 9 entries
     }
 

@@ -3,6 +3,8 @@ Efficiency Analytics Service
 
 Calculates efficiency trends, stability metrics, and load-response relationships.
 This is the core differentiator - showing athletes if they're getting fitter or just accumulating work.
+
+V2 Enhancement (ADR-008): Adds statistical significance testing for trends.
 """
 
 from datetime import datetime, timedelta
@@ -13,6 +15,12 @@ from sqlalchemy import and_, func
 from collections import defaultdict
 from models import Activity, Athlete, ActivitySplit
 from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
+from services.efficiency_trending import (
+    analyze_efficiency_trend,
+    calculate_efficiency_percentile,
+    estimate_days_to_pr_efficiency,
+    to_dict as trend_to_dict
+)
 
 
 def bulk_load_splits_for_activities(
@@ -578,6 +586,25 @@ def get_efficiency_trends(
         trend_direction = "insufficient_data"
         trend_magnitude = None
     
+    # V2: Statistical trend analysis with significance testing
+    statistical_trend = analyze_efficiency_trend(time_series)
+    
+    # Calculate efficiency percentile (where does current EF sit in history)
+    efficiency_percentile = calculate_efficiency_percentile(
+        efficiencies[-1], 
+        efficiencies[:-1] if len(efficiencies) > 1 else efficiencies
+    )
+    
+    # Estimate days to PR efficiency if improving
+    days_to_pr = None
+    if statistical_trend.slope_per_week and statistical_trend.slope_per_week < 0:
+        best_ef = min(efficiencies)
+        days_to_pr = estimate_days_to_pr_efficiency(
+            efficiencies[-1], 
+            best_ef, 
+            statistical_trend.slope_per_week
+        )
+    
     result = {
         "time_series": time_series,
         "summary": {
@@ -591,8 +618,13 @@ def get_efficiency_trends(
             "best_efficiency": round(min(efficiencies), 2),
             "worst_efficiency": round(max(efficiencies), 2),
             "trend_direction": trend_direction,
-            "trend_magnitude": round(trend_magnitude, 2) if trend_magnitude else None
-        }
+            "trend_magnitude": round(trend_magnitude, 2) if trend_magnitude else None,
+            # V2: Enhanced statistical metrics
+            "efficiency_percentile": efficiency_percentile,
+            "days_to_pr_efficiency": days_to_pr
+        },
+        # V2: Statistical trend analysis
+        "trend_analysis": trend_to_dict(statistical_trend)
     }
     
     # Add stability metrics

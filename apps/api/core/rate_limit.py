@@ -31,6 +31,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/v1/correlations/what-doesnt-work": 10,
             "/v1/admin": 50,  # Admin endpoints: 50 per minute
             "/v1/analytics/efficiency-trends": 30,  # 30 per minute
+            "/v1/analytics/diagnostic-report": 4,  # 4 per minute (compute-intensive, cached 1hr)
         }
     
     async def dispatch(self, request: Request, call_next):
