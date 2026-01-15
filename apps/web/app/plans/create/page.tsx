@@ -762,7 +762,7 @@ export default function CreatePlanPage() {
             <div>
               <h2 className="text-xl font-bold text-white mb-2">Your Goal Race</h2>
               <p className="text-slate-400 text-sm mb-6">
-                We'll analyze your full training history to build the perfect plan.
+                We&apos;ll analyze your full training history to build the perfect plan.
               </p>
               
               <div className="space-y-6">
@@ -825,7 +825,7 @@ export default function CreatePlanPage() {
             <div>
               <h2 className="text-xl font-bold text-white mb-2">Tune-Up Races (Optional)</h2>
               <p className="text-slate-400 text-sm mb-6">
-                Add any races you're doing before your goal race. We'll coordinate your training around them.
+                Add any races you&apos;re doing before your goal race. We&apos;ll coordinate your training around them.
               </p>
               
               <div className="space-y-4">
