@@ -402,8 +402,8 @@ class TestNarrativeMemory:
         # Clear memory store for this test
         _memory_store.clear()
         
-        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
-        
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False, use_db_fallback=False)
+
         # Should not be shown initially
         assert not memory.recently_shown("test_hash_123", days=14)
         
@@ -417,7 +417,7 @@ class TestNarrativeMemory:
         """Old records should not count as recent."""
         _memory_store.clear()
         
-        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False, use_db_fallback=False)
         
         # Manually insert old record
         _memory_store[str(athlete_id)] = {
@@ -434,7 +434,7 @@ class TestNarrativeMemory:
         """Filter to only fresh narratives."""
         _memory_store.clear()
         
-        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False, use_db_fallback=False)
         
         # Record one narrative
         memory.record_shown("shown_hash", "load_state", "home")
@@ -454,7 +454,7 @@ class TestNarrativeMemory:
         """Pick freshest with priority fallback."""
         _memory_store.clear()
         
-        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False, use_db_fallback=False)
         
         # All fresh - should return highest priority
         narratives = [
@@ -522,7 +522,7 @@ class TestNarrativeLayerIntegration:
         _memory_store.clear()
         
         translator = NarrativeTranslator(mock_db, athlete_id)
-        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False, use_db_fallback=False)
         
         # Mock
         translator.anchor_finder.find_prior_race_at_load = Mock(return_value=None)
@@ -653,7 +653,7 @@ class TestMemoryEdgeCases:
         """Clear old records in memory fallback."""
         _memory_store.clear()
         
-        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False, use_db_fallback=False)
         
         # Add old record
         _memory_store[str(athlete_id)] = {
@@ -666,14 +666,14 @@ class TestMemoryEdgeCases:
     
     def test_get_stale_patterns_no_redis(self, mock_db, athlete_id):
         """Get stale patterns without Redis returns empty."""
-        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False, use_db_fallback=False)
         
         stale = memory.get_stale_patterns(threshold=5)
         assert stale == []
     
     def test_get_shown_count_no_redis(self, mock_db, athlete_id):
         """Get shown count without Redis returns 0."""
-        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False)
+        memory = NarrativeMemory(mock_db, athlete_id, use_redis=False, use_db_fallback=False)
         
         count = memory.get_shown_count("load_state", days=30)
         assert count == 0

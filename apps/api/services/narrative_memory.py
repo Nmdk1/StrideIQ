@@ -6,7 +6,13 @@ Tracks shown narratives to prevent repetition.
 Key insight: Even with dynamic anchors, the same narrative can appear
 if the athlete's situation is stable. Memory prevents staleness.
 
-Storage: Redis for speed, with DB fallback for persistence.
+Storage Hierarchy:
+1. Redis (preferred) - Fast, TTL-based expiration
+2. Database (fallback) - Persistent, works in multi-instance production
+3. In-memory (dev only) - Single instance only, for tests
+
+IMPORTANT: In-memory fallback is NOT safe for production with multiple API instances.
+Use database fallback in production when Redis is unavailable.
 """
 
 from datetime import datetime, timedelta
@@ -16,18 +22,61 @@ import logging
 import json
 
 from sqlalchemy.orm import Session
-from sqlalchemy import Column, DateTime, Text, Integer, ForeignKey
+from sqlalchemy import Column, DateTime, Text, Integer, ForeignKey, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# IN-MEMORY FALLBACK (when Redis unavailable)
+# IN-MEMORY FALLBACK (DEV/TEST ONLY - NOT SAFE FOR MULTI-INSTANCE PRODUCTION)
 # =============================================================================
 
-# Simple in-memory store for development/fallback
+# Simple in-memory store for development/testing only
+# WARNING: This does not persist across restarts or sync across instances
 _memory_store: Dict[str, Dict[str, datetime]] = {}
+
+
+# =============================================================================
+# DATABASE FALLBACK (PRODUCTION SAFE)
+# =============================================================================
+
+def _ensure_narrative_shown_table(db: Session) -> bool:
+    """Ensure the narrative_shown table exists. Returns True if successful."""
+    try:
+        # Check if table exists
+        result = db.execute(text("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'narrative_shown'
+            )
+        """))
+        exists = result.scalar()
+        
+        if not exists:
+            # Create table
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS narrative_shown (
+                    id SERIAL PRIMARY KEY,
+                    athlete_id UUID NOT NULL,
+                    narrative_hash VARCHAR(32) NOT NULL,
+                    signal_type VARCHAR(64) NOT NULL,
+                    surface VARCHAR(32) NOT NULL,
+                    shown_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    UNIQUE(athlete_id, narrative_hash)
+                )
+            """))
+            db.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_narrative_shown_athlete 
+                ON narrative_shown(athlete_id, shown_at)
+            """))
+            db.commit()
+            logger.info("Created narrative_shown table for production fallback")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to ensure narrative_shown table: {e}")
+        return False
 
 
 class NarrativeMemory:
@@ -43,21 +92,38 @@ class NarrativeMemory:
     - recently_shown(): Was this exact narrative shown recently?
     - record_shown(): Mark a narrative as shown
     - get_stale_patterns(): Which signal types are overused?
+    
+    Storage hierarchy:
+    1. Redis (if available) - Fastest, automatic TTL
+    2. Database (production fallback) - Persistent, multi-instance safe
+    3. In-memory (tests only) - Fast but not production safe
     """
     
-    def __init__(self, db: Session, athlete_id: UUID, use_redis: bool = True):
+    def __init__(
+        self, 
+        db: Session, 
+        athlete_id: UUID, 
+        use_redis: bool = True,
+        use_db_fallback: bool = True  # Use DB when Redis unavailable
+    ):
         self.db = db
         self.athlete_id = str(athlete_id)
         self.use_redis = use_redis
+        self.use_db_fallback = use_db_fallback
         self._redis = None
+        self._db_table_ready = False
         
         if use_redis:
             try:
                 from core.redis_client import get_redis_client
                 self._redis = get_redis_client()
             except Exception as e:
-                logger.warning(f"Redis unavailable, using memory fallback: {e}")
+                logger.warning(f"Redis unavailable: {e}")
                 self._redis = None
+        
+        # Ensure DB fallback table exists if we might need it
+        if self._redis is None and use_db_fallback and db is not None:
+            self._db_table_ready = _ensure_narrative_shown_table(db)
     
     # =========================================================================
     # CORE OPERATIONS
@@ -101,7 +167,27 @@ class NarrativeMemory:
             except Exception as e:
                 logger.warning(f"Redis write failed: {e}")
         
-        # Fallback to memory
+        # Fallback to database (production safe)
+        if self.use_db_fallback and self._db_table_ready:
+            try:
+                self.db.execute(text("""
+                    INSERT INTO narrative_shown (athlete_id, narrative_hash, signal_type, surface, shown_at)
+                    VALUES (:athlete_id, :hash, :signal_type, :surface, NOW())
+                    ON CONFLICT (athlete_id, narrative_hash) 
+                    DO UPDATE SET shown_at = NOW(), signal_type = :signal_type, surface = :surface
+                """), {
+                    "athlete_id": self.athlete_id,
+                    "hash": narrative_hash,
+                    "signal_type": signal_type,
+                    "surface": surface
+                })
+                self.db.commit()
+                return
+            except Exception as e:
+                logger.warning(f"DB write failed, using memory: {e}")
+                self.db.rollback()
+        
+        # Final fallback to memory (tests only, not production safe)
         if self.athlete_id not in _memory_store:
             _memory_store[self.athlete_id] = {}
         _memory_store[self.athlete_id][narrative_hash] = datetime.utcnow()
@@ -130,7 +216,24 @@ class NarrativeMemory:
             except Exception as e:
                 logger.warning(f"Redis read failed: {e}")
         
-        # Fallback to memory
+        # Fallback to database (production safe)
+        if self.use_db_fallback and self._db_table_ready:
+            try:
+                result = self.db.execute(text("""
+                    SELECT shown_at FROM narrative_shown
+                    WHERE athlete_id = :athlete_id 
+                    AND narrative_hash = :hash
+                    AND shown_at > NOW() - INTERVAL ':days days'
+                """.replace(":days", str(days))), {
+                    "athlete_id": self.athlete_id,
+                    "hash": narrative_hash
+                })
+                row = result.fetchone()
+                return row is not None
+            except Exception as e:
+                logger.warning(f"DB read failed, using memory: {e}")
+        
+        # Final fallback to memory (tests only)
         athlete_memory = _memory_store.get(self.athlete_id, {})
         shown_at = athlete_memory.get(narrative_hash)
         if shown_at:

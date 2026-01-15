@@ -2333,7 +2333,13 @@ async def preview_constraint_aware_plan(
                     memory.record_shown(n.hash, n.signal_type, "plan_preview")
         except Exception as e:
             import logging
-            logging.getLogger(__name__).debug(f"Narrative generation failed: {e}")
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Plan preview narrative generation failed for {athlete.id}: {type(e).__name__}: {e}")
+            try:
+                from services.audit_logger import log_narrative_error
+                log_narrative_error(athlete.id, "plan_preview", str(e))
+            except Exception:
+                pass
     
     return {
         "fitness_bank": bank.to_dict(),

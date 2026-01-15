@@ -296,7 +296,13 @@ def get_activity(
                     memory.record_shown(narrative_obj.hash, narrative_obj.signal_type, "activity_detail")
         except Exception as e:
             import logging
-            logging.getLogger(__name__).debug(f"Narrative generation failed: {e}")
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Activity narrative generation failed for activity {activity_id}: {type(e).__name__}: {e}")
+            try:
+                from services.audit_logger import log_narrative_error
+                log_narrative_error(current_user.id, "activity_detail", str(e))
+            except Exception:
+                pass
     
     # Build response
     result = {

@@ -49,8 +49,8 @@ class TestIDORProtection:
         athlete1 = uuid4()
         athlete2 = uuid4()
         
-        memory1 = NarrativeMemory(mock_db, athlete1, use_redis=False)
-        memory2 = NarrativeMemory(mock_db, athlete2, use_redis=False)
+        memory1 = NarrativeMemory(mock_db, athlete1, use_redis=False, use_db_fallback=False)
+        memory2 = NarrativeMemory(mock_db, athlete2, use_redis=False, use_db_fallback=False)
         
         # Record for athlete1
         memory1.record_shown("hash123", "load_state", "home")

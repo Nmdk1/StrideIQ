@@ -664,7 +664,14 @@ async def get_home_data(
                     hero_narrative = narrative_obj.text
                     memory.record_shown(narrative_obj.hash, narrative_obj.signal_type, "home_hero")
         except Exception as e:
-            logger.debug(f"Hero narrative generation failed: {e}")
+            # Log at WARNING level for production visibility
+            logger.warning(f"Hero narrative generation failed for user {current_user.id}: {type(e).__name__}: {e}")
+            # Audit log the failure
+            try:
+                from services.audit_logger import log_narrative_error
+                log_narrative_error(current_user.id, "home_hero", str(e))
+            except Exception:
+                pass  # Don't fail the request due to audit logging
     
     return HomeResponse(
         today=today_workout,

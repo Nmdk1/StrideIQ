@@ -258,7 +258,13 @@ def get_diagnostic_report_endpoint(
                         memory.record_shown(n.hash, n.signal_type, "diagnostic")
             except Exception as e:
                 import logging
-                logging.getLogger(__name__).debug(f"Narrative generation failed: {e}")
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Diagnostic narrative generation failed for {athlete.id}: {type(e).__name__}: {e}")
+                try:
+                    from services.audit_logger import log_narrative_error
+                    log_narrative_error(athlete.id, "diagnostic", str(e))
+                except Exception:
+                    pass
                 response["narratives"] = []
         else:
             response["narratives"] = []
