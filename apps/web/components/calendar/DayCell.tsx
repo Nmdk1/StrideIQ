@@ -15,13 +15,14 @@
 import React from 'react';
 import { useUnits } from '@/lib/context/UnitsContext';
 import type { CalendarDay } from '@/lib/api/services/calendar';
+import { DayBadge, type DayBadgeData } from './DayBadge';
 
 // Simplified workout type display - categories, not individual types
 const WORKOUT_CATEGORIES: Record<string, { label: string; color: string }> = {
   // Rest / Recovery
-  rest: { label: 'Rest', color: 'text-gray-500' },
-  recovery: { label: 'Recovery', color: 'text-gray-400' },
-  gym: { label: 'Gym', color: 'text-gray-400' },
+  rest: { label: 'Rest', color: 'text-slate-500' },
+  recovery: { label: 'Recovery', color: 'text-slate-400' },
+  gym: { label: 'Gym', color: 'text-slate-400' },
   
   // Easy efforts - green
   easy: { label: 'Easy', color: 'text-emerald-400' },
@@ -49,14 +50,14 @@ const WORKOUT_CATEGORIES: Record<string, { label: string; color: string }> = {
   
   // Race
   race: { label: 'RACE', color: 'text-pink-400' },
-  shakeout: { label: 'Shakeout', color: 'text-gray-400' },
-  shakeout_strides: { label: 'Shakeout', color: 'text-gray-400' },
+  shakeout: { label: 'Shakeout', color: 'text-slate-400' },
+  shakeout_strides: { label: 'Shakeout', color: 'text-slate-400' },
 };
 
 function getWorkoutInfo(type: string): { label: string; color: string } {
   return WORKOUT_CATEGORIES[type] || { 
     label: type.replace(/_/g, ' ').substring(0, 10), 
-    color: 'text-gray-400' 
+    color: 'text-slate-400' 
   };
 }
 
@@ -66,9 +67,10 @@ interface DayCellProps {
   isSelected: boolean;
   onClick: () => void;
   compact?: boolean;
+  signals?: DayBadgeData[];
 }
 
-export function DayCell({ day, isToday, isSelected, onClick, compact = false }: DayCellProps) {
+export function DayCell({ day, isToday, isSelected, onClick, compact = false, signals = [] }: DayCellProps) {
   const { formatDistance } = useUnits();
   
   const dayNum = parseInt(day.date.split('-')[2], 10);
@@ -88,13 +90,13 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
       <div 
         onClick={onClick}
         className={`
-          min-h-[60px] p-1.5 border-b border-r border-gray-700/30 cursor-pointer
-          transition-colors active:bg-gray-800/50
+          min-h-[60px] min-w-0 p-1.5 border-b border-r border-slate-700/50 cursor-pointer
+          transition-colors active:bg-slate-800/50 overflow-hidden
           ${isToday ? 'bg-blue-900/20' : ''}
           ${isSelected ? 'ring-1 ring-blue-500' : ''}
         `}
       >
-        <div className={`text-xs font-medium mb-1 ${isToday ? 'text-blue-400' : 'text-gray-500'}`}>
+        <div className={`text-xs font-medium mb-1 ${isToday ? 'text-blue-400' : 'text-slate-500'}`}>
           {dayNum}
         </div>
         
@@ -111,6 +113,15 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
             {workoutInfo.label}
           </div>
         )}
+        
+        {/* Signal badges - compact */}
+        {signals.length > 0 && (
+          <div className="flex gap-0.5 mt-1 flex-wrap">
+            {signals.slice(0, 1).map((signal, idx) => (
+              <DayBadge key={idx} badge={signal} compact />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -120,14 +131,14 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
     <div 
       onClick={onClick}
       className={`
-        min-h-[100px] p-2 border-b border-r border-gray-700/30 cursor-pointer
-        transition-colors hover:bg-gray-800/30
+        min-h-[100px] min-w-0 p-2 border-b border-r border-slate-700/50 cursor-pointer
+        transition-colors hover:bg-slate-800/30 overflow-hidden
         ${isToday ? 'bg-blue-900/15' : ''}
         ${isSelected ? 'ring-1 ring-blue-500' : ''}
       `}
     >
       {/* Day number */}
-      <div className={`text-sm mb-2 font-medium ${isToday ? 'text-blue-400' : 'text-gray-500'}`}>
+      <div className={`text-sm mb-2 font-medium ${isToday ? 'text-blue-400' : 'text-slate-500'}`}>
         {dayNum}
       </div>
       
@@ -148,7 +159,7 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
           <div className={`text-[10px] ${
             day.inline_insight.sentiment === 'positive' ? 'text-emerald-400/80' :
             day.inline_insight.sentiment === 'negative' ? 'text-orange-400/80' :
-            'text-gray-400'
+            'text-slate-400'
           }`}>
             {day.inline_insight.value}
           </div>
@@ -156,11 +167,11 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
         
         {/* Planned workout - secondary if completed, primary if not */}
         {hasPlanned && day.planned_workout && (
-          <div className={`${isCompleted ? 'opacity-50' : ''}`}>
-            <div className={`text-xs font-medium ${workoutInfo.color}`}>
+          <div className={`${isCompleted ? 'opacity-50' : ''} overflow-hidden`}>
+            <div className={`text-xs font-medium ${workoutInfo.color} truncate`}>
               {workoutInfo.label}
               {day.planned_workout.target_distance_km && !isCompleted && (
-                <span className="text-gray-500 ml-1">
+                <span className="text-slate-500 ml-1">
                   {formatDistance(day.planned_workout.target_distance_km * 1000, 0)}
                 </span>
               )}
@@ -168,7 +179,7 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
             {/* Show pace hint on hover - truncated */}
             {day.planned_workout.coach_notes && !isCompleted && (
               <div 
-                className="text-[10px] text-gray-500 truncate mt-0.5" 
+                className="text-[10px] text-slate-500 truncate mt-0.5" 
                 title={day.planned_workout.coach_notes}
               >
                 {day.planned_workout.coach_notes.split(' ').slice(0, 2).join(' ')}
@@ -179,7 +190,16 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false }: 
         
         {/* Rest day indicator */}
         {!hasPlanned && !hasActivities && (
-          <div className="text-xs text-gray-600">—</div>
+          <div className="text-xs text-slate-600">—</div>
+        )}
+        
+        {/* Signal badges - desktop */}
+        {signals.length > 0 && (
+          <div className="flex gap-1 mt-1.5 flex-wrap">
+            {signals.slice(0, 2).map((signal, idx) => (
+              <DayBadge key={idx} badge={signal} />
+            ))}
+          </div>
         )}
       </div>
     </div>

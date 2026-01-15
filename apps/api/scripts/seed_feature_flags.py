@@ -176,6 +176,26 @@ REQUIRED_FLAGS = [
         "rollout_percentage": 100,
     },
     # CS predictor feature flag REMOVED - feature archived to branch archive/cs-model-2026-01
+    {
+        "key": "analytics.diagnostic_report",
+        "name": "Diagnostic Report",
+        "description": "Comprehensive on-demand diagnostic report for athletes",
+        "enabled": True,  # Enabled - ADR-019 implemented
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "home.enhanced_context",
+        "name": "Enhanced Home Context",
+        "description": "Correlation-based Why This Workout and TSB context on Home page",
+        "enabled": True,  # Enabled - ADR-020 implemented
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
 ]
 
 with engine.connect() as conn:

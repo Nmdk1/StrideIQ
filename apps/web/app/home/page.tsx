@@ -1,14 +1,9 @@
 'use client';
 
 /**
- * Home Page - The Glance Layer (Premium Edition)
+ * Home Page - The Glance Layer
  * 
- * Million-dollar SaaS feel with:
- * - Subtle grid background + gradient
- * - Fade-in animations
- * - Hover micro-interactions
- * - Strong visual hierarchy
- * - Tighter spacing
+ * Aligned with Tools/Compare style: slate-800 cards, #0a0a0f background, orange accents.
  * 
  * TONE: Sparse, direct, data-driven. No prescriptiveness.
  * EMPTY STATES: Helpful, action-oriented, no guilt.
@@ -36,29 +31,31 @@ import {
   MessageSquare,
   Footprints,
   Flame,
-  Sparkles
+  Sparkles,
+  Home
 } from 'lucide-react';
+import { SignalsBanner } from '@/components/home/SignalsBanner';
 
 // Workout type colors and icons
 const WORKOUT_CONFIG: Record<string, { color: string; bgColor: string; borderColor: string; icon: React.ReactNode }> = {
-  rest: { color: 'text-slate-400', bgColor: 'bg-slate-500/10', borderColor: 'border-slate-500', icon: <Clock className="w-6 h-6" /> },
-  recovery: { color: 'text-slate-400', bgColor: 'bg-slate-500/10', borderColor: 'border-slate-500', icon: <Clock className="w-6 h-6" /> },
-  easy: { color: 'text-emerald-400', bgColor: 'bg-emerald-500/10', borderColor: 'border-emerald-500', icon: <Footprints className="w-6 h-6" /> },
-  easy_strides: { color: 'text-emerald-400', bgColor: 'bg-emerald-500/10', borderColor: 'border-emerald-500', icon: <Zap className="w-6 h-6" /> },
-  strides: { color: 'text-emerald-400', bgColor: 'bg-emerald-500/10', borderColor: 'border-emerald-500', icon: <Zap className="w-6 h-6" /> },
-  medium_long: { color: 'text-blue-400', bgColor: 'bg-blue-500/10', borderColor: 'border-blue-500', icon: <TrendingUp className="w-6 h-6" /> },
-  long: { color: 'text-blue-400', bgColor: 'bg-blue-500/10', borderColor: 'border-blue-500', icon: <TrendingUp className="w-6 h-6" /> },
-  long_mp: { color: 'text-blue-400', bgColor: 'bg-blue-500/10', borderColor: 'border-blue-500', icon: <Target className="w-6 h-6" /> },
-  threshold: { color: 'text-orange-400', bgColor: 'bg-orange-500/10', borderColor: 'border-orange-500', icon: <Flame className="w-6 h-6" /> },
-  tempo: { color: 'text-orange-400', bgColor: 'bg-orange-500/10', borderColor: 'border-orange-500', icon: <Flame className="w-6 h-6" /> },
-  intervals: { color: 'text-red-400', bgColor: 'bg-red-500/10', borderColor: 'border-red-500', icon: <Activity className="w-6 h-6" /> },
-  vo2max: { color: 'text-red-400', bgColor: 'bg-red-500/10', borderColor: 'border-red-500', icon: <Activity className="w-6 h-6" /> },
-  race: { color: 'text-pink-400', bgColor: 'bg-pink-500/10', borderColor: 'border-pink-500', icon: <Target className="w-6 h-6" /> },
+  rest: { color: 'text-slate-400', bgColor: 'bg-slate-500/20', borderColor: 'border-slate-500', icon: <Clock className="w-6 h-6" /> },
+  recovery: { color: 'text-slate-400', bgColor: 'bg-slate-500/20', borderColor: 'border-slate-500', icon: <Clock className="w-6 h-6" /> },
+  easy: { color: 'text-emerald-400', bgColor: 'bg-emerald-500/20', borderColor: 'border-emerald-500', icon: <Footprints className="w-6 h-6" /> },
+  easy_strides: { color: 'text-emerald-400', bgColor: 'bg-emerald-500/20', borderColor: 'border-emerald-500', icon: <Zap className="w-6 h-6" /> },
+  strides: { color: 'text-emerald-400', bgColor: 'bg-emerald-500/20', borderColor: 'border-emerald-500', icon: <Zap className="w-6 h-6" /> },
+  medium_long: { color: 'text-blue-400', bgColor: 'bg-blue-500/20', borderColor: 'border-blue-500', icon: <TrendingUp className="w-6 h-6" /> },
+  long: { color: 'text-blue-400', bgColor: 'bg-blue-500/20', borderColor: 'border-blue-500', icon: <TrendingUp className="w-6 h-6" /> },
+  long_mp: { color: 'text-blue-400', bgColor: 'bg-blue-500/20', borderColor: 'border-blue-500', icon: <Target className="w-6 h-6" /> },
+  threshold: { color: 'text-orange-400', bgColor: 'bg-orange-500/20', borderColor: 'border-orange-500', icon: <Flame className="w-6 h-6" /> },
+  tempo: { color: 'text-orange-400', bgColor: 'bg-orange-500/20', borderColor: 'border-orange-500', icon: <Flame className="w-6 h-6" /> },
+  intervals: { color: 'text-red-400', bgColor: 'bg-red-500/20', borderColor: 'border-red-500', icon: <Activity className="w-6 h-6" /> },
+  vo2max: { color: 'text-red-400', bgColor: 'bg-red-500/20', borderColor: 'border-red-500', icon: <Activity className="w-6 h-6" /> },
+  race: { color: 'text-pink-400', bgColor: 'bg-pink-500/20', borderColor: 'border-pink-500', icon: <Target className="w-6 h-6" /> },
 };
 
 function getWorkoutConfig(type?: string) {
-  if (!type) return { color: 'text-slate-400', bgColor: 'bg-slate-500/10', borderColor: 'border-slate-500', icon: <Footprints className="w-6 h-6" /> };
-  return WORKOUT_CONFIG[type] || { color: 'text-slate-400', bgColor: 'bg-slate-500/10', borderColor: 'border-slate-500', icon: <Footprints className="w-6 h-6" /> };
+  if (!type) return { color: 'text-slate-400', bgColor: 'bg-slate-500/20', borderColor: 'border-slate-500', icon: <Footprints className="w-6 h-6" /> };
+  return WORKOUT_CONFIG[type] || { color: 'text-slate-400', bgColor: 'bg-slate-500/20', borderColor: 'border-slate-500', icon: <Footprints className="w-6 h-6" /> };
 }
 
 function formatWorkoutType(type?: string): string {
@@ -84,11 +81,11 @@ function formatWorkoutType(type?: string): string {
 function getStatusBadge(status: string) {
   switch (status) {
     case 'ahead':
-      return <Badge variant="success" className="gap-1 text-xs"><TrendingUp className="w-3 h-3" /> Ahead</Badge>;
+      return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 gap-1 text-xs"><TrendingUp className="w-3 h-3" /> Ahead</Badge>;
     case 'on_track':
-      return <Badge variant="info" className="gap-1 text-xs"><CheckCircle2 className="w-3 h-3" /> On Track</Badge>;
+      return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 gap-1 text-xs"><CheckCircle2 className="w-3 h-3" /> On Track</Badge>;
     case 'behind':
-      return <Badge variant="warning" className="gap-1 text-xs"><Clock className="w-3 h-3" /> Behind</Badge>;
+      return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 gap-1 text-xs"><Clock className="w-3 h-3" /> Behind</Badge>;
     default:
       return null;
   }
@@ -100,7 +97,7 @@ export default function HomePage() {
   if (isLoading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f]">
+        <div className="min-h-screen flex items-center justify-center bg-slate-900">
           <LoadingSpinner size="lg" />
         </div>
       </ProtectedRoute>
@@ -110,11 +107,11 @@ export default function HomePage() {
   if (error || !data) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-[#0a0a0f] text-foreground p-4">
+        <div className="min-h-screen bg-slate-900 text-slate-100 p-4">
           <div className="max-w-xl mx-auto pt-12">
-            <Card className="border-destructive/50 bg-destructive/5">
+            <Card className="bg-slate-800 border-red-700/50">
               <CardContent className="pt-6">
-                <p className="text-muted-foreground">Could not load data. Try again.</p>
+                <p className="text-slate-400">Could not load data. Try again.</p>
               </CardContent>
             </Card>
           </div>
@@ -133,81 +130,79 @@ export default function HomePage() {
 
   return (
     <ProtectedRoute>
-      {/* Premium background with subtle grid */}
-      <div className="min-h-screen bg-[#0a0a0f] relative overflow-hidden">
-        {/* Gradient overlays */}
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 via-transparent to-black/80 pointer-events-none" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-orange-950/20 via-transparent to-transparent pointer-events-none" />
-        
-        {/* Subtle grid pattern */}
-        <div 
-          className="absolute inset-0 opacity-[0.015] pointer-events-none"
-          style={{
-            backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
-            backgroundSize: '64px 64px'
-          }}
-        />
-        
-        {/* Main content with fade-in */}
-        <div className="relative max-w-xl mx-auto px-4 py-5 md:py-8 space-y-5 animate-fade-in">
+      <div className="min-h-screen bg-slate-900 text-slate-100">
+        <div className="max-w-xl mx-auto px-4 py-6 md:py-8 space-y-6">
+          
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2.5 rounded-xl bg-orange-500/20 ring-1 ring-orange-500/30">
+              <Home className="w-6 h-6 text-orange-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Home</h1>
+              <p className="text-sm text-slate-400">
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              </p>
+            </div>
+          </div>
           
           {/* Welcome Banner - New Users */}
           {showWelcomeCard && (
-            <Card className="border-orange-500/40 bg-gradient-to-br from-orange-950/50 via-orange-900/30 to-transparent overflow-hidden group hover:border-orange-500/60 transition-all duration-300 hover:shadow-xl hover:shadow-orange-500/10">
-              <div className="absolute inset-0 bg-gradient-to-r from-orange-500/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <CardHeader className="relative pb-3">
+            <Card className="bg-gradient-to-r from-orange-500/10 to-pink-500/10 border-orange-500/30">
+              <CardHeader className="pb-3">
                 <div className="flex items-center gap-3 mb-1">
-                  <div className="p-2.5 rounded-xl bg-orange-500/20 ring-1 ring-orange-500/30">
-                    <Zap className="w-5 h-5 text-orange-400" />
+                  <div className="p-2 bg-orange-500/20 rounded-lg ring-1 ring-orange-500/30">
+                    <Zap className="w-5 h-5 text-orange-500" />
                   </div>
                   <CardTitle className="text-lg text-orange-300">Welcome to StrideIQ</CardTitle>
                 </div>
-                <CardDescription className="text-slate-300/90 text-sm leading-relaxed">
+                <CardDescription className="text-slate-300">
                   Connect Strava to import your runs. We&apos;ll show you what&apos;s actually working.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="relative flex flex-wrap gap-2 pt-0">
-                <Button asChild size="sm" className="bg-orange-600 hover:bg-orange-500 shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 transition-all">
+              <CardContent className="flex flex-wrap gap-2 pt-0">
+                <Button asChild className="bg-orange-600 hover:bg-orange-500">
                   <Link href="/settings">Connect Strava</Link>
                 </Button>
-                <Button asChild variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800">
+                <Button asChild variant="outline" className="border-slate-600 hover:bg-slate-800">
                   <Link href="/calendar">Create Plan</Link>
                 </Button>
               </CardContent>
             </Card>
           )}
           
-          {/* TODAY - Hero Section */}
-          <section className="animate-fade-in" style={{ animationDelay: '50ms' }}>
-            <div className="flex items-center justify-between mb-2">
+          {/* Signals Banner - Analytics Insights (only for users with data) */}
+          {hasAnyData && !showWelcomeCard && (
+            <SignalsBanner />
+          )}
+          
+          {/* TODAY Section */}
+          <section>
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-primary/10">
-                  <Calendar className="w-3.5 h-3.5 text-primary" />
-                </div>
-                <span className="text-xs uppercase tracking-widest font-semibold text-slate-400">
-                  {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                </span>
+                <Calendar className="w-4 h-4 text-orange-500" />
+                <span className="text-sm font-semibold text-slate-300">Today</span>
               </div>
               {today.phase && (
-                <Badge variant="outline" className="text-orange-400 border-orange-500/40 bg-orange-500/5 text-xs">
+                <Badge variant="outline" className="text-orange-400 border-orange-500/40">
                   {today.phase}
                 </Badge>
               )}
             </div>
             
             {today.has_workout ? (
-              <Card className={`border-l-4 ${workoutConfig.borderColor} bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950 backdrop-blur-sm group hover:shadow-2xl hover:shadow-primary/5 transition-all duration-300 hover:-translate-y-0.5`}>
-                <CardHeader className="pb-2 pt-5">
+              <Card className={`bg-slate-800 border-slate-700 border-l-4 ${workoutConfig.borderColor}`}>
+                <CardHeader className="pb-2">
                   <div className="flex items-start gap-4">
-                    <div className={`p-3.5 rounded-2xl ${workoutConfig.bgColor} ${workoutConfig.color} ring-1 ring-white/5 group-hover:scale-105 transition-transform duration-300`}>
+                    <div className={`p-3 rounded-xl ${workoutConfig.bgColor} ${workoutConfig.color} ring-1 ring-white/10`}>
                       {workoutConfig.icon}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <CardTitle className={`text-2xl md:text-3xl font-bold ${workoutConfig.color} tracking-tight`}>
+                      <CardTitle className={`text-xl md:text-2xl font-bold ${workoutConfig.color}`}>
                         {today.title || formatWorkoutType(today.workout_type)}
                       </CardTitle>
-                      <CardDescription className="mt-1 text-base">
-                        {today.distance_mi && <span className="font-medium text-foreground/70">{today.distance_mi} mi</span>}
+                      <CardDescription className="mt-1">
+                        {today.distance_mi && <span className="font-medium text-slate-300">{today.distance_mi} mi</span>}
                         {today.distance_mi && today.pace_guidance && <span className="mx-2 text-slate-600">·</span>}
                         {today.pace_guidance && <span className="text-slate-400">{today.pace_guidance}</span>}
                       </CardDescription>
@@ -216,18 +211,18 @@ export default function HomePage() {
                 </CardHeader>
                 
                 {today.why_context && (
-                  <CardContent className="pt-3 pb-3">
-                    <div className="bg-slate-800/50 rounded-xl p-3.5 border border-slate-700/50">
+                  <CardContent className="pt-2 pb-3">
+                    <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600/50">
                       <div className="flex gap-2">
-                        <Sparkles className="w-4 h-4 text-primary/70 flex-shrink-0 mt-0.5" />
-                        <p className="text-sm text-slate-300 leading-relaxed">{today.why_context}</p>
+                        <Sparkles className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+                        <p className="text-sm text-slate-300">{today.why_context}</p>
                       </div>
                     </div>
                   </CardContent>
                 )}
                 
                 <CardContent className="pt-0 pb-4">
-                  <div className="flex items-center justify-between border-t border-slate-800 pt-3">
+                  <div className="flex items-center justify-between border-t border-slate-700 pt-3">
                     <div className="flex items-center gap-3 text-sm text-slate-500">
                       {today.week_number && (
                         <span className="flex items-center gap-1.5">
@@ -236,7 +231,7 @@ export default function HomePage() {
                         </span>
                       )}
                     </div>
-                    <Button asChild variant="ghost" size="sm" className="text-slate-400 hover:text-white h-8">
+                    <Button asChild variant="ghost" size="sm" className="text-slate-400 hover:text-white">
                       <Link href="/calendar">
                         Calendar <ArrowRight className="w-3.5 h-3.5 ml-1" />
                       </Link>
@@ -245,17 +240,15 @@ export default function HomePage() {
                 </CardContent>
               </Card>
             ) : (
-              <Card className="bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950 border-slate-800 group hover:border-slate-700 transition-all duration-300">
-                <CardHeader className="pb-3 pt-5">
+              <Card className="bg-slate-800 border-slate-700">
+                <CardHeader className="pb-3">
                   <div className="flex items-start gap-4">
-                    <div className="p-3.5 rounded-2xl bg-slate-800 ring-1 ring-slate-700">
+                    <div className="p-3 rounded-xl bg-slate-700 ring-1 ring-slate-600">
                       <Clock className="w-6 h-6 text-slate-500" />
                     </div>
                     <div>
-                      <CardTitle className="text-xl md:text-2xl text-slate-400 font-medium">
-                        No workout scheduled
-                      </CardTitle>
-                      <CardDescription className="mt-1 text-sm">
+                      <CardTitle className="text-xl text-slate-400">No workout scheduled</CardTitle>
+                      <CardDescription className="mt-1">
                         {hasAnyData 
                           ? "Recovery day. Your call."
                           : isStravaConnected
@@ -267,13 +260,13 @@ export default function HomePage() {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 pb-4 flex flex-wrap gap-2">
-                  <Button asChild variant="secondary" size="sm" className="h-8">
+                  <Button asChild variant="secondary" size="sm">
                     <Link href="/calendar">
                       {hasAnyData ? 'Calendar' : 'Create Plan'} <ArrowRight className="w-3.5 h-3.5 ml-1" />
                     </Link>
                   </Button>
                   {!isStravaConnected && !hasAnyData && (
-                    <Button asChild variant="ghost" size="sm" className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 h-8">
+                    <Button asChild variant="ghost" size="sm" className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10">
                       <Link href="/settings">Connect Strava</Link>
                     </Button>
                   )}
@@ -282,21 +275,19 @@ export default function HomePage() {
             )}
           </section>
           
-          {/* YESTERDAY - Insight Section */}
-          <section className="animate-fade-in" style={{ animationDelay: '100ms' }}>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-1.5 rounded-lg bg-emerald-500/10">
-                <Activity className="w-3.5 h-3.5 text-emerald-400" />
-              </div>
-              <span className="text-xs uppercase tracking-widest font-semibold text-slate-400">Yesterday</span>
+          {/* YESTERDAY Section */}
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Activity className="w-4 h-4 text-emerald-500" />
+              <span className="text-sm font-semibold text-slate-300">Yesterday</span>
             </div>
             
             {yesterday.has_activity ? (
-              <Card className="bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-emerald-950/30 border-l-4 border-emerald-500/60 group hover:shadow-lg hover:shadow-emerald-500/5 transition-all duration-300 hover:-translate-y-0.5">
+              <Card className="bg-slate-800 border-slate-700 border-l-4 border-emerald-500">
                 <CardContent className="py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-xl bg-emerald-500/15 ring-1 ring-emerald-500/20 group-hover:scale-105 transition-transform">
+                      <div className="p-2 rounded-lg bg-emerald-500/20 ring-1 ring-emerald-500/30">
                         <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                       </div>
                       <div>
@@ -307,12 +298,12 @@ export default function HomePage() {
                           {yesterday.pace_per_mi}
                         </p>
                         {yesterday.insight && (
-                          <p className="text-sm text-slate-300 mt-2 leading-relaxed">{yesterday.insight}</p>
+                          <p className="text-sm text-slate-300 mt-2">{yesterday.insight}</p>
                         )}
                       </div>
                     </div>
                     {yesterday.activity_id && (
-                      <Button asChild variant="ghost" size="sm" className="text-slate-400 hover:text-white h-7 px-2">
+                      <Button asChild variant="ghost" size="icon" className="text-slate-400 hover:text-white">
                         <Link href={`/activities/${yesterday.activity_id}`}>
                           <ArrowRight className="w-4 h-4" />
                         </Link>
@@ -322,11 +313,11 @@ export default function HomePage() {
                 </CardContent>
               </Card>
             ) : (
-              <Card className="bg-slate-900/50 border-slate-800/50 group hover:border-slate-700 transition-all">
-                <CardContent className="py-3.5">
+              <Card className="bg-slate-800/50 border-slate-700/50">
+                <CardContent className="py-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-xl bg-slate-800 ring-1 ring-slate-700">
+                      <div className="p-2 rounded-lg bg-slate-700 ring-1 ring-slate-600">
                         <Footprints className="w-4 h-4 text-slate-500" />
                       </div>
                       <div>
@@ -342,7 +333,7 @@ export default function HomePage() {
                       </div>
                     </div>
                     {hasLastActivity && yesterday.last_activity_id && (
-                      <Button asChild variant="ghost" size="sm" className="text-slate-500 hover:text-white h-7 px-2">
+                      <Button asChild variant="ghost" size="icon" className="text-slate-500 hover:text-white">
                         <Link href={`/activities/${yesterday.last_activity_id}`}>
                           <ArrowRight className="w-4 h-4" />
                         </Link>
@@ -354,22 +345,20 @@ export default function HomePage() {
             )}
           </section>
           
-          {/* WEEK - Progress Section */}
-          <section className="animate-fade-in" style={{ animationDelay: '150ms' }}>
-            <div className="flex items-center justify-between mb-2">
+          {/* WEEK Section */}
+          <section>
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-blue-500/10">
-                  <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
-                </div>
-                <span className="text-xs uppercase tracking-widest font-semibold text-slate-400">This Week</span>
+                <BarChart3 className="w-4 h-4 text-blue-500" />
+                <span className="text-sm font-semibold text-slate-300">This Week</span>
               </div>
               {week.week_number && week.total_weeks && (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 font-medium">
-                    {week.week_number}/{week.total_weeks}
+                  <span className="text-xs text-slate-500">
+                    Week {week.week_number}/{week.total_weeks}
                   </span>
                   {week.phase && (
-                    <Badge variant="outline" className="text-orange-400 border-orange-500/30 bg-orange-500/5 text-[10px] px-1.5 py-0">
+                    <Badge variant="outline" className="text-orange-400 border-orange-500/30 text-xs">
                       {week.phase}
                     </Badge>
                   )}
@@ -377,9 +366,9 @@ export default function HomePage() {
               )}
             </div>
             
-            <Card className="bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950 border-slate-800 group hover:border-slate-700 transition-all">
+            <Card className="bg-slate-800 border-slate-700">
               <CardContent className="pt-4 pb-4">
-                {/* Day Pills - Compact visual week */}
+                {/* Day Pills */}
                 <div className="flex justify-between gap-1 mb-4">
                   {week.days.map((day) => {
                     const dayConfig = getWorkoutConfig(day.workout_type);
@@ -387,18 +376,12 @@ export default function HomePage() {
                       <div 
                         key={day.date}
                         className={`
-                          flex-1 text-center py-2.5 px-0.5 rounded-lg transition-all duration-200
-                          ${day.is_today 
-                            ? 'ring-2 ring-orange-500/70 bg-orange-500/10 shadow-lg shadow-orange-500/10' 
-                            : ''
-                          }
-                          ${day.completed 
-                            ? 'bg-emerald-500/15 border border-emerald-500/25' 
-                            : 'bg-slate-800/50 border border-transparent hover:border-slate-700'
-                          }
+                          flex-1 text-center py-2.5 px-0.5 rounded-lg transition-all
+                          ${day.is_today ? 'ring-2 ring-orange-500 bg-orange-500/10' : ''}
+                          ${day.completed ? 'bg-emerald-500/15 border border-emerald-500/25' : 'bg-slate-700/50 border border-transparent'}
                         `}
                       >
-                        <div className={`text-[10px] uppercase tracking-wide mb-1 ${day.is_today ? 'text-orange-400 font-semibold' : 'text-slate-500'}`}>
+                        <div className={`text-[10px] uppercase mb-1 ${day.is_today ? 'text-orange-400 font-semibold' : 'text-slate-500'}`}>
                           {day.day_abbrev}
                         </div>
                         <div className={`text-xs font-semibold ${day.completed ? 'text-emerald-400' : dayConfig.color}`}>
@@ -421,20 +404,18 @@ export default function HomePage() {
                 </div>
                 
                 {week.status === 'no_plan' ? (
-                  <div className="text-center py-1">
+                  <div className="text-center py-2">
                     {week.completed_mi > 0 ? (
                       <>
                         <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <Footprints className="w-5 h-5 text-primary" />
-                          <span className="text-xl font-bold text-white">
-                            {week.completed_mi} mi
-                          </span>
+                          <Footprints className="w-5 h-5 text-orange-500" />
+                          <span className="text-xl font-bold text-white">{week.completed_mi} mi</span>
                           <span className="text-sm text-slate-500">logged</span>
                         </div>
                         {week.trajectory_sentence && (
                           <p className="text-xs text-slate-400 mb-3">{week.trajectory_sentence}</p>
                         )}
-                        <Button asChild variant="secondary" size="sm" className="h-8 text-xs">
+                        <Button asChild variant="secondary" size="sm">
                           <Link href="/calendar">
                             Track with a plan <ArrowRight className="w-3.5 h-3.5 ml-1" />
                           </Link>
@@ -452,11 +433,11 @@ export default function HomePage() {
                           }
                         </p>
                         <div className="flex justify-center gap-2">
-                          <Button asChild variant="secondary" size="sm" className="h-8 text-xs">
+                          <Button asChild variant="secondary" size="sm">
                             <Link href="/calendar">Create Plan</Link>
                           </Button>
                           {!isStravaConnected && (
-                            <Button asChild variant="ghost" size="sm" className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 h-8 text-xs">
+                            <Button asChild variant="ghost" size="sm" className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10">
                               <Link href="/settings">Connect Strava</Link>
                             </Button>
                           )}
@@ -466,17 +447,17 @@ export default function HomePage() {
                   </div>
                 ) : (
                   <>
-                    {/* Animated Progress Bar */}
+                    {/* Progress Bar */}
                     {week.planned_mi > 0 && (
                       <div className="mb-3">
                         <Progress 
                           value={Math.min(100, week.progress_pct)} 
-                          className="h-2.5 bg-slate-800"
-                          indicatorClassName={`transition-all duration-1000 ease-out ${
-                            week.status === 'ahead' ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' :
-                            week.status === 'on_track' ? 'bg-gradient-to-r from-blue-600 to-blue-400' :
-                            week.status === 'behind' ? 'bg-gradient-to-r from-orange-600 to-orange-400' : 'bg-primary'
-                          }`}
+                          className="h-2.5"
+                          indicatorClassName={
+                            week.status === 'ahead' ? 'bg-emerald-500' :
+                            week.status === 'on_track' ? 'bg-blue-500' :
+                            week.status === 'behind' ? 'bg-orange-500' : 'bg-orange-500'
+                          }
                         />
                       </div>
                     )}
@@ -492,7 +473,7 @@ export default function HomePage() {
                     
                     {/* Trajectory */}
                     {week.trajectory_sentence && (
-                      <p className="text-xs text-slate-400 mt-2.5 pt-2.5 border-t border-slate-800">
+                      <p className="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-700">
                         {week.trajectory_sentence}
                       </p>
                     )}
@@ -500,39 +481,31 @@ export default function HomePage() {
                 )}
               </CardContent>
             </Card>
-            
-            <div className="mt-2 text-right">
-              <Button asChild variant="link" size="sm" className="text-slate-500 hover:text-white p-0 h-auto text-xs">
-                <Link href="/calendar">
-                  Full Calendar <ArrowRight className="w-3 h-3 ml-1" />
-                </Link>
-              </Button>
-            </div>
           </section>
           
-          {/* Quick Links - Compact */}
-          <section className="grid grid-cols-2 gap-3 animate-fade-in" style={{ animationDelay: '200ms' }}>
-            <Link href="/analytics" className="group">
-              <Card className="h-full bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-blue-950/30 border-slate-800 hover:border-blue-500/40 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:-translate-y-0.5 active:scale-[0.98]">
+          {/* Quick Links */}
+          <section className="grid grid-cols-2 gap-4">
+            <Link href="/analytics">
+              <Card className="bg-slate-800 border-slate-700 hover:border-blue-500/50 transition-colors group">
                 <CardContent className="py-4 px-4">
                   <div className="flex items-center gap-2.5 mb-1">
-                    <div className="p-2 rounded-lg bg-blue-500/15 ring-1 ring-blue-500/20 group-hover:bg-blue-500/25 transition-colors">
+                    <div className="p-2 rounded-lg bg-blue-500/20 ring-1 ring-blue-500/30 group-hover:bg-blue-500/30 transition-colors">
                       <BarChart3 className="w-4 h-4 text-blue-400" />
                     </div>
-                    <span className="font-semibold text-sm text-white group-hover:text-blue-300 transition-colors">Analytics</span>
+                    <span className="font-semibold text-sm text-white">Analytics</span>
                   </div>
                   <p className="text-xs text-slate-500 ml-[42px]">Trends & correlations</p>
                 </CardContent>
               </Card>
             </Link>
-            <Link href="/coach" className="group">
-              <Card className="h-full bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-purple-950/30 border-slate-800 hover:border-purple-500/40 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/10 hover:-translate-y-0.5 active:scale-[0.98]">
+            <Link href="/coach">
+              <Card className="bg-slate-800 border-slate-700 hover:border-purple-500/50 transition-colors group">
                 <CardContent className="py-4 px-4">
                   <div className="flex items-center gap-2.5 mb-1">
-                    <div className="p-2 rounded-lg bg-purple-500/15 ring-1 ring-purple-500/20 group-hover:bg-purple-500/25 transition-colors">
+                    <div className="p-2 rounded-lg bg-purple-500/20 ring-1 ring-purple-500/30 group-hover:bg-purple-500/30 transition-colors">
                       <MessageSquare className="w-4 h-4 text-purple-400" />
                     </div>
-                    <span className="font-semibold text-sm text-white group-hover:text-purple-300 transition-colors">Coach</span>
+                    <span className="font-semibold text-sm text-white">Coach</span>
                   </div>
                   <p className="text-xs text-slate-500 ml-[42px]">Ask questions</p>
                 </CardContent>

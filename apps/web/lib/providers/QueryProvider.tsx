@@ -9,7 +9,23 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+// Shared QueryClient instance for access outside React tree (e.g., logout)
+let sharedQueryClient: QueryClient | null = null;
+
+export function getQueryClient(): QueryClient | null {
+  return sharedQueryClient;
+}
+
+/**
+ * Clear all cached query data (call on logout)
+ */
+export function clearQueryCache(): void {
+  if (sharedQueryClient) {
+    sharedQueryClient.clear();
+  }
+}
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -27,6 +43,14 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
         },
       })
   );
+  
+  // Store reference to shared client
+  useEffect(() => {
+    sharedQueryClient = queryClient;
+    return () => {
+      sharedQueryClient = null;
+    };
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -18,6 +18,7 @@ export interface TodayWorkout {
   distance_mi?: number;
   pace_guidance?: string;
   why_context?: string;
+  why_source?: 'correlation' | 'load' | 'plan';  // ADR-020: Source of context
   week_number?: number;
   phase?: string;
 }
@@ -55,6 +56,8 @@ export interface WeekProgress {
   days: WeekDay[];
   status: 'on_track' | 'ahead' | 'behind' | 'no_plan';
   trajectory_sentence?: string;
+  tsb_context?: 'Fresh' | 'Building' | 'Fatigued';  // ADR-020: Training stress context
+  load_trend?: 'up' | 'stable' | 'down';  // ADR-020: Load direction
 }
 
 export interface HomeData {

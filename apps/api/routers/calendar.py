@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict
 
 from core.database import get_db
 from core.auth import get_current_user
+from core.feature_flags import is_feature_enabled
 from models import (
     Athlete, Activity, TrainingPlan, PlannedWorkout,
     CalendarNote, CoachChat, CalendarInsight, ActivityFeedback
@@ -320,6 +321,77 @@ def generate_inline_insight(activities: List[Activity], planned: Optional[Planne
 # =============================================================================
 # ENDPOINTS
 # =============================================================================
+
+# IMPORTANT: /signals MUST be defined BEFORE /{calendar_date} to avoid route conflict
+# FastAPI matches routes in order - /{calendar_date} would match "signals" as a date string
+
+@router.get("/signals")
+def get_calendar_signals_endpoint(
+    start_date: date = Query(..., description="Start date for signals"),
+    end_date: date = Query(..., description="End date for signals"),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get calendar signals for a date range.
+    
+    Returns day-level badges (efficiency spikes, decay risks, PR matches, etc.)
+    and week-level trajectory summaries.
+    
+    ADR-016: Calendar Signals - Day Badges + Week Trajectory
+    
+    Requires feature flag: signals.calendar_badges
+    """
+    import logging
+    from services.calendar_signals import get_calendar_signals, calendar_signals_to_dict
+    
+    logger = logging.getLogger(__name__)
+    
+    # Check feature flag
+    flag_enabled = is_feature_enabled("signals.calendar_badges", str(current_user.id), db)
+    
+    if not flag_enabled:
+        return {
+            "day_signals": {},
+            "week_trajectories": {},
+            "message": "Calendar signals feature not enabled"
+        }
+    
+    # Validate date range (max 90 days)
+    if (end_date - start_date).days > 90:
+        logger.warning(f"Calendar signals: date range too large for athlete {current_user.id}: {start_date} to {end_date}")
+        return {
+            "day_signals": {},
+            "week_trajectories": {},
+            "message": "Date range cannot exceed 90 days"
+        }
+    
+    if end_date < start_date:
+        logger.warning(f"Calendar signals: end_date before start_date for athlete {current_user.id}: {start_date} to {end_date}")
+        return {
+            "day_signals": {},
+            "week_trajectories": {},
+            "message": "End date must be after start date"
+        }
+    
+    try:
+        # Get signals
+        result = get_calendar_signals(
+            athlete_id=str(current_user.id),
+            start_date=start_date,
+            end_date=end_date,
+            db=db
+        )
+        
+        return calendar_signals_to_dict(result)
+    except Exception as e:
+        logger.error(f"Calendar signals error for athlete {current_user.id}: {e}")
+        return {
+            "day_signals": {},
+            "week_trajectories": {},
+            "message": "Error fetching calendar signals"
+        }
+
 
 @router.get("", response_model=CalendarRangeResponse)
 def get_calendar(

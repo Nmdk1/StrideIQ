@@ -10,6 +10,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { authService } from '../api/services/auth';
 import { apiClient } from '../api/client';
+import { clearQueryCache } from '../providers/QueryProvider';
 import type { Athlete, LoginRequest, RegisterRequest } from '../api/types';
 
 const AUTH_TOKEN_KEY = 'auth_token';
@@ -148,6 +149,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     apiClient.setAuthToken(null);
     localStorage.removeItem(AUTH_TOKEN_KEY);
     localStorage.removeItem(AUTH_USER_KEY);
+    
+    // Clear React Query cache to prevent stale data showing after logout
+    clearQueryCache();
+    
     setState({
       user: null,
       token: null,

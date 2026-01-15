@@ -16,13 +16,27 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useCalendarRange } from '@/lib/hooks/queries/calendar';
 import { DayCell, DayDetailPanel, WeekSummaryRow, CreatePlanCTA, PlanBanner } from '@/components/calendar';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { UnitToggle } from '@/components/ui/UnitToggle';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { ChevronLeft, ChevronRight, Calendar, Lightbulb, MessageSquare, Activity, Clock, Flame } from 'lucide-react';
 import type { CalendarDay, WeekSummary } from '@/lib/api/services/calendar';
+import type { DayBadgeData } from '@/components/calendar/DayBadge';
+import type { WeekTrajectoryData } from '@/components/calendar/WeekSummaryRow';
+import { apiClient } from '@/lib/api/client';
+
+// Types for calendar signals
+interface CalendarSignalsResponse {
+  day_signals: Record<string, DayBadgeData[]>;
+  week_trajectories: Record<string, WeekTrajectoryData>;
+  message?: string;
+}
 
 // Day names starting from Monday
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -40,27 +54,30 @@ function CalendarHeader({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <button 
+      <Button 
+        variant="ghost"
+        size="icon"
         onClick={onPrevMonth}
-        className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+        className="text-slate-400 hover:text-white hover:bg-slate-800"
         aria-label="Previous month"
       >
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-      </button>
-      <h1 className="text-xl font-semibold text-white min-w-[160px] text-center">
-        {month} {year}
-      </h1>
-      <button 
+        <ChevronLeft className="w-5 h-5" />
+      </Button>
+      <div className="flex items-center gap-2 min-w-[180px] justify-center">
+        <Calendar className="w-5 h-5 text-orange-500" />
+        <h1 className="text-xl font-semibold text-white">
+          {month} {year}
+        </h1>
+      </div>
+      <Button 
+        variant="ghost"
+        size="icon"
         onClick={onNextMonth}
-        className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+        className="text-slate-400 hover:text-white hover:bg-slate-800"
         aria-label="Next month"
       >
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      </button>
+        <ChevronRight className="w-5 h-5" />
+      </Button>
     </div>
   );
 }
@@ -72,49 +89,53 @@ function ActionBar({
 }: { 
   weekStats: { completed: number; planned: number } 
 }) {
-  // Only show if there's meaningful data
   const showProgress = weekStats.planned > 0;
   const progressPct = showProgress ? Math.min(100, (weekStats.completed / weekStats.planned) * 100) : 0;
   
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur border-t border-gray-800 px-4 py-3 z-30">
+    <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur border-t border-slate-700 px-4 py-3 z-30">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        {/* Week progress - clean minimal display */}
+        {/* Week progress */}
         <div className="flex items-center gap-4">
           {showProgress ? (
             <>
-              <div className="text-sm text-gray-400">
-                This week: <span className="text-white font-medium">{weekStats.completed.toFixed(0)}</span>
-                <span className="text-gray-600">/</span>
-                <span className="text-gray-500">{weekStats.planned.toFixed(0)} mi</span>
+              <div className="flex items-center gap-2 text-sm">
+                <Activity className="w-4 h-4 text-orange-500" />
+                <span className="text-slate-400">This week:</span>
+                <span className="text-white font-medium">{weekStats.completed.toFixed(0)}</span>
+                <span className="text-slate-600">/</span>
+                <span className="text-slate-500">{weekStats.planned.toFixed(0)} mi</span>
               </div>
               {/* Mini progress bar */}
-              <div className="hidden sm:block w-24 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+              <div className="hidden sm:block w-24 h-1.5 bg-slate-700 rounded-full overflow-hidden">
                 <div 
-                  className="h-full bg-emerald-500 rounded-full transition-all" 
+                  className="h-full bg-orange-500 rounded-full transition-all" 
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
             </>
           ) : (
-            <div className="text-sm text-gray-500">No planned workouts this week</div>
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Clock className="w-4 h-4" />
+              No planned workouts this week
+            </div>
           )}
         </div>
         
         {/* Quick actions */}
-        <div className="flex items-center gap-2">
-          <a 
-            href="/insights"
-            className="px-3 py-1.5 text-sm text-gray-400 hover:text-white transition-colors"
-          >
-            Insights
-          </a>
-          <a 
-            href="/coach"
-            className="px-3 py-1.5 text-sm text-gray-400 hover:text-white transition-colors"
-          >
-            Coach
-          </a>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" asChild className="text-slate-400 hover:text-white">
+            <a href="/insights">
+              <Lightbulb className="w-4 h-4 mr-1.5" />
+              Insights
+            </a>
+          </Button>
+          <Button variant="ghost" size="sm" asChild className="text-slate-400 hover:text-white">
+            <a href="/coach">
+              <MessageSquare className="w-4 h-4 mr-1.5" />
+              Coach
+            </a>
+          </Button>
         </div>
       </div>
     </div>
@@ -132,35 +153,39 @@ function MonthTotals({ days }: { days: CalendarDay[] }) {
   const secs = totalDuration % 60;
   const timeStr = `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   
-  // Estimate calories (rough: ~100 cal/mile for running)
   const estCalories = Math.round((totalDistance / 1609.344) * 100);
   
   if (totalActivities === 0) return null;
   
   return (
-    <div className="mt-4 bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <span className="text-sm text-gray-400">Month Totals</span>
-        <div className="flex items-center gap-6 text-sm">
-          <div>
-            <span className="text-gray-500">Activities: </span>
-            <span className="text-white font-semibold">{totalActivities}</span>
-          </div>
-          <div>
-            <span className="text-gray-500">Distance: </span>
-            <span className="text-white font-semibold">{totalMiles} mi</span>
-          </div>
-          <div>
-            <span className="text-gray-500">Time: </span>
-            <span className="text-white font-semibold">{timeStr}</span>
-          </div>
-          <div>
-            <span className="text-gray-500">Calories: </span>
-            <span className="text-white font-semibold">{estCalories.toLocaleString()}</span>
+    <Card className="mt-4 bg-slate-800/50 border-slate-700">
+      <CardContent className="py-4 px-4">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <span className="text-sm text-slate-400 flex items-center gap-2">
+            <Flame className="w-4 h-4 text-orange-500" />
+            Month Totals
+          </span>
+          <div className="flex items-center gap-6 text-sm">
+            <div>
+              <span className="text-slate-500">Activities: </span>
+              <span className="text-white font-semibold">{totalActivities}</span>
+            </div>
+            <div>
+              <span className="text-slate-500">Distance: </span>
+              <span className="text-white font-semibold">{totalMiles} mi</span>
+            </div>
+            <div>
+              <span className="text-slate-500">Time: </span>
+              <span className="text-white font-semibold">{timeStr}</span>
+            </div>
+            <div>
+              <span className="text-slate-500">Calories: </span>
+              <span className="text-white font-semibold">{estCalories.toLocaleString()}</span>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -189,6 +214,33 @@ export default function CalendarPage() {
   }, [currentDate]);
   
   const { data: calendar, isLoading, error } = useCalendarRange(startDate, endDate);
+  
+  // Fetch calendar signals (ADR-016)
+  const { data: signals } = useQuery({
+    queryKey: ['calendar-signals', startDate, endDate],
+    queryFn: () => apiClient.get<CalendarSignalsResponse>(
+      `/calendar/signals?start_date=${startDate}&end_date=${endDate}`
+    ),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
+    enabled: !!calendar, // Only fetch once calendar data is loaded
+  });
+  
+  // Get signals for a specific date
+  const getDaySignals = (dateStr: string): DayBadgeData[] => {
+    return signals?.day_signals?.[dateStr] || [];
+  };
+  
+  // Get trajectory for a week (from week number to ISO week string)
+  const getWeekTrajectory = (weekNumber: number | undefined): WeekTrajectoryData | undefined => {
+    if (!weekNumber || !signals?.week_trajectories) return undefined;
+    // Find matching week trajectory by week number
+    const weekKey = Object.keys(signals.week_trajectories).find(key => {
+      const match = key.match(/W(\d+)$/);
+      return match && parseInt(match[1]) === weekNumber;
+    });
+    return weekKey ? signals.week_trajectories[weekKey] : undefined;
+  };
   
   const handlePrevMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
@@ -258,7 +310,7 @@ export default function CalendarPage() {
   
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-gray-100 pb-24">
+      <div className="min-h-screen bg-slate-900 text-slate-100 pb-24">
         <div className="max-w-7xl mx-auto px-4 py-6">
           {/* Header - clean, minimal */}
           <div className="flex justify-between items-center mb-6">
@@ -301,28 +353,28 @@ export default function CalendarPage() {
           ) : (
             <>
               {/* Day headers with Weekly Totals column */}
-              <div className="hidden md:grid grid-cols-[repeat(7,1fr)_140px] border-l border-t border-gray-700 bg-gray-800/50">
+              <div className="hidden md:grid grid-cols-[repeat(7,1fr)_120px] border-l border-t border-slate-700 bg-slate-800/50">
                 {DAY_NAMES.map(day => (
-                  <div key={day} className="py-3 text-center text-sm font-semibold text-gray-400 border-r border-b border-gray-700">
+                  <div key={day} className="py-3 text-center text-sm font-semibold text-slate-400 border-r border-b border-slate-700">
                     {day}
                   </div>
                 ))}
-                <div className="py-3 text-center text-sm font-semibold text-gray-400 border-r border-b border-gray-700 hidden lg:block">
+                <div className="py-3 text-center text-sm font-semibold text-slate-400 border-r border-b border-slate-700 hidden lg:block">
                   Weekly Totals
                 </div>
               </div>
               
               {/* Mobile day headers - abbreviated */}
-              <div className="grid md:hidden grid-cols-7 border-l border-t border-gray-700 bg-gray-800/50">
+              <div className="grid md:hidden grid-cols-7 border-l border-t border-slate-700 bg-slate-800/50">
                 {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
-                  <div key={i} className="py-2 text-center text-xs font-semibold text-gray-400 border-r border-b border-gray-700">
+                  <div key={i} className="py-2 text-center text-xs font-semibold text-slate-400 border-r border-b border-slate-700">
                     {day}
                   </div>
                 ))}
               </div>
               
               {/* Calendar grid with aligned weekly totals */}
-              <div className="border-l border-gray-700">
+              <div className="border-l border-slate-700">
                 {weeksWithDays.map((week, weekIndex) => {
                   const weekDistance = week.days.reduce((sum, d) => sum + (d.total_distance_m || 0), 0);
                   const weekDuration = week.days.reduce((sum, d) => sum + (d.total_duration_s || 0), 0);
@@ -343,18 +395,31 @@ export default function CalendarPage() {
                             isToday={day.date === today}
                             isSelected={day.date === selectedDate}
                             onClick={() => handleDayClick(day.date)}
+                            signals={getDaySignals(day.date)}
                           />
                         ))}
                         
                         {/* Weekly total cell - only show if there's activity */}
-                        <div className="hidden lg:flex flex-col justify-center items-end p-3 border-r border-b border-gray-700/30 min-h-[120px]">
+                        <div className="hidden lg:flex flex-col justify-center items-end p-3 border-r border-b border-slate-700/30 min-h-[120px]">
                           {hasActivity ? (
                             <div className="text-right">
                               <div className="text-white font-medium text-sm">{weekMiles} mi</div>
-                              <div className="text-gray-500 text-xs">{timeStr}</div>
+                              <div className="text-slate-500 text-xs">{timeStr}</div>
+                              {/* Week trajectory sentence */}
+                              {getWeekTrajectory(week.weekNumber) && (
+                                <div className={`text-[10px] mt-1.5 max-w-[130px] leading-tight ${
+                                  getWeekTrajectory(week.weekNumber)?.trend === 'positive' 
+                                    ? 'text-emerald-400/80' 
+                                    : getWeekTrajectory(week.weekNumber)?.trend === 'caution' 
+                                    ? 'text-yellow-400/80' 
+                                    : 'text-slate-400'
+                                }`}>
+                                  {getWeekTrajectory(week.weekNumber)?.summary}
+                                </div>
+                              )}
                             </div>
                           ) : (
-                            <div className="text-gray-600 text-xs">—</div>
+                            <div className="text-slate-600 text-xs">—</div>
                           )}
                         </div>
                       </div>
@@ -369,15 +434,30 @@ export default function CalendarPage() {
                             isSelected={day.date === selectedDate}
                             onClick={() => handleDayClick(day.date)}
                             compact
+                            signals={getDaySignals(day.date)}
                           />
                         ))}
                       </div>
                       
                       {/* Mobile week total - only show if there's activity */}
                       {hasActivity && (
-                        <div className="md:hidden flex justify-between items-center px-3 py-2 bg-gray-800/20 border-b border-gray-700/30 text-sm">
-                          <span className="text-gray-500">Week</span>
-                          <span className="text-gray-300 font-medium">{weekMiles} mi · {timeStr}</span>
+                        <div className="md:hidden px-3 py-2 bg-slate-800/20 border-b border-slate-700/30 text-sm">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-500">Week</span>
+                            <span className="text-slate-300 font-medium">{weekMiles} mi · {timeStr}</span>
+                          </div>
+                          {/* Week trajectory sentence - mobile */}
+                          {getWeekTrajectory(week.weekNumber) && (
+                            <div className={`text-[10px] mt-1 ${
+                              getWeekTrajectory(week.weekNumber)?.trend === 'positive' 
+                                ? 'text-emerald-400/80' 
+                                : getWeekTrajectory(week.weekNumber)?.trend === 'caution' 
+                                ? 'text-yellow-400/80' 
+                                : 'text-slate-400'
+                            }`}>
+                              {getWeekTrajectory(week.weekNumber)?.summary}
+                            </div>
+                          )}
                         </div>
                       )}
                     </React.Fragment>
@@ -389,7 +469,7 @@ export default function CalendarPage() {
               <MonthTotals days={calendar?.days || []} />
               
               {weeksWithDays.length === 0 && (
-                <div className="text-center py-12 text-gray-400">
+                <div className="text-center py-12 text-slate-400">
                   No calendar data available for this period.
                 </div>
               )}
