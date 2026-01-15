@@ -16,12 +16,15 @@ Design Philosophy:
 - Use data we have (HR, pace, duration) rather than requiring power data
 - Reasonable defaults when data is incomplete
 - Transparent about assumptions
+
+ADR-010: Training Stress Balance Enhancement
 """
 
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Optional, Tuple
 from uuid import UUID
 from dataclasses import dataclass
+from enum import Enum
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 import math
@@ -30,6 +33,37 @@ import logging
 from models import Activity, Athlete, DailyCheckin
 
 logger = logging.getLogger(__name__)
+
+
+class TSBZone(str, Enum):
+    """Training Stress Balance zones for actionable insights."""
+    RACE_READY = "race_ready"           # +15 to +25: Fresh & fit
+    RECOVERING = "recovering"            # +5 to +15: Final taper
+    OPTIMAL_TRAINING = "optimal_training"  # -10 to +5: Productive overload
+    OVERREACHING = "overreaching"        # -30 to -10: High fatigue
+    OVERTRAINING_RISK = "overtraining_risk"  # < -30: Red zone
+
+
+@dataclass
+class TSBZoneInfo:
+    """Information about a TSB zone."""
+    zone: TSBZone
+    label: str
+    description: str
+    color: str  # For UI display
+    is_race_window: bool
+
+
+@dataclass
+class RaceReadiness:
+    """Race readiness assessment."""
+    score: float  # 0-100
+    tsb: float
+    tsb_zone: TSBZone
+    tsb_trend: str
+    days_since_hard_workout: Optional[int]
+    recommendation: str
+    is_race_window: bool
 
 
 @dataclass
@@ -492,5 +526,261 @@ class TrainingLoadCalculator:
             return "Recovery phase. Base building opportunity if ready."
         
         return "Training load appears balanced."
+    
+    # =========================================================================
+    # TSB ZONES AND RACE READINESS (ADR-010)
+    # =========================================================================
+    
+    @staticmethod
+    def get_tsb_zone(tsb: float) -> TSBZoneInfo:
+        """
+        Classify TSB into actionable zones.
+        
+        Zones based on TrainingPeaks methodology with adjustments for runners.
+        """
+        if tsb >= 15:
+            return TSBZoneInfo(
+                zone=TSBZone.RACE_READY,
+                label="Race Ready",
+                description="Fresh and fit - ideal race window",
+                color="green",
+                is_race_window=True
+            )
+        elif tsb >= 5:
+            return TSBZoneInfo(
+                zone=TSBZone.RECOVERING,
+                label="Recovering",
+                description="Final taper zone - ready soon",
+                color="blue",
+                is_race_window=False
+            )
+        elif tsb >= -10:
+            return TSBZoneInfo(
+                zone=TSBZone.OPTIMAL_TRAINING,
+                label="Optimal Training",
+                description="Productive overload - building fitness",
+                color="yellow",
+                is_race_window=False
+            )
+        elif tsb >= -30:
+            return TSBZoneInfo(
+                zone=TSBZone.OVERREACHING,
+                label="Overreaching",
+                description="High fatigue - monitor recovery closely",
+                color="orange",
+                is_race_window=False
+            )
+        else:
+            return TSBZoneInfo(
+                zone=TSBZone.OVERTRAINING_RISK,
+                label="Overtraining Risk",
+                description="Red zone - consider rest urgently",
+                color="red",
+                is_race_window=False
+            )
+    
+    def calculate_race_readiness(
+        self,
+        athlete_id: UUID,
+        target_date: Optional[date] = None
+    ) -> RaceReadiness:
+        """
+        Calculate race readiness score combining multiple factors.
+        
+        Score 0-100 based on:
+        - TSB value (40% weight)
+        - TSB trend (20% weight)
+        - Days since hard workout (20% weight)
+        - CTL level (20% weight)
+        """
+        if target_date is None:
+            target_date = date.today()
+        
+        # Get current load summary
+        load = self.calculate_training_load(athlete_id, target_date)
+        
+        # Get TSB zone
+        zone_info = self.get_tsb_zone(load.current_tsb)
+        
+        # Score components
+        
+        # 1. TSB score (40%): Map TSB to 0-100
+        # Optimal race TSB is +15 to +25
+        if load.current_tsb >= 15 and load.current_tsb <= 25:
+            tsb_score = 100
+        elif load.current_tsb > 25:
+            # Too fresh - might be undertrained
+            tsb_score = max(70, 100 - (load.current_tsb - 25) * 2)
+        elif load.current_tsb >= 5:
+            # Approaching race ready
+            tsb_score = 70 + (load.current_tsb - 5) * 3
+        elif load.current_tsb >= -10:
+            # Training zone - not ideal for racing
+            tsb_score = 40 + (load.current_tsb + 10) * 3
+        elif load.current_tsb >= -30:
+            # Fatigued
+            tsb_score = max(10, 40 + (load.current_tsb + 10) * 1.5)
+        else:
+            # Danger zone
+            tsb_score = 10
+        
+        # 2. TSB trend score (20%)
+        if load.tsb_trend == "rising":
+            trend_score = 100
+        elif load.tsb_trend == "stable":
+            trend_score = 70
+        else:  # falling
+            trend_score = 40
+        
+        # 3. Days since hard workout (20%)
+        days_since_hard = self._get_days_since_hard_workout(athlete_id, target_date)
+        if days_since_hard is None:
+            rest_score = 50  # Unknown
+        elif days_since_hard >= 3 and days_since_hard <= 7:
+            rest_score = 100  # Ideal pre-race rest
+        elif days_since_hard >= 2:
+            rest_score = 80
+        elif days_since_hard >= 1:
+            rest_score = 60
+        else:
+            rest_score = 30  # Hard workout today
+        
+        # 4. CTL level (20%) - need adequate fitness base
+        if load.current_ctl >= 60:
+            ctl_score = 100
+        elif load.current_ctl >= 40:
+            ctl_score = 80
+        elif load.current_ctl >= 25:
+            ctl_score = 60
+        elif load.current_ctl >= 15:
+            ctl_score = 40
+        else:
+            ctl_score = 20
+        
+        # Weighted total
+        total_score = (
+            tsb_score * 0.40 +
+            trend_score * 0.20 +
+            rest_score * 0.20 +
+            ctl_score * 0.20
+        )
+        
+        # Generate recommendation
+        recommendation = self._generate_race_recommendation(
+            total_score, load.current_tsb, zone_info, days_since_hard
+        )
+        
+        return RaceReadiness(
+            score=round(total_score, 1),
+            tsb=load.current_tsb,
+            tsb_zone=zone_info.zone,
+            tsb_trend=load.tsb_trend,
+            days_since_hard_workout=days_since_hard,
+            recommendation=recommendation,
+            is_race_window=zone_info.is_race_window
+        )
+    
+    def _get_days_since_hard_workout(
+        self,
+        athlete_id: UUID,
+        target_date: date
+    ) -> Optional[int]:
+        """Find days since last hard workout."""
+        hard_types = ['tempo', 'threshold', 'interval', 'race', 'vo2max', 'speed',
+                      'tempo_run', 'threshold_run', 'vo2max_intervals', 'track_workout']
+        
+        last_hard = self.db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.start_time < datetime.combine(target_date, datetime.min.time()),
+            Activity.workout_type.in_(hard_types)
+        ).order_by(Activity.start_time.desc()).first()
+        
+        if not last_hard:
+            return None
+        
+        return (target_date - last_hard.start_time.date()).days
+    
+    def _generate_race_recommendation(
+        self,
+        score: float,
+        tsb: float,
+        zone_info: TSBZoneInfo,
+        days_since_hard: Optional[int]
+    ) -> str:
+        """Generate race-specific recommendation."""
+        if score >= 85:
+            return "Excellent race readiness. Peak condition for goal effort."
+        elif score >= 70:
+            return "Good race readiness. Should perform well in competition."
+        elif score >= 55:
+            if tsb < 0:
+                return "Moderate readiness. Consider extra recovery for best performance."
+            else:
+                return "Moderate readiness. Fine for training race or B-race."
+        elif score >= 40:
+            if zone_info.zone == TSBZone.OVERREACHING:
+                return "Fatigue elevated. Racing now may compromise recovery."
+            return "Low readiness. Better suited for training than racing."
+        else:
+            return "Not recommended for racing. Focus on recovery."
+    
+    def project_tsb(
+        self,
+        athlete_id: UUID,
+        days_ahead: int = 14,
+        planned_tss_per_day: Optional[List[float]] = None
+    ) -> List[Dict]:
+        """
+        Project future TSB based on planned training.
+        
+        Args:
+            athlete_id: Athlete UUID
+            days_ahead: Number of days to project
+            planned_tss_per_day: Optional list of planned daily TSS
+                                 If None, assumes rest (TSS=0)
+        
+        Returns:
+            List of projected daily TSB values
+        """
+        today = date.today()
+        
+        # Get current state
+        load = self.calculate_training_load(athlete_id, today)
+        current_atl = load.current_atl
+        current_ctl = load.current_ctl
+        
+        atl_decay = 2 / (self.ATL_DECAY_DAYS + 1)
+        ctl_decay = 2 / (self.CTL_DECAY_DAYS + 1)
+        
+        projections = []
+        
+        for day_offset in range(1, days_ahead + 1):
+            target_date = today + timedelta(days=day_offset)
+            
+            # Get planned TSS for this day
+            if planned_tss_per_day and day_offset <= len(planned_tss_per_day):
+                day_tss = planned_tss_per_day[day_offset - 1]
+            else:
+                day_tss = 0  # Assume rest
+            
+            # Update EMAs
+            current_atl = current_atl * (1 - atl_decay) + day_tss * atl_decay
+            current_ctl = current_ctl * (1 - ctl_decay) + day_tss * ctl_decay
+            current_tsb = current_ctl - current_atl
+            
+            zone = self.get_tsb_zone(current_tsb)
+            
+            projections.append({
+                "date": target_date.isoformat(),
+                "day_offset": day_offset,
+                "projected_tss": day_tss,
+                "atl": round(current_atl, 1),
+                "ctl": round(current_ctl, 1),
+                "tsb": round(current_tsb, 1),
+                "zone": zone.zone.value,
+                "is_race_window": zone.is_race_window
+            })
+        
+        return projections
 
 
