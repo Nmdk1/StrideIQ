@@ -64,6 +64,7 @@ export interface HomeData {
   today: TodayWorkout;
   yesterday: YesterdayInsight;
   week: WeekProgress;
+  hero_narrative?: string;  // ADR-033: Personalized hero sentence
   strava_connected: boolean;
   has_any_activities: boolean;
   total_activities: number;

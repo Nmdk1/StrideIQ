@@ -120,8 +120,8 @@ export default function HomePage() {
     );
   }
 
-  const { today, yesterday, week, strava_connected, has_any_activities, total_activities } = data;
-  
+  const { today, yesterday, week, hero_narrative, strava_connected, has_any_activities, total_activities } = data;
+
   const isStravaConnected = strava_connected;
   const hasAnyData = has_any_activities || yesterday.has_activity || week.completed_mi > 0;
   const showWelcomeCard = !isStravaConnected && !hasAnyData;
@@ -175,7 +175,16 @@ export default function HomePage() {
           {hasAnyData && !showWelcomeCard && (
             <SignalsBanner />
           )}
-          
+
+          {/* Hero Narrative - ADR-033: First-3-seconds impact */}
+          {hero_narrative && hasAnyData && (
+            <div className="px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
+              <p className="text-sm text-slate-300 italic leading-relaxed">
+                &ldquo;{hero_narrative}&rdquo;
+              </p>
+            </div>
+          )}
+
           {/* TODAY Section */}
           <section>
             <div className="flex items-center justify-between mb-3">

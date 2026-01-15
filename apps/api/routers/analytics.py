@@ -162,3 +162,115 @@ def get_trend_attribution_endpoint(
 # Reason: Redundant with Training Pace Calculator, low perceived value, user confusion
 # See ADR-011 for details
 
+
+@router.get("/diagnostic-report")
+def get_diagnostic_report_endpoint(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate comprehensive diagnostic report for the authenticated athlete.
+    
+    Returns:
+    - Executive summary with key findings
+    - Personal best profile with pace analysis
+    - Volume trajectory with phase detection
+    - Efficiency trend analysis
+    - Race history
+    - Data quality assessment (what's missing)
+    - Prioritized recommendations
+    
+    ADR-019: On-Demand Diagnostic Report
+    
+    Rate limited: 1 report per 15 minutes (cached for 1 hour)
+    Requires feature flag: analytics.diagnostic_report
+    """
+    from services.athlete_diagnostic import (
+        generate_diagnostic_report,
+        diagnostic_report_to_dict
+    )
+    
+    # Check feature flag
+    flag_enabled = is_feature_enabled("analytics.diagnostic_report", str(current_user.id), db)
+    
+    if not flag_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Diagnostic report feature is not enabled"
+        )
+    
+    # Generate cache key
+    cache_key_str = cache_key(
+        "diagnostic_report",
+        str(current_user.id)
+    )
+    
+    # Try cache first (reports are cached for 1 hour)
+    cached_result = get_cache(cache_key_str)
+    if cached_result is not None:
+        return cached_result
+    
+    try:
+        report = generate_diagnostic_report(
+            athlete_id=str(current_user.id),
+            db=db
+        )
+        
+        response = diagnostic_report_to_dict(report)
+        
+        # Add personalized narratives (ADR-033)
+        if is_feature_enabled("narrative.translation_enabled", str(current_user.id), db):
+            try:
+                from services.narrative_translator import NarrativeTranslator
+                from services.narrative_memory import NarrativeMemory
+                from services.fitness_bank import FitnessBankCalculator
+                from services.training_load import TrainingLoadCalculator
+                
+                bank_calc = FitnessBankCalculator(db)
+                bank = bank_calc.calculate(current_user.id)
+                
+                load_calc = TrainingLoadCalculator(db)
+                load = load_calc.calculate_training_load(current_user.id)
+                
+                if bank and load:
+                    translator = NarrativeTranslator(db, current_user.id)
+                    memory = NarrativeMemory(db, current_user.id, use_redis=False)
+                    
+                    # Get all narratives for diagnostic summary
+                    all_narratives = translator.get_all_narratives(
+                        bank,
+                        tsb=load.current_tsb,
+                        ctl=load.current_ctl,
+                        atl=load.current_atl,
+                        max_count=5
+                    )
+                    
+                    # Pick fresh ones
+                    fresh = memory.pick_freshest(all_narratives, count=4)
+                    
+                    response["narratives"] = [
+                        {"text": n.text, "type": n.signal_type, "priority": n.priority}
+                        for n in fresh
+                    ]
+                    
+                    # Record as shown
+                    for n in fresh:
+                        memory.record_shown(n.hash, n.signal_type, "diagnostic")
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).debug(f"Narrative generation failed: {e}")
+                response["narratives"] = []
+        else:
+            response["narratives"] = []
+        
+        # Cache for 1 hour (3600 seconds)
+        set_cache(cache_key_str, response, ttl=3600)
+        
+        return response
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating diagnostic report: {str(e)}"
+        )
+

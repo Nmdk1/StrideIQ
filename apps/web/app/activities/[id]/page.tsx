@@ -21,6 +21,7 @@ import RunContextAnalysis from '@/components/activities/RunContextAnalysis';
 import { SplitsChart } from '@/components/activities/SplitsChart';
 import { PerceptionPrompt } from '@/components/activities/PerceptionPrompt';
 import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
+import { WhyThisRun } from '@/components/activities/WhyThisRun';
 
 interface Activity {
   id: string;
@@ -48,6 +49,9 @@ interface Activity {
   is_race: boolean | null;
   race_confidence: number | null;
   performance_percentage: number | null;
+  
+  // ADR-033: Narrative context
+  narrative: string | null;
 }
 
 interface Split {
@@ -108,11 +112,11 @@ export default function ActivityDetailPage() {
   // Show loading while auth is being determined
   if (authLoading || !isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gray-900 text-gray-100 p-8">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 p-8">
         <div className="max-w-4xl mx-auto">
           <div className="animate-pulse space-y-6">
-            <div className="h-10 bg-gray-800 rounded w-2/3"></div>
-            <div className="h-6 bg-gray-800 rounded w-1/3"></div>
+            <div className="h-10 bg-slate-800 rounded w-2/3"></div>
+            <div className="h-6 bg-slate-800 rounded w-1/3"></div>
           </div>
         </div>
       </div>
@@ -121,14 +125,14 @@ export default function ActivityDetailPage() {
 
   if (activityLoading) {
     return (
-      <div className="min-h-screen bg-gray-900 text-gray-100 p-8">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 p-8">
         <div className="max-w-4xl mx-auto">
           <div className="animate-pulse space-y-6">
-            <div className="h-10 bg-gray-800 rounded w-2/3"></div>
-            <div className="h-6 bg-gray-800 rounded w-1/3"></div>
+            <div className="h-10 bg-slate-800 rounded w-2/3"></div>
+            <div className="h-6 bg-slate-800 rounded w-1/3"></div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-24 bg-gray-800 rounded"></div>
+                <div key={i} className="h-24 bg-slate-800 rounded"></div>
               ))}
             </div>
           </div>
@@ -139,14 +143,14 @@ export default function ActivityDetailPage() {
 
   if (activityError || !activity) {
     return (
-      <div className="min-h-screen bg-gray-900 text-gray-100 p-8">
+      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 p-8">
         <div className="max-w-4xl mx-auto">
           <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-6">
             <h2 className="text-xl font-bold text-red-400 mb-2">Activity Not Found</h2>
-            <p className="text-gray-400">This activity could not be loaded.</p>
+            <p className="text-slate-400">This activity could not be loaded.</p>
             <button
               onClick={() => router.push('/dashboard')}
-              className="mt-4 px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700 transition-colors"
+              className="mt-4 px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 transition-colors"
             >
               Back to Dashboard
             </button>
@@ -190,13 +194,13 @@ export default function ActivityDetailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
+    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
           <button
             onClick={() => router.back()}
-            className="text-gray-400 hover:text-white mb-4 flex items-center gap-2 transition-colors"
+            className="text-slate-400 hover:text-white mb-4 flex items-center gap-2 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -205,7 +209,7 @@ export default function ActivityDetailPage() {
           </button>
           
           <h1 className="text-3xl font-bold text-white mb-2">{activity.name}</h1>
-          <p className="text-gray-400">
+          <p className="text-slate-400">
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
           </p>
           
@@ -236,11 +240,20 @@ export default function ActivityDetailPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </Link>
-            <p className="text-xs text-gray-500 mt-1.5">
+            <p className="text-xs text-slate-500 mt-1.5">
               See how this run compares to your similar efforts
             </p>
           </div>
         </div>
+
+        {/* Narrative Context - ADR-033 */}
+        {activity.narrative && (
+          <div className="mb-8 px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
+            <p className="text-sm text-slate-300 italic leading-relaxed">
+              &ldquo;{activity.narrative}&rdquo;
+            </p>
+          </div>
+        )}
 
         {/* Workout Type Classification */}
         <div className="mb-8">
@@ -297,7 +310,7 @@ export default function ActivityDetailPage() {
 
         {/* Splits Chart */}
         {splits && splits.length > 0 && (
-          <div className="bg-gray-800/50 rounded-lg p-6 mb-8">
+          <div className="bg-slate-800/50 rounded-lg p-6 mb-8">
             <h2 className="text-xl font-bold text-white mb-4">Splits</h2>
             <SplitsChart splits={splits} />
           </div>
@@ -315,6 +328,10 @@ export default function ActivityDetailPage() {
         {/* Run Context Analysis - The Core Intelligence */}
         <div className="mb-8">
           <h2 className="text-xl font-bold text-white mb-4">Context Analysis</h2>
+          {/* Why This Run? Attribution Analysis */}
+          <WhyThisRun activityId={activityId} className="mb-6" />
+          
+          {/* Run Context Analysis */}
           <RunContextAnalysis activityId={activityId} />
         </div>
       </div>
@@ -336,11 +353,11 @@ function MetricCard({
   secondary?: boolean;
 }) {
   return (
-    <div className={`rounded-lg p-4 ${secondary ? 'bg-gray-800/30' : 'bg-gray-800/50'}`}>
-      <p className="text-gray-400 text-sm mb-1">{label}</p>
-      <p className={`font-bold ${secondary ? 'text-xl text-gray-300' : 'text-2xl text-white'}`}>
+    <div className={`rounded-lg p-4 ${secondary ? 'bg-slate-800/30' : 'bg-slate-800/50'}`}>
+      <p className="text-slate-400 text-sm mb-1">{label}</p>
+      <p className={`font-bold ${secondary ? 'text-xl text-slate-300' : 'text-2xl text-white'}`}>
         {value}
-        {unit && <span className="text-gray-500 text-sm font-normal ml-1">{unit}</span>}
+        {unit && <span className="text-slate-500 text-sm font-normal ml-1">{unit}</span>}
       </p>
     </div>
   );

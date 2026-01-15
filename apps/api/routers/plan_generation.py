@@ -2289,8 +2289,11 @@ async def preview_constraint_aware_plan(
     
     Shows what we know about the athlete's capabilities and constraints
     before generating a plan. Does not consume rate limit.
+    
+    Includes personalized narratives (ADR-033) for key insights.
     """
     from services.fitness_bank import get_fitness_bank
+    from core.feature_flags import is_feature_enabled
     
     # Get fitness bank
     bank = get_fitness_bank(athlete.id, db)
@@ -2299,8 +2302,42 @@ async def preview_constraint_aware_plan(
     today = date.today()
     weeks_to_race = (race_date - today).days // 7
     
+    # Generate narratives (ADR-033)
+    narratives = []
+    if is_feature_enabled("narrative.translation_enabled", str(athlete.id), db):
+        try:
+            from services.narrative_translator import NarrativeTranslator
+            from services.narrative_memory import NarrativeMemory
+            from services.training_load import TrainingLoadCalculator
+            
+            translator = NarrativeTranslator(db, athlete.id)
+            memory = NarrativeMemory(db, athlete.id, use_redis=False)
+            load_calc = TrainingLoadCalculator(db)
+            load = load_calc.calculate_training_load(athlete.id)
+            
+            if load:
+                # Get all applicable narratives
+                all_narratives = translator.get_all_narratives(
+                    bank,
+                    tsb=load.current_tsb,
+                    ctl=load.current_ctl,
+                    atl=load.current_atl,
+                    max_count=4
+                )
+                
+                # Filter to fresh ones and take top 3
+                fresh = memory.pick_freshest(all_narratives, count=3)
+                
+                for n in fresh:
+                    narratives.append({"text": n.text, "type": n.signal_type})
+                    memory.record_shown(n.hash, n.signal_type, "plan_preview")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug(f"Narrative generation failed: {e}")
+    
     return {
         "fitness_bank": bank.to_dict(),
+        "narratives": narratives,  # ADR-033
         "race": {
             "date": race_date.isoformat(),
             "distance": race_distance,
