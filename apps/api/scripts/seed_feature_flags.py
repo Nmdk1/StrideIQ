@@ -196,6 +196,56 @@ REQUIRED_FLAGS = [
         "requires_payment": None,
         "rollout_percentage": 100,
     },
+    {
+        "key": "plan.model_driven_generation",
+        "name": "Model-Driven Plan Generation",
+        "description": "Individual performance model for personalized plan generation (ADR-022)",
+        "enabled": True,  # Enabled for beta elite users (ADR-027)
+        "requires_subscription": True,
+        "requires_tier": "elite",
+        "requires_payment": None,
+        "rollout_percentage": 100,  # Full rollout to elite tier
+    },
+    {
+        "key": "ab.model_vs_template",
+        "name": "A/B Test: Model vs Template Plans",
+        "description": "A/B testing for model-driven vs template plan generation (ADR-026)",
+        "enabled": False,  # Enable when ready to start A/B test
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 0,
+    },
+    {
+        "key": "cache.model_params",
+        "name": "Model Parameter Caching",
+        "description": "Cache individual model parameters in database (ADR-024)",
+        "enabled": True,  # Default enabled
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "api.model_driven_plans",
+        "name": "Model-Driven Plans API",
+        "description": "API endpoint for model-driven plan generation (ADR-025)",
+        "enabled": True,  # Enabled for beta
+        "requires_subscription": True,
+        "requires_tier": "elite",
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
+    {
+        "key": "narrative.translation_enabled",
+        "name": "Narrative Translation Layer",
+        "description": "Human-first narrative generation from signals (ADR-033)",
+        "enabled": True,  # Enabled for all users
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
 ]
 
 with engine.connect() as conn:
