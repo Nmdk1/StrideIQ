@@ -95,6 +95,7 @@ class HomeResponse(BaseModel):
     today: TodayWorkout
     yesterday: YesterdayInsight
     week: WeekProgress
+    hero_narrative: Optional[str] = None  # Hero sentence for first-3-seconds impact (ADR-033)
     strava_connected: bool = False  # Whether user has connected Strava
     has_any_activities: bool = False  # Whether user has any synced activities
     total_activities: int = 0  # Total number of activities
@@ -622,10 +623,54 @@ async def get_home_data(
     if current_user.last_strava_sync:
         last_sync = current_user.last_strava_sync.isoformat()
     
+    # Generate hero narrative (ADR-033)
+    hero_narrative = None
+    if is_feature_enabled("narrative.translation_enabled", str(current_user.id), db) and has_any_activities:
+        try:
+            from services.narrative_translator import NarrativeTranslator
+            from services.narrative_memory import NarrativeMemory
+            from services.fitness_bank import FitnessBankCalculator
+            from services.training_load import TrainingLoadCalculator
+            
+            # Get fitness bank and load data
+            bank_calc = FitnessBankCalculator(db)
+            bank = bank_calc.calculate(current_user.id)
+            
+            load_calc = TrainingLoadCalculator(db)
+            load = load_calc.calculate_training_load(current_user.id)
+            
+            if bank and load:
+                translator = NarrativeTranslator(db, current_user.id)
+                memory = NarrativeMemory(db, current_user.id, use_redis=False)
+                
+                # Build upcoming workout context if available
+                upcoming = None
+                if today_workout.has_workout:
+                    upcoming = {
+                        "workout_type": today_workout.workout_type,
+                        "name": today_workout.title
+                    }
+                
+                # Get hero narrative
+                narrative_obj = translator.get_hero_narrative(
+                    bank,
+                    tsb=load.current_tsb,
+                    ctl=load.current_ctl,
+                    atl=load.current_atl,
+                    upcoming_workout=upcoming
+                )
+                
+                if narrative_obj and not memory.recently_shown(narrative_obj.hash, days=1):
+                    hero_narrative = narrative_obj.text
+                    memory.record_shown(narrative_obj.hash, narrative_obj.signal_type, "home_hero")
+        except Exception as e:
+            logger.debug(f"Hero narrative generation failed: {e}")
+    
     return HomeResponse(
         today=today_workout,
         yesterday=yesterday_insight,
         week=week_progress,
+        hero_narrative=hero_narrative,
         strava_connected=strava_connected,
         has_any_activities=has_any_activities,
         total_activities=total_activities,

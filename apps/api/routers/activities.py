@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 from core.database import get_db
 from core.auth import get_current_user
+from core.feature_flags import is_feature_enabled
 from models import Activity, Athlete
 from schemas import ActivityResponse
 
@@ -240,7 +241,7 @@ def get_activity(
     """
     Get a single activity by ID with full details.
     
-    Includes workout classification and expected RPE if available.
+    Includes workout classification, expected RPE, and narrative context.
     Only returns activity if it belongs to the current user.
     """
     from services.workout_classifier import WorkoutClassifierService
@@ -267,6 +268,35 @@ def get_activity(
             expected_rpe_range = classifier.get_expected_rpe(workout_type, duration_min)
         except (ValueError, Exception):
             pass
+    
+    # Generate narrative context (ADR-033)
+    narrative = None
+    if is_feature_enabled("narrative.translation_enabled", str(current_user.id), db):
+        try:
+            from services.narrative_translator import NarrativeTranslator
+            from services.narrative_memory import NarrativeMemory
+            
+            translator = NarrativeTranslator(db, current_user.id)
+            memory = NarrativeMemory(db, current_user.id, use_redis=False)
+            
+            # Generate workout context narrative
+            if activity.workout_type:
+                pace = None
+                if activity.average_speed and float(activity.average_speed) > 0:
+                    pace = 26.8224 / float(activity.average_speed)
+                
+                narrative_obj = translator.narrate_workout_context(
+                    activity.workout_type,
+                    activity.name or "Run",
+                    pace
+                )
+                
+                if narrative_obj and not memory.recently_shown(narrative_obj.hash, days=7):
+                    narrative = narrative_obj.text
+                    memory.record_shown(narrative_obj.hash, narrative_obj.signal_type, "activity_detail")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug(f"Narrative generation failed: {e}")
     
     # Build response
     result = {
@@ -302,7 +332,58 @@ def get_activity(
         "temperature_f": activity.temperature_f,
         "humidity_pct": activity.humidity_pct,
         "weather_condition": activity.weather_condition,
+        
+        # Narrative context (ADR-033)
+        "narrative": narrative,
     }
     
     return result
+
+
+@router.get("/{activity_id}/attribution")
+def get_activity_attribution(
+    activity_id: str,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get attribution analysis for a specific activity - "Why This Run?"
+    
+    Aggregates signals from all analytics methods to explain the run's quality.
+    Includes pace decay, TSB status, pre-run state, efficiency comparison, and CS analysis.
+    
+    ADR-015: Why This Run? Activity Attribution
+    
+    Requires feature flag: analytics.run_attribution
+    """
+    from services.run_attribution import get_run_attribution, run_attribution_to_dict
+    
+    # Check feature flag
+    flag_enabled = is_feature_enabled("analytics.run_attribution", str(current_user.id), db)
+    
+    if not flag_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Run attribution feature is not enabled"
+        )
+    
+    # Validate activity_id format
+    try:
+        UUID(activity_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid activity ID format"
+        )
+    
+    # Get attribution
+    result = get_run_attribution(activity_id, str(current_user.id), db)
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Activity not found or no attribution available"
+        )
+    
+    return run_attribution_to_dict(result)
 
