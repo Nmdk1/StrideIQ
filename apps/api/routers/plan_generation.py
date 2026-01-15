@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from core.database import get_db
 from core.auth import get_current_athlete, get_current_athlete_optional
@@ -597,6 +597,94 @@ def _save_plan(
             coach_notes=workout.pace_description,
         )
         db.add(db_workout)
+    
+    db.commit()
+    
+    return db_plan
+
+
+def _save_model_driven_plan(
+    db: Session,
+    athlete_id: UUID,
+    plan,  # ModelDrivenPlan from model_driven_plan_generator
+) -> TrainingPlan:
+    """Save model-driven plan to database with all workouts."""
+    from models import TrainingPlan, PlannedWorkout
+    from datetime import datetime
+    
+    # Distance mapping
+    DISTANCE_METERS = {
+        "5k": 5000,
+        "10k": 10000,
+        "half_marathon": 21097,
+        "marathon": 42195
+    }
+    
+    # Archive any existing active plans
+    existing = db.query(TrainingPlan).filter(
+        TrainingPlan.athlete_id == athlete_id,
+        TrainingPlan.status == "active"
+    ).all()
+    
+    for p in existing:
+        p.status = "archived"
+    
+    # Create training plan
+    distance_m = DISTANCE_METERS.get(plan.race_distance, 42195)
+    
+    # Build plan name
+    race_distance_name = plan.race_distance.replace("_", " ").title()
+    plan_name = f"Model-Driven {race_distance_name} Plan"
+    
+    db_plan = TrainingPlan(
+        athlete_id=athlete_id,
+        name=plan_name,
+        status="active",
+        goal_race_date=plan.race_date,
+        goal_race_distance_m=distance_m,
+        plan_start_date=plan.weeks[0].start_date if plan.weeks else None,
+        plan_end_date=plan.race_date,
+        total_weeks=plan.total_weeks,
+        baseline_vdot=plan.prediction.projected_vdot if plan.prediction else None,
+        plan_type=plan.race_distance,
+        generation_method="model_driven",
+    )
+    
+    db.add(db_plan)
+    db.flush()  # Get the plan ID
+    
+    # Create planned workouts from weeks
+    for week in plan.weeks:
+        for day in week.days:
+            if day.workout_type == "rest":
+                continue  # Don't store rest days
+            
+            # Parse date
+            workout_date = datetime.strptime(day.date, "%Y-%m-%d").date() if isinstance(day.date, str) else day.date
+            
+            # Build personalization notes
+            coach_notes_parts = []
+            if day.target_pace:
+                coach_notes_parts.append(f"Target pace: {day.target_pace}")
+            if day.notes:
+                coach_notes_parts.extend(day.notes)
+            coach_notes = " | ".join(coach_notes_parts) if coach_notes_parts else None
+            
+            db_workout = PlannedWorkout(
+                plan_id=db_plan.id,
+                athlete_id=athlete_id,
+                scheduled_date=workout_date,
+                week_number=week.week_number,
+                day_of_week=workout_date.weekday(),
+                workout_type=day.workout_type,
+                title=day.name,
+                description=day.description,
+                phase=week.phase,
+                target_duration_minutes=int(day.target_tss / 0.8) if day.target_tss else None,  # Rough estimate
+                target_distance_km=round(day.target_miles * 1.609, 2) if day.target_miles else None,
+                coach_notes=coach_notes,
+            )
+            db.add(db_workout)
     
     db.commit()
     
@@ -1593,4 +1681,648 @@ async def get_workout_types(
             {"value": "rest", "label": "Rest Day", "description": "Full rest, no running"},
         ],
         "can_modify": _check_paid_tier(athlete, db),
+    }
+
+
+# ============ Model-Driven Plan Generation (ADR-025) ============
+
+class TuneUpRace(BaseModel):
+    """A tune-up race before the goal race."""
+    race_date: date = Field(..., description="Tune-up race date", alias="date")
+    distance: str = Field(..., description="Distance: 5k, 10k, 10_mile, half_marathon")
+    name: Optional[str] = Field(None, description="Race name")
+    purpose: str = Field("tune_up", description="Purpose: tune_up, threshold, sharpening, fitness_check")
+    
+    class Config:
+        populate_by_name = True
+
+
+class ModelDrivenPlanRequest(BaseModel):
+    """Request for model-driven personalized plan (ADR-022, ADR-025)."""
+    race_date: date = Field(..., description="Target race date")
+    race_distance: str = Field(..., description="Race distance: 5k, 10k, half_marathon, marathon")
+    goal_time_seconds: Optional[int] = Field(None, ge=600, description="Goal race time in seconds")
+    force_recalibrate: bool = Field(False, description="Force model recalibration")
+    tune_up_races: Optional[List[TuneUpRace]] = Field(None, description="Tune-up races before goal race")
+
+
+class ModelDrivenPlanResponse(BaseModel):
+    """Response for model-driven plan generation."""
+    plan_id: str
+    race: Dict[str, Any]
+    prediction: Dict[str, Any]
+    model: Dict[str, Any]
+    personalization: Dict[str, Any]
+    weeks: List[Dict[str, Any]]
+    generated_at: str
+
+
+# Rate limiting storage (in-memory, replace with Redis in production)
+_model_plan_rate_limit: Dict[str, List[datetime]] = {}
+MODEL_PLAN_RATE_LIMIT = 5  # 5 requests per day
+
+
+def _check_rate_limit(athlete_id: str) -> bool:
+    """Check if athlete has exceeded rate limit."""
+    from datetime import datetime, timedelta
+    
+    now = datetime.now()
+    cutoff = now - timedelta(hours=24)
+    
+    if athlete_id not in _model_plan_rate_limit:
+        _model_plan_rate_limit[athlete_id] = []
+    
+    # Clean old entries
+    _model_plan_rate_limit[athlete_id] = [
+        t for t in _model_plan_rate_limit[athlete_id] if t > cutoff
+    ]
+    
+    return len(_model_plan_rate_limit[athlete_id]) < MODEL_PLAN_RATE_LIMIT
+
+
+def _record_rate_limit(athlete_id: str) -> None:
+    """Record a rate limit hit."""
+    from datetime import datetime
+    
+    if athlete_id not in _model_plan_rate_limit:
+        _model_plan_rate_limit[athlete_id] = []
+    
+    _model_plan_rate_limit[athlete_id].append(datetime.now())
+
+
+@router.post("/model-driven", response_model=Dict[str, Any])
+async def create_model_driven_plan(
+    request: ModelDrivenPlanRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a model-driven personalized plan (ADR-022, ADR-025).
+    
+    Uses the Individual Performance Model to:
+    1. Calibrate τ1/τ2 from your training history
+    2. Calculate optimal load trajectory
+    3. Personalize taper based on pre-race fingerprint
+    4. Predict race time from fitness trajectory
+    
+    ELITE TIER ONLY. Rate limited to 5 requests/day.
+    """
+    import logging
+    from datetime import datetime
+    
+    logger = logging.getLogger(__name__)
+    start_time = datetime.now()
+    
+    # Check feature flag
+    flags = FeatureFlagService(db)
+    if not flags.is_enabled("plan.model_driven_generation", athlete):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "reason": "Model-driven plans require Elite subscription",
+                "upgrade_path": "/pricing"
+            }
+        )
+    
+    # Check tier
+    if athlete.subscription_tier not in ("elite", "premium", "guided"):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "reason": "Model-driven plans require Elite subscription",
+                "upgrade_path": "/pricing"
+            }
+        )
+    
+    # Check rate limit
+    if not _check_rate_limit(str(athlete.id)):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Maximum 5 model-driven plans per day."
+        )
+    
+    # Validate inputs
+    valid_distances = ["5k", "10k", "half_marathon", "marathon"]
+    if request.race_distance.lower() not in valid_distances:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid race_distance. Must be one of: {', '.join(valid_distances)}"
+        )
+    
+    today = date.today()
+    if request.race_date <= today:
+        raise HTTPException(
+            status_code=400,
+            detail="Race date must be in the future"
+        )
+    
+    max_weeks = 52
+    weeks_to_race = (request.race_date - today).days // 7
+    if weeks_to_race > max_weeks:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Race date too far in future (max {max_weeks} weeks)"
+        )
+    
+    if weeks_to_race < 4:
+        raise HTTPException(
+            status_code=400,
+            detail="Race date too close (minimum 4 weeks)"
+        )
+    
+    # Validate tune-up races if provided
+    tune_ups = None
+    if request.tune_up_races:
+        tune_ups = []
+        for tr in request.tune_up_races:
+            if tr.race_date >= request.race_date:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Tune-up race on {tr.race_date} must be before goal race on {request.race_date}"
+                )
+            if tr.race_date <= today:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Tune-up race on {tr.race_date} must be in the future"
+                )
+            tune_ups.append({
+                "date": tr.race_date,
+                "distance": tr.distance,
+                "name": tr.name,
+                "purpose": tr.purpose
+            })
+    
+    # Generate plan
+    try:
+        from services.model_driven_plan_generator import generate_model_driven_plan
+        
+        plan = generate_model_driven_plan(
+            athlete_id=athlete.id,
+            race_date=request.race_date,
+            race_distance=request.race_distance.lower(),
+            db=db,
+            goal_time_seconds=request.goal_time_seconds,
+            tune_up_races=tune_ups
+        )
+        
+        # Save plan to database
+        saved_plan = _save_model_driven_plan(db, athlete.id, plan)
+        
+        # Record rate limit
+        _record_rate_limit(str(athlete.id))
+        
+        # Log success
+        gen_time = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Model-driven plan generated for {athlete.id} in {gen_time:.2f}s, saved as {saved_plan.id}")
+        
+        # Convert to response
+        return {
+            "plan_id": str(saved_plan.id),
+            "race": {
+                "date": plan.race_date.isoformat(),
+                "distance": plan.race_distance,
+                "distance_m": plan.race_distance_m
+            },
+            "prediction": plan.prediction.to_dict(),
+            "model": {
+                "confidence": plan.model_confidence,
+                "tau1": round(plan.tau1, 1),
+                "tau2": round(plan.tau2, 1),
+                "insights": _generate_model_insights(plan.tau1, plan.tau2)
+            },
+            "personalization": {
+                "taper_start_week": plan.taper_start_week,
+                "notes": plan.counter_conventional_notes,
+                "summary": plan.personalization_summary
+            },
+            "weeks": [w.to_dict() for w in plan.weeks],
+            "summary": {
+                "total_weeks": plan.total_weeks,
+                "total_miles": round(plan.total_miles, 1),
+                "total_tss": round(plan.total_tss, 0)
+            },
+            "generated_at": plan.created_at.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Model-driven plan generation failed for {athlete.id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Plan generation failed: {str(e)}"
+        )
+
+
+def _generate_model_insights(tau1: float, tau2: float) -> List[str]:
+    """Generate human-readable insights from model parameters."""
+    insights = []
+    
+    if tau1 < 38:
+        insights.append(f"You adapt faster than average (τ1={tau1:.0f} vs typical 42 days)")
+    elif tau1 > 46:
+        insights.append(f"You benefit from longer training blocks (τ1={tau1:.0f} vs typical 42 days)")
+    
+    if tau2 < 6:
+        insights.append(f"You recover quickly from fatigue (τ2={tau2:.0f} vs typical 7 days)")
+    elif tau2 > 9:
+        insights.append(f"You need extra recovery time (τ2={tau2:.0f} vs typical 7 days)")
+    
+    # Optimal taper insight
+    optimal_taper = int(2.0 * tau2)
+    optimal_taper = max(7, min(21, optimal_taper))
+    insights.append(f"Your optimal taper length: {optimal_taper} days")
+    
+    return insights
+
+
+@router.get("/model-driven/preview")
+async def preview_model_driven_plan(
+    race_date: date,
+    race_distance: str,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Preview model insights without generating full plan.
+    
+    Returns model parameters and prediction without consuming rate limit.
+    Useful for UI to show "what you'll get" before generating.
+    """
+    from services.model_cache import get_or_calibrate_model_cached
+    from services.race_predictor import predict_race_time
+    
+    # Get cached model (don't force recalibrate for preview)
+    model = get_or_calibrate_model_cached(athlete.id, db, force_recalibrate=False)
+    
+    # Get race prediction
+    distance_m = {"5k": 5000, "10k": 10000, "half_marathon": 21097, "marathon": 42195}
+    prediction = predict_race_time(athlete.id, race_date, distance_m.get(race_distance.lower(), 42195), db)
+    
+    return {
+        "model": {
+            "confidence": model.confidence.value,
+            "tau1": round(model.tau1, 1),
+            "tau2": round(model.tau2, 1),
+            "insights": _generate_model_insights(model.tau1, model.tau2),
+            "can_calibrate": model.n_performance_markers >= 3
+        },
+        "prediction": prediction.to_dict() if prediction else None,
+        "race_date": race_date.isoformat(),
+        "race_distance": race_distance
+    }
+
+
+# ============ Constraint-Aware Plan Generation (ADR-030, ADR-031) ============
+
+class ConstraintAwarePlanRequest(BaseModel):
+    """Request for constraint-aware personalized plan (ADR-030, ADR-031).
+    
+    The Fitness Bank Framework analyzes your full training history to build
+    plans that respect your constraints while targeting your proven peak.
+    """
+    race_date: date = Field(..., description="Target race date")
+    race_distance: str = Field(..., description="Race distance: 5k, 10k, 10_mile, half_marathon, marathon")
+    goal_time_seconds: Optional[int] = Field(None, ge=600, description="Goal race time in seconds")
+    tune_up_races: Optional[List[TuneUpRace]] = Field(None, description="Tune-up races before goal race")
+    race_name: Optional[str] = Field(None, description="Goal race name")
+
+
+def _save_constraint_aware_plan(
+    db: Session,
+    athlete_id: UUID,
+    plan,  # ConstraintAwarePlan from constraint_aware_planner
+    race_name: Optional[str] = None,
+) -> TrainingPlan:
+    """Save constraint-aware plan to database with all workouts."""
+    from models import TrainingPlan, PlannedWorkout
+    from datetime import datetime
+    
+    # Distance mapping
+    DISTANCE_METERS = {
+        "5k": 5000,
+        "10k": 10000,
+        "10_mile": 16093,
+        "half_marathon": 21097,
+        "half": 21097,
+        "marathon": 42195
+    }
+    
+    # Archive any existing active plans
+    existing = db.query(TrainingPlan).filter(
+        TrainingPlan.athlete_id == athlete_id,
+        TrainingPlan.status == "active"
+    ).all()
+    
+    for p in existing:
+        p.status = "archived"
+    
+    # Create training plan
+    distance_m = DISTANCE_METERS.get(plan.race_distance, 42195)
+    
+    # Build plan name
+    race_distance_name = plan.race_distance.replace("_", " ").title()
+    plan_name = race_name if race_name else f"Constraint-Aware {race_distance_name} Plan"
+    
+    # Get fitness bank summary
+    fb = plan.fitness_bank
+    
+    db_plan = TrainingPlan(
+        athlete_id=athlete_id,
+        name=plan_name,
+        goal_race_name=race_name,
+        status="active",
+        goal_race_date=plan.race_date,
+        goal_race_distance_m=distance_m,
+        plan_start_date=plan.weeks[0].start_date if plan.weeks else None,
+        plan_end_date=plan.race_date,
+        total_weeks=plan.total_weeks,
+        baseline_vdot=fb.get("best_vdot") if isinstance(fb, dict) else None,
+        baseline_weekly_volume_km=round(fb.get("peak", {}).get("weekly_miles", 0) * 1.609, 1) if isinstance(fb, dict) else None,
+        plan_type=plan.race_distance,
+        generation_method="constraint_aware",
+    )
+    
+    db.add(db_plan)
+    db.flush()  # Get the plan ID
+    
+    # Create planned workouts from weeks
+    for week in plan.weeks:
+        for day in week.days:
+            if day.workout_type == "rest":
+                continue  # Don't store rest days
+            
+            # Calculate date for this day
+            workout_date = week.start_date + timedelta(days=day.day_of_week)
+            
+            # Build coach notes from paces and notes
+            coach_notes_parts = []
+            if day.paces:
+                pace_str = ", ".join(f"{k}: {v}/mi" for k, v in day.paces.items())
+                coach_notes_parts.append(f"Paces: {pace_str}")
+            if day.notes:
+                coach_notes_parts.extend(day.notes)
+            coach_notes = " | ".join(coach_notes_parts) if coach_notes_parts else None
+            
+            # Map intensity to phase for display
+            phase_map = {
+                "rebuild_easy": "rebuild",
+                "rebuild_strides": "rebuild", 
+                "build_t": "build",
+                "build_mp": "build",
+                "build_mixed": "build",
+                "recovery": "recovery",
+                "peak": "peak",
+                "sharpen": "peak",
+                "taper_1": "taper",
+                "taper_2": "taper",
+                "tune_up": "race",
+                "race": "race"
+            }
+            theme_val = week.theme.value if hasattr(week.theme, 'value') else str(week.theme)
+            phase = phase_map.get(theme_val, "build")
+            
+            db_workout = PlannedWorkout(
+                plan_id=db_plan.id,
+                athlete_id=athlete_id,
+                scheduled_date=workout_date,
+                week_number=week.week_number,
+                day_of_week=day.day_of_week,
+                workout_type=day.workout_type,
+                title=day.name,
+                description=day.description,
+                phase=phase,
+                target_duration_minutes=int(day.tss_estimate / 0.8) if day.tss_estimate else None,
+                target_distance_km=round(day.target_miles * 1.609, 2) if day.target_miles else None,
+                coach_notes=coach_notes,
+            )
+            db.add(db_workout)
+    
+    db.commit()
+    
+    return db_plan
+
+
+@router.post("/constraint-aware", response_model=Dict[str, Any])
+async def create_constraint_aware_plan(
+    request: ConstraintAwarePlanRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a constraint-aware personalized plan (ADR-030, ADR-031).
+    
+    Uses the Fitness Bank Framework to:
+    1. Analyze your FULL training history (peak capabilities, race performances)
+    2. Detect current constraints (injury, reduced volume, time gaps)
+    3. Calculate individual τ1/τ2 response characteristics
+    4. Generate week themes with proper alternation (T/MP/Recovery)
+    5. Prescribe specific workouts ("2x3mi @ 6:25" not "threshold work")
+    6. Handle tune-up races with proper coordination
+    
+    ELITE TIER ONLY. Rate limited to 5 requests/day.
+    
+    Key Features:
+    - Respects your detected training patterns (Sunday long runs, Thursday quality)
+    - Injury-aware: protects first 2-3 weeks if returning from break
+    - Personal paces from YOUR race performances (VDOT)
+    - Counter-conventional insights based on individual τ values
+    """
+    import logging
+    from datetime import datetime
+    
+    logger = logging.getLogger(__name__)
+    start_time = datetime.now()
+    
+    # Check feature flag
+    flags = FeatureFlagService(db)
+    if not flags.is_enabled("plan.model_driven_generation", athlete):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "reason": "Constraint-aware plans require Elite subscription",
+                "upgrade_path": "/pricing"
+            }
+        )
+    
+    # Check tier
+    if athlete.subscription_tier not in ("elite", "premium", "guided"):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "reason": "Constraint-aware plans require Elite subscription",
+                "upgrade_path": "/pricing"
+            }
+        )
+    
+    # Check rate limit
+    if not _check_rate_limit(str(athlete.id)):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Maximum 5 plans per day."
+        )
+    
+    # Validate inputs
+    valid_distances = ["5k", "10k", "10_mile", "half_marathon", "half", "marathon"]
+    if request.race_distance.lower() not in valid_distances:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid race_distance. Must be one of: {', '.join(valid_distances)}"
+        )
+    
+    today = date.today()
+    if request.race_date <= today:
+        raise HTTPException(
+            status_code=400,
+            detail="Race date must be in the future"
+        )
+    
+    max_weeks = 52
+    weeks_to_race = (request.race_date - today).days // 7
+    if weeks_to_race > max_weeks:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Race date too far in future (max {max_weeks} weeks)"
+        )
+    
+    if weeks_to_race < 4:
+        raise HTTPException(
+            status_code=400,
+            detail="Race date too close (minimum 4 weeks)"
+        )
+    
+    # Validate tune-up races if provided
+    tune_ups = None
+    if request.tune_up_races:
+        tune_ups = []
+        for tr in request.tune_up_races:
+            if tr.race_date >= request.race_date:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Tune-up race on {tr.race_date} must be before goal race on {request.race_date}"
+                )
+            if tr.race_date <= today:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Tune-up race on {tr.race_date} must be in the future"
+                )
+            tune_ups.append({
+                "date": tr.race_date,
+                "distance": tr.distance,
+                "name": tr.name,
+                "purpose": tr.purpose
+            })
+    
+    # Generate plan using Constraint-Aware Planner
+    try:
+        from services.constraint_aware_planner import generate_constraint_aware_plan
+        
+        plan = generate_constraint_aware_plan(
+            athlete_id=athlete.id,
+            race_date=request.race_date,
+            race_distance=request.race_distance.lower(),
+            db=db,
+            goal_time=str(request.goal_time_seconds) if request.goal_time_seconds else None,
+            tune_up_races=tune_ups
+        )
+        
+        # Save plan to database
+        saved_plan = _save_constraint_aware_plan(db, athlete.id, plan, race_name=request.race_name)
+        
+        # Record rate limit
+        _record_rate_limit(str(athlete.id))
+        
+        # Log success
+        gen_time = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Constraint-aware plan generated for {athlete.id} in {gen_time:.2f}s, saved as {saved_plan.id}")
+        
+        # Convert to response
+        return {
+            "success": True,
+            "plan_id": str(saved_plan.id),
+            "race": {
+                "date": plan.race_date.isoformat(),
+                "distance": plan.race_distance,
+                "name": request.race_name
+            },
+            "fitness_bank": plan.fitness_bank,
+            "model": {
+                "confidence": plan.model_confidence,
+                "tau1": round(plan.tau1, 1),
+                "tau2": round(plan.tau2, 1),
+                "insights": _generate_model_insights(plan.tau1, plan.tau2)
+            },
+            "prediction": {
+                "time": plan.predicted_time,
+                "confidence_interval": plan.prediction_ci
+            },
+            "personalization": {
+                "notes": plan.counter_conventional_notes,
+                "tune_up_races": plan.tune_up_races
+            },
+            "summary": {
+                "total_weeks": plan.total_weeks,
+                "total_miles": round(plan.total_miles, 1),
+                "peak_miles": round(max(w.total_miles for w in plan.weeks), 1) if plan.weeks else 0
+            },
+            "weeks": [w.to_dict() for w in plan.weeks],
+            "generated_at": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Constraint-aware plan generation failed for {athlete.id}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Plan generation failed: {str(e)}"
+        )
+
+
+@router.get("/constraint-aware/preview")
+async def preview_constraint_aware_plan(
+    race_date: date,
+    race_distance: str,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Preview Fitness Bank insights without generating full plan.
+    
+    Shows what we know about the athlete's capabilities and constraints
+    before generating a plan. Does not consume rate limit.
+    """
+    from services.fitness_bank import get_fitness_bank
+    
+    # Get fitness bank
+    bank = get_fitness_bank(athlete.id, db)
+    
+    # Calculate weeks to race
+    today = date.today()
+    weeks_to_race = (race_date - today).days // 7
+    
+    return {
+        "fitness_bank": bank.to_dict(),
+        "race": {
+            "date": race_date.isoformat(),
+            "distance": race_distance,
+            "weeks_out": weeks_to_race
+        },
+        "model": {
+            "tau1": round(bank.tau1, 1),
+            "tau2": round(bank.tau2, 1),
+            "experience": bank.experience_level.value,
+            "insights": _generate_model_insights(bank.tau1, bank.tau2)
+        },
+        "constraint": {
+            "type": bank.constraint_type.value,
+            "details": bank.constraint_details,
+            "returning": bank.is_returning_from_break
+        },
+        "projections": {
+            "weeks_to_race_ready": bank.weeks_to_race_ready,
+            "sustainable_peak": round(bank.sustainable_peak_weekly, 0)
+        },
+        "patterns": {
+            "long_run_day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][bank.typical_long_run_day] if bank.typical_long_run_day is not None else None,
+            "quality_day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][bank.typical_quality_day] if bank.typical_quality_day is not None else None
+        }
     }
