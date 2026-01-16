@@ -160,20 +160,37 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
       {/* Content area */}
       <div className="space-y-1.5">
         {/* Completed activities - show each separately */}
-        {isCompleted && sortedActivities.map((activity, idx) => (
-          <div key={activity.id || idx} className="flex items-center gap-1.5">
-            <span className="text-emerald-400 text-xs">✓</span>
-            <span className="text-sm font-medium text-white">
-              {formatDistance(activity.distance_m || 0, 1)}
-            </span>
-            {/* Show HR for each activity if available */}
-            {activity.avg_hr && (
-              <span className="text-[10px] text-slate-400">
-                HR {activity.avg_hr}
+        {isCompleted && sortedActivities.map((activity, idx) => {
+          // Calculate pace if we have distance and duration
+          let paceStr = '';
+          if (activity.distance_m && activity.duration_s && activity.distance_m > 0) {
+            const pacePerMile = activity.duration_s / (activity.distance_m / 1609.344);
+            const mins = Math.floor(pacePerMile / 60);
+            const secs = Math.floor(pacePerMile % 60);
+            paceStr = `${mins}:${secs.toString().padStart(2, '0')}/mi`;
+          }
+          
+          return (
+            <div key={activity.id || idx} className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-emerald-400 text-xs">✓</span>
+              <span className="text-sm font-medium text-white">
+                {formatDistance(activity.distance_m || 0, 1)}
               </span>
-            )}
-          </div>
-        ))}
+              {/* Pace - primary metric for runners */}
+              {paceStr && (
+                <span className="text-[10px] text-blue-400">
+                  {paceStr}
+                </span>
+              )}
+              {/* HR - secondary metric */}
+              {activity.avg_hr && (
+                <span className="text-[10px] text-slate-400">
+                  {activity.avg_hr}
+                </span>
+              )}
+            </div>
+          );
+        })}
         
         {/* Inline insight - only show if single activity (avoids clutter) */}
         {isCompleted && !hasMultipleActivities && day.inline_insight && (
