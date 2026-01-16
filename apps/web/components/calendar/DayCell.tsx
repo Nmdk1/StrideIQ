@@ -88,8 +88,9 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
   const workoutType = day.planned_workout?.workout_type || 'rest';
   const workoutInfo = getWorkoutInfo(workoutType);
   
-  // Calculate total distance for the day
-  const totalDistance = day.activities.reduce((sum, a) => sum + (a.distance_m || 0), 0);
+  // Sort activities by distance (longest first = primary)
+  const sortedActivities = [...day.activities].sort((a, b) => (b.distance_m || 0) - (a.distance_m || 0));
+  const hasMultipleActivities = day.activities.length > 1;
   
   // Compact mobile view
   if (compact) {
@@ -107,12 +108,12 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
           {dayNum}
         </div>
         
-        {/* Completed - show checkmark and distance */}
-        {isCompleted && (
-          <div className="text-[10px] text-emerald-400 font-medium">
-            ✓ {formatDistance(totalDistance, 0)}
+        {/* Completed - show each activity */}
+        {isCompleted && sortedActivities.map((activity, idx) => (
+          <div key={activity.id || idx} className="text-[10px] text-emerald-400 font-medium">
+            ✓ {formatDistance(activity.distance_m || 0, 0)}
           </div>
-        )}
+        ))}
         
         {/* Missed workout - past day with plan but no activity */}
         {isMissed && (
@@ -158,18 +159,24 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
       
       {/* Content area */}
       <div className="space-y-1.5">
-        {/* Completed activity - primary display */}
-        {isCompleted && (
-          <div className="flex items-center gap-1.5">
+        {/* Completed activities - show each separately */}
+        {isCompleted && sortedActivities.map((activity, idx) => (
+          <div key={activity.id || idx} className="flex items-center gap-1.5">
             <span className="text-emerald-400 text-xs">✓</span>
             <span className="text-sm font-medium text-white">
-              {formatDistance(totalDistance, 1)}
+              {formatDistance(activity.distance_m || 0, 1)}
             </span>
+            {/* Show HR for each activity if available */}
+            {activity.avg_hr && (
+              <span className="text-[10px] text-slate-400">
+                HR {activity.avg_hr}
+              </span>
+            )}
           </div>
-        )}
+        ))}
         
-        {/* Inline insight - key metric for the day */}
-        {isCompleted && day.inline_insight && (
+        {/* Inline insight - only show if single activity (avoids clutter) */}
+        {isCompleted && !hasMultipleActivities && day.inline_insight && (
           <div className={`text-[10px] ${
             day.inline_insight.sentiment === 'positive' ? 'text-emerald-400/80' :
             day.inline_insight.sentiment === 'negative' ? 'text-orange-400/80' :
