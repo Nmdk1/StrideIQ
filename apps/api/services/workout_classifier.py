@@ -242,15 +242,24 @@ class WorkoutClassifierService:
         # Check for progression pattern
         progression_detected = self._detect_progression(activity)
         
+        # Check for hard finish (high max_hr vs avg_hr)
+        hard_finish_detected = self._detect_hard_finish(activity)
+
         # Get HR zone if available
         hr_zone = self._calculate_hr_zone(avg_hr, athlete_thresholds)
-        
-        # Calculate intensity score
+
+        # Calculate intensity score (now includes max_hr consideration)
         intensity_score = self._calculate_intensity(
-            avg_pace_per_km, 
-            avg_hr, 
-            athlete_thresholds
+            avg_pace_per_km,
+            avg_hr,
+            athlete_thresholds,
+            max_hr=activity.max_hr
         )
+        
+        # If progression or hard finish detected, ensure intensity reflects it
+        if (progression_detected or hard_finish_detected) and intensity_score < 50:
+            # Boost intensity to at least "moderate" for structured efforts
+            intensity_score = max(intensity_score, 55)
         
         # Classify based on patterns and metrics
         if intervals_detected:
@@ -505,18 +514,39 @@ class WorkoutClassifierService:
         self,
         avg_pace_per_km: Optional[float],
         avg_hr: Optional[int],
-        thresholds: AthleteThresholds
+        thresholds: AthleteThresholds,
+        max_hr: Optional[int] = None
     ) -> float:
-        """Calculate intensity score 0-100"""
-        scores = []
+        """
+        Calculate intensity score 0-100.
         
+        Now considers max_hr in addition to avg_hr:
+        - High max_hr relative to avg_hr indicates hard efforts/finishes
+        - This prevents runs with moderate avg_hr but hard efforts from being
+          classified as "easy"
+        """
+        scores = []
+
         # HR-based intensity
         if avg_hr and thresholds.max_hr:
             hr_pct = (avg_hr / thresholds.max_hr) * 100
             # Map 60-100% HR to 0-100 intensity
             hr_intensity = max(0, min(100, (hr_pct - 60) * 2.5))
             scores.append(hr_intensity)
-        
+            
+            # Boost intensity if max_hr significantly exceeds avg_hr
+            # This catches progression runs, hard finishes, fartlek patterns
+            if max_hr and avg_hr:
+                hr_spread = (max_hr - avg_hr) / avg_hr if avg_hr > 0 else 0
+                # If max_hr is 15%+ above avg, this wasn't a truly easy run
+                if hr_spread > 0.15:  # e.g., avg 140, max 161+
+                    # Add intensity boost based on how high max went
+                    max_hr_pct = (max_hr / thresholds.max_hr) * 100
+                    if max_hr_pct > 85:  # Max HR hit threshold zone
+                        boost = min(20, (max_hr_pct - 85) * 2)  # Up to 20 point boost
+                        hr_intensity = min(100, hr_intensity + boost)
+                        scores[-1] = hr_intensity  # Update the HR intensity
+
         # Pace-based intensity (if we have threshold pace)
         if avg_pace_per_km and thresholds.threshold_pace_per_km:
             # Faster than threshold = higher intensity
@@ -525,8 +555,28 @@ class WorkoutClassifierService:
             pace_intensity = 100 - (pace_ratio - 0.8) * 200
             pace_intensity = max(0, min(100, pace_intensity))
             scores.append(pace_intensity)
-        
+
         return sum(scores) / len(scores) if scores else 50.0
+    
+    def _detect_hard_finish(self, activity: Activity) -> bool:
+        """
+        Detect if activity had a hard finish based on HR spread.
+        
+        A "hard finish" is when max_hr significantly exceeds avg_hr,
+        indicating the athlete pushed hard at the end even if the
+        overall average looks moderate.
+        """
+        if not activity.avg_hr or not activity.max_hr:
+            return False
+        
+        avg_hr = activity.avg_hr
+        max_hr = activity.max_hr
+        
+        # Calculate HR spread
+        hr_spread = (max_hr - avg_hr) / avg_hr if avg_hr > 0 else 0
+        
+        # If max is 15%+ above average AND max > 160, it was a hard finish
+        return hr_spread > 0.15 and max_hr > 160
     
     def _detect_intervals(self, activity: Activity) -> Tuple[bool, int, float]:
         """
@@ -600,43 +650,73 @@ class WorkoutClassifierService:
     def _detect_progression(self, activity: Activity) -> bool:
         """
         Detect if activity has progression pattern (negative splits).
-        
+
         Looks for consistently decreasing pace across the run.
+        
+        Enhanced detection for:
+        1. "Each mile faster than the last" pattern
+        2. Traditional negative split (last third faster than first)
+        3. Hard finish pattern (significant acceleration in final splits)
         """
         # Handle dynamic relationship - need to convert to list
         splits = list(activity.splits) if activity.splits else []
         if len(splits) < 3:
             return False
-        
+
         # Get pace for each split
         # ActivitySplit uses: distance (meters), moving_time (seconds)
         paces = []
         for split in splits:
             distance = float(split.distance) if split.distance else None
             moving_time = split.moving_time or split.elapsed_time
-            
+
             if distance and distance > 0 and moving_time:
                 pace_per_km = (moving_time / distance) * 1000
                 paces.append(pace_per_km)
-        
+
         if len(paces) < 3:
             return False
+
+        # PATTERN 1: "Each mile faster" - strong progression
+        # Count how many consecutive splits are faster than previous
+        consecutive_faster = 0
+        max_consecutive = 0
+        for i in range(1, len(paces)):
+            if paces[i] < paces[i-1]:
+                consecutive_faster += 1
+                max_consecutive = max(max_consecutive, consecutive_faster)
+            else:
+                consecutive_faster = 0
         
+        # If most splits (70%+) are consecutively faster, it's a clear progression
+        if max_consecutive >= len(paces) * 0.7:
+            return True
+        
+        # PATTERN 2: Traditional negative split
         # Compare first third to last third
         third = len(paces) // 3
         if third < 1:
-            return False
-        
+            third = 1
+
         first_third_avg = sum(paces[:third]) / third
         last_third_avg = sum(paces[-third:]) / third
-        
+
         # Last third should be at least 5% faster than first third
         if last_third_avg < first_third_avg * 0.95:
-            # Also check for consistent trend (not just fast finish)
+            # Check for general downward trend
             decreasing_count = sum(1 for i in range(1, len(paces)) if paces[i] < paces[i-1])
             if decreasing_count >= len(paces) * 0.5:
                 return True
         
+        # PATTERN 3: Hard finish - last split(s) significantly faster
+        # Even without overall progression, a big acceleration at end signals quality
+        if len(paces) >= 3:
+            last_pace = paces[-1]
+            avg_early = sum(paces[:-1]) / (len(paces) - 1)
+            # Last split 10%+ faster than rest = hard finish/progression
+            if last_pace < avg_early * 0.90:
+                return True
+
         return False
     
     def _classify_race(
@@ -721,19 +801,28 @@ class WorkoutClassifierService:
         """Classify a progression run"""
         distance_km = (activity.distance_m or 0) / 1000
         duration_min = (activity.duration_s or 0) / 60
-        
+
         if distance_km > 25:
             workout_type = WorkoutType.FAST_FINISH_LONG
         else:
             workout_type = WorkoutType.PROGRESSION_RUN
-        
+
         expected_rpe = self.get_expected_rpe(workout_type, duration_min)
         
+        # Build reasoning with HR context
+        reasoning = "Negative split pattern detected — pace increased throughout"
+        
+        # Add HR context if we have max vs avg spread
+        if activity.avg_hr and activity.max_hr:
+            hr_spread_pct = ((activity.max_hr - activity.avg_hr) / activity.avg_hr) * 100
+            if hr_spread_pct > 15:
+                reasoning += f" (max HR {activity.max_hr} vs avg {activity.avg_hr} shows hard finish)"
+
         return WorkoutClassification(
             workout_type=workout_type,
             workout_zone=WorkoutZone.MIXED,
-            confidence=0.75,
-            reasoning="Negative split/progression pattern detected",
+            confidence=0.80,  # Higher confidence with enhanced detection
+            reasoning=reasoning,
             detected_intervals=False,
             detected_progression=True,
             avg_hr_zone=hr_zone,
