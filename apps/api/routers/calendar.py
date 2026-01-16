@@ -266,20 +266,21 @@ def generate_inline_insight(activities: List[Activity], planned: Optional[Planne
         # Would need baseline comparison - placeholder
         pass
     
-    # HR-based insight
+    # HR-based insight - always show when available for consistency
+    # Inconsistent display (only notable HR) creates user confusion
     if activity.avg_hr:
         if activity.avg_hr < 135:
-            return InlineInsight(
-                metric='hr',
-                value=f'HR {activity.avg_hr}',
-                sentiment='positive'
-            )
+            sentiment = 'positive'  # Low HR = good aerobic efficiency
         elif activity.avg_hr > 165:
-            return InlineInsight(
-                metric='hr',
-                value=f'HR {activity.avg_hr}',
-                sentiment='negative'
-            )
+            sentiment = 'negative'  # High HR = worth noting
+        else:
+            sentiment = 'neutral'   # Normal range
+        
+        return InlineInsight(
+            metric='hr',
+            value=f'HR {activity.avg_hr}',
+            sentiment=sentiment
+        )
     
     # Pace-based insight
     if activity.distance_m and activity.duration_s and activity.distance_m > 0:
