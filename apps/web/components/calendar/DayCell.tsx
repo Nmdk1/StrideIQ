@@ -78,6 +78,13 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
   const hasPlanned = !!day.planned_workout;
   const isCompleted = day.status === 'completed' || hasActivities;
   
+  // Detect if this is a past day with a missed workout
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayDate = new Date(day.date + 'T00:00:00');
+  const isPast = dayDate < today;
+  const isMissed = isPast && hasPlanned && !hasActivities;
+  
   const workoutType = day.planned_workout?.workout_type || 'rest';
   const workoutInfo = getWorkoutInfo(workoutType);
   
@@ -107,8 +114,15 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
           </div>
         )}
         
-        {/* Planned but not completed - show workout type */}
-        {hasPlanned && !isCompleted && (
+        {/* Missed workout - past day with plan but no activity */}
+        {isMissed && (
+          <div className="text-[10px] font-medium text-slate-500 line-through">
+            {workoutInfo.label}
+          </div>
+        )}
+        
+        {/* Planned but not completed - show workout type (future days only) */}
+        {hasPlanned && !isCompleted && !isMissed && (
           <div className={`text-[10px] font-medium ${workoutInfo.color}`}>
             {workoutInfo.label}
           </div>
@@ -165,8 +179,25 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
           </div>
         )}
         
-        {/* Planned workout - secondary if completed, primary if not */}
-        {hasPlanned && day.planned_workout && (
+        {/* Missed workout - past day with plan but no activity */}
+        {isMissed && day.planned_workout && (
+          <div className="overflow-hidden opacity-60">
+            <div className="text-xs font-medium text-slate-500 truncate line-through">
+              {workoutInfo.label}
+              {day.planned_workout.target_distance_km && (
+                <span className="text-slate-600 ml-1">
+                  {formatDistance(day.planned_workout.target_distance_km * 1000, 0)}
+                </span>
+              )}
+            </div>
+            <div className="text-[10px] text-slate-600 mt-0.5">
+              Missed
+            </div>
+          </div>
+        )}
+        
+        {/* Planned workout - secondary if completed, primary if not (future days only) */}
+        {hasPlanned && day.planned_workout && !isMissed && (
           <div className={`${isCompleted ? 'opacity-50' : ''} overflow-hidden`}>
             <div className={`text-xs font-medium ${workoutInfo.color} truncate`}>
               {workoutInfo.label}
