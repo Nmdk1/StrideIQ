@@ -163,11 +163,24 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
         {isCompleted && sortedActivities.map((activity, idx) => {
           // Calculate pace if we have distance and duration
           let paceStr = '';
+          let durationStr = '';
+          
+          if (activity.duration_s) {
+            const hours = Math.floor(activity.duration_s / 3600);
+            const mins = Math.floor((activity.duration_s % 3600) / 60);
+            const secs = Math.floor(activity.duration_s % 60);
+            if (hours > 0) {
+              durationStr = `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            } else {
+              durationStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+            }
+          }
+          
           if (activity.distance_m && activity.duration_s && activity.distance_m > 0) {
             const pacePerMile = activity.duration_s / (activity.distance_m / 1609.344);
             const mins = Math.floor(pacePerMile / 60);
             const secs = Math.floor(pacePerMile % 60);
-            paceStr = `${mins}:${secs.toString().padStart(2, '0')}/mi`;
+            paceStr = `${mins}:${secs.toString().padStart(2, '0')}`;
           }
           
           return (
@@ -176,16 +189,22 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
               <span className="text-sm font-medium text-white">
                 {formatDistance(activity.distance_m || 0, 1)}
               </span>
-              {/* Pace - primary metric for runners */}
-              {paceStr && (
-                <span className="text-[10px] text-blue-400">
-                  {paceStr}
+              {/* Duration */}
+              {durationStr && (
+                <span className="text-[10px] text-slate-300">
+                  {durationStr}
                 </span>
               )}
-              {/* HR - secondary metric */}
+              {/* Pace */}
+              {paceStr && (
+                <span className="text-[10px] text-blue-400">
+                  {paceStr}/mi
+                </span>
+              )}
+              {/* HR */}
               {activity.avg_hr && (
-                <span className="text-[10px] text-slate-400">
-                  {activity.avg_hr}
+                <span className="text-[10px] text-slate-500">
+                  ♥{activity.avg_hr}
                 </span>
               )}
             </div>
