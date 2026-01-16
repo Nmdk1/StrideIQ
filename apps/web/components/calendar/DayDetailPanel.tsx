@@ -36,7 +36,10 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
   const [coachMessage, setCoachMessage] = useState('');
   const [coachResponse, setCoachResponse] = useState('');
   
-  const dateObj = new Date(date);
+  // Parse date as local timezone (not UTC) to avoid off-by-one errors
+  // "2026-01-16" should display as Jan 16 regardless of timezone
+  const [year, month, day] = date.split('-').map(Number);
+  const dateObj = new Date(year, month - 1, day); // month is 0-indexed
   const formattedDate = dateObj.toLocaleDateString('en-US', { 
     weekday: 'long', 
     month: 'long', 
