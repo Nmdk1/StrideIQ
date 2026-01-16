@@ -211,16 +211,7 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
           );
         })}
         
-        {/* Inline insight - only show if single activity (avoids clutter) */}
-        {isCompleted && !hasMultipleActivities && day.inline_insight && (
-          <div className={`text-[10px] ${
-            day.inline_insight.sentiment === 'positive' ? 'text-emerald-400/80' :
-            day.inline_insight.sentiment === 'negative' ? 'text-orange-400/80' :
-            'text-slate-400'
-          }`}>
-            {day.inline_insight.value}
-          </div>
-        )}
+        {/* Inline insight removed - metrics now shown directly on each activity */}
         
         {/* Missed workout - past day with plan but no activity */}
         {isMissed && day.planned_workout && (
