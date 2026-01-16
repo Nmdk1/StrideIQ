@@ -195,30 +195,76 @@ class TestModelCalibration:
         assert confidence == ModelConfidence.LOW
     
     def test_optimal_taper_calculation(self, mock_db):
-        """Test optimal taper days calculation from model parameters."""
-        # Model with fast fatigue decay (τ2 = 5)
-        fast_recovery_model = BanisterModel(
+        """
+        Test optimal taper days calculation from model parameters.
+        
+        Taper is now τ1-aware (ADR-034 Phase 1):
+        - Fast adapters (τ1 < 30): 1.75 × τ2, bounded 7-14 days
+        - Moderate adapters (30 ≤ τ1 < 40): 2.0 × τ2, bounded 10-18 days
+        - Slow adapters (τ1 ≥ 40): 2.25 × τ2, bounded 14-21 days
+        """
+        # Fast adapter (τ1 = 25) with fast recovery (τ2 = 5)
+        # Expected: 1.75 * 5 = 8.75 → 8, bounded to 7-14 → 8
+        fast_adapter_model = BanisterModel(
             athlete_id="test",
-            tau1=40, tau2=5, k1=1, k2=2, p0=50,
+            tau1=25, tau2=5, k1=1, k2=2, p0=50,
+            fit_error=0, r_squared=0.8,
+            n_performance_markers=5, n_training_days=180,
+            confidence=ModelConfidence.HIGH
+        )
+        taper_days = fast_adapter_model.calculate_optimal_taper_days()
+        assert 7 <= taper_days <= 14, f"Fast adapter should get 7-14 day taper, got {taper_days}"
+        
+        # Fast adapter with normal recovery (τ2 = 7)
+        # Expected: 1.75 * 7 = 12.25 → 12, bounded to 7-14 → 12
+        fast_adapter_normal_recovery = BanisterModel(
+            athlete_id="test",
+            tau1=25, tau2=7, k1=1, k2=2, p0=50,
+            fit_error=0, r_squared=0.8,
+            n_performance_markers=5, n_training_days=180,
+            confidence=ModelConfidence.HIGH
+        )
+        taper_days = fast_adapter_normal_recovery.calculate_optimal_taper_days()
+        assert taper_days == 12, f"Expected 12 day taper for τ1=25/τ2=7, got {taper_days}"
+        
+        # Moderate adapter (τ1 = 35) with normal recovery (τ2 = 7)
+        # Expected: 2.0 * 7 = 14, bounded to 10-18 → 14
+        moderate_adapter_model = BanisterModel(
+            athlete_id="test",
+            tau1=35, tau2=7, k1=1, k2=2, p0=50,
+            fit_error=0, r_squared=0.8,
+            n_performance_markers=5, n_training_days=180,
+            confidence=ModelConfidence.HIGH
+        )
+        taper_days = moderate_adapter_model.calculate_optimal_taper_days()
+        assert 10 <= taper_days <= 18, f"Moderate adapter should get 10-18 day taper, got {taper_days}"
+        
+        # Slow adapter (τ1 = 50) with slow recovery (τ2 = 10)
+        # Expected: 2.25 * 10 = 22.5 → 22, bounded to 14-21 → 21
+        slow_adapter_model = BanisterModel(
+            athlete_id="test",
+            tau1=50, tau2=10, k1=1, k2=2, p0=50,
+            fit_error=0, r_squared=0.8,
+            n_performance_markers=5, n_training_days=180,
+            confidence=ModelConfidence.HIGH
+        )
+        taper_days = slow_adapter_model.calculate_optimal_taper_days()
+        assert 14 <= taper_days <= 21, f"Slow adapter should get 14-21 day taper, got {taper_days}"
+        
+    def test_taper_rationale_generation(self, mock_db):
+        """Test that taper rationale explains τ1-based reasoning."""
+        fast_model = BanisterModel(
+            athlete_id="test",
+            tau1=25, tau2=7, k1=1, k2=2, p0=50,
             fit_error=0, r_squared=0.8,
             n_performance_markers=5, n_training_days=180,
             confidence=ModelConfidence.HIGH
         )
         
-        taper_days = fast_recovery_model.calculate_optimal_taper_days()
-        assert taper_days == 10  # ~2 * τ2
-        
-        # Model with slow fatigue decay (τ2 = 10)
-        slow_recovery_model = BanisterModel(
-            athlete_id="test",
-            tau1=45, tau2=10, k1=1, k2=2, p0=50,
-            fit_error=0, r_squared=0.8,
-            n_performance_markers=5, n_training_days=180,
-            confidence=ModelConfidence.HIGH
-        )
-        
-        taper_days = slow_recovery_model.calculate_optimal_taper_days()
-        assert taper_days == 20  # ~2 * τ2
+        rationale = fast_model.get_taper_rationale()
+        assert "25" in rationale or "fast" in rationale.lower()
+        assert "taper" in rationale.lower()
+        assert len(rationale) > 20
 
 
 # =============================================================================

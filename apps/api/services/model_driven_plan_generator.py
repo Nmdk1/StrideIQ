@@ -90,9 +90,10 @@ class DayPlan:
     target_pace: Optional[str] = None
     intensity: str = "easy"
     notes: List[str] = field(default_factory=list)
+    rationale: Optional[str] = None  # Why this workout on this day
     
     def to_dict(self) -> Dict:
-        return {
+        result = {
             "date": self.date.isoformat(),
             "day_of_week": self.day_of_week,
             "workout_type": self.workout_type,
@@ -104,6 +105,9 @@ class DayPlan:
             "intensity": self.intensity,
             "notes": self.notes
         }
+        if self.rationale:
+            result["rationale"] = self.rationale
+        return result
 
 
 @dataclass
@@ -697,13 +701,16 @@ class ModelDrivenPlanGenerator:
         
         Source: TRAINING_PHILOSOPHY.md - T-work in build, max 1-2 quality sessions
         Source: PLAN_GENERATION_FRAMEWORK.md Rule A3 - Never 3 hard days
+        
+        Enhancement: Add strides to 1 easy day for neuromuscular maintenance
+        without additional fatigue. Strides are NOT quality - they're 80% work.
         """
         return [
             {"day": 0, "type": "rest", "tss_pct": 0},       # Rest (Monday)
-            {"day": 1, "type": "easy", "tss_pct": 0.14},    # Easy (Tuesday)
-            {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday)
+            {"day": 1, "type": "easy_strides", "tss_pct": 0.14},  # Easy + strides (Tuesday) - neuromuscular
+            {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday) - pre-quality rest
             {"day": 3, "type": "quality", "tss_pct": 0.14}, # Threshold (Thursday) - single quality
-            {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday)
+            {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday) - recovery
             {"day": 5, "type": "easy", "tss_pct": 0.16},    # Medium-long easy (Saturday)
             {"day": 6, "type": "long", "tss_pct": 0.30},    # Long run (Sunday) - can have MP finish
         ]
@@ -717,14 +724,17 @@ class ModelDrivenPlanGenerator:
         - Quality: ~25% (race-specific + MP in long)
         
         Source: TRAINING_PHILOSOPHY.md - MP work placed inside long runs
+        
+        Enhancement: Add strides to maintain turnover and neuromuscular sharpness.
+        Critical for race readiness - these are NOT fatiguing.
         """
         return [
             {"day": 0, "type": "rest", "tss_pct": 0},       # Rest (Monday)
-            {"day": 1, "type": "easy", "tss_pct": 0.14},    # Easy (Tuesday)
-            {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday)
+            {"day": 1, "type": "easy_strides", "tss_pct": 0.14},  # Easy + strides (Tuesday) - stay sharp
+            {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday) - pre-quality
             {"day": 3, "type": "quality", "tss_pct": 0.14}, # Race pace (Thursday)
-            {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday)
-            {"day": 5, "type": "easy", "tss_pct": 0.16},    # Medium easy (Saturday)
+            {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday) - recovery
+            {"day": 5, "type": "easy", "tss_pct": 0.16},    # Medium easy (Saturday) - pre-long run
             {"day": 6, "type": "long", "tss_pct": 0.30},    # Long run with MP (Sunday)
         ]
     
@@ -733,17 +743,18 @@ class ModelDrivenPlanGenerator:
         Get taper phase week structure.
         
         Distribution: Mostly easy with light sharpening
+        Volume drops, intensity maintained through strides and short bursts.
         
         Source: TRAINING_PHILOSOPHY.md - Taper maintains some intensity, reduces volume
         """
         return [
-            {"day": 0, "type": "rest", "tss_pct": 0},       # Rest (Monday)
-            {"day": 1, "type": "easy", "tss_pct": 0.18},    # Easy (Tuesday)
-            {"day": 2, "type": "sharpening", "tss_pct": 0.18},  # Light sharpening (Wednesday)
-            {"day": 3, "type": "easy", "tss_pct": 0.16},    # Easy (Thursday)
-            {"day": 4, "type": "easy", "tss_pct": 0.16},    # Easy (Friday)
-            {"day": 5, "type": "rest", "tss_pct": 0},       # Rest (Saturday)
-            {"day": 6, "type": "long", "tss_pct": 0.32},    # Reduced long (Sunday)
+            {"day": 0, "type": "rest", "tss_pct": 0},            # Rest (Monday)
+            {"day": 1, "type": "easy_strides", "tss_pct": 0.18}, # Easy + strides (Tuesday) - stay sharp
+            {"day": 2, "type": "sharpening", "tss_pct": 0.18},   # Light sharpening (Wednesday)
+            {"day": 3, "type": "easy", "tss_pct": 0.16},         # Easy (Thursday)
+            {"day": 4, "type": "easy_strides", "tss_pct": 0.16}, # Easy + strides (Friday) - maintain turnover
+            {"day": 5, "type": "rest", "tss_pct": 0},            # Rest (Saturday)
+            {"day": 6, "type": "long", "tss_pct": 0.32},         # Reduced long (Sunday)
         ]
     
     def _get_race_week_structure(self) -> List[Dict]:
@@ -849,47 +860,77 @@ class ModelDrivenPlanGenerator:
             )
         
         elif workout_type == "easy_strides":
-            # Easy run with strides at end - base phase speed work
-            # Source: TRAINING_PHILOSOPHY.md - Strides in base phase for neuromuscular
+            # Easy run with strides at end - neuromuscular work without fatigue
+            # Source: TRAINING_PHILOSOPHY.md - Strides for turnover and form
             miles = target_tss * TSS_TO_MILES_EASY
             return DayPlan(
                 date=date,
                 day_of_week=day_of_week,
-                workout_type="easy",  # Counts as easy for 80/20
+                workout_type="easy",  # Counts as easy for 80/20 - strides don't add significant stress
                 name="Easy Run + Strides",
-                description=f"Easy run at {paces.get('e_pace', 'easy pace')}, then 4-6 × 20s strides (fast but relaxed).",
+                description=(
+                    f"Easy run at {paces.get('e_pace', 'easy pace')}, then 6×20s strides. "
+                    f"Strides: accelerate smoothly to ~90% effort over 15-20 seconds, "
+                    f"hold 5 seconds, decelerate. Walk back to start. Stay relaxed, not sprinting."
+                ),
                 target_tss=target_tss,
                 target_miles=miles,
                 target_pace=paces.get('e_pace'),
                 intensity="easy",
-                notes=["Strides: 20 seconds fast, walk back recovery", "Not sprinting - smooth and relaxed"]
+                notes=[
+                    "Strides maintain leg speed without fatigue",
+                    "Focus on quick, light turnover - not max effort",
+                    "Full recovery between each (60-90 seconds)"
+                ],
+                rationale=(
+                    "Strides preserve neuromuscular coordination and leg speed during aerobic-focused training. "
+                    "Too short to cause fatigue, but enough to prevent 'dead legs' from only easy running."
+                )
             )
         
         elif workout_type == "quality":
             miles = target_tss * TSS_TO_MILES_QUALITY
             if phase == TrainingPhase.BUILD:
+                # TERMINOLOGY: Threshold = intervals with recovery (3x10min w/ 2min jog)
+                # Tempo = continuous sustained (25min straight)
+                # We prescribe threshold intervals - they're more manageable and effective
                 return DayPlan(
                     date=date,
                     day_of_week=day_of_week,
                     workout_type="threshold",
-                    name="Threshold Workout",
-                    description=f"Warm up, then tempo at {paces.get('t_pace', 'threshold pace')}.",
+                    name="Threshold Intervals",
+                    description=(
+                        f"Warm up 2mi easy. Main set: 3×10min at {paces.get('t_pace', 'threshold pace')} "
+                        f"with 2min easy jog recovery. Cool down 1mi easy. "
+                        f"Comfortably hard - you could speak in short phrases."
+                    ),
                     target_tss=target_tss,
                     target_miles=miles,
                     target_pace=paces.get('t_pace'),
-                    intensity="hard"
+                    intensity="hard",
+                    rationale=(
+                        "Threshold intervals build lactate clearance capacity. "
+                        "Breaking into segments makes the effort sustainable while achieving same adaptation."
+                    )
                 )
             else:  # PEAK
                 return DayPlan(
                     date=date,
                     day_of_week=day_of_week,
                     workout_type="race_pace",
-                    name="Race Pace Work",
-                    description=f"Race-specific work at {paces.get('m_pace', 'marathon pace')}.",
+                    name="Goal Pace Rehearsal",
+                    description=(
+                        f"Warm up 2mi easy. Main set: 4-5mi at {paces.get('m_pace', 'goal race pace')}. "
+                        f"Cool down 1mi easy. Practice race-day pacing and form."
+                    ),
                     target_tss=target_tss,
                     target_miles=miles,
                     target_pace=paces.get('m_pace'),
-                    intensity="moderate"
+                    intensity="moderate",
+                    rationale=(
+                        "Goal pace work in peak phase locks in race-day rhythm. "
+                        "This is dress rehearsal - same pace you'll run on race day."
+                    )
                 )
         
         elif workout_type == "sharpening":
@@ -1009,11 +1050,22 @@ class ModelDrivenPlanGenerator:
                     day_of_week=day_of_week,
                     workout_type="long_run",
                     name=f"Long Run with {mp_miles}mi @ MP",
-                    description=f"Start easy, finish last {mp_miles} miles at {paces.get('m_pace', 'marathon pace')}.",
+                    description=(
+                        f"Start easy for first {round(miles - mp_miles, 0):.0f} miles at {paces.get('e_pace', 'easy pace')}. "
+                        f"Final {mp_miles} miles at {paces.get('m_pace', 'marathon pace')}."
+                    ),
                     target_tss=target_tss,
                     target_miles=miles,
                     target_pace=paces.get('e_pace'),
-                    intensity="moderate"
+                    intensity="moderate",
+                    rationale=(
+                        f"Marathon pace at the END of a long run when fatigued teaches your body to "
+                        f"hold pace on tired legs - exactly what you'll face in the race. "
+                        f"Your {proven_mp:.0f}mi @ MP history shows you can handle {mp_miles}mi in build phase."
+                        if proven_mp > 0 else
+                        f"Marathon pace at the END of a long run when fatigued teaches your body to "
+                        f"hold pace on tired legs - exactly what you'll face in the race."
+                    )
                 )
             elif phase == TrainingPhase.PEAK and race_distance in ("marathon", "half_marathon"):
                 # ========================================
@@ -1048,12 +1100,20 @@ class ModelDrivenPlanGenerator:
                     date=date,
                     day_of_week=day_of_week,
                     workout_type="long_run",
-                    name=f"Long Run with {mp_miles}mi @ MP",
-                    description=f"Build to {paces.get('m_pace', 'marathon pace')} for middle or finish portion. Race simulation.",
+                    name=f"Peak Long Run: {mp_miles}mi @ MP",
+                    description=(
+                        f"Dress rehearsal for race day. Start easy, then {mp_miles} miles at "
+                        f"{paces.get('m_pace', 'marathon pace')}. Practice race nutrition and pacing."
+                    ),
                     target_tss=target_tss,
                     target_miles=miles,
                     target_pace=paces.get('e_pace'),
-                    intensity="moderate"
+                    intensity="moderate",
+                    rationale=(
+                        "This is your final race simulation. The longest MP portion of the cycle confirms "
+                        "you can hold goal pace for extended distance. This builds both physical and "
+                        "psychological confidence for race day."
+                    )
                 )
             elif phase == TrainingPhase.TAPER:
                 return DayPlan(

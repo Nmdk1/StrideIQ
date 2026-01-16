@@ -147,21 +147,70 @@ class BanisterModel:
         Taper should be long enough for fatigue to clear,
         but short enough that fitness doesn't decay too much.
         
-        Heuristic: ~2-3 × τ2 gives significant fatigue reduction
-        while CTL loss is ~(1 - e^(-taper/τ1)) which is small for taper << τ1
+        Key insight: τ1 (fitness time constant) matters for taper LENGTH.
+        - Fast adapters (low τ1) lose fitness faster → shorter taper
+        - Slow adapters (high τ1) retain fitness longer → can taper longer
+        
+        τ2 (fatigue time constant) determines minimum taper for recovery.
+        
+        Formula:
+        - Base: 2 × τ2 (for 80% fatigue clearance)
+        - Adjust: Constrain by τ1 (don't let fitness decay >10%)
+        - For 10% fitness loss: t = -τ1 × ln(0.9) ≈ 0.105 × τ1
         """
-        # Target: 80% fatigue reduction, <10% fitness loss
-        # Fatigue at time t: ATL(0) * e^(-t/τ2)
-        # For 80% reduction: e^(-t/τ2) = 0.2 → t = -τ2 * ln(0.2) = 1.6 * τ2
+        import math
         
-        # Fitness at time t: CTL(0) * e^(-t/τ1)
-        # For 10% loss: e^(-t/τ1) = 0.9 → t = -τ1 * ln(0.9) = 0.105 * τ1
+        # Fatigue-based minimum: ~2 × τ2 for 80% clearance
+        fatigue_based = 2.0 * self.tau2
         
-        # Balance: ~2 * τ2 is usually good
-        taper_days = int(2.0 * self.tau2)
+        # Fitness-based maximum: Don't lose more than 10% fitness
+        # e^(-t/τ1) = 0.9 → t = -τ1 × ln(0.9) ≈ 0.105 × τ1
+        fitness_based_max = 0.105 * self.tau1
         
-        # Bound to reasonable range
-        return max(7, min(21, taper_days))
+        # For fast adapters (low τ1), this constrains the taper
+        # τ1=25 → max ~2.6 days before 10% loss (too short, so use τ2)
+        # τ1=42 → max ~4.4 days (still τ2-constrained for most)
+        # τ1=60 → max ~6.3 days
+        
+        # Use τ2-based minimum, but cap based on τ1 profile
+        if self.tau1 < 30:
+            # Fast adapter: shorter taper is fine, fitness decays fast
+            # Use 1.5-2 × τ2, capped at 14 days
+            taper_days = int(1.75 * self.tau2)
+            taper_days = max(7, min(14, taper_days))
+        elif self.tau1 < 40:
+            # Moderate adapter: standard 2 × τ2
+            taper_days = int(2.0 * self.tau2)
+            taper_days = max(10, min(18, taper_days))
+        else:
+            # Slow adapter: can handle longer taper, fitness retained
+            taper_days = int(2.25 * self.tau2)
+            taper_days = max(14, min(21, taper_days))
+        
+        return taper_days
+    
+    def get_taper_rationale(self) -> str:
+        """Get human-readable explanation for taper duration."""
+        taper_days = self.calculate_optimal_taper_days()
+        taper_weeks = (taper_days + 6) // 7
+        
+        if self.tau1 < 30:
+            reason = (
+                f"Your τ1 of {self.tau1:.0f} days indicates fast fitness adaptation. "
+                f"A {taper_weeks}-week ({taper_days}-day) taper prevents excessive fitness loss."
+            )
+        elif self.tau1 < 40:
+            reason = (
+                f"Your τ1 of {self.tau1:.0f} days suggests standard adaptation rate. "
+                f"A {taper_weeks}-week taper balances recovery and fitness retention."
+            )
+        else:
+            reason = (
+                f"Your τ1 of {self.tau1:.0f} days shows you retain fitness well. "
+                f"A {taper_weeks}-week taper allows full fatigue clearance without fitness loss."
+            )
+        
+        return reason
 
 
 @dataclass
