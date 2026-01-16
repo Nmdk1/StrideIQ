@@ -192,6 +192,43 @@ class AthleteThresholds:
     easy_pace_per_km: Optional[float]
 
 
+@dataclass
+class ProgressionAnalysis:
+    """
+    Detailed analysis of progression pattern in a run.
+    
+    Separates DETECTION (did pace decrease?) from QUALITY ASSESSMENT
+    (was this intentional structured work or just warming up?).
+    
+    A progression pattern is detected when pace decreases throughout.
+    Whether it constitutes "quality work" depends on multiple factors.
+    """
+    # Detection - was there a progression pattern?
+    pattern_detected: bool
+    pattern_type: str  # "consecutive", "negative_split", "hard_finish", "none"
+    
+    # Metrics for quality assessment
+    distance_km: float
+    duration_min: float
+    pace_delta_sec_per_km: float  # First split pace - last split pace (positive = got faster)
+    pace_delta_pct: float  # Percentage improvement from first to last
+    final_pace_sec_per_km: Optional[float]  # Pace of final split
+    max_hr: Optional[int]
+    avg_hr: Optional[int]
+    hr_spread_pct: float  # (max_hr - avg_hr) / avg_hr * 100
+    
+    # Quality indicators (computed)
+    is_meaningful_distance: bool  # >= 8km / 5 miles
+    is_significant_acceleration: bool  # Pace delta > 20 sec/km
+    has_hard_finish_hr: bool  # Max HR > 85% of athlete max AND spread > 15%
+    final_pace_is_quality: bool  # Final pace within 10% of threshold
+    
+    # Overall assessment
+    quality_indicator_count: int  # How many of the 4 indicators are True
+    is_quality_progression: bool  # 2+ indicators = quality work
+    assessment_reasoning: str  # Human-readable explanation
+
+
 class WorkoutClassifierService:
     """
     Classifies workouts based on objective data.
@@ -239,16 +276,13 @@ class WorkoutClassifierService:
         # Check for intervals (requires splits or lap data)
         intervals_detected, num_intervals, avg_interval_duration = self._detect_intervals(activity)
         
-        # Check for progression pattern
-        progression_detected = self._detect_progression(activity)
-        
-        # Check for hard finish (high max_hr vs avg_hr)
-        hard_finish_detected = self._detect_hard_finish(activity)
+        # Analyze progression pattern (comprehensive analysis)
+        progression_analysis = self._analyze_progression(activity, athlete_thresholds)
 
         # Get HR zone if available
         hr_zone = self._calculate_hr_zone(avg_hr, athlete_thresholds)
 
-        # Calculate intensity score (now includes max_hr consideration)
+        # Calculate intensity score (includes max_hr consideration)
         intensity_score = self._calculate_intensity(
             avg_pace_per_km,
             avg_hr,
@@ -256,10 +290,11 @@ class WorkoutClassifierService:
             max_hr=activity.max_hr
         )
         
-        # If progression or hard finish detected, ensure intensity reflects it
-        if (progression_detected or hard_finish_detected) and intensity_score < 50:
-            # Boost intensity to at least "moderate" for structured efforts
-            intensity_score = max(intensity_score, 55)
+        # Adjust intensity based on progression quality
+        # Only boost if it's a QUALITY progression, not just any negative split
+        if progression_analysis.is_quality_progression and intensity_score < 55:
+            # Quality progressions are at least moderate intensity
+            intensity_score = max(intensity_score, 55 + (progression_analysis.quality_indicator_count * 5))
         
         # Classify based on patterns and metrics
         if intervals_detected:
@@ -268,9 +303,11 @@ class WorkoutClassifierService:
                 num_intervals, avg_interval_duration
             )
         
-        if progression_detected:
+        # Handle progression based on quality assessment
+        if progression_analysis.pattern_detected:
             return self._classify_progression(
-                activity, athlete_thresholds, hr_zone, intensity_score
+                activity, athlete_thresholds, hr_zone, intensity_score,
+                progression_analysis
             )
         
         # Steady-state classification based on intensity
@@ -558,26 +595,6 @@ class WorkoutClassifierService:
 
         return sum(scores) / len(scores) if scores else 50.0
     
-    def _detect_hard_finish(self, activity: Activity) -> bool:
-        """
-        Detect if activity had a hard finish based on HR spread.
-        
-        A "hard finish" is when max_hr significantly exceeds avg_hr,
-        indicating the athlete pushed hard at the end even if the
-        overall average looks moderate.
-        """
-        if not activity.avg_hr or not activity.max_hr:
-            return False
-        
-        avg_hr = activity.avg_hr
-        max_hr = activity.max_hr
-        
-        # Calculate HR spread
-        hr_spread = (max_hr - avg_hr) / avg_hr if avg_hr > 0 else 0
-        
-        # If max is 15%+ above average AND max > 160, it was a hard finish
-        return hr_spread > 0.15 and max_hr > 160
-    
     def _detect_intervals(self, activity: Activity) -> Tuple[bool, int, float]:
         """
         Detect if activity has interval pattern from splits data.
@@ -647,38 +664,83 @@ class WorkoutClassifierService:
         
         return (False, 0, 0.0)
     
-    def _detect_progression(self, activity: Activity) -> bool:
+    def _analyze_progression(
+        self, 
+        activity: Activity, 
+        thresholds: AthleteThresholds
+    ) -> ProgressionAnalysis:
         """
-        Detect if activity has progression pattern (negative splits).
-
-        Looks for consistently decreasing pace across the run.
+        Comprehensive progression analysis.
         
-        Enhanced detection for:
-        1. "Each mile faster than the last" pattern
-        2. Traditional negative split (last third faster than first)
-        3. Hard finish pattern (significant acceleration in final splits)
+        Separates PATTERN DETECTION from QUALITY ASSESSMENT:
+        - Pattern detection: Did pace decrease throughout?
+        - Quality assessment: Was this intentional structured work?
+        
+        A 3-mile warmup with negative splits is NOT the same as
+        a 10-mile long run with tempo finish. This method captures that nuance.
+        
+        Quality indicators (need 2+ for "quality progression"):
+        1. Meaningful distance (>= 8km / 5 miles)
+        2. Significant acceleration (pace delta > 20 sec/km)
+        3. Hard finish HR (max HR > 85% of athlete max AND spread > 15%)
+        4. Final pace is quality (within 10% of threshold pace)
         """
-        # Handle dynamic relationship - need to convert to list
+        # Extract basic metrics
+        distance_km = (activity.distance_m or 0) / 1000
+        duration_min = (activity.duration_s or 0) / 60
+        avg_hr = activity.avg_hr
+        max_hr = activity.max_hr
+        
+        # Calculate HR spread
+        hr_spread_pct = 0.0
+        if avg_hr and max_hr and avg_hr > 0:
+            hr_spread_pct = ((max_hr - avg_hr) / avg_hr) * 100
+        
+        # Default "no progression" result
+        no_progression = ProgressionAnalysis(
+            pattern_detected=False,
+            pattern_type="none",
+            distance_km=distance_km,
+            duration_min=duration_min,
+            pace_delta_sec_per_km=0.0,
+            pace_delta_pct=0.0,
+            final_pace_sec_per_km=None,
+            max_hr=max_hr,
+            avg_hr=avg_hr,
+            hr_spread_pct=hr_spread_pct,
+            is_meaningful_distance=False,
+            is_significant_acceleration=False,
+            has_hard_finish_hr=False,
+            final_pace_is_quality=False,
+            quality_indicator_count=0,
+            is_quality_progression=False,
+            assessment_reasoning="No progression pattern detected"
+        )
+        
+        # Get splits for pace analysis
         splits = list(activity.splits) if activity.splits else []
         if len(splits) < 3:
-            return False
-
-        # Get pace for each split
-        # ActivitySplit uses: distance (meters), moving_time (seconds)
+            return no_progression
+        
+        # Extract paces from splits
         paces = []
         for split in splits:
             distance = float(split.distance) if split.distance else None
             moving_time = split.moving_time or split.elapsed_time
-
             if distance and distance > 0 and moving_time:
                 pace_per_km = (moving_time / distance) * 1000
                 paces.append(pace_per_km)
-
+        
         if len(paces) < 3:
-            return False
-
-        # PATTERN 1: "Each mile faster" - strong progression
-        # Count how many consecutive splits are faster than previous
+            return no_progression
+        
+        # =====================================================================
+        # PATTERN DETECTION
+        # =====================================================================
+        pattern_detected = False
+        pattern_type = "none"
+        
+        # Pattern 1: Consecutive faster splits (70%+ of run)
         consecutive_faster = 0
         max_consecutive = 0
         for i in range(1, len(paces)):
@@ -688,36 +750,109 @@ class WorkoutClassifierService:
             else:
                 consecutive_faster = 0
         
-        # If most splits (70%+) are consecutively faster, it's a clear progression
         if max_consecutive >= len(paces) * 0.7:
-            return True
+            pattern_detected = True
+            pattern_type = "consecutive"
         
-        # PATTERN 2: Traditional negative split
-        # Compare first third to last third
-        third = len(paces) // 3
-        if third < 1:
-            third = 1
-
-        first_third_avg = sum(paces[:third]) / third
-        last_third_avg = sum(paces[-third:]) / third
-
-        # Last third should be at least 5% faster than first third
-        if last_third_avg < first_third_avg * 0.95:
-            # Check for general downward trend
-            decreasing_count = sum(1 for i in range(1, len(paces)) if paces[i] < paces[i-1])
-            if decreasing_count >= len(paces) * 0.5:
-                return True
+        # Pattern 2: Negative split (last third 5%+ faster than first third)
+        if not pattern_detected:
+            third = max(1, len(paces) // 3)
+            first_third_avg = sum(paces[:third]) / third
+            last_third_avg = sum(paces[-third:]) / third
+            
+            if last_third_avg < first_third_avg * 0.95:
+                decreasing_count = sum(1 for i in range(1, len(paces)) if paces[i] < paces[i-1])
+                if decreasing_count >= len(paces) * 0.5:
+                    pattern_detected = True
+                    pattern_type = "negative_split"
         
-        # PATTERN 3: Hard finish - last split(s) significantly faster
-        # Even without overall progression, a big acceleration at end signals quality
-        if len(paces) >= 3:
+        # Pattern 3: Hard finish (last split 10%+ faster than earlier average)
+        if not pattern_detected and len(paces) >= 3:
             last_pace = paces[-1]
             avg_early = sum(paces[:-1]) / (len(paces) - 1)
-            # Last split 10%+ faster than rest = hard finish/progression
             if last_pace < avg_early * 0.90:
-                return True
-
-        return False
+                pattern_detected = True
+                pattern_type = "hard_finish"
+        
+        if not pattern_detected:
+            return no_progression
+        
+        # =====================================================================
+        # PROGRESSION METRICS
+        # =====================================================================
+        first_pace = paces[0]
+        final_pace = paces[-1]
+        pace_delta = first_pace - final_pace  # Positive = got faster
+        pace_delta_pct = (pace_delta / first_pace) * 100 if first_pace > 0 else 0
+        
+        # =====================================================================
+        # QUALITY ASSESSMENT - 4 indicators
+        # =====================================================================
+        quality_indicators = []
+        reasoning_parts = []
+        
+        # Indicator 1: Meaningful distance (>= 8km / ~5 miles)
+        is_meaningful_distance = distance_km >= 8.0
+        if is_meaningful_distance:
+            quality_indicators.append("meaningful_distance")
+            reasoning_parts.append(f"{distance_km:.1f}km is substantial distance")
+        
+        # Indicator 2: Significant acceleration (pace delta > 20 sec/km)
+        is_significant_acceleration = pace_delta > 20
+        if is_significant_acceleration:
+            quality_indicators.append("significant_acceleration")
+            reasoning_parts.append(f"dropped {pace_delta:.0f}s/km from start to finish")
+        
+        # Indicator 3: Hard finish HR response
+        has_hard_finish_hr = False
+        if max_hr and thresholds.max_hr and thresholds.max_hr > 0:
+            max_hr_pct = (max_hr / thresholds.max_hr) * 100
+            if max_hr_pct > 85 and hr_spread_pct > 15:
+                has_hard_finish_hr = True
+                quality_indicators.append("hard_finish_hr")
+                reasoning_parts.append(f"max HR {max_hr} ({max_hr_pct:.0f}% of max) shows real effort")
+        
+        # Indicator 4: Final pace is quality (within 10% of threshold)
+        final_pace_is_quality = False
+        if thresholds.threshold_pace_per_km and final_pace:
+            threshold = thresholds.threshold_pace_per_km
+            if final_pace <= threshold * 1.10:  # Within 10% of threshold
+                final_pace_is_quality = True
+                quality_indicators.append("quality_final_pace")
+                reasoning_parts.append("final pace approached threshold effort")
+        
+        # =====================================================================
+        # FINAL ASSESSMENT
+        # =====================================================================
+        quality_count = len(quality_indicators)
+        is_quality = quality_count >= 2
+        
+        if is_quality:
+            reasoning = f"Quality progression: {'; '.join(reasoning_parts)}"
+        elif quality_count == 1:
+            reasoning = f"Progressive easy run ({reasoning_parts[0]}, but only 1 quality indicator)"
+        else:
+            reasoning = "Progressive warmup/shakeout (negative splits but no quality indicators)"
+        
+        return ProgressionAnalysis(
+            pattern_detected=True,
+            pattern_type=pattern_type,
+            distance_km=distance_km,
+            duration_min=duration_min,
+            pace_delta_sec_per_km=pace_delta,
+            pace_delta_pct=pace_delta_pct,
+            final_pace_sec_per_km=final_pace,
+            max_hr=max_hr,
+            avg_hr=avg_hr,
+            hr_spread_pct=hr_spread_pct,
+            is_meaningful_distance=is_meaningful_distance,
+            is_significant_acceleration=is_significant_acceleration,
+            has_hard_finish_hr=has_hard_finish_hr,
+            final_pace_is_quality=final_pace_is_quality,
+            quality_indicator_count=quality_count,
+            is_quality_progression=is_quality,
+            assessment_reasoning=reasoning
+        )
     
     def _classify_race(
         self, 
@@ -796,32 +931,67 @@ class WorkoutClassifierService:
         activity: Activity,
         thresholds: AthleteThresholds,
         hr_zone: Optional[int],
-        intensity_score: float
+        intensity_score: float,
+        analysis: ProgressionAnalysis
     ) -> WorkoutClassification:
-        """Classify a progression run"""
-        distance_km = (activity.distance_m or 0) / 1000
-        duration_min = (activity.duration_s or 0) / 60
-
-        if distance_km > 25:
+        """
+        Classify a progression run based on comprehensive analysis.
+        
+        Key insight: A negative split pattern alone does NOT make a run "hard".
+        
+        Classifications:
+        - FAST_FINISH_LONG: Long run (25km+) with progression = quality structured workout
+        - PROGRESSION_RUN: Quality progression (2+ indicators) = structured tempo-like work
+        - EASY_RUN: Short progression without quality indicators = warmup/shakeout
+        - AEROBIC_RUN: Medium progression (1 indicator) = progressive easy run
+        """
+        distance_km = analysis.distance_km
+        duration_min = analysis.duration_min
+        
+        # Determine workout type based on quality assessment
+        if distance_km > 25 and analysis.is_quality_progression:
+            # Long run with quality finish
             workout_type = WorkoutType.FAST_FINISH_LONG
-        else:
+            zone = WorkoutZone.MIXED
+            confidence = 0.85
+        elif analysis.is_quality_progression:
+            # Quality progression with 2+ indicators
             workout_type = WorkoutType.PROGRESSION_RUN
-
+            zone = WorkoutZone.MIXED
+            confidence = 0.80
+        elif analysis.quality_indicator_count == 1:
+            # One indicator - progressive but still aerobic
+            workout_type = WorkoutType.AEROBIC_RUN
+            zone = WorkoutZone.ENDURANCE
+            confidence = 0.70
+        else:
+            # No quality indicators - just warming up with negative splits
+            if distance_km < 6:
+                workout_type = WorkoutType.SHAKEOUT
+            else:
+                workout_type = WorkoutType.EASY_RUN
+            zone = WorkoutZone.ENDURANCE
+            confidence = 0.75
+        
         expected_rpe = self.get_expected_rpe(workout_type, duration_min)
         
-        # Build reasoning with HR context
-        reasoning = "Negative split pattern detected — pace increased throughout"
+        # Use the detailed reasoning from analysis
+        reasoning = analysis.assessment_reasoning
         
-        # Add HR context if we have max vs avg spread
-        if activity.avg_hr and activity.max_hr:
-            hr_spread_pct = ((activity.max_hr - activity.avg_hr) / activity.avg_hr) * 100
-            if hr_spread_pct > 15:
-                reasoning += f" (max HR {activity.max_hr} vs avg {activity.avg_hr} shows hard finish)"
-
+        # Add pattern type context
+        pattern_descriptions = {
+            "consecutive": "each split faster than the last",
+            "negative_split": "last third faster than first",
+            "hard_finish": "significant acceleration in final splits"
+        }
+        pattern_desc = pattern_descriptions.get(analysis.pattern_type, "")
+        if pattern_desc:
+            reasoning = f"{pattern_desc.capitalize()} — {reasoning}"
+        
         return WorkoutClassification(
             workout_type=workout_type,
-            workout_zone=WorkoutZone.MIXED,
-            confidence=0.80,  # Higher confidence with enhanced detection
+            workout_zone=zone,
+            confidence=confidence,
             reasoning=reasoning,
             detected_intervals=False,
             detected_progression=True,
