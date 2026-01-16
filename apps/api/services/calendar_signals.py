@@ -23,7 +23,7 @@ import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
-from models import Activity, DailyCheckin
+from models import Activity, DailyCheckin, PersonalBest
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,7 @@ class SignalType(str, Enum):
     FRESH_FORM = "fresh_form"
     FATIGUED = "fatigued"
     AT_CS = "at_cs"
+    PERSONAL_BEST = "personal_best"
 
 
 class SignalConfidence(str, Enum):
@@ -374,6 +375,74 @@ def get_pr_match_badge(
         return None
 
 
+def get_personal_best_badge(
+    athlete_id: str,
+    activity_date: date,
+    db: Session
+) -> Optional[DayBadge]:
+    """
+    Check if any activity on this day is a personal best.
+    
+    Looks up the PersonalBest table to see if any PB has an activity
+    from this date.
+    """
+    try:
+        # Get activities for this day
+        activities = db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.start_time >= datetime.combine(activity_date, datetime.min.time()),
+            Activity.start_time < datetime.combine(activity_date + timedelta(days=1), datetime.min.time())
+        ).all()
+        
+        if not activities:
+            return None
+        
+        # Check if any activity is linked to a PersonalBest
+        activity_ids = [a.id for a in activities]
+        
+        pbs = db.query(PersonalBest).filter(
+            PersonalBest.activity_id.in_(activity_ids)
+        ).all()
+        
+        if not pbs:
+            return None
+        
+        # Get the most significant PB (shortest distance = more valuable in running culture)
+        # Order: 5K > 10K > Half > Marathon > others
+        distance_priority = {
+            '5k': 1, '10k': 2, 'half_marathon': 3, 'marathon': 4,
+            'mile': 0, '1k': 0, '2mile': 1  # Mile is also a prestigious distance
+        }
+        
+        best_pb = min(pbs, key=lambda p: (
+            distance_priority.get(p.distance_category.lower(), 10),
+            p.distance_meters
+        ))
+        
+        # Format distance for display
+        category = best_pb.distance_category.replace('_', ' ').upper()
+        if category == 'HALF MARATHON':
+            category = 'HALF'
+        elif category == '5K':
+            category = '5K'
+        elif category == '10K':
+            category = '10K'
+        
+        return DayBadge(
+            type=SignalType.PERSONAL_BEST.value,
+            badge=f"PB {category}",
+            color="purple",
+            icon="zap",
+            confidence=SignalConfidence.HIGH.value,
+            tooltip=f"Personal Best: {best_pb.distance_category.replace('_', ' ').title()}",
+            priority=0  # Highest priority - PBs should always show
+        )
+        
+    except Exception as e:
+        logger.warning(f"Error getting personal best badge: {e}")
+        return None
+
+
 def get_day_badges(
     athlete_id: str,
     activity_date: date,
@@ -387,6 +456,11 @@ def get_day_badges(
     badges: List[DayBadge] = []
     
     # Collect from all sources
+    # PB badge first (highest priority)
+    pb_badge = get_personal_best_badge(athlete_id, activity_date, db)
+    if pb_badge:
+        badges.append(pb_badge)
+    
     eff_badge = get_efficiency_badge(athlete_id, activity_date, db)
     if eff_badge:
         badges.append(eff_badge)

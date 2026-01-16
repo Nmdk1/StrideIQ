@@ -244,6 +244,33 @@ def meters_to_miles(meters: int) -> float:
     return round(meters / 1609.344, 1)
 
 
+def get_primary_activity(activities: List[Activity]) -> Optional[Activity]:
+    """
+    Select the primary (most significant) activity from a list.
+    
+    Priority:
+    1. Race-flagged activity (is_race_candidate=True)
+    2. Longest activity by distance
+    
+    This ensures that when multiple activities occur on the same day
+    (e.g., warmup + race), the main event is used for inline metrics.
+    """
+    if not activities:
+        return None
+    
+    if len(activities) == 1:
+        return activities[0]
+    
+    # Priority 1: Race-flagged activity
+    races = [a for a in activities if getattr(a, 'is_race_candidate', False)]
+    if races:
+        # Return longest race if multiple
+        return max(races, key=lambda a: a.distance_m or 0)
+    
+    # Priority 2: Longest activity
+    return max(activities, key=lambda a: a.distance_m or 0)
+
+
 def generate_inline_insight(activities: List[Activity], planned: Optional[PlannedWorkout]) -> Optional[InlineInsight]:
     """
     Generate a single inline insight for a calendar day.
@@ -258,8 +285,8 @@ def generate_inline_insight(activities: List[Activity], planned: Optional[Planne
     if not activities:
         return None
     
-    # Use first/primary activity
-    activity = activities[0]
+    # Use primary activity (longest or race), not just first
+    activity = get_primary_activity(activities)
     
     # Check for efficiency score (stored in activity or calculated)
     if hasattr(activity, 'efficiency_factor') and activity.efficiency_factor:
