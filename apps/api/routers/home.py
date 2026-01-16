@@ -311,9 +311,10 @@ def generate_why_context(
 
 
 def generate_trajectory_sentence(
-    status: str, 
-    completed_mi: float, 
+    status: str,
+    completed_mi: float,
     planned_mi: float,
+    remaining_mi: float = 0.0,
     quality_completed: int = 0,
     quality_planned: int = 0,
     activities_this_week: int = 0,
@@ -322,10 +323,13 @@ def generate_trajectory_sentence(
     """
     Generate a sparse trajectory sentence.
     Tone: Data speaks. No praise, no prescription.
-    
+
     Includes TSB context when available.
+    
+    remaining_mi: Only counts today + future planned miles (excludes missed past days)
     """
-    remaining = planned_mi - completed_mi
+    # Use remaining_mi (today + future) not (planned - completed) to avoid confusion
+    remaining = remaining_mi if remaining_mi > 0 else max(0, planned_mi - completed_mi)
     
     if status == "no_plan":
         # Still provide insight for users without a plan
@@ -513,12 +517,15 @@ async def get_home_data(
     week_days = []
     completed_mi = 0.0
     planned_mi = 0.0
+    remaining_mi = 0.0  # Only count today + future planned miles
     current_week_number = None
     current_phase = None
     
     for i in range(7):
         day_date = monday + timedelta(days=i)
         day_abbrev = ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i]
+        is_past = day_date < today
+        is_today_or_future = day_date >= today
         
         # Get planned workout for this day
         planned_workout = None
@@ -538,11 +545,17 @@ async def get_home_data(
         workout_type = None
         distance_mi = None
         completed = False
+        is_missed = False
         
         if planned_workout:
             workout_type = planned_workout.workout_type
-            if planned_workout.target_distance_km:
-                planned_mi += planned_workout.target_distance_km * 0.621371
+            planned_distance = planned_workout.target_distance_km * 0.621371 if planned_workout.target_distance_km else 0
+            planned_mi += planned_distance
+            
+            # Only count future planned miles as "remaining"
+            if is_today_or_future and not actual:
+                remaining_mi += planned_distance
+                
             if day_date == today:
                 current_week_number = planned_workout.week_number
                 current_phase = planned_workout.phase
@@ -554,12 +567,18 @@ async def get_home_data(
                 completed_mi += actual_mi
                 distance_mi = round(actual_mi, 1)
         elif planned_workout and planned_workout.target_distance_km:
-            distance_mi = round(planned_workout.target_distance_km * 0.621371, 0)
+            # Past day with no activity = missed
+            if is_past:
+                is_missed = True
+                distance_mi = None  # Don't show planned distance for missed days
+            else:
+                # Future day - show planned distance
+                distance_mi = round(planned_workout.target_distance_km * 0.621371, 0)
         
         week_days.append(WeekDay(
             date=day_date.isoformat(),
             day_abbrev=day_abbrev,
-            workout_type=workout_type,
+            workout_type=workout_type if not is_missed else None,  # Don't show workout type for missed
             distance_mi=distance_mi,
             completed=completed,
             is_today=(day_date == today)
@@ -591,6 +610,7 @@ async def get_home_data(
         status=status,
         completed_mi=round(completed_mi, 1),
         planned_mi=round(planned_mi, 1),
+        remaining_mi=round(remaining_mi, 1),
         activities_this_week=activities_this_week,
         tsb_context=tsb_short_context
     )
