@@ -93,16 +93,17 @@ def get_tsb_signal(athlete_id: str, db: Session) -> Optional[Signal]:
         from services.training_load import TrainingLoadCalculator, TSBZone
         
         calculator = TrainingLoadCalculator(db)
-        
+
         # Get current training load
-        load = calculator.calculate_training_load(UUID(athlete_id))
-        
+        athlete_uuid = UUID(athlete_id)
+        load = calculator.calculate_training_load(athlete_uuid)
+
         if load is None:
             return None
-        
+
         tsb = load.current_tsb
         ctl = load.current_ctl
-        zone_info = calculator.get_tsb_zone(tsb)
+        zone_info = calculator.get_tsb_zone(tsb, athlete_id=athlete_uuid)
         
         # Only show if we have meaningful CTL (>20 indicates some training history)
         if ctl < 20:

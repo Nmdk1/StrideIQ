@@ -18,58 +18,176 @@ from services.training_load import (
     LoadSummary,
     TSBZone,
     TSBZoneInfo,
-    RaceReadiness
+    RaceReadiness,
+    PersonalTSBProfile
 )
 
 
-class TestTSBZoneClassification:
-    """Test TSB zone classification."""
+class TestPopulationTSBZones:
+    """Test population-based TSB zone classification (fallback behavior)."""
     
-    def test_race_ready_zone(self):
-        """TSB 15-25 should be race ready."""
-        zone = TrainingLoadCalculator.get_tsb_zone(20)
+    @pytest.fixture
+    def mock_db(self):
+        return MagicMock()
+    
+    @pytest.fixture
+    def calculator(self, mock_db):
+        return TrainingLoadCalculator(mock_db)
+    
+    def test_race_ready_zone(self, calculator):
+        """TSB 15+ should be race ready (population norm)."""
+        zone = calculator._get_population_tsb_zone(20)
         assert zone.zone == TSBZone.RACE_READY
         assert zone.is_race_window is True
         assert zone.color == "green"
         
-    def test_race_ready_lower_bound(self):
+    def test_race_ready_lower_bound(self, calculator):
         """TSB 15 should be race ready."""
-        zone = TrainingLoadCalculator.get_tsb_zone(15)
+        zone = calculator._get_population_tsb_zone(15)
         assert zone.zone == TSBZone.RACE_READY
         
-    def test_recovering_zone(self):
+    def test_recovering_zone(self, calculator):
         """TSB 5-15 should be recovering."""
-        zone = TrainingLoadCalculator.get_tsb_zone(10)
+        zone = calculator._get_population_tsb_zone(10)
         assert zone.zone == TSBZone.RECOVERING
         assert zone.is_race_window is False
         assert zone.color == "blue"
     
-    def test_optimal_training_zone(self):
+    def test_optimal_training_zone(self, calculator):
         """TSB -10 to +5 should be optimal training."""
-        zone = TrainingLoadCalculator.get_tsb_zone(0)
+        zone = calculator._get_population_tsb_zone(0)
         assert zone.zone == TSBZone.OPTIMAL_TRAINING
         assert zone.label == "Optimal Training"
         
-        zone = TrainingLoadCalculator.get_tsb_zone(-5)
+        zone = calculator._get_population_tsb_zone(-5)
         assert zone.zone == TSBZone.OPTIMAL_TRAINING
     
-    def test_overreaching_zone(self):
+    def test_overreaching_zone(self, calculator):
         """TSB -30 to -10 should be overreaching."""
-        zone = TrainingLoadCalculator.get_tsb_zone(-20)
+        zone = calculator._get_population_tsb_zone(-20)
         assert zone.zone == TSBZone.OVERREACHING
         assert zone.color == "orange"
     
-    def test_overtraining_risk_zone(self):
+    def test_overtraining_risk_zone(self, calculator):
         """TSB < -30 should be overtraining risk."""
-        zone = TrainingLoadCalculator.get_tsb_zone(-35)
+        zone = calculator._get_population_tsb_zone(-35)
         assert zone.zone == TSBZone.OVERTRAINING_RISK
         assert zone.color == "red"
         assert "Red zone" in zone.description
     
-    def test_very_fresh_still_race_ready(self):
+    def test_very_fresh_still_race_ready(self, calculator):
         """Very high TSB should still be race ready."""
-        zone = TrainingLoadCalculator.get_tsb_zone(30)
+        zone = calculator._get_population_tsb_zone(30)
         assert zone.zone == TSBZone.RACE_READY
+
+
+class TestPersonalTSBProfile:
+    """Test N=1 personalized TSB zones."""
+    
+    def test_profile_from_insufficient_data(self):
+        """Profile with <56 days should use population defaults."""
+        athlete_id = uuid4()
+        tsb_values = [-5, -10, 0, 5, -15]  # Only 5 days
+        
+        profile = PersonalTSBProfile.from_tsb_history(athlete_id, tsb_values)
+        
+        assert profile.is_sufficient_data is False
+        # Should use population defaults
+        assert profile.mean_tsb == -5.0
+        assert profile.std_tsb == 15.0
+    
+    def test_profile_from_sufficient_data(self):
+        """Profile with 56+ days should calculate personal stats."""
+        athlete_id = uuid4()
+        # Simulate 60 days of TSB values averaging around -15
+        tsb_values = [-15 + (i % 10) - 5 for i in range(60)]
+        
+        profile = PersonalTSBProfile.from_tsb_history(athlete_id, tsb_values)
+        
+        assert profile.is_sufficient_data is True
+        assert profile.sample_days == 60
+        # Mean should be close to -15
+        assert -20 < profile.mean_tsb < -10
+    
+    def test_personal_zone_thresholds_calculated(self):
+        """Personal thresholds should be mean ± SD based."""
+        athlete_id = uuid4()
+        # Create athlete who trains at mean TSB of -20, SD of 10
+        tsb_values = [-20 + (i % 20) - 10 for i in range(70)]
+        
+        profile = PersonalTSBProfile.from_tsb_history(athlete_id, tsb_values)
+        
+        # Thresholds should be relative to personal mean/SD
+        assert profile.threshold_fresh > profile.mean_tsb  # Fresh = mean + 1.5 SD
+        assert profile.threshold_danger < profile.mean_tsb  # Danger = mean - 2 SD
+    
+    def test_get_zone_uses_personal_thresholds(self):
+        """Zone classification should use personal thresholds."""
+        athlete_id = uuid4()
+        # High-volume athlete: mean TSB = -20, SD = 10
+        # For this athlete, TSB -10 is actually fresher than normal
+        profile = PersonalTSBProfile(
+            athlete_id=athlete_id,
+            mean_tsb=-20.0,
+            std_tsb=10.0,
+            min_tsb=-40.0,
+            max_tsb=5.0,
+            sample_days=90,
+            threshold_fresh=-5.0,      # -20 + 1.5*10 = -5
+            threshold_recovering=-12.5, # -20 + 0.75*10 = -12.5
+            threshold_normal_low=-30.0, # -20 - 1*10 = -30
+            threshold_danger=-40.0,    # -20 - 2*10 = -40
+            is_sufficient_data=True
+        )
+        
+        # TSB -10 (which population would call "overreaching")
+        # is in RECOVERING zone for this high-volume athlete
+        zone = profile.get_zone(-10)
+        assert zone == TSBZone.RECOVERING  # Not OVERREACHING!
+        
+        # TSB -20 is their normal (optimal training)
+        zone = profile.get_zone(-20)
+        assert zone == TSBZone.OPTIMAL_TRAINING
+        
+        # TSB -35 would be overreaching for this athlete
+        zone = profile.get_zone(-35)
+        assert zone == TSBZone.OVERREACHING
+        
+        # Population-based would call TSB -20 "overreaching"
+        # but for this athlete it's normal training
+        
+    def test_personal_zone_info_descriptions(self):
+        """Zone info should include personalized descriptions."""
+        athlete_id = uuid4()
+        profile = PersonalTSBProfile(
+            athlete_id=athlete_id,
+            mean_tsb=-15.0,
+            std_tsb=10.0,
+            min_tsb=-35.0,
+            max_tsb=10.0,
+            sample_days=90,
+            threshold_fresh=0.0,
+            threshold_recovering=-7.5,
+            threshold_normal_low=-25.0,
+            threshold_danger=-35.0,
+            is_sufficient_data=True
+        )
+        
+        zone_info = profile.get_zone_info(-10)
+        
+        # Description should mention personal context
+        assert "your" in zone_info.description.lower() or "typical" in zone_info.description.lower()
+    
+    def test_minimum_std_enforced(self):
+        """Standard deviation should have minimum to avoid overly narrow zones."""
+        athlete_id = uuid4()
+        # Very consistent athlete - all TSB values the same
+        tsb_values = [-10.0] * 60
+        
+        profile = PersonalTSBProfile.from_tsb_history(athlete_id, tsb_values)
+        
+        # SD should be at least 8 (enforced minimum)
+        assert profile.std_tsb >= 8.0
 
 
 class TestTSSCalculation:

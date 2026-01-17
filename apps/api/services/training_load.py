@@ -37,11 +37,11 @@ logger = logging.getLogger(__name__)
 
 class TSBZone(str, Enum):
     """Training Stress Balance zones for actionable insights."""
-    RACE_READY = "race_ready"           # +15 to +25: Fresh & fit
-    RECOVERING = "recovering"            # +5 to +15: Final taper
-    OPTIMAL_TRAINING = "optimal_training"  # -10 to +5: Productive overload
-    OVERREACHING = "overreaching"        # -30 to -10: High fatigue
-    OVERTRAINING_RISK = "overtraining_risk"  # < -30: Red zone
+    RACE_READY = "race_ready"           # Fresh & fit - personalized threshold
+    RECOVERING = "recovering"            # Final taper zone
+    OPTIMAL_TRAINING = "optimal_training"  # Normal productive training
+    OVERREACHING = "overreaching"        # High fatigue FOR THIS ATHLETE
+    OVERTRAINING_RISK = "overtraining_risk"  # Unusual fatigue - red zone
 
 
 @dataclass
@@ -52,6 +52,155 @@ class TSBZoneInfo:
     description: str
     color: str  # For UI display
     is_race_window: bool
+
+
+@dataclass
+class PersonalTSBProfile:
+    """
+    Athlete's personalized TSB distribution.
+    
+    This is true N=1: zones are defined relative to this athlete's
+    historical TSB, not population norms.
+    
+    A marathoner who routinely trains at TSB -20 has different
+    "overreaching" threshold than a casual runner at TSB +5.
+    """
+    athlete_id: UUID
+    mean_tsb: float
+    std_tsb: float
+    min_tsb: float
+    max_tsb: float
+    sample_days: int  # Number of days with data
+    
+    # Personalized zone thresholds (calculated from distribution)
+    threshold_fresh: float      # Above this = unusually fresh (mean + 1.5 SD)
+    threshold_recovering: float # Above this = fresher than normal (mean + 0.75 SD)
+    threshold_normal_low: float # Below this = more fatigued than normal (mean - 1 SD)
+    threshold_danger: float     # Below this = unusually fatigued (mean - 2 SD)
+    
+    is_sufficient_data: bool    # >= 56 days (8 weeks) of history
+    
+    @classmethod
+    def from_tsb_history(
+        cls,
+        athlete_id: UUID,
+        tsb_values: List[float],
+        min_days: int = 56  # 8 weeks minimum for reliable stats
+    ) -> "PersonalTSBProfile":
+        """
+        Calculate personal TSB profile from historical TSB values.
+        
+        Zone definitions (relative to personal distribution):
+        - RACE_READY: > mean + 1.5 SD (unusually fresh for you)
+        - RECOVERING: mean + 0.75 SD to mean + 1.5 SD (fresher than normal)
+        - OPTIMAL_TRAINING: mean - 1 SD to mean + 0.75 SD (your normal range)
+        - OVERREACHING: mean - 2 SD to mean - 1 SD (more fatigued than usual)
+        - OVERTRAINING_RISK: < mean - 2 SD (unusually fatigued - investigate)
+        """
+        n = len(tsb_values)
+        
+        if n < min_days:
+            # Insufficient data - return profile with population defaults
+            return cls(
+                athlete_id=athlete_id,
+                mean_tsb=-5.0,  # Population average
+                std_tsb=15.0,   # Population SD estimate
+                min_tsb=-30.0,
+                max_tsb=25.0,
+                sample_days=n,
+                threshold_fresh=17.5,      # -5 + 1.5*15 = 17.5
+                threshold_recovering=6.25, # -5 + 0.75*15 = 6.25
+                threshold_normal_low=-20.0, # -5 - 1*15 = -20
+                threshold_danger=-35.0,    # -5 - 2*15 = -35
+                is_sufficient_data=False
+            )
+        
+        # Calculate statistics
+        mean = sum(tsb_values) / n
+        variance = sum((x - mean) ** 2 for x in tsb_values) / n
+        std = math.sqrt(variance) if variance > 0 else 10.0  # Minimum SD of 10
+        
+        # Enforce minimum SD to avoid overly narrow zones
+        std = max(std, 8.0)
+        
+        return cls(
+            athlete_id=athlete_id,
+            mean_tsb=round(mean, 1),
+            std_tsb=round(std, 1),
+            min_tsb=round(min(tsb_values), 1),
+            max_tsb=round(max(tsb_values), 1),
+            sample_days=n,
+            threshold_fresh=round(mean + 1.5 * std, 1),
+            threshold_recovering=round(mean + 0.75 * std, 1),
+            threshold_normal_low=round(mean - 1.0 * std, 1),
+            threshold_danger=round(mean - 2.0 * std, 1),
+            is_sufficient_data=True
+        )
+    
+    def get_zone(self, tsb: float) -> TSBZone:
+        """
+        Classify a TSB value into a zone based on THIS athlete's personal thresholds.
+        """
+        if tsb >= self.threshold_fresh:
+            return TSBZone.RACE_READY
+        elif tsb >= self.threshold_recovering:
+            return TSBZone.RECOVERING
+        elif tsb >= self.threshold_normal_low:
+            return TSBZone.OPTIMAL_TRAINING
+        elif tsb >= self.threshold_danger:
+            return TSBZone.OVERREACHING
+        else:
+            return TSBZone.OVERTRAINING_RISK
+    
+    def get_zone_info(self, tsb: float) -> TSBZoneInfo:
+        """
+        Get full zone info with personalized description.
+        """
+        zone = self.get_zone(tsb)
+        
+        # Calculate how many SDs from mean
+        sds_from_mean = (tsb - self.mean_tsb) / self.std_tsb if self.std_tsb > 0 else 0
+        
+        if zone == TSBZone.RACE_READY:
+            return TSBZoneInfo(
+                zone=zone,
+                label="Fresh for You",
+                description=f"TSB {tsb:+.0f} is unusually fresh (>{self.threshold_fresh:+.0f} is your race-ready zone)",
+                color="green",
+                is_race_window=True
+            )
+        elif zone == TSBZone.RECOVERING:
+            return TSBZoneInfo(
+                zone=zone,
+                label="Recovering",
+                description=f"TSB {tsb:+.0f} — fresher than your typical training state",
+                color="blue",
+                is_race_window=False
+            )
+        elif zone == TSBZone.OPTIMAL_TRAINING:
+            return TSBZoneInfo(
+                zone=zone,
+                label="Normal Training",
+                description=f"TSB {tsb:+.0f} — within your typical training range ({self.threshold_normal_low:+.0f} to {self.threshold_recovering:+.0f})",
+                color="yellow",
+                is_race_window=False
+            )
+        elif zone == TSBZone.OVERREACHING:
+            return TSBZoneInfo(
+                zone=zone,
+                label="Fatigued for You",
+                description=f"TSB {tsb:+.0f} is below your normal range — more fatigued than usual",
+                color="orange",
+                is_race_window=False
+            )
+        else:  # OVERTRAINING_RISK
+            return TSBZoneInfo(
+                zone=zone,
+                label="Unusually Fatigued",
+                description=f"TSB {tsb:+.0f} is {abs(sds_from_mean):.1f} SDs below your mean — investigate",
+                color="red",
+                is_race_window=False
+            )
 
 
 @dataclass
@@ -529,20 +678,81 @@ class TrainingLoadCalculator:
     
     # =========================================================================
     # TSB ZONES AND RACE READINESS (ADR-010)
+    # N=1 INDIVIDUALIZED ZONES
     # =========================================================================
     
-    @staticmethod
-    def get_tsb_zone(tsb: float) -> TSBZoneInfo:
+    def get_personal_tsb_profile(
+        self,
+        athlete_id: UUID,
+        lookback_days: int = 180  # 6 months of history
+    ) -> PersonalTSBProfile:
+        """
+        Calculate athlete's personal TSB profile from their history.
+        
+        This is true N=1: zones are defined based on THIS athlete's
+        historical TSB distribution, not population norms.
+        
+        Args:
+            athlete_id: Athlete UUID
+            lookback_days: How far back to look (default 6 months)
+        
+        Returns:
+            PersonalTSBProfile with personalized zone thresholds
+        """
+        # Get load history
+        history = self.get_load_history(athlete_id, days=lookback_days)
+        
+        if not history:
+            # No history - return default profile
+            return PersonalTSBProfile.from_tsb_history(athlete_id, [])
+        
+        # Extract TSB values
+        tsb_values = [day.tsb for day in history]
+        
+        return PersonalTSBProfile.from_tsb_history(athlete_id, tsb_values)
+    
+    def get_tsb_zone(
+        self,
+        tsb: float,
+        athlete_id: Optional[UUID] = None
+    ) -> TSBZoneInfo:
         """
         Classify TSB into actionable zones.
         
-        Zones based on TrainingPeaks methodology with adjustments for runners.
+        If athlete_id provided: Uses personalized thresholds based on
+        this athlete's historical TSB distribution (N=1).
+        
+        If no athlete_id: Falls back to population-based thresholds
+        (legacy behavior for backwards compatibility).
+        
+        N=1 Philosophy:
+        - "Overreaching" means fatigued FOR THIS ATHLETE, not a generic threshold
+        - A marathoner at TSB -15 might be normal; for a casual runner it's deep fatigue
+        - Zones are defined relative to personal mean ± standard deviations
+        """
+        # Use personal profile if athlete_id provided
+        if athlete_id:
+            profile = self.get_personal_tsb_profile(athlete_id)
+            return profile.get_zone_info(tsb)
+        
+        # Fallback: population-based thresholds (for backwards compatibility)
+        return self._get_population_tsb_zone(tsb)
+    
+    @staticmethod
+    def _get_population_tsb_zone(tsb: float) -> TSBZoneInfo:
+        """
+        Population-based TSB zones (legacy/fallback).
+        
+        NOTE: These are NOT individualized. Used only when we don't
+        have athlete-specific data or for backwards compatibility.
+        
+        Thresholds based on TrainingPeaks methodology.
         """
         if tsb >= 15:
             return TSBZoneInfo(
                 zone=TSBZone.RACE_READY,
                 label="Race Ready",
-                description="Fresh and fit - ideal race window",
+                description="Fresh and fit - ideal race window (population norm)",
                 color="green",
                 is_race_window=True
             )
@@ -550,7 +760,7 @@ class TrainingLoadCalculator:
             return TSBZoneInfo(
                 zone=TSBZone.RECOVERING,
                 label="Recovering",
-                description="Final taper zone - ready soon",
+                description="Final taper zone (population norm)",
                 color="blue",
                 is_race_window=False
             )
@@ -558,7 +768,7 @@ class TrainingLoadCalculator:
             return TSBZoneInfo(
                 zone=TSBZone.OPTIMAL_TRAINING,
                 label="Optimal Training",
-                description="Productive overload - building fitness",
+                description="Productive overload (population norm)",
                 color="yellow",
                 is_race_window=False
             )
@@ -566,7 +776,7 @@ class TrainingLoadCalculator:
             return TSBZoneInfo(
                 zone=TSBZone.OVERREACHING,
                 label="Overreaching",
-                description="High fatigue - monitor recovery closely",
+                description="High fatigue (population norm)",
                 color="orange",
                 is_race_window=False
             )
@@ -574,7 +784,7 @@ class TrainingLoadCalculator:
             return TSBZoneInfo(
                 zone=TSBZone.OVERTRAINING_RISK,
                 label="Overtraining Risk",
-                description="Red zone - consider rest urgently",
+                description="Red zone (population norm)",
                 color="red",
                 is_race_window=False
             )
@@ -599,8 +809,8 @@ class TrainingLoadCalculator:
         # Get current load summary
         load = self.calculate_training_load(athlete_id, target_date)
         
-        # Get TSB zone
-        zone_info = self.get_tsb_zone(load.current_tsb)
+        # Get TSB zone (personalized for this athlete)
+        zone_info = self.get_tsb_zone(load.current_tsb, athlete_id=athlete_id)
         
         # Score components
         
@@ -768,7 +978,7 @@ class TrainingLoadCalculator:
             current_ctl = current_ctl * (1 - ctl_decay) + day_tss * ctl_decay
             current_tsb = current_ctl - current_atl
             
-            zone = self.get_tsb_zone(current_tsb)
+            zone = self.get_tsb_zone(current_tsb, athlete_id=athlete_id)
             
             projections.append({
                 "date": target_date.isoformat(),

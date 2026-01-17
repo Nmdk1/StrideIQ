@@ -193,15 +193,16 @@ def get_tsb_attribution(
     """
     try:
         from services.training_load import TrainingLoadCalculator, TSBZone
-        
+
         calculator = TrainingLoadCalculator(db)
-        load = calculator.calculate_training_load(UUID(athlete_id))
-        
+        athlete_uuid = UUID(athlete_id)
+        load = calculator.calculate_training_load(athlete_uuid)
+
         if not load or load.current_ctl < 20:
             return None
-        
+
         tsb = load.current_tsb
-        zone_info = calculator.get_tsb_zone(tsb)
+        zone_info = calculator.get_tsb_zone(tsb, athlete_id=athlete_uuid)
         
         if zone_info.zone == TSBZone.RACE_READY:
             title = "Peak Form"

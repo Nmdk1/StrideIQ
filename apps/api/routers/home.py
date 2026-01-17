@@ -210,7 +210,8 @@ def get_tsb_context(athlete_id: str, db: Session) -> Optional[tuple[str, str, st
         from uuid import UUID
         
         calculator = TrainingLoadCalculator(db)
-        load = calculator.calculate_training_load(UUID(athlete_id))
+        athlete_uuid = UUID(athlete_id)
+        load = calculator.calculate_training_load(athlete_uuid)
         
         if load is None:
             return None, None, None
@@ -222,7 +223,8 @@ def get_tsb_context(athlete_id: str, db: Session) -> Optional[tuple[str, str, st
         if ctl < 20:
             return None, None, None
         
-        zone_info = calculator.get_tsb_zone(tsb)
+        # Use personalized TSB zones for this athlete (N=1)
+        zone_info = calculator.get_tsb_zone(tsb, athlete_id=athlete_uuid)
         
         # ONLY show context when it's actionable
         # "Building" or "normal" states don't need to be called out

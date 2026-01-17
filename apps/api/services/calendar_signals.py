@@ -275,13 +275,14 @@ def get_tsb_badge(
         from services.training_load import TrainingLoadCalculator, TSBZone
         
         calculator = TrainingLoadCalculator(db)
-        load = calculator.calculate_training_load(UUID(athlete_id))
+        athlete_uuid = UUID(athlete_id)
+        load = calculator.calculate_training_load(athlete_uuid)
         
         if not load or load.current_ctl < 20:
             return None
         
         tsb = load.current_tsb
-        zone_info = calculator.get_tsb_zone(tsb)
+        zone_info = calculator.get_tsb_zone(tsb, athlete_id=athlete_uuid)
         
         if zone_info.zone == TSBZone.RACE_READY:
             return DayBadge(
@@ -537,15 +538,16 @@ def get_week_trajectory(
         except Exception:
             pass
         
-        # Check TSB
+        # Check TSB (personalized zones for this athlete)
         try:
             from services.training_load import TrainingLoadCalculator, TSBZone
             
             calculator = TrainingLoadCalculator(db)
-            load = calculator.calculate_training_load(UUID(athlete_id))
+            athlete_uuid = UUID(athlete_id)
+            load = calculator.calculate_training_load(athlete_uuid)
             
             if load and load.current_ctl >= 20:
-                zone_info = calculator.get_tsb_zone(load.current_tsb)
+                zone_info = calculator.get_tsb_zone(load.current_tsb, athlete_id=athlete_uuid)
                 details['tsb_zone'] = zone_info.zone.value
                 
                 if zone_info.zone == TSBZone.RACE_READY:
