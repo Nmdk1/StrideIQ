@@ -90,6 +90,7 @@ export default function Navigation() {
   
   const secondaryNavItems = [
     { href: '/activities', label: 'Activities', icon: '🏃' },
+    { href: '/training-load', label: 'Load', icon: '📈' },
     { href: '/compare', label: 'Compare', icon: '👻' },
     { href: '/personal-bests', label: 'PBs', icon: '🏆' },
     { href: '/tools', label: 'Tools', icon: '🧮' },
