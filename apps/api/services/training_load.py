@@ -85,20 +85,24 @@ class PersonalTSBProfile:
         cls,
         athlete_id: UUID,
         tsb_values: List[float],
-        min_days: int = 56  # 8 weeks minimum for reliable stats
+        min_days: int = 56,  # 8 weeks minimum for reliable stats
+        trim_percentile: float = 5.0  # Trim top/bottom 5% for outlier resistance
     ) -> "PersonalTSBProfile":
         """
         Calculate personal TSB profile from historical TSB values.
-        
+
         Zone definitions (relative to personal distribution):
         - RACE_READY: > mean + 1.5 SD (unusually fresh for you)
         - RECOVERING: mean + 0.75 SD to mean + 1.5 SD (fresher than normal)
         - OPTIMAL_TRAINING: mean - 1 SD to mean + 0.75 SD (your normal range)
         - OVERREACHING: mean - 2 SD to mean - 1 SD (more fatigued than usual)
         - OVERTRAINING_RISK: < mean - 2 SD (unusually fatigued - investigate)
+        
+        Uses TRIMMED mean and SD to reduce sensitivity to outliers
+        (e.g., injury recovery periods, extended rest).
         """
         n = len(tsb_values)
-        
+
         if n < min_days:
             # Insufficient data - return profile with population defaults
             return cls(
@@ -114,12 +118,25 @@ class PersonalTSBProfile:
                 threshold_danger=-35.0,    # -5 - 2*15 = -35
                 is_sufficient_data=False
             )
+
+        # Use trimmed mean/SD for outlier resistance
+        # Sort values and exclude top/bottom 5%
+        sorted_values = sorted(tsb_values)
+        trim_count = max(1, int(n * trim_percentile / 100))
         
-        # Calculate statistics
-        mean = sum(tsb_values) / n
-        variance = sum((x - mean) ** 2 for x in tsb_values) / n
-        std = math.sqrt(variance) if variance > 0 else 10.0  # Minimum SD of 10
+        if n > 2 * trim_count:
+            # Enough data to trim
+            trimmed_values = sorted_values[trim_count:-trim_count]
+        else:
+            # Not enough data to trim, use all values
+            trimmed_values = sorted_values
         
+        # Calculate trimmed statistics
+        trimmed_n = len(trimmed_values)
+        mean = sum(trimmed_values) / trimmed_n
+        variance = sum((x - mean) ** 2 for x in trimmed_values) / trimmed_n
+        std = math.sqrt(variance) if variance > 0 else 10.0
+
         # Enforce minimum SD to avoid overly narrow zones
         std = max(std, 8.0)
         
@@ -688,28 +705,49 @@ class TrainingLoadCalculator:
     ) -> PersonalTSBProfile:
         """
         Calculate athlete's personal TSB profile from their history.
-        
+
         This is true N=1: zones are defined based on THIS athlete's
         historical TSB distribution, not population norms.
-        
+
         Args:
             athlete_id: Athlete UUID
             lookback_days: How far back to look (default 6 months)
-        
+
         Returns:
             PersonalTSBProfile with personalized zone thresholds
         """
         # Get load history
         history = self.get_load_history(athlete_id, days=lookback_days)
-        
+
         if not history:
             # No history - return default profile
+            logger.info(
+                f"Personal TSB profile for {athlete_id}: No history, using population defaults"
+            )
             return PersonalTSBProfile.from_tsb_history(athlete_id, [])
-        
+
         # Extract TSB values
         tsb_values = [day.tsb for day in history]
+        profile = PersonalTSBProfile.from_tsb_history(athlete_id, tsb_values)
         
-        return PersonalTSBProfile.from_tsb_history(athlete_id, tsb_values)
+        # Log the calculated profile for observability
+        if profile.is_sufficient_data:
+            logger.info(
+                f"Personal TSB profile for {athlete_id}: "
+                f"mean={profile.mean_tsb:+.1f}, SD={profile.std_tsb:.1f}, "
+                f"thresholds=[fresh>{profile.threshold_fresh:+.1f}, "
+                f"recovering>{profile.threshold_recovering:+.1f}, "
+                f"normal>{profile.threshold_normal_low:+.1f}, "
+                f"danger>{profile.threshold_danger:+.1f}] "
+                f"(sample_days={profile.sample_days})"
+            )
+        else:
+            logger.info(
+                f"Personal TSB profile for {athlete_id}: "
+                f"Insufficient data ({profile.sample_days} days < 56), using population defaults"
+            )
+        
+        return profile
     
     def get_tsb_zone(
         self,
