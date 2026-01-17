@@ -452,6 +452,11 @@ def get_day_badges(
     Get all badges for a single day.
     
     Filters by confidence and limits to MAX_BADGES_PER_DAY.
+    
+    Note: TSB/Load badges are intentionally NOT included here.
+    Training load is normal daily state, not an exception worth badging.
+    Load info is available in the day detail panel and week trajectory.
+    Badges should highlight exceptions, not the norm.
     """
     badges: List[DayBadge] = []
     
@@ -469,9 +474,9 @@ def get_day_badges(
     if decay_badge:
         badges.append(decay_badge)
     
-    tsb_badge = get_tsb_badge(athlete_id, activity_date, db)
-    if tsb_badge:
-        badges.append(tsb_badge)
+    # NOTE: TSB badge intentionally removed from calendar view.
+    # Load status is normal training state, not an exception.
+    # Available in: day detail panel, week trajectory, analytics.
     
     pr_badge = get_pr_match_badge(athlete_id, activity_date, db)
     if pr_badge:
