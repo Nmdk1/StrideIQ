@@ -24,6 +24,20 @@ router = APIRouter(prefix="/v1/training-load", tags=["Training Load"])
 
 # ============ Response Models ============
 
+class PersonalZonesResponse(BaseModel):
+    """N=1 personalized TSB zone thresholds based on athlete history."""
+    mean_tsb: float
+    std_tsb: float
+    threshold_fresh: float      # TSB above this = Race Ready
+    threshold_recovering: float # TSB above this = Recovering
+    threshold_normal_low: float # TSB above this = Normal Training
+    threshold_danger: float     # TSB above this = Overreaching, below = Danger
+    sample_days: int
+    is_personalized: bool       # True if enough data, False = population defaults
+    current_zone: str           # Current zone based on personal thresholds
+    zone_description: str       # Human-readable description
+
+
 class LoadSummaryResponse(BaseModel):
     atl: float
     ctl: float
@@ -47,6 +61,7 @@ class DailyLoadResponse(BaseModel):
 class LoadHistoryResponse(BaseModel):
     history: List[DailyLoadResponse]
     summary: LoadSummaryResponse
+    personal_zones: Optional[PersonalZonesResponse] = None
 
 
 # ============ Endpoints ============
@@ -89,7 +104,7 @@ async def get_load_history(
     """
     Get daily training load history for charting.
     
-    Useful for visualizing fitness/fatigue/form progression.
+    Includes N=1 personalized TSB zones based on athlete history.
     """
     if days < 7:
         days = 7
@@ -99,6 +114,23 @@ async def get_load_history(
     calculator = TrainingLoadCalculator(db)
     history = calculator.get_load_history(athlete.id, days=days)
     summary = calculator.calculate_training_load(athlete.id)
+    
+    # Get personal TSB profile for N=1 zone display
+    profile = calculator.get_personal_tsb_profile(athlete.id)
+    zone_info = calculator.get_tsb_zone(summary.current_tsb, athlete_id=athlete.id)
+    
+    personal_zones = PersonalZonesResponse(
+        mean_tsb=profile.mean_tsb,
+        std_tsb=profile.std_tsb,
+        threshold_fresh=profile.threshold_fresh,
+        threshold_recovering=profile.threshold_recovering,
+        threshold_normal_low=profile.threshold_normal_low,
+        threshold_danger=profile.threshold_danger,
+        sample_days=profile.sample_days,
+        is_personalized=profile.is_sufficient_data,
+        current_zone=zone_info.zone.value,
+        zone_description=zone_info.description
+    )
     
     return LoadHistoryResponse(
         history=[
@@ -120,7 +152,8 @@ async def get_load_history(
             tsb_trend=summary.tsb_trend,
             training_phase=summary.training_phase,
             recommendation=summary.recommendation
-        )
+        ),
+        personal_zones=personal_zones
     )
 
 

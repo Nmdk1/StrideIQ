@@ -50,9 +50,23 @@ interface LoadSummary {
   recommendation: string;
 }
 
+interface PersonalZones {
+  mean_tsb: number;
+  std_tsb: number;
+  threshold_fresh: number;
+  threshold_recovering: number;
+  threshold_normal_low: number;
+  threshold_danger: number;
+  sample_days: number;
+  is_personalized: boolean;
+  current_zone: string;
+  zone_description: string;
+}
+
 interface LoadHistoryResponse {
   history: DailyLoad[];
   summary: LoadSummary;
+  personal_zones?: PersonalZones;
 }
 
 export default function TrainingLoadPage() {
@@ -153,6 +167,11 @@ export default function TrainingLoadPage() {
                 recommendation={data.summary.recommendation}
               />
             </div>
+
+            {/* Personal Zones Card - N=1 */}
+            {data.personal_zones && (
+              <PersonalZonesCard zones={data.personal_zones} currentTsb={data.summary.tsb} />
+            )}
 
             {/* Performance Management Chart */}
             <div className="bg-slate-800/50 rounded-lg p-6 mb-8">
@@ -420,6 +439,118 @@ function PhaseCard({
         <span className="text-xl font-bold text-white capitalize">{phase}</span>
       </div>
       <p className="text-slate-400 text-xs">{recommendation}</p>
+    </div>
+  );
+}
+
+function PersonalZonesCard({
+  zones,
+  currentTsb,
+}: {
+  zones: PersonalZones;
+  currentTsb: number;
+}) {
+  const formatThreshold = (val: number) => {
+    return val >= 0 ? `+${val.toFixed(0)}` : val.toFixed(0);
+  };
+
+  // Determine which zone the current TSB falls into for highlighting
+  const getZoneHighlight = (zoneName: string) => {
+    if (zones.current_zone === zoneName) {
+      return 'bg-orange-600/30 border-l-2 border-orange-500';
+    }
+    return '';
+  };
+
+  return (
+    <div className="bg-slate-800/50 rounded-lg p-6 mb-8 border border-slate-700/50">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-xl font-bold text-white">Your Personal Zones</h2>
+          <p className="text-slate-400 text-sm">
+            {zones.is_personalized 
+              ? `Calibrated from ${zones.sample_days} days of your training`
+              : 'Using population defaults (need 56+ days for personalization)'
+            }
+          </p>
+        </div>
+        {zones.is_personalized && (
+          <span className="px-3 py-1 bg-green-900/30 text-green-400 text-xs rounded-full border border-green-700/50">
+            N=1 Personalized
+          </span>
+        )}
+      </div>
+
+      {/* Current state */}
+      <div className="bg-slate-900/50 rounded-lg p-4 mb-4">
+        <p className="text-slate-400 text-sm mb-1">Current State</p>
+        <p className="text-white">{zones.zone_description}</p>
+      </div>
+
+      {/* Zone thresholds */}
+      <div className="space-y-2">
+        <div className={`flex justify-between items-center p-2 rounded ${getZoneHighlight('race_ready')}`}>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-green-500"></div>
+            <span className="text-slate-300">Race Ready</span>
+          </div>
+          <span className="text-slate-400 font-mono text-sm">
+            TSB &gt; {formatThreshold(zones.threshold_fresh)}
+          </span>
+        </div>
+
+        <div className={`flex justify-between items-center p-2 rounded ${getZoneHighlight('recovering')}`}>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+            <span className="text-slate-300">Recovering</span>
+          </div>
+          <span className="text-slate-400 font-mono text-sm">
+            {formatThreshold(zones.threshold_recovering)} to {formatThreshold(zones.threshold_fresh)}
+          </span>
+        </div>
+
+        <div className={`flex justify-between items-center p-2 rounded ${getZoneHighlight('optimal_training')}`}>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-slate-400"></div>
+            <span className="text-slate-300">Normal Training</span>
+          </div>
+          <span className="text-slate-400 font-mono text-sm">
+            {formatThreshold(zones.threshold_normal_low)} to {formatThreshold(zones.threshold_recovering)}
+          </span>
+        </div>
+
+        <div className={`flex justify-between items-center p-2 rounded ${getZoneHighlight('overreaching')}`}>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+            <span className="text-slate-300">Overreaching</span>
+          </div>
+          <span className="text-slate-400 font-mono text-sm">
+            {formatThreshold(zones.threshold_danger)} to {formatThreshold(zones.threshold_normal_low)}
+          </span>
+        </div>
+
+        <div className={`flex justify-between items-center p-2 rounded ${getZoneHighlight('overtraining_risk')}`}>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-red-500"></div>
+            <span className="text-slate-300">Overtraining Risk</span>
+          </div>
+          <span className="text-slate-400 font-mono text-sm">
+            TSB &lt; {formatThreshold(zones.threshold_danger)}
+          </span>
+        </div>
+      </div>
+
+      {/* Stats footer */}
+      <div className="mt-4 pt-4 border-t border-slate-700/50 grid grid-cols-2 gap-4 text-sm">
+        <div>
+          <span className="text-slate-500">Your typical TSB</span>
+          <p className="text-white font-mono">{formatThreshold(zones.mean_tsb)} (mean)</p>
+        </div>
+        <div>
+          <span className="text-slate-500">Your variation</span>
+          <p className="text-white font-mono">±{zones.std_tsb.toFixed(1)} (SD)</p>
+        </div>
+      </div>
     </div>
   );
 }
