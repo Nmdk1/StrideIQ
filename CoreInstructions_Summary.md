@@ -1,182 +1,168 @@
-# Core Instructions Summary for StrideIQ Agents
+# StrideIQ Core Instructions Summary
+**Last Updated:** 2026-01-17 00:30 UTC
+**Version:** 2.1
 
-**Version:** 3.13.0  
-**Last Updated:** 2026-01-12  
-**Status:** Production (Phases 1-3 of Landing Experience Complete)
+## What is StrideIQ?
+AI-powered running coach that creates personalized training plans based on an athlete's actual physiological response to training - not population averages. The "Biological Digital Twin" concept.
 
----
+## Core Philosophy: N=1
+**The athlete is the sole sample.** Every metric, threshold, and recommendation should be calibrated to THIS athlete's data, not population norms.
 
-## READ THIS ENTIRE FILE FIRST ON EVERY NEW SESSION
+Recent example: TSB zones are now personalized. An athlete who routinely trains at TSB -20 won't be incorrectly labeled "overreaching" just because population thresholds say so.
 
-No skimming, no shortcuts, no assumptions.
+## Tech Stack
+- **Backend:** FastAPI, Python 3.11, SQLAlchemy, PostgreSQL (TimescaleDB)
+- **Frontend:** Next.js 14, React, TypeScript, Tailwind CSS, shadcn/ui
+- **Infrastructure:** Docker Compose, Redis, Celery
+- **Data:** Strava integration for activity sync
 
----
+## Key Services Running
+```
+docker-compose up -d --build
+```
+- API: http://localhost:8000
+- Web: http://localhost:3000
+- PostgreSQL: localhost:5432
+- Redis: localhost:6379
 
-## Manifesto & Philosophy
-
-### N=1 is the Only N That Matters
-- Athlete data overrides everything (books, coaches, research)
-- External knowledge informs questions, not answers
-- Population findings are hypotheses to test, not truths to impose
-
-### Value-First Insights
-- Only show when meaningful/statistically valid
-- Sparse/irreverent tone (e.g., "Data says this. Cool. Test it.")
-- No prescriptive language (no "you should")
-- No guilt, no motivation, no fluff
-- Explicit about uncertainty, limitations, missing data
-
-### Let The Data Speak
-- No imposition of population findings as truth
-- Pattern recognition from athlete's own data
-- Hierarchy aware: Career → Season → Build → Block → Week → Workout → Type → Variation
-
----
-
-## Project Overview
-
-### App Name
-**StrideIQ** — AI-powered running intelligence platform answering "WHY did I run faster/slower?" using athlete data alone.
-
-### Tech Stack
-- **Backend:** FastAPI/Python 3.11, PostgreSQL/TimescaleDB, Celery/Redis
-- **Frontend:** Next.js 14/TypeScript, React Query, Tailwind CSS
-- **Auth:** JWT
-- **Containerization:** Docker, Docker Compose
-
-### Current Architecture (ADR 14 - Layered Intelligence)
-| Layer | Time | Intent | View |
-|-------|------|--------|------|
-| **Glance** | 2 sec | "What now?" | Home (today's workout + insight) |
-| **Explore** | 30 sec | "How am I doing?" | Calendar (week view, trends) |
-| **Research** | 5+ min | "Why did this happen?" | Analytics (correlations, attribution) |
-
-### Key Features
-- Strava sync (Garmin ready)
-- Efficiency/decoupling analysis
-- Correlations (single/multi-factor, lags)
-- Workout classification (40+ types, 8 zones)
-- Knowledge base (8 books, 5 coaches, athlete input highest weight)
-- Plans (standard/semi-custom/custom)
-- Insights dashboard ("What's Working/Doesn't", trends, attribution)
-- Contextual comparison ("ghost average" of similar runs)
-
----
-
-## Current State
+## Current State (as of 2026-01-17)
 
 ### Recently Completed
-- **Phase 1:** Home Experience (Today's workout + Why, Yesterday's insight, Week trajectory)
-- **Phase 2:** Calendar Enhancement (Inline insights, week summaries)
-- **Phase 3:** Analytics Restructure (Renamed Dashboard → Analytics, correlation explorer)
-- **Bug fixes:** Workout classification, stability metrics, insights page
+1. **N=1 TSB Zones (ADR-035)** - Personal thresholds based on athlete's historical mean/SD
+2. **Training Load Page** - Accessible at /training-load with Personal Zones card
+3. **Calendar Signals** - PB badges, removed noisy load badges
+4. **Workout Classification** - Nuanced progression run detection with quality indicators
+5. **Home Page Fixes** - Correct "remaining miles" calculation, past missed workouts handled
 
-### In Progress
-- Phase 4: Research Tools (query engine, multi-athlete view, data export)
-
-### Navigation Structure
-```
-Primary:
-  Home        — The glance (today + yesterday + week)
-  Calendar    — The exploration (past/present/future)
-  Analytics   — The research (trends, correlations, attribution)
-  Coach       — Ask questions, get answers
-
-Secondary:
-  Activities, Personal Bests, Profile, Settings, Tools
+### All Tests Passing
+```bash
+docker-compose exec api python -m pytest tests/ -v
 ```
 
 ---
 
-## Key Rules for Agents
+## PRIORITY: Phase 2 Training Plan Implementation
 
-### Always Do
-1. Read ALL relevant files before proposing changes (no skimming)
-2. Follow TONE_GUIDE.md for all copy (sparse, irreverent, non-prescriptive)
-3. Test changes before committing
-4. Update documentation when making architectural changes
-5. Commit with clear, descriptive messages
+### Background
+Phase 1 training plans are functional but have issues identified by the athlete:
 
-### Never Do
-1. No assumptions - if context missing, ask
-2. No prescriptive language ("you should", "you need to")
-3. No guilt-inducing copy
-4. No over-engineering beyond what was asked
-5. No motivational fluff
+1. **Zero strides or hill work/sprints** despite high volume (75 mpw)
+2. **Tempo and Threshold runs treated as same** (need distinction)
+3. **Too long taper** (3 weeks vs physiological 2 weeks)
+4. **Little variation** in distances and run types
 
-### Rigor Process (For Major Changes)
-1. ADR (Architecture Decision Record)
-2. Audit logging
-3. Unit/integration tests
-4. Security review (validation, IDOR, rate limiting)
-5. Feature flag (if applicable)
-6. Rebuild and verify
+### What Exists
+- `apps/api/services/model_driven_plan_generator.py` - Current plan generator
+- `apps/api/services/constraint_aware_planner.py` - Handles athlete constraints
+- `apps/api/services/fitness_bank.py` - Fitness/fatigue modeling
+- `docs/adr/ADR-034-training-plan-variation.md` - Variation engine design
+
+### Phase 2 Requirements (from user conversations)
+
+#### 1. Workout Variety Engine
+Add strides, hill sprints, and drills to plans:
+- **Strides:** 4-6x20sec after easy runs, 2x/week during base/build
+- **Hill sprints:** 6-10x10sec max effort, 1x/week during build
+- **Drills:** Dynamic warmup progressions
+
+#### 2. Distinguish Tempo vs Threshold
+- **Tempo:** Comfortably hard, ~15-20 min sustained, ~85% max HR
+- **Threshold:** Lactate threshold pace, 20-40 min, ~88-90% max HR
+- Plans should prescribe each appropriately, not interchangeably
+
+#### 3. Evidence-Based Taper
+- Marathon: 2-3 weeks (currently 3, user prefers 2)
+- Half Marathon: 10-14 days
+- Shorter races: 7-10 days
+- Make taper length configurable or data-driven
+
+#### 4. Distance/Type Variation
+- Avoid same distance easy runs every day
+- Mix: 4mi easy, 6mi easy, 5mi with strides, etc.
+- Psychological freshness matters
+
+#### 5. Manual Plan Adjustments
+User wants ability to:
+- Swap workout days easily
+- Mark workouts as missed (not just delete)
+- Adjust individual workout distances
+
+### Key Files to Read
+1. `_AI_CONTEXT_/TRAINING_PHILOSOPHY.md` - Core training principles
+2. `_AI_CONTEXT_/PLAN_GENERATION_FRAMEWORK.md` - Current generation logic
+3. `docs/adr/ADR-034-training-plan-variation.md` - Variation engine spec
+4. `apps/api/services/model_driven_plan_generator.py` - Main generator
+5. User's Grok conversation about plan quality (referenced in session history)
+
+### Implementation Approach
+1. **Create ADR first** - Document the Phase 2 design
+2. **Add unit tests** - TDD for new workout types
+3. **Extend generator** - Add variety without breaking existing logic
+4. **Verify with real plan** - Generate plan and validate manually
+5. **Frontend support** - Ensure calendar displays new workout types correctly
 
 ---
 
-## Recent Bug Fixes (Session 2026-01-12)
+## Development Standards
 
-1. **Stability metrics "Hard Runs: 0"**
-   - Changed from HR-zone classification to workout_type + intensity_score
-   - Half marathon PR at 152 HR is HARD (was being missed)
+### Rigor Requirements
+- **ADR for significant features** - Design first, code second
+- **Verification before commit** - Run tests, check manually
+- **Logging for observability** - Log key calculations
+- **Handle edge cases** - Cold start, missing data, outliers
 
-2. **Workout classifier missing name detection**
-   - Added `_classify_from_name()` for threshold/tempo/interval keywords
-   - "35 minutes at threshold effort" → now correctly `threshold_run`
+### Testing
+```bash
+# Run all API tests
+docker-compose exec api python -m pytest tests/ -v
 
-3. **Insights page 500 error**
-   - Fixed `duration_weeks` → `total_weeks`
-   - Fixed `current_phase` to calculate from PlannedWorkout
+# Run specific test file
+docker-compose exec api python -m pytest tests/test_training_load.py -v
 
----
-
-## Known Issues
-
-1. Some activities may have false positive classifications (e.g., "skipped intervals" matching "intervals")
-2. 26 pre-existing unit test failures (not from recent changes)
-3. User max_hr and vdot not set - could auto-estimate from data
-
----
-
-## File Structure Reference
-
+# Verify N=1 TSB zones
+docker-compose exec api python scripts/verify_n1_tsb.py
 ```
-apps/
-  api/                    # FastAPI backend
-    routers/              # API endpoints
-    services/             # Business logic
-    scripts/              # Utility scripts
-    tests/                # Unit tests
-  web/                    # Next.js frontend
-    app/                  # Pages (App Router)
-    components/           # React components
-    lib/api/              # API client services
 
-_AI_CONTEXT_/
-  OPERATIONS/             # ADRs and operational docs
-  KNOWLEDGE_BASE/         # Philosophy docs
+### Rebuilding
+```bash
+# Full rebuild
+docker-compose down
+docker-compose up -d --build
 
-Key files:
-  TONE_GUIDE.md          # Voice and copy rules
-  BMI_PHILOSOPHY.md      # Data philosophy
+# API only
+docker-compose up -d --build api
 ```
 
 ---
 
-## Session Continuity
+## Key ADRs to Know
+- **ADR-010:** Training Stress Balance (TSB/ATL/CTL)
+- **ADR-022:** Individual Performance Model (Banister τ1/τ2)
+- **ADR-033:** Narrative Translation Layer
+- **ADR-034:** Training Plan Variation Engine
+- **ADR-035:** N=1 Individualized TSB Zones (NEW)
 
-When starting a new session:
-1. Read this file FIRST
-2. Check `ChatSession_*.md` files for recent context
-3. Run `git log --oneline -10` to see recent commits
-4. Run `docker-compose ps` to verify services are running
+## Tone/Style
+- **No fluff** - Technical accuracy over validation
+- **Disagree when necessary** - User values honest feedback
+- **Full rigor** - Don't cut corners on significant features
+- **Verify before claiming done** - Tests pass, manual check complete
+
+## User Context
+- **Name:** Michael (mbshaf@gmail.com)
+- **Age:** 57
+- **Training:** High volume (~75 mpw), experienced marathoner
+- **Goal:** Training for specific races with data-driven plans
+- **Personality:** Values precision, calls out sloppiness, wants N=1 personalization
 
 ---
 
-## Current Goals/Roadmap
+## Quick Start for Next Agent
 
-- [x] Phase 1-3: Landing Experience Architecture
-- [ ] Phase 4: Research Tools (query engine, multi-athlete, export)
-- [ ] Full attribution "why" (inputs explaining trends)
-- [ ] Premium gating (Stripe integration ready)
-- [ ] Long-term: Acquisition target ($5M+ with 400 users)
+1. Read this file and `_AI_CONTEXT_/ChatSession_2026-01-17_0030.md`
+2. Run `docker-compose ps` to verify services
+3. Check git status for any uncommitted changes
+4. Review `docs/adr/ADR-034-training-plan-variation.md` for Phase 2 context
+5. Ask user what they want to prioritize
+
+**Primary pending work:** Phase 2 Training Plan Implementation (variety, tempo/threshold distinction, taper length, manual adjustments)
