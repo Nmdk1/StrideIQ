@@ -5,6 +5,50 @@
 **To:** New Agent
 **Goal:** Full system audit, fix all issues, verify with real athlete data, leave system fully functional
 
+---
+
+## CRITICAL: Plan Generator BROKEN (Fix First)
+
+**Status:** RESOLVED (was a 500 surfaced as “CORS” in browser)
+**Page:** `localhost:3000/plans/create`
+
+**What it looked like in browser:**
+```
+Access to fetch at 'http://localhost:8000/v2/plans/constraint-aware' from origin 'http://localhost:3000' 
+has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present.
+[Plan Create] Error creating constraint-aware plan: TypeError: Failed to fetch
+```
+
+**Root causes (fixed):**
+- `feature_flag` schema mismatch (missing `requires_subscription` etc.) caused `POST /v2/plans/constraint-aware` to 500.
+- `feature_flag` table was empty (no `plan.model_driven_generation` row), so even after schema fix, flags needed seeding.
+- `services/fitness_bank.py` caught DB exceptions (e.g. missing `athlete_calibrated_model`) without rolling back, leaving the SQLAlchemy session “aborted” and breaking subsequent queries.
+
+**Fix steps applied:**
+```bash
+# 1) Apply migration to align feature_flag schema
+docker-compose exec -T api alembic upgrade head
+
+# 2) Seed feature flags (creates plan.model_driven_generation, etc.)
+docker-compose exec -T api python scripts/seed_feature_flags.py
+
+# 3) Ensure services/fitness_bank.py rolls back on DB exceptions (prevents aborted tx)
+#    (code change; already in repo)
+
+# 4) Verify endpoint (must return 200 + Allow-Origin)
+docker-compose exec -T api python -c "import requests; base='http://localhost:8000'; r=requests.post(base+'/v1/auth/login', json={'email':'mbshaf@gmail.com','password':'StrideIQLocal!2026'}); r.raise_for_status(); tok=r.json()['access_token']; h={'Authorization':'Bearer '+tok,'Origin':'http://localhost:3000'}; payload={'race_date':'2026-03-15','race_distance':'marathon','race_name':'Test','tune_up_races':[]}; resp=requests.post(base+'/v2/plans/constraint-aware', headers=h, json=payload, timeout=180); print(resp.status_code, resp.headers.get('access-control-allow-origin'))"
+```
+
+**Key files:**
+- `apps/api/routers/plan_generation.py` - endpoint definition
+- `apps/api/main.py` - CORS middleware
+- `apps/api/services/constraint_aware_planner.py` - plan generation logic
+- `apps/api/services/fitness_bank.py` - **must rollback() on caught DB exceptions**
+
+**Verification:** `POST /v2/plans/constraint-aware` now returns **200** and includes `Access-Control-Allow-Origin: http://localhost:3000`.
+
+---
+
 ## Current State (Verified)
 
 **As of 2026-01-19, the AI Coach is validated end-to-end with real athlete data:**

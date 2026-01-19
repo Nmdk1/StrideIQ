@@ -264,6 +264,12 @@ class FitnessBankCalculator:
             tau1 = model.tau1
             tau2 = model.tau2
         except Exception as e:
+            # Important: if the DB raised (e.g. missing table), the SQLAlchemy
+            # session is left in an aborted transaction state until rollback.
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
             logger.warning(f"Could not get model: {e}")
             tau1, tau2 = 42.0, 7.0
         
@@ -274,6 +280,11 @@ class FitnessBankCalculator:
             current_ctl = current_load.current_ctl
             current_atl = current_load.current_atl
         except Exception as e:
+            # Same rule: DB exceptions require rollback before any further queries.
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
             logger.warning(f"Could not get current load: {e}")
             current_ctl, current_atl = 50.0, 40.0
         
