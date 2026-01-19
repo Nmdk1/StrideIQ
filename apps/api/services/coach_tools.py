@@ -764,3 +764,111 @@ def get_efficiency_by_zone(
             pass
         return {"ok": False, "tool": "get_efficiency_by_zone", "error": str(e)}
 
+
+def get_nutrition_correlations(
+    db: Session,
+    athlete_id: UUID,
+    days: int = 90,
+) -> Dict[str, Any]:
+    """
+    Get activity-linked nutrition correlations.
+    """
+    now = datetime.utcnow()
+    try:
+        days = max(30, min(int(days), 365))
+        start = now - timedelta(days=days)
+
+        # Local import to avoid circulars.
+        from services.correlation_engine import aggregate_activity_nutrition
+
+        data = aggregate_activity_nutrition(str(athlete_id), start, now, db)
+        results: Dict[str, Any] = {}
+
+        for key, pairs in (data or {}).items():
+            if not pairs:
+                results[key] = {
+                    "sample_size": 0,
+                    "correlation": None,
+                    "note": "insufficient data",
+                }
+                continue
+
+            if len(pairs) < 5:
+                results[key] = {
+                    "sample_size": len(pairs),
+                    "correlation": None,
+                    "note": "insufficient data",
+                }
+                continue
+
+            x_vals = [p[1] for p in pairs]
+            y_vals = [p[2] for p in pairs]
+
+            n = len(x_vals)
+            mean_x = sum(x_vals) / n
+            mean_y = sum(y_vals) / n
+
+            numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(x_vals, y_vals))
+            denom_x = sum((x - mean_x) ** 2 for x in x_vals) ** 0.5
+            denom_y = sum((y - mean_y) ** 2 for y in y_vals) ** 0.5
+
+            if denom_x == 0 or denom_y == 0:
+                r = 0.0
+            else:
+                r = numerator / (denom_x * denom_y)
+
+            results[key] = {
+                "sample_size": n,
+                "correlation": round(float(r), 3),
+                "interpretation": _interpret_nutrition_correlation(key, float(r)),
+            }
+
+        return {
+            "ok": True,
+            "tool": "get_nutrition_correlations",
+            "generated_at": _iso(now),
+            "data": results,
+            "evidence": [
+                {
+                    "type": "derived",
+                    "id": f"nutrition_correlations:{str(athlete_id)}",
+                    "date": date.today().isoformat(),
+                    "value": f"Activity-linked nutrition analysis over {days} days",
+                }
+            ],
+        }
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "tool": "get_nutrition_correlations", "error": str(e)}
+
+
+def _interpret_nutrition_correlation(key: str, r: float) -> str:
+    """Interpret correlation coefficient for nutrition."""
+    if abs(r) < 0.1:
+        return "No meaningful relationship found"
+
+    # NOTE: Efficiency in our system is pace(sec/km)/HR, so LOWER is better.
+    # That means a NEGATIVE correlation between intake and efficiency can be a positive sign.
+    if "efficiency" in key and "delta" not in key:
+        if r < -0.3:
+            return "Strong positive effect: higher intake -> better efficiency"
+        elif r < -0.1:
+            return "Moderate positive effect"
+        elif r > 0.3:
+            return "Possible negative effect: higher intake -> worse efficiency"
+        elif r > 0.1:
+            return "Slight negative effect"
+
+    if "delta" in key:
+        if r < -0.3:
+            return "Strong recovery benefit: higher protein -> faster recovery"
+        elif r < -0.1:
+            return "Moderate recovery benefit"
+        elif r > 0.1:
+            return "No recovery benefit detected"
+
+    return f"Correlation: {r:.2f}"
+

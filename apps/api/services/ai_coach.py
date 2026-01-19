@@ -266,6 +266,25 @@ When providing insights:
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_nutrition_correlations",
+                    "description": "Get correlations between pre/post-activity nutrition and performance/recovery.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "days": {
+                                "type": "integer",
+                                "description": "Days of history (default 90, max 365).",
+                                "minimum": 30,
+                                "maximum": 365,
+                            }
+                        },
+                        "required": [],
+                    },
+                },
+            },
         ]
     
     def _get_or_create_assistant(self) -> Optional[str]:
@@ -808,6 +827,8 @@ When providing insights:
                                 output = coach_tools.get_pb_patterns(self.db, athlete_id)
                             elif tool_name == "get_efficiency_by_zone":
                                 output = coach_tools.get_efficiency_by_zone(self.db, athlete_id, **args)
+                            elif tool_name == "get_nutrition_correlations":
+                                output = coach_tools.get_nutrition_correlations(self.db, athlete_id, **args)
                             else:
                                 output = {
                                     "ok": False,

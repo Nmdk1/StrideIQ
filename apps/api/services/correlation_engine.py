@@ -385,6 +385,186 @@ def aggregate_daily_inputs(
     return inputs
 
 
+def aggregate_activity_nutrition(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session,
+) -> Dict[str, List[Tuple[date_type, float, float]]]:
+    """
+    Aggregate activity-linked nutrition with efficiency.
+
+    Returns:
+        {
+            "pre_carbs_vs_efficiency": [(date, carbs_g, efficiency), ...],
+            "pre_protein_vs_efficiency": [(date, protein_g, efficiency), ...],
+            "post_protein_vs_next_efficiency": [(date, protein_g, next_eff_delta), ...],
+        }
+    """
+    result: Dict[str, List[Tuple[date_type, float, float]]] = {
+        "pre_carbs_vs_efficiency": [],
+        "pre_protein_vs_efficiency": [],
+        "post_protein_vs_next_efficiency": [],
+    }
+
+    # --- Pre-activity nutrition linked to same activity efficiency ---
+    try:
+        pre_rows = (
+            db.query(
+                NutritionEntry.activity_id,
+                NutritionEntry.carbs_g,
+                NutritionEntry.protein_g,
+                Activity.start_time,
+                Activity.avg_hr,
+                Activity.duration_s,
+                Activity.distance_m,
+            )
+            .join(Activity, Activity.id == NutritionEntry.activity_id)
+            .filter(
+                NutritionEntry.athlete_id == athlete_id,
+                NutritionEntry.date >= start_date.date(),
+                NutritionEntry.date <= end_date.date(),
+                NutritionEntry.entry_type == "pre_activity",
+                NutritionEntry.activity_id.isnot(None),
+            )
+            .all()
+        )
+    except Exception:
+        # Be defensive: if join fails in some envs, fall back to empty.
+        pre_rows = []
+
+    for row in pre_rows:
+        activity_date = row.start_time.date() if row.start_time else None
+        avg_hr = float(row.avg_hr) if row.avg_hr is not None else None
+        duration_s = float(row.duration_s) if row.duration_s is not None else None
+        distance_m = float(row.distance_m) if row.distance_m is not None else None
+        if (
+            activity_date is None
+            or avg_hr is None
+            or avg_hr <= 0
+            or duration_s is None
+            or duration_s <= 0
+            or distance_m is None
+            or distance_m <= 0
+        ):
+            continue
+
+        pace_per_km = duration_s / (distance_m / 1000.0)
+        efficiency = pace_per_km / avg_hr  # Lower is better
+
+        if row.carbs_g is not None:
+            carbs = float(row.carbs_g)
+            if carbs > 0:
+                result["pre_carbs_vs_efficiency"].append((activity_date, carbs, float(efficiency)))
+
+        if row.protein_g is not None:
+            protein = float(row.protein_g)
+            if protein > 0:
+                result["pre_protein_vs_efficiency"].append((activity_date, protein, float(efficiency)))
+
+    # --- Post-activity protein vs next-day efficiency delta ---
+    try:
+        post_rows = (
+            db.query(
+                NutritionEntry.activity_id,
+                NutritionEntry.protein_g,
+                NutritionEntry.date,
+                Activity.avg_hr,
+                Activity.duration_s,
+                Activity.distance_m,
+            )
+            .outerjoin(Activity, Activity.id == NutritionEntry.activity_id)
+            .filter(
+                NutritionEntry.athlete_id == athlete_id,
+                NutritionEntry.date >= start_date.date(),
+                NutritionEntry.date <= end_date.date(),
+                NutritionEntry.entry_type == "post_activity",
+                NutritionEntry.protein_g.isnot(None),
+            )
+            .all()
+        )
+    except Exception:
+        post_rows = []
+
+    # Prefetch next-day run activities (first run per day) to avoid N+1.
+    next_activity_by_date: Dict[date_type, Tuple[float, float, float]] = {}
+    try:
+        next_candidates = (
+            db.query(
+                func.date(Activity.start_time).label("d"),
+                Activity.avg_hr,
+                Activity.duration_s,
+                Activity.distance_m,
+                Activity.start_time,
+            )
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
+                Activity.start_time >= start_date,
+                Activity.start_time <= (end_date + timedelta(days=1)),
+            )
+            .order_by(Activity.start_time.asc())
+            .all()
+        )
+        for r in next_candidates:
+            d = r.d
+            if d is None or d in next_activity_by_date:
+                continue
+            avg_hr = float(r.avg_hr) if r.avg_hr is not None else None
+            duration_s = float(r.duration_s) if r.duration_s is not None else None
+            distance_m = float(r.distance_m) if r.distance_m is not None else None
+            if (
+                avg_hr is None
+                or avg_hr <= 0
+                or duration_s is None
+                or duration_s <= 0
+                or distance_m is None
+                or distance_m <= 0
+            ):
+                continue
+            next_activity_by_date[d] = (avg_hr, duration_s, distance_m)
+    except Exception:
+        next_activity_by_date = {}
+
+    for row in post_rows:
+        entry_date = row.date
+        if entry_date is None:
+            continue
+
+        protein = float(row.protein_g) if row.protein_g is not None else None
+        if protein is None or protein <= 0:
+            continue
+
+        # Current activity efficiency (if linked)
+        avg_hr = float(row.avg_hr) if row.avg_hr is not None else None
+        duration_s = float(row.duration_s) if row.duration_s is not None else None
+        distance_m = float(row.distance_m) if row.distance_m is not None else None
+        if (
+            avg_hr is None
+            or avg_hr <= 0
+            or duration_s is None
+            or duration_s <= 0
+            or distance_m is None
+            or distance_m <= 0
+        ):
+            continue
+
+        current_eff = (duration_s / (distance_m / 1000.0)) / avg_hr
+
+        next_day = entry_date + timedelta(days=1)
+        next_metrics = next_activity_by_date.get(next_day)
+        if not next_metrics:
+            continue
+
+        next_avg_hr, next_duration_s, next_distance_m = next_metrics
+        next_eff = (next_duration_s / (next_distance_m / 1000.0)) / next_avg_hr
+
+        eff_delta = float(next_eff - current_eff)
+        result["post_protein_vs_next_efficiency"].append((entry_date, float(protein), eff_delta))
+
+    return result
+
+
 def aggregate_training_load_inputs(
     athlete_id: str,
     start_date: datetime,

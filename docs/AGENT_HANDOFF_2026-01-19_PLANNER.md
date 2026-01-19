@@ -36,7 +36,7 @@
 | 2 | ADR-046 | ✅ **Complete** | Expose hidden analytics to Coach |
 | 3 | ADR-047 | ✅ **Complete** | Coach architecture refactor |
 | 4 | ADR-048 | ✅ **Complete** | Dynamic insight suggestions |
-| 5 | ADR-049 | 📋 **Draft** | Activity-linked nutrition correlation |
+| 5 | ADR-049 | ✅ **Complete** | Activity-linked nutrition correlation |
 
 ---
 
