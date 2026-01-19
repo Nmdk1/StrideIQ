@@ -9,7 +9,10 @@
     "lint": "next lint",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "e2e:coach": "node scripts/e2e_coach_suggestions.mjs",
+    "e2e:coach:headed": "cross-env E2E_HEADLESS=false node scripts/e2e_coach_suggestions.mjs",
+    "e2e:install:browsers": "playwright install chromium"
   },
   "dependencies": {
     "@radix-ui/react-progress": "^1.1.8",
@@ -37,6 +40,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.4.23",
+    "cross-env": "^7.0.3",
     "eslint": "^8",
     "eslint-config-next": "14.0.0",
     "jest": "^29.7.0",

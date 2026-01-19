@@ -3,13 +3,14 @@ import { chromium } from "playwright";
 const EMAIL = process.env.E2E_EMAIL || "mbshaf@gmail.com";
 const PASSWORD = process.env.E2E_PASSWORD || "StrideIQLocal!2026";
 const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:3000";
+const HEADLESS = (process.env.E2E_HEADLESS || "true").toLowerCase() !== "false";
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 async function main() {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: HEADLESS });
   const page = await browser.newPage();
 
   // Login
