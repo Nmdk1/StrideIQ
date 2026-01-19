@@ -137,6 +137,9 @@ class TestInputValidation:
             current_ctl=72.0,
             current_atl=80.0,
             weeks_since_peak=4,
+            # ADR-038: N=1 long run progression inputs
+            current_long_run_miles=22.0 * 0.80,
+            average_long_run_miles=22.0 * 0.90,
             tau1=25.0,
             tau2=18.0,
             experience_level=ExperienceLevel.ELITE,

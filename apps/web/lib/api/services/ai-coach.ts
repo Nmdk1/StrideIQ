@@ -23,12 +23,23 @@ export interface ContextResponse {
   context: string;
 }
 
+export interface NewConversationResponse {
+  ok: boolean;
+}
+
 export const aiCoachService = {
   /**
    * Chat with the AI coach
    */
   async chat(request: ChatRequest): Promise<ChatResponse> {
     return apiClient.post<ChatResponse>('/v1/coach/chat', request);
+  },
+
+  /**
+   * Start a new conversation (clears persisted thread)
+   */
+  async newConversation(): Promise<NewConversationResponse> {
+    return apiClient.post<NewConversationResponse>('/v1/coach/new-conversation', {});
   },
 
   /**

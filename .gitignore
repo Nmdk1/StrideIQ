@@ -61,11 +61,23 @@ dist/
 *.db
 *.sqlite
 *.sqlite3
+backups/
+*.sql
 
 # Temporary files
 tmp/
 temp/
 *.tmp
+_tmp/
+test-results/
+apps/web/_tmp/
+
+# Local diagnostics / scratch scripts (keep repo clean)
+apps/api/debug_*.py
+apps/api/check_*.py
+apps/api/final_test.py
+apps/api/fix_and_test.py
+apps/api/test_full_flow.py
 
 # Large files that shouldn't be in repo
 *.pdf

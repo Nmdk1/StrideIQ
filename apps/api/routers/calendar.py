@@ -62,6 +62,7 @@ class PlannedWorkoutResponse(BaseModel):
     title: str
     description: Optional[str] = None
     phase: str
+    week_number: int  # Required for week summary grouping
     target_distance_km: Optional[float] = None
     target_duration_minutes: Optional[int] = None
     segments: Optional[list] = None  # List of workout segments

@@ -391,18 +391,26 @@ class TestRacePredictor:
     
     def test_prediction_handles_insufficient_data(self, mock_db):
         """Test that prediction gracefully handles insufficient data."""
-        with patch.object(RacePredictor, '_get_current_vdot', return_value=None):
-            with patch.object(RacePredictor, '_estimate_vdot_from_training', return_value=None):
-                predictor = RacePredictor(mock_db)
-                
-                prediction = predictor.predict(
-                    athlete_id=uuid4(),
-                    race_date=date.today() + timedelta(days=56),
-                    distance_m=42195
-                )
-                
-                assert prediction.prediction_confidence == "insufficient_data"
-                assert "Insufficient data" in prediction.notes[0]
+        # Mock the model retrieval to return a model with no calibration
+        mock_model = MagicMock()
+        mock_model.tau1 = 42.0
+        mock_model.tau2 = 7.0
+        mock_model.k1 = 1.0
+        mock_model.k2 = 2.0
+        
+        with patch('services.race_predictor.get_or_calibrate_model', return_value=mock_model):
+            with patch.object(RacePredictor, '_get_current_vdot', return_value=None):
+                with patch.object(RacePredictor, '_estimate_vdot_from_training', return_value=None):
+                    predictor = RacePredictor(mock_db)
+                    
+                    prediction = predictor.predict(
+                        athlete_id=uuid4(),
+                        race_date=date.today() + timedelta(days=56),
+                        distance_m=42195
+                    )
+                    
+                    assert prediction.prediction_confidence == "insufficient_data"
+                    assert "Insufficient data" in prediction.notes[0]
     
     def test_tsb_adjustment_applied(self, mock_db):
         """Test that TSB adjustment is applied to predictions."""

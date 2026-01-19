@@ -485,6 +485,60 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             return f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
 
         predictions: Dict[str, Any] = {}
+        evidence: List[Dict[str, Any]] = []
+
+        def _best_vdot_from_personal_bests() -> Optional[Dict[str, Any]]:
+            """
+            Derive a VDOT estimate from the athlete's PersonalBest table.
+
+            Returns:
+                {"vdot": float, "pb": PersonalBest} or None
+            """
+            try:
+                from models import PersonalBest
+                from services.vdot_calculator import calculate_vdot_from_race_time
+
+                pbs = (
+                    db.query(PersonalBest)
+                    .filter(PersonalBest.athlete_id == athlete_id)
+                    .order_by(PersonalBest.achieved_at.desc())
+                    .limit(20)
+                    .all()
+                )
+                if not pbs:
+                    return None
+
+                # Prefer race PBs and standard race distances (better anchors).
+                candidates: List[tuple[float, Any]] = []
+                for pb in pbs:
+                    v = calculate_vdot_from_race_time(pb.distance_meters, pb.time_seconds)
+                    if not v:
+                        continue
+                    weight = 0.0
+                    if getattr(pb, "is_race", False):
+                        weight += 0.3
+                    if pb.distance_category in {"5k", "10k", "half_marathon", "marathon"}:
+                        weight += 0.2
+                    candidates.append((float(v) + weight, pb))
+
+                if not candidates:
+                    return None
+
+                candidates.sort(key=lambda t: t[0], reverse=True)
+                best_weighted, best_pb = candidates[0]
+
+                # Remove weight for reporting a clean VDOT value.
+                base_vdot = float(best_weighted)
+                if getattr(best_pb, "is_race", False):
+                    base_vdot -= 0.3
+                if best_pb.distance_category in {"5k", "10k", "half_marathon", "marathon"}:
+                    base_vdot -= 0.2
+
+                return {"vdot": round(base_vdot, 1), "pb": best_pb}
+            except Exception:
+                return None
+
+        pb_vdot = _best_vdot_from_personal_bests()
         for label, dist_m in distances:
             try:
                 pred = predictor.predict(athlete_id=athlete_id, race_date=race_date, distance_m=dist_m)
@@ -497,10 +551,20 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 except Exception:
                     pass
                 # Fallback: if the calibrated model table isn't present in this environment,
-                # use the athlete's stored VDOT (if available) to provide a reasonable estimate.
+                # use the athlete's stored VDOT or derive one from PBs to provide a reasonable estimate.
                 msg = str(e)
-                if athlete and getattr(athlete, "vdot", None) and "athlete_calibrated_model" in msg:
-                    seconds = calculate_race_time_from_vdot(float(athlete.vdot), dist_m)
+                fallback_vdot: Optional[float] = None
+                fallback_source: Optional[str] = None
+
+                if athlete and getattr(athlete, "vdot", None):
+                    fallback_vdot = float(athlete.vdot)
+                    fallback_source = "athlete_vdot"
+                elif pb_vdot and pb_vdot.get("vdot"):
+                    fallback_vdot = float(pb_vdot["vdot"])
+                    fallback_source = "pb_vdot"
+
+                if fallback_vdot and "athlete_calibrated_model" in msg:
+                    seconds = calculate_race_time_from_vdot(float(fallback_vdot), dist_m)
                     if seconds:
                         predictions[label] = {
                             "prediction": {
@@ -508,16 +572,39 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                                 "time_formatted": _fmt_time(int(seconds)),
                                 "confidence_interval_seconds": None,
                                 "confidence_interval_formatted": None,
-                                "confidence": "vdot_fallback",
+                                "confidence": f"{fallback_source}_fallback",
                             },
-                            "projections": {"vdot": round(float(athlete.vdot), 1), "ctl": None, "tsb": None},
-                            "factors": ["Athlete.vdot fallback (no calibrated model available)"],
+                            "projections": {"vdot": round(float(fallback_vdot), 1), "ctl": None, "tsb": None},
+                            "factors": [
+                                "Calibrated performance model unavailable; using VDOT-derived equivalent times.",
+                                f"VDOT source: {fallback_source}",
+                            ],
                             "notes": ["This estimate is less personalized than the calibrated model pipeline."],
                         }
                     else:
                         predictions[label] = {"error": msg}
                 else:
                     predictions[label] = {"error": msg}
+
+        # Evidence: cite the PB used for fallback (if any), plus a derived marker.
+        if pb_vdot and pb_vdot.get("pb"):
+            pb = pb_vdot["pb"]
+            pb_date = (
+                getattr(pb, "achieved_at", None).date().isoformat()
+                if getattr(pb, "achieved_at", None)
+                else date.today().isoformat()
+            )
+            evidence.append(
+                {
+                    "type": "personal_best",
+                    "id": str(getattr(pb, "id", "")) or f"pb:{pb_date}:{getattr(pb, 'distance_category', 'unknown')}",
+                    "date": pb_date,
+                    "value": (
+                        f"PB anchor for predictions: {getattr(pb, 'distance_category', 'pb')} "
+                        f"in {getattr(pb, 'time_seconds', '?')}s (activity {getattr(pb, 'activity_id', '')})"
+                    ),
+                }
+            )
 
         return {
             "ok": True,
@@ -527,7 +614,8 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 "race_date": race_date.isoformat(),
                 "predictions": predictions,
             },
-            "evidence": [
+            "evidence": evidence
+            + [
                 {
                     "type": "derived",
                     "id": f"race_predictions:{str(athlete_id)}",
@@ -673,27 +761,120 @@ def get_active_insights(db: Session, athlete_id: UUID, limit: int = 5) -> Dict[s
 def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     Training patterns that preceded personal bests.
+    
+    Returns BOTH summary stats AND per-PB detail so coach can cite specifics.
     """
+    from services.training_load import TrainingLoadCalculator
+    from models import PersonalBest
+    
     now = datetime.utcnow()
     try:
         start = now - timedelta(days=365)
-        result = aggregate_pre_pb_state(str(athlete_id), start, now, db)
+        
+        # Get all PBs
+        pbs = db.query(PersonalBest).filter(
+            PersonalBest.athlete_id == athlete_id,
+            PersonalBest.achieved_at >= start,
+            PersonalBest.achieved_at <= now
+        ).all()
+        
+        if not pbs:
+            return {
+                "ok": True,
+                "tool": "get_pb_patterns",
+                "generated_at": _iso(now),
+                "data": {"pb_count": 0, "pbs": []},
+                "evidence": [],
+            }
+        
+        # Get training load history for TSB lookup
+        calc = TrainingLoadCalculator(db)
+        try:
+            history = calc.get_load_history(athlete_id, days=365)
+        except Exception:
+            history = []
+        
+        # Build date lookup
+        load_by_date = {}
+        items = history if isinstance(history, list) else history.get("daily_loads", [])
+        for item in items:
+            d = item.date if hasattr(item, 'date') else item.get('date')
+            if hasattr(d, 'date'):
+                d = d.date()
+            elif isinstance(d, str):
+                from datetime import datetime as dt
+                d = dt.fromisoformat(d).date()
+            load_by_date[d] = item
+        
+        # Build per-PB detail
+        pb_details = []
+        tsb_values = []
+        
+        for pb in sorted(pbs, key=lambda x: x.achieved_at or now):
+            pb_date = pb.achieved_at.date() if pb.achieved_at else None
+            if not pb_date:
+                continue
+                
+            # Get TSB day before
+            check_date = pb_date - timedelta(days=1)
+            tsb = None
+            ctl = None
+            if check_date in load_by_date:
+                item = load_by_date[check_date]
+                tsb = item.tsb if hasattr(item, 'tsb') else item.get('tsb')
+                ctl = item.ctl if hasattr(item, 'ctl') else item.get('ctl')
+                if tsb is not None:
+                    tsb = round(tsb, 1)
+                    tsb_values.append(tsb)
+                if ctl is not None:
+                    ctl = round(ctl, 1)
+            
+            dist_km = round((pb.distance_meters or 0) / 1000, 2)
+            time_min = round((pb.time_seconds or 0) / 60, 1)
+            pace = round(time_min / dist_km, 2) if dist_km > 0 else None
+            
+            pb_details.append({
+                "personal_best_id": str(pb.id),
+                "activity_id": str(pb.activity_id) if getattr(pb, "activity_id", None) else None,
+                "date": pb_date.isoformat(),
+                "category": pb.distance_category,
+                "distance_km": dist_km,
+                "time_min": time_min,
+                "pace_min_per_km": pace,
+                "is_race": pb.is_race,
+                "tsb_day_before": tsb,
+                "ctl_day_before": ctl,
+            })
+        
+        # Compute summary stats
+        summary = {
+            "pb_count": len(pb_details),
+            "tsb_min": min(tsb_values) if tsb_values else None,
+            "tsb_max": max(tsb_values) if tsb_values else None,
+            "tsb_mean": round(sum(tsb_values) / len(tsb_values), 1) if tsb_values else None,
+        }
+        
+        # Build evidence with actual citations
+        evidence = []
+        for pb in pb_details:
+            anchor_id = pb.get("activity_id") or pb.get("personal_best_id") or f"pb:{pb['date']}:{pb['category']}"
+            activity_part = f" (activity {pb.get('activity_id')})" if pb.get("activity_id") else ""
+            evidence.append({
+                "type": "personal_best",
+                "id": anchor_id,
+                "date": pb["date"],
+                "value": f"{pb['category']} PR: {pb['distance_km']}km in {pb['time_min']}min{activity_part}, TSB was {pb['tsb_day_before']}",
+            })
 
         return {
             "ok": True,
             "tool": "get_pb_patterns",
             "generated_at": _iso(now),
-            "data": result,
-            "evidence": [
-                {
-                    "type": "derived",
-                    "id": f"pb_patterns:{str(athlete_id)}",
-                    "date": date.today().isoformat(),
-                    "value": (
-                        f"{(result or {}).get('pb_count', 0)} PBs analyzed, optimal TSB range: {(result or {}).get('optimal_tsb_range')}"
-                    ),
-                }
-            ],
+            "data": {
+                **summary,
+                "pbs": pb_details,
+            },
+            "evidence": evidence,
         }
     except Exception as e:
         try:
@@ -730,6 +911,68 @@ def get_efficiency_by_zone(
         best = min(efficiencies) if efficiencies else None
         avg = (sum(efficiencies) / len(efficiencies)) if efficiencies else None
 
+        # Evidence: include a few concrete, citable activities that match the zone filter.
+        evidence: List[Dict[str, Any]] = []
+        try:
+            athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            max_hr = int(athlete.max_hr) if athlete and athlete.max_hr else None
+            if max_hr:
+                if effort_zone == "easy":
+                    hr_min, hr_max = 0, int(max_hr * 0.75)
+                elif effort_zone == "threshold":
+                    hr_min, hr_max = int(max_hr * 0.80), int(max_hr * 0.88)
+                elif effort_zone == "race":
+                    hr_min, hr_max = int(max_hr * 0.88), 999
+                else:
+                    hr_min, hr_max = None, None
+
+                if hr_min is not None and hr_max is not None:
+                    acts = (
+                        db.query(Activity)
+                        .filter(
+                            Activity.athlete_id == athlete_id,
+                            Activity.sport == "run",
+                            Activity.start_time >= start,
+                            Activity.start_time <= now,
+                            Activity.avg_hr >= hr_min,
+                            Activity.avg_hr <= hr_max,
+                            Activity.distance_m >= 3000,
+                            Activity.duration_s.isnot(None),
+                            Activity.avg_hr.isnot(None),
+                        )
+                        .order_by(Activity.start_time.desc())
+                        .limit(5)
+                        .all()
+                    )
+
+                    for a in acts:
+                        pace_sec_km = float(a.duration_s) / (float(a.distance_m) / 1000.0)
+                        eff = pace_sec_km / float(a.avg_hr) if a.avg_hr else None
+                        value_parts: List[str] = []
+                        if eff is not None:
+                            value_parts.append(f"zone_eff {eff:.6f} (sec/km per bpm)")
+                        pace = _pace_str(a.duration_s, a.distance_m)
+                        if pace:
+                            value_parts.append(f"pace {pace}")
+                        if a.avg_hr is not None:
+                            value_parts.append(f"avg HR {int(a.avg_hr)} bpm")
+                        value = ", ".join(value_parts) if value_parts else f"{effort_zone} zone run"
+
+                        evidence.append(
+                            {
+                                "type": "activity",
+                                "id": str(a.id),
+                                "date": a.start_time.date().isoformat(),
+                                "value": value,
+                                # Back-compat keys
+                                "activity_id": str(a.id),
+                                "start_time": _iso(a.start_time),
+                            }
+                        )
+        except Exception:
+            # Don't fail the tool if evidence enrichment fails.
+            pass
+
         return {
             "ok": True,
             "tool": "get_efficiency_by_zone",
@@ -744,7 +987,8 @@ def get_efficiency_by_zone(
                 "recent_trend_pct": round(trend_data[-1][1], 2) if trend_data else None,
                 "note": "Efficiency is Pace(sec/km)/HR(bpm). Lower = faster at same HR (better). Trend % is vs baseline (negative = improvement).",
             },
-            "evidence": [
+            "evidence": evidence
+            + [
                 {
                     "type": "derived",
                     "id": f"efficiency_zone:{str(athlete_id)}:{effort_zone}",

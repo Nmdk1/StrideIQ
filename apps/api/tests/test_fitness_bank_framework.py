@@ -93,6 +93,8 @@ def elite_fitness_bank():
         current_ctl=30.0,
         current_atl=39.0,
         weeks_since_peak=8,
+        current_long_run_miles=12.0,
+        average_long_run_miles=14.6,
         tau1=25.0,
         tau2=18.0,
         experience_level=ExperienceLevel.ELITE,
@@ -126,6 +128,8 @@ def intermediate_fitness_bank():
         current_ctl=55.0,
         current_atl=50.0,
         weeks_since_peak=2,
+        current_long_run_miles=14.0,
+        average_long_run_miles=12.0,
         tau1=42.0,
         tau2=7.0,
         experience_level=ExperienceLevel.INTERMEDIATE,
@@ -174,11 +178,11 @@ class TestPaceCalculation:
         """Test pace calculation from VDOT 53."""
         paces = calculate_paces_from_vdot(53.0)
         
-        # Easy should be ~8:00-8:10
-        assert 7.8 <= paces["easy"] <= 8.3
+        # Easy should be ~7:45-8:15 (from lookup service)
+        assert 7.7 <= paces["easy"] <= 8.3
         
-        # Marathon should be ~6:45-6:55
-        assert 6.6 <= paces["marathon"] <= 7.0
+        # Marathon should be ~6:30-7:00 (from lookup service)
+        assert 6.5 <= paces["marathon"] <= 7.0
         
         # Threshold should be ~6:20-6:30
         assert 6.2 <= paces["threshold"] <= 6.6
@@ -292,7 +296,7 @@ class TestWorkoutPrescription:
     
     def test_threshold_workout_structure(self, elite_fitness_bank):
         """Test that threshold workouts have specific structure."""
-        generator = WorkoutPrescriptionGenerator(elite_fitness_bank)
+        generator = WorkoutPrescriptionGenerator(elite_fitness_bank, race_distance="marathon")
         
         week = generator.generate_week(
             theme=WeekTheme.BUILD_T_EMPHASIS,
@@ -317,7 +321,7 @@ class TestWorkoutPrescription:
     
     def test_mp_long_run_progression(self, elite_fitness_bank):
         """Test that MP long runs scale based on week."""
-        generator = WorkoutPrescriptionGenerator(elite_fitness_bank)
+        generator = WorkoutPrescriptionGenerator(elite_fitness_bank, race_distance="marathon")
         
         # Early build week
         early_week = generator.generate_week(
@@ -358,7 +362,7 @@ class TestWorkoutPrescription:
     
     def test_personal_paces(self, elite_fitness_bank):
         """Test that workouts use personal VDOT paces."""
-        generator = WorkoutPrescriptionGenerator(elite_fitness_bank)
+        generator = WorkoutPrescriptionGenerator(elite_fitness_bank, race_distance="marathon")
         
         week = generator.generate_week(
             theme=WeekTheme.BUILD_T_EMPHASIS,
@@ -435,7 +439,7 @@ class TestIntegration:
         )
         
         # Generate workouts for each theme
-        workout_generator = WorkoutPrescriptionGenerator(elite_fitness_bank)
+        workout_generator = WorkoutPrescriptionGenerator(elite_fitness_bank, race_distance="marathon")
         weeks = []
         
         for theme_plan in themes[:3]:  # Just test first 3 weeks

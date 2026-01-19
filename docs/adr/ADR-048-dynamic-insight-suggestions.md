@@ -27,6 +27,13 @@ These are generic and don't reference the athlete's actual data.
 3. **Miss anomalies** — Don't surface unusual patterns or insights
 4. **Not ranked by relevance** — Generic order, not prioritized
 
+### Root Trust Problem (the “why”)
+
+Even when analytics exist, the UI can still feel like “hallucination” if the coach does not provide **receipts**.
+
+**Receipts = date + UUID + human-readable value.**  
+When the coach cites an `activity_id` or `personal_best` anchor, the user can verify the claim, which builds interaction trust.
+
 ### Target State
 
 Suggestions like:
@@ -47,6 +54,15 @@ Refactor `get_dynamic_suggestions()` to:
 2. **Pull data from coach tools** (ADR-046)
 3. **Format insights as questions** with specific data
 4. **Rank by priority/recency**
+
+### Add Citation-Forcing Suggestions
+
+To prevent the “generic answer” failure mode, suggestions should be written to force a cited answer, e.g.:
+- “Cite the activity id + date + value”
+- “Cite two EF points (earliest + latest) with activity IDs”
+- “Cite each PR’s activity id + date + TSB day-before”
+
+This keeps the coach anchored in tool evidence without relying on the model to “remember” to cite.
 
 ### Implementation
 
@@ -98,9 +114,9 @@ def get_dynamic_suggestions(self, athlete_id: UUID) -> List[str]:
             tsb = result["data"].get("tsb")
             if tsb is not None:
                 if tsb > 20:
-                    add(f"Your TSB is +{tsb:.0f} — you're fresh. Ready for a hard effort?")
+                    add("Am I fresh enough for a hard workout? Cite my current ATL/CTL/TSB and explain what that implies for today.")
                 elif tsb < -30:
-                    add(f"Your TSB is {tsb:.0f} — heavy fatigue. Should we discuss recovery?")
+                    add("Am I overreaching? Cite my current ATL/CTL/TSB and give a recovery plan for the next 48 hours.")
     except Exception:
         pass
     
@@ -132,14 +148,14 @@ def get_dynamic_suggestions(self, athlete_id: UUID) -> List[str]:
         )
         if completed_today:
             distance_km = (completed_today.distance_m or 0) / 1000
-            add(f"You ran {distance_km:.1f} km today. How did it feel?")
+            add(f"Review my run from today ({distance_km:.1f} km). Cite the activity id + distance + pace + avg HR (from get_recent_runs).")
     except Exception:
         pass
     
     # --- Fallback defaults ---
     if len(suggestions) < 3:
-        add("How is my training going overall?")
-        add("Am I on track for my goal?")
+        add("How is my training going overall? Cite at least 2 recent runs (date + activity id + distance + pace) and my current ATL/CTL/TSB.")
+        add("Am I on track for my goal race? Use get_plan_week and get_training_load and cite specific workouts + current load.")
     
     return suggestions[:5]
 
@@ -215,6 +231,13 @@ def _insight_to_question(self, insight) -> Optional[str]:
    ```
    Judge has: 6 PBs, TSB ~28, efficiency improving
    → Should see: PB-related suggestion, freshness suggestion, or efficiency success suggestion
+
+### Trust Validation (new hard requirement)
+
+7. **Click → cited answer**
+   - Clicking any suggestion in `/coach` must produce an answer containing at least one citation with:
+     - a date (YYYY-MM-DD)
+     - a UUID (activity id or PB anchor)
    ```
 
 ---
@@ -226,6 +249,9 @@ def _insight_to_question(self, insight) -> Optional[str]:
 2. Verify at least one suggestion contains a specific number
 3. Verify suggestions change based on TSB (compare with athlete at TSB < 0)
 4. Cross-check suggestions against known athlete state
+5. Verify end-to-end in the UI: `localhost:3000/coach` click suggestion → cited answer
+6. Run repeatable headless check from `apps/web/`:
+   - `node scripts/e2e_coach_suggestions.mjs`
 
 ---
 
@@ -253,4 +279,4 @@ If issues arise:
 
 ---
 
-**Awaiting Judge approval.**
+**Verified 2026-01-19: end-to-end click → cited answer.**

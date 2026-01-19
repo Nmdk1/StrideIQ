@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 # revision identifiers, used by Alembic.
@@ -19,22 +20,37 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 1. Add Sync Cursor to ConnectedAccount
-    op.add_column('connected_accounts', sa.Column('last_sync_at', sa.DateTime(timezone=True), nullable=True))
-    
-    # 2. Add Provider and Race Detection to Activity
-    op.add_column('activities', sa.Column('provider', sa.String(), nullable=True))
-    op.add_column('activities', sa.Column('external_activity_id', sa.String(), nullable=True))
-    op.add_column('activities', sa.Column('is_race_candidate', sa.Boolean(), server_default='false'))
-    op.add_column('activities', sa.Column('race_confidence', sa.Float(), nullable=True))
-    op.add_column('activities', sa.Column('user_verified_race', sa.Boolean(), nullable=True))
-    
-    # 3. Enforce the "No Duplicates" rule
-    op.create_unique_constraint('uq_provider_external_id', 'activities', ['provider', 'external_activity_id'])
+    """
+    Enforce ingestion contract.
+
+    Notes:
+    - `connected_accounts` may not exist in all schemas; apply that change only if present.
+    - Activity ingestion fields are added in the follow-up migration
+      `c047bd6a61d4_add_ingestion_contract_fields` and should NOT be duplicated here.
+    """
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    tables = set(inspector.get_table_names())
+
+    # 1) Add sync cursor to ConnectedAccount (optional table)
+    if "connected_accounts" in tables:
+        existing_cols = {col["name"] for col in inspector.get_columns("connected_accounts")}
+        if "last_sync_at" not in existing_cols:
+            op.add_column(
+                "connected_accounts",
+                sa.Column("last_sync_at", sa.DateTime(timezone=True), nullable=True),
+            )
 
 
 def downgrade() -> None:
-    pass
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    tables = set(inspector.get_table_names())
+
+    if "connected_accounts" in tables:
+        cols = {col["name"] for col in inspector.get_columns("connected_accounts")}
+        if "last_sync_at" in cols:
+            op.drop_column("connected_accounts", "last_sync_at")
 
 
 

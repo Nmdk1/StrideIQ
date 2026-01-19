@@ -48,8 +48,13 @@ class Settings(BaseSettings):
     # Token Encryption
     TOKEN_ENCRYPTION_KEY: Optional[str] = Field(default=None)
     
-    # JWT Authentication
-    SECRET_KEY: Optional[str] = Field(default=None)
+    # JWT Authentication - REQUIRED for token signing
+    # Must be set via environment variable, never use default in production
+    SECRET_KEY: str = Field(
+        default=...,  # Required - no default
+        description="JWT signing key. Must be cryptographically secure (32+ chars). "
+                    "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+    )
     
     # Garmin Configuration (for future official API)
     GARMIN_CLIENT_ID: Optional[str] = Field(default=None)
@@ -93,6 +98,10 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = Field(default="development")
     DEBUG: bool = Field(default=False)
+    
+    # CORS - comma-separated list of allowed origins for production
+    # e.g., "https://strideiq.run,https://www.strideiq.run"
+    CORS_ORIGINS: Optional[str] = Field(default=None)
     
     # Sentry Error Tracking
     SENTRY_DSN: Optional[str] = Field(default=None)

@@ -51,6 +51,7 @@ export interface PlannedWorkout {
   title: string;
   description?: string;
   phase: string;
+  week_number: number;  // Required for week summary grouping
   target_distance_km?: number;
   target_duration_minutes?: number;
   segments?: any;

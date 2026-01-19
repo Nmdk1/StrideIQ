@@ -29,8 +29,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { BarChart3, TrendingUp, TrendingDown, Minus, Target, Calendar, ArrowRight, Activity, Zap, AlertTriangle } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Minus, Target, Calendar, ArrowRight, Activity, Zap, AlertTriangle, Info } from 'lucide-react';
 import { WhyThisTrend } from '@/components/analytics/WhyThisTrend';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Helper to format workout type for display
 const workoutTypeColors: Record<string, string> = {
@@ -42,6 +43,25 @@ const workoutTypeColors: Record<string, string> = {
   intervals: 'bg-red-900/50 text-red-400',
   race: 'bg-yellow-900/50 text-yellow-400',
 };
+
+function InfoTooltip({ content }: { content: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="Metric info"
+          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-400 transition-colors"
+        >
+          <Info className="w-3.5 h-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs bg-slate-800 border-slate-700 text-slate-200">
+        <p className="text-xs leading-relaxed">{content}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export default function DashboardPage() {
   const { formatDistance } = useUnits();
@@ -91,10 +111,20 @@ export default function DashboardPage() {
     );
   }
 
+  const currentEfTooltip = `Current EF: ${data.summary?.current_efficiency}. Efficiency Factor (EF) is a simple pace-per-heart-rate signal; higher usually means you can run faster at the same effort.`;
+  const avgEfTooltip = `${days}d Avg EF: ${data.summary?.average_efficiency}. A smoothed view of efficiency over the selected window.`;
+  const bestEfTooltip = `Best EF: ${data.summary?.best_efficiency}. Your highest observed efficiency — useful for tracking fitness peaks.`;
+  const trendTooltip = `Trend: ${data.summary?.trend_direction ?? 'stable'}. Improving means EF is rising over time; declining means EF is falling.`;
+  const consistencyScoreTooltip = `Consistency Score: ${data.stability?.consistency_score?.toFixed(1)}/100. Summarizes training regularity and intensity balance.`;
+  const easyRunsTooltip = `Easy Runs: ${data.stability?.easy_runs}. Lower-intensity sessions (recovery / aerobic base).`;
+  const moderateRunsTooltip = `Moderate Runs: ${data.stability?.moderate_runs}. Steady aerobic work (not easy, not hard).`;
+  const hardRunsTooltip = `Hard Runs: ${data.stability?.hard_runs}. Higher-intensity sessions (threshold / VO₂ / hard workouts).`;
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
         <div className="max-w-6xl mx-auto px-4">
+          <TooltipProvider>
           <div className="mb-8">
             <div className="mb-4">
               <div className="flex items-center gap-3 mb-2">
@@ -187,7 +217,7 @@ export default function DashboardPage() {
                         <div className="text-[10px] text-slate-400">
                           {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'short' })}
                         </div>
-                        <div className="text-xs font-medium truncate" title={workout.title}>
+                    <div className="text-xs font-medium truncate">
                           {workout.workout_type === 'rest' ? 'Rest' : 
                            workout.target_distance_km ? formatDistance(workout.target_distance_km * 1000, 0) : 
                            workout.title.split(' ')[0]}
@@ -243,29 +273,49 @@ export default function DashboardPage() {
           {/* Summary Stats - Sparse, data-driven */}
           {data.summary && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-              <Card className="bg-slate-800 border-slate-700">
+              <Card
+                className="bg-slate-800 border-slate-700 transition-colors hover:border-slate-600"
+              >
                 <CardContent className="pt-4 pb-4">
-                  <p className="text-xs text-slate-500 mb-1">Current EF</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-xs text-slate-500">Current EF</p>
+                    <InfoTooltip content={currentEfTooltip} />
+                  </div>
                   <p className="text-xl font-semibold">{data.summary.current_efficiency}</p>
                 </CardContent>
               </Card>
-              <Card className="bg-slate-800 border-slate-700">
+              <Card
+                className="bg-slate-800 border-slate-700 transition-colors hover:border-slate-600"
+              >
                 <CardContent className="pt-4 pb-4">
-                  <p className="text-xs text-slate-500 mb-1">{days}d Avg</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-xs text-slate-500">{days}d Avg</p>
+                    <InfoTooltip content={avgEfTooltip} />
+                  </div>
                   <p className="text-xl font-semibold">{data.summary.average_efficiency}</p>
                 </CardContent>
               </Card>
-              <Card className="bg-slate-800 border-slate-700">
+              <Card
+                className="bg-slate-800 border-slate-700 transition-colors hover:border-slate-600"
+              >
                 <CardContent className="pt-4 pb-4">
-                  <p className="text-xs text-slate-500 mb-1">Best</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-xs text-slate-500">Best</p>
+                    <InfoTooltip content={bestEfTooltip} />
+                  </div>
                   <p className="text-xl font-semibold text-emerald-400">
                     {data.summary.best_efficiency}
                   </p>
                 </CardContent>
               </Card>
-              <Card className="bg-slate-800 border-slate-700">
+              <Card
+                className="bg-slate-800 border-slate-700 transition-colors hover:border-slate-600"
+              >
                 <CardContent className="pt-4 pb-4">
-                  <p className="text-xs text-slate-500 mb-1">Trend</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-xs text-slate-500">Trend</p>
+                    <InfoTooltip content={trendTooltip} />
+                  </div>
                   <p className={`text-xl font-semibold flex items-center gap-1 ${
                     data.summary.trend_direction === 'improving' ? 'text-emerald-400' :
                     data.summary.trend_direction === 'declining' ? 'text-orange-400' :
@@ -291,22 +341,42 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent className="pt-0">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-400">Consistency Score</p>
+                  <div
+                    className="rounded-lg border border-slate-700 bg-slate-900/20 p-3 transition-colors hover:border-slate-600"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-slate-400">Consistency Score</p>
+                      <InfoTooltip content={consistencyScoreTooltip} />
+                    </div>
                     <p className="text-xl font-semibold">
                       {data.stability.consistency_score?.toFixed(1)}/100
                     </p>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-400">Easy Runs</p>
+                  <div
+                    className="rounded-lg border border-slate-700 bg-slate-900/20 p-3 transition-colors hover:border-slate-600"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-slate-400">Easy Runs</p>
+                      <InfoTooltip content={easyRunsTooltip} />
+                    </div>
                     <p className="text-xl font-semibold text-emerald-400">{data.stability.easy_runs}</p>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-400">Moderate Runs</p>
+                  <div
+                    className="rounded-lg border border-slate-700 bg-slate-900/20 p-3 transition-colors hover:border-slate-600"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-slate-400">Moderate Runs</p>
+                      <InfoTooltip content={moderateRunsTooltip} />
+                    </div>
                     <p className="text-xl font-semibold text-blue-400">{data.stability.moderate_runs}</p>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-400">Hard Runs</p>
+                  <div
+                    className="rounded-lg border border-slate-700 bg-slate-900/20 p-3 transition-colors hover:border-slate-600"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-slate-400">Hard Runs</p>
+                      <InfoTooltip content={hardRunsTooltip} />
+                    </div>
                     <p className="text-xl font-semibold text-orange-400">{data.stability.hard_runs}</p>
                   </div>
                 </div>
@@ -340,6 +410,7 @@ export default function DashboardPage() {
           
           {/* Correlation Explorer */}
           <CorrelationExplorer days={days} />
+          </TooltipProvider>
         </div>
       </div>
     </ProtectedRoute>
@@ -391,8 +462,23 @@ function CorrelationExplorer({ days }: { days: number }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-0">
-          <p className="text-slate-500 text-sm">
-            Not enough data yet. Log more inputs (sleep, nutrition, stress) to discover patterns.
+          <p className="text-slate-400 text-sm">
+            Log check-ins and nutrition to discover what habits correlate with your best runs.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href="/checkin">
+              <Button variant="outline" size="sm">
+                Log Check-in
+              </Button>
+            </Link>
+            <Link href="/nutrition">
+              <Button variant="outline" size="sm">
+                Log Nutrition
+              </Button>
+            </Link>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            ~10 entries needed to surface meaningful correlations.
           </p>
         </CardContent>
       </Card>

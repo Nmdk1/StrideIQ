@@ -12,6 +12,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { PlanManagementModal } from '@/components/plans/PlanManagementModal';
+import { API_CONFIG } from '@/lib/api/config';
 
 interface ActivePlan {
   id: string;
@@ -50,6 +51,49 @@ function formatPhase(phase: string | null | undefined): string {
 export function PlanBanner({ plan, currentWeek, currentPhase }: PlanBannerProps) {
   const [showManagement, setShowManagement] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  
+  // Export plan to CSV (Google Sheets compatible)
+  const handleExportCSV = async () => {
+    setExporting(true);
+    setShowMenu(false);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`${API_CONFIG.baseURL}/v1/plans/${plan.id}/export/csv?units=imperial`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Export failed');
+      }
+      
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'training_plan.csv';
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="(.+)"/);
+        if (match) filename = match[1];
+      }
+      
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Failed to export plan. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
   
   // Parse date without timezone issues
   const formatRaceDate = (dateStr: string) => {
@@ -120,6 +164,17 @@ export function PlanBanner({ plan, currentWeek, currentPhase }: PlanBannerProps)
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
                   <div className="absolute right-0 top-full mt-1 w-48 bg-slate-800 border border-slate-700/50 rounded-lg shadow-xl z-20 py-1">
+                    <button
+                      onClick={handleExportCSV}
+                      disabled={exporting}
+                      className="w-full px-4 py-2 text-sm text-left text-emerald-400 hover:bg-slate-700 flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      {exporting ? 'Exporting...' : 'Export to CSV'}
+                    </button>
+                    <div className="border-t border-slate-700 my-1" />
                     <button
                       onClick={() => { setShowMenu(false); setShowManagement(true); }}
                       className="w-full px-4 py-2 text-sm text-left text-slate-300 hover:bg-slate-700 hover:text-white"

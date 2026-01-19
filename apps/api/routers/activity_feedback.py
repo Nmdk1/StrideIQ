@@ -13,6 +13,10 @@ from core.auth import get_current_user
 from models import Activity, ActivityFeedback, Athlete
 from schemas import ActivityFeedbackCreate, ActivityFeedbackResponse, ActivityFeedbackUpdate
 from services.perception_prompts import get_pending_feedback_prompts
+from services.workout_feedback_capture import process_activity_feedback
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/activity-feedback", tags=["activity-feedback"])
 
@@ -103,6 +107,26 @@ def create_activity_feedback(
     db.add(db_feedback)
     db.commit()
     db.refresh(db_feedback)
+    
+    # ADR-036: Update N=1 learning models with this feedback
+    if feedback.perceived_effort is not None:
+        try:
+            capture_result = process_activity_feedback(
+                activity_id=feedback.activity_id,
+                athlete_id=current_user.id,
+                perceived_effort=feedback.perceived_effort,
+                db=db,
+                leg_feel=feedback.leg_feel
+            )
+            if capture_result.processed:
+                logger.info(
+                    f"N=1 feedback captured: {capture_result.stimulus_type}, "
+                    f"rpe_gap={capture_result.rpe_gap:.1f}, "
+                    f"learning_banked={capture_result.new_learning_banked}"
+                )
+        except Exception as e:
+            # Don't fail the request if N=1 capture fails
+            logger.warning(f"N=1 feedback capture failed (non-critical): {e}")
     
     return db_feedback
 

@@ -14,7 +14,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MessageSquare, Send, Sparkles, Activity, BedDouble, Target, TrendingUp } from 'lucide-react';
+import { MessageSquare, Send, Sparkles, Activity, BedDouble, Target, TrendingUp, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface Message {
@@ -24,19 +24,22 @@ interface Message {
   timestamp: Date;
 }
 
-const SUGGESTED_QUESTIONS = [
-  { text: "How is my training going this week?", icon: Activity },
-  { text: "Am I ready for a hard workout tomorrow?", icon: Sparkles },
-  { text: "What should I focus on in my next long run?", icon: Target },
-  { text: "How does my current fitness compare to a month ago?", icon: TrendingUp },
-  { text: "What's the most important thing I should do this week?", icon: BedDouble },
-];
+function getSuggestionIcon(text: string) {
+  const t = text.toLowerCase();
+  if (t.includes('long run')) return Target;
+  if (t.includes('overtraining') || t.includes('overtrain')) return Sparkles;
+  if (t.includes('getting fitter') || t.includes('fitter') || t.includes('fitness')) return TrendingUp;
+  if (t.includes("today")) return Activity;
+  if (t.includes("focus on this week") || t.includes("this week")) return BedDouble;
+  return Sparkles;
+}
 
 export default function CoachPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Scroll to bottom when new messages arrive
@@ -62,6 +65,21 @@ Ask me anything about your training!`,
       }]);
     }
   }, [messages.length]);
+
+  // Fetch dynamic suggestions on load
+  useEffect(() => {
+    let cancelled = false;
+    aiCoachService.getSuggestions()
+      .then((res) => {
+        if (!cancelled) setSuggestions(res.suggestions || []);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   
   const handleSend = async (messageText?: string) => {
     const text = messageText || input.trim();
@@ -101,6 +119,20 @@ Ask me anything about your training!`,
       setIsLoading(false);
     }
   };
+
+  const handleNewConversation = async () => {
+    if (isLoading) return;
+    setError(null);
+    setIsLoading(true);
+    try {
+      await aiCoachService.newConversation();
+      setMessages([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start a new conversation');
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -114,17 +146,30 @@ Ask me anything about your training!`,
       <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
         {/* Header */}
         <div className="border-b border-slate-700 bg-slate-800/50 px-4 py-3">
-          <div className="max-w-4xl mx-auto flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 ring-2 ring-orange-500/30">
-              <MessageSquare className="w-5 h-5 text-white" />
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 ring-2 ring-orange-500/30">
+                <MessageSquare className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="font-semibold flex items-center gap-2">
+                  StrideIQ Coach
+                  <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs">AI</Badge>
+                </h1>
+                <p className="text-xs text-slate-400">Data-driven training guidance</p>
+              </div>
             </div>
-            <div>
-              <h1 className="font-semibold flex items-center gap-2">
-                StrideIQ Coach
-                <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs">AI</Badge>
-              </h1>
-              <p className="text-xs text-slate-400">Data-driven training guidance</p>
-            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleNewConversation}
+              disabled={isLoading}
+              className="border-slate-700 hover:border-orange-500/50 hover:bg-slate-800 text-slate-300"
+            >
+              <RotateCcw className="w-3.5 h-3.5 mr-1.5 text-orange-500" />
+              New conversation
+            </Button>
           </div>
         </div>
         
@@ -187,7 +232,7 @@ Ask me anything about your training!`,
         </div>
         
         {/* Suggestions (show only when no messages yet) */}
-        {messages.length <= 1 && (
+        {messages.length <= 1 && suggestions.length > 0 && (
           <div className="px-4 pb-4">
             <div className="max-w-4xl mx-auto">
               <p className="text-xs text-slate-400 mb-2 flex items-center gap-1.5">
@@ -195,19 +240,22 @@ Ask me anything about your training!`,
                 Suggested questions:
               </p>
               <div className="flex flex-wrap gap-2">
-                {SUGGESTED_QUESTIONS.map((q, i) => (
+                {suggestions.map((text, i) => {
+                  const Icon = getSuggestionIcon(text);
+                  return (
                   <Button
                     key={i}
                     variant="outline"
                     size="sm"
-                    onClick={() => handleSend(q.text)}
+                    onClick={() => handleSend(text)}
                     disabled={isLoading}
                     className="border-slate-700 hover:border-orange-500/50 hover:bg-slate-800 text-slate-300"
                   >
-                    <q.icon className="w-3.5 h-3.5 mr-1.5 text-orange-500" />
-                    {q.text}
+                    <Icon className="w-3.5 h-3.5 mr-1.5 text-orange-500" />
+                    {text}
                   </Button>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

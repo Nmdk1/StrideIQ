@@ -35,6 +35,19 @@ def create_schema_directly():
     )
     from sqlalchemy import text
     
+    # SAFETY CHECK: If athlete table has data, don't overwrite schema
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT COUNT(*) FROM athlete"))
+            count = result.scalar()
+            if count and count > 0:
+                print(f"Database has {count} athletes - skipping schema creation to preserve data")
+                print("Run 'alembic upgrade head' manually if schema updates are needed")
+                return
+    except Exception as e:
+        print(f"Could not check athlete table (may not exist yet): {e}")
+        # Continue with schema creation if table doesn't exist
+    
     print("Creating schema directly from models...")
     
     # Create TimescaleDB extension first
@@ -45,7 +58,11 @@ def create_schema_directly():
     # Create all tables
     Base.metadata.create_all(engine, checkfirst=True)
     
-    # Create alembic_version table and stamp as head
+    # Create alembic_version table and stamp as current head.
+    #
+    # Note: this environment prefers schema creation from models (create_all)
+    # rather than relying on historical Alembic migrations, which may not be
+    # consistently replayable from an empty database.
     with engine.connect() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS alembic_version (
@@ -53,7 +70,7 @@ def create_schema_directly():
             )
         """))
         conn.execute(text("DELETE FROM alembic_version"))
-        conn.execute(text("INSERT INTO alembic_version (version_num) VALUES ('b7eda0eabd7f')"))
+        conn.execute(text("INSERT INTO alembic_version (version_num) VALUES ('c1a6e2b7d9f0')"))
         conn.commit()
     
     print("Schema created successfully!")

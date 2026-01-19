@@ -51,6 +51,22 @@ export interface NutritionEntryUpdate {
 
 export const nutritionService = {
   /**
+   * Check whether natural-language parsing is available.
+   * No auth required (capability endpoint).
+   */
+  async nlParsingAvailable(): Promise<{ available: boolean }> {
+    return apiClient.get<{ available: boolean }>('/v1/nutrition/parse/available', { skipAuth: true, retries: 0 });
+  },
+
+  /**
+   * Parse natural-language nutrition text into a NutritionEntryCreate draft.
+   */
+  async parseText(text: string): Promise<NutritionEntryCreate> {
+    // Disable API client retries so errors surface immediately.
+    return apiClient.post<NutritionEntryCreate>('/v1/nutrition/parse', { text }, { retries: 0 });
+  },
+
+  /**
    * Create nutrition entry
    */
   async createEntry(entry: NutritionEntryCreate): Promise<NutritionEntry> {

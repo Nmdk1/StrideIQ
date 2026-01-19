@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useNutritionEntries, useCreateNutritionEntry } from '@/lib/hooks/queries/nutrition';
+import { useNutritionEntries, useCreateNutritionEntry, useParseNutritionText, useNLParsingAvailable } from '@/lib/hooks/queries/nutrition';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import type { NutritionEntryCreate } from '@/lib/api/services/nutrition';
@@ -27,9 +27,13 @@ export default function NutritionPage() {
   const { user } = useAuth();
   const today = new Date().toISOString().split('T')[0];
   const { data: entries, isLoading } = useNutritionEntries({ start_date: today, end_date: today });
+  const { data: nlAvailable } = useNLParsingAvailable();
   const createEntry = useCreateNutritionEntry();
+  const parseNutritionText = useParseNutritionText();
   
   const [showForm, setShowForm] = useState(false);
+  const [nlText, setNlText] = useState('');
+  const [postSubmitMessage, setPostSubmitMessage] = useState<string | null>(null);
   const [formData, setFormData] = useState<NutritionEntryCreate>({
     athlete_id: user?.id || '',
     date: today,
@@ -53,11 +57,38 @@ export default function NutritionPage() {
     setShowForm(true);
   };
 
+  const handleParse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPostSubmitMessage(null);
+    const text = nlText.trim();
+    if (!text) return;
+
+    try {
+      const draft = await parseNutritionText.mutateAsync(text);
+      setFormData((prev) => ({
+        ...prev,
+        athlete_id: user?.id || draft.athlete_id || prev.athlete_id,
+        date: draft.date || prev.date,
+        entry_type: draft.entry_type || prev.entry_type,
+        calories: draft.calories,
+        protein_g: draft.protein_g,
+        carbs_g: draft.carbs_g,
+        fat_g: draft.fat_g,
+        fiber_g: draft.fiber_g,
+        notes: draft.notes || text,
+      }));
+      setShowForm(true);
+    } catch (err) {
+      // Error handled by mutation state
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await createEntry.mutateAsync(formData);
       setShowForm(false);
+      setPostSubmitMessage("Logged. We'll surface patterns once we have enough check-ins + nutrition to compare.");
       setFormData({
         athlete_id: user?.id || '',
         date: today,
@@ -84,6 +115,8 @@ export default function NutritionPage() {
     );
   }
 
+  const showNLParsing = nlAvailable?.available === true;
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
@@ -95,10 +128,43 @@ export default function NutritionPage() {
             </p>
           </div>
 
+          {postSubmitMessage && (
+            <div className="bg-green-900/20 border border-green-700/40 text-green-200 rounded-lg p-4 mb-6">
+              <p className="text-sm">{postSubmitMessage}</p>
+            </div>
+          )}
+
           {/* Quick Presets */}
           {!showForm && (
             <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6 mb-6">
               <h2 className="text-lg font-semibold mb-4">Quick Add</h2>
+
+              {/* Natural language input */}
+              {showNLParsing && (
+                <form onSubmit={handleParse} className="mb-5">
+                  <label className="block text-sm font-medium mb-2">Describe what you ate (optional)</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={nlText}
+                      onChange={(e) => setNlText(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      placeholder='e.g., "oatmeal and black coffee"'
+                    />
+                    <button
+                      type="submit"
+                      disabled={parseNutritionText.isPending || !nlText.trim()}
+                      className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-200 font-medium"
+                    >
+                      {parseNutritionText.isPending ? <LoadingSpinner size="sm" /> : 'Parse'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">
+                    We&apos;ll estimate macros and pre-fill the form. You can edit anything before saving.
+                  </p>
+                  {parseNutritionText.isError && <ErrorMessage error={parseNutritionText.error} />}
+                </form>
+              )}
+
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                 {NUTRITION_PRESETS.map((preset) => (
                   <button

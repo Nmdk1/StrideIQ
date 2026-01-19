@@ -11,7 +11,20 @@ export const nutritionKeys = {
   lists: () => [...nutritionKeys.all, 'list'] as const,
   list: (params?: any) => [...nutritionKeys.lists(), params] as const,
   detail: (id: string) => [...nutritionKeys.all, 'detail', id] as const,
+  nlParsingAvailable: () => [...nutritionKeys.all, 'nlParsingAvailable'] as const,
 } as const;
+
+/**
+ * Check whether NL parsing is available (OPENAI_API_KEY configured).
+ */
+export function useNLParsingAvailable() {
+  return useQuery<{ available: boolean }>({
+    queryKey: nutritionKeys.nlParsingAvailable(),
+    queryFn: () => nutritionService.nlParsingAvailable(),
+    retry: false,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
 
 /**
  * List nutrition entries
@@ -51,6 +64,16 @@ export function useCreateNutritionEntry() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: nutritionKeys.lists() });
     },
+  });
+}
+
+/**
+ * Parse natural language nutrition text to prefill a form.
+ */
+export function useParseNutritionText() {
+  return useMutation({
+    mutationFn: (text: string) => nutritionService.parseText(text),
+    retry: false,
   });
 }
 

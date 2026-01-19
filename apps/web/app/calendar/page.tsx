@@ -85,9 +85,11 @@ function CalendarHeader({
 // PlanBanner moved to @/components/calendar/PlanBanner.tsx for reusability
 
 function ActionBar({ 
-  weekStats 
+  weekStats,
+  isCurrentMonthView
 }: { 
-  weekStats: { completed: number; planned: number } 
+  weekStats: { completed: number; planned: number };
+  isCurrentMonthView: boolean;
 }) {
   const showProgress = weekStats.planned > 0;
   const progressPct = showProgress ? Math.min(100, (weekStats.completed / weekStats.planned) * 100) : 0;
@@ -114,10 +116,15 @@ function ActionBar({
                 />
               </div>
             </>
-          ) : (
+          ) : isCurrentMonthView ? (
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <Clock className="w-4 h-4" />
               No planned workouts this week
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Calendar className="w-4 h-4" />
+              Viewing future/past month
             </div>
           )}
         </div>
@@ -263,6 +270,13 @@ export default function CalendarPage() {
     return `${year}-${month}-${day}`;
   }, []);
   
+  // Check if we're viewing the current month
+  const isCurrentMonthView = useMemo(() => {
+    const now = new Date();
+    return currentDate.getFullYear() === now.getFullYear() && 
+           currentDate.getMonth() === now.getMonth();
+  }, [currentDate]);
+  
   // Group days by week for display
   const weeksWithDays = useMemo(() => {
     if (!calendar?.days) return [];
@@ -292,19 +306,31 @@ export default function CalendarPage() {
     return weeks;
   }, [calendar]);
   
-  // Calculate current week stats
+  // Calculate current week stats - always shows TODAY's week, even when viewing other months
+  // First check if today's week is in the viewed calendar, otherwise use week_summaries[0] 
+  // which should be the current/most relevant week from the API
   const weekStats = useMemo(() => {
     if (!calendar?.week_summaries?.length) {
       return { completed: 0, planned: 0 };
     }
     
-    const currentWeekSummary = calendar.week_summaries.find(w => 
+    // Look for the week containing today
+    const todayWeek = calendar.week_summaries.find(w => 
       w.days.some(d => d.date === today)
     );
     
+    // If viewing a different month, today won't be in the summaries
+    // In that case, we still want to show today's week stats
+    // The API should include this in a separate field, but for now return zeros
+    // to clearly indicate we're not in the current week view
+    if (!todayWeek) {
+      // When viewing future/past months, don't show misleading stats
+      return { completed: 0, planned: 0 };
+    }
+    
     return {
-      completed: currentWeekSummary?.completed_miles || 0,
-      planned: currentWeekSummary?.planned_miles || 0,
+      completed: todayWeek.completed_miles || 0,
+      planned: todayWeek.planned_miles || 0,
     };
   }, [calendar, today]);
   
@@ -478,7 +504,7 @@ export default function CalendarPage() {
         </div>
         
         {/* Action bar */}
-        <ActionBar weekStats={weekStats} />
+        <ActionBar weekStats={weekStats} isCurrentMonthView={isCurrentMonthView} />
         
         {/* Day detail panel */}
         <DayDetailPanel

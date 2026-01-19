@@ -43,6 +43,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${SECRET_KEY}  # Required - set in .env, no default allowed
     ports:
       - "0.0.0.0:8000:8000"
     depends_on:
@@ -79,7 +80,10 @@ services:
       - ./apps/api:/api  # Mount API code so worker can import tasks
 
   web:
-    build: ./apps/web
+    build:
+      context: ./apps/web
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     container_name: running_app_web
     command: npm start
     ports:
@@ -91,6 +95,8 @@ services:
 
 volumes:
   postgres_data:
+    external: true
+    name: runningapp_postgres_data
   redis_data:
 
 

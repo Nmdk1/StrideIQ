@@ -24,11 +24,13 @@ const WORKOUT_CATEGORIES: Record<string, { label: string; color: string }> = {
   recovery: { label: 'Recovery', color: 'text-slate-400' },
   gym: { label: 'Gym', color: 'text-slate-400' },
   
-  // Easy efforts - green
+  // Easy efforts - green (but strides/hills VISIBLE)
   easy: { label: 'Easy', color: 'text-emerald-400' },
-  easy_strides: { label: 'Easy', color: 'text-emerald-400' },
-  easy_hills: { label: 'Easy', color: 'text-emerald-400' },
-  strides: { label: 'Strides', color: 'text-emerald-400' },
+  easy_strides: { label: 'Easy+Strides', color: 'text-emerald-400' },  // VISIBLE
+  easy_hills: { label: 'Easy+Hills', color: 'text-emerald-400' },      // VISIBLE
+  strides: { label: 'Strides', color: 'text-lime-400' },               // Distinct
+  hill_strides: { label: 'Hill Strides', color: 'text-lime-400' },     // VISIBLE
+  hill_sprints: { label: 'Hill Sprints', color: 'text-amber-400' },    // VISIBLE, distinct
   
   // Medium efforts - blue
   medium_long: { label: 'Med Long', color: 'text-blue-400' },
@@ -37,11 +39,10 @@ const WORKOUT_CATEGORIES: Record<string, { label: string; color: string }> = {
   long: { label: 'Long', color: 'text-blue-400' },
   long_mp: { label: 'Long+MP', color: 'text-blue-400' },
   
-  // Quality - orange
+  // Quality - orange (NO tempo - use threshold only)
   threshold: { label: 'Threshold', color: 'text-orange-400' },
   threshold_light: { label: 'Threshold', color: 'text-orange-400' },
   threshold_short: { label: 'Threshold', color: 'text-orange-400' },
-  tempo: { label: 'Tempo', color: 'text-orange-400' },
   
   // Speed - red  
   intervals: { label: 'Intervals', color: 'text-red-400' },
@@ -52,6 +53,8 @@ const WORKOUT_CATEGORIES: Record<string, { label: string; color: string }> = {
   race: { label: 'RACE', color: 'text-pink-400' },
   shakeout: { label: 'Shakeout', color: 'text-slate-400' },
   shakeout_strides: { label: 'Shakeout', color: 'text-slate-400' },
+  pre_race: { label: 'Pre-Race', color: 'text-slate-400' },
+  tune_up_ra: { label: 'Tune-up', color: 'text-pink-400' },
 };
 
 function getWorkoutInfo(type: string): { label: string; color: string } {
@@ -241,13 +244,22 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
                 </span>
               )}
             </div>
-            {/* Show pace hint on hover - truncated */}
+            {/* Show pace hint - extract pace value from coach_notes */}
             {day.planned_workout.coach_notes && !isCompleted && (
               <div 
                 className="text-[10px] text-slate-500 truncate mt-0.5" 
                 title={day.planned_workout.coach_notes}
               >
-                {day.planned_workout.coach_notes.split(' ').slice(0, 2).join(' ')}
+                {(() => {
+                  // Extract first pace (e.g., "easy: 8:04/mi" from "Paces: easy: 8:04/mi | ...")
+                  const notes = day.planned_workout.coach_notes || '';
+                  const paceMatch = notes.match(/Paces:\s*(\w+):\s*([\d:]+\/mi)/);
+                  if (paceMatch) {
+                    return `${paceMatch[1]}: ${paceMatch[2]}`;
+                  }
+                  // Fallback: first 30 chars
+                  return notes.substring(0, 30);
+                })()}
               </div>
             )}
           </div>

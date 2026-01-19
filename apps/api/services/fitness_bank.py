@@ -92,6 +92,11 @@ class FitnessBank:
     current_atl: float
     weeks_since_peak: int
     
+    # N=1 Long Run Data (ADR-038)
+    # Used for progressive long run calculation
+    current_long_run_miles: float         # Max long run in last 4 weeks
+    average_long_run_miles: float         # Average of all long runs >= 10mi
+    
     # Individual response characteristics
     tau1: float
     tau2: float
@@ -125,7 +130,9 @@ class FitnessBank:
             "current": {
                 "weekly_miles": round(self.current_weekly_miles, 1),
                 "ctl": round(self.current_ctl, 0),
-                "atl": round(self.current_atl, 0)
+                "atl": round(self.current_atl, 0),
+                "long_run": round(self.current_long_run_miles, 1),
+                "avg_long_run": round(self.average_long_run_miles, 1)
             },
             "best_vdot": round(self.best_vdot, 1),
             "races": [r.to_dict() for r in self.race_performances[:5]],
@@ -305,6 +312,9 @@ class FitnessBankCalculator:
         # Find weeks since peak
         weeks_since_peak = self._weeks_since_peak(activities, peaks["peak_weekly"])
         
+        # Calculate current and average long run (ADR-038: N=1 long run progression)
+        current_long, average_long = self._calculate_current_long_run(activities)
+        
         return FitnessBank(
             athlete_id=str(athlete_id),
             peak_weekly_miles=peaks["peak_weekly"],
@@ -320,6 +330,8 @@ class FitnessBankCalculator:
             current_ctl=current_ctl,
             current_atl=current_atl,
             weeks_since_peak=weeks_since_peak,
+            current_long_run_miles=current_long,
+            average_long_run_miles=average_long,
             tau1=tau1,
             tau2=tau2,
             experience_level=experience,
@@ -548,6 +560,53 @@ class FitnessBankCalculator:
         
         return sum(weekly_miles.values()) / len(weekly_miles)
     
+    def _calculate_current_long_run(self, activities: List) -> Tuple[float, float]:
+        """
+        Calculate current and average long run from activity data.
+        
+        ADR-038: N=1 Long Run Progression
+        
+        Uses athlete's actual data, not population formulas.
+        
+        Returns:
+            Tuple of (current_long_run, average_long_run):
+            - current_long_run: Max long run in last 4 weeks
+            - average_long_run: Average of all long runs >= 10mi (or 90+ min)
+        """
+        today = date.today()
+        four_weeks_ago = today - timedelta(days=28)
+        
+        recent_long_runs = []
+        all_long_runs = []
+        
+        for a in activities:
+            miles = (a.distance_m or 0) / 1609.344
+            duration_min = (a.duration_s or 0) / 60
+            
+            # Long run threshold: 10+ miles OR 90+ minutes
+            # This catches long runs at any pace
+            is_long_run = miles >= 10 or duration_min >= 90
+            
+            if is_long_run:
+                all_long_runs.append(miles)
+                
+                # Recent long runs (last 4 weeks)
+                if a.start_time.date() >= four_weeks_ago:
+                    recent_long_runs.append(miles)
+        
+        # Current: max of recent long runs (what they can do NOW)
+        current = max(recent_long_runs) if recent_long_runs else 0.0
+        
+        # Average: mean of all long runs (their typical long run)
+        average = sum(all_long_runs) / len(all_long_runs) if all_long_runs else 0.0
+        
+        logger.info(
+            f"N=1 Long Run Data: current={current:.1f}mi (from {len(recent_long_runs)} recent), "
+            f"average={average:.1f}mi (from {len(all_long_runs)} total)"
+        )
+        
+        return current, average
+    
     def _determine_experience(self, peaks: Dict, races: List[RacePerformance]) -> ExperienceLevel:
         """Determine experience level from history."""
         peak_weekly = peaks["peak_weekly"]
@@ -716,6 +775,8 @@ class FitnessBankCalculator:
             current_ctl=30.0,
             current_atl=25.0,
             weeks_since_peak=0,
+            current_long_run_miles=0.0,
+            average_long_run_miles=0.0,
             tau1=42.0,
             tau2=7.0,
             experience_level=ExperienceLevel.BEGINNER,

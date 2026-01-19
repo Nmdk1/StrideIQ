@@ -40,7 +40,7 @@ export default function CheckinPage() {
       const token = localStorage.getItem('auth_token');
       const today = new Date().toISOString().split('T')[0];
       
-      await fetch(
+      const resp = await fetch(
         `${API_CONFIG.baseURL}/v1/daily-checkin`,
         {
           method: 'POST',
@@ -62,6 +62,11 @@ export default function CheckinPage() {
           }),
         }
       );
+
+      if (!resp.ok) {
+        const detail = await resp.text().catch(() => '');
+        throw new Error(detail || `HTTP ${resp.status}`);
+      }
       
       setSubmitted(true);
       setTimeout(() => router.push('/dashboard'), 1000);
@@ -79,6 +84,9 @@ export default function CheckinPage() {
           <div className="text-center">
             <div className="text-4xl mb-4">✓</div>
             <p className="text-xl font-medium">Logged.</p>
+            <p className="text-sm text-slate-400 mt-2 max-w-sm">
+              We’ll use this to look for patterns (sleep/stress/soreness ↔ training efficiency) as your data builds.
+            </p>
           </div>
         </div>
       </ProtectedRoute>

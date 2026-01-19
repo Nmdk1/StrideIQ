@@ -17,6 +17,7 @@ import logging
 import random
 
 from services.fitness_bank import FitnessBank, ExperienceLevel
+from services.vdot_calculator import calculate_training_paces
 from services.week_theme_generator import WeekTheme
 
 logger = logging.getLogger(__name__)
@@ -26,48 +27,102 @@ logger = logging.getLogger(__name__)
 # PACE CALCULATION
 # =============================================================================
 
-def calculate_paces_from_vdot(vdot: float) -> Dict[str, float]:
+def _parse_pace_str_to_seconds_per_mile(pace_str: Optional[str]) -> Optional[int]:
     """
-    Calculate training paces from VDOT.
-    
-    Returns paces in minutes per mile.
+    Parse a pace string into seconds per mile.
+
+    Accepts "M:SS" (or "H:MM:SS") and returns total seconds per mile.
     """
-    # VDOT to pace approximations (Daniels-based)
-    # These are approximate formulas
-    
-    # Marathon pace (roughly VDOT race pace for marathon distance)
-    # Higher VDOT = faster pace
-    marathon_pace = 10.5 - (vdot * 0.07)  # ~6:50 at VDOT 52
-    
-    # Threshold pace (about 83-88% of VO2max, ~15-20 sec/mi faster than MP)
-    threshold_pace = marathon_pace - 0.35
-    
-    # Interval pace (about 95-100% VO2max)
-    interval_pace = threshold_pace - 0.45
-    
-    # Easy pace (about 65-75% VO2max, ~1:30-2:00/mi slower than MP)
-    easy_pace = marathon_pace + 1.3
-    
-    # Long run pace (slightly slower than easy)
-    long_pace = easy_pace + 0.15
-    
-    # Recovery pace (very easy)
-    recovery_pace = easy_pace + 0.5
-    
+    if not pace_str or not isinstance(pace_str, str):
+        return None
+
+    parts = pace_str.strip().split(":")
+    if len(parts) == 2:
+        mins_str, secs_str = parts
+        hrs = 0
+    elif len(parts) == 3:
+        hrs_str, mins_str, secs_str = parts
+        try:
+            hrs = int(hrs_str)
+        except ValueError:
+            return None
+    else:
+        return None
+
+    try:
+        mins = int(mins_str)
+        secs = int(secs_str)
+    except ValueError:
+        return None
+
+    if mins < 0 or secs < 0 or secs >= 60:
+        return None
+
+    return hrs * 3600 + mins * 60 + secs
+
+
+def _calculate_paces_from_training_paces(vdot: float) -> Dict[str, float]:
+    """
+    Unified pace source (ADR-040).
+
+    Uses Daniels/Gilbert physics from `services.vdot_calculator.calculate_training_paces()`
+    and adapts its output into this generator's expected format:
+
+        {"threshold": 6.53, ...}  # float minutes per mile
+
+    Notes:
+    - `vdot_calculator` doesn't provide explicit "long" or "recovery" paces; we derive them
+      conservatively from easy pace (+9s and +30s respectively) to preserve existing keys.
+    """
+    raw = calculate_training_paces(vdot)
+
+    def seconds_for(zone: str) -> Optional[int]:
+        zone_val = raw.get(zone)
+        if isinstance(zone_val, dict):
+            return _parse_pace_str_to_seconds_per_mile(zone_val.get("mi"))
+        return None
+
+    easy_sec = seconds_for("easy")
+    marathon_sec = seconds_for("marathon")
+    threshold_sec = seconds_for("threshold")
+    interval_sec = seconds_for("interval")
+
+    if easy_sec is None or marathon_sec is None or threshold_sec is None or interval_sec is None:
+        logger.warning(
+            "Could not derive training paces from vdot_calculator output; "
+            f"vdot={vdot}, raw_keys={list(raw.keys())}"
+        )
+        # Fail-safe: keep generator functional with conservative defaults rather than crashing.
+        # (Should not happen for valid VDOTs.)
+        easy_sec = easy_sec or 540  # 9:00
+        marathon_sec = marathon_sec or 480  # 8:00
+        threshold_sec = threshold_sec or 450  # 7:30
+        interval_sec = interval_sec or 405  # 6:45
+
+    # Preserve existing keys expected across plan generation logic.
+    long_sec = easy_sec + 9
+    recovery_sec = easy_sec + 30
+
     return {
-        "easy": round(easy_pace, 2),
-        "long": round(long_pace, 2),
-        "marathon": round(marathon_pace, 2),
-        "threshold": round(threshold_pace, 2),
-        "interval": round(interval_pace, 2),
-        "recovery": round(recovery_pace, 2)
+        "easy": easy_sec / 60.0,
+        "long": long_sec / 60.0,
+        "marathon": marathon_sec / 60.0,
+        "threshold": threshold_sec / 60.0,
+        "interval": interval_sec / 60.0,
+        "recovery": recovery_sec / 60.0,
     }
+
+
+# Backward-compatible public API used elsewhere (planner, tests, scripts).
+def calculate_paces_from_vdot(vdot: float) -> Dict[str, float]:
+    return _calculate_paces_from_training_paces(vdot)
 
 
 def format_pace(pace_minutes: float) -> str:
     """Format pace as M:SS."""
-    minutes = int(pace_minutes)
-    seconds = int((pace_minutes - minutes) * 60)
+    total_seconds = int(round(pace_minutes * 60))
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
     return f"{minutes}:{seconds:02d}"
 
 
@@ -211,15 +266,224 @@ class WorkoutPrescriptionGenerator:
     
     Outputs concrete workouts with structures and paces,
     not generic "threshold work" or "tempo run".
+    
+    N=1 Approach:
+    - Long runs PROGRESS from current capability to race-appropriate peaks
+    - Volume builds to support the long runs
+    - τ1 informs recovery rhythm (fast adapters handle more aggressive cycles)
+    - Quality focus varies by distance (VO2max for 5K, MP for marathon)
+    - Variety in neuromuscular work (rotate strides, hills, drills)
+    - Hill work is safe for ALL levels (scaled reps)
     """
     
-    def __init__(self, bank: FitnessBank):
+    # Long run targets by race distance (where we need to GET TO, not cap)
+    LONG_RUN_PEAK_TARGETS = {
+        "5k": 14,           # Don't need 20 milers for 5K
+        "10k": 16,
+        "10_mile": 18,
+        "half": 18,
+        "half_marathon": 18,
+        "marathon": 22      # Need to get to 20-22 for marathon
+    }
+    
+    # Long run constraints (safety, not arbitrary caps)
+    LONG_RUN_MAX_MINUTES = 180      # 3 hours is reasonable upper limit
+    LONG_RUN_MAX_VOLUME_PCT = 0.35  # Single run shouldn't exceed 35% of weekly
+    
+    # Whether to include race-pace long runs for this distance
+    USE_RACE_PACE_LONG_RUNS = {
+        "5k": False,       # 5K doesn't need race-pace long runs
+        "10k": False,      # 10K focuses on threshold/VO2
+        "10_mile": True,   # Can benefit from tempo long runs
+        "half": True,      # HMP long runs in late build
+        "half_marathon": True,
+        "marathon": True   # MP long runs are key
+    }
+    
+    # Primary quality focus by distance
+    QUALITY_FOCUS = {
+        "5k": ["vo2max", "speed", "threshold"],
+        "10k": ["threshold", "vo2max"],
+        "10_mile": ["threshold", "mp"],
+        "half": ["threshold", "mp"],
+        "half_marathon": ["threshold", "mp"],
+        "marathon": ["mp", "threshold"]
+    }
+    
+    # Neuromuscular work types for variety rotation
+    NEUROMUSCULAR_TYPES = [
+        "strides",          # Flat strides, 6x100m
+        "hill_sprints",     # 8-10x10sec max effort
+        "hill_strides",     # 6x100m on gentle hill (power + form)
+    ]
+    
+    def __init__(self, bank: FitnessBank, race_distance: str = "marathon"):
         self.bank = bank
-        self.paces = calculate_paces_from_vdot(bank.best_vdot)
+        self.race_distance = race_distance.lower()
+        self.paces = _calculate_paces_from_training_paces(bank.best_vdot)
         self.experience = bank.experience_level
+        
+        # =====================================================================
+        # ADR-038: N=1 Long Run Progression
+        # 
+        # Start from CURRENT capability (what they're actually doing)
+        # Progress to PEAK capability (what they've proven they can do)
+        # =====================================================================
+        
+        # Current: use recent long run data, with fallbacks
+        current_from_data = getattr(bank, 'current_long_run_miles', 0.0)
+        average_from_data = getattr(bank, 'average_long_run_miles', 0.0)
+        
+        # Establish starting point using N=1 data
+        if current_from_data > 0:
+            # Best case: we have recent long run data
+            self.long_run_current = current_from_data
+        elif average_from_data > 0:
+            # Fallback: use 70% of their average
+            self.long_run_current = average_from_data * 0.70
+        else:
+            # Last resort: estimate from weekly volume (conservative)
+            self.long_run_current = max(bank.current_weekly_miles * 0.25, 6.0)
+        
+        # Ensure minimum based on race distance
+        distance_minimums = {
+            "5k": 6.0, "10k": 8.0, "10_mile": 10.0,
+            "half": 10.0, "half_marathon": 10.0, "marathon": 10.0
+        }
+        self.long_run_current = max(
+            self.long_run_current,
+            distance_minimums.get(self.race_distance, 8.0)
+        )
+        
+        # Peak target: use proven capability but respect distance-specific appropriateness
+        distance_peak_target = self.LONG_RUN_PEAK_TARGETS.get(self.race_distance, 18)
+        proven_peak = bank.peak_long_run_miles
+        
+        # For shorter distances, cap peak at distance-appropriate level
+        # A 5K runner doesn't need 22-mile long runs even if they've done them for marathons
+        distance_max = distance_peak_target * 1.15  # Allow 15% above target max
+        
+        if proven_peak >= distance_peak_target * 0.9:
+            # They've proven capability - use it but cap at distance-appropriate level
+            self.long_run_peak = min(proven_peak, distance_max)
+            self._proven_capability_used = True
+        elif proven_peak > 0:
+            # They have some history - allow stretch to target (max 4mi beyond proven)
+            self.long_run_peak = min(distance_peak_target, proven_peak + 4)
+            self._proven_capability_used = False
+        else:
+            # No history - use distance-appropriate target
+            self.long_run_peak = distance_peak_target
+            self._proven_capability_used = False
+        
+        # Legacy compatibility
+        self.long_run_start = self.long_run_current  # Redirect old references
+        self.long_run_peak_target = self.long_run_peak
+        self.long_run_cap = self.long_run_peak
+        
+        self.use_mp_long_runs = self.USE_RACE_PACE_LONG_RUNS.get(self.race_distance, True)
+        self.quality_focus = self.QUALITY_FOCUS.get(self.race_distance, ["threshold"])
         
         # Format paces for display
         self.pace_strs = {k: format_pace(v) for k, v in self.paces.items()}
+        
+        # Track recent neuromuscular work for variety
+        self._recent_neuro_types: List[str] = []
+        
+        logger.info(
+            f"N=1 Long Run Progression (ADR-038): "
+            f"current={self.long_run_current:.1f}mi → "
+            f"peak={self.long_run_peak:.1f}mi | "
+            f"from_data={current_from_data:.1f}mi, avg={average_from_data:.1f}mi | "
+            f"proven={proven_peak:.1f}mi, distance={self.race_distance}"
+        )
+    
+    def calculate_long_run_for_week(self, week_number: int, total_weeks: int, 
+                                     theme: WeekTheme) -> float:
+        """
+        Calculate long run distance using N=1 progression (ADR-038).
+        
+        Algorithm:
+        1. Start from current capability (not peak)
+        2. Progress linearly to peak over build weeks
+        3. Apply phase-specific adjustments
+        4. Respect safety constraints (max 2mi/week increase)
+        
+        This produces smooth progression like: 12 → 14 → 16 → 18 → 20 → 22
+        Not dangerous jumps like: 10 → 22
+        """
+        # Taper/race/tune-up weeks: reduce from peak
+        if theme in [WeekTheme.TAPER_1, WeekTheme.TAPER_2, WeekTheme.RACE, WeekTheme.TUNE_UP_RACE]:
+            reduction_pct = {
+                WeekTheme.TAPER_1: 0.70,       # 70% of peak
+                WeekTheme.TAPER_2: 0.55,       # 55% of peak
+                WeekTheme.TUNE_UP_RACE: 0.50,  # 50% - the race itself is the work
+                WeekTheme.RACE: 0.40,          # 40% (shakeout)
+            }
+            return self.long_run_peak * reduction_pct.get(theme, 0.60)
+        
+        # Recovery weeks: mid-point between current and peak
+        if theme == WeekTheme.RECOVERY:
+            return self.long_run_current + (self.long_run_peak - self.long_run_current) * 0.5
+        
+        # Calculate build progression
+        # Reserve last 3 weeks for taper
+        build_weeks = max(1, total_weeks - 3)
+        
+        # Progress factor: 0.0 at week 1, 1.0 at peak week
+        progress = min(1.0, (week_number - 1) / build_weeks)
+        
+        # Linear progression from current to peak
+        target = self.long_run_current + (self.long_run_peak - self.long_run_current) * progress
+        
+        # Safety: max 2 miles increase per week
+        # Calculate what last week's target would have been
+        if week_number > 1:
+            prev_progress = min(1.0, (week_number - 2) / build_weeks)
+            prev_target = self.long_run_current + (self.long_run_peak - self.long_run_current) * prev_progress
+            max_increase = 2.0  # miles per week
+            target = min(target, prev_target + max_increase)
+        
+        # Apply time safety (3 hours max)
+        long_pace = self.paces.get("long", 9.0)
+        time_limit = self.LONG_RUN_MAX_MINUTES / long_pace
+        target = min(target, time_limit)
+        
+        # Floor: never go below current capability
+        target = max(target, self.long_run_current)
+        
+        # Audit logging for debugging
+        logger.debug(
+            f"Long run week {week_number}/{total_weeks} ({theme.value}): "
+            f"target={target:.1f}mi, progress={progress:.2f}, "
+            f"current={self.long_run_current:.1f}, peak={self.long_run_peak:.1f}"
+        )
+        
+        return target
+    
+    def _select_neuromuscular_type(self) -> str:
+        """
+        Select neuromuscular work type with variety.
+        
+        Rotates through types to prevent staleness.
+        All athletes get hill work - it's safe for everyone.
+        """
+        # Filter out recently used types
+        available = [t for t in self.NEUROMUSCULAR_TYPES 
+                    if t not in self._recent_neuro_types[-2:]]  # Avoid last 2
+        
+        if not available:
+            available = self.NEUROMUSCULAR_TYPES
+        
+        # Random selection from available
+        selected = random.choice(available)
+        
+        # Track for variety
+        self._recent_neuro_types.append(selected)
+        if len(self._recent_neuro_types) > 4:
+            self._recent_neuro_types.pop(0)
+        
+        return selected
     
     def generate_week(self,
                      theme: WeekTheme,
@@ -231,8 +495,8 @@ class WorkoutPrescriptionGenerator:
         
         days = []
         
-        # Get day assignments based on theme and patterns
-        day_assignments = self._assign_days_by_theme(theme, target_miles)
+        # Get day assignments based on theme, patterns, and progressive long run
+        day_assignments = self._assign_days_by_theme(theme, target_miles, week_number, total_weeks)
         
         for day_idx in range(7):
             current_date = start_date + timedelta(days=day_idx)
@@ -273,8 +537,13 @@ class WorkoutPrescriptionGenerator:
             notes=self._get_week_notes(theme, week_number, total_weeks)
         )
     
-    def _assign_days_by_theme(self, theme: WeekTheme, target_miles: float) -> Dict[int, Tuple[str, float]]:
-        """Assign workout types and miles to days based on theme."""
+    def _assign_days_by_theme(self, theme: WeekTheme, target_miles: float,
+                              week_number: int = 1, total_weeks: int = 12) -> Dict[int, Tuple[str, float]]:
+        """
+        Assign workout types and miles to days based on theme.
+        
+        Uses progressive long run calculation rather than fixed percentages.
+        """
         
         # Get preferred days from bank
         long_day = self.bank.typical_long_run_day if self.bank.typical_long_run_day is not None else 6
@@ -286,41 +555,55 @@ class WorkoutPrescriptionGenerator:
         # Rest day(s)
         primary_rest = rest_days[0] if rest_days else 0
         
+        # Progressive long run for this week (not fixed percentage)
+        progressive_long = self.calculate_long_run_for_week(week_number, total_weeks, theme)
+        
         if theme == WeekTheme.REBUILD_EASY:
             # All easy, one rest
+            # ADR-038: Use progressive_long for long run, not volume-based calculation
             available_days = [d for d in range(7) if d != primary_rest]
-            miles_per_run = target_miles / len(available_days)
+            remaining_miles = target_miles - progressive_long
+            easy_days = [d for d in available_days if d != long_day]
+            miles_per_easy = remaining_miles / len(easy_days) if easy_days else 5.0
+            
             for d in available_days:
                 if d == long_day:
-                    assignments[d] = ("easy_long", miles_per_run * 1.4)
+                    assignments[d] = ("easy_long", progressive_long)
                 else:
-                    assignments[d] = ("easy", miles_per_run * 0.9)
+                    assignments[d] = ("easy", miles_per_easy)
         
         elif theme == WeekTheme.REBUILD_STRIDES:
             # Easy with strides, one rest
+            # ADR-038: Use progressive_long for long run, not volume-based calculation
             available_days = [d for d in range(7) if d != primary_rest]
-            miles_per_run = target_miles / len(available_days)
+            remaining_miles = target_miles - progressive_long
+            easy_days = [d for d in available_days if d != long_day]
+            miles_per_easy = remaining_miles / len(easy_days) if easy_days else 5.0
+            
             for d in available_days:
                 if d == long_day:
-                    assignments[d] = ("easy_long", miles_per_run * 1.4)
+                    assignments[d] = ("easy_long", progressive_long)
                 elif d == quality_day:
-                    assignments[d] = ("easy_strides", miles_per_run)
+                    assignments[d] = ("easy_strides", miles_per_easy)
                 else:
-                    assignments[d] = ("easy", miles_per_run * 0.9)
+                    assignments[d] = ("easy", miles_per_easy * 0.95)
         
         elif theme == WeekTheme.BUILD_T_EMPHASIS:
             # Threshold focus + long run
             self._assign_standard_week(assignments, target_miles, long_day, quality_day, 
-                                      primary_rest, quality_type="threshold")
+                                      primary_rest, quality_type="threshold", 
+                                      progressive_long=progressive_long)
         
         elif theme == WeekTheme.BUILD_MP_EMPHASIS:
             # MP long run + secondary threshold
-            self._assign_mp_week(assignments, target_miles, long_day, quality_day, primary_rest)
+            self._assign_mp_week(assignments, target_miles, long_day, quality_day, primary_rest,
+                                progressive_long=progressive_long)
         
         elif theme == WeekTheme.BUILD_MIXED:
             # Both quality types
             self._assign_standard_week(assignments, target_miles, long_day, quality_day,
-                                      primary_rest, quality_type="threshold", add_mp=True)
+                                      primary_rest, quality_type="threshold", add_mp=True,
+                                      progressive_long=progressive_long)
         
         elif theme == WeekTheme.RECOVERY:
             # Easy only, extra rest
@@ -335,16 +618,18 @@ class WorkoutPrescriptionGenerator:
         
         elif theme == WeekTheme.PEAK:
             # Maximum quality
-            self._assign_peak_week(assignments, target_miles, long_day, quality_day, primary_rest)
+            self._assign_peak_week(assignments, target_miles, long_day, quality_day, primary_rest,
+                                  progressive_long=progressive_long)
         
         elif theme == WeekTheme.SHARPEN:
             # Race-specific sharpening
-            self._assign_sharpen_week(assignments, target_miles, long_day, quality_day, primary_rest)
+            self._assign_sharpen_week(assignments, target_miles, long_day, quality_day, primary_rest,
+                                     progressive_long=progressive_long)
         
         elif theme in (WeekTheme.TAPER_1, WeekTheme.TAPER_2):
             # Reduced volume, maintain some intensity
             self._assign_taper_week(assignments, target_miles, long_day, quality_day, 
-                                   primary_rest, theme)
+                                   primary_rest, theme, progressive_long=progressive_long)
         
         elif theme == WeekTheme.TUNE_UP_RACE:
             # Race day with surrounding easy
@@ -364,10 +649,17 @@ class WorkoutPrescriptionGenerator:
         return assignments
     
     def _assign_standard_week(self, assignments, target, long_day, quality_day, 
-                             rest_day, quality_type, add_mp=False):
-        """Assign a standard build week with quality + long."""
-        # Long run: ~25-30% of weekly
-        long_miles = target * 0.28
+                             rest_day, quality_type, add_mp=False, progressive_long=None):
+        """
+        Assign a standard build week with quality + long.
+        
+        ADR-037 Updated:
+        - Neuromuscular work for ALL levels (rotates through types for variety)
+        - Hill work is safe for everyone - scaled reps by experience
+        - Variety prevents staleness (don't repeat same type week after week)
+        """
+        # Long run: Use progressive calculation (or fallback to 28% if not provided)
+        long_miles = progressive_long if progressive_long is not None else target * 0.28
         
         # Quality: ~15% of weekly
         quality_miles = target * 0.15
@@ -384,7 +676,36 @@ class WorkoutPrescriptionGenerator:
                 secondary_day = (secondary_day + 1) % 7
             easy_days = [d for d in easy_days if d != secondary_day]
         
-        easy_per_day = remaining / len(easy_days) if easy_days else 0
+        # ADR-037 Updated: Neuromuscular work for ALL levels with variety
+        # Select 1-2 neuromuscular days based on available easy days
+        neuro_days = []
+        neuro_types = []
+        
+        if len(easy_days) >= 2:
+            # First neuro day: day after quality (activation for recovery)
+            day_after_quality = (quality_day + 1) % 7
+            if day_after_quality in easy_days:
+                neuro_days.append(day_after_quality)
+            elif easy_days:
+                neuro_days.append(easy_days[0])
+            
+            # Second neuro day: 2 days before long run (prime the legs)
+            day_before_long = (long_day - 2) % 7
+            if day_before_long in easy_days and day_before_long not in neuro_days:
+                neuro_days.append(day_before_long)
+            elif len(easy_days) > 1:
+                for d in easy_days:
+                    if d not in neuro_days:
+                        neuro_days.append(d)
+                        break
+        
+        # Select neuromuscular types with variety (rotate through options)
+        for _ in neuro_days:
+            neuro_type = self._select_neuromuscular_type()
+            neuro_types.append(neuro_type)
+        
+        # Vary easy day distances - shortest before long run
+        easy_miles_list = self._distribute_easy_miles(remaining, easy_days, quality_day, long_day)
         
         assignments[long_day] = ("long", long_miles)
         assignments[quality_day] = (quality_type, quality_miles)
@@ -392,32 +713,58 @@ class WorkoutPrescriptionGenerator:
         if add_mp:
             assignments[secondary_day] = ("mp_medium", secondary_miles)
         
-        for d in easy_days:
-            assignments[d] = ("easy", easy_per_day)
+        # Assign easy days with neuromuscular variety
+        for i, d in enumerate(easy_days):
+            miles = easy_miles_list[i]
+            
+            # Check if this is a neuromuscular day
+            if d in neuro_days:
+                neuro_idx = neuro_days.index(d)
+                neuro_type = neuro_types[neuro_idx] if neuro_idx < len(neuro_types) else "strides"
+                assignments[d] = (neuro_type, miles)
+            else:
+                assignments[d] = ("easy", miles)
     
-    def _assign_mp_week(self, assignments, target, long_day, quality_day, rest_day):
-        """Assign MP-emphasis week: MP long run + maintenance threshold."""
-        # MP long run: ~30% of weekly
-        long_miles = target * 0.30
+    def _assign_mp_week(self, assignments, target, long_day, quality_day, rest_day,
+                        progressive_long=None):
+        """
+        Assign MP-emphasis week: MP long run + threshold.
         
-        # Short threshold: ~10%
+        Uses threshold work (NOT tempo - tempo is an ambiguous term).
+        """
+        # MP long run: Use progressive calculation
+        long_miles = progressive_long if progressive_long is not None else target * 0.30
+        
+        # Threshold: ~10%
         threshold_miles = target * 0.10
         
         # Easy fills rest
         remaining = target - long_miles - threshold_miles
         easy_days = [d for d in range(7) if d not in [rest_day, long_day, quality_day]]
-        easy_per_day = remaining / len(easy_days) if easy_days else 0
+        
+        # Neuromuscular work with variety
+        neuro_days = easy_days[:2] if len(easy_days) >= 2 else easy_days[:1]
+        neuro_types = [self._select_neuromuscular_type() for _ in neuro_days]
+        
+        easy_miles_list = self._distribute_easy_miles(remaining, easy_days, quality_day, long_day)
         
         assignments[long_day] = ("long_mp", long_miles)
         assignments[quality_day] = ("threshold", threshold_miles)
         
-        for d in easy_days:
-            assignments[d] = ("easy", easy_per_day)
+        for i, d in enumerate(easy_days):
+            miles = easy_miles_list[i]
+            if d in neuro_days:
+                neuro_idx = neuro_days.index(d)
+                neuro_type = neuro_types[neuro_idx] if neuro_idx < len(neuro_types) else "strides"
+                assignments[d] = (neuro_type, miles)
+            else:
+                assignments[d] = ("easy", miles)
     
-    def _assign_peak_week(self, assignments, target, long_day, quality_day, rest_day):
+    def _assign_peak_week(self, assignments, target, long_day, quality_day, rest_day,
+                         progressive_long=None):
         """Assign peak week: maximum quality."""
-        # Peak MP long run: ~32%
-        long_miles = target * 0.32
+        # Peak long run: Use progressive calculation (peak should be longest)
+        long_miles = progressive_long if progressive_long is not None else target * 0.32
         
         # Full threshold: ~15%
         threshold_miles = target * 0.15
@@ -428,20 +775,23 @@ class WorkoutPrescriptionGenerator:
             strides_day = (strides_day + 1) % 7
         
         remaining = target - long_miles - threshold_miles
+        strides_miles = remaining * 0.22  # ~22% of remaining for strides day
+        easy_remaining = remaining - strides_miles
         easy_days = [d for d in range(7) if d not in [rest_day, long_day, quality_day, strides_day]]
-        easy_per_day = remaining / (len(easy_days) + 1) if easy_days else remaining
+        easy_miles_list = self._distribute_easy_miles(easy_remaining, easy_days, quality_day, long_day)
         
         assignments[long_day] = ("long_mp", long_miles)
         assignments[quality_day] = ("threshold", threshold_miles)
-        assignments[strides_day] = ("easy_strides", easy_per_day * 1.1)
+        assignments[strides_day] = ("easy_strides", strides_miles)
         
-        for d in easy_days:
-            assignments[d] = ("easy", easy_per_day * 0.95)
+        for i, d in enumerate(easy_days):
+            assignments[d] = ("easy", easy_miles_list[i])
     
-    def _assign_sharpen_week(self, assignments, target, long_day, quality_day, rest_day):
+    def _assign_sharpen_week(self, assignments, target, long_day, quality_day, rest_day,
+                            progressive_long=None):
         """Assign sharpening week: race-specific work."""
-        # Shorter long run: ~22%
-        long_miles = target * 0.22
+        # Sharpen long run: Use progressive calculation (typically reduced from peak)
+        long_miles = progressive_long if progressive_long is not None else target * 0.22
         
         # Sharp intervals: ~10%
         interval_miles = target * 0.10
@@ -452,21 +802,27 @@ class WorkoutPrescriptionGenerator:
             strides_day = (strides_day + 1) % 7
         
         remaining = target - long_miles - interval_miles
+        strides_miles = remaining * 0.25  # ~25% of remaining for strides day
+        easy_remaining = remaining - strides_miles
         easy_days = [d for d in range(7) if d not in [rest_day, long_day, quality_day, strides_day]]
-        easy_per_day = remaining / (len(easy_days) + 1) if easy_days else remaining
+        easy_miles_list = self._distribute_easy_miles(easy_remaining, easy_days, quality_day, long_day)
         
         assignments[long_day] = ("long", long_miles)
         assignments[quality_day] = ("intervals", interval_miles)
-        assignments[strides_day] = ("easy_strides", easy_per_day)
+        assignments[strides_day] = ("easy_strides", strides_miles)
         
-        for d in easy_days:
-            assignments[d] = ("easy", easy_per_day)
+        for i, d in enumerate(easy_days):
+            assignments[d] = ("easy", easy_miles_list[i])
     
-    def _assign_taper_week(self, assignments, target, long_day, quality_day, rest_day, theme):
+    def _assign_taper_week(self, assignments, target, long_day, quality_day, rest_day, theme,
+                          progressive_long=None):
         """Assign taper week: reduced with maintained intensity."""
-        # Reduced long run
-        long_pct = 0.20 if theme == WeekTheme.TAPER_1 else 0.18
-        long_miles = target * long_pct
+        # Reduced long run: Use progressive calculation (already accounts for taper reduction)
+        if progressive_long is not None:
+            long_miles = progressive_long
+        else:
+            long_pct = 0.20 if theme == WeekTheme.TAPER_1 else 0.18
+            long_miles = target * long_pct
         
         # Short quality maintenance
         quality_miles = target * 0.08
@@ -476,19 +832,23 @@ class WorkoutPrescriptionGenerator:
         if theme == WeekTheme.TAPER_2:
             rest_days.append((rest_day + 3) % 7)
         
+        # Strides day
+        strides_day = (long_day - 2) % 7
+        if strides_day in rest_days:
+            strides_day = (strides_day + 1) % 7
+        
         remaining = target - long_miles - quality_miles
-        easy_days = [d for d in range(7) if d not in rest_days + [long_day, quality_day]]
-        easy_per_day = remaining / len(easy_days) if easy_days else remaining
+        strides_miles = remaining * 0.22
+        easy_remaining = remaining - strides_miles
+        easy_days = [d for d in range(7) if d not in rest_days + [long_day, quality_day, strides_day]]
+        easy_miles_list = self._distribute_easy_miles(easy_remaining, easy_days, quality_day, long_day)
         
         assignments[long_day] = ("long", long_miles)
         assignments[quality_day] = ("threshold_short", quality_miles)
+        assignments[strides_day] = ("easy_strides", strides_miles)
         
-        for d in easy_days:
-            # Add strides to one easy day
-            if d == (long_day - 2) % 7:
-                assignments[d] = ("easy_strides", easy_per_day)
-            else:
-                assignments[d] = ("easy", easy_per_day)
+        for i, d in enumerate(easy_days):
+            assignments[d] = ("easy", easy_miles_list[i])
     
     def _assign_tune_up_week(self, assignments, target, long_day, quality_day, rest_day):
         """Assign tune-up race week."""
@@ -505,14 +865,14 @@ class WorkoutPrescriptionGenerator:
         
         remaining = target - race_miles - pre_race_miles - post_race_miles
         easy_days = [d for d in range(7) if d not in [rest_day, race_day, pre_race_strides, post_race_recovery]]
-        easy_per_day = remaining / len(easy_days) if easy_days else 0
+        easy_miles_list = self._distribute_easy_miles(remaining, easy_days, quality_day)
         
         assignments[race_day] = ("race", race_miles)
         assignments[pre_race_strides] = ("easy_strides", pre_race_miles)
         assignments[post_race_recovery] = ("recovery", post_race_miles)
         
-        for d in easy_days:
-            assignments[d] = ("easy", easy_per_day)
+        for i, d in enumerate(easy_days):
+            assignments[d] = ("easy", easy_miles_list[i])
     
     def _assign_race_week(self, assignments, target, long_day, rest_day):
         """Assign goal race week."""
@@ -525,20 +885,75 @@ class WorkoutPrescriptionGenerator:
         # Strides mid-week
         strides_day = 2 if rest_day != 2 else 3
         
-        race_miles = 26.2  # Marathon
+        # Distance-specific race miles
+        race_miles_by_distance = {
+            "5k": 3.1,
+            "10k": 6.2,
+            "10_mile": 10.0,
+            "half": 13.1,
+            "half_marathon": 13.1,
+            "marathon": 26.2
+        }
+        race_miles = race_miles_by_distance.get(self.race_distance, 26.2)
         shakeout_miles = 3
         strides_miles = 5
         
         remaining = target - race_miles - shakeout_miles - strides_miles
         easy_days = [d for d in range(7) if d not in [rest_day, race_day, shakeout_day, strides_day]]
-        easy_per_day = remaining / len(easy_days) if easy_days else 0
+        easy_miles_list = self._distribute_easy_miles(remaining, easy_days, strides_day)
         
         assignments[race_day] = ("race", race_miles)
         assignments[shakeout_day] = ("shakeout", shakeout_miles)
         assignments[strides_day] = ("easy_strides", strides_miles)
         
-        for d in easy_days:
-            assignments[d] = ("easy", easy_per_day)
+        for i, d in enumerate(easy_days):
+            assignments[d] = ("easy", easy_miles_list[i])
+    
+    def _distribute_easy_miles(self, total_miles: float, easy_days: List[int], 
+                               quality_day: int, long_day: int = 6) -> List[float]:
+        """
+        Distribute easy miles with intentional variety.
+        
+        Pattern:
+        - Day BEFORE long run: SHORTEST (recovery/pre-long)
+        - Day AFTER quality: Short recovery
+        - Other days: Varied medium to medium-long
+        """
+        if not easy_days:
+            return []
+        
+        if len(easy_days) == 1:
+            return [total_miles]
+        
+        avg = total_miles / len(easy_days)
+        
+        result = []
+        for i, day in enumerate(easy_days):
+            day_before_long = (day + 1) % 7 == long_day
+            day_after_quality = (day - 1) % 7 == quality_day
+            
+            if day_before_long:
+                # Day before long: SHORTEST - fresh legs for long run
+                factor = 0.65
+            elif day_after_quality:
+                # Recovery after hard work: also short
+                factor = 0.75
+            elif i == 0:
+                # Early in week: medium
+                factor = 1.0
+            else:
+                # Other days: medium to medium-long
+                factor = 1.10 + (i * 0.05)  # Progressive
+            
+            result.append(avg * factor)
+        
+        # Normalize to hit exact total
+        current_total = sum(result)
+        if current_total > 0:
+            scale = total_miles / current_total
+            result = [m * scale for m in result]
+        
+        return result
     
     def _generate_day_workout(self, day_idx: int, workout_type: str, target_miles: float,
                               theme: WeekTheme, week_number: int, total_weeks: int) -> DayPlan:
@@ -565,6 +980,15 @@ class WorkoutPrescriptionGenerator:
         
         elif workout_type == "threshold_short":
             return self._generate_threshold(day_idx, target_miles, short=True)
+        
+        elif workout_type == "hill_sprints":
+            return self._generate_hill_sprints(day_idx, target_miles)
+        
+        elif workout_type == "strides":
+            return self._generate_easy_with_strides(day_idx, target_miles)
+        
+        elif workout_type == "hill_strides":
+            return self._generate_hill_strides(day_idx, target_miles)
         
         elif workout_type == "intervals":
             return self._generate_intervals(day_idx, target_miles)
@@ -629,18 +1053,28 @@ class WorkoutPrescriptionGenerator:
     def _generate_long_run(self, day_idx: int, miles: float, with_mp: bool = False,
                           week_number: int = 1, total_weeks: int = 12) -> DayPlan:
         
+        # Apply distance-specific cap
+        capped_miles = min(miles, self.long_run_cap)
+        if capped_miles < miles:
+            logger.debug(f"Long run capped: {miles:.1f} -> {capped_miles:.1f} for {self.race_distance}")
+        
+        # Check if MP is appropriate for this distance
+        if with_mp and not self.use_mp_long_runs:
+            with_mp = False
+            logger.debug(f"MP long runs disabled for {self.race_distance}")
+        
         if not with_mp:
             long_pace = format_pace_range(self.paces["long"], 15)
             return DayPlan(
                 day_of_week=day_idx,
                 workout_type="long",
-                name=f"{miles:.0f}mi long",
-                description=f"{miles:.0f}mi @ {long_pace}",
-                target_miles=miles,
+                name=f"{capped_miles:.0f}mi long",
+                description=f"{capped_miles:.0f}mi @ {long_pace}",
+                target_miles=capped_miles,
                 intensity="moderate",
                 paces={"long": self.pace_strs["long"]},
                 notes=[],
-                tss_estimate=miles * 9
+                tss_estimate=capped_miles * 9
             )
         
         # MP long run - scale based on week and proven capability
@@ -649,7 +1083,27 @@ class WorkoutPrescriptionGenerator:
         # Scale MP portion based on experience and proven capability
         proven_mp = self.bank.peak_mp_long_run_miles
         
-        if self.experience == ExperienceLevel.ELITE and proven_mp >= 16:
+        # For half marathon, use less MP work than full marathon
+        if self.race_distance in ["half", "half_marathon"]:
+            # Half marathon: lighter MP work, only in late build
+            if progress < 0.6:
+                # Early half training - just long runs without MP
+                long_pace = format_pace_range(self.paces["long"], 15)
+                return DayPlan(
+                    day_of_week=day_idx,
+                    workout_type="long",
+                    name=f"{capped_miles:.0f}mi long",
+                    description=f"{capped_miles:.0f}mi @ {long_pace}",
+                    target_miles=capped_miles,
+                    intensity="moderate",
+                    paces={"long": self.pace_strs["long"]},
+                    notes=[],
+                    tss_estimate=capped_miles * 9
+                )
+            else:
+                # Late half training: 20-30% @ HMP
+                mp_ratio = 0.20 + (0.10 * ((progress - 0.6) / 0.4))  # 20% → 30%
+        elif self.experience == ExperienceLevel.ELITE and proven_mp >= 16:
             # Can handle 70% @ MP in peak
             mp_ratio = 0.40 + (0.30 * progress)  # 40% → 70%
         elif self.experience == ExperienceLevel.EXPERIENCED and proven_mp >= 12:
@@ -657,28 +1111,36 @@ class WorkoutPrescriptionGenerator:
         else:
             mp_ratio = 0.25 + (0.20 * progress)  # 25% → 45%
         
-        mp_miles = min(round(miles * mp_ratio, 0), proven_mp if proven_mp > 0 else miles * 0.5)
-        easy_miles = miles - mp_miles
+        mp_miles = min(round(capped_miles * mp_ratio, 0), proven_mp if proven_mp > 0 else capped_miles * 0.5)
+        easy_miles = capped_miles - mp_miles
         
-        mp_pace = self.pace_strs["marathon"]
+        # Use appropriate pace label for distance
+        if self.race_distance in ["half", "half_marathon"]:
+            pace_label = "HMP"
+            # Half marathon pace is faster than marathon pace
+            hmp_pace = self.paces["marathon"] - 0.12
+            mp_pace = format_pace(hmp_pace)
+        else:
+            pace_label = "MP"
+            mp_pace = self.pace_strs["marathon"]
         easy_pace = self.pace_strs["long"]
         
         # Determine structure
         if progress > 0.8:
             # Peak - race simulation
-            desc = f"{miles:.0f}mi with {mp_miles:.0f}mi @ MP ({mp_pace}) - race simulation"
-            name = f"{miles:.0f}mi w/ {mp_miles:.0f}@MP"
+            desc = f"{capped_miles:.0f}mi with {mp_miles:.0f}mi @ {pace_label} ({mp_pace}) - race simulation"
+            name = f"{capped_miles:.0f}mi w/ {mp_miles:.0f}@{pace_label}"
         elif progress > 0.5:
-            # Mid build - MP middle or finish
-            desc = f"{miles:.0f}mi: {easy_miles:.0f}E + {mp_miles:.0f}mi @ MP ({mp_pace})"
-            name = f"{miles:.0f}mi w/ {mp_miles:.0f}@MP"
+            # Mid build - tempo finish
+            desc = f"{capped_miles:.0f}mi: {easy_miles:.0f}E + {mp_miles:.0f}mi @ {pace_label} ({mp_pace})"
+            name = f"{capped_miles:.0f}mi w/ {mp_miles:.0f}@{pace_label}"
         else:
-            # Early - MP finish
-            desc = f"{miles:.0f}mi with last {mp_miles:.0f}mi @ MP ({mp_pace})"
-            name = f"{miles:.0f}mi, last {mp_miles:.0f}@MP"
+            # Early - pace finish
+            desc = f"{capped_miles:.0f}mi with last {mp_miles:.0f}mi @ {pace_label} ({mp_pace})"
+            name = f"{capped_miles:.0f}mi, last {mp_miles:.0f}@{pace_label}"
         
         notes = []
-        if mp_miles >= 16:
+        if mp_miles >= 16 and self.race_distance == "marathon":
             notes.append(f"You've done {proven_mp:.0f}@MP before — this is your territory")
         
         return DayPlan(
@@ -686,9 +1148,9 @@ class WorkoutPrescriptionGenerator:
             workout_type="long_mp",
             name=name,
             description=desc,
-            target_miles=miles,
+            target_miles=capped_miles,
             intensity="hard",
-            paces={"marathon": mp_pace, "easy": easy_pace},
+            paces={"race_pace": mp_pace, "easy": easy_pace},
             notes=notes,
             tss_estimate=easy_miles * 8 + mp_miles * 12
         )
@@ -723,6 +1185,69 @@ class WorkoutPrescriptionGenerator:
             paces={"threshold": self.pace_strs["threshold"], "easy": self.pace_strs["easy"]},
             notes=[],
             tss_estimate=structure.total_miles * 10 * structure.tss_multiplier
+        )
+    
+    def _generate_hill_sprints(self, day_idx: int, miles: float) -> DayPlan:
+        """
+        Generate hill sprint workout (ADR-037).
+        
+        Hill sprints are neuromuscular power work:
+        - 8-10x 10-12 sec MAX effort up steep hill
+        - Full recovery between reps
+        - Done after easy running, not a standalone quality session
+        """
+        easy_pace = format_pace_range(self.paces["easy"])
+        
+        # Scale reps by experience
+        reps = {
+            ExperienceLevel.ELITE: 10,
+            ExperienceLevel.EXPERIENCED: 8,
+            ExperienceLevel.INTERMEDIATE: 6,
+            ExperienceLevel.BEGINNER: 4
+        }.get(self.experience, 6)
+        
+        return DayPlan(
+            day_of_week=day_idx,
+            workout_type="hill_sprints",
+            name=f"{miles:.0f}mi + {reps}x hill sprints",
+            description=f"{miles:.0f}mi easy @ {easy_pace} + {reps}x10sec hill sprints (MAX effort, full recovery)",
+            target_miles=miles,
+            intensity="moderate",
+            paces={"easy": self.pace_strs["easy"]},
+            notes=["Find steep hill. Sprint MAX effort 10sec. Walk down. Full recovery between reps."],
+            tss_estimate=miles * 10
+        )
+    
+    def _generate_hill_strides(self, day_idx: int, miles: float) -> DayPlan:
+        """
+        Generate hill strides (hybrid power + form work).
+        
+        Hill strides are:
+        - 6-8x ~100m strides on gentle uphill (3-5% grade)
+        - Controlled, smooth effort (not max sprint like hill sprints)
+        - Focus on form: high knees, forward lean, arm drive
+        - Develops power without maximal stress
+        """
+        easy_pace = format_pace_range(self.paces["easy"])
+        
+        # Scale reps by experience (everyone can do these)
+        reps = {
+            ExperienceLevel.ELITE: 8,
+            ExperienceLevel.EXPERIENCED: 7,
+            ExperienceLevel.INTERMEDIATE: 6,
+            ExperienceLevel.BEGINNER: 5
+        }.get(self.experience, 6)
+        
+        return DayPlan(
+            day_of_week=day_idx,
+            workout_type="hill_strides",
+            name=f"{miles:.0f}mi + {reps}x hill strides",
+            description=f"{miles:.0f}mi easy @ {easy_pace} + {reps}x100m hill strides (smooth, controlled)",
+            target_miles=miles,
+            intensity="easy",
+            paces={"easy": self.pace_strs["easy"]},
+            notes=["Find gentle uphill (3-5%). Smooth 100m strides with good form. Walk recovery."],
+            tss_estimate=miles * 10
         )
     
     def _generate_intervals(self, day_idx: int, miles: float) -> DayPlan:

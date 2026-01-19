@@ -69,6 +69,27 @@ interface LoadHistoryResponse {
   personal_zones?: PersonalZones;
 }
 
+function getPeriodEndpoints(history: DailyLoad[]) {
+  if (!history || history.length === 0) return null;
+  const first = history[0];
+  const last = history[history.length - 1];
+  const firstDate = new Date(first.date).getTime();
+  const lastDate = new Date(last.date).getTime();
+  // Defensive: keep "start" as the older date even if backend order changes.
+  return firstDate <= lastDate ? { start: first, end: last } : { start: last, end: first };
+}
+
+function formatOverPeriod(days: number) {
+  if (days === 365) return 'over 1yr';
+  return `over ${days}d`;
+}
+
+function formatSignedInt(n: number) {
+  const rounded = Math.round(n);
+  if (rounded > 0) return `+${rounded}`;
+  return `${rounded}`;
+}
+
 export default function TrainingLoadPage() {
   const router = useRouter();
   const { token, isAuthenticated } = useAuth();
@@ -97,6 +118,11 @@ export default function TrainingLoadPage() {
   });
 
   if (!isAuthenticated) return null;
+
+  const endpoints = data?.history ? getPeriodEndpoints(data.history) : null;
+  const ctlDelta = endpoints ? endpoints.end.ctl - endpoints.start.ctl : null;
+  const atlDelta = endpoints ? endpoints.end.atl - endpoints.start.atl : null;
+  const tsbDelta = endpoints ? endpoints.end.tsb - endpoints.start.tsb : null;
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
@@ -146,6 +172,9 @@ export default function TrainingLoadPage() {
                 value={data.summary.ctl}
                 trend={data.summary.ctl_trend}
                 color="blue"
+                deltaText={ctlDelta === null ? undefined : `${formatSignedInt(ctlDelta)} ${formatOverPeriod(days)}`}
+                deltaTone={ctlDelta === null ? undefined : ctlDelta >= 0 ? 'good' : 'bad'}
+                tooltip="CTL (Fitness): 42-day exponential average of training stress. Higher = more accumulated fitness."
               />
               <MetricCard
                 label="Fatigue"
@@ -153,6 +182,9 @@ export default function TrainingLoadPage() {
                 value={data.summary.atl}
                 trend={data.summary.atl_trend}
                 color="orange"
+                deltaText={atlDelta === null ? undefined : `${formatSignedInt(atlDelta)} ${formatOverPeriod(days)}`}
+                deltaTone={atlDelta === null ? undefined : atlDelta >= 0 ? 'bad' : 'good'}
+                tooltip="ATL (Fatigue): 7-day exponential average of training stress. Higher = more recent fatigue."
               />
               <MetricCard
                 label="Form"
@@ -161,10 +193,14 @@ export default function TrainingLoadPage() {
                 trend={data.summary.tsb_trend}
                 color={data.summary.tsb > 0 ? 'green' : 'red'}
                 showSign
+                deltaText={tsbDelta === null ? undefined : `${formatSignedInt(tsbDelta)} ${formatOverPeriod(days)}`}
+                deltaTone={tsbDelta === null ? undefined : tsbDelta >= 0 ? 'good' : 'bad'}
+                tooltip="TSB (Form): Fitness minus Fatigue. Positive = fresher, negative = more fatigued (often while building fitness)."
               />
               <PhaseCard 
                 phase={data.summary.training_phase}
                 recommendation={data.summary.recommendation}
+                tooltip="Training Phase: a high-level read of whether you're building, tapering, recovering, or maintaining based on your recent training load."
               />
             </div>
 
@@ -176,9 +212,10 @@ export default function TrainingLoadPage() {
             {/* Performance Management Chart */}
             <div className="bg-slate-800/50 rounded-lg p-6 mb-8">
               <h2 className="text-xl font-bold text-white mb-4">Performance Management Chart</h2>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={data.history} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <div className="w-full" style={{ height: 320 }}>
+                {data.history.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                    <ComposedChart data={data.history} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                     <XAxis 
                       dataKey="date" 
@@ -249,17 +286,23 @@ export default function TrainingLoadPage() {
                       strokeWidth={2}
                       dot={false}
                     />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full w-full rounded-lg bg-slate-900/30 border border-slate-700/50 flex items-center justify-center">
+                    <p className="text-slate-500 text-sm">No data to display</p>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Daily TSS Chart */}
             <div className="bg-slate-800/50 rounded-lg p-6 mb-8">
               <h2 className="text-xl font-bold text-white mb-4">Daily Training Stress</h2>
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={data.history} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <div className="w-full" style={{ height: 192 }}>
+                {data.history.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                    <ComposedChart data={data.history} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                     <XAxis 
                       dataKey="date" 
@@ -295,8 +338,13 @@ export default function TrainingLoadPage() {
                       stroke="#6366F1"
                       strokeWidth={1}
                     />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full w-full rounded-lg bg-slate-900/30 border border-slate-700/50 flex items-center justify-center">
+                    <p className="text-slate-500 text-sm">No data to display</p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -355,6 +403,9 @@ function MetricCard({
   trend,
   color,
   showSign = false,
+  deltaText,
+  deltaTone,
+  tooltip,
 }: {
   label: string;
   sublabel: string;
@@ -362,6 +413,9 @@ function MetricCard({
   trend: string;
   color: 'blue' | 'orange' | 'green' | 'red';
   showSign?: boolean;
+  deltaText?: string;
+  deltaTone?: 'good' | 'bad' | 'neutral';
+  tooltip?: string;
 }) {
   const colorClasses = {
     blue: 'text-blue-400 bg-blue-900/20 border-blue-700/50',
@@ -378,8 +432,18 @@ function MetricCard({
 
   const displayValue = showSign && value > 0 ? `+${value.toFixed(0)}` : value.toFixed(0);
 
+  const deltaTextClass =
+    deltaTone === 'good'
+      ? 'text-green-400'
+      : deltaTone === 'bad'
+        ? 'text-red-400'
+        : 'text-slate-500';
+
   return (
-    <div className={`rounded-lg p-4 border ${colorClasses[color]}`}>
+    <div
+      className={`rounded-lg p-4 border ${colorClasses[color]} ${tooltip ? 'cursor-help' : ''}`}
+      title={tooltip}
+    >
       <p className="text-slate-400 text-sm mb-1">{label}</p>
       <p className="text-slate-500 text-xs mb-2">{sublabel}</p>
       <div className="flex items-baseline gap-2">
@@ -390,6 +454,11 @@ function MetricCard({
           {getTrendArrow()}
         </span>
       </div>
+      {deltaText ? (
+        <p className={`mt-2 text-xs ${deltaTextClass}`}>
+          {deltaText}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -397,9 +466,11 @@ function MetricCard({
 function PhaseCard({
   phase,
   recommendation,
+  tooltip,
 }: {
   phase: string;
   recommendation: string;
+  tooltip?: string;
 }) {
   const getPhaseColor = () => {
     switch (phase) {
@@ -431,8 +502,26 @@ function PhaseCard({
     }
   };
 
+  const phaseMeaning = (() => {
+    switch (phase) {
+      case 'building':
+        return 'Building: increasing training load to develop fitness.';
+      case 'tapering':
+        return 'Tapering: reducing load to shed fatigue and sharpen.';
+      case 'recovering':
+        return 'Recovering: prioritizing recovery after a hard block or race.';
+      case 'maintaining':
+        return 'Maintaining: holding fitness steady with balanced load.';
+      default:
+        return 'Training phase is inferred from your recent training load.';
+    }
+  })();
+
   return (
-    <div className={`rounded-lg p-4 border ${getPhaseColor()}`}>
+    <div
+      className={`rounded-lg p-4 border ${getPhaseColor()} ${tooltip ? 'cursor-help' : ''}`}
+      title={tooltip ? `${tooltip}\n\n${phaseMeaning}` : phaseMeaning}
+    >
       <p className="text-slate-400 text-sm mb-1">Training Phase</p>
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">{getPhaseIcon()}</span>

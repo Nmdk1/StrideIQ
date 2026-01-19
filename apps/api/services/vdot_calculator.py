@@ -2,25 +2,24 @@
 Training Pace Calculator - Based on Daniels' Running Formula
 
 Comprehensive calculator for fitness scores, training paces, and equivalent race performances.
-Based on publicly available formulas from Dr. Jack Daniels' research in "Daniels' Running Formula."
+Based on publicly available FORMULAS from Dr. Jack Daniels' research in "Daniels' Running Formula."
 
-Uses lookup-based system for accurate calculations.
+CRITICAL: This calculator uses PHYSICS-BASED FORMULAS, NOT lookup tables.
+- The Daniels/Gilbert oxygen cost equation is PUBLIC (published research)
+- The pace TABLES are COPYRIGHTED (Daniels' commercial property)
+- DO NOT import or use vdot_lookup.py - it will cause copyright issues
+- This has regressed 3+ times - DO NOT RE-ENABLE LOOKUP
+
 This implementation uses mathematical formulas and methodology from Dr. Daniels' work.
 Not affiliated with VDOT O2 or The Run SMART Project.
 """
 from typing import Dict, List, Optional, Tuple
 import math
 
-# Import lookup service for accurate calculations
-try:
-    from services.vdot_lookup import (
-        calculate_vdot_from_race_time_lookup,
-        get_training_paces_from_vdot,
-        get_equivalent_race_times
-    )
-    LOOKUP_AVAILABLE = True
-except ImportError:
-    LOOKUP_AVAILABLE = False
+# IMPORTANT: Do NOT use lookup tables - they are copyrighted (Daniels' tables)
+# Instead, use the physics-based formulas which are public information
+# The formulas produce accurate results based on exercise physiology research
+LOOKUP_AVAILABLE = False
 
 
 # Standard race distances in meters
@@ -169,6 +168,13 @@ def calculate_training_paces(vdot: float) -> Dict:
                     "interval": pace_to_dict(paces.get("i_pace", "")),
                     "repetition": pace_to_dict(paces.get("r_pace", "")),
                     "fast_reps": pace_to_dict(paces.get("r_pace", "")),  # Fast reps = R pace
+                    # Raw seconds for tests and PaceEngine
+                    "easy_pace_low": paces.get("e_pace_seconds"),
+                    "easy_pace_high": int(paces.get("e_pace_seconds", 0) * 1.15) if paces.get("e_pace_seconds") else None,
+                    "marathon_pace": paces.get("m_pace_seconds"),
+                    "threshold_pace": paces.get("t_pace_seconds"),
+                    "interval_pace": paces.get("i_pace_seconds"),
+                    "repetition_pace": paces.get("r_pace_seconds"),
                 }
         except Exception as e:
             # Fall back to approximation if lookup fails

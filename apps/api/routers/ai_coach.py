@@ -35,6 +35,10 @@ class ContextResponse(BaseModel):
     context: str
 
 
+class NewConversationResponse(BaseModel):
+    ok: bool
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_coach(
     request: ChatRequest,
@@ -61,6 +65,22 @@ async def chat_with_coach(
     )
 
 
+@router.post("/new-conversation", response_model=NewConversationResponse)
+async def new_conversation(
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Clear the stored coach thread for the athlete.
+
+    Next chat message will create a new conversation thread.
+    """
+    athlete.coach_thread_id = None
+    db.add(athlete)
+    db.commit()
+    return NewConversationResponse(ok=True)
+
+
 @router.get("/context", response_model=ContextResponse)
 async def get_coach_context(
     days: int = 30,
@@ -84,16 +104,8 @@ async def get_suggested_questions(
     db: Session = Depends(get_db),
 ):
     """
-    Get suggested questions based on current training state.
+    Get suggested questions based on current athlete state.
     """
-    # These would be dynamic in the future, based on recent activity
-    suggestions = [
-        "How is my training going this week?",
-        "Am I ready for a hard workout tomorrow?",
-        "What should I focus on in my next long run?",
-        "How does my current fitness compare to a month ago?",
-        "Should I adjust my goal pace based on recent runs?",
-        "What's the most important thing I should do this week?",
-    ]
-    
+    coach = AICoach(db)
+    suggestions = coach.get_dynamic_suggestions(athlete.id)
     return {"suggestions": suggestions}

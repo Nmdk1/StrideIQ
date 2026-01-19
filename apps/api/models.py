@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, Boolean, Float, Date, DateTime, ForeignKey, Numeric, Text, Index, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, Boolean, Float, Date, DateTime, ForeignKey, Numeric, Text, String, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
@@ -16,6 +16,7 @@ class Athlete(Base):
     password_hash = Column(Text, nullable=True)  # For authentication
     role = Column(Text, default="athlete", nullable=False)  # 'athlete', 'admin', 'coach'
     display_name = Column(Text, nullable=True)
+    coach_thread_id = Column(String, nullable=True)
     birthdate = Column(Date, nullable=True)
     sex = Column(Text, nullable=True)
     subscription_tier = Column(Text, default="free", nullable=False)
@@ -1091,7 +1092,6 @@ class AthleteGoal(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
     __table_args__ = (
-        Index("ix_athlete_goal_athlete_id", "athlete_id"),
         Index("ix_athlete_goal_race_date", "goal_race_date"),
     )
 
@@ -1131,4 +1131,121 @@ class PlanTemplate(Base):
     
     __table_args__ = (
         Index("ix_plan_template_distance_duration", "distance", "duration_weeks"),
+    )
+
+
+# =============================================================================
+# N=1 LEARNING ENGINE MODELS (ADR-036)
+# =============================================================================
+
+class AthleteCalibratedModel(Base):
+    """
+    Persisted Banister model calibration for an athlete.
+    
+    Stores τ1/τ2 calibration results instead of recalculating each time.
+    Invalidated when new race data is added.
+    
+    ADR-036: N=1 Learning Workout Selection Engine
+    """
+    __tablename__ = "athlete_calibrated_model"
+    
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), primary_key=True)
+    
+    # Banister parameters
+    tau1 = Column(Float, nullable=False)  # Fitness decay (days)
+    tau2 = Column(Float, nullable=False)  # Fatigue decay (days)
+    k1 = Column(Float, nullable=False)    # Fitness scaling
+    k2 = Column(Float, nullable=False)    # Fatigue scaling
+    p0 = Column(Float, nullable=False)    # Baseline performance
+    
+    # Fit quality
+    r_squared = Column(Float, nullable=True)
+    fit_error = Column(Float, nullable=True)
+    n_performance_markers = Column(Integer, nullable=True)
+    n_training_days = Column(Integer, nullable=True)
+    
+    # Confidence and tier
+    confidence = Column(Text, nullable=False)  # 'high', 'moderate', 'low', 'uncalibrated'
+    data_tier = Column(Text, nullable=False)   # 'uncalibrated', 'learning', 'calibrated'
+    confidence_notes = Column(JSONB, nullable=True)  # List of notes about calibration
+    
+    # Lifecycle
+    calibrated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    valid_until = Column(Date, nullable=True)  # Recalibrate after new race
+
+
+class AthleteWorkoutResponse(Base):
+    """
+    Tracks how an athlete responds to different workout stimulus types.
+    
+    Aggregates RPE gaps, completion rates, and adaptation signals
+    to learn which workout types work best for THIS athlete.
+    
+    Updated after each quality workout with feedback.
+    
+    ADR-036: N=1 Learning Workout Selection Engine
+    """
+    __tablename__ = "athlete_workout_response"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    stimulus_type = Column(Text, nullable=False)  # 'intervals', 'continuous', 'hills', etc.
+    
+    # Aggregated response signals
+    avg_rpe_gap = Column(Float, nullable=True)       # mean(actual_rpe - expected_rpe)
+    rpe_gap_stddev = Column(Float, nullable=True)    # Consistency of RPE response
+    completion_rate = Column(Float, nullable=True)   # Fraction completed as prescribed
+    adaptation_signal = Column(Float, nullable=True) # EF trend post-workout (future)
+    
+    # Sample size
+    n_observations = Column(Integer, default=0, nullable=False)
+    
+    # Timestamps
+    first_observation = Column(DateTime(timezone=True), nullable=True)
+    last_updated = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    __table_args__ = (
+        Index("ix_athlete_workout_response_athlete_id", "athlete_id"),
+        Index("ix_athlete_workout_response_stimulus", "stimulus_type"),
+        UniqueConstraint('athlete_id', 'stimulus_type', name='uq_athlete_stimulus_response'),
+    )
+
+
+class AthleteLearning(Base):
+    """
+    Banked learnings about what works/doesn't work for an athlete.
+    
+    Explicit intelligence that compounds over time:
+    - what_works: Templates/patterns that produced positive outcomes
+    - what_doesnt_work: Templates/patterns that failed or caused issues
+    - injury_trigger: Patterns that preceded injuries
+    
+    ADR-036: N=1 Learning Workout Selection Engine
+    """
+    __tablename__ = "athlete_learning"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    
+    # Learning classification
+    learning_type = Column(Text, nullable=False)  # 'what_works', 'what_doesnt_work', 'injury_trigger', 'preference'
+    subject = Column(Text, nullable=False)        # template_id, stimulus_type, or pattern description
+    
+    # Evidence and confidence
+    evidence = Column(JSONB, nullable=True)       # Supporting data (build_ids, outcomes, etc.)
+    confidence = Column(Float, default=0.5, nullable=False)  # 0-1, increases with repeated observations
+    
+    # Provenance
+    discovered_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    source = Column(Text, nullable=False)         # 'rpe_analysis', 'race_outcome', 'user_feedback', 'injury_correlation'
+    
+    # Lifecycle
+    is_active = Column(Boolean, default=True, nullable=False)  # Can be invalidated
+    invalidated_at = Column(DateTime(timezone=True), nullable=True)
+    invalidation_reason = Column(Text, nullable=True)
+    
+    __table_args__ = (
+        Index("ix_athlete_learning_athlete_id", "athlete_id"),
+        Index("ix_athlete_learning_type", "learning_type"),
+        Index("ix_athlete_learning_athlete_type", "athlete_id", "learning_type"),
     )

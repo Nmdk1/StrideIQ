@@ -239,14 +239,25 @@ class WeekThemeGenerator:
         """Generate build phase with alternating themes."""
         themes = []
         
-        # Injury rebuild first
+        # Injury rebuild first - but scale to available time
         rebuild_weeks = 0
         if constraints.needs_rebuild:
-            # 2-3 weeks rebuild based on how reduced they are
+            # Base rebuild: 2-3 weeks based on how reduced they are
             if constraints.current_volume_pct < 0.3:
-                rebuild_weeks = 3
+                base_rebuild = 3
             else:
-                rebuild_weeks = 2
+                base_rebuild = 2
+            
+            # For short plans (< 12 weeks), compress rebuild to preserve build time
+            # Need at least 3 quality build weeks + peak before taper
+            min_build_weeks_needed = 4  # 3 quality + 1 peak
+            available_for_rebuild = max(0, weeks - min_build_weeks_needed)
+            rebuild_weeks = min(base_rebuild, available_for_rebuild)
+            
+            # If very short plan, may have 0 or 1 rebuild week - that's ok
+            if rebuild_weeks == 0 and constraints.current_volume_pct < 0.3:
+                # At least 1 easy week for safety
+                rebuild_weeks = min(1, weeks - 2)
             
             themes.append((WeekTheme.REBUILD_EASY, ["Gentle return - easy only"]))
             if rebuild_weeks >= 2:
@@ -259,22 +270,27 @@ class WeekThemeGenerator:
             return themes
         
         # Alternate T and MP emphasis
-        recovery_freq = constraints.recovery_frequency
+        # For short plans, skip recovery weeks entirely - not enough time
+        if remaining <= 5:
+            recovery_freq = 999  # Effectively never - short plans need all quality time
+        else:
+            recovery_freq = constraints.recovery_frequency
+        
         quality_count = 0  # Track quality weeks since last recovery
         use_t_next = True  # Alternate flag
         
         for i in range(remaining):
             quality_count += 1
             
-            # Check if recovery needed
+            # PEAK CHECK FIRST - last build week is always peak, never recovery
+            if i == remaining - 1:
+                themes.append((WeekTheme.PEAK, ["Maximum quality + volume"]))
+                continue
+            
+            # Check if recovery needed (but NEVER on peak week)
             if quality_count >= recovery_freq:
                 themes.append((WeekTheme.RECOVERY, ["Absorb adaptation"]))
                 quality_count = 0
-                continue
-            
-            # Check if peak week (last build week before taper)
-            if i == remaining - 1:
-                themes.append((WeekTheme.PEAK, ["Maximum quality + volume"]))
                 continue
             
             # Alternate T and MP
@@ -292,7 +308,12 @@ class WeekThemeGenerator:
         """Generate taper phase."""
         themes = []
         
-        if weeks >= 2:
+        if weeks >= 3:
+            # Extended taper for slow adapters
+            themes.append((WeekTheme.SHARPEN, ["Begin taper - maintain sharpness"]))
+            themes.append((WeekTheme.TAPER_1, ["Reduce volume, maintain intensity"]))
+            themes.append((WeekTheme.TAPER_2, ["Final sharpening"]))
+        elif weeks >= 2:
             themes.append((WeekTheme.TAPER_1, ["Reduce volume, maintain intensity"]))
             themes.append((WeekTheme.TAPER_2, ["Final sharpening"]))
         elif weeks == 1:

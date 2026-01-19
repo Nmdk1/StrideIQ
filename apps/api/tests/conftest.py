@@ -1,5 +1,9 @@
 """
 Pytest configuration and fixtures
+
+IMPORTANT: All tests use transactional rollback isolation.
+Nothing created during tests persists to the database.
+This prevents test data pollution completely.
 """
 import pytest
 import sys
@@ -10,23 +14,51 @@ from datetime import datetime, date
 # Add the parent directory to the path so we can import from services
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 from core.database import SessionLocal, engine
 from models import Athlete, Activity, PersonalBest, BestEffort
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def db_session():
-    """Create a database session for testing."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    """
+    Create a database session with transactional rollback.
+    
+    All changes made during the test are rolled back after the test completes.
+    This guarantees zero test data pollution - nothing persists.
+    """
+    connection = engine.connect()
+    transaction = connection.begin()
+    
+    # Bind session to this connection
+    session = Session(bind=connection)
+    
+    # Begin a nested transaction (savepoint)
+    nested = connection.begin_nested()
+    
+    # If the application code calls session.commit(), restart the savepoint
+    @event.listens_for(session, "after_transaction_end")
+    def restart_savepoint(session, transaction):
+        nonlocal nested
+        if transaction.nested and not transaction._parent.nested:
+            nested = connection.begin_nested()
+    
+    yield session
+    
+    # Rollback everything - nothing persists
+    session.close()
+    transaction.rollback()
+    connection.close()
 
 
 @pytest.fixture
 def test_athlete(db_session):
-    """Create a test athlete and clean up after test."""
+    """
+    Create a test athlete.
+    
+    No cleanup needed - transactional rollback handles it automatically.
+    """
     athlete = Athlete(
         email=f"test_{uuid4()}@example.com",
         display_name="Test Athlete",
@@ -38,30 +70,7 @@ def test_athlete(db_session):
     db_session.commit()
     db_session.refresh(athlete)
     
-    yield athlete
-    
-    # Cleanup - delete in proper order to respect foreign keys
-    try:
-        # Delete PersonalBest records first (they reference Activity)
-        db_session.query(PersonalBest).filter(
-            PersonalBest.athlete_id == athlete.id
-        ).delete()
-        
-        # Delete BestEffort records 
-        db_session.query(BestEffort).filter(
-            BestEffort.athlete_id == athlete.id
-        ).delete()
-        
-        # Delete Activity records
-        db_session.query(Activity).filter(
-            Activity.athlete_id == athlete.id
-        ).delete()
-        
-        # Delete the athlete
-        db_session.delete(athlete)
-        db_session.commit()
-    except Exception:
-        db_session.rollback()
+    return athlete  # No cleanup needed - transaction rollback handles it
 
 
 @pytest.fixture

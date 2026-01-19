@@ -5,16 +5,29 @@ Provides:
 - Password hashing (bcrypt)
 - JWT token generation and validation
 - Role-based access control
+
+SECURITY REQUIREMENTS:
+- SECRET_KEY must be set via environment variable
+- SECRET_KEY must be cryptographically secure (32+ characters)
+- SECRET_KEY must be different for each environment (dev/staging/prod)
+- SECRET_KEY must NEVER be committed to source control
 """
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 from jose import JWTError, jwt
 import bcrypt
 from core.config import settings
-import secrets
 
-# JWT settings
-SECRET_KEY = settings.SECRET_KEY or secrets.token_urlsafe(32)
+# JWT settings - SECRET_KEY is required by config.py, will fail at startup if not set
+SECRET_KEY = settings.SECRET_KEY
+
+# Validate SECRET_KEY strength at module load
+if len(SECRET_KEY) < 32:
+    raise ValueError(
+        "SECRET_KEY must be at least 32 characters. "
+        "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30 * 24 * 60  # 30 days
 

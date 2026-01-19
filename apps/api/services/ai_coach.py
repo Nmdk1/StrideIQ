@@ -574,11 +574,22 @@ When providing insights:
             if result.get("ok"):
                 data = result.get("data") or {}
                 pb_count = data.get("pb_count", 0)
-                tsb_range = data.get("optimal_tsb_range")
-                if pb_count >= 2 and tsb_range:
+                tsb_min = data.get("tsb_min")
+                tsb_max = data.get("tsb_max")
+                pbs = data.get("pbs", [])
+                
+                if pb_count >= 2 and tsb_min is not None and tsb_max is not None:
                     add(
-                        f"You have {pb_count} PRs with optimal TSB {tsb_range[0]:.0f} to {tsb_range[1]:.0f}. What's your secret?"
+                        f"Analyze what led to my {pb_count} PRs. Cite each PR date + distance + TSB day-before + activity id (from get_pb_patterns)."
                     )
+                
+                # Add specific extreme TSB suggestion if there's an outlier
+                if pbs:
+                    extreme = min(pbs, key=lambda p: p.get("tsb_day_before") or 0)
+                    if extreme.get("tsb_day_before") is not None and extreme.get("tsb_day_before") < -30:
+                        add(
+                            f"Explain my {extreme['category']} PR on {extreme['date']} when TSB was {extreme['tsb_day_before']:.0f}. Cite the PR details and compare to my typical PR TSB range."
+                        )
         except Exception:
             pass
 
@@ -589,9 +600,11 @@ When providing insights:
                 tsb = result.get("data", {}).get("tsb")
                 if tsb is not None:
                     if tsb > 20:
-                        add(f"Your TSB is +{tsb:.0f} — you're fresh. Ready for a hard effort?")
+                        add(f"Am I fresh enough for a hard workout? Cite my current ATL/CTL/TSB and explain what that implies for today.")
                     elif tsb < -30:
-                        add(f"Your TSB is {tsb:.0f} — heavy fatigue. Should we discuss recovery?")
+                        add(f"Am I overreaching? Cite my current ATL/CTL/TSB and give a recovery plan for the next 48 hours.")
+                    else:
+                        add(f"Summarize my current training load status. Cite current ATL/CTL/TSB and the TSB zone label.")
         except Exception:
             pass
 
@@ -602,9 +615,9 @@ When providing insights:
                 trend = result.get("data", {}).get("recent_trend_pct")
                 if trend is not None:
                     if trend < -10:
-                        add(f"Your threshold efficiency improved {abs(trend):.0f}% recently. What's working?")
+                        add("Is my threshold efficiency improving? Use get_efficiency_by_zone and cite the current value + trend%, and also cite 2 specific recent runs from get_efficiency_trend.")
                     elif trend > 10:
-                        add(f"Your threshold efficiency dropped {trend:.0f}% — want to investigate?")
+                        add("My threshold efficiency looks worse. Use get_efficiency_by_zone and get_efficiency_trend to identify 2 concrete examples (date + activity id) showing the change.")
         except Exception:
             pass
 
@@ -622,14 +635,14 @@ When providing insights:
             )
             if completed_today:
                 distance_km = (completed_today.distance_m or 0) / 1000
-                add(f"You ran {distance_km:.1f} km today. How did it feel?")
+                add(f"Review my run from today ({distance_km:.1f} km). Cite the activity id + distance + pace + avg HR (from get_recent_runs).")
         except Exception:
             pass
 
         # --- Fallback defaults ---
         if len(suggestions) < 3:
-            add("How is my training going overall?")
-            add("Am I on track for my goal?")
+            add("How is my training going overall? Cite at least 2 recent runs (date + activity id + distance + pace) and my current ATL/CTL/TSB.")
+            add("Am I on track for my goal race? Use get_plan_week and get_training_load and cite specific workouts + current load.")
 
         return suggestions[:5]
 

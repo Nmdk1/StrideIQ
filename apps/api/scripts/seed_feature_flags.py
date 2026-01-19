@@ -246,6 +246,16 @@ REQUIRED_FLAGS = [
         "requires_payment": None,
         "rollout_percentage": 100,
     },
+    {
+        "key": "plan.n1_long_run_progression",
+        "name": "N=1 Long Run Progression",
+        "description": "ADR-038: Uses athlete's actual current/peak long run data for progression instead of population formulas. Fixes dangerous 10→22mi jumps.",
+        "enabled": True,  # Enabled - fix verified across all distances/timelines
+        "requires_subscription": False,
+        "requires_tier": None,
+        "requires_payment": None,
+        "rollout_percentage": 100,
+    },
 ]
 
 with engine.connect() as conn:

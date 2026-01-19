@@ -68,6 +68,9 @@ def mock_fitness_bank():
         current_ctl=72.0,
         current_atl=80.0,
         weeks_since_peak=4,
+        # ADR-038: N=1 long run progression inputs
+        current_long_run_miles=22.0 * 0.80,
+        average_long_run_miles=22.0 * 0.90,
         tau1=25.0,
         tau2=18.0,
         experience_level=ExperienceLevel.ELITE,
@@ -91,6 +94,8 @@ def injured_fitness_bank(mock_fitness_bank):
     mock_fitness_bank.is_returning_from_break = True
     mock_fitness_bank.current_weekly_miles = 35.0
     mock_fitness_bank.weeks_since_peak = 3
+    # Injury return: current long run capability is reduced vs peak (guideline ~50%)
+    mock_fitness_bank.current_long_run_miles = mock_fitness_bank.peak_long_run_miles * 0.50
     return mock_fitness_bank
 
 

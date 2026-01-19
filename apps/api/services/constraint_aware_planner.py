@@ -140,7 +140,7 @@ class ConstraintAwarePlanner:
         themes = self._apply_constraint_overrides(themes, bank, tune_up_races)
         
         # 4. Fill workouts for each week
-        workout_generator = WorkoutPrescriptionGenerator(bank)
+        workout_generator = WorkoutPrescriptionGenerator(bank, race_distance=race_distance)
         weeks = []
         
         for theme_plan in themes:
@@ -488,7 +488,7 @@ class ConstraintAwarePlanner:
         """Generate minimal plan when race is very soon."""
         
         # Just race week
-        workout_gen = WorkoutPrescriptionGenerator(bank)
+        workout_gen = WorkoutPrescriptionGenerator(bank, race_distance=race_distance)
         week = workout_gen.generate_week(
             theme=WeekTheme.RACE,
             week_number=1,

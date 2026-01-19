@@ -2,6 +2,10 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app/web
 
+# Build-time argument for API URL (baked into Next.js bundle)
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 COPY package*.json ./
 RUN npm ci
 

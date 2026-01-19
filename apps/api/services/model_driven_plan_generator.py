@@ -208,10 +208,30 @@ class ModelDrivenPlanGenerator:
     Generates training plans from individual performance model.
     
     No templates. No LLM. Pure calculation from athlete's data.
+    
+    ADR-036: When feature flag 'plan.3d_workout_selection' is enabled,
+    uses the N=1 Learning Workout Selector for quality sessions instead
+    of hardcoded workout prescriptions.
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, feature_flags=None):
         self.db = db
+        self._feature_flags = feature_flags
+        self._workout_selector = None
+        self._recent_quality_ids: List[str] = []  # Track for variance enforcement
+        
+    def _use_3d_selection(self, athlete_id: UUID) -> bool:
+        """Check if 3D workout selection is enabled for this athlete."""
+        if self._feature_flags is None:
+            return False
+        return self._feature_flags.is_enabled("plan.3d_workout_selection", athlete_id)
+    
+    def _get_workout_selector(self):
+        """Lazy-load the workout selector."""
+        if self._workout_selector is None:
+            from services.workout_templates import WorkoutSelector
+            self._workout_selector = WorkoutSelector(self.db)
+        return self._workout_selector
     
     def generate(
         self,
@@ -227,6 +247,9 @@ class ModelDrivenPlanGenerator:
         Args:
             athlete_id: Athlete UUID
             race_date: Target race date
+            
+        Note: When feature flag 'plan.3d_workout_selection' is enabled,
+        quality workouts are selected using the N=1 Learning Workout Selector (ADR-036).
             race_distance: Race distance key (e.g., "marathon")
             goal_time_seconds: Optional goal time (for pace calculation)
             tune_up_races: List of tune-up races with date, distance, purpose
@@ -238,6 +261,10 @@ class ModelDrivenPlanGenerator:
         
         plan_id = str(uuid.uuid4())
         race_distance_m = RACE_DISTANCES.get(race_distance.lower(), 42195)
+        
+        # Track athlete ID for 3D selection (ADR-036)
+        self._current_athlete_id = athlete_id
+        self._recent_quality_ids = []  # Reset for this plan generation
         
         # Step 1: Get or calibrate individual model
         model = get_or_calibrate_model(athlete_id, self.db)
@@ -331,6 +358,118 @@ class ModelDrivenPlanGenerator:
             taper_start_week=trajectory.taper_start_week,
             counter_conventional_notes=counter_notes,
             personalization_summary=personalization
+        )
+    
+    # =========================================================================
+    # N=1 LEARNING WORKOUT SELECTION (ADR-036)
+    # =========================================================================
+    
+    def _select_quality_workout_3d(
+        self,
+        date: date,
+        day_of_week: str,
+        target_tss: float,
+        miles: float,
+        paces: Dict[str, str],
+        phase: TrainingPhase,
+        week_number: int,
+        total_weeks: int
+    ) -> 'DayPlan':
+        """
+        Select quality workout using N=1 Learning Workout Selector.
+        
+        Uses the three-dimensional model (Periodization, Progression, Variance)
+        with phase as a soft weight, athlete intelligence bank, and explore/exploit
+        based on data sufficiency tier.
+        
+        ADR-036: N=1 Learning Workout Selection Engine
+        """
+        from services.workout_templates import TrainingPhase as TemplatePhase
+        
+        # Map internal phase to template phase
+        phase_map = {
+            TrainingPhase.BASE: TemplatePhase.BASE,
+            TrainingPhase.BUILD: TemplatePhase.BUILD,
+            TrainingPhase.PEAK: TemplatePhase.PEAK,
+            TrainingPhase.TAPER: TemplatePhase.TAPER,
+        }
+        template_phase = phase_map.get(phase, TemplatePhase.BUILD)
+        
+        # Get workout selector
+        selector = self._get_workout_selector()
+        
+        # Calculate week in phase (approximate)
+        # Assume roughly equal phase splits: 25% base, 50% build, 20% peak, 5% taper
+        if phase == TrainingPhase.BASE:
+            phase_start_week = 1
+            phase_weeks = max(1, int(total_weeks * 0.25))
+        elif phase == TrainingPhase.BUILD:
+            phase_start_week = int(total_weeks * 0.25) + 1
+            phase_weeks = max(1, int(total_weeks * 0.50))
+        elif phase == TrainingPhase.PEAK:
+            phase_start_week = int(total_weeks * 0.75) + 1
+            phase_weeks = max(1, int(total_weeks * 0.20))
+        else:  # TAPER
+            phase_start_week = int(total_weeks * 0.95) + 1
+            phase_weeks = max(1, total_weeks - phase_start_week + 1)
+        
+        week_in_phase = max(1, week_number - phase_start_week + 1)
+        
+        # Select workout
+        result = selector.select_quality_workout(
+            athlete_id=str(self._current_athlete_id),
+            phase=template_phase,
+            week_in_phase=week_in_phase,
+            total_phase_weeks=phase_weeks,
+            recent_quality_ids=self._recent_quality_ids[-5:],  # Last 5 quality workouts
+            athlete_facilities=[]  # TODO: get from athlete preferences
+        )
+        
+        # Track for variance enforcement
+        self._recent_quality_ids.append(result.template.id)
+        
+        # Convert template to DayPlan
+        template = result.template
+        
+        # Substitute pace placeholders in description
+        description = template.description_template
+        for pace_key in ['e_pace', 't_pace', 'm_pace', 'i_pace', 'r_pace']:
+            placeholder = '{' + pace_key + '}'
+            if placeholder in description:
+                description = description.replace(placeholder, paces.get(pace_key, 'target pace'))
+        
+        # Build rationale with selection context
+        rationale = template.rationale or template.hypothesis
+        if result.data_tier.value != "uncalibrated":
+            rationale += f" (Selected via N=1 learning, tier: {result.data_tier.value})"
+        
+        # Map fatigue cost to intensity
+        intensity_map = {
+            "low": "easy",
+            "moderate": "moderate", 
+            "high": "hard"
+        }
+        intensity = intensity_map.get(template.fatigue_cost.value, "moderate")
+        
+        # Log audit info
+        logger.info(
+            f"3D selection: {template.id} for {date} "
+            f"(phase={phase.value}, mode={result.selection_mode}, tier={result.data_tier.value}, "
+            f"score={result.final_score:.2f})"
+        )
+        
+        return DayPlan(
+            date=date,
+            day_of_week=day_of_week,
+            workout_type=template.workout_type,
+            name=template.name,
+            description=description,
+            target_tss=target_tss,
+            target_miles=miles,
+            target_pace=paces.get('t_pace') if 'threshold' in template.workout_type else paces.get('e_pace'),
+            intensity=intensity,
+            rationale=rationale,
+            notes=template.notes
         )
     
     # =========================================================================
@@ -557,7 +696,12 @@ class ModelDrivenPlanGenerator:
         goal_time: Optional[int],
         distance_m: int
     ) -> Dict[str, str]:
-        """Get training paces from VDOT or goal time."""
+        """
+        Get training paces from VDOT or goal time.
+        
+        Returns dict with keys: e_pace, m_pace, t_pace, i_pace, r_pace
+        Values are formatted as "M:SS/mi"
+        """
         from services.vdot_calculator import calculate_vdot_from_race_time
         
         if goal_time:
@@ -568,8 +712,31 @@ class ModelDrivenPlanGenerator:
             current_vdot = predictor._get_current_vdot(athlete_id)
             vdot = current_vdot if current_vdot else 45.0  # Default
         
-        paces = calculate_training_paces(vdot)
-        return paces if paces else self._default_paces()
+        raw_paces = calculate_training_paces(vdot)
+        
+        if not raw_paces:
+            return self._default_paces()
+        
+        # Convert from vdot_calculator format to our expected format
+        # vdot_calculator returns: {"easy": {"mi": "7:57", "km": "4:56"}, ...}
+        # We need: {"e_pace": "7:57/mi", "m_pace": "6:39/mi", ...}
+        def extract_pace(key: str) -> str:
+            pace_dict = raw_paces.get(key, {})
+            if isinstance(pace_dict, dict):
+                mi_pace = pace_dict.get("mi")
+                if mi_pace:
+                    return f"{mi_pace}/mi"
+            elif isinstance(pace_dict, str):
+                return f"{pace_dict}/mi" if not pace_dict.endswith("/mi") else pace_dict
+            return None
+        
+        return {
+            "e_pace": extract_pace("easy") or "9:00/mi",
+            "m_pace": extract_pace("marathon") or "8:00/mi",
+            "t_pace": extract_pace("threshold") or "7:15/mi",
+            "i_pace": extract_pace("interval") or "6:30/mi",
+            "r_pace": extract_pace("repetition") or "6:00/mi"
+        }
     
     def _default_paces(self) -> Dict[str, str]:
         """Return default training paces."""
@@ -890,6 +1057,21 @@ class ModelDrivenPlanGenerator:
         
         elif workout_type == "quality":
             miles = target_tss * TSS_TO_MILES_QUALITY
+            
+            # ADR-036: Use 3D workout selection when feature flag is enabled
+            if hasattr(self, '_use_3d_selection') and self._use_3d_selection(self._current_athlete_id):
+                return self._select_quality_workout_3d(
+                    date=date,
+                    day_of_week=day_of_week,
+                    target_tss=target_tss,
+                    miles=miles,
+                    paces=paces,
+                    phase=phase,
+                    week_number=week_number,
+                    total_weeks=total_weeks
+                )
+            
+            # Legacy hardcoded selection (fallback)
             if phase == TrainingPhase.BUILD:
                 # TERMINOLOGY: Threshold = intervals with recovery (3x10min w/ 2min jog)
                 # Tempo = continuous sustained (25min straight)
@@ -935,6 +1117,20 @@ class ModelDrivenPlanGenerator:
         
         elif workout_type == "sharpening":
             miles = target_tss * TSS_TO_MILES_QUALITY
+            
+            # ADR-036: Use 3D workout selection for sharpening when feature flag is enabled
+            if hasattr(self, '_use_3d_selection') and self._use_3d_selection(self._current_athlete_id):
+                return self._select_quality_workout_3d(
+                    date=date,
+                    day_of_week=day_of_week,
+                    target_tss=target_tss,
+                    miles=miles,
+                    paces=paces,
+                    phase=phase,
+                    week_number=week_number,
+                    total_weeks=total_weeks
+                )
+            
             return DayPlan(
                 date=date,
                 day_of_week=day_of_week,
@@ -1449,7 +1645,8 @@ def generate_model_driven_plan(
     race_distance: str,
     db: Session,
     goal_time_seconds: Optional[int] = None,
-    tune_up_races: Optional[List[Dict]] = None
+    tune_up_races: Optional[List[Dict]] = None,
+    feature_flags = None
 ) -> ModelDrivenPlan:
     """Generate model-driven training plan.
     
@@ -1459,8 +1656,11 @@ def generate_model_driven_plan(
             - distance: "5k", "10k", "10_mile", "half_marathon"
             - name: Optional race name
             - purpose: "tune_up", "threshold", "sharpening", "fitness_check"
+        feature_flags: Optional FeatureFlagService instance. When provided and
+            'plan.3d_workout_selection' is enabled, uses N=1 Learning Workout
+            Selector for quality sessions (ADR-036).
     """
-    generator = ModelDrivenPlanGenerator(db)
+    generator = ModelDrivenPlanGenerator(db, feature_flags=feature_flags)
     return generator.generate(
         athlete_id=athlete_id,
         race_date=race_date,

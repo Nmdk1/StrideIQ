@@ -809,10 +809,98 @@ def get_or_calibrate_model(
     """
     Get cached model or calibrate new one.
     
-    TODO: Add model caching to database
+    ADR-036: Persists calibrated model to AthleteCalibratedModel table.
     """
+    from models import AthleteCalibratedModel
+    from datetime import datetime, date, timezone
+    
+    # Check for existing cached model
+    if not force_recalibrate:
+        cached = db.query(AthleteCalibratedModel).filter(
+            AthleteCalibratedModel.athlete_id == athlete_id
+        ).first()
+        
+        if cached:
+            # Check if still valid
+            if cached.valid_until is None or cached.valid_until >= date.today():
+                logger.info(f"Using cached model for {athlete_id}: τ1={cached.tau1:.1f}, τ2={cached.tau2:.1f}")
+                return BanisterModel(
+                    athlete_id=str(athlete_id),
+                    tau1=cached.tau1,
+                    tau2=cached.tau2,
+                    k1=cached.k1,
+                    k2=cached.k2,
+                    p0=cached.p0,
+                    r_squared=cached.r_squared,
+                    fit_error=cached.fit_error,
+                    n_performance_markers=cached.n_performance_markers,
+                    n_training_days=cached.n_training_days,
+                    confidence=ModelConfidence(cached.confidence) if cached.confidence in ['high', 'moderate', 'low', 'uncalibrated'] else ModelConfidence.LOW
+                )
+    
+    # Calibrate new model
     engine = IndividualPerformanceModel(db)
-    return engine.calibrate(athlete_id)
+    model = engine.calibrate(athlete_id)
+    
+    # Persist to database
+    try:
+        existing = db.query(AthleteCalibratedModel).filter(
+            AthleteCalibratedModel.athlete_id == athlete_id
+        ).first()
+        
+        if existing:
+            existing.tau1 = model.tau1
+            existing.tau2 = model.tau2
+            existing.k1 = model.k1
+            existing.k2 = model.k2
+            existing.p0 = model.p0
+            existing.r_squared = model.r_squared
+            existing.fit_error = model.fit_error
+            existing.n_performance_markers = model.n_performance_markers
+            existing.n_training_days = model.n_training_days
+            existing.confidence = model.confidence.value
+            existing.data_tier = _determine_data_tier(model)
+            existing.calibrated_at = datetime.now(timezone.utc)
+            existing.valid_until = None  # Valid until new race invalidates
+        else:
+            new_cached = AthleteCalibratedModel(
+                athlete_id=athlete_id,
+                tau1=model.tau1,
+                tau2=model.tau2,
+                k1=model.k1,
+                k2=model.k2,
+                p0=model.p0,
+                r_squared=model.r_squared,
+                fit_error=model.fit_error,
+                n_performance_markers=model.n_performance_markers,
+                n_training_days=model.n_training_days,
+                confidence=model.confidence.value,
+                data_tier=_determine_data_tier(model),
+                calibrated_at=datetime.now(timezone.utc),
+                valid_until=None
+            )
+            db.add(new_cached)
+        
+        db.commit()
+        logger.info(f"Persisted model for {athlete_id}: τ1={model.tau1:.1f}, τ2={model.tau2:.1f}")
+    except Exception as e:
+        logger.warning(f"Failed to persist model (non-critical): {e}")
+        db.rollback()
+    
+    return model
+
+
+def _determine_data_tier(model: BanisterModel) -> str:
+    """Determine data tier from model quality."""
+    n_markers = model.n_performance_markers or 0
+    n_days = model.n_training_days or 0
+    
+    if n_markers >= 3 and n_days >= 180:
+        return "calibrated"
+    elif n_markers >= 1 or n_days >= 60:
+        return "learning"
+    else:
+        return "uncalibrated"
 
 
 def get_model_insights(athlete_id: UUID, db: Session) -> Dict:

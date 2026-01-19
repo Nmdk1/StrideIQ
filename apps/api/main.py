@@ -7,7 +7,7 @@ routers, and configuration for production use.
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, plan_generation, home
+from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, plan_generation, home, plan_export
 try:
     from routers import garmin
     GARMIN_AVAILABLE = True
@@ -76,17 +76,22 @@ app = FastAPI(
 )
 
 # CORS middleware
-# Allow localhost origins for development, or all origins if DEBUG is True
-allowed_origins = (
-    ["*"] if settings.DEBUG
-    else [
+# Production: set CORS_ORIGINS env var (comma-separated)
+# Development: DEBUG=True allows all origins
+if settings.DEBUG:
+    allowed_origins = ["*"]
+elif settings.CORS_ORIGINS:
+    # Production - use configured origins
+    allowed_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
+else:
+    # Fallback for local development
+    allowed_origins = [
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
         "http://10.0.0.137:3000",  # Home network access
     ]
-)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -305,6 +310,7 @@ app.include_router(calendar.router)
 app.include_router(insights.router)
 app.include_router(plan_generation.router)
 app.include_router(home.router)
+app.include_router(plan_export.router)
 
 # GDPR endpoints
 try:

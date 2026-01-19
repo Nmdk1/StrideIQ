@@ -4,7 +4,8 @@ Nutrition API Endpoints
 Handles nutrition tracking (pre/during/post activity + daily) for correlation analysis.
 Nutrition patterns are correlated with performance efficiency to identify personal response curves.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+import os
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
@@ -12,11 +13,73 @@ from decimal import Decimal
 from datetime import date, datetime
 
 from core.database import get_db
+from core.auth import get_current_user
 from core.cache import invalidate_athlete_cache, invalidate_correlation_cache
 from models import Athlete, NutritionEntry, Activity
 from schemas import NutritionEntryCreate, NutritionEntryResponse
+from pydantic import BaseModel
+
+from services import nutrition_parser
 
 router = APIRouter(prefix="/v1", tags=["nutrition"])
+
+
+@router.get("/nutrition/parse/available")
+def nutrition_parse_available():
+    """
+    Capability check for NL nutrition parsing.
+
+    No auth required: UI uses this to decide whether to render the NL input.
+    """
+    return {"available": bool(os.getenv("OPENAI_API_KEY"))}
+
+
+class NutritionParseRequest(BaseModel):
+    text: str
+
+
+@router.post("/nutrition/parse", response_model=NutritionEntryCreate, status_code=status.HTTP_200_OK)
+def parse_nutrition(
+    payload: NutritionParseRequest,
+    current_user: Athlete = Depends(get_current_user),
+):
+    """
+    Parse natural-language nutrition text into structured macros.
+
+    Phase 1:
+    - Accepts { text: string }
+    - Uses OpenAI to estimate macros
+    - Returns a NutritionEntryCreate payload prefilled for the current user (daily entry, today)
+
+    Notes:
+    - Manual entry remains the fallback if parsing is unavailable.
+    """
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="text is required")
+
+    try:
+        parsed = nutrition_parser.parse_nutrition_text(text)
+    except Exception as e:
+        # Keep failure mode user-friendly and non-fatal for manual fallback.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Nutrition parsing unavailable: {str(e)}",
+        )
+
+    return NutritionEntryCreate(
+        athlete_id=current_user.id,
+        date=date.today(),
+        entry_type="daily",
+        activity_id=None,
+        calories=parsed.get("calories"),
+        protein_g=parsed.get("protein_g"),
+        carbs_g=parsed.get("carbs_g"),
+        fat_g=parsed.get("fat_g"),
+        fiber_g=parsed.get("fiber_g"),
+        timing=None,
+        notes=parsed.get("notes") or text,
+    )
 
 
 @router.post("/nutrition", response_model=NutritionEntryResponse, status_code=201)
