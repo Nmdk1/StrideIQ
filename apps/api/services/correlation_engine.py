@@ -17,6 +17,8 @@ Based on manifesto Section 3: Correlation Engines
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from decimal import Decimal
+import logging
+from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 from statistics import mean, stdev
@@ -24,9 +26,13 @@ import math
 
 from models import (
     Activity, ActivitySplit, NutritionEntry, DailyCheckin, 
-    WorkPattern, BodyComposition, ActivityFeedback
+    WorkPattern, BodyComposition, ActivityFeedback,
+    PlannedWorkout, TrainingPlan, Athlete, PersonalBest
 )
+from datetime import date as date_type
 from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
+
+logger = logging.getLogger(__name__)
 
 
 # Statistical thresholds
@@ -271,8 +277,288 @@ def aggregate_daily_inputs(
     ).order_by(BodyComposition.date).all()
     
     inputs["bmi"] = [(row.date, float(row.bmi)) for row in bmi_data]
+
+    # Stress (1-5 scale)
+    stress_data = db.query(
+        DailyCheckin.date,
+        DailyCheckin.stress_1_5
+    ).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.date >= start_date.date(),
+        DailyCheckin.date <= end_date.date(),
+        DailyCheckin.stress_1_5.isnot(None)
+    ).all()
+
+    inputs["stress_1_5"] = [(row.date, float(row.stress_1_5)) for row in stress_data]
+
+    # Soreness (1-5 scale)
+    soreness_data = db.query(
+        DailyCheckin.date,
+        DailyCheckin.soreness_1_5
+    ).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.date >= start_date.date(),
+        DailyCheckin.date <= end_date.date(),
+        DailyCheckin.soreness_1_5.isnot(None)
+    ).all()
+
+    inputs["soreness_1_5"] = [(row.date, float(row.soreness_1_5)) for row in soreness_data]
+
+    # RPE (1-10 scale)
+    rpe_data = db.query(
+        DailyCheckin.date,
+        DailyCheckin.rpe_1_10
+    ).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.date >= start_date.date(),
+        DailyCheckin.date <= end_date.date(),
+        DailyCheckin.rpe_1_10.isnot(None)
+    ).all()
+
+    inputs["rpe_1_10"] = [(row.date, float(row.rpe_1_10)) for row in rpe_data]
+
+    # Enjoyment (1-5 scale)
+    enjoyment_data = db.query(
+        DailyCheckin.date,
+        DailyCheckin.enjoyment_1_5
+    ).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.date >= start_date.date(),
+        DailyCheckin.date <= end_date.date(),
+        DailyCheckin.enjoyment_1_5.isnot(None)
+    ).all()
+
+    inputs["enjoyment_1_5"] = [(row.date, float(row.enjoyment_1_5)) for row in enjoyment_data]
+
+    # Confidence (1-5 scale)
+    confidence_data = db.query(
+        DailyCheckin.date,
+        DailyCheckin.confidence_1_5
+    ).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.date >= start_date.date(),
+        DailyCheckin.date <= end_date.date(),
+        DailyCheckin.confidence_1_5.isnot(None)
+    ).all()
+
+    inputs["confidence_1_5"] = [(row.date, float(row.confidence_1_5)) for row in confidence_data]
+
+    # Motivation (1-5 scale)
+    motivation_data = db.query(
+        DailyCheckin.date,
+        DailyCheckin.motivation_1_5
+    ).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.date >= start_date.date(),
+        DailyCheckin.date <= end_date.date(),
+        DailyCheckin.motivation_1_5.isnot(None)
+    ).all()
+
+    inputs["motivation_1_5"] = [(row.date, float(row.motivation_1_5)) for row in motivation_data]
+
+    # Overnight average HR
+    overnight_hr_data = db.query(
+        DailyCheckin.date,
+        DailyCheckin.overnight_avg_hr
+    ).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.date >= start_date.date(),
+        DailyCheckin.date <= end_date.date(),
+        DailyCheckin.overnight_avg_hr.isnot(None)
+    ).all()
+
+    inputs["overnight_avg_hr"] = [(row.date, float(row.overnight_avg_hr)) for row in overnight_hr_data]
+
+    # HRV SDNN
+    hrv_sdnn_data = db.query(
+        DailyCheckin.date,
+        DailyCheckin.hrv_sdnn
+    ).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.date >= start_date.date(),
+        DailyCheckin.date <= end_date.date(),
+        DailyCheckin.hrv_sdnn.isnot(None)
+    ).all()
+
+    inputs["hrv_sdnn"] = [(row.date, float(row.hrv_sdnn)) for row in hrv_sdnn_data]
     
     return inputs
+
+
+def aggregate_training_load_inputs(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session
+) -> Dict[str, List[Tuple[datetime, float]]]:
+    """
+    Aggregate TSB/CTL/ATL into time-series data for correlation.
+    
+    These are derived metrics from TrainingLoadCalculator.
+    """
+    from services.training_load import TrainingLoadCalculator
+    
+    inputs: Dict[str, List[Tuple[datetime, float]]] = {}
+    calc = TrainingLoadCalculator(db)
+    
+    # Get load history for the period
+    try:
+        load_history = calc.get_load_history(
+            athlete_id=UUID(athlete_id),
+            days=(end_date - start_date).days + 1
+        )
+        
+        # ADR-045 pseudocode assumes a dict; our implementation returns a List[DailyLoad].
+        if isinstance(load_history, dict):
+            daily_loads = load_history.get("daily_loads", [])
+        else:
+            daily_loads = load_history or []
+        
+        tsb_data = []
+        ctl_data = []
+        atl_data = []
+        
+        for day_load in daily_loads:
+            # Support both dict-like and attribute-like objects
+            day_date = None
+            tsb_val = None
+            ctl_val = None
+            atl_val = None
+            
+            if isinstance(day_load, dict):
+                day_date = day_load.get("date")
+                tsb_val = day_load.get("tsb")
+                ctl_val = day_load.get("ctl")
+                atl_val = day_load.get("atl")
+            else:
+                day_date = getattr(day_load, "date", None)
+                tsb_val = getattr(day_load, "tsb", None)
+                ctl_val = getattr(day_load, "ctl", None)
+                atl_val = getattr(day_load, "atl", None)
+            
+            if isinstance(day_date, str):
+                day_date = datetime.fromisoformat(day_date).date()
+            elif isinstance(day_date, datetime):
+                day_date = day_date.date()
+            
+            if tsb_val is not None:
+                tsb_data.append((day_date, float(tsb_val)))
+            if ctl_val is not None:
+                ctl_data.append((day_date, float(ctl_val)))
+            if atl_val is not None:
+                atl_data.append((day_date, float(atl_val)))
+        
+        inputs["tsb"] = tsb_data
+        inputs["ctl"] = ctl_data
+        inputs["atl"] = atl_data
+        
+    except Exception as e:
+        logger.warning(f"Failed to get training load for correlation: {e}")
+        inputs["tsb"] = []
+        inputs["ctl"] = []
+        inputs["atl"] = []
+    
+    return inputs
+
+
+def aggregate_pace_at_effort(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session,
+    effort_level: str = "easy"  # "easy", "threshold"
+) -> List[Tuple[datetime, float]]:
+    """
+    Aggregate pace at specific effort levels.
+    
+    Args:
+        effort_level: "easy" (< 75% max_hr) or "threshold" (85-92% max_hr)
+    
+    Returns:
+        List of (activity_date, pace_per_km_seconds) tuples
+    """
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    if not athlete or not athlete.max_hr:
+        return []
+    
+    max_hr = athlete.max_hr
+    
+    if effort_level == "easy":
+        hr_min = 0
+        hr_max = int(max_hr * 0.75)
+    elif effort_level == "threshold":
+        hr_min = int(max_hr * 0.85)
+        hr_max = int(max_hr * 0.92)
+    else:
+        return []
+    
+    activities = db.query(Activity).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.start_time >= start_date,
+        Activity.start_time <= end_date,
+        Activity.avg_hr >= hr_min,
+        Activity.avg_hr <= hr_max,
+        Activity.distance_m > 0,
+        Activity.duration_s > 0
+    ).order_by(Activity.start_time).all()
+    
+    pace_data = []
+    for activity in activities:
+        pace_per_km = activity.duration_s / (activity.distance_m / 1000.0)
+        pace_data.append((activity.start_time.date(), pace_per_km))
+    
+    return pace_data
+
+
+def aggregate_workout_completion(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session,
+    window_days: int = 7
+) -> List[Tuple[datetime, float]]:
+    """
+    Calculate rolling workout completion rate.
+    
+    Returns:
+        List of (date, completion_rate) tuples where rate is 0.0-1.0
+    """
+    # Get active plan
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.athlete_id == athlete_id,
+        TrainingPlan.status == "active"
+    ).first()
+    
+    if not plan:
+        return []
+    
+    completion_data = []
+    current_date = start_date.date()
+    end = end_date.date()
+    
+    while current_date <= end:
+        window_start = current_date - timedelta(days=window_days)
+        
+        scheduled = db.query(PlannedWorkout).filter(
+            PlannedWorkout.plan_id == plan.id,
+            PlannedWorkout.scheduled_date >= window_start,
+            PlannedWorkout.scheduled_date <= current_date
+        ).count()
+        
+        completed = db.query(PlannedWorkout).filter(
+            PlannedWorkout.plan_id == plan.id,
+            PlannedWorkout.scheduled_date >= window_start,
+            PlannedWorkout.scheduled_date <= current_date,
+            PlannedWorkout.completed == True
+        ).count()
+        
+        if scheduled > 0:
+            rate = completed / scheduled
+            completion_data.append((current_date, rate))
+        
+        current_date += timedelta(days=1)
+    
+    return completion_data
 
 
 def aggregate_efficiency_outputs(
@@ -313,6 +599,244 @@ def aggregate_efficiency_outputs(
             efficiency_data.append((activity.start_time.date(), ef))
     
     return efficiency_data
+
+
+def aggregate_efficiency_by_effort_zone(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session,
+    effort_zone: str = "threshold"  # "easy", "threshold", "race"
+) -> List[Tuple[date_type, float]]:
+    """
+    Aggregate efficiency for COMPARABLE runs only.
+    
+    Effort zones (% max HR):
+    - easy: < 75%
+    - threshold: 80-88%
+    - race: > 88%
+    
+    Returns Pace/HR ratio (lower = better efficiency at that effort)
+    """
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    if not athlete or not athlete.max_hr:
+        return []
+    
+    max_hr = athlete.max_hr
+    
+    if effort_zone == "easy":
+        hr_min, hr_max = 0, int(max_hr * 0.75)
+    elif effort_zone == "threshold":
+        hr_min, hr_max = int(max_hr * 0.80), int(max_hr * 0.88)
+    elif effort_zone == "race":
+        hr_min, hr_max = int(max_hr * 0.88), 999
+    else:
+        return []
+    
+    activities = db.query(Activity).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.start_time >= start_date,
+        Activity.start_time <= end_date,
+        Activity.avg_hr >= hr_min,
+        Activity.avg_hr <= hr_max,
+        Activity.distance_m >= 3000,  # Minimum 3km for meaningful data
+        Activity.duration_s > 0
+    ).order_by(Activity.start_time).all()
+    
+    result = []
+    for a in activities:
+        pace_sec_km = a.duration_s / (a.distance_m / 1000)
+        efficiency = pace_sec_km / a.avg_hr  # Lower = faster at same HR
+        result.append((a.start_time.date(), efficiency))
+    
+    return result
+
+
+def aggregate_efficiency_trend(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session,
+    effort_zone: str = "threshold",
+    window_days: int = 30
+) -> List[Tuple[date_type, float]]:
+    """
+    Calculate rolling efficiency improvement rate.
+    
+    Returns % change in efficiency vs baseline (negative = improvement)
+    """
+    raw_data = aggregate_efficiency_by_effort_zone(
+        athlete_id, start_date, end_date, db, effort_zone
+    )
+    
+    if len(raw_data) < 5:
+        return []
+    
+    # Baseline: first 5 data points average
+    baseline = sum(d[1] for d in raw_data[:5]) / 5
+    
+    result = []
+    for d, eff in raw_data[5:]:
+        pct_change = ((eff - baseline) / baseline) * 100
+        result.append((d, pct_change))
+    
+    return result
+
+
+def aggregate_pb_events(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session
+) -> List[Tuple[date_type, float]]:
+    """
+    Aggregate PB events as binary time series.
+    
+    Returns:
+        List of (date, 1.0) for PB days, (date, 0.0) for non-PB days
+    """
+    # Get all PB dates
+    pbs = db.query(PersonalBest.achieved_at).filter(
+        PersonalBest.athlete_id == athlete_id,
+        PersonalBest.achieved_at >= start_date,
+        PersonalBest.achieved_at <= end_date
+    ).all()
+    
+    pb_dates = {pb.achieved_at.date() for pb in pbs}
+    
+    # Get all activity dates
+    activities = db.query(Activity.start_time).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.start_time >= start_date,
+        Activity.start_time <= end_date
+    ).all()
+    
+    activity_dates = {a.start_time.date() for a in activities}
+    
+    # Create binary series
+    result = []
+    for d in sorted(activity_dates):
+        result.append((d, 1.0 if d in pb_dates else 0.0))
+    
+    return result
+
+
+def aggregate_race_pace(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session
+) -> List[Tuple[date_type, float]]:
+    """
+    Aggregate pace on race-like efforts.
+    
+    Filters to activities that are likely races or hard efforts:
+    - avg_hr > 85% max_hr, OR
+    - distance > 5km with avg_hr > 80% max_hr
+    
+    Returns:
+        List of (date, pace_per_km_seconds) tuples
+    """
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    if not athlete or not athlete.max_hr:
+        return []
+    
+    max_hr = athlete.max_hr
+    hr_threshold_high = int(max_hr * 0.85)
+    hr_threshold_mid = int(max_hr * 0.80)
+    
+    # Race-like efforts: high HR OR long + moderately high HR
+    activities = db.query(Activity).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.start_time >= start_date,
+        Activity.start_time <= end_date,
+        Activity.distance_m > 0,
+        Activity.duration_s > 0,
+        Activity.avg_hr.isnot(None)
+    ).filter(
+        or_(
+            Activity.avg_hr >= hr_threshold_high,
+            and_(
+                Activity.distance_m >= 5000,
+                Activity.avg_hr >= hr_threshold_mid
+            )
+        )
+    ).order_by(Activity.start_time).all()
+    
+    pace_data = []
+    for activity in activities:
+        pace_per_km = activity.duration_s / (activity.distance_m / 1000.0)
+        pace_data.append((activity.start_time.date(), pace_per_km))
+    
+    return pace_data
+
+
+def aggregate_pre_pb_state(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session,
+    days_before: int = 1
+) -> Dict:
+    """
+    Analyze training state in days leading up to PBs.
+    
+    Returns summary statistics, not time series.
+    """
+    from services.training_load import TrainingLoadCalculator
+    
+    pbs = db.query(PersonalBest).filter(
+        PersonalBest.athlete_id == athlete_id,
+        PersonalBest.achieved_at >= start_date,
+        PersonalBest.achieved_at <= end_date
+    ).all()
+    
+    if not pbs:
+        return {"pb_count": 0, "patterns": None}
+    
+    calc = TrainingLoadCalculator(db)
+    
+    try:
+        history = calc.get_load_history(UUID(athlete_id) if isinstance(athlete_id, str) else athlete_id, days=365)
+    except Exception as e:
+        logger.warning(f"Failed to get load history for pre-PB analysis: {e}")
+        return {"pb_count": len(pbs), "patterns": None, "error": str(e)}
+    
+    # Build lookup - handle both list and dict return types
+    load_by_date = {}
+    items = history if isinstance(history, list) else history.get("daily_loads", [])
+    for item in items:
+        d = item.date if hasattr(item, 'date') else item.get('date')
+        if hasattr(d, 'date'):
+            d = d.date()
+        elif isinstance(d, str):
+            d = datetime.fromisoformat(d).date()
+        load_by_date[d] = item
+    
+    pre_pb_tsb = []
+    pre_pb_ctl = []
+    
+    for pb in pbs:
+        pb_date = pb.achieved_at.date()
+        # Get state 1 day before PB
+        check_date = pb_date - timedelta(days=days_before)
+        if check_date in load_by_date:
+            item = load_by_date[check_date]
+            tsb = item.tsb if hasattr(item, 'tsb') else item.get('tsb')
+            ctl = item.ctl if hasattr(item, 'ctl') else item.get('ctl')
+            if tsb is not None:
+                pre_pb_tsb.append(float(tsb))
+            if ctl is not None:
+                pre_pb_ctl.append(float(ctl))
+    
+    return {
+        "pb_count": len(pbs),
+        "pre_pb_tsb_mean": sum(pre_pb_tsb) / len(pre_pb_tsb) if pre_pb_tsb else None,
+        "pre_pb_tsb_min": min(pre_pb_tsb) if pre_pb_tsb else None,
+        "pre_pb_tsb_max": max(pre_pb_tsb) if pre_pb_tsb else None,
+        "pre_pb_ctl_mean": sum(pre_pb_ctl) / len(pre_pb_ctl) if pre_pb_ctl else None,
+        "optimal_tsb_range": (min(pre_pb_tsb), max(pre_pb_tsb)) if pre_pb_tsb else None
+    }
 
 
 def find_time_shifted_correlations(
@@ -392,7 +916,9 @@ def _align_time_series(
 def analyze_correlations(
     athlete_id: str,
     days: int = 90,
-    db: Session = None
+    db: Session = None,
+    include_training_load: bool = True,  # NEW PARAMETER
+    output_metric: str = "efficiency"     # NEW PARAMETER: "efficiency", "pace_easy", "completion"
 ) -> Dict:
     """
     Main correlation analysis function.
@@ -407,9 +933,35 @@ def analyze_correlations(
     
     # Aggregate inputs
     inputs = aggregate_daily_inputs(athlete_id, start_date, end_date, db)
+
+    # Add training load inputs if requested
+    if include_training_load:
+        load_inputs = aggregate_training_load_inputs(athlete_id, start_date, end_date, db)
+        inputs.update(load_inputs)
     
-    # Aggregate outputs (efficiency)
-    outputs = aggregate_efficiency_outputs(athlete_id, start_date, end_date, db)
+    # Get outputs based on metric
+    if output_metric == "efficiency":
+        outputs = aggregate_efficiency_outputs(athlete_id, start_date, end_date, db)
+    elif output_metric == "pace_easy":
+        outputs = aggregate_pace_at_effort(athlete_id, start_date, end_date, db, "easy")
+    elif output_metric == "pace_threshold":
+        outputs = aggregate_pace_at_effort(athlete_id, start_date, end_date, db, "threshold")
+    elif output_metric == "completion":
+        outputs = aggregate_workout_completion(athlete_id, start_date, end_date, db)
+    elif output_metric == "efficiency_threshold":
+        outputs = aggregate_efficiency_by_effort_zone(athlete_id, start_date, end_date, db, "threshold")
+    elif output_metric == "efficiency_race":
+        outputs = aggregate_efficiency_by_effort_zone(athlete_id, start_date, end_date, db, "race")
+    elif output_metric == "efficiency_easy":
+        outputs = aggregate_efficiency_by_effort_zone(athlete_id, start_date, end_date, db, "easy")
+    elif output_metric == "efficiency_trend":
+        outputs = aggregate_efficiency_trend(athlete_id, start_date, end_date, db, "threshold")
+    elif output_metric == "pb_events":
+        outputs = aggregate_pb_events(athlete_id, start_date, end_date, db)
+    elif output_metric == "race_pace":
+        outputs = aggregate_race_pace(athlete_id, start_date, end_date, db)
+    else:
+        outputs = aggregate_efficiency_outputs(athlete_id, start_date, end_date, db)
     
     if len(outputs) < MIN_SAMPLE_SIZE:
         return {

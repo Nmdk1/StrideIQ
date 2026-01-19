@@ -13,7 +13,7 @@ Features:
 import os
 import json
 from datetime import date, datetime, timedelta
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -33,6 +33,9 @@ from models import (
     Athlete, Activity, TrainingPlan, PlannedWorkout, 
     DailyCheckin, PersonalBest
 )
+from services import coach_tools
+from services.training_load import TrainingLoadCalculator
+from services.efficiency_analytics import get_efficiency_trends
 
 
 class AICoach:
@@ -84,7 +87,22 @@ You understand running physiology, periodization, and training principles:
 2. Never recommend extreme diets or protocols
 3. Always acknowledge when you're uncertain
 4. Base recommendations on the athlete's current fitness level, not aspirational goals
-5. Consider the athlete's injury history if mentioned"""
+5. Consider the athlete's injury history if mentioned
+
+## Evidence & Citations (REQUIRED)
+
+When providing insights:
+- Always cite specific evidence from tool results (run IDs, dates, and values).
+- Format citations clearly in plain English, e.g.:
+  - "On 2026-01-15, you ran 8.5 km @ 5:30/km (avg HR 152 bpm)."
+  - "On 2026-01-12, EF was 123.4 (pace 8.10 min/mi, avg HR 150)."
+- For questions like "Am I getting fitter?", you MUST use `get_efficiency_trend` and cite at least 2 EF points (earliest and latest available).
+- If data is insufficient, say: "I don't have enough data to answer that."
+- Never make claims (numbers, trends, training load, plan details) without tool-backed evidence."""
+
+    # Model tiers (simple 2-tier selection for cost control)
+    MODEL_SIMPLE = "gpt-3.5-turbo"    # ~$0.002/query
+    MODEL_STANDARD = "gpt-4o-mini"    # ~$0.01/query
 
     def __init__(self, db: Session):
         self.db = db
@@ -94,9 +112,161 @@ You understand running physiology, periodization, and training principles:
         if OPENAI_AVAILABLE:
             api_key = os.getenv("OPENAI_API_KEY")
             if api_key:
-                self.client = OpenAI(api_key=api_key)
+                # Assistants v1 is deprecated; use Assistants v2 header.
+                # See: https://platform.openai.com/docs/assistants/migration
+                self.client = OpenAI(
+                    api_key=api_key,
+                    default_headers={"OpenAI-Beta": "assistants=v2"},
+                )
                 # Get or create assistant
                 self.assistant_id = os.getenv("OPENAI_ASSISTANT_ID") or self._get_or_create_assistant()
+
+    def _assistant_tools(self) -> List[Dict[str, Any]]:
+        """
+        OpenAI Assistants API function tool definitions (bounded tools).
+        """
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_recent_runs",
+                    "description": "Fetch the athlete's recent runs from the Activity table (with IDs + timestamps).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "days": {
+                                "type": "integer",
+                                "description": "How many days back to look (default 7).",
+                                "minimum": 1,
+                                "maximum": 365,
+                            }
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_efficiency_trend",
+                    "description": "Get efficiency trend data over time (EF time series + summary).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "days": {
+                                "type": "integer",
+                                "description": "How many days of history to analyze (default 30).",
+                                "minimum": 7,
+                                "maximum": 365,
+                            }
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_plan_week",
+                    "description": "Get the current week's planned workouts for the athlete's active plan.",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_training_load",
+                    "description": "Get current ATL/CTL/TSB and personalized TSB zone info.",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_correlations",
+                    "description": "Get correlations between wellness inputs and efficiency outputs.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "days": {
+                                "type": "integer",
+                                "description": "How many days of history to analyze (default 30).",
+                                "minimum": 14,
+                                "maximum": 365,
+                            }
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_race_predictions",
+                    "description": "Get race time predictions for 5K, 10K, Half Marathon, and Marathon.",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_recovery_status",
+                    "description": "Get recovery metrics: half-life, durability index, false fitness and masked fatigue signals.",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_active_insights",
+                    "description": "Get prioritized actionable insights for the athlete.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "description": "Max insights to return (default 5, max 10).",
+                                "minimum": 1,
+                                "maximum": 10,
+                            }
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_pb_patterns",
+                    "description": "Get training patterns that preceded personal bests, including optimal TSB range.",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_efficiency_by_zone",
+                    "description": "Get efficiency trend for specific effort zones (easy, threshold, race).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "effort_zone": {
+                                "type": "string",
+                                "enum": ["easy", "threshold", "race"],
+                                "description": "Effort zone to analyze (default threshold).",
+                            },
+                            "days": {
+                                "type": "integer",
+                                "description": "Days of history (default 90, max 365).",
+                                "minimum": 30,
+                                "maximum": 365,
+                            }
+                        },
+                        "required": [],
+                    },
+                },
+            },
+        ]
     
     def _get_or_create_assistant(self) -> Optional[str]:
         """Get existing assistant or create a new one."""
@@ -109,14 +279,31 @@ You understand running physiology, periodization, and training principles:
             for assistant in assistants.data:
                 if assistant.name == "StrideIQ Coach":
                     logger.info(f"Using existing assistant: {assistant.id}")
+                    # Ensure tool definitions are up to date (idempotent).
+                    try:
+                        self.client.beta.assistants.update(
+                            assistant_id=assistant.id,
+                            instructions=self.SYSTEM_INSTRUCTIONS
+                            + "\n\n## Tool Use Policy\n"
+                            + "- You MUST use the provided tools for athlete data.\n"
+                            + "- Do NOT invent metrics. If unavailable, say so.\n"
+                            + "- When you cite numbers (dates, distances, EF, CTL/ATL/TSB), they must come from tool outputs.\n",
+                            tools=self._assistant_tools(),
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to update assistant tools/instructions: {e}")
                     return assistant.id
             
             # Create new assistant
             assistant = self.client.beta.assistants.create(
                 name="StrideIQ Coach",
-                instructions=self.SYSTEM_INSTRUCTIONS,
+                instructions=self.SYSTEM_INSTRUCTIONS
+                + "\n\n## Tool Use Policy\n"
+                + "- You MUST use the provided tools for athlete data.\n"
+                + "- Do NOT invent metrics. If unavailable, say so.\n"
+                + "- When you cite numbers (dates, distances, EF, CTL/ATL/TSB), they must come from tool outputs.\n",
                 model="gpt-4o",  # or "gpt-4-turbo-preview" for cost savings
-                tools=[],  # Can add code interpreter, retrieval later
+                tools=self._assistant_tools(),
             )
             logger.info(f"Created new assistant: {assistant.id}")
             return assistant.id
@@ -129,18 +316,39 @@ You understand running physiology, periodization, and training principles:
         """
         Get or create a conversation thread for an athlete.
         
-        In production, thread IDs would be stored in the database.
-        For now, we create a new thread each time (stateless).
+        Thread IDs are persisted on the Athlete record so conversation
+        context survives across requests and page refreshes.
+        """
+        thread_id, _created = self.get_or_create_thread_with_state(athlete_id)
+        return thread_id
+
+    def get_or_create_thread_with_state(self, athlete_id: UUID) -> Tuple[Optional[str], bool]:
+        """
+        Get or create a conversation thread for an athlete.
+
+        Returns:
+            (thread_id, created_new)
         """
         if not self.client:
-            return None
-        
+            return None, False
+
+        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if not athlete:
+            return None, False
+
+        if athlete.coach_thread_id:
+            return athlete.coach_thread_id, False
+
         try:
             thread = self.client.beta.threads.create()
-            return thread.id
+            athlete.coach_thread_id = thread.id
+            self.db.add(athlete)
+            self.db.commit()
+            return thread.id, True
         except Exception as e:
-            logger.error(f"Failed to create thread: {e}")
-            return None
+            self.db.rollback()
+            logger.error(f"Failed to create/persist thread: {e}")
+            return None, False
     
     def build_context(self, athlete_id: UUID, window_days: int = 30) -> str:
         """
@@ -311,6 +519,148 @@ You understand running physiology, periodization, and training principles:
         
         days_in = (today - plan.plan_start_date).days
         return (days_in // 7) + 1
+
+    def get_dynamic_suggestions(self, athlete_id: UUID) -> List[str]:
+        """
+        Return 3-5 data-driven suggested questions.
+        
+        Sources:
+        - coach_tools.get_active_insights (prioritized insights)
+        - coach_tools.get_pb_patterns (recent PBs)
+        - coach_tools.get_training_load (TSB state)
+        - coach_tools.get_efficiency_by_zone (efficiency trends)
+        """
+        suggestions: List[str] = []
+
+        def add(q: str) -> None:
+            if q and q not in suggestions and len(suggestions) < 5:
+                suggestions.append(q)
+
+        today = date.today()
+
+        # --- 1. Insights from coach_tools.get_active_insights ---
+        try:
+            result = coach_tools.get_active_insights(self.db, athlete_id, limit=3)
+            if result.get("ok"):
+                for ins in result.get("data", {}).get("insights", []):
+                    q = self._insight_to_question(ins)
+                    if q:
+                        add(q)
+        except Exception:
+            pass
+
+        # --- 2. PB-driven suggestions ---
+        try:
+            result = coach_tools.get_pb_patterns(self.db, athlete_id)
+            if result.get("ok"):
+                data = result.get("data") or {}
+                pb_count = data.get("pb_count", 0)
+                tsb_range = data.get("optimal_tsb_range")
+                if pb_count >= 2 and tsb_range:
+                    add(
+                        f"You have {pb_count} PRs with optimal TSB {tsb_range[0]:.0f} to {tsb_range[1]:.0f}. What's your secret?"
+                    )
+        except Exception:
+            pass
+
+        # --- 3. TSB-driven suggestions ---
+        try:
+            result = coach_tools.get_training_load(self.db, athlete_id)
+            if result.get("ok"):
+                tsb = result.get("data", {}).get("tsb")
+                if tsb is not None:
+                    if tsb > 20:
+                        add(f"Your TSB is +{tsb:.0f} — you're fresh. Ready for a hard effort?")
+                    elif tsb < -30:
+                        add(f"Your TSB is {tsb:.0f} — heavy fatigue. Should we discuss recovery?")
+        except Exception:
+            pass
+
+        # --- 4. Efficiency-driven suggestions ---
+        try:
+            result = coach_tools.get_efficiency_by_zone(self.db, athlete_id, "threshold", 90)
+            if result.get("ok"):
+                trend = result.get("data", {}).get("recent_trend_pct")
+                if trend is not None:
+                    if trend < -10:
+                        add(f"Your threshold efficiency improved {abs(trend):.0f}% recently. What's working?")
+                    elif trend > 10:
+                        add(f"Your threshold efficiency dropped {trend:.0f}% — want to investigate?")
+        except Exception:
+            pass
+
+        # --- 5. Recent activity suggestions ---
+        try:
+            start_of_today = datetime.combine(today, datetime.min.time())
+            completed_today = (
+                self.db.query(Activity)
+                .filter(
+                    Activity.athlete_id == athlete_id,
+                    Activity.sport == "run",
+                    Activity.start_time >= start_of_today,
+                )
+                .first()
+            )
+            if completed_today:
+                distance_km = (completed_today.distance_m or 0) / 1000
+                add(f"You ran {distance_km:.1f} km today. How did it feel?")
+        except Exception:
+            pass
+
+        # --- Fallback defaults ---
+        if len(suggestions) < 3:
+            add("How is my training going overall?")
+            add("Am I on track for my goal?")
+
+        return suggestions[:5]
+
+    def _insight_to_question(self, insight: Dict[str, Any]) -> Optional[str]:
+        """Convert an insight dict to a question format."""
+        title = insight.get("title") or ""
+        if not title:
+            return None
+
+        title_lower = title.lower()
+        if "improving" in title_lower:
+            return f"{title} — what's driving this?"
+        elif "declining" in title_lower or "drop" in title_lower:
+            return f"{title} — should we investigate?"
+        elif "pattern" in title_lower:
+            return f"{title} — is this intentional?"
+        elif "risk" in title_lower or "warning" in title_lower:
+            return f"{title} — what should I do?"
+        else:
+            return f"{title} — tell me more?"
+
+    def classify_query(self, message: str) -> str:
+        """
+        Classify query to select appropriate model.
+
+        Returns: 'simple' or 'standard'
+        """
+        message_lower = (message or "").lower()
+
+        # Simple: Direct data lookups (single tool call, minimal reasoning)
+        simple_patterns = [
+            "what's my tsb", "what is my tsb",
+            "what's my ctl", "what is my ctl",
+            "what's my atl", "what is my atl",
+            "show my plan", "this week's plan",
+            "my last run", "recent runs",
+            "my race predictions", "predicted times",
+            "recovery status", "am i recovering",
+        ]
+        if any(p in message_lower for p in simple_patterns):
+            return "simple"
+
+        # Everything else: Standard
+        return "standard"
+
+    def get_model_for_query(self, query_type: str) -> str:
+        """Map query type to model."""
+        if query_type == "simple":
+            return self.MODEL_SIMPLE
+        return self.MODEL_STANDARD
     
     async def chat(
         self, 
@@ -335,34 +685,70 @@ You understand running physiology, periodization, and training principles:
                 "response": "AI Coach is not configured. Please set OPENAI_API_KEY in your environment.",
                 "error": True
             }
+
+        # Phase 3 acceptance: if the athlete has no run data and asks about fitness trend,
+        # respond explicitly with the required phrasing (avoid any implied metrics).
+        try:
+            if "getting fitter" in (message or "").lower():
+                has_any_run = (
+                    self.db.query(Activity.id)
+                    .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
+                    .limit(1)
+                    .first()
+                    is not None
+                )
+                if not has_any_run:
+                    thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                    return {
+                        "response": "I don't have enough data to answer that.",
+                        "thread_id": thread_id,
+                        "error": False,
+                    }
+        except Exception:
+            # Never block chat on this precheck; fall back to normal flow.
+            pass
         
         try:
-            # Create a new thread for this conversation
-            thread = self.client.beta.threads.create()
+            # Classify query and get model
+            query_type = self.classify_query(message)
+            model = self.get_model_for_query(query_type)
+
+            # Log model selection for cost tracking
+            logger.info(f"Coach query: type={query_type}, model={model}")
+
+            thread_id, is_new_thread = self.get_or_create_thread_with_state(athlete_id)
+            if not thread_id:
+                return {
+                    "response": "Unable to start coach conversation (thread creation failed).",
+                    "error": True,
+                }
             
-            # Build context
-            if include_context:
-                context = self.build_context(athlete_id)
-                system_context = f"## Athlete Context\n\n{context}\n\n---\n\nRespond to the athlete's question below:"
-                
-                # Add context as first message
+            # New thread kickoff: reinforce bounded-tool policy (no data injection).
+            if is_new_thread:
                 self.client.beta.threads.messages.create(
-                    thread_id=thread.id,
+                    thread_id=thread_id,
                     role="user",
-                    content=system_context
+                    content=(
+                        "You are the athlete's coach.\n\n"
+                        "IMPORTANT: Use tools for ALL athlete-specific facts (dates, distances, EF, CTL/ATL/TSB, plan details). "
+                        "Do not guess or invent metrics. If data is missing, say so.\n\n"
+                        "CITATIONS REQUIRED: When you state a fact, cite it explicitly (date + id + value), e.g. "
+                        "\"On 2026-01-15 (activity <uuid>), you ran 8.5 km @ 5:30/km.\""
+                    ),
                 )
             
             # Add the user's message
             self.client.beta.threads.messages.create(
-                thread_id=thread.id,
+                thread_id=thread_id,
                 role="user",
                 content=message
             )
             
             # Run the assistant
             run = self.client.beta.threads.runs.create(
-                thread_id=thread.id,
-                assistant_id=self.assistant_id
+                thread_id=thread_id,
+                assistant_id=self.assistant_id,
+                model=model,  # Override model per query
             )
             
             # Wait for completion (with timeout)
@@ -372,12 +758,101 @@ You understand running physiology, periodization, and training principles:
             
             while True:
                 run_status = self.client.beta.threads.runs.retrieve(
-                    thread_id=thread.id,
+                    thread_id=thread_id,
                     run_id=run.id
                 )
                 
                 if run_status.status == "completed":
                     break
+                elif run_status.status == "requires_action":
+                    required = getattr(run_status, "required_action", None)
+                    submit = getattr(required, "submit_tool_outputs", None) if required else None
+                    tool_calls = getattr(submit, "tool_calls", None) if submit else None
+
+                    if not tool_calls:
+                        return {
+                            "response": "AI coach requested tools, but no tool calls were provided.",
+                            "error": True,
+                        }
+
+                    logger.info(
+                        "AI coach requires_action: %s tool call(s) requested",
+                        len(tool_calls),
+                    )
+                    tool_outputs = []
+                    for call in tool_calls:
+                        try:
+                            fn = call.function
+                            tool_name = fn.name
+                            raw_args = fn.arguments or "{}"
+                            args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                            logger.info("AI coach tool_call requested: %s args=%s", tool_name, raw_args)
+
+                            if tool_name == "get_recent_runs":
+                                output = coach_tools.get_recent_runs(self.db, athlete_id, **args)
+                            elif tool_name == "get_efficiency_trend":
+                                output = coach_tools.get_efficiency_trend(self.db, athlete_id, **args)
+                            elif tool_name == "get_plan_week":
+                                output = coach_tools.get_plan_week(self.db, athlete_id)
+                            elif tool_name == "get_training_load":
+                                output = coach_tools.get_training_load(self.db, athlete_id)
+                            elif tool_name == "get_correlations":
+                                output = coach_tools.get_correlations(self.db, athlete_id, **args)
+                            elif tool_name == "get_race_predictions":
+                                output = coach_tools.get_race_predictions(self.db, athlete_id)
+                            elif tool_name == "get_recovery_status":
+                                output = coach_tools.get_recovery_status(self.db, athlete_id)
+                            elif tool_name == "get_active_insights":
+                                output = coach_tools.get_active_insights(self.db, athlete_id, **args)
+                            elif tool_name == "get_pb_patterns":
+                                output = coach_tools.get_pb_patterns(self.db, athlete_id)
+                            elif tool_name == "get_efficiency_by_zone":
+                                output = coach_tools.get_efficiency_by_zone(self.db, athlete_id, **args)
+                            else:
+                                output = {
+                                    "ok": False,
+                                    "tool": tool_name,
+                                    "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+                                    "error": f"Unknown tool: {tool_name}",
+                                    "data": {},
+                                    "evidence": [],
+                                }
+
+                            # Log a bounded view of the tool output for verification.
+                            try:
+                                output_preview = json.dumps(output)[:1200]
+                            except Exception:
+                                output_preview = str(output)[:1200]
+                            logger.info("AI coach tool_call output: %s %s", tool_name, output_preview)
+
+                            tool_outputs.append(
+                                {
+                                    "tool_call_id": call.id,
+                                    "output": json.dumps(output),
+                                }
+                            )
+                        except Exception as e:
+                            tool_outputs.append(
+                                {
+                                    "tool_call_id": call.id,
+                                    "output": json.dumps(
+                                        {
+                                            "ok": False,
+                                            "tool": getattr(getattr(call, "function", None), "name", "unknown"),
+                                            "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+                                            "error": f"Tool execution error: {str(e)}",
+                                            "data": {},
+                                            "evidence": [],
+                                        }
+                                    ),
+                                }
+                            )
+
+                    self.client.beta.threads.runs.submit_tool_outputs(
+                        thread_id=thread_id,
+                        run_id=run.id,
+                        tool_outputs=tool_outputs,
+                    )
                 elif run_status.status in ["failed", "cancelled", "expired"]:
                     return {
                         "response": f"The AI coach encountered an error: {run_status.status}",
@@ -394,7 +869,7 @@ You understand running physiology, periodization, and training principles:
             
             # Get the response
             messages = self.client.beta.threads.messages.list(
-                thread_id=thread.id,
+                thread_id=thread_id,
                 order="desc",
                 limit=1
             )
@@ -408,7 +883,7 @@ You understand running physiology, periodization, and training principles:
                 
                 return {
                     "response": response_text,
-                    "thread_id": thread.id,
+                    "thread_id": thread_id,
                     "error": False
                 }
             
