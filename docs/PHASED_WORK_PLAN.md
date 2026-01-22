@@ -34,8 +34,8 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 
 | Phase | Name | Status | Notes |
 |------:|------|--------|------|
-| 1 | Finish the Subscriber Experience | In progress | Sprint 1: fixed calendar coach tile, plan adjustments 500s, and trend attribution 500. |
-| 2 | Public Pages (Landing + About) | Not started | |
+| 1 | Finish the Subscriber Experience | Complete | Sprints 1–3 accepted: fixed 500s, improved Home/Insights trust, hardened coach UX (units + receipts), mobile responsiveness + mobile QA sweep, and removed hardcoded credential strings with CI guardrails. |
+| 2 | Public Pages (Landing + About) | In progress | Phase 2 approved to start (kickoff). Focus: landing/about clarity, conversion flow, and “front door” polish consistent with manifesto. |
 | 3 | Onboarding Workflow (“Latency Bridge”) | Not started | |
 | 4 | Admin “Heartbeat” | Not started | |
 | 5 | Operational Visibility + Reliability | Not started | |
@@ -52,6 +52,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 - **2026-01-21 (Phase 1 / Sprint 1)**: Fixed 3 blockers: (1) Calendar day drilldown “Coach” action 500 due to missing `coach_chat` table (added migration), (2) Plan adjustments (“swap days” / “adjust load”) 500 due to missing `plan_modification_log` table + swap-days request/schema mismatch (added migration + fixed endpoint), (3) Analytics “Why This Trend” 500 caused by schema drift in `DailyCheckin` fields (made attribution collection backward-compatible). Next: hover uniformity, chart styling, and Insights trust repairs.
 - **2026-01-22 (Phase 1 / Sprint 2 - partial, degraded session)**: Attempted to enforce **uniform UX** by unifying the global page background and removing `bg-[#0a0a0f]` styling drift across many logged-in routes/components. **Result:** base background is now consistent (`bg-slate-900`), but **Home still reads as a different theme** because it relies on translucent card surfaces (`bg-slate-800/50`, nested `bg-slate-900/30`) while Analytics/Calendar primarily use solid `bg-slate-800 border-slate-700`. Next: standardize Home to match Analytics card surfaces, and introduce a shared page wrapper component to prevent future drift.
 - **2026-01-21 (Phase 1 / Sprint 2 - accepted)**: Fixed Home dashboard “trapped whitespace” and row-height rhythm issues (single Signals spans full width; row cards stretch to equal height; “Yesterday” is no longer orphaned and is stacked with Quick Access). Fixed trust-breaking Insights intelligence generation by replacing placeholder/incorrect logic (ISO week bug, “need more history”) with time-scoped, evidence-backed “micro insights” computed from ~2 years of run history and explicit rebuild/return-to-run context. Next: improve the correlation engine so every candidate input is measurable and evaluated (individually + in defined clusters) against explicit outcomes (efficiency trend, PBs, injury proxies) with receipts and minimum-sample guards.
+- **2026-01-22 (Phase 1 / Sprint 3 - accepted, Phase 1 complete)**: Hardened the Coach “trust contract” so answers stay conversational while remaining auditable: receipts are now compact and collapsible in the UI, evidence is human-readable (date + run name + key values), and units preference (miles/min‑mi) is enforced and persisted. Added a Phase 1 mobile QA sweep script (detects horizontal overflow and verifies Coach mobile behavior). Removed hardcoded credential strings from repo artifacts and added a CI guardrail to prevent regressions. Phase 1 is complete; Phase 2 (public pages) is approved to start.
 
 ---
 
