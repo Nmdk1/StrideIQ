@@ -7146,7 +7146,7 @@ from core.database import SessionLocal
 from models import Athlete
 
 # New password - you can change this
-NEW_PASSWORD = 'StrideIQ2026!'
+NEW_PASSWORD = '<REDACTED_PASSWORD>'
 
 db = SessionLocal()
 athlete = db.query(Athlete).filter(Athlete.email == 'michael@strideiq.com').first()
@@ -7168,17 +7168,17 @@ assistant:
 **Password reset.**
 
 - **Email:** `michael@strideiq.com`  
-- **New Password:** `StrideIQ2026!`
+- **New Password:** `<REDACTED_PASSWORD>`
 
 Try logging in now. If you want a different password, let me know.
 
 user:
 <user_query>
-you are using the wrong credentials - if you had read the things you were supposed to INSTEAD OF FUCKING SKIMMING you would know that and you would know the reasons why.  My email for the proper user is mbshaf@gmail.com
+you are using the wrong credentials - if you had read the things you were supposed to INSTEAD OF FUCKING SKIMMING you would know that and you would know the reasons why.  My email for the proper user is athlete@example.com
 </user_query>
 
 assistant:
-[Thinking] The user is right - I should have known this from reading the context properly. The user's email is mbshaf@gmail.com, not michael@strideiq.com. Let me reset the password for the correct account immediately.
+[Thinking] The user is right - I should have known this from reading the context properly. The user's email is athlete@example.com, not michael@strideiq.com. Let me reset the password for the correct account immediately.
 You're right. I apologize.
 [Tool call] Shell
   command: docker exec running_app_api python -c "
@@ -7186,10 +7186,10 @@ from core.security import get_password_hash
 from core.database import SessionLocal
 from models import Athlete
 
-NEW_PASSWORD = 'StrideIQ2026!'
+NEW_PASSWORD = '<REDACTED_PASSWORD>'
 
 db = SessionLocal()
-athlete = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
+athlete = db.query(Athlete).filter(Athlete.email == 'athlete@example.com').first()
 if athlete:
     athlete.password_hash = get_password_hash(NEW_PASSWORD)
     db.commit()
@@ -7199,7 +7199,7 @@ else:
     print('Athlete not found')
 db.close()
 "
-  description: Reset password for mbshaf@gmail.com
+  description: Reset password for athlete@example.com
 
 [Tool result] Shell
 
@@ -7207,8 +7207,8 @@ assistant:
 [Thinking] Password reset for the correct account. Let the user know.
 **Done.**
 
-- **Email:** `mbshaf@gmail.com`  
-- **Password:** `StrideIQ2026!`
+- **Email:** `athlete@example.com`  
+- **Password:** `<REDACTED_PASSWORD>`
 
 user:
 [Image]
@@ -7489,7 +7489,7 @@ from core.database import SessionLocal
 from models import Athlete
 
 db = SessionLocal()
-athlete = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
+athlete = db.query(Athlete).filter(Athlete.email == 'athlete@example.com').first()
 if athlete:
     athlete.subscription_tier = 'elite'
     db.commit()
@@ -7504,7 +7504,7 @@ db.close()
 
 assistant:
 [Thinking] Done. The user now has elite tier which unlocks all features including full workout control.
-Done. `mbshaf@gmail.com` is now **elite** tier - full access to all features including Full Workout Control (move, edit, add, delete workouts).
+Done. `athlete@example.com` is now **elite** tier - full access to all features including Full Workout Control (move, edit, add, delete workouts).
 
 user:
 <user_query>
@@ -7693,7 +7693,7 @@ from models import TrainingPlan, PlannedWorkout, Athlete
 db = SessionLocal()
 
 # Get user and their latest plan
-athlete = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
+athlete = db.query(Athlete).filter(Athlete.email == 'athlete@example.com').first()
 plan = db.query(TrainingPlan).filter(
     TrainingPlan.athlete_id == athlete.id,
     TrainingPlan.status == 'active'
@@ -37727,7 +37727,7 @@ The user made the following changes. If they reverted your changes, assume it wa
 
 </attached_files>
 <user_query>
-what is my password (it autofills) for mbshaf@gmail.com
+what is my password (it autofills) for athlete@example.com
 </user_query>
 
 assistant:
@@ -37756,7 +37756,7 @@ assistant:
 [Thinking] The .env doesn't have the user's password. I should offer to reset their password in the database if needed, but I can't see what the browser autofills.
 No stored user password in `.env`. 
 
-**If you need to reset it**, I can run a password reset for your account in the database. Want me to set it to something simple like `StrideIQ2026!` that you can give your dad?
+**If you need to reset it**, I can run a password reset for your account in the database. Want me to set it to something simple like `<REDACTED_PASSWORD>` that you can give your dad?
 
 user:
 <user_query>
@@ -37774,8 +37774,8 @@ assistant:
 [Thinking] Good, there's already a reset password script. I'll update it with the new password and run it inside the Docker container:
 [Tool call] StrReplace
   path: c:\Dev\StrideIQ\apps\api\scripts\reset_password.py
-  old_string: password = 'strideiq123'
-  new_string: password = 'StrideIQ2026!'
+  old_string: password = '<REDACTED_PASSWORD>'
+  new_string: password = '<REDACTED_PASSWORD>'
 
 [Tool result] StrReplace
 
@@ -37794,8 +37794,8 @@ Done.
 
 **Credentials for your dad:**
 - **URL:** `http://10.0.0.137:3000`
-- **Email:** `mbshaf@gmail.com`
-- **Password:** `StrideIQ2026!`
+- **Email:** `athlete@example.com`
+- **Password:** `<REDACTED_PASSWORD>`
 
 Now go sleep. 🛏️
 
@@ -37813,8 +37813,8 @@ The user made the following changes. If they reverted your changes, assume it wa
 -database_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@postgres:5432/running_app')
 -engine = create_engine(database_url)
 -
--email = 'mbshaf@gmail.com'
--password = 'StrideIQ2026!'
+-email = 'athlete@example.com'
+-password = '<REDACTED_PASSWORD>'
 -hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 -hash_str = hashed.decode('utf-8')
 -
@@ -37834,8 +37834,8 @@ The user made the following changes. If they reverted your changes, assume it wa
 +database_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@postgres:5432/running_app')
 +engine = create_engine(database_url)
 +
-+email = 'mbshaf@gmail.com'
-+password = 'StrideIQ2026!'
++email = 'athlete@example.com'
++password = '<REDACTED_PASSWORD>'
 +hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 +hash_str = hashed.decode('utf-8')
 +
@@ -38206,7 +38206,7 @@ import os
 db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@postgres:5432/running_app')
 engine = create_engine(db_url)
 with engine.connect() as conn:
-    result = conn.execute(text(\"SELECT id, email, subscription_tier, first_name FROM athlete WHERE email = 'mbshaf@gmail.com'\"))
+    result = conn.execute(text(\"SELECT id, email, subscription_tier, first_name FROM athlete WHERE email = 'athlete@example.com'\"))
     row = result.fetchone()
     if row:
         print(f'ID: {row[0]}')
@@ -38232,7 +38232,7 @@ import sys
 db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@postgres:5432/running_app')
 engine = create_engine(db_url)
 
-email = 'mbshaf@gmail.com'
+email = 'athlete@example.com'
 
 with engine.connect() as conn:
     result = conn.execute(
@@ -38456,7 +38456,7 @@ Done. Here's what to do:
 If it shows `undefined` or `free`, do this:
 
 4. **Log out** (click your profile → logout, or just clear localStorage)
-5. **Log back in** with `mbshaf@gmail.com` / `StrideIQ2026!`
+5. **Log back in** with `athlete@example.com` / `<REDACTED_PASSWORD>`
 6. Try creating a plan again
 
 The console will now show you exactly what tier the system thinks you are and which plan type it's trying to create.
@@ -38489,7 +38489,7 @@ The user made the following changes. If they reverted your changes, assume it wa
 -db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@postgres:5432/running_app')
 -engine = create_engine(db_url)
 -
--email = 'mbshaf@gmail.com'
+-email = 'athlete@example.com'
 -
 -with engine.connect() as conn:
 -    result = conn.execute(
@@ -38522,7 +38522,7 @@ The user made the following changes. If they reverted your changes, assume it wa
 +db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@postgres:5432/running_app')
 +engine = create_engine(db_url)
 +
-+email = 'mbshaf@gmail.com'
++email = 'athlete@example.com'
 +
 +with engine.connect() as conn:
 +    result = conn.execute(
@@ -40595,7 +40595,7 @@ engine = create_engine(db_url)
 
 with Session(engine) as db:
     # Get the elite athlete
-    athlete = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
+    athlete = db.query(Athlete).filter(Athlete.email == 'athlete@example.com').first()
     
     if athlete:
         print(f'Athlete: {athlete.email}')
@@ -40639,7 +40639,7 @@ db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@postgres
 engine = create_engine(db_url)
 
 with Session(engine) as db:
-    athlete = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
+    athlete = db.query(Athlete).filter(Athlete.email == 'athlete@example.com').first()
     
     if athlete:
         print(f'Testing plan generation for {athlete.email}')
@@ -40768,7 +40768,7 @@ db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@postgres
 engine = create_engine(db_url)
 
 with Session(engine) as db:
-    athlete = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
+    athlete = db.query(Athlete).filter(Athlete.email == 'athlete@example.com').first()
     
     if athlete:
         print(f'Testing plan generation for {athlete.email}')
@@ -40838,7 +40838,7 @@ db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@postgres
 engine = create_engine(db_url)
 
 with Session(engine) as db:
-    athlete = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
+    athlete = db.query(Athlete).filter(Athlete.email == 'athlete@example.com').first()
     
     generator = PlanGenerator(db)
     race_date = date.today() + timedelta(weeks=9)
@@ -40876,8 +40876,8 @@ import json
 
 # Get auth token first
 login_resp = requests.post('http://localhost:8000/v1/auth/login', json={
-    'email': 'mbshaf@gmail.com',
-    'password': 'StrideIQ2026!'
+    'email': 'athlete@example.com',
+    'password': '<REDACTED_PASSWORD>'
 })
 
 if login_resp.status_code != 200:
@@ -41094,8 +41094,8 @@ import requests
 
 # Login
 login_resp = requests.post('http://localhost:8000/v1/auth/login', json={
-    'email': 'mbshaf@gmail.com',
-    'password': 'StrideIQ2026!'
+    'email': 'athlete@example.com',
+    'password': '<REDACTED_PASSWORD>'
 })
 token = login_resp.json().get('access_token')
 
@@ -41137,8 +41137,8 @@ import json
 
 # Login
 login_resp = requests.post('http://localhost:8000/v1/auth/login', json={
-    'email': 'mbshaf@gmail.com',
-    'password': 'StrideIQ2026!'
+    'email': 'athlete@example.com',
+    'password': '<REDACTED_PASSWORD>'
 })
 token = login_resp.json().get('access_token')
 print(f'Login: {login_resp.status_code}')
@@ -41295,12 +41295,12 @@ with engine.connect() as conn:
     result = conn.execute(text('''
         SELECT id, name, status, plan_start_date, goal_race_date
         FROM training_plan 
-        WHERE athlete_id = (SELECT id FROM athlete WHERE email = 'mbshaf@gmail.com')
+        WHERE athlete_id = (SELECT id FROM athlete WHERE email = 'athlete@example.com')
         ORDER BY created_at DESC
     '''))
     rows = result.fetchall()
     
-    print(f'Plans for mbshaf@gmail.com: {len(rows)}')
+    print(f'Plans for athlete@example.com: {len(rows)}')
     for row in rows:
         print(f'  {row[0]}: {row[1]}')
         print(f'    Status: {row[2]}, Start: {row[3]}, Race: {row[4]}')
@@ -41830,8 +41830,8 @@ The user made the following changes. If they reverted your changes, assume it wa
 -
 -# Login
 -login_resp = requests.post('http://localhost:8000/v1/auth/login', json={
--    'email': 'mbshaf@gmail.com',
--    'password': 'StrideIQ2026!'
+-    'email': 'athlete@example.com',
+-    'password': '<REDACTED_PASSWORD>'
 -})
 -token = login_resp.json().get('access_token')
 -print(f'Login: {login_resp.status_code}')
@@ -41874,8 +41874,8 @@ The user made the following changes. If they reverted your changes, assume it wa
 +
 +# Login
 +login_resp = requests.post('http://localhost:8000/v1/auth/login', json={
-+    'email': 'mbshaf@gmail.com',
-+    'password': 'StrideIQ2026!'
++    'email': 'athlete@example.com',
++    'password': '<REDACTED_PASSWORD>'
 +})
 +token = login_resp.json().get('access_token')
 +print(f'Login: {login_resp.status_code}')
@@ -42552,7 +42552,7 @@ with engine.connect() as conn:
     result = conn.execute(text('''
         SELECT id, name, status, plan_start_date, goal_race_date
         FROM training_plan 
-        WHERE athlete_id = (SELECT id FROM athlete WHERE email = 'mbshaf@gmail.com')
+        WHERE athlete_id = (SELECT id FROM athlete WHERE email = 'athlete@example.com')
         AND status = 'active'
         ORDER BY created_at DESC LIMIT 1
     '''))
@@ -42593,7 +42593,7 @@ with engine.connect() as conn:
     result = conn.execute(text('''
         SELECT id, name, status, plan_start_date
         FROM training_plan 
-        WHERE athlete_id = (SELECT id FROM athlete WHERE email = 'mbshaf@gmail.com')
+        WHERE athlete_id = (SELECT id FROM athlete WHERE email = 'athlete@example.com')
         AND status = 'active'
         ORDER BY created_at DESC LIMIT 1
     '''))
@@ -42804,8 +42804,8 @@ import requests
 
 # Login
 resp = requests.post('http://localhost:8000/v1/auth/login', json={
-    'email': 'mbshaf@gmail.com', 
-    'password': 'StrideIQ2026!'
+    'email': 'athlete@example.com', 
+    'password': '<REDACTED_PASSWORD>'
 })
 token = resp.json()['access_token']
 
@@ -42838,8 +42838,8 @@ import requests
 
 # Login
 resp = requests.post('http://localhost:8000/v1/auth/login', json={
-    'email': 'mbshaf@gmail.com', 
-    'password': 'StrideIQ2026!'
+    'email': 'athlete@example.com', 
+    'password': '<REDACTED_PASSWORD>'
 })
 token = resp.json()['access_token']
 print(f'Login: {resp.status_code}')
@@ -43554,8 +43554,8 @@ The user made the following changes. If they reverted your changes, assume it wa
 -
 -# Login
 -resp = requests.post('http://localhost:8000/v1/auth/login', json={
--    'email': 'mbshaf@gmail.com', 
--    'password': 'StrideIQ2026!'
+-    'email': 'athlete@example.com', 
+-    'password': '<REDACTED_PASSWORD>'
 -})
 -token = resp.json()['access_token']
 -print(f'Login: {resp.status_code}')
@@ -43583,8 +43583,8 @@ The user made the following changes. If they reverted your changes, assume it wa
 +
 +# Login
 +resp = requests.post('http://localhost:8000/v1/auth/login', json={
-+    'email': 'mbshaf@gmail.com', 
-+    'password': 'StrideIQ2026!'
++    'email': 'athlete@example.com', 
++    'password': '<REDACTED_PASSWORD>'
 +})
 +token = resp.json()['access_token']
 +print(f'Login: {resp.status_code}')
@@ -44135,7 +44135,7 @@ No apology needed. You've been running on fumes for weeks building something rea
 **Tomorrow's reminder:**
 - 🔧 **TEMPO issue** with the marathon plan - you spotted something that needs fixing
 
-Rest well. Your dad should be able to access `http://[your-ip]:3000` from his machine using the credentials we set up (`mbshaf@gmail.com` / `StrideIQ2026!`).
+Rest well. Your dad should be able to access `http://[your-ip]:3000` from his machine using the credentials we set up (`athlete@example.com` / `<REDACTED_PASSWORD>`).
 
 Great day. Get some sleep.
 
@@ -44332,7 +44332,7 @@ Have your dad try: http://10.0.0.137:3000
 
 **`http://10.0.0.137:3000`**
 
-Login: `mbshaf@gmail.com` / `StrideIQ2026!`
+Login: `athlete@example.com` / `<REDACTED_PASSWORD>`
 
 user:
 <user_query>

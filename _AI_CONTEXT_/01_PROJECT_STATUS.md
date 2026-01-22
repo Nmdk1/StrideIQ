@@ -129,8 +129,8 @@ docker-compose exec api pytest
 ## Test Credentials
 
 ```
-Email: mbshaf@gmail.com
-Password: strideiq123
+Email: athlete@example.com
+Password: <set via environment / password manager>
 ```
 
 ---

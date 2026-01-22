@@ -149,7 +149,7 @@ docker-compose up -d --build api
 - **Verify before claiming done** - Tests pass, manual check complete
 
 ## User Context
-- **Name:** Michael (mbshaf@gmail.com)
+- **Name:** (redacted) (athlete@example.com)
 - **Age:** 57
 - **Training:** High volume (~75 mpw), experienced marathoner
 - **Goal:** Training for specific races with data-driven plans

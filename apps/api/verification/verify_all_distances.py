@@ -4,6 +4,7 @@ Comprehensive verification script for ADR-038: N=1 Long Run Progression.
 Tests all distances and timelines to ensure no dangerous jumps.
 """
 
+import os
 from core.database import SessionLocal
 from models import Athlete
 from services.fitness_bank import get_fitness_bank
@@ -51,7 +52,12 @@ def main():
     db = SessionLocal()
     
     try:
-        athlete = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
+        athlete_email = os.getenv("STRIDEIQ_TEST_EMAIL")
+        if not athlete_email:
+            print("Set STRIDEIQ_TEST_EMAIL to target a test athlete (no hardcoded emails in repo).")
+            return
+
+        athlete = db.query(Athlete).filter(Athlete.email == athlete_email).first()
         if not athlete:
             print("Athlete not found")
             return

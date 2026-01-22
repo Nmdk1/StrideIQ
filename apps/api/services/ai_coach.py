@@ -99,7 +99,16 @@ When providing insights:
   - "On 2026-01-12, EF was 123.4 (pace 8.10 min/mi, avg HR 150)."
 - For questions like "Am I getting fitter?", you MUST use `get_efficiency_trend` and cite at least 2 EF points (earliest and latest available).
 - If data is insufficient, say: "I don't have enough data to answer that."
-- Never make claims (numbers, trends, training load, plan details) without tool-backed evidence."""
+- Never make claims (numbers, trends, training load, plan details) without tool-backed evidence.
+
+## Units (REQUIRED)
+
+- Use the athlete's preferred units from tools (metric or imperial).
+- If the athlete requests miles, respond in miles + min/mi and do not show km unless explicitly asked.
+
+## History access
+
+- You can look back up to ~2 years for recent-run tools (up to 730 days). Do not claim you are limited to 30 days."""
 
     # Model tiers (simple 2-tier selection for cost control)
     MODEL_SIMPLE = "gpt-3.5-turbo"    # ~$0.002/query
@@ -139,7 +148,7 @@ When providing insights:
                                 "type": "integer",
                                 "description": "How many days back to look (default 7).",
                                 "minimum": 1,
-                                "maximum": 365,
+                                "maximum": 730,
                             }
                         },
                         "required": [],
@@ -736,6 +745,35 @@ When providing insights:
                 "error": True
             }
 
+        # Persist units preference if the athlete explicitly requests it.
+        self._maybe_update_units_preference(athlete_id, message)
+
+        # Deterministic answers for high-risk questions (avoid "reckless" responses).
+        lower = (message or "").lower()
+        if any(phrase in lower for phrase in ("how far back", "how far can you look", "how far back can you look", "how far back do you go")):
+            return {
+                "response": (
+                    "I can look back **up to ~2 years** (730 days) for run-history queries, and I can cite specific activities (date + activity id).\n\n"
+                    "If you want a longest-run or high-volume comparison, I can pull a 365–730 day window and summarize it with receipts."
+                ),
+                "thread_id": self.get_or_create_thread(athlete_id),
+                "error": False,
+            }
+
+        if (
+            ("run today" in lower or "today's run" in lower or "today run" in lower)
+            and ("suggest" in lower or "what should" in lower or "any advice" in lower or "tips" in lower)
+        ) or (
+            # Common follow-ups after a "today" recommendation: user disputes the plan distance.
+            ("plan" in lower and ("too short" in lower or "stupid" in lower or "way too short" in lower))
+        ):
+            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            return {
+                "response": self._today_run_guidance(athlete_id),
+                "thread_id": thread_id,
+                "error": False,
+            }
+
         # Phase 3 acceptance: if the athlete has no run data and asks about fitness trend,
         # respond explicitly with the required phrasing (avoid any implied metrics).
         try:
@@ -782,6 +820,7 @@ When providing insights:
                         "You are the athlete's coach.\n\n"
                         "IMPORTANT: Use tools for ALL athlete-specific facts (dates, distances, EF, CTL/ATL/TSB, plan details). "
                         "Do not guess or invent metrics. If data is missing, say so.\n\n"
+                        "UNITS: Use the athlete's preferred units from tools. If they request miles, respond in miles + min/mi.\n\n"
                         "CITATIONS REQUIRED: When you state a fact, cite it explicitly (date + id + value), e.g. "
                         "\"On 2026-01-15 (activity <uuid>), you ran 8.5 km @ 5:30/km.\""
                     ),
@@ -966,6 +1005,140 @@ When providing insights:
                 "error": True
             }
 
+    def _maybe_update_units_preference(self, athlete_id: UUID, message: str) -> None:
+        try:
+            ml = (message or "").lower()
+            wants_miles = ("miles" in ml) and ("always" in ml or "not kilometers" in ml or "not km" in ml)
+            wants_km = ("kilometers" in ml or "km" in ml) and ("always" in ml or "not miles" in ml)
+
+            if not (wants_miles or wants_km):
+                return
+
+            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            if not athlete:
+                return
+
+            target = "imperial" if wants_miles else "metric"
+            if athlete.preferred_units != target:
+                athlete.preferred_units = target
+                self.db.commit()
+        except Exception:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+
+    def _today_run_guidance(self, athlete_id: UUID) -> str:
+        """
+        Deterministic run-today guidance:
+        - uses plan + recent run history + load
+        - uses preferred units
+        - includes receipts
+        """
+        today = date.today().isoformat()
+        day_ctx = coach_tools.get_calendar_day_context(self.db, athlete_id, day=today)
+        recent_42 = coach_tools.get_recent_runs(self.db, athlete_id, days=42)
+        load = coach_tools.get_training_load(self.db, athlete_id)
+
+        units = (day_ctx.get("data", {}) or {}).get("preferred_units") or (recent_42.get("data", {}) or {}).get("preferred_units") or "metric"
+
+        planned = (day_ctx.get("data", {}) or {}).get("planned_workout") or {}
+        planned_id = planned.get("planned_workout_id")
+        planned_title = planned.get("title")
+        planned_phase = (planned.get("phase") or "").lower() if planned.get("phase") else None
+        planned_mi = planned.get("target_distance_mi")
+        planned_km = planned.get("target_distance_km")
+
+        runs = (recent_42.get("data", {}) or {}).get("runs") or []
+
+        # Compute baseline from recent runs
+        distances_mi = [r.get("distance_mi") for r in runs if r.get("distance_mi") is not None]
+        max_run_mi = max(distances_mi) if distances_mi else None
+        total_14_mi = None
+        try:
+            recent_14 = coach_tools.get_recent_runs(self.db, athlete_id, days=14)
+            total_14_mi = (recent_14.get("data", {}) or {}).get("total_distance_mi")
+        except Exception:
+            total_14_mi = None
+
+        # Detect plan/history mismatch (very conservative planned distance vs known baseline)
+        plan_conflict = False
+        if planned_mi is not None and max_run_mi is not None and max_run_mi >= 10 and planned_mi <= (0.5 * max_run_mi):
+            plan_conflict = True
+
+        # Build guidance in a conversational format (receipts are expandable in the UI).
+        lines: List[str] = []
+        lines.append(f"Here’s what I’d do **today ({today})**.")
+
+        if planned_title:
+            if units == "imperial" and planned_mi is not None:
+                lines.append(f"Your plan has **{planned_mi:.1f} mi easy** ({planned_title}).")
+            elif planned_km is not None:
+                lines.append(f"Your plan has **{planned_km:.1f} km easy** ({planned_title}).")
+            else:
+                lines.append(f"Your plan has: {planned_title}.")
+        else:
+            lines.append("I don’t see a planned workout for today.")
+
+        if plan_conflict:
+            lines.append("")
+            lines.append(
+                "That distance also looks **conservative vs your recent baseline**. If you’re returning from injury, that may be intentional; "
+                "if it feels wrong, we should fix the plan logic (not just override it ad‑hoc)."
+            )
+
+        if planned_phase and planned_phase.startswith("rebuild"):
+            lines.append("")
+            lines.append("Context: you’re in **REBUILD** — smooth, controlled, no hero pace.")
+
+        lines.append("")
+        lines.append("**My suggestion:**")
+        if units == "imperial":
+            target = planned_mi if planned_mi is not None else 6.0
+            # Offer options (tight/normal/extra) without pretending certainty.
+            lines.append(f"- If you want to keep it conservative: **{max(3.0, float(target)):.0f}–{max(4.0, float(target)):.0f} mi easy**.")
+            lines.append(f"- If you feel stable and want a bit more: **{max(5.0, float(target)):.0f}–{max(6.0, float(target)):.0f} mi easy**.")
+            lines.append("- Optional (only if everything feels good): **4–6 × 20s relaxed strides** with full recovery jog.")
+        else:
+            target = planned_km if planned_km is not None else 10.0
+            lines.append(f"- Conservative: **{max(5.0, float(target)):.0f}–{max(6.0, float(target)):.0f} km easy**.")
+            lines.append(f"- If you feel stable: **{max(8.0, float(target)):.0f}–{max(10.0, float(target)):.0f} km easy**.")
+            lines.append("- Optional (only if everything feels good): **4–6 × 20s relaxed strides** with full recovery jog.")
+
+        # Load context
+        tsb = (load.get("data", {}) or {}).get("tsb")
+        atl = (load.get("data", {}) or {}).get("atl")
+        ctl = (load.get("data", {}) or {}).get("ctl")
+        zone = (load.get("data", {}) or {}).get("tsb_zone_label")
+        if tsb is not None and atl is not None and ctl is not None:
+            lines.append("")
+            if zone:
+                lines.append(f"FYI your current load is ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f} ({zone}).")
+            else:
+                lines.append(f"FYI your current load is ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f}.")
+
+        # Receipts: cite planned workout + a couple of recent runs
+        lines.append("")
+        lines.append("## Receipts")
+        if planned_title:
+            if units == "imperial" and planned_mi is not None:
+                lines.append(f"- {today}: Planned — {planned_title} ({planned_mi:.1f} mi)")
+            elif planned_km is not None:
+                lines.append(f"- {today}: Planned — {planned_title} ({planned_km:.1f} km)")
+            else:
+                lines.append(f"- {today}: Planned — {planned_title}")
+
+        # Use evidence lines already formatted in preferred units (coach_tools does this now).
+        ev = recent_42.get("evidence") or []
+        for e in ev[:3]:
+            if e.get("type") == "activity":
+                # Keep receipts human-readable; do not dump UUIDs unless explicitly requested.
+                lines.append(f"- {e.get('date')}: {e.get('value')}")
+        if tsb is not None and atl is not None and ctl is not None:
+            lines.append(f"- {today}: Training load — ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f}")
+
+        return "\n".join(lines)
+
     _UUID_RE = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
     _DATE_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
 
@@ -1071,8 +1244,9 @@ When providing insights:
                 "Rewrite your last answer to comply with the Evidence & Citations rules.\n\n"
                 "Rules:\n"
                 "- If you include any numbers (distances, times, paces, HR, EF, ATL/CTL/TSB, percentages), you MUST include receipts.\n"
-                "- Receipts must include at least one ISO date (YYYY-MM-DD) and, when applicable, an activity id (UUID).\n"
-                "- Add a final section titled 'Receipts' listing the supporting evidence lines.\n"
+                "- Add a final section titled 'Receipts' listing supporting evidence lines.\n"
+                "- Receipts must include at least one ISO date (YYYY-MM-DD) and a human label (e.g., run name + key values).\n"
+                "- Do NOT dump long UUIDs unless the user explicitly asks; keep receipts readable.\n"
                 "- Do not add new claims; only restate with proper receipts.\n"
                 "- If you cannot cite the data, reply exactly: \"I don't have enough data to answer that.\""
             ),

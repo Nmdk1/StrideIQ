@@ -12,7 +12,7 @@ The current plan generator applies population-based constraints uniformly to all
 
 ### Bug: Population Caps Override Proven Capability
 
-For athlete `mbshaf@gmail.com`:
+For athlete `athlete@example.com`:
 - **Proven long run capability:** 22.0 miles (actual longest run in 198-activity history)
 - **Population time cap applied:** 18.2 miles (150 min / 8.23 pace)
 - **Result:** Plan caps long runs at 18.2mi despite athlete proving 22mi capability
@@ -98,7 +98,7 @@ Plan generator will alternate between tempo and threshold in BUILD phase, not tr
 | 30-45 | Normal | 2-3 weeks |
 | > 45 | Slow adapter | 3 weeks |
 
-Athlete `mbshaf@gmail.com` has τ1=25 → 2-week taper.
+Athlete `athlete@example.com` has τ1=25 → 2-week taper.
 
 ### 5. Easy Run Variation
 
@@ -195,7 +195,7 @@ Every long run prescription logs:
 1. Shadow mode 7 days, zero errors
 2. Long runs for experienced athletes reach proven capability
 3. Strides appear 2x/week in build phase
-4. Manual review of `mbshaf@gmail.com` plan approved
+4. Manual review of `athlete@example.com` plan approved
 
 ## Related ADRs
 

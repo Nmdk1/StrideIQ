@@ -3,7 +3,7 @@
 ## Date: 2026-01-14
 
 ## Athlete Profile
-- **Email**: mbshaf@gmail.com
+- **Email**: athlete@example.com
 - **Total PBs**: 10 distances
 
 ---

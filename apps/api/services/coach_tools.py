@@ -51,6 +51,32 @@ from services.vdot_calculator import calculate_race_time_from_vdot
 def _iso(dt: datetime) -> str:
     return dt.replace(microsecond=0).isoformat()
 
+_M_PER_MI = 1609.344
+
+
+def _mi_from_m(meters: Optional[int | float]) -> Optional[float]:
+    if meters is None:
+        return None
+    try:
+        return float(meters) / _M_PER_MI
+    except Exception:
+        return None
+
+
+def _pace_str_mi(seconds: Optional[int], meters: Optional[int]) -> Optional[str]:
+    if not seconds or not meters or meters <= 0:
+        return None
+    pace_s_per_mi = seconds / (meters / _M_PER_MI)
+    m = int(pace_s_per_mi // 60)
+    s = int(round(pace_s_per_mi % 60))
+    return f"{m}:{s:02d}/mi"
+
+
+def _preferred_units(db: Session, athlete_id: UUID) -> str:
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    units = (athlete.preferred_units if athlete else None) or "metric"
+    return units if units in ("metric", "imperial") else "metric"
+
 
 def _pace_str(seconds: Optional[int], meters: Optional[int]) -> Optional[str]:
     if not seconds or not meters or meters <= 0:
@@ -66,8 +92,10 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
     Last N days of run activities.
     """
     now = datetime.utcnow()
-    days = max(1, min(int(days), 365))
+    # Allow ~2 years so injury-return + baseline can be compared.
+    days = max(1, min(int(days), 730))
     cutoff = now - timedelta(days=days)
+    units = _preferred_units(db, athlete_id)
 
     runs = (
         db.query(Activity)
@@ -86,7 +114,9 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
 
     for a in runs:
         distance_km = (float(a.distance_m) / 1000.0) if a.distance_m is not None else None
+        distance_mi = _mi_from_m(a.distance_m) if a.distance_m is not None else None
         pace = _pace_str(a.duration_s, a.distance_m)
+        pace_mi = _pace_str_mi(a.duration_s, a.distance_m)
         date_str = a.start_time.date().isoformat()
 
         run_rows.append(
@@ -95,19 +125,30 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
                 "start_time": _iso(a.start_time),
                 "name": a.name,
                 "distance_m": int(a.distance_m) if a.distance_m is not None else None,
+                "distance_mi": round(distance_mi, 2) if distance_mi is not None else None,
+                "distance_km": round(distance_km, 2) if distance_km is not None else None,
                 "duration_s": int(a.duration_s) if a.duration_s is not None else None,
                 "avg_hr": int(a.avg_hr) if a.avg_hr is not None else None,
                 "pace_per_km": _pace_str(a.duration_s, a.distance_m),
+                "pace_per_mile": pace_mi,
                 "workout_type": a.workout_type,
                 "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
             }
         )
 
         parts: List[str] = []
-        if distance_km is not None:
-            parts.append(f"{distance_km:.1f} km")
-        if pace:
-            parts.append(f"@ {pace}")
+        run_name = (a.name or "").strip() or "Run"
+        parts.append(run_name)
+        if units == "imperial":
+            if distance_mi is not None:
+                parts.append(f"{distance_mi:.1f} mi")
+            if pace_mi:
+                parts.append(f"@ {pace_mi}")
+        else:
+            if distance_km is not None:
+                parts.append(f"{distance_km:.1f} km")
+            if pace:
+                parts.append(f"@ {pace}")
         if a.avg_hr is not None:
             parts.append(f"(avg HR {int(a.avg_hr)} bpm)")
         if a.workout_type:
@@ -118,6 +159,7 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
             {
                 "type": "activity",
                 "id": str(a.id),
+                "ref": str(a.id)[:8],
                 "date": date_str,
                 "value": value_str,
                 # Back-compat keys (internal use in earlier phases)
@@ -135,8 +177,10 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
         "generated_at": _iso(now),
         "data": {
             "window_days": days,
+            "preferred_units": units,
             "run_count": len(runs),
             "total_distance_km": round(total_distance_m / 1000.0, 2),
+            "total_distance_mi": round(total_distance_m / _M_PER_MI, 2),
             "total_duration_min": round(total_duration_s / 60.0, 1),
             "runs": run_rows,
         },
@@ -169,6 +213,7 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
         .filter(TrainingPlan.athlete_id == athlete_id, TrainingPlan.status == "active")
         .first()
     )
+    units = _preferred_units(db, athlete_id)
 
     planned = None
     if plan:
@@ -189,17 +234,20 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
     planned_data: Optional[Dict[str, Any]] = None
     evidence: List[Dict[str, Any]] = []
     if planned:
+        planned_mi = _mi_from_m(planned.target_distance_km * 1000.0) if planned.target_distance_km is not None else None
         planned_data = {
             "planned_workout_id": str(planned.id),
             "plan_id": str(planned.plan_id),
             "date": planned.scheduled_date.isoformat() if planned.scheduled_date else None,
             "week_number": planned.week_number,
+            "phase": planned.phase,
             "workout_type": planned.workout_type,
             "workout_subtype": planned.workout_subtype,
             "title": planned.title,
             "coach_notes": planned.coach_notes,
             "description": planned.description,
             "target_distance_km": float(planned.target_distance_km) if planned.target_distance_km is not None else None,
+            "target_distance_mi": round(planned_mi, 2) if planned_mi is not None else None,
             "target_duration_minutes": planned.target_duration_minutes,
             "completed": bool(planned.completed),
             "skipped": bool(planned.skipped),
@@ -216,26 +264,39 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
     activity_rows: List[Dict[str, Any]] = []
     for a in acts:
         distance_km = (float(a.distance_m) / 1000.0) if a.distance_m is not None else None
+        distance_mi = _mi_from_m(a.distance_m) if a.distance_m is not None else None
         activity_rows.append(
             {
                 "activity_id": str(a.id),
                 "start_time": _iso(a.start_time),
                 "name": a.name,
                 "distance_m": int(a.distance_m) if a.distance_m is not None else None,
+                "distance_mi": round(distance_mi, 2) if distance_mi is not None else None,
+                "distance_km": round(distance_km, 2) if distance_km is not None else None,
                 "duration_s": int(a.duration_s) if a.duration_s is not None else None,
                 "avg_hr": int(a.avg_hr) if a.avg_hr is not None else None,
                 "pace_per_km": _pace_str(a.duration_s, a.distance_m),
+                "pace_per_mile": _pace_str_mi(a.duration_s, a.distance_m),
                 "workout_type": a.workout_type,
                 "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
             }
         )
 
         parts: List[str] = []
-        if distance_km is not None:
-            parts.append(f"{distance_km:.1f} km")
-        pace = _pace_str(a.duration_s, a.distance_m)
-        if pace:
-            parts.append(f"@ {pace}")
+        run_name = (a.name or "").strip() or "Run"
+        parts.append(run_name)
+        if units == "imperial":
+            if distance_mi is not None:
+                parts.append(f"{distance_mi:.1f} mi")
+            pace_mi = _pace_str_mi(a.duration_s, a.distance_m)
+            if pace_mi:
+                parts.append(f"@ {pace_mi}")
+        else:
+            if distance_km is not None:
+                parts.append(f"{distance_km:.1f} km")
+            pace = _pace_str(a.duration_s, a.distance_m)
+            if pace:
+                parts.append(f"@ {pace}")
         if a.avg_hr is not None:
             parts.append(f"(avg HR {int(a.avg_hr)} bpm)")
         if a.workout_type:
@@ -244,6 +305,7 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
             {
                 "type": "activity",
                 "id": str(a.id),
+                "ref": str(a.id)[:8],
                 "date": day_date.isoformat(),
                 "value": " ".join(parts) if parts else "run",
             }
@@ -255,6 +317,7 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
         "generated_at": _iso(now),
         "data": {
             "date": day_date.isoformat(),
+            "preferred_units": units,
             "active_plan_id": str(plan.id) if plan else None,
             "planned_workout": planned_data,
             "activities": activity_rows,

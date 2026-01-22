@@ -147,7 +147,7 @@ Descriptions now include personal context:
 - [x] Unit tests for zone classification with personal thresholds
 - [x] Integration test: API returns personalized zones for real athlete
 - [x] Manual verification: Check calculated thresholds for test athlete
-    - Verified with mbshaf@gmail.com (198 activities, 180 days history)
+    - Verified with athlete@example.com (198 activities, 180 days history)
     - Personal mean TSB: -3.2, SD: 13.9 (trimmed)
     - Thresholds: fresh>+17.6, recovering>+7.2, normal>-17.1, danger>-31.0
 - [x] Logging: Log personal thresholds when calculated

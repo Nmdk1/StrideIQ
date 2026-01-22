@@ -26,7 +26,7 @@ The StrideIQ AI Coach is now operating as a **forensic, N=1 coaching system**:
 
 ### Database
 - PostgreSQL in Docker: `docker-compose exec -T postgres psql -U postgres -d running_app`
-- Single athlete: Michael Shaffer (`mbshaf@gmail.com`)
+- Single athlete: (redacted) (`athlete@example.com`)
 - Athlete ID: `4368ec7f-c30d-45ff-a6ee-58db7716be24`
 - 370 activities, 6 personal bests
 
@@ -133,7 +133,7 @@ db.close()
 
 ### 4. Clear Coach Thread Before Testing
 ```sql
-UPDATE athlete SET coach_thread_id = NULL WHERE email = 'mbshaf@gmail.com';
+UPDATE athlete SET coach_thread_id = NULL WHERE email = '<ATHLETE_EMAIL>';
 ```
 
 ### 5. Headless browser proof (repeatable)
@@ -172,7 +172,7 @@ docker-compose exec -T api python -c "..."
 docker-compose exec -T postgres psql -U postgres -d running_app -c "SELECT COUNT(*) FROM athlete;"
 
 # View coach thread
-docker-compose exec -T postgres psql -U postgres -d running_app -c "SELECT coach_thread_id FROM athlete WHERE email = 'mbshaf@gmail.com';"
+docker-compose exec -T postgres psql -U postgres -d running_app -c "SELECT coach_thread_id FROM athlete WHERE email = '<ATHLETE_EMAIL>';"
 ```
 
 ---

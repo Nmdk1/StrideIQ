@@ -2,6 +2,7 @@
 Regenerate and save a new plan with ADR-038 fix.
 """
 
+import os
 from core.database import SessionLocal
 from models import Athlete, TrainingPlan, PlannedWorkout
 from services.constraint_aware_planner import generate_constraint_aware_plan
@@ -11,7 +12,12 @@ from sqlalchemy import text
 db = SessionLocal()
 
 try:
-    athlete = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
+    athlete_email = os.getenv("STRIDEIQ_TEST_EMAIL")
+    if not athlete_email:
+        print("Set STRIDEIQ_TEST_EMAIL to target a test athlete (no hardcoded emails in repo).")
+        exit()
+
+    athlete = db.query(Athlete).filter(Athlete.email == athlete_email).first()
     if not athlete:
         print('Athlete not found')
         exit()

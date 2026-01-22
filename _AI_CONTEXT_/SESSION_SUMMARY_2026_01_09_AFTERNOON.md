@@ -164,7 +164,7 @@ Frontend Pages:
   /dashboard : 200
 
 Auth & Insights API:
-  Login: mbshaf@gmail.com (athlete)
+  Login: athlete@example.com (athlete)
   Insight Templates: 8 available
   Execute Insight: success=True, time=1.76ms
 

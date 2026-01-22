@@ -251,7 +251,7 @@ This isn't just a running app tracking a runner. This is a complete health trans
 
 ```
 Athlete ID: 74dfa254-2fcc-43a8-9fa2-b4c1535077c5
-Email: mbshaf@gmail.com
+Email: athlete@example.com
 
 Activities:        196
 Date Range:        2025-07-05 to 2026-01-13

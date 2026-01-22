@@ -49,7 +49,8 @@ docker-compose exec -T api python scripts/seed_feature_flags.py
 #    (code change; already in repo)
 
 # 4) Verify endpoint (must return 200 + Allow-Origin)
-docker-compose exec -T api python -c "import requests; base='http://localhost:8000'; r=requests.post(base+'/v1/auth/login', json={'email':'mbshaf@gmail.com','password':'StrideIQLocal!2026'}); r.raise_for_status(); tok=r.json()['access_token']; h={'Authorization':'Bearer '+tok,'Origin':'http://localhost:3000'}; payload={'race_date':'2026-03-15','race_distance':'marathon','race_name':'Test','tune_up_races':[]}; resp=requests.post(base+'/v2/plans/constraint-aware', headers=h, json=payload, timeout=180); print(resp.status_code, resp.headers.get('access-control-allow-origin'))"
+# NOTE: Do not hardcode real credentials in this repo. Use environment variables.
+docker-compose exec -T api python -c "import os,requests; base='http://localhost:8000'; email=os.environ['STRIDEIQ_TEST_EMAIL']; pwd=os.environ['STRIDEIQ_TEST_PASSWORD']; r=requests.post(base+'/v1/auth/login', json={'email':email,'password':pwd}); r.raise_for_status(); tok=r.json()['access_token']; h={'Authorization':'Bearer '+tok,'Origin':'http://localhost:3000'}; payload={'race_date':'2026-03-15','race_distance':'marathon','race_name':'Test','tune_up_races':[]}; resp=requests.post(base+'/v2/plans/constraint-aware', headers=h, json=payload, timeout=180); print(resp.status_code, resp.headers.get('access-control-allow-origin'))"
 ```
 
 **Key files:**
@@ -103,8 +104,8 @@ docs/
 **CRITICAL:** There is ONE real athlete in the system. All testing must use their data.
 
 ```
-Name: Michael Shaffer
-Email: mbshaf@gmail.com
+Name: (redacted)
+Email: athlete@example.com
 Athlete ID: 4368ec7f-c30d-45ff-a6ee-58db7716be24
 Activities: 370
 Personal Bests: 9 (Strava best-efforts derived; includes 1-mile race PB)
@@ -297,7 +298,7 @@ The athlete has a `coach_thread_id` that persists conversation. Old threads may 
 
 **Fix:** Clear before testing:
 ```sql
-UPDATE athlete SET coach_thread_id = NULL WHERE email = 'mbshaf@gmail.com';
+UPDATE athlete SET coach_thread_id = NULL WHERE email = '<ATHLETE_EMAIL>';
 ```
 
 ### 5. Database Migration Gap
@@ -401,7 +402,7 @@ SELECT distance_category, achieved_at FROM personal_best
 WHERE athlete_id = '4368ec7f-c30d-45ff-a6ee-58db7716be24';
 
 # Clear coach thread
-UPDATE athlete SET coach_thread_id = NULL WHERE email = 'mbshaf@gmail.com';
+UPDATE athlete SET coach_thread_id = NULL WHERE email = '<ATHLETE_EMAIL>';
 
 # Check for test athlete pollution
 SELECT COUNT(*) FROM athlete;  -- Should be 1
