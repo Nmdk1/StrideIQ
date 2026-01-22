@@ -61,7 +61,7 @@ function buildSuggestionCard(prompt: string): SuggestionCard {
   if (t.includes("pr") || t.includes("personal best") || t.includes("get_pb_patterns")) {
     return {
       title: 'PR Analysis',
-      description: 'What preceded your PRs — with receipts (dates, activity ids, TSB).',
+      description: 'What preceded your PRs — with evidence (dates, run labels, key values).',
       prompt,
       Icon: Trophy,
     };
@@ -70,7 +70,7 @@ function buildSuggestionCard(prompt: string): SuggestionCard {
   if (t.includes("atl") || t.includes("ctl") || t.includes("tsb") || t.includes("training load")) {
     return {
       title: 'Training Load',
-      description: 'Where you are today (ATL/CTL/TSB) and what it implies — cited.',
+      description: 'Where you are today (ATL/CTL/TSB) and what it implies — evidence-backed.',
       prompt,
       Icon: ShieldCheck,
     };
@@ -79,7 +79,7 @@ function buildSuggestionCard(prompt: string): SuggestionCard {
   if (t.includes("efficiency") || t.includes("get_efficiency")) {
     return {
       title: 'Efficiency Deep Dive',
-      description: 'Compare concrete runs and show what changed — cited.',
+      description: 'Compare concrete runs and show what changed — evidence-backed.',
       prompt,
       Icon: TrendingUp,
     };
@@ -88,7 +88,7 @@ function buildSuggestionCard(prompt: string): SuggestionCard {
   if (t.includes("30-day") || t.includes("30 day") || t.includes("month") || t.includes("volume")) {
     return {
       title: 'Volume & Consistency',
-      description: 'Your recent volume rhythm and how it’s trending — cited.',
+      description: 'Your recent volume rhythm and how it’s trending — evidence-backed.',
       prompt,
       Icon: Activity,
     };
@@ -105,7 +105,7 @@ function buildSuggestionCard(prompt: string): SuggestionCard {
 
   return {
     title: 'Ask the Coach',
-    description: 'A focused question that triggers a data-backed answer with receipts.',
+    description: 'A focused question that triggers a data-backed answer with evidence.',
     prompt,
     Icon: BrainCircuit,
   };
@@ -131,7 +131,7 @@ export default function CoachPage() {
       setMessages([{
         id: 'greeting',
         role: 'assistant',
-        content: `Hi — I’m your StrideIQ Coach.\n\nI don’t guess. If I use numbers, I’ll cite receipts from your training data (dates + run names + key values).\n\nWhat do you want to understand or decide today?`,
+        content: `Hi — I’m your StrideIQ Coach.\n\nI don’t guess. If I use numbers, I’ll cite evidence from your training data (dates + run names + key values).\n\nWhat do you want to understand or decide today?`,
         timestamp: new Date(),
       }]);
     }
@@ -228,7 +228,7 @@ export default function CoachPage() {
                   <h1 className="text-2xl font-bold">Coach</h1>
                   <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs">AI</Badge>
                 </div>
-                <p className="text-sm text-slate-400">High-trust analysis and prescriptive training, backed by receipts.</p>
+                  <p className="text-sm text-slate-400">High-trust analysis and prescriptive training, backed by evidence.</p>
               </div>
             </div>
 
@@ -277,7 +277,7 @@ export default function CoachPage() {
                                       {receipts && (
                                         <details className="rounded-lg border border-slate-700/60 bg-slate-950/40 px-4 py-3">
                                           <summary className="cursor-pointer text-xs font-semibold text-slate-300">
-                                            Receipts (expand)
+                                            Evidence (expand)
                                           </summary>
                                           <div className="mt-2 prose prose-invert prose-sm max-w-none text-slate-300">
                                             <ReactMarkdown>{receipts}</ReactMarkdown>
@@ -362,7 +362,7 @@ export default function CoachPage() {
                                       {receipts && (
                                         <details className="rounded-lg border border-slate-700/60 bg-slate-950/40 px-3 py-2">
                                           <summary className="cursor-pointer text-xs font-semibold text-slate-300">
-                                            Receipts (expand)
+                                            Evidence (expand)
                                           </summary>
                                           <div className="mt-2 prose prose-invert prose-sm max-w-none text-slate-300">
                                             <ReactMarkdown>{receipts}</ReactMarkdown>
@@ -435,7 +435,7 @@ export default function CoachPage() {
                     </div>
                   </div>
                   <p className="text-xs text-slate-400 text-center mt-2">
-                    Receipts are attached to analytic claims (expand in-message).
+                    Evidence is attached to analytic claims (expand in-message).
                   </p>
                 </div>
               </CardContent>
