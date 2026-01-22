@@ -7,6 +7,19 @@
 
 ---
 
+## Update (2026-01-22): UI consistency work + next-agent context
+
+This repo has additional uncommitted work beyond this handoff’s original scope (notably **web UI consistency** attempts and admin/diagnostics routing changes).
+
+- **Canonical UX goal**: the logged-in product must feel like one cohesive app (consistent backgrounds, card surfaces, spacing).
+- **What changed**: global background drift (`bg-[#0a0a0f]`) was removed across many web pages/components in favor of `bg-slate-900`.
+- **What’s still wrong (per owner feedback)**: Home still reads as a different theme due to translucent card surfaces (e.g. `bg-slate-800/50`, nested `bg-slate-900/30`) vs Analytics/Calendar using solid `bg-slate-800 border-slate-700`.
+- **Next step**: standardize Home card surfaces to match Analytics/Calendar, and introduce a shared page wrapper component so styling can’t drift again.
+
+See the session handoff for the next agent: `docs/AGENT_HANDOFF_2026-01-22_UI_UNIFICATION_AND_VERSION_CONTROL.md`.
+
+---
+
 ## CRITICAL: Plan Generator BROKEN (Fix First)
 
 **Status:** RESOLVED (was a 500 surfaced as “CORS” in browser)
@@ -94,7 +107,7 @@ Name: Michael Shaffer
 Email: mbshaf@gmail.com
 Athlete ID: 4368ec7f-c30d-45ff-a6ee-58db7716be24
 Activities: 370
-Personal Bests: 6
+Personal Bests: 9 (Strava best-efforts derived; includes 1-mile race PB)
 ```
 
 **Data Quality Settings (fixed this session):**
@@ -106,6 +119,63 @@ Threshold Pace: 3.92 min/km
 ```
 
 ---
+
+## NEW (2026-01-20): Strava Best-Effort Ingestion Hardening (Production Safety)
+
+**Why this exists:** PBs, diagnostics, and parts of coaching depend on Strava’s authoritative `best_efforts` (fastest segments inside activities). If ingestion is incomplete, downstream metrics can look “wrong” even when logic is correct.
+
+**Root regression fixed:** `run_migrations.py` used `create_all()` + manual `alembic_version` stamping, which could silently skip tables added later (ex: `best_effort`). This made PBs appear “reverted” even though best-effort code existed.
+
+**Fixes applied:**
+- `apps/api/run_migrations.py`: now runs `alembic upgrade head` (fail-fast). Only falls back to `create_all()` for an empty DB and then stamps `head`.
+- Migration: `apps/api/alembic/versions/8c7b1b3c4d5e_add_best_effort_table_for_pbs.py` (creates `best_effort` if missing).
+- Worker task registration: `apps/api/tasks/__init__.py` imports `best_effort_tasks`.
+
+**New endpoints (no external calls unless explicitly queued):**
+- `GET /v1/athletes/{id}/best-efforts/status`
+- `POST /v1/athletes/{id}/sync-best-efforts/queue?limit=200`
+- `POST /v1/athletes/{id}/strava/backfill-index/queue?pages=5`
+- `POST /v1/athletes/{id}/strava/ingest-activity/{strava_activity_id}?mark_as_race=true`
+- `GET /v1/tasks/{task_id}`
+
+**NEW (ops visibility):**
+- Table: `athlete_ingestion_state` (1 row per athlete/provider) stores:
+  - last task ids
+  - last run started/finished
+  - last error (if any)
+  - last run counters (pages fetched / activities checked / etc.)
+- `GET /v1/athletes/{id}/best-efforts/status` now returns **both**:
+  - computed progress (`best_efforts.*`)
+  - durable run metadata (`ingestion_state.*`)
+
+**Frontend behavior:**
+- `apps/web/app/personal-bests/page.tsx` queues best-effort backfill and polls task completion (no long-running HTTP request / no sleeping in the browser request).
+
+**Operational notes (for viral-safe scaling):**
+- Use **index backfill** first (cheap): creates missing Activity rows from Strava summaries.
+- Use **best-effort backfill** second (expensive): fetches per-activity details to extract `best_efforts` and regenerates PBs.
+- If a specific race is missing and Strava shows best-efforts for it, use **single-activity ingest** with the Strava activity ID (authoritative link; no guessing).
+
+**IMPORTANT NOTE (Strava semantics):**
+- Many activities will legitimately return **no** `best_efforts` because Strava only includes them when the activity sets a PR.
+- Therefore, “has BestEffort rows” is NOT a valid proxy for “processed.”
+- The system now tracks a dedicated processing marker: `activity.best_efforts_extracted_at`.
+- `GET /v1/athletes/{id}/best-efforts/status` reports `activities_processed` using that marker.
+
+**Viral spike throttle (global):**
+- `apps/api/services/strava_service.py:get_activity_details` is now guarded by a Redis-backed semaphore.
+- Setting: `STRAVA_DETAIL_FETCH_CONCURRENCY` (default 4) caps concurrent Strava `/activities/{id}` detail fetches across *all* workers.
+- If Redis is unavailable, throttle degrades gracefully (availability > strict throttling).
+
+**Golden path check (automated):**
+- Script: `apps/api/scripts/golden_path_check.py`
+- Runs a minimal end-to-end validation against a running stack:
+  - auth → best-efforts status → queue a tiny chunk → PBs → coach citations
+  - optional plan generation check (can be skipped)
+- Usage (inside API container):
+```bash
+docker-compose exec -T api python scripts/golden_path_check.py --skip-plan
+```
 
 ## The 5 Phases of N=1 Insight Engine
 
