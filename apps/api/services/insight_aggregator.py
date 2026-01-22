@@ -780,60 +780,288 @@ class InsightAggregator:
         that's populated over time. For now, we generate some basic insights.
         """
         intelligence = AthleteIntelligence()
-        
-        # Calculate what correlates with good performance
-        # (Simplified - would be much more sophisticated in production)
-        
-        recent = (
+
+        # IMPORTANT: These are allowed to be "micro insights", but they must be stated
+        # accurately. No universalized claims. Always include the analysis window and
+        # sample sizes implicitly in the wording when possible.
+
+        HARD_TYPES = {
+            "race",
+            "threshold_run",
+            "tempo_run",
+            "vo2max_intervals",
+            "fartlek",
+            "intervals",
+            "threshold",
+            "tempo",
+        }
+
+        now = datetime.now(timezone.utc)
+        lookback_days = 730  # ~2 years (you have enough history; use it)
+
+        runs: List[Activity] = (
             self.db.query(Activity)
             .filter(
                 Activity.athlete_id == self.athlete.id,
-                Activity.start_time >= datetime.now(timezone.utc) - timedelta(days=90),
+                Activity.sport == "run",
+                Activity.start_time >= now - timedelta(days=lookback_days),
             )
+            .order_by(Activity.start_time.asc())
             .all()
         )
-        
-        if len(recent) >= 5:
-            # Check consistency pattern
-            weeks_with_runs = set()
-            for a in recent:
-                week_num = a.start_time.isocalendar()[1]
-                weeks_with_runs.add(week_num)
-            
-            if len(weeks_with_runs) >= 8:
-                intelligence.what_works.append({
-                    "text": f"Consistency: Ran {len(weeks_with_runs)} of last 12 weeks",
-                    "source": "n1"
-                })
-        
-        # Volume pattern
-        total_distance = sum(a.distance_m or 0 for a in recent)
-        weeks_span = min(12, len(weeks_with_runs)) if weeks_with_runs else 12
-        avg_weekly = (total_distance / (weeks_span * 7)) * 7 / 1609  # miles per week
-        
-        if avg_weekly >= 20:
-            intelligence.what_works.append({
-                "text": f"Volume: ~{avg_weekly:.0f} mi/week average",
-                "source": "n1"
-            })
-        
-        # Count hard workouts
-        HARD_TYPES = {'race', 'threshold_run', 'tempo_run', 'vo2max_intervals', 
-                      'fartlek', 'intervals', 'threshold', 'tempo'}
-        hard_count = len([a for a in recent if a.workout_type in HARD_TYPES])
-        if hard_count >= 3:
-            intelligence.what_works.append({
-                "text": f"Quality: {hard_count} hard sessions in 90 days",
-                "source": "n1"
-            })
-        
-        # Check for injury history (would come from athlete profile in production)
+
+        if not runs:
+            return intelligence
+
+        def _miles(a: Activity) -> float:
+            return float(a.distance_m or 0) / 1609.344
+
+        def _ef(a: Activity) -> Optional[float]:
+            # Efficiency proxy consistent with other parts of this service:
+            # higher = more speed per bpm.
+            if a.avg_hr and a.average_speed and a.avg_hr > 0:
+                try:
+                    return float(a.average_speed) / float(a.avg_hr)
+                except Exception:
+                    return None
+            return None
+
+        def _week_key(dt: datetime) -> Tuple[int, int]:
+            iso = dt.isocalendar()
+            return (int(iso[0]), int(iso[1]))  # (iso_year, iso_week)
+
+        def _monday_of_iso_week(d: date) -> date:
+            # Monday-based week start (matches ISO week semantics)
+            return d - timedelta(days=d.weekday())
+
+        def _last_n_weeks(end_date: date, n: int) -> List[Tuple[int, int]]:
+            keys: List[Tuple[int, int]] = []
+            cursor = _monday_of_iso_week(end_date)
+            for _ in range(n):
+                iso = cursor.isocalendar()
+                keys.append((int(iso[0]), int(iso[1])))
+                cursor = cursor - timedelta(days=7)
+            return keys
+
+        # --- Weekly aggregates (counts, mileage, EF distribution) ---
+        weekly_run_counts: Dict[Tuple[int, int], int] = {}
+        weekly_miles: Dict[Tuple[int, int], float] = {}
+        weekly_hard_counts: Dict[Tuple[int, int], int] = {}
+        weekly_efs: Dict[Tuple[int, int], List[float]] = {}
+
+        for a in runs:
+            wk = _week_key(a.start_time)
+            weekly_run_counts[wk] = weekly_run_counts.get(wk, 0) + 1
+            weekly_miles[wk] = weekly_miles.get(wk, 0.0) + _miles(a)
+            if a.workout_type in HARD_TYPES or bool(a.is_race_candidate):
+                weekly_hard_counts[wk] = weekly_hard_counts.get(wk, 0) + 1
+            ef = _ef(a)
+            if ef is not None:
+                weekly_efs.setdefault(wk, []).append(ef)
+
+        # --- What works (scoped, non-universal) ---
+        # Run-frequency association: compare weeks with >=4 runs vs <=3 runs, excluding very low-volume weeks.
+        # This avoids claiming "4 runs/week = +4%" as a universal law; it's a within-history comparison.
+        high_weeks: List[float] = []
+        low_weeks: List[float] = []
+        n_weeks_total = 0
+        for wk, ef_list in weekly_efs.items():
+            miles = weekly_miles.get(wk, 0.0)
+            # Exclude near-zero weeks (often injury/off/travel) from "what works" claims.
+            if miles < 5:
+                continue
+            if len(ef_list) < 2:
+                continue
+            n_weeks_total += 1
+            weekly_median_ef = statistics.median(ef_list)
+            rc = weekly_run_counts.get(wk, 0)
+            if rc >= 4:
+                high_weeks.append(weekly_median_ef)
+            elif rc <= 3:
+                low_weeks.append(weekly_median_ef)
+
+        if len(high_weeks) >= 6 and len(low_weeks) >= 6:
+            med_high = statistics.median(high_weeks)
+            med_low = statistics.median(low_weeks)
+            if med_low > 0:
+                pct = ((med_high - med_low) / med_low) * 100.0
+                direction = "higher" if pct >= 0 else "lower"
+                intelligence.what_works.append(
+                    {
+                        "text": (
+                            f"Run frequency (last ~{lookback_days//30} months): weeks with ≥4 runs had "
+                            f"{abs(pct):.0f}% {direction} median efficiency vs weeks with ≤3 runs."
+                        ),
+                        "source": "n1",
+                    }
+                )
+
+        # Volume baseline (descriptive, not prescriptive)
+        # Use last 12 full weeks for a *current* profile without pretending it's a universal lever.
+        last12 = _last_n_weeks(date.today(), 12)
+        miles_12 = [weekly_miles.get(wk, 0.0) for wk in last12]
+        runs_12 = [weekly_run_counts.get(wk, 0) for wk in last12]
+        if any((m > 0) for m in miles_12):
+            avg_miles_12 = statistics.mean(miles_12)
+            med_runs_12 = statistics.median(runs_12) if runs_12 else 0
+            weeks_4plus = sum(1 for r in runs_12 if r >= 4)
+            min_miles_12 = min(miles_12) if miles_12 else 0.0
+            max_miles_12 = max(miles_12) if miles_12 else 0.0
+
+            # Put this in "what works" as a *measurable operating range*, not a claim of causality.
+            intelligence.what_works.append(
+                {
+                    "text": (
+                        f"Consistency (last 12w): ≥4 runs in {weeks_4plus}/12 weeks "
+                        f"(median {med_runs_12:.1f} runs/week)."
+                    ),
+                    "source": "n1",
+                }
+            )
+            intelligence.what_works.append(
+                {
+                    "text": f"Volume (last 12w): ~{avg_miles_12:.0f} mi/week average (range {min_miles_12:.0f}–{max_miles_12:.0f}).",
+                    "source": "n1",
+                }
+            )
+
+        # --- What doesn't work (detectable, data-backed flags) ---
+        # 1) “Easy runs too hard” heuristic: non-race runs above 75% max HR.
+        max_hr = float(self.athlete.max_hr or 185)
+        easy_hr_threshold = max_hr * 0.75
+        last_28_cutoff = now - timedelta(days=28)
+        recent_28 = [a for a in runs if a.start_time >= last_28_cutoff]
+        non_race_recent = [
+            a for a in recent_28 if not a.is_race_candidate and (a.distance_m or 0) >= 3000 and a.avg_hr
+        ]
+        too_hard = [a for a in non_race_recent if a.avg_hr and float(a.avg_hr) > easy_hr_threshold]
+        if len(non_race_recent) >= 6:
+            frac = len(too_hard) / len(non_race_recent) if non_race_recent else 0.0
+            if frac >= 0.5:
+                intelligence.what_doesnt.append(
+                    {
+                        "text": (
+                            f"Last 28 days: {len(too_hard)}/{len(non_race_recent)} non-race runs averaged "
+                            f">{easy_hr_threshold:.0f} bpm (75% max HR). If those were meant to be easy, that’s a fatigue amplifier."
+                        ),
+                        "source": "n1",
+                    }
+                )
+
+        # 2) Hard-session clustering: 2+ “hard” runs within 48 hours.
+        hard_runs = [
+            a
+            for a in recent_28
+            if (a.workout_type in HARD_TYPES or bool(a.is_race_candidate)) and (a.distance_m or 0) >= 3000
+        ]
+        hard_runs.sort(key=lambda a: a.start_time)
+        clusters = 0
+        for i in range(1, len(hard_runs)):
+            if (hard_runs[i].start_time - hard_runs[i - 1].start_time).total_seconds() <= 48 * 3600:
+                clusters += 1
+        if clusters >= 1:
+            intelligence.what_doesnt.append(
+                {
+                    "text": f"Last 28 days: {clusters} instance(s) of hard efforts within 48 hours. If you’re rebuilding, this is a common place to get hurt again.",
+                    "source": "n1",
+                }
+            )
+
+        # 3) Volatility: big week-to-week swings are a repeatable injury amplifier during returns.
+        if len(miles_12) >= 8:
+            miles_min = min(miles_12)
+            miles_max = max(miles_12)
+            if miles_max - miles_min >= 30:
+                intelligence.what_doesnt.append(
+                    {
+                        "text": f"Last 12 weeks: weekly mileage swung {miles_min:.0f}→{miles_max:.0f} mi. Volatility like this is where injuries hide.",
+                        "source": "n1",
+                    }
+                )
+            low_weeks = sum(1 for r in runs_12 if r <= 2)
+            if low_weeks >= 2:
+                intelligence.what_doesnt.append(
+                    {
+                        "text": f"Last 12 weeks: {low_weeks} weeks with ≤2 runs. That’s a real disruption vs a steady base.",
+                        "source": "n1",
+                    }
+                )
+
+        # --- Injury risk patterns (detect “return to run” + ramp risk) ---
+        # We don’t need “more data”; we need better signals. Use objective return-to-run markers.
+        # 1) Detect a recent gap (proxy for injury/off)
+        run_dates = [a.start_time.date() for a in runs]
+        run_dates.sort()
+        biggest_recent_gap = 0
+        gap_end: Optional[date] = None
+        for i in range(1, len(run_dates)):
+            gap = (run_dates[i] - run_dates[i - 1]).days
+            if run_dates[i] >= date.today() - timedelta(days=180) and gap > biggest_recent_gap:
+                biggest_recent_gap = gap
+                gap_end = run_dates[i]
+
+        if biggest_recent_gap >= 10 and gap_end is not None:
+            intelligence.injury_patterns.append(
+                {
+                    "text": f"Return-to-run flag: a {biggest_recent_gap}-day gap ended on {gap_end.isoformat()}. That usually marks injury/travel/off-cycle risk.",
+                    "source": "n1",
+                }
+            )
+
+        # 0) If your active plan is explicitly in rebuild, treat that as an injury-return context signal.
+        active_plan = (
+            self.db.query(TrainingPlan)
+            .filter(
+                TrainingPlan.athlete_id == self.athlete.id,
+                TrainingPlan.status == "active",
+            )
+            .first()
+        )
+        if active_plan:
+            # Look at nearby planned workouts for phase labels
+            today = date.today()
+            phases = (
+                self.db.query(PlannedWorkout.phase)
+                .filter(
+                    PlannedWorkout.plan_id == active_plan.id,
+                    PlannedWorkout.scheduled_date.between(today - timedelta(days=7), today + timedelta(days=14)),
+                    PlannedWorkout.phase.isnot(None),
+                )
+                .all()
+            )
+            phase_set = {p[0] for p in phases if p and p[0]}
+            if any(str(p).lower().startswith("rebuild") for p in phase_set):
+                intelligence.injury_patterns.append(
+                    {
+                        "text": "Plan context: current phase is REBUILD. Treat everything as return-to-run until proven otherwise.",
+                        "source": "n1",
+                    }
+                )
+
+        # 2) Acute ramp: this week vs prior 4-week average
+        # Use ISO weeks so it matches how athletes think about training weeks.
+        last1 = _last_n_weeks(date.today(), 1)[0]
+        prev4 = _last_n_weeks(date.today() - timedelta(days=7), 4)
+        cur_miles = weekly_miles.get(last1, 0.0)
+        prev4_miles = [weekly_miles.get(wk, 0.0) for wk in prev4]
+        prev4_avg = statistics.mean(prev4_miles) if prev4_miles else 0.0
+        if prev4_avg >= 5 and cur_miles >= prev4_avg * 1.35:
+            intelligence.injury_patterns.append(
+                {
+                    "text": f"Ramp flag: this week is {cur_miles:.0f} mi vs prior-4wk avg {prev4_avg:.0f} mi/week (+{((cur_miles/prev4_avg)-1)*100:.0f}%).",
+                    "source": "n1",
+                }
+            )
+
+        # If we detected no injury flags at all, be explicit (true negative) instead of “need more history”.
         if not intelligence.injury_patterns:
-            intelligence.injury_patterns.append({
-                "text": "No injury patterns detected yet (need more history)",
-                "source": "n1"
-            })
-        
+            intelligence.injury_patterns.append(
+                {
+                    "text": "In the last 6 months, no obvious gap/ramp/stacking flags triggered from your run history.",
+                    "source": "n1",
+                }
+            )
+
         return intelligence
     
     def persist_insights(self, insights: List[GeneratedInsight]) -> int:
