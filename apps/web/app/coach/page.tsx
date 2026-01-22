@@ -232,14 +232,14 @@ export default function CoachPage() {
           </div>
 
           {/* Main grid (align with Home bento rhythm) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_20rem] gap-6 items-stretch">
             {/* Chat panel */}
-            <Card className="lg:col-span-8 bg-slate-800/50 border-slate-700/50 overflow-hidden flex flex-col min-h-[68vh]">
+            <Card className="bg-slate-800/50 border-slate-700/50 overflow-hidden flex flex-col min-h-[68vh] min-w-0">
               <CardContent className="p-0 flex flex-col flex-1">
                 {/* Messages (taller + higher: less outer padding, more viewport usage) */}
                 <div className="flex-1 overflow-y-auto px-4 py-4">
                   {isEmptyConversation ? (
-                    <div className="h-full min-h-[52vh] flex items-center justify-center">
+                    <div className="h-full min-h-[52vh] flex flex-col items-center justify-center gap-6">
                       {messages.map((message) => (
                         <div
                           key={message.id}
@@ -267,6 +267,44 @@ export default function CoachPage() {
                           </Card>
                         </div>
                       ))}
+
+                      {/* Mobile: inline suggestions under welcome (sidebar hidden) */}
+                      {suggestions.length > 0 && (
+                        <div className="w-full md:hidden">
+                          <div className="flex items-center gap-2 text-xs text-slate-400 mb-3">
+                            <Sparkles className="w-3.5 h-3.5 text-orange-500" />
+                            <span>Try one of these</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {(suggestions || []).slice(0, 5).map((prompt, i) => {
+                              const card = buildSuggestionCard(prompt);
+                              const Icon = card.Icon;
+                              return (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => handleSend(card.prompt)}
+                                  disabled={isLoading}
+                                  className="text-left rounded-lg border border-slate-700/60 bg-slate-900/30 hover:bg-slate-900/40 hover:border-orange-500/40 transition-colors p-4 disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-700/60">
+                                      <Icon className="w-4 h-4 text-orange-400" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="font-semibold text-slate-100">{card.title}</div>
+                                      <div className="text-sm text-slate-400 mt-1 leading-snug">
+                                        {card.description}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -349,7 +387,7 @@ export default function CoachPage() {
                       </button>
                     </div>
                   </div>
-                  <p className="text-xs text-slate-500 text-center mt-2">
+                  <p className="text-xs text-slate-400 text-center mt-2">
                     Receipts required for athlete-specific numbers (dates + activity ids + values).
                   </p>
                 </div>
@@ -357,48 +395,14 @@ export default function CoachPage() {
             </Card>
 
             {/* Capabilities / suggestions panel */}
-            <Card className="lg:col-span-4 bg-slate-800/50 border-slate-700/50 h-full">
+            <Card className="hidden md:block bg-slate-800/50 border-slate-700/50 h-full w-80">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-sm text-slate-300 mb-3">
                   <Sparkles className="w-4 h-4 text-orange-500" />
                   <span className="font-semibold">Try one of these</span>
                 </div>
 
-                {/* Mobile: collapsible to avoid clutter; Desktop: always visible */}
-                <details className="lg:hidden" open={isEmptyConversation}>
-                  <summary className="cursor-pointer select-none text-sm text-slate-400 mb-3">
-                    Suggestions
-                  </summary>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {(suggestions || []).slice(0, 5).map((prompt, i) => {
-                      const card = buildSuggestionCard(prompt);
-                      const Icon = card.Icon;
-                      return (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => handleSend(card.prompt)}
-                          disabled={isLoading}
-                          className="text-left rounded-lg border border-slate-700/60 bg-slate-900/30 hover:bg-slate-900/40 hover:border-orange-500/40 transition-colors p-4 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-700/60">
-                              <Icon className="w-4 h-4 text-orange-400" />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="font-semibold text-slate-100">{card.title}</div>
-                              <div className="text-sm text-slate-400 mt-1 leading-snug">
-                                {card.description}
-                              </div>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </details>
-
-                <div className="hidden lg:grid grid-cols-1 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   {(suggestions || []).slice(0, 5).map((prompt, i) => {
                     const card = buildSuggestionCard(prompt);
                     const Icon = card.Icon;
