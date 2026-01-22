@@ -12,6 +12,8 @@
     "test:coverage": "jest --coverage",
     "e2e:coach": "node scripts/e2e_coach_suggestions.mjs",
     "e2e:coach:headed": "cross-env E2E_HEADLESS=false node scripts/e2e_coach_suggestions.mjs",
+    "e2e:mobile": "node scripts/e2e_mobile_phase_one.mjs",
+    "e2e:mobile:headed": "cross-env E2E_HEADLESS=false node scripts/e2e_mobile_phase_one.mjs",
     "e2e:install:browsers": "playwright install chromium"
   },
   "dependencies": {

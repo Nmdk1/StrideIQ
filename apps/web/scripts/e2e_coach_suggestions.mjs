@@ -1,7 +1,7 @@
 import { chromium } from "playwright";
 
-const EMAIL = process.env.E2E_EMAIL || "mbshaf@gmail.com";
-const PASSWORD = process.env.E2E_PASSWORD || "StrideIQLocal!2026";
+const EMAIL = process.env.E2E_EMAIL;
+const PASSWORD = process.env.E2E_PASSWORD;
 const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:3000";
 const HEADLESS = (process.env.E2E_HEADLESS || "true").toLowerCase() !== "false";
 
@@ -10,6 +10,12 @@ function sleep(ms) {
 }
 
 async function main() {
+  if (!EMAIL || !PASSWORD) {
+    throw new Error(
+      "Missing E2E credentials. Set E2E_EMAIL and E2E_PASSWORD in your environment."
+    );
+  }
+
   const browser = await chromium.launch({ headless: HEADLESS });
   const page = await browser.newPage();
 
@@ -23,13 +29,13 @@ async function main() {
   // Navigate to Coach
   await page.goto(`${BASE_URL}/coach`, { waitUntil: "domcontentloaded" });
 
-  // Wait for suggestions and click first one.
-  const suggestionsWrapper = page.getByText("Suggested questions:").locator("..");
-  const suggestionButtons = suggestionsWrapper.locator("button");
-  await suggestionButtons.first().waitFor({ timeout: 60_000 });
-
-  const suggestionText = (await suggestionButtons.first().innerText()).trim();
-  await suggestionButtons.first().click();
+  // Wait for suggestions and click first one (sidebar on desktop).
+  await page.getByText("Try one of these").first().waitFor({ timeout: 60_000 });
+  const suggestionButtons = page.locator("button").filter({ hasText: "PR Analysis" }).first();
+  const fallbackFirstButton = page.locator("button").first();
+  const buttonToClick = (await suggestionButtons.count()) > 0 ? suggestionButtons : fallbackFirstButton;
+  const suggestionText = ((await buttonToClick.innerText()) || "").trim();
+  await buttonToClick.click();
 
   // Wait for assistant response (after the user message we just sent).
   // The UI shows "Thinking..." while waiting.
@@ -43,8 +49,14 @@ async function main() {
   const assistantMessage = page.locator(".prose").last();
   const responseText = ((await assistantMessage.innerText()) || "").trim();
 
-  const hasCitation = /\b20\d{2}-\d{2}-\d{2}\b/.test(responseText) &&
-    /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i.test(responseText);
+  // Receipts are collapsible; expand if present and ensure there is at least one ISO date.
+  const receiptsSummary = page.getByText("Receipts (expand)").last();
+  if (await receiptsSummary.count()) {
+    await receiptsSummary.click();
+  }
+  await sleep(250);
+  const fullText = ((await page.locator(".prose").last().innerText()) || "").trim();
+  const hasDateReceipt = /\b20\d{2}-\d{2}-\d{2}\b/.test(fullText);
 
   if (!responseText) {
     throw new Error(`No assistant response text after clicking suggestion: "${suggestionText}"`);
@@ -52,9 +64,9 @@ async function main() {
   if (/AI Coach is not configured/i.test(responseText)) {
     throw new Error("AI coach not configured (missing OPENAI_API_KEY?)");
   }
-  if (!hasCitation) {
+  if (!hasDateReceipt) {
     throw new Error(
-      `Assistant response did not include a date + UUID citation.\nSuggestion: "${suggestionText}"\nResponse:\n${responseText}`
+      `Assistant response did not include an ISO-date receipt.\nSuggestion: "${suggestionText}"\nResponse:\n${fullText}`
     );
   }
 

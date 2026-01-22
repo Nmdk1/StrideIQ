@@ -24,6 +24,19 @@ interface Message {
   timestamp: Date;
 }
 
+function splitReceipts(content: string): { main: string; receipts: string | null } {
+  // Split out a trailing "Receipts" section so the chat stays readable.
+  // We expect markdown headings like "## Receipts".
+  const re = /(\n|^)##\s+Receipts\s*\n/i;
+  const m = content.match(re);
+  if (!m || m.index == null) return { main: content, receipts: null };
+
+  const idx = m.index + (m[1] === '\n' ? 1 : 0);
+  const main = content.slice(0, idx).trimEnd();
+  const receipts = content.slice(idx).trim();
+  return { main, receipts };
+}
+
 type SuggestionCard = {
   title: string;
   description: string;
@@ -118,7 +131,7 @@ export default function CoachPage() {
       setMessages([{
         id: 'greeting',
         role: 'assistant',
-        content: `Hi — I’m your StrideIQ Coach.\n\nI don’t guess. If I use numbers, I’ll cite receipts from your training data (dates + activity ids + values).\n\nWhat do you want to understand or decide today?`,
+        content: `Hi — I’m your StrideIQ Coach.\n\nI don’t guess. If I use numbers, I’ll cite receipts from your training data (dates + run names + key values).\n\nWhat do you want to understand or decide today?`,
         timestamp: new Date(),
       }]);
     }
@@ -254,9 +267,26 @@ export default function CoachPage() {
                           >
                             <CardContent className="py-4 px-5">
                               {message.role === 'assistant' ? (
-                                <div className="prose prose-invert prose-sm max-w-none">
-                                  <ReactMarkdown>{message.content}</ReactMarkdown>
-                                </div>
+                                (() => {
+                                  const { main, receipts } = splitReceipts(message.content);
+                                  return (
+                                    <div className="space-y-3">
+                                      <div className="prose prose-invert prose-sm max-w-none">
+                                        <ReactMarkdown>{main}</ReactMarkdown>
+                                      </div>
+                                      {receipts && (
+                                        <details className="rounded-lg border border-slate-700/60 bg-slate-950/40 px-4 py-3">
+                                          <summary className="cursor-pointer text-xs font-semibold text-slate-300">
+                                            Receipts (expand)
+                                          </summary>
+                                          <div className="mt-2 prose prose-invert prose-sm max-w-none text-slate-300">
+                                            <ReactMarkdown>{receipts}</ReactMarkdown>
+                                          </div>
+                                        </details>
+                                      )}
+                                    </div>
+                                  );
+                                })()
                               ) : (
                                 <p className="whitespace-pre-wrap">{message.content}</p>
                               )}
@@ -270,7 +300,7 @@ export default function CoachPage() {
 
                       {/* Mobile: inline suggestions under welcome (sidebar hidden) */}
                       {suggestions.length > 0 && (
-                        <div className="w-full md:hidden">
+                        <div className="w-full md:hidden" data-testid="coach-suggestions-mobile">
                           <div className="flex items-center gap-2 text-xs text-slate-400 mb-3">
                             <Sparkles className="w-3.5 h-3.5 text-orange-500" />
                             <span>Try one of these</span>
@@ -322,9 +352,26 @@ export default function CoachPage() {
                           >
                             <CardContent className="py-3 px-4">
                               {message.role === 'assistant' ? (
-                                <div className="prose prose-invert prose-sm max-w-none">
-                                  <ReactMarkdown>{message.content}</ReactMarkdown>
-                                </div>
+                                (() => {
+                                  const { main, receipts } = splitReceipts(message.content);
+                                  return (
+                                    <div className="space-y-3">
+                                      <div className="prose prose-invert prose-sm max-w-none">
+                                        <ReactMarkdown>{main}</ReactMarkdown>
+                                      </div>
+                                      {receipts && (
+                                        <details className="rounded-lg border border-slate-700/60 bg-slate-950/40 px-3 py-2">
+                                          <summary className="cursor-pointer text-xs font-semibold text-slate-300">
+                                            Receipts (expand)
+                                          </summary>
+                                          <div className="mt-2 prose prose-invert prose-sm max-w-none text-slate-300">
+                                            <ReactMarkdown>{receipts}</ReactMarkdown>
+                                          </div>
+                                        </details>
+                                      )}
+                                    </div>
+                                  );
+                                })()
                               ) : (
                                 <p className="whitespace-pre-wrap">{message.content}</p>
                               )}
@@ -388,14 +435,17 @@ export default function CoachPage() {
                     </div>
                   </div>
                   <p className="text-xs text-slate-400 text-center mt-2">
-                    Receipts required for athlete-specific numbers (dates + activity ids + values).
+                    Receipts are attached to analytic claims (expand in-message).
                   </p>
                 </div>
               </CardContent>
             </Card>
 
             {/* Capabilities / suggestions panel */}
-            <Card className="hidden md:block bg-slate-800/50 border-slate-700/50 h-full w-80">
+            <Card
+              className="hidden md:block bg-slate-800/50 border-slate-700/50 h-full w-80"
+              data-testid="coach-suggestions-sidebar"
+            >
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-sm text-slate-300 mb-3">
                   <Sparkles className="w-4 h-4 text-orange-500" />
