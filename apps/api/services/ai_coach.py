@@ -93,10 +93,11 @@ You understand running physiology, periodization, and training principles:
 ## Evidence & Citations (REQUIRED)
 
 When providing insights:
-- Always cite specific evidence from tool results (run IDs, dates, and values).
+- Always cite specific evidence from tool results (ISO dates + human-readable run labels + key values).
 - Format citations clearly in plain English, e.g.:
   - "On 2026-01-15, you ran 8.5 km @ 5:30/km (avg HR 152 bpm)."
   - "On 2026-01-12, EF was 123.4 (pace 8.10 min/mi, avg HR 150)."
+- Avoid dumping full UUIDs in the main answer. Only include full activity IDs if the athlete explicitly asks.
 - For questions like "Am I getting fitter?", you MUST use `get_efficiency_trend` and cite at least 2 EF points (earliest and latest available).
 - If data is insufficient, say: "I don't have enough data to answer that."
 - Never make claims (numbers, trends, training load, plan details) without tool-backed evidence.
@@ -307,6 +308,64 @@ When providing insights:
                                 "minimum": 30,
                                 "maximum": 365,
                             }
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weekly_volume",
+                    "description": "Weekly rollups of run volume (distance/time/count) for the last N weeks.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "weeks": {
+                                "type": "integer",
+                                "description": "How many weeks back (default 12, max 104).",
+                                "minimum": 1,
+                                "maximum": 104,
+                            }
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_best_runs",
+                    "description": "Get best runs by an explicit metric (efficiency, pace, distance, intensity_score), optionally filtered to an effort zone.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "days": {"type": "integer", "description": "History window (default 365, max 730).", "minimum": 7, "maximum": 730},
+                            "metric": {
+                                "type": "string",
+                                "description": "Ranking metric.",
+                                "enum": ["efficiency", "pace", "distance", "intensity_score"],
+                            },
+                            "limit": {"type": "integer", "description": "Max results (default 5, max 10).", "minimum": 1, "maximum": 10},
+                            "effort_zone": {
+                                "type": "string",
+                                "description": "Optional effort zone filter based on athlete max HR.",
+                                "enum": ["easy", "threshold", "race"],
+                            },
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "compare_training_periods",
+                    "description": "Compare last N days vs the previous N days (volume/run count deltas).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "days": {"type": "integer", "description": "Days per period (default 28, max 180).", "minimum": 7, "maximum": 180}
                         },
                         "required": [],
                     },
@@ -607,7 +666,7 @@ When providing insights:
                 
                 if pb_count >= 2 and tsb_min is not None and tsb_max is not None:
                     add(
-                        f"Analyze what led to my {pb_count} PRs. Cite each PR date + distance + TSB day-before + activity id (from get_pb_patterns)."
+                        f"Analyze what led to my {pb_count} PRs. Cite each PR date + distance + TSB day-before (from get_pb_patterns)."
                     )
                 
                 # Add specific extreme TSB suggestion if there's an outlier
@@ -662,13 +721,13 @@ When providing insights:
             )
             if completed_today:
                 distance_km = (completed_today.distance_m or 0) / 1000
-                add(f"Review my run from today ({distance_km:.1f} km). Cite the activity id + distance + pace + avg HR (from get_recent_runs).")
+                add(f"Review my run from today ({distance_km:.1f} km). Cite the date + run label + distance + pace + avg HR (from get_recent_runs).")
         except Exception:
             pass
 
         # --- Fallback defaults ---
         if len(suggestions) < 3:
-            add("How is my training going overall? Cite at least 2 recent runs (date + activity id + distance + pace) and my current ATL/CTL/TSB.")
+            add("How is my training going overall? Cite at least 2 recent runs (date + run label + distance + pace) and my current ATL/CTL/TSB.")
             add("Am I on track for my goal race? Use get_plan_week and get_training_load and cite specific workouts + current load.")
 
         return suggestions[:5]
@@ -774,6 +833,36 @@ When providing insights:
                 "error": False,
             }
 
+        # Deterministic "most impactful run" to prevent vague/hallucinated definitions.
+        if "most impactful" in lower and "run" in lower:
+            days = self._extract_days_lookback(lower) or 7
+            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            return {
+                "response": self._most_impactful_run(athlete_id, days=days),
+                "thread_id": thread_id,
+                "error": False,
+            }
+
+        # Deterministic "longest run" (common high-signal question).
+        if ("longest" in lower or "furthest" in lower) and "run" in lower:
+            days = self._extract_days_lookback(lower) or 365
+            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            return {
+                "response": self._top_run_by(athlete_id, days=days, metric="distance", label="longest"),
+                "thread_id": thread_id,
+                "error": False,
+            }
+
+        # Deterministic "hardest run" / "hardest workout" (ambiguous; we define it explicitly).
+        if ("hardest" in lower or "toughest" in lower) and ("run" in lower or "workout" in lower):
+            days = self._extract_days_lookback(lower) or 30
+            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            return {
+                "response": self._top_run_by(athlete_id, days=days, metric="stress_proxy", label="hardest"),
+                "thread_id": thread_id,
+                "error": False,
+            }
+
         # Phase 3 acceptance: if the athlete has no run data and asks about fitness trend,
         # respond explicitly with the required phrasing (avoid any implied metrics).
         try:
@@ -821,8 +910,8 @@ When providing insights:
                         "IMPORTANT: Use tools for ALL athlete-specific facts (dates, distances, EF, CTL/ATL/TSB, plan details). "
                         "Do not guess or invent metrics. If data is missing, say so.\n\n"
                         "UNITS: Use the athlete's preferred units from tools. If they request miles, respond in miles + min/mi.\n\n"
-                        "CITATIONS REQUIRED: When you state a fact, cite it explicitly (date + id + value), e.g. "
-                        "\"On 2026-01-15 (activity <uuid>), you ran 8.5 km @ 5:30/km.\""
+                        "EVIDENCE REQUIRED: When you state a fact with numbers, cite it explicitly (ISO date + human label + key values). "
+                        "Do not dump long UUIDs unless the athlete explicitly asks."
                     ),
                 )
             
@@ -901,6 +990,12 @@ When providing insights:
                                 output = coach_tools.get_efficiency_by_zone(self.db, athlete_id, **args)
                             elif tool_name == "get_nutrition_correlations":
                                 output = coach_tools.get_nutrition_correlations(self.db, athlete_id, **args)
+                            elif tool_name == "get_weekly_volume":
+                                output = coach_tools.get_weekly_volume(self.db, athlete_id, **args)
+                            elif tool_name == "get_best_runs":
+                                output = coach_tools.get_best_runs(self.db, athlete_id, **args)
+                            elif tool_name == "compare_training_periods":
+                                output = coach_tools.compare_training_periods(self.db, athlete_id, **args)
                             else:
                                 output = {
                                     "ok": False,
@@ -986,6 +1081,18 @@ When providing insights:
                 except Exception as e:
                     # Never fail the whole request; return the original response.
                     logger.warning(f"Citations enforcement failed: {e}")
+
+                # Normalize for UI + trust contract:
+                # - prefer "## Evidence" section naming
+                # - collapse-friendly output (heading present when applicable)
+                # - suppress UUID spam unless explicitly requested
+                try:
+                    response_text = self._normalize_response_for_ui(
+                        user_message=message,
+                        assistant_message=response_text,
+                    )
+                except Exception as e:
+                    logger.warning(f"Coach response normalization failed: {e}")
                 
                 return {
                     "response": response_text,
@@ -1119,7 +1226,7 @@ When providing insights:
 
         # Receipts: cite planned workout + a couple of recent runs
         lines.append("")
-        lines.append("## Receipts")
+        lines.append("## Evidence")
         if planned_title:
             if units == "imperial" and planned_mi is not None:
                 lines.append(f"- {today}: Planned — {planned_title} ({planned_mi:.1f} mi)")
@@ -1159,7 +1266,8 @@ When providing insights:
 
         lower = text.lower()
 
-        receipt_section = ("receipts" in lower) or ("citations" in lower)
+        # Only treat explicit headings as satisfying the contract; the word "evidence" may appear in normal prose.
+        receipt_section = bool(re.search(r"(^|\n)##\s*(evidence|receipts)\b", lower))
         has_date = bool(self._DATE_RE.search(text))
         has_uuid = bool(self._UUID_RE.search(text))
         if receipt_section or has_date or has_uuid:
@@ -1244,9 +1352,9 @@ When providing insights:
                 "Rewrite your last answer to comply with the Evidence & Citations rules.\n\n"
                 "Rules:\n"
                 "- If you include any numbers (distances, times, paces, HR, EF, ATL/CTL/TSB, percentages), you MUST include receipts.\n"
-                "- Add a final section titled 'Receipts' listing supporting evidence lines.\n"
-                "- Receipts must include at least one ISO date (YYYY-MM-DD) and a human label (e.g., run name + key values).\n"
-                "- Do NOT dump long UUIDs unless the user explicitly asks; keep receipts readable.\n"
+                "- Add a final section titled '## Evidence' listing supporting evidence lines.\n"
+                "- Evidence lines must include at least one ISO date (YYYY-MM-DD) and a human label (e.g., run name + key values).\n"
+                "- Do NOT dump long UUIDs unless the athlete explicitly asks; keep evidence readable.\n"
                 "- Do not add new claims; only restate with proper receipts.\n"
                 "- If you cannot cite the data, reply exactly: \"I don't have enough data to answer that.\""
             ),
@@ -1308,6 +1416,12 @@ When providing insights:
                             output = coach_tools.get_efficiency_by_zone(self.db, athlete_id, **args)
                         elif tool_name == "get_nutrition_correlations":
                             output = coach_tools.get_nutrition_correlations(self.db, athlete_id, **args)
+                        elif tool_name == "get_weekly_volume":
+                            output = coach_tools.get_weekly_volume(self.db, athlete_id, **args)
+                        elif tool_name == "get_best_runs":
+                            output = coach_tools.get_best_runs(self.db, athlete_id, **args)
+                        elif tool_name == "compare_training_periods":
+                            output = coach_tools.compare_training_periods(self.db, athlete_id, **args)
                         else:
                             output = {
                                 "ok": False,
@@ -1361,6 +1475,257 @@ When providing insights:
 
         # If rewrite failed, return a safe refusal instead of uncited numbers.
         return "I don't have enough data to answer that."
+
+    def _extract_days_lookback(self, lower_message: str) -> Optional[int]:
+        """
+        Best-effort extraction of a lookback window from natural language like:
+          - "last 7 days"
+          - "past 14 days"
+          - "in the last 30"
+        """
+        try:
+            m = re.search(r"(last|past|previous)\s+(\d{1,3})\s*(day|days|d)\b", lower_message)
+            if not m:
+                m = re.search(r"\b(\d{1,3})\s*(day|days|d)\b", lower_message)
+            if not m:
+                return None
+            days = int(m.group(2) if m.lastindex and m.lastindex >= 2 else m.group(1))
+            if days < 1:
+                return None
+            return max(1, min(days, 730))
+        except Exception:
+            return None
+
+    def _user_explicitly_requested_ids(self, user_message: str) -> bool:
+        ml = (user_message or "").lower()
+        # If the athlete asks for IDs, we should allow them (debugging / audit use cases).
+        return any(
+            k in ml
+            for k in (
+                "activity id",
+                "activity_id",
+                "uuid",
+                "full id",
+                "full uuid",
+                "show ids",
+                "show id",
+            )
+        )
+
+    def _normalize_response_for_ui(self, *, user_message: str, assistant_message: str) -> str:
+        """
+        Make coach output consistent and readable across *all* questions.
+
+        Goals:
+        - If there's an evidence/receipts block, ensure it is headed by '## Evidence' so the UI can collapse it.
+        - Prefer 'Evidence' wording over 'Receipts' wording.
+        - Suppress full UUID dumps in the main answer unless explicitly requested.
+        """
+        text = (assistant_message or "").strip()
+        if not text:
+            return text
+
+        wants_ids = self._user_explicitly_requested_ids(user_message)
+
+        # Normalize headings: 'Receipts' -> 'Evidence'
+        text = re.sub(r"(?mi)(^|\n)##\s*Receipts\s*$", r"\1## Evidence", text)
+
+        # If the model wrote a trailing "Receipts" or "Evidence" label without a markdown heading,
+        # convert it into a collapsible heading.
+        # Examples:
+        #   "Receipts\n- 2026-...: ...\n"
+        #   "Evidence:\n- 2026-...: ...\n"
+        text = re.sub(r"(?mi)(^|\n)(receipts|evidence)\s*:\s*\n", r"\1## Evidence\n", text)
+        text = re.sub(r"(?mi)(^|\n)(receipts|evidence)\s*\n(?=\s*[-*]\s*20\d{2}-\d{2}-\d{2})", r"\1## Evidence\n", text)
+
+        if wants_ids:
+            return text
+
+        # Split into main vs evidence to avoid leaking UUIDs into the conversational flow.
+        m = re.search(r"(?mi)(^|\n)##\s*Evidence\s*\n", text)
+        if m and m.start() is not None:
+            split_idx = m.start() + (1 if m.group(1) == "\n" else 0)
+            main = text[:split_idx].rstrip()
+            evidence = text[split_idx:].lstrip()
+        else:
+            main, evidence = text, ""
+
+        # Remove UUIDs from main. Prefer removing the whole "(activity id: ...)" clause if present.
+        main = re.sub(r"(?i)\s*\(?(planned workout|activity)\s*(id)?\s*:\s*%s\)?\s*" % self._UUID_RE.pattern, "", main)
+        main = re.sub(self._UUID_RE, "", main)
+        # Clean double spaces left behind.
+        main = re.sub(r"[ \t]{2,}", " ", main).strip()
+
+        if evidence:
+            # In evidence: keep things readable; replace UUIDs with short refs.
+            def _uuid_to_ref(match: re.Match) -> str:
+                u = match.group(0)
+                return f"{u[:8]}…"
+
+            evidence = re.sub(self._UUID_RE, _uuid_to_ref, evidence)
+            # Also normalize any "Receipts" mention lingering inside evidence blocks.
+            evidence = re.sub(r"(?mi)(^|\n)##\s*Receipts\s*\n", r"\1## Evidence\n", evidence)
+            return (main + "\n\n" + evidence.strip()).strip()
+
+        return main
+
+    def _most_impactful_run(self, athlete_id: UUID, days: int = 7) -> str:
+        """
+        Deterministic: define and compute "impactful" so we don't hallucinate.
+
+        Definition (current):
+          - impact_score = intensity_score * duration_s (proxy for stress)
+          - fallback: duration_s, then distance
+        """
+        days = max(1, min(int(days), 730))
+        recent = coach_tools.get_recent_runs(self.db, athlete_id, days=days)
+        runs = (recent.get("data", {}) or {}).get("runs") or []
+        units = (recent.get("data", {}) or {}).get("preferred_units") or "metric"
+
+        if not runs:
+            return "I don't have enough data to answer that."
+
+        def impact_score(r: Dict[str, Any]) -> float:
+            intensity = r.get("intensity_score")
+            dur = r.get("duration_s") or 0
+            dist_m = r.get("distance_m") or 0
+            if intensity is not None and dur:
+                return float(intensity) * float(dur)
+            if dur:
+                return float(dur)
+            return float(dist_m)
+
+        ranked = sorted(runs, key=impact_score, reverse=True)
+        top = ranked[0]
+
+        # Compose a human-readable headline, strictly from tool output.
+        dt = (top.get("start_time") or "")[:10] or "unknown-date"
+        name = (top.get("name") or "").strip() or "Run"
+        avg_hr = top.get("avg_hr")
+
+        if units == "imperial":
+            dist = top.get("distance_mi")
+            pace = top.get("pace_per_mile")
+            dist_str = f"{dist:.1f} mi" if isinstance(dist, (int, float)) else "distance n/a"
+            pace_str = pace or "pace n/a"
+        else:
+            dist = top.get("distance_km")
+            pace = top.get("pace_per_km")
+            dist_str = f"{dist:.1f} km" if isinstance(dist, (int, float)) else "distance n/a"
+            pace_str = pace or "pace n/a"
+
+        hr_str = f", avg HR {int(avg_hr)} bpm" if avg_hr is not None else ""
+
+        lines: List[str] = []
+        lines.append(f"Interpreting **“most impactful”** as: **highest estimated training stress** in the last {days} days.")
+        lines.append("Right now that’s computed as **intensity_score × duration** (a proxy for how hard the session was), using tool data.")
+        lines.append("")
+        lines.append(f"**Most impactful run:** {dt} — {name} — **{dist_str} @ {pace_str}**{hr_str}")
+
+        # Show a short ranked list for context (no UUID dumps).
+        lines.append("")
+        lines.append("**Next most impactful (for context):**")
+        for r in ranked[1:4]:
+            d = (r.get("start_time") or "")[:10] or "unknown-date"
+            n = (r.get("name") or "").strip() or "Run"
+            if units == "imperial":
+                dd = r.get("distance_mi")
+                pp = r.get("pace_per_mile")
+                dd_str = f"{dd:.1f} mi" if isinstance(dd, (int, float)) else "n/a"
+            else:
+                dd = r.get("distance_km")
+                pp = r.get("pace_per_km")
+                dd_str = f"{dd:.1f} km" if isinstance(dd, (int, float)) else "n/a"
+            pp_str = pp or "n/a"
+            lines.append(f"- {d} — {n} — {dd_str} @ {pp_str}")
+
+        # Evidence (use the already-formatted evidence lines from tools)
+        lines.append("")
+        lines.append("## Evidence")
+        ev = recent.get("evidence") or []
+        for e in ev[:6]:
+            if e.get("type") == "activity":
+                # Keep human-readable. Short ref is OK for disambiguation.
+                ref = e.get("ref")
+                suffix = f" (ref {ref})" if ref else ""
+                lines.append(f"- {e.get('date')}: {e.get('value')}{suffix}")
+
+        return "\n".join(lines)
+
+    def _top_run_by(self, athlete_id: UUID, *, days: int, metric: str, label: str) -> str:
+        """
+        Deterministic "top run" selector to support many high-signal questions.
+
+        Supported metrics:
+          - distance: max distance
+          - stress_proxy: intensity_score × duration_s (fallback duration, then distance)
+        """
+        days = max(1, min(int(days), 730))
+        recent = coach_tools.get_recent_runs(self.db, athlete_id, days=days)
+        runs = (recent.get("data", {}) or {}).get("runs") or []
+        units = (recent.get("data", {}) or {}).get("preferred_units") or "metric"
+
+        if not runs:
+            return "I don't have enough data to answer that."
+
+        def score(r: Dict[str, Any]) -> float:
+            if metric == "distance":
+                return float(r.get("distance_m") or 0)
+            if metric == "stress_proxy":
+                intensity = r.get("intensity_score")
+                dur = r.get("duration_s") or 0
+                dist_m = r.get("distance_m") or 0
+                if intensity is not None and dur:
+                    return float(intensity) * float(dur)
+                if dur:
+                    return float(dur)
+                return float(dist_m)
+            return 0.0
+
+        ranked = sorted(runs, key=score, reverse=True)
+        top = ranked[0]
+
+        dt = (top.get("start_time") or "")[:10] or "unknown-date"
+        name = (top.get("name") or "").strip() or "Run"
+        avg_hr = top.get("avg_hr")
+
+        if units == "imperial":
+            dist = top.get("distance_mi")
+            pace = top.get("pace_per_mile")
+            dist_str = f"{dist:.1f} mi" if isinstance(dist, (int, float)) else "distance n/a"
+            pace_str = pace or "pace n/a"
+        else:
+            dist = top.get("distance_km")
+            pace = top.get("pace_per_km")
+            dist_str = f"{dist:.1f} km" if isinstance(dist, (int, float)) else "distance n/a"
+            pace_str = pace or "pace n/a"
+
+        hr_str = f", avg HR {int(avg_hr)} bpm" if avg_hr is not None else ""
+
+        lines: List[str] = []
+        if metric == "distance":
+            lines.append(f"Interpreting **“{label}”** as: **maximum distance** in the last {days} days.")
+        elif metric == "stress_proxy":
+            lines.append(
+                f"Interpreting **“{label}”** as: **highest estimated training stress** in the last {days} days."
+            )
+            lines.append("Computed as **intensity_score × duration** (proxy), using tool data.")
+        else:
+            lines.append(f"Interpreting **“{label}”** as: top by {metric} in the last {days} days.")
+
+        lines.append("")
+        lines.append(f"**{label.capitalize()} run:** {dt} — {name} — **{dist_str} @ {pace_str}**{hr_str}")
+
+        lines.append("")
+        lines.append("## Evidence")
+        ev = recent.get("evidence") or []
+        for e in ev[:6]:
+            if e.get("type") == "activity":
+                ref = e.get("ref")
+                suffix = f" (ref {ref})" if ref else ""
+                lines.append(f"- {e.get('date')}: {e.get('value')}{suffix}")
+
+        return "\n".join(lines)
 
 
 def get_ai_coach(db: Session) -> AICoach:

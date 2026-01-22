@@ -1272,6 +1272,393 @@ def get_nutrition_correlations(
         return {"ok": False, "tool": "get_nutrition_correlations", "error": str(e)}
 
 
+def get_weekly_volume(db: Session, athlete_id: UUID, weeks: int = 12) -> Dict[str, Any]:
+    """
+    Weekly rollups of run volume (distance/time/count).
+
+    This is designed for questions like:
+    - "What were my highest-volume weeks recently?"
+    - "How consistent have I been since returning from injury?"
+    """
+    now = datetime.utcnow()
+    try:
+        weeks = max(1, min(int(weeks), 104))  # cap at ~2 years
+        units = _preferred_units(db, athlete_id)
+
+        # Build week buckets aligned to Monday starts (ISO week).
+        today = date.today()
+        end_week_start = today - timedelta(days=today.weekday())  # Monday
+        start_week_start = end_week_start - timedelta(days=7 * (weeks - 1))
+        start_dt = datetime.combine(start_week_start, datetime.min.time())
+        end_dt = datetime.combine(end_week_start + timedelta(days=7), datetime.min.time())
+
+        runs = (
+            db.query(Activity)
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
+                Activity.start_time >= start_dt,
+                Activity.start_time < end_dt,
+            )
+            .order_by(Activity.start_time.asc())
+            .all()
+        )
+
+        buckets: Dict[str, Dict[str, Any]] = {}
+        for w in range(weeks):
+            ws = start_week_start + timedelta(days=7 * w)
+            key = ws.isoformat()
+            buckets[key] = {
+                "week_start": key,
+                "week_end": (ws + timedelta(days=6)).isoformat(),
+                "run_count": 0,
+                "total_distance_m": 0.0,
+                "total_duration_s": 0.0,
+            }
+
+        for a in runs:
+            d = a.start_time.date()
+            ws = d - timedelta(days=d.weekday())
+            key = ws.isoformat()
+            if key not in buckets:
+                continue
+            b = buckets[key]
+            b["run_count"] += 1
+            b["total_distance_m"] += float(a.distance_m or 0)
+            b["total_duration_s"] += float(a.duration_s or 0)
+
+        week_rows: List[Dict[str, Any]] = []
+        for key in sorted(buckets.keys()):
+            b = buckets[key]
+            dist_m = float(b["total_distance_m"])
+            dur_s = float(b["total_duration_s"])
+            week_rows.append(
+                {
+                    "week_start": b["week_start"],
+                    "week_end": b["week_end"],
+                    "run_count": int(b["run_count"]),
+                    "total_distance_km": round(dist_m / 1000.0, 2),
+                    "total_distance_mi": round(dist_m / _M_PER_MI, 2),
+                    "total_duration_hr": round(dur_s / 3600.0, 2),
+                }
+            )
+
+        # Evidence: cite the top 3 weeks by distance in preferred units
+        def _week_magnitude(wr: Dict[str, Any]) -> float:
+            return float(wr.get("total_distance_mi" if units == "imperial" else "total_distance_km") or 0)
+
+        top_weeks = sorted(week_rows, key=_week_magnitude, reverse=True)[:3]
+        evidence: List[Dict[str, Any]] = []
+        for w in top_weeks:
+            dist = w["total_distance_mi"] if units == "imperial" else w["total_distance_km"]
+            unit = "mi" if units == "imperial" else "km"
+            evidence.append(
+                {
+                    "type": "derived",
+                    "id": f"weekly_volume:{str(athlete_id)}:{w['week_start']}",
+                    "date": w["week_start"],
+                    "value": f"Week of {w['week_start']}: {dist:.1f} {unit} across {w['run_count']} runs",
+                }
+            )
+
+        return {
+            "ok": True,
+            "tool": "get_weekly_volume",
+            "generated_at": _iso(now),
+            "data": {
+                "preferred_units": units,
+                "weeks": weeks,
+                "week_start_first": start_week_start.isoformat(),
+                "week_start_last": end_week_start.isoformat(),
+                "weeks_data": week_rows,
+            },
+            "evidence": evidence,
+        }
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "tool": "get_weekly_volume", "error": str(e)}
+
+
+def get_best_runs(
+    db: Session,
+    athlete_id: UUID,
+    days: int = 365,
+    metric: str = "efficiency",
+    limit: int = 5,
+    effort_zone: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Return the "best" runs by an explicit, auditable definition.
+
+    Metrics:
+      - efficiency: lowest Pace(sec/km)/HR(bpm) (lower = better)
+      - pace: fastest pace (min/mi or min/km depending on units)
+      - distance: longest distance
+      - intensity_score: highest intensity_score
+
+    Optional effort_zone filters by athlete max_hr:
+      - easy / threshold / race (same mapping used elsewhere)
+    """
+    now = datetime.utcnow()
+    try:
+        days = max(7, min(int(days), 730))
+        limit = max(1, min(int(limit), 10))
+        units = _preferred_units(db, athlete_id)
+
+        cutoff = now - timedelta(days=days)
+        q = (
+            db.query(Activity)
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
+                Activity.start_time >= cutoff,
+                Activity.distance_m.isnot(None),
+                Activity.duration_s.isnot(None),
+            )
+        )
+
+        if effort_zone:
+            ez = effort_zone.lower().strip()
+            athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            max_hr = int(athlete.max_hr) if athlete and athlete.max_hr else None
+            if max_hr:
+                if ez == "easy":
+                    hr_min, hr_max = 0, int(max_hr * 0.75)
+                elif ez == "threshold":
+                    hr_min, hr_max = int(max_hr * 0.80), int(max_hr * 0.88)
+                elif ez == "race":
+                    hr_min, hr_max = int(max_hr * 0.88), 999
+                else:
+                    hr_min, hr_max = None, None
+                if hr_min is not None and hr_max is not None:
+                    q = q.filter(Activity.avg_hr.isnot(None), Activity.avg_hr >= hr_min, Activity.avg_hr <= hr_max)
+
+        acts = q.order_by(Activity.start_time.desc()).limit(200).all()  # bounded
+
+        rows: List[Dict[str, Any]] = []
+        for a in acts:
+            distance_m = float(a.distance_m or 0)
+            duration_s = float(a.duration_s or 0)
+            if distance_m <= 0 or duration_s <= 0:
+                continue
+
+            pace_s_per_km = duration_s / (distance_m / 1000.0)
+            pace_mi = _pace_str_mi(int(a.duration_s) if a.duration_s else None, int(a.distance_m) if a.distance_m else None)
+            pace_km = _pace_str(int(a.duration_s) if a.duration_s else None, int(a.distance_m) if a.distance_m else None)
+            eff = (pace_s_per_km / float(a.avg_hr)) if a.avg_hr else None
+
+            rows.append(
+                {
+                    "activity_id": str(a.id),
+                    "date": a.start_time.date().isoformat(),
+                    "name": (a.name or "").strip() or "Run",
+                    "distance_km": round(distance_m / 1000.0, 2),
+                    "distance_mi": round(distance_m / _M_PER_MI, 2),
+                    "duration_s": int(duration_s),
+                    "avg_hr": int(a.avg_hr) if a.avg_hr is not None else None,
+                    "pace_per_km": pace_km,
+                    "pace_per_mile": pace_mi,
+                    "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
+                    "efficiency_sec_per_km_per_bpm": round(eff, 6) if eff is not None else None,
+                }
+            )
+
+        def _score(r: Dict[str, Any]) -> float:
+            if metric == "efficiency":
+                v = r.get("efficiency_sec_per_km_per_bpm")
+                return float(v) if v is not None else 1e9  # lower is better
+            if metric == "pace":
+                # lower seconds per km is better; derive from formatted pace if possible
+                # fall back to distance/duration
+                dur = r.get("duration_s") or 0
+                dist_km = r.get("distance_km") or 0
+                if dur and dist_km:
+                    return float(dur) / float(dist_km)
+                return 1e9
+            if metric == "distance":
+                return -float(r.get("distance_km") or 0)  # negative so sort ascending works
+            if metric == "intensity_score":
+                return -float(r.get("intensity_score") or 0)
+            return 0.0
+
+        # Sort: for some metrics we inverted the sign so "best" is still smallest _score.
+        rows_sorted = sorted(rows, key=_score)
+        best = rows_sorted[:limit]
+
+        evidence: List[Dict[str, Any]] = []
+        for r in best:
+            dist = r["distance_mi"] if units == "imperial" else r["distance_km"]
+            unit = "mi" if units == "imperial" else "km"
+            pace = r["pace_per_mile"] if units == "imperial" else r["pace_per_km"]
+            parts = [r["name"], f"{dist:.1f} {unit}", f"@ {pace}"]
+            if r.get("avg_hr") is not None:
+                parts.append(f"(avg HR {r['avg_hr']} bpm)")
+            if metric == "efficiency" and r.get("efficiency_sec_per_km_per_bpm") is not None:
+                parts.append(f"[eff {r['efficiency_sec_per_km_per_bpm']:.6f}]")
+            evidence.append(
+                {
+                    "type": "activity",
+                    "id": r["activity_id"],
+                    "ref": r["activity_id"][:8],
+                    "date": r["date"],
+                    "value": " ".join(parts),
+                }
+            )
+
+        return {
+            "ok": True,
+            "tool": "get_best_runs",
+            "generated_at": _iso(now),
+            "data": {
+                "preferred_units": units,
+                "window_days": days,
+                "metric": metric,
+                "effort_zone": effort_zone,
+                "results": best,
+            },
+            "evidence": evidence,
+        }
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "tool": "get_best_runs", "error": str(e)}
+
+
+def compare_training_periods(db: Session, athlete_id: UUID, days: int = 28) -> Dict[str, Any]:
+    """
+    Compare the last N days to the previous N days.
+
+    Designed for:
+    - "Am I ramping too fast?"
+    - "What changed in the last 4 weeks vs the prior 4 weeks?"
+    """
+    now = datetime.utcnow()
+    try:
+        days = max(7, min(int(days), 180))
+        units = _preferred_units(db, athlete_id)
+
+        end_a = now
+        start_a = now - timedelta(days=days)
+        end_b = start_a
+        start_b = start_a - timedelta(days=days)
+
+        def _fetch(start: datetime, end: datetime) -> List[Activity]:
+            return (
+                db.query(Activity)
+                .filter(
+                    Activity.athlete_id == athlete_id,
+                    Activity.sport == "run",
+                    Activity.start_time >= start,
+                    Activity.start_time < end,
+                )
+                .order_by(Activity.start_time.desc())
+                .all()
+            )
+
+        a = _fetch(start_a, end_a)
+        b = _fetch(start_b, end_b)
+
+        def _summ(acts: List[Activity]) -> Dict[str, Any]:
+            total_m = sum(float(x.distance_m or 0) for x in acts)
+            total_s = sum(float(x.duration_s or 0) for x in acts)
+            run_count = sum(1 for x in acts if x.distance_m)
+            avg_hr_vals = [int(x.avg_hr) for x in acts if x.avg_hr is not None]
+            return {
+                "run_count": run_count,
+                "total_distance_km": round(total_m / 1000.0, 2),
+                "total_distance_mi": round(total_m / _M_PER_MI, 2),
+                "total_duration_hr": round(total_s / 3600.0, 2),
+                "avg_hr": round(sum(avg_hr_vals) / len(avg_hr_vals), 1) if avg_hr_vals else None,
+            }
+
+        sa = _summ(a)
+        sb = _summ(b)
+
+        def _pct(new: float, old: float) -> Optional[float]:
+            try:
+                if old == 0:
+                    return None
+                return round(((new - old) / old) * 100.0, 1)
+            except Exception:
+                return None
+
+        dist_a = sa["total_distance_mi"] if units == "imperial" else sa["total_distance_km"]
+        dist_b = sb["total_distance_mi"] if units == "imperial" else sb["total_distance_km"]
+        dist_delta_pct = _pct(float(dist_a), float(dist_b))
+
+        # Evidence: cite a couple runs from each period, in preferred units
+        def _fmt_run(act: Activity) -> str:
+            distance_km = (float(act.distance_m) / 1000.0) if act.distance_m else None
+            distance_mi = _mi_from_m(act.distance_m) if act.distance_m else None
+            if units == "imperial":
+                dist = f"{distance_mi:.1f} mi" if distance_mi is not None else "n/a"
+                pace = _pace_str_mi(act.duration_s, act.distance_m) or "n/a"
+            else:
+                dist = f"{distance_km:.1f} km" if distance_km is not None else "n/a"
+                pace = _pace_str(act.duration_s, act.distance_m) or "n/a"
+            hr = f"(avg HR {int(act.avg_hr)} bpm)" if act.avg_hr is not None else ""
+            name = (act.name or "").strip() or "Run"
+            return f"{name} {dist} @ {pace} {hr}".strip()
+
+        evidence: List[Dict[str, Any]] = []
+        for act in (a[:2] if a else []):
+            evidence.append(
+                {
+                    "type": "activity",
+                    "id": str(act.id),
+                    "ref": str(act.id)[:8],
+                    "date": act.start_time.date().isoformat(),
+                    "value": _fmt_run(act),
+                }
+            )
+        for act in (b[:2] if b else []):
+            evidence.append(
+                {
+                    "type": "activity",
+                    "id": str(act.id),
+                    "ref": str(act.id)[:8],
+                    "date": act.start_time.date().isoformat(),
+                    "value": _fmt_run(act),
+                }
+            )
+
+        return {
+            "ok": True,
+            "tool": "compare_training_periods",
+            "generated_at": _iso(now),
+            "data": {
+                "preferred_units": units,
+                "days": days,
+                "period_a": {
+                    "start": start_a.date().isoformat(),
+                    "end": (end_a.date()).isoformat(),
+                    "summary": sa,
+                },
+                "period_b": {
+                    "start": start_b.date().isoformat(),
+                    "end": (end_b.date()).isoformat(),
+                    "summary": sb,
+                },
+                "deltas": {
+                    "distance_delta_pct": dist_delta_pct,
+                    "run_count_delta": sa["run_count"] - sb["run_count"],
+                },
+            },
+            "evidence": evidence,
+        }
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "tool": "compare_training_periods", "error": str(e)}
+
+
 def _interpret_nutrition_correlation(key: str, r: float) -> str:
     """Interpret correlation coefficient for nutrition."""
     if abs(r) < 0.1:

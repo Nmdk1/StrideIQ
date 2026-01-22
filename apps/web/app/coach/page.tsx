@@ -26,15 +26,17 @@ interface Message {
 
 function splitReceipts(content: string): { main: string; receipts: string | null } {
   // Split out a trailing "Receipts" section so the chat stays readable.
-  // We expect markdown headings like "## Receipts".
-  const re = /(\n|^)##\s+Receipts\s*\n/i;
+  // We expect markdown headings like "## Evidence" or "## Receipts".
+  // (Backend is migrating from "Receipts" -> "Evidence", but we keep backwards compatibility.)
+  const re = /(\n|^)##\s+(Evidence|Receipts)\s*\n/i;
   const m = content.match(re);
   if (!m || m.index == null) return { main: content, receipts: null };
 
   const idx = m.index + (m[1] === '\n' ? 1 : 0);
   const main = content.slice(0, idx).trimEnd();
-  const receipts = content.slice(idx).trim();
-  return { main, receipts };
+  const receiptsRaw = content.slice(idx).trim();
+  const receipts = receiptsRaw.replace(/^##\s+(Evidence|Receipts)\s*\n/i, '').trim();
+  return { main, receipts: receipts || null };
 }
 
 type SuggestionCard = {

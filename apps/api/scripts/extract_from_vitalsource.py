@@ -139,7 +139,7 @@ def main():
         print("\nExample:")
         print("  python extract_from_vitalsource.py 'https://bookshelf.vitalsource.com/...' output.txt")
         print("\nOr set env vars:")
-        print("  export VITALSOURCE_EMAIL=your@email.com")
+        print("  export VITALSOURCE_EMAIL=your_email_here")
         print("  export VITALSOURCE_PASSWORD=yourpassword")
         sys.exit(1)
     

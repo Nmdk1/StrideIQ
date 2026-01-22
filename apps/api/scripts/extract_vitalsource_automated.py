@@ -275,7 +275,7 @@ def main():
         print("\nExample:")
         print("  python extract_vitalsource_automated.py 'https://bookshelf.vitalsource.com/...' daniels.txt")
         print("\nOr set env vars:")
-        print("  export VITALSOURCE_EMAIL=your@email.com")
+        print("  export VITALSOURCE_EMAIL=your_email_here")
         print("  export VITALSOURCE_PASSWORD=yourpassword")
         sys.exit(1)
     

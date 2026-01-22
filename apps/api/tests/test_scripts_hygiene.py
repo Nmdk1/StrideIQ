@@ -16,7 +16,8 @@ FORBIDDEN_REGEXES: list[re.Pattern[str]] = [
     re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
     # Brand-ish password literals are a common footgun (ex: "StrideIQ...!2026").
     # We only flag when it looks like a password token (digits and/or punctuation).
-    re.compile(r"\bstrideiq[^\s]{4,}\b", re.IGNORECASE),
+    # NOTE: allow env var names like STRIDEIQ_EMAIL/STRIDEIQ_PASSWORD (underscore).
+    re.compile(r"\bstrideiq(?!_)[^\s]{4,}\b", re.IGNORECASE),
 ]
 
 

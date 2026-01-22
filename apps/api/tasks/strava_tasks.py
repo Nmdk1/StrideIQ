@@ -233,6 +233,14 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         last_sync_raw = result[0] if result else None
         
         # Determine after_timestamp
+        #
+        # IMPORTANT:
+        # Strava's `/athlete/activities?after=` filter uses the activity *start time*,
+        # not the upload time. If we use "last sync clicked" as the cursor, we can
+        # permanently miss runs that started before the click but were uploaded later.
+        #
+        # To avoid this, we always use an overlap window when polling.
+        SYNC_OVERLAP_SECONDS = 36 * 60 * 60  # 36h overlap (covers late uploads + timezone edges)
         if last_sync_raw is None:
             after_timestamp = 0
         else:
@@ -240,6 +248,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 after_timestamp = int(last_sync_raw.timestamp())
             else:
                 after_timestamp = int(last_sync_raw)
+            after_timestamp = max(0, int(after_timestamp) - int(SYNC_OVERLAP_SECONDS))
         
         # Poll activities from Strava
         print(f"DEBUG: Polling activities with after_timestamp={after_timestamp}")
@@ -258,8 +267,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         
         # Process each activity
         for activity_idx, a in enumerate(strava_activities):
-            activity_type = a.get("type", "").lower()
-            if activity_type != "run":
+            # Strava uses a few run-like types; treat them as runs.
+            activity_type = (a.get("type") or "").lower()
+            if activity_type not in {"run", "virtualrun", "trailrun"}:
                 skipped_non_runs += 1
                 continue
             

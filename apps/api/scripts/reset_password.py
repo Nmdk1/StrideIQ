@@ -8,7 +8,7 @@ SECURITY:
 
 Usage (inside api container):
   export STRIDEIQ_NEW_PASSWORD='...'
-  python scripts/reset_password.py --email someone@example.com --commit
+  python scripts/reset_password.py --email someone_at_example.com --commit
 """
 
 from __future__ import annotations
