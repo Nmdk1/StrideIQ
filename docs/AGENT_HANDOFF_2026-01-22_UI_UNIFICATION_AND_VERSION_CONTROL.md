@@ -11,10 +11,10 @@
 
 This session attempted to enforce **site-wide visual consistency**. The base background drift has largely been corrected (removing `bg-[#0a0a0f]` from pages/components and aligning on `bg-slate-900`), but the owner’s core complaint remains valid: **Home still reads as a different theme** because its **card surfaces are more translucent/darker** than Analytics/Calendar.
 
-The repo currently contains **a large set of modified + untracked files** (API + Web + Docs). Before continuing feature work, the next agent should:
+The repo has been cleaned up into **scoped commits** (code + docs). Before continuing feature work, the next agent should:
 
 - stabilize the UI styling with **one enforced “page shell”** and **standard card surfaces**
-- create **clean, scoped commits** that avoid committing one-off scripts
+- keep future work in **clean, scoped commits** (avoid committing one-off scripts)
 - ensure `docs/PHASED_WORK_PLAN.md` remains the canonical workflow and is kept current
 
 ---
@@ -36,12 +36,18 @@ The repo currently contains **a large set of modified + untracked files** (API +
 
 ## Current repo state (important)
 
-As of this handoff, `git status` shows:
+As of this handoff, the branch contains **two clean commits**:
 
-- **Modified**: many backend files (`apps/api/...`), many web files (`apps/web/...`), and docs.
-- **Untracked**: new migrations, new routers/services/tests, new web admin/diagnostics pages, and new docs (`docs/PHASED_WORK_PLAN.md` currently untracked and must be committed).
+- `feat: harden ingestion, admin diagnostics, and web UX`
+- `docs: update phased work plan and add 2026-01-22 handoff`
 
-**Critical caution:** there are multiple one-off scripts in `apps/api/scripts/` that are untracked. Avoid committing scripts unless they are clearly intended as maintained operational tooling.
+Current `git status` is clean **except** for **three untracked one-off scripts** in `apps/api/scripts/`:
+
+- `backfill_best_efforts_fast.py`
+- `find_better_mile_effort.py`
+- `fix_planned_workout_glitch_2026_01_22.py`
+
+These were intentionally left uncommitted because they look ad-hoc. Only commit them if the owner explicitly wants them retained as maintained operational tooling.
 
 ---
 
