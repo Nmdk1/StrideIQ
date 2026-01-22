@@ -11,14 +11,13 @@ export default function FreeTools() {
       <div className="max-w-7xl mx-auto px-6">
         <div className="text-center mb-12">
           <div className="inline-block bg-orange-500/10 border border-orange-500/30 rounded-full px-4 py-1 mb-4">
-            <span className="text-orange-400 text-sm font-semibold">100% FREE • NO SIGNUP REQUIRED</span>
+            <span className="text-orange-400 text-sm font-semibold">TRAINING CALCULATORS</span>
           </div>
           <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            All Your Running Tools in One Place
+            Training calculators you’ll actually use
           </h2>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto mb-6">
-            Stop jumping between different websites. The essential running calculators—training paces, age-grading, 
-            heat adjustments—right here. Instant value. Research-backed formulas.
+            Training paces, age-grading, and heat adjustments—built with research-backed equations (not lookup tables).
           </p>
           <div className="flex flex-wrap justify-center gap-6 text-sm text-slate-400">
             <div className="flex items-center gap-2">

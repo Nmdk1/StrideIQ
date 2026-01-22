@@ -47,14 +47,24 @@ export default function Hero() {
         </div>
 
         {/* Tagline */}
-        <p className="text-2xl md:text-4xl font-light mb-6 text-white">
-          AI-Powered Running Intelligence
+        <p className="text-2xl md:text-4xl font-medium mb-6 text-white">
+          Deep Intelligence. Zero Fluff.
         </p>
         
-        {/* Value prop */}
-        <p className="text-lg md:text-xl mb-8 text-slate-300 max-w-2xl mx-auto leading-relaxed">
-          Discover what actually improves <em className="text-orange-400 not-italic font-medium">your</em> running. 
-          We analyze your data to reveal insights unique to you—not generic advice.
+        {/* Value prop (same words as approved preview, stronger hierarchy) */}
+        <p className="text-lg md:text-xl mb-8 max-w-2xl mx-auto leading-relaxed">
+          <span className="block text-slate-200 font-medium">
+            Evidence-backed running intelligence.
+          </span>
+          <span className="block text-slate-100 font-semibold">
+            Shows{" "}
+            <span className="text-orange-400">what works</span>,{" "}
+            <span className="text-orange-400">what doesn’t</span>, and{" "}
+            <span className="text-orange-400">what to do next</span>.
+          </span>
+          <span className="block text-slate-400 mt-2">
+            StrideIQ turns your run history into decisions: training paces, trend signals, and coach guidance — with evidence you can audit.
+          </span>
         </p>
 
         {/* Trust indicators */}
@@ -63,7 +73,7 @@ export default function Hero() {
             <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
-            <span>Free tools, no signup</span>
+            <span>Training calculators</span>
           </div>
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
@@ -86,7 +96,7 @@ export default function Hero() {
             onClick={(e) => handleHashClick(e, 'tools')}
             className="group inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 rounded-xl text-lg transition-all duration-300 shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/30 hover:-translate-y-0.5"
           >
-            Try Free Calculators
+            Use our training calculators
             <svg className="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
             </svg>
@@ -117,7 +127,7 @@ export default function Hero() {
             onClick={(e) => handleHashClick(e, 'tools')}
             className="flex flex-col items-center text-slate-500 hover:text-orange-400 transition-colors"
           >
-            <span className="text-xs uppercase tracking-widest mb-2">Explore</span>
+            <span className="text-xs uppercase tracking-widest mb-2">Tools</span>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>

@@ -106,7 +106,7 @@ export default function Pricing() {
                 href="#tools"
                 className="mt-4 md:mt-0 px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg transition-colors text-sm"
               >
-                Try Free Tools First
+                Try Training Calculators
               </a>
             </div>
             <div className="grid md:grid-cols-2 gap-4 text-sm text-slate-300">

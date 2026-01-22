@@ -9,8 +9,8 @@ export default function QuickValue() {
         <div className="grid md:grid-cols-3 gap-8 text-center">
           <div className="flex flex-col items-center">
             <div className="text-4xl font-bold text-orange-500 mb-2">3</div>
-            <div className="text-lg font-semibold mb-1">Free Calculators</div>
-            <div className="text-sm text-slate-400">All-in-one tools, zero barriers</div>
+            <div className="text-lg font-semibold mb-1">Training Calculators</div>
+            <div className="text-sm text-slate-400">Paces, age-grading, heat adjustments</div>
           </div>
           <div className="flex flex-col items-center">
             <div className="text-4xl font-bold text-orange-500 mb-2">360°</div>
