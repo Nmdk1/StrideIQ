@@ -54,20 +54,30 @@ def _poll_task(base: str, token: str, task_id: str, timeout_s: int = 180) -> Dic
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default=os.getenv("STRIDEIQ_BASE_URL", "http://localhost:8000"))
-    parser.add_argument("--email", default=os.getenv("STRIDEIQ_EMAIL", "mbshaf@gmail.com"))
-    parser.add_argument("--password", default=os.getenv("STRIDEIQ_PASSWORD", "StrideIQLocal!2026"))
+    # No defaults for credentials. Provide via env or explicit flags.
+    parser.add_argument("--email", default=os.getenv("STRIDEIQ_EMAIL"))
+    parser.add_argument(
+        "--password-env",
+        default="STRIDEIQ_PASSWORD",
+        help="env var containing login password (default: STRIDEIQ_PASSWORD)",
+    )
     parser.add_argument("--skip-best-efforts", action="store_true")
     parser.add_argument("--skip-coach", action="store_true")
     parser.add_argument("--skip-plan", action="store_true")
     args = parser.parse_args()
 
     base = args.base.rstrip("/")
+    if not args.email:
+        raise SystemExit("ERROR: missing STRIDEIQ_EMAIL (or pass --email)")
+    password = os.getenv(args.password_env)
+    if not password:
+        raise SystemExit(f"ERROR: missing env var {args.password_env} (login password)")
 
     # Auth
     r = _req(
         "POST",
         f"{base}/v1/auth/login",
-        json={"email": args.email, "password": args.password},
+        json={"email": args.email, "password": password},
         timeout=30,
     )
     r.raise_for_status()

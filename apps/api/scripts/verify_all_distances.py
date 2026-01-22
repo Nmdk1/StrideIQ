@@ -88,7 +88,12 @@ def main():
     db = SessionLocal()
     
     try:
-        athlete = db.query(Athlete).filter(Athlete.email == "mbshaf@gmail.com").first()
+        email = os.getenv("STRIDEIQ_EMAIL")
+        if not email:
+            print("[ERROR] Missing STRIDEIQ_EMAIL (athlete selection)")
+            return False
+
+        athlete = db.query(Athlete).filter(Athlete.email == email).first()
         if not athlete:
             print("[ERROR] Could not find athlete")
             return False

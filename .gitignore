@@ -78,6 +78,7 @@ apps/api/check_*.py
 apps/api/final_test.py
 apps/api/fix_and_test.py
 apps/api/test_full_flow.py
+apps/api/scripts/_scratch/
 
 # Large files that shouldn't be in repo
 *.pdf
