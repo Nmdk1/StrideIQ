@@ -1186,6 +1186,7 @@ async def adjust_week_load(
         raise HTTPException(status_code=404, detail=f"No modifiable workouts found in week {request.week_number}")
     
     adjustments_made = []
+    from services.planned_workout_text import normalize_workout_text_fields
     
     if request.adjustment == "reduce_light":
         # Find one quality session and convert to easy
@@ -1198,6 +1199,8 @@ async def adjust_week_load(
                 workout.workout_type = "easy"
                 workout.title = "Easy Run (adjusted)"
                 workout.coach_notes = f"Originally {old_type.replace('_', ' ')}. Adjusted to easy run for recovery."
+                # Avoid trust-breaking stale text if description referenced the old session.
+                workout.description = None
                 converted = True
                 adjustments_made.append(f"Converted {old_type} to easy run")
             
@@ -1205,7 +1208,10 @@ async def adjust_week_load(
             if workout.target_distance_km:
                 original = workout.target_distance_km
                 workout.target_distance_km = round(original * 0.9, 1)
+                # Description frequently contains distance/structure; clear if we didn't regenerate it.
+                workout.description = None
                 adjustments_made.append(f"Reduced {workout.workout_type} from {original}km to {workout.target_distance_km}km")
+            normalize_workout_text_fields(workout)
     
     elif request.adjustment == "reduce_moderate":
         # Recovery week: all easy runs at 70% volume
@@ -1215,13 +1221,16 @@ async def adjust_week_load(
                 workout.workout_type = "easy"
                 workout.title = "Easy Recovery Run"
                 workout.coach_notes = "Recovery week adjustment. Keep it easy and relaxed."
+                workout.description = None
             
             # Reduce volume to 70%
             if workout.target_distance_km:
                 original = workout.target_distance_km
                 workout.target_distance_km = round(original * 0.7, 1)
+                workout.description = None
             
             adjustments_made.append(f"Adjusted {workout.title} for recovery week")
+            normalize_workout_text_fields(workout)
     
     elif request.adjustment == "increase_light":
         # Add 1 mile to easy runs (careful)
@@ -1231,7 +1240,9 @@ async def adjust_week_load(
                     original = workout.target_distance_km
                     # Add approximately 1 mile (1.6km)
                     workout.target_distance_km = round(original + 1.6, 1)
+                    workout.description = None
                     adjustments_made.append(f"Increased {workout.title} from {original}km to {workout.target_distance_km}km")
+            normalize_workout_text_fields(workout)
     
     else:
         raise HTTPException(status_code=400, detail=f"Invalid adjustment type: {request.adjustment}")
@@ -1463,50 +1474,61 @@ async def update_workout(
     before_snapshot = _serialize_workout(workout)
     
     changes = []
-    
-    def _normalize_text(v: Optional[str]) -> Optional[str]:
-        """
-        Fix common mojibake sequences seen when UTF-8 is mis-decoded.
+    structural_changed = False
 
-        Example: 'easyâ†’MP' should be 'easy→MP'
-        """
-        if v is None:
-            return None
-        return (
-            v.replace("â†’", "→")
-            .replace("â†’", "→")
-        )
+    from services.planned_workout_text import (
+        clear_derived_text_on_structural_change,
+        normalize_text,
+        normalize_workout_text_fields,
+    )
 
     if request.workout_type is not None:
         old_type = workout.workout_type
         workout.workout_type = request.workout_type
         changes.append(f"type: {old_type} → {request.workout_type}")
+        structural_changed = True
     
     if request.workout_subtype is not None:
         old_sub = workout.workout_subtype
         workout.workout_subtype = request.workout_subtype
         changes.append(f"subtype: {old_sub} → {request.workout_subtype}")
+        structural_changed = True
 
     if request.title is not None:
-        workout.title = _normalize_text(request.title)
+        workout.title = normalize_text(request.title)
         changes.append(f"title updated")
     
     if request.description is not None:
-        workout.description = _normalize_text(request.description)
+        workout.description = normalize_text(request.description)
         changes.append(f"description updated")
     
     if request.target_distance_km is not None:
         old_dist = workout.target_distance_km
         workout.target_distance_km = request.target_distance_km
         changes.append(f"distance: {old_dist}km → {request.target_distance_km}km")
+        structural_changed = True
     
     if request.target_duration_minutes is not None:
         workout.target_duration_minutes = request.target_duration_minutes
         changes.append(f"duration updated")
+        structural_changed = True
     
     if request.coach_notes is not None:
-        workout.coach_notes = _normalize_text(request.coach_notes)
+        workout.coach_notes = normalize_text(request.coach_notes)
         changes.append(f"notes updated")
+
+    # Always normalize existing fields too (fix mojibake already stored).
+    normalize_workout_text_fields(workout)
+
+    # If structure changed but user did not explicitly provide new derived text,
+    # clear it to avoid stale/mismatched descriptions.
+    clear_derived_text_on_structural_change(
+        workout,
+        structural_changed=structural_changed,
+        description_provided=(request.description is not None),
+        coach_notes_provided=(request.coach_notes is not None),
+        changes=changes,
+    )
     
     # Audit log
     log_workout_edit(
@@ -1531,6 +1553,7 @@ async def update_workout(
             "target_distance_km": workout.target_distance_km,
             "target_duration_minutes": workout.target_duration_minutes,
             "coach_notes": workout.coach_notes,
+            "description": workout.description,
         },
     }
 
