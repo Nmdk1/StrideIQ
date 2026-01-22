@@ -300,11 +300,11 @@ export default function HomePage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
             {/* Row 1, Col 1: Today */}
             <div>
               {today.has_workout ? (
-                <Card className="bg-slate-800/50 border-slate-700/50">
+                <Card className="bg-slate-800/50 border-slate-700/50 h-full">
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
@@ -370,7 +370,7 @@ export default function HomePage() {
                   </CardContent>
                 </Card>
               ) : (
-                <Card className="bg-slate-800/50 border-slate-700/50">
+                <Card className="bg-slate-800/50 border-slate-700/50 h-full">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
@@ -428,7 +428,7 @@ export default function HomePage() {
 
             {/* Row 2, Col 1: This week */}
             <div>
-              <Card className="bg-slate-800/50 border-slate-700/50">
+              <Card className="bg-slate-800/50 border-slate-700/50 h-full">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -564,98 +564,104 @@ export default function HomePage() {
 
             {/* Row 2, Col 2: Quick access + Yesterday */}
             <div>
-              <Card className="bg-slate-800/50 border-slate-700/50">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm text-slate-300">Quick access</CardTitle>
-                  <CardDescription>Shortcuts + last activity</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button asChild variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800 justify-start">
-                      <Link href="/calendar">
-                        <Calendar className="w-4 h-4 mr-2" /> Calendar
-                      </Link>
-                    </Button>
-                    <Button asChild variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800 justify-start">
-                      <Link href="/coach">
-                        <MessageSquare className="w-4 h-4 mr-2" /> Coach
-                      </Link>
-                    </Button>
-                    <Button asChild variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800 justify-start">
-                      <Link href="/analytics">
-                        <BarChart3 className="w-4 h-4 mr-2" /> Analytics
-                      </Link>
-                    </Button>
-                    <Button asChild variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800 justify-start">
-                      <Link href="/personal-bests">
-                        <Target className="w-4 h-4 mr-2" /> PBs
-                      </Link>
-                    </Button>
-                  </div>
-
-                  <div className="h-px bg-slate-700/50 my-4" />
-
-                  <div className="flex items-center gap-2 mb-3">
-                    <Activity className="w-4 h-4 text-emerald-500" />
-                    <span className="text-sm font-semibold text-slate-300">Yesterday</span>
-                  </div>
-
-                  {yesterday.has_activity ? (
-                    <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3 min-w-0">
-                          <div className="p-2 rounded-lg bg-emerald-500/10 ring-1 ring-emerald-500/20">
-                            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-semibold text-white truncate">{yesterday.activity_name}</p>
-                            <p className="text-sm text-slate-400 mt-0.5">
-                              {yesterday.distance_mi && <span>{yesterday.distance_mi} mi</span>}
-                              {yesterday.distance_mi && yesterday.pace_per_mi && <span className="mx-1.5 text-slate-600">·</span>}
-                              {yesterday.pace_per_mi}
-                            </p>
-                            {yesterday.insight && <p className="text-sm text-slate-300 mt-2">{yesterday.insight}</p>}
-                          </div>
-                        </div>
-                        {yesterday.activity_id && (
-                          <Button asChild variant="ghost" size="icon" className="text-slate-400 hover:text-white">
-                            <Link href={`/activities/${yesterday.activity_id}`}>
-                              <ArrowRight className="w-4 h-4" />
-                            </Link>
-                          </Button>
-                        )}
-                      </div>
+              <div className="flex flex-col gap-6 h-full">
+                <Card className="bg-slate-800/50 border-slate-700/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-slate-300">Quick access</CardTitle>
+                    <CardDescription>Shortcuts</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button asChild variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800 justify-start">
+                        <Link href="/calendar">
+                          <Calendar className="w-4 h-4 mr-2" /> Calendar
+                        </Link>
+                      </Button>
+                      <Button asChild variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800 justify-start">
+                        <Link href="/coach">
+                          <MessageSquare className="w-4 h-4 mr-2" /> Coach
+                        </Link>
+                      </Button>
+                      <Button asChild variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800 justify-start">
+                        <Link href="/analytics">
+                          <BarChart3 className="w-4 h-4 mr-2" /> Analytics
+                        </Link>
+                      </Button>
+                      <Button asChild variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800 justify-start">
+                        <Link href="/personal-bests">
+                          <Target className="w-4 h-4 mr-2" /> PBs
+                        </Link>
+                      </Button>
                     </div>
-                  ) : (
-                    <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="p-2 rounded-lg bg-slate-700 ring-1 ring-slate-600">
-                            <Footprints className="w-4 h-4 text-slate-500" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-slate-400">No activity yesterday</p>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                              {hasLastActivity
-                                ? `Last ran ${yesterday.days_since_last === 1 ? 'the day before' : `${yesterday.days_since_last} days ago`}`
-                                : isStravaConnected
-                                  ? "Waiting for sync."
-                                  : "Connect Strava to see insights."}
-                            </p>
-                          </div>
-                        </div>
-                        {hasLastActivity && yesterday.last_activity_id && (
-                          <Button asChild variant="ghost" size="icon" className="text-slate-500 hover:text-white">
-                            <Link href={`/activities/${yesterday.last_activity_id}`}>
-                              <ArrowRight className="w-4 h-4" />
-                            </Link>
-                          </Button>
-                        )}
-                      </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-slate-800/50 border-slate-700/50 flex-1">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-emerald-500" />
+                      <CardTitle className="text-sm text-slate-300">Yesterday</CardTitle>
                     </div>
-                  )}
-                </CardContent>
-              </Card>
+                    <CardDescription>Most recent activity</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {yesterday.has_activity ? (
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="p-2 rounded-lg bg-emerald-500/10 ring-1 ring-emerald-500/20">
+                              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-white truncate">{yesterday.activity_name}</p>
+                              <p className="text-sm text-slate-400 mt-0.5">
+                                {yesterday.distance_mi && <span>{yesterday.distance_mi} mi</span>}
+                                {yesterday.distance_mi && yesterday.pace_per_mi && <span className="mx-1.5 text-slate-600">·</span>}
+                                {yesterday.pace_per_mi}
+                              </p>
+                              {yesterday.insight && <p className="text-sm text-slate-300 mt-2">{yesterday.insight}</p>}
+                            </div>
+                          </div>
+                          {yesterday.activity_id && (
+                            <Button asChild variant="ghost" size="icon" className="text-slate-400 hover:text-white">
+                              <Link href={`/activities/${yesterday.activity_id}`}>
+                                <ArrowRight className="w-4 h-4" />
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="p-2 rounded-lg bg-slate-700 ring-1 ring-slate-600">
+                              <Footprints className="w-4 h-4 text-slate-500" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-slate-400">No activity yesterday</p>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                {hasLastActivity
+                                  ? `Last ran ${yesterday.days_since_last === 1 ? 'the day before' : `${yesterday.days_since_last} days ago`}`
+                                  : isStravaConnected
+                                    ? "Waiting for sync."
+                                    : "Connect Strava to see insights."}
+                              </p>
+                            </div>
+                          </div>
+                          {hasLastActivity && yesterday.last_activity_id && (
+                            <Button asChild variant="ghost" size="icon" className="text-slate-500 hover:text-white">
+                              <Link href={`/activities/${yesterday.last_activity_id}`}>
+                                <ArrowRight className="w-4 h-4" />
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </div>
           

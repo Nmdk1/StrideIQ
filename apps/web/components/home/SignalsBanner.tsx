@@ -196,6 +196,8 @@ export function SignalsBanner() {
   if (data.signals.length === 0) {
     return null;
   }
+
+  const isSingleSignal = data.signals.length === 1;
   
   return (
     <section className="animate-in fade-in duration-500">
@@ -213,6 +215,7 @@ export function SignalsBanner() {
           <div 
             key={signal.id}
             style={{ animationDelay: `${index * 100}ms` }}
+            className={isSingleSignal ? 'md:col-span-2' : undefined}
           >
             <SignalCard signal={signal} />
           </div>
