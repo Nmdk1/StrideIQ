@@ -19,6 +19,7 @@ import { useUnits } from '@/lib/context/UnitsContext';
 import { API_CONFIG } from '@/lib/api/config';
 import RunContextAnalysis from '@/components/activities/RunContextAnalysis';
 import { SplitsChart } from '@/components/activities/SplitsChart';
+import { SplitsTable } from '@/components/activities/SplitsTable';
 import { PerceptionPrompt } from '@/components/activities/PerceptionPrompt';
 import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
 import { WhyThisRun } from '@/components/activities/WhyThisRun';
@@ -63,6 +64,13 @@ interface Split {
   max_heartrate: number | null;
   average_cadence: number | null;
   gap_seconds_per_mile: number | null;
+}
+
+function normalizeCadenceToSpm(raw: number | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null;
+  const v = Number(raw);
+  if (!isFinite(v) || v <= 0) return null;
+  return v < 120 ? v * 2 : v;
 }
 
 export default function ActivityDetailPage() {
@@ -112,7 +120,7 @@ export default function ActivityDetailPage() {
   // Show loading while auth is being determined
   if (authLoading || !isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 p-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100 p-8">
         <div className="max-w-4xl mx-auto">
           <div className="animate-pulse space-y-6">
             <div className="h-10 bg-slate-800 rounded w-2/3"></div>
@@ -125,7 +133,7 @@ export default function ActivityDetailPage() {
 
   if (activityLoading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 p-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100 p-8">
         <div className="max-w-4xl mx-auto">
           <div className="animate-pulse space-y-6">
             <div className="h-10 bg-slate-800 rounded w-2/3"></div>
@@ -143,7 +151,7 @@ export default function ActivityDetailPage() {
 
   if (activityError || !activity) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 p-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100 p-8">
         <div className="max-w-4xl mx-auto">
           <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-6">
             <h2 className="text-xl font-bold text-red-400 mb-2">Activity Not Found</h2>
@@ -194,7 +202,7 @@ export default function ActivityDetailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
+    <div className="min-h-screen bg-slate-900 text-slate-100">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -291,7 +299,11 @@ export default function ActivityDetailPage() {
           />
           <MetricCard
             label="Cadence"
-            value={activity.average_cadence?.toString() || '--'}
+            value={
+              normalizeCadenceToSpm(activity.average_cadence) !== null
+                ? Math.round(normalizeCadenceToSpm(activity.average_cadence) as number).toString()
+                : '--'
+            }
             unit="spm"
             secondary
           />
@@ -310,9 +322,15 @@ export default function ActivityDetailPage() {
 
         {/* Splits Chart */}
         {splits && splits.length > 0 && (
-          <div className="bg-slate-800/50 rounded-lg p-6 mb-8">
-            <h2 className="text-xl font-bold text-white mb-4">Splits</h2>
-            <SplitsChart splits={splits} />
+          <div className="bg-slate-800/50 rounded-lg p-6 mb-8 border border-slate-700/50">
+            <h2 className="text-xl font-bold text-white">Splits / Laps</h2>
+            <p className="text-sm text-slate-400 mt-1">
+              Real split detail (pace, HR, cadence, and GAP when available).
+            </p>
+            <div className="mt-5">
+              <SplitsChart splits={splits} className="mb-6" />
+              <SplitsTable splits={splits} />
+            </div>
           </div>
         )}
 

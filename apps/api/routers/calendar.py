@@ -27,6 +27,7 @@ from models import (
     Athlete, Activity, TrainingPlan, PlannedWorkout,
     CalendarNote, CoachChat, CalendarInsight, ActivityFeedback
 )
+from services.ai_coach import AICoach
 
 router = APIRouter(prefix="/calendar", tags=["Calendar"])
 
@@ -56,6 +57,7 @@ class CalendarNoteResponse(BaseModel):
 
 class PlannedWorkoutResponse(BaseModel):
     id: UUID
+    plan_id: UUID
     scheduled_date: date
     workout_type: str
     workout_subtype: Optional[str] = None
@@ -754,7 +756,7 @@ def delete_calendar_note(
 
 
 @router.post("/coach", response_model=CoachMessageResponse)
-def send_coach_message(
+async def send_coach_message(
     request: CoachMessageRequest,
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -798,21 +800,40 @@ def send_coach_message(
         "timestamp": datetime.utcnow().isoformat()
     })
     
-    # Build context for GPT
-    context = _build_coach_context(
+    # Snapshot context for audit/debug
+    context_snapshot = _build_coach_context(
         db=db,
         athlete=current_user,
         context_type=request.context_type,
         context_date=request.context_date,
         context_week=request.context_week
     )
-    
-    # Generate coach response (placeholder - integrate with actual GPT)
-    coach_response = _generate_coach_response(
-        message=request.message,
-        context=context,
-        history=messages[:-1]  # Previous messages
+
+    # Route to the real AI Coach (same engine as /v1/coach)
+    coach = AICoach(db)
+
+    augmented_message = request.message
+    if request.context_type == "day" and request.context_date:
+        augmented_message = (
+            f"{request.message}\n\n"
+            f"Context: calendar day {request.context_date.isoformat()}.\n"
+            f"Before answering, call get_calendar_day_context(day='{request.context_date.isoformat()}') "
+            f"and cite planned workout + activity IDs and values."
+        )
+    elif request.context_type == "week" and request.context_week:
+        augmented_message = (
+            f"{request.message}\n\n"
+            f"Context: plan week {request.context_week}.\n"
+            f"Before answering, call get_plan_week and cite specific planned workout dates/titles."
+        )
+
+    result = await coach.chat(
+        athlete_id=current_user.id,
+        message=augmented_message,
+        include_context=True,
     )
+
+    coach_response = result.get("response", "")
     
     # Add coach response
     messages.append({
@@ -823,6 +844,7 @@ def send_coach_message(
     
     # Update chat
     chat.messages = messages
+    chat.context_snapshot = context_snapshot
     chat.updated_at = datetime.utcnow()
     db.commit()
     
@@ -1013,7 +1035,7 @@ def get_calendar_week(
         for d in days
     )
     
-    quality_types = ['threshold', 'intervals', 'tempo', 'long_mp']
+    quality_types = ['threshold', 'intervals', 'tempo', 'long_mp', 'progression']
     quality_planned = sum(1 for w in planned_workouts if w.workout_type in quality_types)
     quality_completed = sum(
         1 for d in days

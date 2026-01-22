@@ -12,7 +12,7 @@ from uuid import UUID
 from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
-from models import Activity, Athlete
+from models import Activity, Athlete, ActivitySplit
 from schemas import ActivityResponse
 
 router = APIRouter(prefix="/v1/activities", tags=["activities"])
@@ -305,6 +305,32 @@ def get_activity(
                 pass
     
     # Build response
+    # Derive cadence from stored splits (Strava cadence isn't stored on Activity yet).
+    cadence_weighted_sum = 0.0
+    cadence_weight_s = 0.0
+    try:
+        split_rows = (
+            db.query(ActivitySplit.average_cadence, ActivitySplit.moving_time, ActivitySplit.elapsed_time)
+            .filter(ActivitySplit.activity_id == activity.id)
+            .all()
+        )
+        for avg_cadence, moving_time, elapsed_time in split_rows:
+            if avg_cadence is None:
+                continue
+            w = float(moving_time or elapsed_time or 0)
+            if w <= 0:
+                continue
+            cadence_weighted_sum += float(avg_cadence) * w
+            cadence_weight_s += w
+    except Exception:
+        # Best-effort only; do not break activity detail if cadence derivation fails.
+        cadence_weighted_sum = 0.0
+        cadence_weight_s = 0.0
+
+    derived_avg_cadence = None
+    if cadence_weight_s > 0:
+        derived_avg_cadence = cadence_weighted_sum / cadence_weight_s
+
     result = {
         "id": str(activity.id),
         "name": activity.name or "Run",
@@ -315,7 +341,7 @@ def get_activity(
         "moving_time_s": activity.duration_s,
         "average_hr": activity.avg_hr,
         "max_hr": activity.max_hr,
-        "average_cadence": None,  # Not stored currently
+        "average_cadence": derived_avg_cadence,
         "total_elevation_gain_m": float(activity.total_elevation_gain) if activity.total_elevation_gain else None,
         "average_temp_c": float(activity.temperature_f - 32) * 5/9 if activity.temperature_f else None,
         "strava_activity_id": activity.external_activity_id if activity.provider == "strava" else None,

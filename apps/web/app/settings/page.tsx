@@ -156,23 +156,23 @@ export default function SettingsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-purple-500" />
-                  Subscription
+                  Membership
                 </CardTitle>
-                <CardDescription>Manage your plan</CardDescription>
+                <CardDescription>Elite access and billing</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div>
                       <p className="font-medium flex items-center gap-2">
-                        {user?.subscription_tier || 'Free'} Plan
+                        {(user?.subscription_tier || 'Free')} Plan
                         <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Active</Badge>
                       </p>
-                      <p className="text-sm text-slate-400">Current subscription tier</p>
+                      <p className="text-sm text-slate-400">We’re moving to a single paid tier: Elite</p>
                     </div>
                   </div>
-                  <Button className="bg-orange-600 hover:bg-orange-500">
-                    Upgrade <ArrowUpRight className="w-4 h-4 ml-1" />
+                  <Button className="bg-slate-700 hover:bg-slate-600" disabled>
+                    Membership coming soon <ArrowUpRight className="w-4 h-4 ml-1" />
                   </Button>
                 </div>
               </CardContent>

@@ -38,8 +38,9 @@ class TestNormalizeEffortName:
     def test_unmapped_efforts_return_none(self):
         """Unmapped efforts return None."""
         assert normalize_effort_name("1/2 mile") is None
-        assert normalize_effort_name("1k") is None
-        assert normalize_effort_name("10 mile") is None
+        # Now tracked as standard distances
+        assert normalize_effort_name("1k") == "1k"
+        assert normalize_effort_name("10 mile") == "10_mile"
     
     def test_empty_string_returns_none(self):
         """Empty string returns None."""

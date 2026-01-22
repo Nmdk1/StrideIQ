@@ -15,7 +15,7 @@ Endpoints:
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from typing import Optional, List
+from typing import Optional, List, Literal
 from uuid import UUID
 from datetime import date, timedelta
 from pydantic import BaseModel, ConfigDict
@@ -27,7 +27,6 @@ from services.insight_aggregator import (
     InsightAggregator,
     get_active_insights,
     InsightType,
-    PREMIUM_INSIGHT_TYPES,
 )
 
 router = APIRouter(prefix="/v1/insights", tags=["Insights"])
@@ -55,9 +54,40 @@ class InsightResponse(BaseModel):
 class ActiveInsightsResponse(BaseModel):
     """Response with active insights"""
     insights: List[InsightResponse]
-    is_premium: bool
+    is_elite: bool
     total_available: int
-    premium_locked: int  # How many insights are locked behind premium
+
+
+class FeedEvidenceItem(BaseModel):
+    label: str
+    value: str
+
+
+class FeedActionItem(BaseModel):
+    label: str
+    href: str
+
+
+class FeedConfidence(BaseModel):
+    label: str
+    score: float
+    details: Optional[str] = None
+
+
+class InsightFeedCard(BaseModel):
+    key: str
+    type: Literal["trend", "load_response", "plan", "readiness", "personal_bests"]
+    priority: int
+    title: str
+    summary: str
+    confidence: FeedConfidence
+    evidence: List[FeedEvidenceItem] = []
+    actions: List[FeedActionItem] = []
+
+
+class InsightFeedResponse(BaseModel):
+    generated_at: str
+    cards: List[InsightFeedCard]
 
 
 class KPIResponse(BaseModel):
@@ -132,36 +162,22 @@ def get_insights(
     Get active insights for the current athlete.
     
     Returns personalized, ranked insights generated from recent activity.
-    Premium users see all insight types; free users see a subset.
+    Elite members see the full product. (We intentionally avoid "premium" tier fragmentation.)
     """
-    is_premium = current_user.subscription_tier in ("pro", "premium", "elite")
+    # Treat all paid tiers as "elite access" (until we migrate old tier labels).
+    is_elite = getattr(current_user, "has_active_subscription", False) or current_user.subscription_tier == "elite"
     
     # Get persisted insights
     insights = get_active_insights(
         db=db,
         athlete_id=current_user.id,
-        limit=limit if is_premium else limit + 5,  # Fetch extra to count locked
+        limit=limit,
         include_dismissed=include_dismissed,
     )
-    
-    # Count premium-locked insights for free users
-    premium_locked = 0
-    filtered_insights = []
-    
-    for insight in insights:
-        try:
-            insight_type = InsightType(insight.insight_type)
-            if insight_type in PREMIUM_INSIGHT_TYPES and not is_premium:
-                premium_locked += 1
-            else:
-                filtered_insights.append(insight)
-        except ValueError:
-            # Unknown insight type, include it
-            filtered_insights.append(insight)
-    
+
     # Build response
     response_insights = []
-    for i in filtered_insights[:limit]:
+    for i in insights[:limit]:
         response_insights.append(InsightResponse(
             id=i.id,
             insight_type=i.insight_type,
@@ -176,10 +192,25 @@ def get_insights(
     
     return ActiveInsightsResponse(
         insights=response_insights,
-        is_premium=is_premium,
+        is_elite=is_elite,
         total_available=len(insights),
-        premium_locked=premium_locked,
     )
+
+
+@router.get("/feed", response_model=InsightFeedResponse)
+def get_insight_feed(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    max_cards: int = Query(5, ge=3, le=10),
+):
+    """
+    Ranked insight feed with evidence + actions.
+    Deterministic (no LLM calls); built from existing engines.
+    """
+    from services.insight_feed import build_insight_feed_cards
+
+    payload = build_insight_feed_cards(db=db, athlete=current_user, max_cards=max_cards)
+    return payload
 
 
 @router.get("/build-status", response_model=BuildStatusResponse)
@@ -250,35 +281,46 @@ def get_athlete_intelligence(
     Get athlete intelligence bank.
     
     Returns banked learnings: what works, what doesn't, patterns, injury history.
-    This is premium-only as it requires extensive analysis.
+    This is part of Elite.
     """
-    is_premium = current_user.subscription_tier in ("pro", "premium", "elite")
+    is_elite = getattr(current_user, "has_active_subscription", False) or current_user.subscription_tier == "elite"
     
-    if not is_premium:
+    if not is_elite:
         raise HTTPException(
             status_code=403,
-            detail="Athlete Intelligence is a premium feature. Upgrade to access your personalized training insights."
+            detail="Athlete Intelligence requires Elite tier."
         )
     
     aggregator = InsightAggregator(db, current_user)
     intelligence = aggregator.get_athlete_intelligence()
-    
+
+    def _to_item(x) -> IntelligenceItemResponse:
+        # Backward/forward compatible: handle both strings and dicts from the service layer.
+        if isinstance(x, dict):
+            return IntelligenceItemResponse(
+                text=str(x.get("text") or ""),
+                source=str(x.get("source") or "n1"),
+                confidence=x.get("confidence"),
+            )
+        return IntelligenceItemResponse(text=str(x), source="n1")
+
     return AthleteIntelligenceResponse(
         what_works=[
-            IntelligenceItemResponse(text=item, source="n1")
-            for item in intelligence.what_works
+            _to_item(item) for item in (intelligence.what_works or [])
         ],
         what_doesnt=[
-            IntelligenceItemResponse(text=item, source="n1")
-            for item in intelligence.what_doesnt
+            _to_item(item) for item in (intelligence.what_doesnt or [])
         ],
         patterns=[
-            PatternResponse(name=k, description=str(v))
-            for k, v in intelligence.patterns.items()
+            PatternResponse(
+                name=str(k),
+                description=str(v),
+                data=v if isinstance(v, dict) else None,
+            )
+            for k, v in (intelligence.patterns or {}).items()
         ],
         injury_patterns=[
-            IntelligenceItemResponse(text=item, source="n1")
-            for item in intelligence.injury_patterns
+            _to_item(item) for item in (intelligence.injury_patterns or [])
         ],
         career_prs=intelligence.career_prs,
     )

@@ -10,6 +10,7 @@
 import React, { useState } from 'react';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { planService, type GeneratedPlan } from '@/lib/api/services/plans';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const DISTANCES = [
   { value: '5k', label: '5K' },
@@ -72,7 +73,7 @@ export default function PlanPreviewPage() {
   };
   
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
+    <div className="min-h-screen bg-slate-900 text-slate-100">
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
@@ -88,7 +89,7 @@ export default function PlanPreviewPage() {
               <select
                 value={distance}
                 onChange={(e) => setDistance(e.target.value)}
-                className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white"
               >
                 {DISTANCES.map(d => (
                   <option key={d.value} value={d.value}>{d.label}</option>
@@ -101,7 +102,7 @@ export default function PlanPreviewPage() {
               <select
                 value={tier}
                 onChange={(e) => setTier(e.target.value)}
-                className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white"
               >
                 {TIERS.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -114,7 +115,7 @@ export default function PlanPreviewPage() {
               <select
                 value={duration}
                 onChange={(e) => setDuration(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white"
               >
                 <option value={8}>8 weeks</option>
                 <option value={12}>12 weeks</option>
@@ -128,7 +129,7 @@ export default function PlanPreviewPage() {
               <select
                 value={days}
                 onChange={(e) => setDays(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white"
               >
                 <option value={5}>5 days</option>
                 <option value={6}>6 days</option>
@@ -166,19 +167,19 @@ export default function PlanPreviewPage() {
             <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6">
               <h2 className="text-xl font-bold text-white mb-4">Plan Summary</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-[#0a0a0f] rounded-lg p-4">
+                <div className="bg-slate-900 rounded-lg p-4">
                   <div className="text-3xl font-bold text-white">{preview.duration_weeks}</div>
                   <div className="text-sm text-slate-400">Weeks</div>
                 </div>
-                <div className="bg-[#0a0a0f] rounded-lg p-4">
+                <div className="bg-slate-900 rounded-lg p-4">
                   <div className="text-3xl font-bold text-emerald-400">{preview.total_miles.toFixed(0)}</div>
                   <div className="text-sm text-slate-400">Total Miles</div>
                 </div>
-                <div className="bg-[#0a0a0f] rounded-lg p-4">
+                <div className="bg-slate-900 rounded-lg p-4">
                   <div className="text-3xl font-bold text-blue-400">{preview.peak_volume.toFixed(0)}</div>
                   <div className="text-sm text-slate-400">Peak Miles/Week</div>
                 </div>
-                <div className="bg-[#0a0a0f] rounded-lg p-4">
+                <div className="bg-slate-900 rounded-lg p-4">
                   <div className="text-3xl font-bold text-orange-400">{preview.total_quality_sessions}</div>
                   <div className="text-sm text-slate-400">Quality Sessions</div>
                 </div>
@@ -190,7 +191,7 @@ export default function PlanPreviewPage() {
               <h2 className="text-xl font-bold text-white mb-4">Training Phases</h2>
               <div className="space-y-3">
                 {preview.phases.map((phase, i) => (
-                  <div key={i} className="flex items-center gap-4 p-4 bg-[#0a0a0f] rounded-lg">
+                  <div key={i} className="flex items-center gap-4 p-4 bg-slate-900 rounded-lg">
                     <div className="w-20 text-sm text-slate-500">
                       Wk {phase.weeks[0]}-{phase.weeks[phase.weeks.length - 1]}
                     </div>
@@ -238,7 +239,7 @@ export default function PlanPreviewPage() {
                   
                   return (
                     <div key={week} className="bg-slate-800 border border-slate-700/50 rounded-xl overflow-hidden">
-                      <div className="p-4 bg-[#0a0a0f] border-b border-slate-700/50 flex items-center justify-between">
+                      <div className="p-4 bg-slate-900 border-b border-slate-700/50 flex items-center justify-between">
                         <div>
                           <span className="text-white font-bold">Week {week}</span>
                           <span className="text-slate-500 mx-2">•</span>
@@ -250,11 +251,9 @@ export default function PlanPreviewPage() {
                         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, dayIndex) => {
                           const workout = weekWorkouts.find(w => w.day === dayIndex);
                           return (
-                            <div 
-                              key={day}
-                              className="p-2 min-h-[80px]"
-                              title={workout?.description}
-                            >
+                            <Tooltip key={day}>
+                              <TooltipTrigger asChild>
+                                <div className="p-2 min-h-[80px]">
                               <div className="text-xs text-slate-500 mb-1">{day}</div>
                               {workout && (
                                 <div className={`rounded p-1.5 text-xs ${getWorkoutColor(workout.workout_type)}`}>
@@ -266,7 +265,14 @@ export default function PlanPreviewPage() {
                                   )}
                                 </div>
                               )}
-                            </div>
+                                </div>
+                              </TooltipTrigger>
+                              {workout?.description ? (
+                                <TooltipContent side="top">
+                                  {workout.description}
+                                </TooltipContent>
+                              ) : null}
+                            </Tooltip>
                           );
                         })}
                       </div>
@@ -291,7 +297,7 @@ export default function PlanPreviewPage() {
                       {phase.weeks.slice(0, 2).map(week => {
                         const weekWorkouts = preview.workouts.filter(w => w.week === week);
                         return (
-                          <div key={week} className="bg-[#0a0a0f] rounded-lg p-3">
+                          <div key={week} className="bg-slate-900 rounded-lg p-3">
                             <div className="text-sm text-slate-400 mb-2">Week {week}</div>
                             <div className="flex flex-wrap gap-2">
                               {weekWorkouts.map((w, i) => (

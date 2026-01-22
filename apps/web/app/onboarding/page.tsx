@@ -98,7 +98,7 @@ export default function OnboardingPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
         <div className="max-w-2xl mx-auto px-4">
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-2">Welcome</h1>
@@ -196,7 +196,7 @@ function InitialStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: 
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
             placeholder="Your name"
           />
         </div>
@@ -251,7 +251,7 @@ function BasicProfileStage({
             type="date"
             value={formData.birthdate}
             onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
-            className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
           />
         </div>
 
@@ -260,7 +260,7 @@ function BasicProfileStage({
           <select
             value={formData.sex}
             onChange={(e) => setFormData({ ...formData, sex: e.target.value })}
-            className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
           >
             <option value="">Select...</option>
             <option value="M">Male</option>
@@ -275,7 +275,7 @@ function BasicProfileStage({
             step="0.1"
             value={formData.height_cm}
             onChange={(e) => setFormData({ ...formData, height_cm: parseFloat(e.target.value) || undefined })}
-            className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
             placeholder="e.g., 175.0"
           />
           <p className="text-xs text-slate-500 mt-1">Required for BMI calculation</p>
@@ -334,7 +334,7 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
               type="checkbox"
               checked={goals.includes(goal)}
               onChange={() => toggleGoal(goal)}
-              className="w-4 h-4 text-blue-600 bg-[#0a0a0f] border-slate-700/50 rounded"
+              className="w-4 h-4 text-blue-600 bg-slate-900 border-slate-700/50 rounded"
             />
             <span className="ml-3 text-slate-300">{goal}</span>
           </label>
@@ -408,7 +408,7 @@ function ConnectStravaStage({ onNext, onSkip }: { onNext: () => void; onSkip: ()
       </p>
       
       <div className="space-y-4 mb-6">
-        <div className="bg-[#0a0a0f] rounded p-4">
+        <div className="bg-slate-900 rounded p-4">
           <div className="flex items-center gap-3 mb-3">
             <svg className="w-8 h-8 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
               <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/>

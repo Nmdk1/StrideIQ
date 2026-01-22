@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     STRAVA_CLIENT_SECRET: Optional[str] = Field(default=None)
     STRAVA_REDIRECT_URI: Optional[str] = Field(default=None)
     STRAVA_WEBHOOK_VERIFY_TOKEN: Optional[str] = Field(default=None)
+
+    # Strava Ingestion Throttling (viral-safe scaling)
+    # Caps concurrent Strava *detail* fetches across all workers.
+    STRAVA_DETAIL_FETCH_CONCURRENCY: int = Field(default=4)
+    # How long a worker will wait to acquire a detail-fetch slot before failing the attempt.
+    STRAVA_DETAIL_FETCH_ACQUIRE_TIMEOUT_S: int = Field(default=60)
+    # Poll interval while waiting for a slot.
+    STRAVA_DETAIL_FETCH_ACQUIRE_POLL_S: float = Field(default=1.0)
     
     # Token Encryption
     TOKEN_ENCRYPTION_KEY: Optional[str] = Field(default=None)

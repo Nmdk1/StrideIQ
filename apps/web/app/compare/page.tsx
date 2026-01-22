@@ -38,6 +38,7 @@ import {
   Target,
   Filter
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Quick score badge component
 function QuickScoreBadge({ activityId }: { activityId: string }) {
@@ -62,12 +63,16 @@ function QuickScoreBadge({ activityId }: { activityId: string }) {
   const config = getScoreConfig(quickScore.score);
   
   return (
-    <div 
-      className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${config.bg} ${config.text} ring-2 ${config.ring} shadow-lg`} 
-      title={`Performance Score: ${Math.round(quickScore.score)}`}
-    >
-      {Math.round(quickScore.score)}
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${config.bg} ${config.text} ring-2 ${config.ring} shadow-lg`}>
+          {Math.round(quickScore.score)}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        Performance Score: {Math.round(quickScore.score)}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

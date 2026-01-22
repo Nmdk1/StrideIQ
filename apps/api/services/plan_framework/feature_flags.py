@@ -44,7 +44,7 @@ class FeatureFlagService:
     Features can be gated by:
     - Global enable/disable
     - Subscription requirement
-    - Tier requirement (pro, elite, etc.)
+    - Tier requirement (legacy tiers are mapped to Elite access)
     - One-time payment
     - Rollout percentage
     - Beta tester list
@@ -123,7 +123,7 @@ class FeatureFlagService:
                 return AccessResult(
                     allowed=False,
                     reason="subscription_required",
-                    upgrade_path="/subscribe"
+                    upgrade_path="/settings"
                 )
         
         # Check tier requirement
@@ -134,8 +134,8 @@ class FeatureFlagService:
                 return AccessResult(
                     allowed=False,
                     reason="tier_upgrade_required",
-                    required_tier=required_tier,
-                    upgrade_path=f"/upgrade/{required_tier}"
+                    required_tier="elite",
+                    upgrade_path="/settings"
                 )
         
         # Check payment requirement
@@ -290,15 +290,24 @@ class FeatureFlagService:
     
     def _tier_satisfies(self, athlete_tier: str, required_tier: str) -> bool:
         """Check if athlete's tier satisfies requirement."""
+        # Normalize legacy paid tiers to Elite access while we converge on a single paid tier.
+        normalized_athlete_tier = (athlete_tier or "free").lower()
+        normalized_required_tier = (required_tier or "free").lower()
+
+        legacy_paid = {"pro", "premium", "guided", "subscription"}
+        if normalized_athlete_tier in legacy_paid:
+            normalized_athlete_tier = "elite"
+        if normalized_required_tier in legacy_paid:
+            normalized_required_tier = "elite"
+
         tier_hierarchy = {
             "free": 0,
             "basic": 1,
-            "pro": 2,
-            "elite": 3,
+            "elite": 2,
         }
         
-        athlete_level = tier_hierarchy.get(athlete_tier, 0)
-        required_level = tier_hierarchy.get(required_tier, 0)
+        athlete_level = tier_hierarchy.get(normalized_athlete_tier, 0)
+        required_level = tier_hierarchy.get(normalized_required_tier, 0)
         
         return athlete_level >= required_level
     

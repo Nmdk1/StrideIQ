@@ -44,7 +44,7 @@ export default function FreeTools() {
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
           {/* Training Pace Calculator - Primary */}
-          <div className="bg-[#0a0a0f] rounded-lg p-8 shadow-xl border border-slate-700/50">
+          <div className="bg-slate-900 rounded-lg p-8 shadow-xl border border-slate-700/50">
             <h3 className="text-2xl font-bold mb-4 text-orange-500">Training Pace Calculator</h3>
             <p className="text-slate-400 mb-6">
               Input your recent race time and distance. Get your complete training pace table (E/M/T/I/R) in min/mile and min/km.
@@ -53,7 +53,7 @@ export default function FreeTools() {
           </div>
 
           {/* WMA Age-Grading Calculator - Mission-critical */}
-          <div className="bg-[#0a0a0f] rounded-lg p-8 shadow-xl border border-slate-700/50">
+          <div className="bg-slate-900 rounded-lg p-8 shadow-xl border border-slate-700/50">
             <h3 className="text-2xl font-bold mb-4 text-orange-500">WMA Age-Grading Calculator</h3>
             <p className="text-slate-400 mb-6">
               The same standard for every athlete — no excuses, no decline. See how you measure against world-class performance at any age.
@@ -62,7 +62,7 @@ export default function FreeTools() {
           </div>
 
           {/* Heat-Adjusted Training Pace Calculator */}
-          <div className="bg-[#0a0a0f] rounded-lg p-8 shadow-xl border border-slate-700/50">
+          <div className="bg-slate-900 rounded-lg p-8 shadow-xl border border-slate-700/50">
             <h3 className="text-2xl font-bold mb-4 text-orange-500">Heat-Adjusted Pace Calculator</h3>
             <p className="text-slate-400 mb-6">
               Adjust your training paces for heat and humidity. Maintain true physiological effort in hot conditions. Essential for summer training and warm-weather racing.

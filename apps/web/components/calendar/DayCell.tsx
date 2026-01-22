@@ -16,6 +16,7 @@ import React from 'react';
 import { useUnits } from '@/lib/context/UnitsContext';
 import type { CalendarDay } from '@/lib/api/services/calendar';
 import { DayBadge, type DayBadgeData } from './DayBadge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Simplified workout type display - categories, not individual types
 const WORKOUT_CATEGORIES: Record<string, { label: string; color: string }> = {
@@ -246,21 +247,25 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
             </div>
             {/* Show pace hint - extract pace value from coach_notes */}
             {day.planned_workout.coach_notes && !isCompleted && (
-              <div 
-                className="text-[10px] text-slate-500 truncate mt-0.5" 
-                title={day.planned_workout.coach_notes}
-              >
-                {(() => {
-                  // Extract first pace (e.g., "easy: 8:04/mi" from "Paces: easy: 8:04/mi | ...")
-                  const notes = day.planned_workout.coach_notes || '';
-                  const paceMatch = notes.match(/Paces:\s*(\w+):\s*([\d:]+\/mi)/);
-                  if (paceMatch) {
-                    return `${paceMatch[1]}: ${paceMatch[2]}`;
-                  }
-                  // Fallback: first 30 chars
-                  return notes.substring(0, 30);
-                })()}
-              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                    {(() => {
+                      // Extract first pace (e.g., "easy: 8:04/mi" from "Paces: easy: 8:04/mi | ...")
+                      const notes = day.planned_workout.coach_notes || '';
+                      const paceMatch = notes.match(/Paces:\s*(\w+):\s*([\d:]+\/mi)/);
+                      if (paceMatch) {
+                        return `${paceMatch[1]}: ${paceMatch[2]}`;
+                      }
+                      // Fallback: first 30 chars
+                      return notes.substring(0, 30);
+                    })()}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {day.planned_workout.coach_notes}
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
         )}

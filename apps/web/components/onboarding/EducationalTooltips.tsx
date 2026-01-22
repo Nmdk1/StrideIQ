@@ -112,7 +112,7 @@ function Tooltip({ step, onNext, onSkip, currentStep, totalSteps }: TooltipProps
       
       {/* Tooltip */}
       <div
-        className="fixed z-[9999] w-80 bg-slate-800 border border-slate-700/50 rounded-lg shadow-xl p-4 animate-fade-in"
+        className="fixed z-[9999] w-80 bg-slate-800 border border-slate-700/50 rounded-lg shadow-lg p-4 animate-fade-in"
         style={{ top: position.top, left: position.left }}
       >
         <div className="flex items-start justify-between mb-2">

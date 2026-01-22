@@ -29,6 +29,7 @@ celery_app.conf.update(
 # Import tasks to register them
 from . import strava_tasks  # noqa: E402
 from . import digest_tasks  # noqa: E402
+from . import best_effort_tasks  # noqa: E402
 try:
     from . import garmin_tasks  # noqa: E402
 except ImportError:

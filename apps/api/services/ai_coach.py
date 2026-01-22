@@ -148,6 +148,23 @@ When providing insights:
             {
                 "type": "function",
                 "function": {
+                    "name": "get_calendar_day_context",
+                    "description": "Get plan + actual context for a specific calendar day (planned workout + activities with IDs).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "day": {
+                                "type": "string",
+                                "description": "Calendar date in YYYY-MM-DD.",
+                            }
+                        },
+                        "required": ["day"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "get_efficiency_trend",
                     "description": "Get efficiency trend data over time (EF time series + summary).",
                     "parameters": {
@@ -822,6 +839,8 @@ When providing insights:
 
                             if tool_name == "get_recent_runs":
                                 output = coach_tools.get_recent_runs(self.db, athlete_id, **args)
+                            elif tool_name == "get_calendar_day_context":
+                                output = coach_tools.get_calendar_day_context(self.db, athlete_id, **args)
                             elif tool_name == "get_efficiency_trend":
                                 output = coach_tools.get_efficiency_trend(self.db, athlete_id, **args)
                             elif tool_name == "get_plan_week":

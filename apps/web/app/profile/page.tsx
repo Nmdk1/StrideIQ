@@ -87,7 +87,7 @@ export default function ProfilePage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
         <div className="max-w-4xl mx-auto px-4">
           <h1 className="text-3xl font-bold mb-8">Profile</h1>
 
@@ -113,7 +113,7 @@ export default function ProfilePage() {
                     type="text"
                     value={formData.display_name}
                     onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                   />
                 </div>
 
@@ -123,7 +123,7 @@ export default function ProfilePage() {
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                   />
                 </div>
 
@@ -133,7 +133,7 @@ export default function ProfilePage() {
                     type="date"
                     value={formData.birthdate}
                     onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                   />
                 </div>
 
@@ -142,7 +142,7 @@ export default function ProfilePage() {
                   <select
                     value={formData.sex}
                     onChange={(e) => setFormData({ ...formData, sex: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                   >
                     <option value="">Select...</option>
                     <option value="M">Male</option>
@@ -157,7 +157,7 @@ export default function ProfilePage() {
                     step="0.1"
                     value={formData.height_cm}
                     onChange={(e) => setFormData({ ...formData, height_cm: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                     placeholder="e.g., 175.0"
                   />
                 </div>

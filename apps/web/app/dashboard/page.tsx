@@ -18,7 +18,7 @@ export default function DashboardRedirect() {
   }, [router]);
   
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f]">
+    <div className="min-h-screen flex items-center justify-center bg-slate-900">
       <p className="text-slate-400">Redirecting...</p>
     </div>
   );

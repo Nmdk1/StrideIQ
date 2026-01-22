@@ -1,6 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { insightsService } from '@/lib/api/services/insights';
 
+export const useInsightFeed = (maxCards = 5) => {
+  return useQuery({
+    queryKey: ['insights', 'feed', maxCards],
+    queryFn: () => insightsService.getInsightFeed(maxCards),
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
 export const useActiveInsights = (limit = 10) => {
   return useQuery({
     queryKey: ['insights', 'active', limit],
@@ -17,11 +25,12 @@ export const useBuildStatus = () => {
   });
 };
 
-export const useAthleteIntelligence = () => {
+export const useAthleteIntelligence = (enabled = true) => {
   return useQuery({
     queryKey: ['insights', 'intelligence'],
     queryFn: () => insightsService.getAthleteIntelligence(),
     staleTime: 10 * 60 * 1000, // 10 minutes - this data changes slowly
+    enabled,
   });
 };
 

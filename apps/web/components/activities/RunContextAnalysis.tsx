@@ -253,6 +253,7 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
           title="Efficiency Trend"
           trend={analysis.efficiency_trend}
           goodDirection="improving"
+          dataPointLabel="runs"
         />
         
         {/* Volume Trend */}
@@ -260,6 +261,7 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
           title="Volume Trend"
           trend={analysis.volume_trend}
           goodDirection="stable"
+          dataPointLabel="weeks"
         />
       </div>
 
@@ -353,12 +355,24 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
 function TrendCard({ 
   title, 
   trend, 
-  goodDirection 
+  goodDirection,
+  dataPointLabel,
 }: { 
   title: string; 
   trend: RunAnalysisData['efficiency_trend'];
   goodDirection: 'improving' | 'stable';
+  dataPointLabel: string;
 }) {
+  const confidenceLabel = () => {
+    // Backend returns a 0-1 scalar; map to human-friendly labels.
+    const c = trend.confidence ?? 0;
+    if (trend.direction === 'insufficient_data') return 'insufficient';
+    if (c >= 0.8) return 'high';
+    if (c >= 0.5) return 'moderate';
+    if (c >= 0.3) return 'low';
+    return 'insufficient';
+  };
+
   const getDirectionColor = () => {
     if (trend.direction === 'insufficient_data') return 'text-slate-500';
     if (trend.direction === 'stable') return 'text-slate-400';
@@ -386,8 +400,14 @@ function TrendCard({
             Significant
           </span>
         )}
+        <span className="text-xs text-slate-300 bg-slate-700/40 px-2 py-0.5 rounded">
+          {confidenceLabel()} confidence
+        </span>
       </div>
-      {trend.magnitude !== null && trend.direction !== 'insufficient_data' && (
+      <p className="text-slate-500 text-sm mt-1">
+        Based on {trend.data_points} {dataPointLabel} in the last {trend.period_days} days.
+      </p>
+      {trend.magnitude !== null && trend.direction !== 'insufficient_data' && trend.is_significant && (
         <p className="text-slate-500 text-sm mt-1">
           {Math.abs(trend.magnitude).toFixed(1)}% over {trend.period_days} days
         </p>

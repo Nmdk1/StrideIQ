@@ -12,6 +12,7 @@ Endpoints for:
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from uuid import UUID
@@ -707,6 +708,7 @@ class SwapDaysRequest(BaseModel):
     """Request to swap two workouts."""
     workout_id_1: UUID = Field(..., description="First workout ID")
     workout_id_2: UUID = Field(..., description="Second workout ID")
+    reason: Optional[str] = Field(None, description="Optional reason for swap")
 
 
 class AdjustLoadRequest(BaseModel):
@@ -724,6 +726,7 @@ class MoveWorkoutRequest(BaseModel):
 class UpdateWorkoutRequest(BaseModel):
     """Request to update workout details."""
     workout_type: Optional[str] = Field(None, max_length=50, description="New workout type")
+    workout_subtype: Optional[str] = Field(None, max_length=50, description="Optional workout subtype (e.g., easy_to_mp)")
     title: Optional[str] = Field(None, max_length=200, description="New title")
     description: Optional[str] = Field(None, max_length=2000, description="New description")
     target_distance_km: Optional[float] = Field(None, ge=0, le=200, description="Target distance in km")
@@ -1083,9 +1086,30 @@ async def swap_workout_days(
     if workout2.completed:
         raise HTTPException(status_code=400, detail="Cannot swap a completed workout")
     
-    # Swap the scheduled dates and day_of_week
-    workout1.scheduled_date, workout2.scheduled_date = workout2.scheduled_date, workout1.scheduled_date
-    workout1.day_of_week, workout2.day_of_week = workout2.day_of_week, workout1.day_of_week
+    # Swap the scheduled dates and day_of_week.
+    #
+    # IMPORTANT: planned_workout has a unique constraint on (plan_id, scheduled_date).
+    # A naive swap can violate the constraint during flush (row-by-row UPDATE).
+    # Use a temporary date to keep the constraint satisfied throughout the transaction.
+    if not workout1.scheduled_date or not workout2.scheduled_date:
+        raise HTTPException(status_code=400, detail="Cannot swap workouts without scheduled dates")
+
+    original_date_1 = workout1.scheduled_date
+    original_date_2 = workout2.scheduled_date
+    original_dow_1 = workout1.day_of_week
+    original_dow_2 = workout2.day_of_week
+
+    temp_date = date(1900, 1, 1)
+    workout1.scheduled_date = temp_date
+    workout1.day_of_week = 0
+    db.flush()
+
+    workout2.scheduled_date = original_date_1
+    workout2.day_of_week = original_dow_1
+    db.flush()
+    workout1.scheduled_date = original_date_2
+    workout1.day_of_week = original_dow_2
+    db.flush()
 
     # Audit log
     log_workout_swap(
@@ -1097,7 +1121,13 @@ async def swap_workout_days(
         reason=request.reason,
     )
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        # Keep user-facing message clean; log details for diagnosis.
+        print(f"ERROR: swap-days IntegrityError: {e}")
+        raise HTTPException(status_code=400, detail="Swap failed due to a schedule conflict. Try a different swap.")
 
     return {
         "success": True,
@@ -1159,7 +1189,7 @@ async def adjust_week_load(
     
     if request.adjustment == "reduce_light":
         # Find one quality session and convert to easy
-        quality_types = ["threshold", "tempo", "intervals", "vo2max", "speed", "long_mp"]
+        quality_types = ["threshold", "tempo", "intervals", "vo2max", "speed", "long_mp", "progression"]
         converted = False
         
         for workout in week_workouts:
@@ -1434,17 +1464,35 @@ async def update_workout(
     
     changes = []
     
+    def _normalize_text(v: Optional[str]) -> Optional[str]:
+        """
+        Fix common mojibake sequences seen when UTF-8 is mis-decoded.
+
+        Example: 'easyâ†’MP' should be 'easy→MP'
+        """
+        if v is None:
+            return None
+        return (
+            v.replace("â†’", "→")
+            .replace("â†’", "→")
+        )
+
     if request.workout_type is not None:
         old_type = workout.workout_type
         workout.workout_type = request.workout_type
         changes.append(f"type: {old_type} → {request.workout_type}")
     
+    if request.workout_subtype is not None:
+        old_sub = workout.workout_subtype
+        workout.workout_subtype = request.workout_subtype
+        changes.append(f"subtype: {old_sub} → {request.workout_subtype}")
+
     if request.title is not None:
-        workout.title = request.title
+        workout.title = _normalize_text(request.title)
         changes.append(f"title updated")
     
     if request.description is not None:
-        workout.description = request.description
+        workout.description = _normalize_text(request.description)
         changes.append(f"description updated")
     
     if request.target_distance_km is not None:
@@ -1457,7 +1505,7 @@ async def update_workout(
         changes.append(f"duration updated")
     
     if request.coach_notes is not None:
-        workout.coach_notes = request.coach_notes
+        workout.coach_notes = _normalize_text(request.coach_notes)
         changes.append(f"notes updated")
     
     # Audit log
@@ -1671,6 +1719,7 @@ async def get_workout_types(
             {"value": "long", "label": "Long Run", "description": "Extended aerobic run"},
             {"value": "long_mp", "label": "Long Run w/ MP", "description": "Long run with marathon pace segments"},
             {"value": "medium_long", "label": "Medium-Long Run", "description": "70-75% of long run distance"},
+            {"value": "progression", "label": "Progression Run", "description": "Starts easy and builds (e.g., easy → MP)"},
             {"value": "threshold", "label": "Threshold/Tempo", "description": "Comfortably hard, lactate threshold"},
             {"value": "tempo", "label": "Tempo Run", "description": "Sustained threshold effort"},
             {"value": "intervals", "label": "Intervals", "description": "High intensity repeats"},

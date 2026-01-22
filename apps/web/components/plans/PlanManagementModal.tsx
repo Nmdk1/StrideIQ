@@ -401,7 +401,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div 
-          className="bg-[#0a0a0f] border border-slate-700/50 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+          className="bg-slate-900 border border-slate-700/50 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}

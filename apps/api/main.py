@@ -7,7 +7,7 @@ routers, and configuration for production use.
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, plan_generation, home, plan_export
+from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, diagnostics, plan_generation, home, plan_export
 try:
     from routers import garmin
     GARMIN_AVAILABLE = True
@@ -80,9 +80,11 @@ app = FastAPI(
 # Development: DEBUG=True allows all origins
 if settings.DEBUG:
     allowed_origins = ["*"]
+    allow_origin_regex = None
 elif settings.CORS_ORIGINS:
     # Production - use configured origins
     allowed_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
+    allow_origin_regex = None
 else:
     # Fallback for local development
     allowed_origins = [
@@ -92,9 +94,15 @@ else:
         "http://127.0.0.1:3001",
         "http://10.0.0.137:3000",  # Home network access
     ]
+    # When running in non-prod, allow other LAN origins without hardcoding the IP.
+    # (e.g. your dad hits http://<your-ip>:3000 from his machine)
+    allow_origin_regex = None
+    if settings.ENVIRONMENT != "production":
+        allow_origin_regex = r"^http://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -308,6 +316,7 @@ app.include_router(activity_workout_type.router)
 app.include_router(athlete_insights.router)
 app.include_router(calendar.router)
 app.include_router(insights.router)
+app.include_router(diagnostics.router)
 app.include_router(plan_generation.router)
 app.include_router(home.router)
 app.include_router(plan_export.router)

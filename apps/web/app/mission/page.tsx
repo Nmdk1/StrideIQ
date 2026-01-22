@@ -5,7 +5,7 @@ import Footer from '../components/Footer';
 
 export default function MissionStatement() {
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
+    <div className="min-h-screen bg-slate-900 text-slate-100">
       {/* Hero Section with Background */}
       <section className="relative py-20 overflow-hidden">
         <div 
@@ -16,7 +16,7 @@ export default function MissionStatement() {
             backgroundSize: "cover"
           }}
         >
-          <div className="absolute inset-0 bg-[#0a0a0f]/80"></div>
+          <div className="absolute inset-0 bg-slate-900/80"></div>
         </div>
         
         <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">

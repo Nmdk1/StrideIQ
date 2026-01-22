@@ -35,19 +35,39 @@ interface AthleteProfile {
   display_name: string;
 }
 
+interface BestEffortStatusPayload {
+  athlete_id: string;
+  provider: string;
+  total_activities: number;
+  activities_processed: number;
+  remaining_activities: number;
+  coverage_pct: number;
+  best_effort_rows: number;
+  activities_with_efforts: number;
+  last_provider_sync_at: string | null;
+}
+
+interface BestEffortStatusResponse {
+  status: 'success';
+  best_efforts: BestEffortStatusPayload;
+}
+
 const DISTANCE_ORDER = [
-  '400m', '800m', 'mile', '2mile', '5k', '10k', '15k', 
-  'half_marathon', 'marathon', '25k', '30k', '50k', '100k'
+  '400m', '800m', '1k', 'mile', '2mile', '5k', '10k', '15k',
+  '10_mile', '20k', 'half_marathon', 'marathon', '25k', '30k', '50k', '100k'
 ];
 
 const DISTANCE_LABELS: Record<string, string> = {
   '400m': '400m',
   '800m': '800m',
+  '1k': '1K',
   'mile': 'Mile',
   '2mile': '2 Mile',
   '5k': '5K',
   '10k': '10K',
   '15k': '15K',
+  '10_mile': '10 Mile',
+  '20k': '20K',
   '25k': '25K',
   '30k': '30K',
   '50k': '50K',
@@ -91,21 +111,55 @@ function PersonalBestsContent() {
     enabled: !!profile?.id,
   });
 
+  // Best-effort ingestion status (cheap; no Strava calls)
+  const { data: beStatus } = useQuery<BestEffortStatusResponse>({
+    queryKey: ['best-efforts-status', profile?.id],
+    queryFn: () => apiClient.get(`/v1/athletes/${profile?.id}/best-efforts/status`),
+    enabled: !!profile?.id,
+    refetchInterval: recalculating ? 3000 : false,
+  });
+
   interface RecalculateResponse {
     pbs_created: number;
     efforts_in_db: number;
   }
 
-  // Sync from Strava mutation (fetches best efforts from API - can take 30-60s)
+  interface QueueSyncResponse {
+    status: 'queued';
+    athlete_id: string;
+    task_id: string;
+    message?: string;
+  }
+
+  interface TaskStatusResponse {
+    task_id: string;
+    status: 'pending' | 'started' | 'success' | 'error';
+    result?: unknown;
+    error?: string;
+  }
+
+  async function pollTask(taskId: string, timeoutMs: number = 120000): Promise<TaskStatusResponse> {
+    const startedAt = Date.now();
+    // simple polling loop (2s) to keep UI responsive without long-running requests
+    while (Date.now() - startedAt < timeoutMs) {
+      const s = await apiClient.get<TaskStatusResponse>(`/v1/tasks/${taskId}`);
+      if (s.status === 'success' || s.status === 'error') return s;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    return { task_id: taskId, status: 'error', error: 'Timed out waiting for background sync' };
+  }
+
+  // Sync from Strava mutation (queued; UI polls task status)
   const syncMutation = useMutation({
-    mutationFn: () => apiClient.post(`/v1/athletes/${profile?.id}/sync-best-efforts?limit=100`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['personal-bests'] });
+    mutationFn: () => apiClient.post<QueueSyncResponse>(`/v1/athletes/${profile?.id}/sync-best-efforts/queue?limit=200`),
+    onSuccess: async (data) => {
+      const status = await pollTask(data.task_id);
+      if (status.status === 'success') {
+        await queryClient.invalidateQueries({ queryKey: ['personal-bests'] });
+      }
       setRecalculating(false);
     },
-    onError: () => {
-      setRecalculating(false);
-    },
+    onError: () => setRecalculating(false),
   });
 
   // Quick recalculate mutation (regenerates from stored efforts - instant)
@@ -128,6 +182,11 @@ function PersonalBestsContent() {
   const handleRecalculate = () => {
     setRecalculating(true);
     recalculateMutation.mutate();
+  };
+
+  const handleProcessNextChunk = () => {
+    setRecalculating(true);
+    syncMutation.mutate();
   };
 
   // Sort PBs by distance order
@@ -182,6 +241,45 @@ function PersonalBestsContent() {
               : 'Recalculate'}
           </Button>
         </div>
+
+        {/* Ingestion status */}
+        {beStatus?.best_efforts && (
+          <Card className="bg-slate-800 border-slate-700 mb-6">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base text-slate-200">Strava ingestion status</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-slate-300 space-y-2">
+              <div className="flex flex-wrap gap-x-6 gap-y-1">
+                <div>
+                  <span className="text-slate-400">Processed:</span>{' '}
+                  <span className="font-mono">{beStatus.best_efforts.activities_processed}/{beStatus.best_efforts.total_activities}</span>{' '}
+                  <span className="text-slate-400">({beStatus.best_efforts.coverage_pct}%)</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Remaining:</span>{' '}
+                  <span className="font-mono">{beStatus.best_efforts.remaining_activities}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Best-effort rows:</span>{' '}
+                  <span className="font-mono">{beStatus.best_efforts.best_effort_rows}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  onClick={handleProcessNextChunk}
+                  disabled={recalculating}
+                  className="border-slate-600 text-slate-200 hover:bg-slate-700"
+                >
+                  Process next chunk
+                </Button>
+                <span className="text-slate-500">
+                  Runs a background sync; some activities will legitimately have 0 “best efforts.”
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* PBs Table */}
         {sortedPbs.length === 0 ? (

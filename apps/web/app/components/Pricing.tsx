@@ -12,7 +12,7 @@ export default function Pricing() {
             Transparent Pricing
           </h2>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto">
-            Start free. Upgrade when you&apos;re ready for more.
+            Start free. Upgrade to Elite when you&apos;re ready for more.
           </p>
         </div>
 
@@ -21,7 +21,7 @@ export default function Pricing() {
           {/* All Tiers in One View - Premium Highlighted */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {/* Free Tier */}
-          <div className="bg-[#0a0a0f] rounded-lg p-6 border border-slate-700/50">
+          <div className="bg-slate-900 rounded-lg p-6 border border-slate-700/50">
             <h3 className="text-xl font-bold mb-2">Free</h3>
             <div className="text-3xl font-bold mb-4">$0</div>
             <ul className="space-y-2 text-sm text-slate-400 mb-6">
@@ -36,7 +36,7 @@ export default function Pricing() {
           </div>
 
           {/* Fixed Plan */}
-          <div className="bg-[#0a0a0f] rounded-lg p-6 border border-slate-700/50">
+          <div className="bg-slate-900 rounded-lg p-6 border border-slate-700/50">
             <h3 className="text-xl font-bold mb-2">Fixed Plan</h3>
             <div className="text-3xl font-bold mb-4">$9<span className="text-base">/plan</span></div>
             <p className="text-xs text-slate-500 mb-4">One-time purchase</p>
@@ -53,7 +53,7 @@ export default function Pricing() {
           </div>
 
           {/* Race-Specific Plan */}
-          <div className="bg-[#0a0a0f] rounded-lg p-6 border border-slate-700/50">
+          <div className="bg-slate-900 rounded-lg p-6 border border-slate-700/50">
             <h3 className="text-xl font-bold mb-2">Race-Specific</h3>
             <div className="text-3xl font-bold mb-4">$12<span className="text-base">/plan</span></div>
             <p className="text-xs text-slate-500 mb-4">One-time • Race-targeted</p>
@@ -69,14 +69,16 @@ export default function Pricing() {
             </Link>
           </div>
 
-          {/* Guided Self-Coaching - PREMIUM HIGHLIGHTED */}
+          {/* Elite Subscription (single paid tier) */}
           <div className="bg-gradient-to-br from-orange-900/40 to-slate-900 rounded-lg p-6 border-2 border-orange-500 relative md:shadow-xl md:shadow-orange-500/20">
             <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-orange-500 text-white px-3 py-1 text-xs font-semibold rounded-full whitespace-nowrap">
-              PREMIUM
+              ELITE
             </div>
-            <h3 className="text-xl font-bold mb-2 mt-2">Guided Self-Coaching</h3>
-            <div className="text-3xl font-bold mb-4">$24<span className="text-base">/month</span></div>
-            <p className="text-xs text-orange-300 mb-4">Our core product • Adaptive coaching</p>
+            <h3 className="text-xl font-bold mb-2 mt-2">Elite</h3>
+            <div className="text-3xl font-bold mb-4">
+              <span className="text-slate-200">Pricing TBA</span>
+            </div>
+            <p className="text-xs text-orange-300 mb-4">Full product access • Adaptive insights</p>
             <ul className="space-y-2 text-sm text-slate-300 mb-6">
               <li>✓ Everything in Race-Specific</li>
               <li>✓ <strong>Adaptive updates</strong></li>
@@ -86,18 +88,18 @@ export default function Pricing() {
               <li>✓ <strong>AI-powered</strong></li>
             </ul>
             <Link href="/register" className="block w-full bg-orange-600 hover:bg-orange-700 text-white py-2 rounded-lg transition-colors font-semibold text-sm shadow-lg shadow-orange-600/30 text-center">
-              Start Coaching
+              Start Elite
             </Link>
           </div>
         </div>
         </div>
 
-        {/* Detailed Premium Section - Aligned with Pricing Grid */}
+        {/* Detailed Elite Section - Aligned with Pricing Grid */}
         <div className="mt-8 w-full">
           <div className="bg-gradient-to-r from-orange-900/30 to-slate-900 rounded-lg p-6 border border-orange-500/50">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4">
               <div>
-                <h3 className="text-2xl font-bold mb-1">Why Guided Self-Coaching?</h3>
+                <h3 className="text-2xl font-bold mb-1">Why Elite?</h3>
                 <p className="text-sm text-slate-400">Elite-level guidance, accessible to everyone</p>
               </div>
               <a

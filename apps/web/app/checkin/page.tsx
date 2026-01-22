@@ -80,7 +80,7 @@ export default function CheckinPage() {
   if (submitted) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-[#0a0a0f] text-slate-100 flex items-center justify-center">
+        <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
           <div className="text-center">
             <div className="text-4xl mb-4">✓</div>
             <p className="text-xl font-medium">Logged.</p>
@@ -95,7 +95,7 @@ export default function CheckinPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-6 px-4">
+      <div className="min-h-screen bg-slate-900 text-slate-100 py-6 px-4">
         <div className="max-w-md mx-auto">
           {/* Header - minimal */}
           <div className="mb-8 text-center">

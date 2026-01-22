@@ -45,7 +45,7 @@ export default function DiscoveryPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
         <div className="max-w-6xl mx-auto px-4">
           {/* Header */}
           <div className="flex justify-between items-center mb-8">

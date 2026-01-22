@@ -784,7 +784,7 @@ export default function CompareResultsPage() {
   if (loading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
           <LoadingSpinner size="lg" />
         </div>
       </ProtectedRoute>
@@ -794,7 +794,7 @@ export default function CompareResultsPage() {
   if (!comparisonData) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-12">
+        <div className="min-h-screen bg-slate-900 text-slate-100 py-12">
           <div className="max-w-4xl mx-auto px-4 text-center">
             <div className="text-6xl mb-6">📊</div>
             <h1 className="text-2xl font-bold mb-4">No Comparison Data</h1>

@@ -5,7 +5,7 @@ Reference: Compare page (`/compare`) and Tools page (`/tools`)
 ## Page Layout
 
 ```tsx
-<div className="min-h-screen bg-[#0a0a0f] text-slate-100">
+<div className="min-h-screen bg-slate-900 text-slate-100">
   {/* Optional: Gradient overlay */}
   <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 via-transparent to-black/50 pointer-events-none" />
   
@@ -55,7 +55,7 @@ Reference: Compare page (`/compare`) and Tools page (`/tools`)
 
 | Element | Class |
 |---------|-------|
-| Page background | `bg-[#0a0a0f]` |
+| Page background | `bg-slate-900` |
 | Card background | `bg-slate-900/80` |
 | Nested card | `bg-slate-800/50` |
 | Border | `border-slate-700/50` |
@@ -123,7 +123,7 @@ Reference: Compare page (`/compare`) and Tools page (`/tools`)
 ## Loading States
 
 ```tsx
-<div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+<div className="min-h-screen bg-slate-900 flex items-center justify-center">
   <LoadingSpinner size="lg" />
 </div>
 ```

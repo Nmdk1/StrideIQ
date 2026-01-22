@@ -111,7 +111,7 @@ describe('Model-Driven Plan Tier Gating', () => {
     expect(isElite).toBe(true);
     
     // Elite users should have access
-    const allowedTiers = ['elite', 'premium', 'guided'];
+    const allowedTiers = ['elite'];
     expect(allowedTiers.includes(mockUser.subscription_tier)).toBe(true);
   });
 
@@ -121,13 +121,13 @@ describe('Model-Driven Plan Tier Gating', () => {
     expect(isElite).toBe(false);
     
     // Free users should NOT have access
-    const allowedTiers = ['elite', 'premium', 'guided'];
+    const allowedTiers = ['elite'];
     expect(allowedTiers.includes(freeUser.subscription_tier)).toBe(false);
   });
 
   test('upgrade link should be visible for non-elite', () => {
     const freeUser = { subscription_tier: 'free' };
-    const showUpgradeLink = !['elite', 'premium', 'guided'].includes(freeUser.subscription_tier);
+    const showUpgradeLink = !['elite'].includes(freeUser.subscription_tier);
     expect(showUpgradeLink).toBe(true);
   });
 });

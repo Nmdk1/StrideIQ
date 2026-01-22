@@ -111,7 +111,7 @@ export default function TrendsPage() {
   const isLoading = efficiencyLoading || volumeLoading || causesLoading;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
+    <div className="min-h-screen bg-slate-900 text-slate-100">
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">

@@ -56,7 +56,7 @@ function InfoTooltip({ content }: { content: string }) {
           <Info className="w-3.5 h-3.5" />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-xs bg-slate-800 border-slate-700 text-slate-200">
+      <TooltipContent side="top">
         <p className="text-xs leading-relaxed">{content}</p>
       </TooltipContent>
     </Tooltip>

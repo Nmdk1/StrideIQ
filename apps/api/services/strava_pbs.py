@@ -10,15 +10,21 @@ Architecture:
 - PersonalBest: Regenerated from BestEffort (MIN per distance)
 """
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from models import Athlete, Activity, BestEffort
 from services.strava_service import get_activity_details
 from services.best_effort_service import normalize_effort_name, regenerate_personal_bests
 from sqlalchemy.orm import Session
 import time
+import re
 
 
-def sync_strava_best_efforts(athlete: Athlete, db: Session, limit: int = 200) -> Dict[str, int]:
+def sync_strava_best_efforts(
+    athlete: Athlete,
+    db: Session,
+    limit: int = 200,
+    allow_rate_limit_sleep: bool = True,
+) -> Dict[str, int]:
     """
     Sync best efforts from Strava's API into the BestEffort table.
     
@@ -36,7 +42,7 @@ def sync_strava_best_efforts(athlete: Athlete, db: Session, limit: int = 200) ->
         Dict with counts: {'activities_checked': int, 'efforts_stored': int, 'pbs_created': int}
     """
     if not athlete.strava_access_token:
-        return {'activities_checked': 0, 'efforts_stored': 0, 'pbs_created': 0}
+        return {'activities_checked': 0, 'efforts_stored': 0, 'pbs_created': 0, 'rate_limited': False}
     
     # Get activities from our database that haven't had best efforts extracted
     # We check if they have any BestEffort records already
@@ -62,10 +68,13 @@ def sync_strava_best_efforts(athlete: Athlete, db: Session, limit: int = 200) ->
             'activities_checked': 0,
             'efforts_stored': 0,
             'pbs_created': pb_result.get('created', 0),
+            'rate_limited': False,
         }
     
     efforts_stored = 0
     activities_checked = 0
+    rate_limited = False
+    retry_after_s: Optional[int] = None
     
     for activity_idx, activity in enumerate(activities):
         try:
@@ -78,11 +87,24 @@ def sync_strava_best_efforts(athlete: Athlete, db: Session, limit: int = 200) ->
             time.sleep(0.5)
         
         try:
-            details = get_activity_details(athlete, activity_id)
+            # For HTTP-triggered syncs, callers may disable sleeping to avoid long requests.
+            # Background jobs can allow sleeping and keep working through Retry-After windows.
+            details = get_activity_details(
+                athlete,
+                activity_id,
+                allow_rate_limit_sleep=allow_rate_limit_sleep,
+            )
         except Exception as e:
             error_str = str(e).lower()
             if "429" in str(e) or "rate" in error_str or "too many" in error_str:
                 print(f"Rate limited at activity {activity_idx}/{len(activities)}, stopping sync early")
+                rate_limited = True
+                m = re.search(r"retry-after\s+(\d+)s", error_str)
+                if m:
+                    try:
+                        retry_after_s = int(m.group(1))
+                    except Exception:
+                        retry_after_s = None
                 break
             continue
         
@@ -91,6 +113,11 @@ def sync_strava_best_efforts(athlete: Athlete, db: Session, limit: int = 200) ->
         
         best_efforts = details.get('best_efforts', [])
         if not best_efforts:
+            # Mark as processed even if there were no PRs in this activity.
+            try:
+                activity.best_efforts_extracted_at = datetime.now(timezone.utc)
+            except Exception:
+                pass
             activities_checked += 1
             continue
         
@@ -140,8 +167,24 @@ def sync_strava_best_efforts(athlete: Athlete, db: Session, limit: int = 200) ->
             db.add(best_effort)
             efforts_stored += 1
         
+        # Mark as processed once we successfully fetched details.
+        try:
+            activity.best_efforts_extracted_at = datetime.now(timezone.utc)
+        except Exception:
+            pass
+
         activities_checked += 1
+
+        # Persist progress periodically so long-running backfills survive rate limits
+        # and we don't lose everything if the worker is restarted.
+        if activities_checked % 10 == 0:
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
     
+    # Flush any remaining inserts before aggregating PBs.
     db.flush()
     
     # Regenerate PersonalBest from all BestEfforts
@@ -151,4 +194,6 @@ def sync_strava_best_efforts(athlete: Athlete, db: Session, limit: int = 200) ->
         'activities_checked': activities_checked,
         'efforts_stored': efforts_stored,
         'pbs_created': pb_result.get('created', 0),
+        'rate_limited': rate_limited,
+        'retry_after_s': retry_after_s,
     }

@@ -14,16 +14,18 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
+import { useRouter } from 'next/navigation';
 
 export default function AdminPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [selectedTab, setSelectedTab] = useState<'users' | 'health' | 'metrics' | 'query' | 'testing'>('users');
   
@@ -82,14 +84,18 @@ export default function AdminPage() {
     setQueryResults(result);
   };
 
-  // Check if user is admin/owner
+  // Hard redirect non-admins away from /admin
+  useEffect(() => {
+    if (user && user.role !== 'admin' && user.role !== 'owner') {
+      router.replace('/home');
+    }
+  }, [router, user]);
+
   if (user && user.role !== 'admin' && user.role !== 'owner') {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
-            <p className="text-red-400">Access denied. Admin access required.</p>
-          </div>
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+          <LoadingSpinner size="lg" />
         </div>
       </ProtectedRoute>
     );
@@ -97,11 +103,21 @@ export default function AdminPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
         <div className="max-w-7xl mx-auto px-4">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
-            <p className="text-slate-400">Command center for site management and monitoring</p>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
+                <p className="text-slate-400">Command center for site management and monitoring</p>
+              </div>
+              <a
+                href="/admin/diagnostics"
+                className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700/50 text-slate-200"
+              >
+                Data Health
+              </a>
+            </div>
           </div>
 
           {/* Tabs */}
@@ -176,7 +192,7 @@ export default function AdminPage() {
               ) : users ? (
                 <div className="bg-slate-800 rounded-lg border border-slate-700/50 overflow-hidden">
                   <table className="w-full">
-                    <thead className="bg-[#0a0a0f]">
+                    <thead className="bg-slate-900">
                       <tr>
                         <th className="px-4 py-3 text-left text-sm font-semibold">Email</th>
                         <th className="px-4 py-3 text-left text-sm font-semibold">Name</th>
@@ -217,7 +233,7 @@ export default function AdminPage() {
                       ))}
                     </tbody>
                   </table>
-                  <div className="px-4 py-3 bg-[#0a0a0f] border-t border-slate-700/50 text-sm text-slate-400">
+                  <div className="px-4 py-3 bg-slate-900 border-t border-slate-700/50 text-sm text-slate-400">
                     Showing {users.users.length} of {users.total} users
                   </div>
                 </div>
@@ -358,7 +374,7 @@ export default function AdminPage() {
                       className={`p-4 rounded-lg border text-left transition-all ${
                         selectedTemplate === t.name
                           ? 'bg-orange-900/30 border-orange-600'
-                          : 'bg-[#0a0a0f] border-slate-700/50 hover:border-slate-500'
+                          : 'bg-slate-900 border-slate-700/50 hover:border-slate-500'
                       }`}
                     >
                       <div className="font-medium text-sm">{t.name.replace(/_/g, ' ')}</div>
@@ -380,7 +396,7 @@ export default function AdminPage() {
                           type="number"
                           value={queryDays}
                           onChange={(e) => setQueryDays(parseInt(e.target.value) || 180)}
-                          className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                           min={1}
                           max={730}
                         />
@@ -392,7 +408,7 @@ export default function AdminPage() {
                           value={queryAthleteId}
                           onChange={(e) => setQueryAthleteId(e.target.value)}
                           placeholder="Leave empty for all"
-                          className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                         />
                       </div>
                       <div>
@@ -402,7 +418,7 @@ export default function AdminPage() {
                           value={queryWorkoutType}
                           onChange={(e) => setQueryWorkoutType(e.target.value)}
                           placeholder="e.g., tempo_run"
-                          className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                         />
                       </div>
                       <div className="flex items-end">
@@ -432,7 +448,7 @@ export default function AdminPage() {
                     <select
                       value={customEntity}
                       onChange={(e) => setCustomEntity(e.target.value)}
-                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                     >
                       {entities && Object.keys(entities.entities).map(entity => (
                         <option key={entity} value={entity}>{entity}</option>
@@ -451,7 +467,7 @@ export default function AdminPage() {
                       value={customGroupBy}
                       onChange={(e) => setCustomGroupBy(e.target.value)}
                       placeholder="e.g., workout_type"
-                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                     />
                   </div>
                   <div>
@@ -461,7 +477,7 @@ export default function AdminPage() {
                       value={customAggregations}
                       onChange={(e) => setCustomAggregations(e.target.value)}
                       placeholder="e.g., efficiency:avg,distance_m:sum"
-                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                     />
                   </div>
                 </div>
@@ -473,7 +489,7 @@ export default function AdminPage() {
                     value={customFilters}
                     onChange={(e) => setCustomFilters(e.target.value)}
                     placeholder='[{"field": "workout_type", "operator": "eq", "value": "tempo_run"}]'
-                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white font-mono text-sm"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white font-mono text-sm"
                   />
                 </div>
                 
@@ -512,7 +528,7 @@ export default function AdminPage() {
                   {queryResults.data && queryResults.data.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
-                        <thead className="bg-[#0a0a0f]">
+                        <thead className="bg-slate-900">
                           <tr>
                             {Object.keys(queryResults.data[0]).map(key => (
                               <th key={key} className="px-3 py-2 text-left font-medium text-slate-400">
@@ -550,7 +566,7 @@ export default function AdminPage() {
                     <summary className="cursor-pointer text-sm text-slate-400 hover:text-slate-300">
                       View Raw JSON
                     </summary>
-                    <pre className="mt-2 p-3 bg-[#0a0a0f] rounded text-xs overflow-x-auto max-h-64">
+                    <pre className="mt-2 p-3 bg-slate-900 rounded text-xs overflow-x-auto max-h-64">
                       {JSON.stringify(queryResults, null, 2)}
                     </pre>
                   </details>

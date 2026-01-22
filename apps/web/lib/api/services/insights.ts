@@ -15,9 +15,47 @@ export interface Insight {
 
 export interface ActiveInsightsResponse {
   insights: Insight[];
-  is_premium: boolean;
+  is_elite: boolean;
   total_available: number;
-  premium_locked: number;
+}
+
+export interface FeedEvidenceItem {
+  label: string;
+  value: string;
+}
+
+export interface FeedActionItem {
+  label: string;
+  href: string;
+}
+
+export interface FeedConfidence {
+  label: string;
+  score: number;
+  details?: string | null;
+}
+
+export type InsightFeedCardType =
+  | 'trend'
+  | 'load_response'
+  | 'plan'
+  | 'readiness'
+  | 'personal_bests';
+
+export interface InsightFeedCard {
+  key: string;
+  type: InsightFeedCardType;
+  priority: number;
+  title: string;
+  summary: string;
+  confidence: FeedConfidence;
+  evidence: FeedEvidenceItem[];
+  actions: FeedActionItem[];
+}
+
+export interface InsightFeedResponse {
+  generated_at: string;
+  cards: InsightFeedCard[];
 }
 
 export interface KPI {
@@ -72,6 +110,10 @@ export const insightsService = {
     return apiClient.get<ActiveInsightsResponse>(
       `/v1/insights/active?limit=${limit}`
     );
+  },
+
+  async getInsightFeed(maxCards = 5): Promise<InsightFeedResponse> {
+    return apiClient.get<InsightFeedResponse>(`/v1/insights/feed?max_cards=${maxCards}`);
   },
 
   async getBuildStatus(): Promise<BuildStatusResponse> {

@@ -21,6 +21,7 @@ import {
   AlertCircle,
   Info
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export interface DayBadgeData {
   type: string;
@@ -94,23 +95,31 @@ export function DayBadge({ badge, compact = false }: DayBadgeProps) {
   if (compact) {
     // Ultra-compact for mobile
     return (
-      <div
-        className={`inline-flex items-center justify-center px-1 py-0.5 rounded text-[8px] font-medium ${colors.bg} ${colors.text}`}
-        title={badge.tooltip}
-      >
-        {badge.badge}
-      </div>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={`inline-flex items-center justify-center px-1 py-0.5 rounded text-[8px] font-medium ${colors.bg} ${colors.text}`}>
+            {badge.badge}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          {badge.tooltip}
+        </TooltipContent>
+      </Tooltip>
     );
   }
   
   return (
-    <div
-      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border ${colors.bg} ${colors.text} ${colors.border} text-[9px] font-medium cursor-default`}
-      title={badge.tooltip}
-    >
-      {icon}
-      <span>{badge.badge}</span>
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border ${colors.bg} ${colors.text} ${colors.border} text-[9px] font-medium cursor-default`}>
+          {icon}
+          <span>{badge.badge}</span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        {badge.tooltip}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

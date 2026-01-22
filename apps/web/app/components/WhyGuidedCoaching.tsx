@@ -8,7 +8,7 @@ export default function WhyGuidedCoaching() {
       <div className="max-w-6xl mx-auto px-6">
         <div className="text-center mb-16">
           <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            Why Guided Self-Coaching?
+            Why Elite?
           </h2>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto">
             Complete health and fitness management—comprehensive monitoring, correlation analysis, and outcomes-driven guidance. 
@@ -19,7 +19,7 @@ export default function WhyGuidedCoaching() {
         {/* Target Audiences */}
         <div className="grid md:grid-cols-2 gap-8 mb-16">
           {/* Masters+ Runners */}
-          <div className="bg-[#0a0a0f] rounded-lg p-8 border border-slate-700/50">
+          <div className="bg-slate-900 rounded-lg p-8 border border-slate-700/50">
             <h3 className="text-2xl font-bold mb-4 text-orange-400">For Masters+ Runners</h3>
             <p className="text-slate-300 mb-4">
               Tired of being treated as &quot;fragile&quot; because of your age? We don&apos;t see decline—we see potential.
@@ -33,7 +33,7 @@ export default function WhyGuidedCoaching() {
           </div>
 
           {/* Rural/Small Town Runners */}
-          <div className="bg-[#0a0a0f] rounded-lg p-8 border border-slate-700/50">
+          <div className="bg-slate-900 rounded-lg p-8 border border-slate-700/50">
             <h3 className="text-2xl font-bold mb-4 text-orange-400">For Runners Everywhere</h3>
             <p className="text-slate-300 mb-4">
               Can&apos;t access coaches or running clubs? Elite coaching is now available wherever you are.
@@ -49,12 +49,12 @@ export default function WhyGuidedCoaching() {
 
         {/* Advantages Over Human Coaches */}
         <div className="bg-gradient-to-r from-orange-900/20 to-slate-900 rounded-lg p-8 border border-orange-500/30 mb-12">
-          <h3 className="text-2xl font-bold mb-6 text-center">How Guided Self-Coaching Compares</h3>
+          <h3 className="text-2xl font-bold mb-6 text-center">How Elite Compares</h3>
           <div className="grid md:grid-cols-2 gap-6">
             <div>
               <h4 className="font-semibold text-slate-300 mb-3">Knowledge Base</h4>
               <p className="text-slate-400 text-sm mb-4">
-                <strong className="text-orange-400">Guided Self-Coaching:</strong> Synthesizes decades of proven training principles from world-class coaches and exercise science—distilled into personalized guidance.
+                <strong className="text-orange-400">Elite:</strong> Synthesizes decades of proven training principles from world-class coaches and exercise science—distilled into personalized guidance.
               </p>
               <p className="text-slate-500 text-sm">
                 <strong>Human Coach:</strong> One person&apos;s experience, training, and biases.
@@ -63,7 +63,7 @@ export default function WhyGuidedCoaching() {
             <div>
               <h4 className="font-semibold text-slate-300 mb-3">Availability</h4>
               <p className="text-slate-400 text-sm mb-4">
-                <strong className="text-orange-400">Guided Self-Coaching:</strong> 24/7 analysis and optimization. Never sleeps, never forgets, never has an off day.
+                <strong className="text-orange-400">Elite:</strong> 24/7 analysis and optimization. Never sleeps, never forgets, never has an off day.
               </p>
               <p className="text-slate-500 text-sm">
                 <strong>Human Coach:</strong> Scheduled calls, email delays, limited hours.
@@ -72,7 +72,7 @@ export default function WhyGuidedCoaching() {
             <div>
               <h4 className="font-semibold text-slate-300 mb-3">Personalization</h4>
               <p className="text-slate-400 text-sm mb-4">
-                <strong className="text-orange-400">Guided Self-Coaching:</strong> Learns specifically from YOUR data. Builds personal response curves—not general principles.
+                <strong className="text-orange-400">Elite:</strong> Learns specifically from YOUR data. Builds personal response curves—not general principles.
               </p>
               <p className="text-slate-500 text-sm">
                 <strong>Human Coach:</strong> Applies general principles, limited personal data history.
@@ -81,10 +81,10 @@ export default function WhyGuidedCoaching() {
             <div>
               <h4 className="font-semibold text-slate-300 mb-3">Cost & Accessibility</h4>
               <p className="text-slate-400 text-sm mb-4">
-                <strong className="text-orange-400">Guided Self-Coaching:</strong> $24/month. Available everywhere, no geographic limitations.
+                <strong className="text-orange-400">Elite:</strong> Pricing TBA. Available everywhere, no geographic limitations.
               </p>
               <p className="text-slate-500 text-sm">
-                <strong>Human Coach:</strong> $50-$300/month. Limited by location and availability.
+                <strong>Human Coach:</strong> Typically $50-$300/month. Limited by location and availability.
               </p>
             </div>
           </div>

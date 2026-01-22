@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { API_CONFIG } from '@/lib/api/config';
+import { Tooltip as UiTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   LineChart,
   Line,
@@ -125,7 +126,7 @@ export default function TrainingLoadPage() {
   const tsbDelta = endpoints ? endpoints.end.tsb - endpoints.start.tsb : null;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
+    <div className="min-h-screen bg-slate-900 text-slate-100">
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -440,11 +441,10 @@ function MetricCard({
         : 'text-slate-500';
 
   return (
-    <div
-      className={`rounded-lg p-4 border ${colorClasses[color]} ${tooltip ? 'cursor-help' : ''}`}
-      title={tooltip}
-    >
-      <p className="text-slate-400 text-sm mb-1">{label}</p>
+    <UiTooltip>
+      <TooltipTrigger asChild>
+        <div className={`rounded-lg p-4 border ${colorClasses[color]} ${tooltip ? 'cursor-help' : ''}`}>
+          <p className="text-slate-400 text-sm mb-1">{label}</p>
       <p className="text-slate-500 text-xs mb-2">{sublabel}</p>
       <div className="flex items-baseline gap-2">
         <span className={`text-3xl font-bold ${colorClasses[color].split(' ')[0]}`}>
@@ -459,7 +459,14 @@ function MetricCard({
           {deltaText}
         </p>
       ) : null}
-    </div>
+        </div>
+      </TooltipTrigger>
+      {tooltip ? (
+        <TooltipContent side="top">
+          {tooltip}
+        </TooltipContent>
+      ) : null}
+    </UiTooltip>
   );
 }
 
@@ -518,17 +525,21 @@ function PhaseCard({
   })();
 
   return (
-    <div
-      className={`rounded-lg p-4 border ${getPhaseColor()} ${tooltip ? 'cursor-help' : ''}`}
-      title={tooltip ? `${tooltip}\n\n${phaseMeaning}` : phaseMeaning}
-    >
+    <UiTooltip>
+      <TooltipTrigger asChild>
+        <div className={`rounded-lg p-4 border ${getPhaseColor()} ${tooltip ? 'cursor-help' : ''}`}>
       <p className="text-slate-400 text-sm mb-1">Training Phase</p>
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">{getPhaseIcon()}</span>
         <span className="text-xl font-bold text-white capitalize">{phase}</span>
       </div>
       <p className="text-slate-400 text-xs">{recommendation}</p>
-    </div>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        {tooltip ? `${tooltip}\n\n${phaseMeaning}` : phaseMeaning}
+      </TooltipContent>
+    </UiTooltip>
   );
 }
 

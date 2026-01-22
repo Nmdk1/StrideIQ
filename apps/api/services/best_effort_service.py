@@ -21,14 +21,16 @@ from services.performance_engine import calculate_age_at_date
 STRAVA_EFFORT_MAP = {
     '400m': '400m',
     '1/2 mile': None,  # Not tracked
-    '1k': None,  # Not tracked
+    '1k': '1k',
     '1 mile': 'mile',
     'mile': 'mile',
     '2 mile': '2mile',
     '5k': '5k',
     '10k': '10k',
     '15k': '15k',
-    '20k': None,  # Not tracked (use half marathon)
+    '10 mile': '10_mile',
+    '10-mile': '10_mile',
+    '20k': '20k',
     'half marathon': 'half_marathon',
     'half-marathon': 'half_marathon',
     '25k': '25k',
@@ -42,11 +44,14 @@ STRAVA_EFFORT_MAP = {
 STANDARD_DISTANCES = {
     '400m': 400,
     '800m': 800,
+    '1k': 1000,
     'mile': 1609,
     '2mile': 3219,
     '5k': 5000,
     '10k': 10000,
     '15k': 15000,
+    '10_mile': 16093,
+    '20k': 20000,
     'half_marathon': 21097,
     '25k': 25000,
     '30k': 30000,

@@ -62,7 +62,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100 flex items-center justify-center py-12 px-4">
+    <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full">
         <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-8">
           <h1 className="text-3xl font-bold mb-2">Create Account</h1>
@@ -80,7 +80,7 @@ export default function RegisterPage() {
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="Your name"
               />
             </div>
@@ -95,7 +95,7 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="you@example.com"
               />
             </div>
@@ -111,7 +111,7 @@ export default function RegisterPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={8}
-                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="At least 8 characters"
               />
             </div>
@@ -126,7 +126,7 @@ export default function RegisterPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="••••••••"
               />
             </div>

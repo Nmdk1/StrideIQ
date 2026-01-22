@@ -10,6 +10,8 @@
 
 'use client';
 
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+
 interface DecouplingBadgeProps {
   decouplingPercent?: number;
   decouplingStatus?: 'green' | 'yellow' | 'red';
@@ -54,10 +56,14 @@ export function DecouplingBadge({
     <div className={`flex items-center gap-3 ${className}`}>
       {/* Traffic Light Badge */}
       <div className="flex items-center gap-2">
-        <div
-          className={`w-4 h-4 rounded-full ${config.bgColor} border-2 ${config.borderColor} shadow-lg`}
-          title={`Decoupling: ${decouplingStatus}`}
-        />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className={`w-4 h-4 rounded-full ${config.bgColor} border-2 ${config.borderColor} shadow-lg`} />
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            Aerobic decoupling: {decouplingPercent > 0 ? '+' : ''}{decouplingPercent.toFixed(1)}% ({config.label})
+          </TooltipContent>
+        </Tooltip>
         <span className={`text-sm font-medium ${config.textColor}`}>
           {config.label}
         </span>

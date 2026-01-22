@@ -1025,7 +1025,7 @@ export default function ContextualComparisonPage() {
   
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
+      <div className="min-h-screen bg-slate-900 text-slate-100">
         {/* Background accents */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
           <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 via-transparent to-black/50" />

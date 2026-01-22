@@ -5,6 +5,7 @@ import { AuthProvider } from '@/lib/context/AuthContext'
 import { UnitsProvider } from '@/lib/context/UnitsContext'
 import { CompareProvider } from '@/lib/context/CompareContext'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -71,14 +72,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="min-h-screen bg-[#0a0a0f] text-slate-100">
+      <body className="min-h-screen bg-slate-900 text-slate-100">
         <ErrorBoundary>
           <AuthProvider>
             <QueryProvider>
               <UnitsProvider>
                 <CompareProvider>
-                  <Navigation />
-                  <main>{children}</main>
+                  <TooltipProvider>
+                    <Navigation />
+                    <main>{children}</main>
+                  </TooltipProvider>
                 </CompareProvider>
               </UnitsProvider>
             </QueryProvider>

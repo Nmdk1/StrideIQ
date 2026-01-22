@@ -96,7 +96,7 @@ export function InsightFeedback({
         onChange={(e) => setFeedbackText(e.target.value)}
         placeholder="Optional comment"
         rows={2}
-        className="w-full px-2 py-1 text-xs bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+        className="w-full px-2 py-1 text-xs bg-slate-900 border border-slate-700/50 rounded text-white"
       />
     </div>
   );

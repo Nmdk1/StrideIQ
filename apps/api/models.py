@@ -21,7 +21,8 @@ class Athlete(Base):
     sex = Column(Text, nullable=True)
     subscription_tier = Column(Text, default="free", nullable=False)
     
-    # Paid subscription tiers that grant access to premium features
+    # Paid subscription tiers that grant Elite access.
+    # We keep legacy values for backward compatibility while converging on a single paid tier ("elite").
     PAID_TIERS = {'elite', 'pro', 'premium', 'guided', 'subscription'}
     
     @property
@@ -74,6 +75,53 @@ class Athlete(Base):
     last_streak_update = Column(DateTime(timezone=True), nullable=True)
 
 
+class AthleteIngestionState(Base):
+    """
+    Durable per-athlete ingestion state for operational visibility.
+
+    This is intentionally lightweight and append-free:
+    - One row per (athlete, provider)
+    - Stores last run metadata, last error, and last task ids
+    """
+    __tablename__ = "athlete_ingestion_state"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    provider = Column(Text, nullable=False, default="strava")
+
+    # --- Best-effort backfill run state ---
+    last_best_efforts_task_id = Column(Text, nullable=True)
+    last_best_efforts_started_at = Column(DateTime(timezone=True), nullable=True)
+    last_best_efforts_finished_at = Column(DateTime(timezone=True), nullable=True)
+    # 'running' | 'success' | 'error' | 'rate_limited'
+    last_best_efforts_status = Column(Text, nullable=True)
+    last_best_efforts_error = Column(Text, nullable=True)
+    last_best_efforts_retry_after_s = Column(Integer, nullable=True)
+    last_best_efforts_activities_checked = Column(Integer, nullable=True)
+    last_best_efforts_efforts_stored = Column(Integer, nullable=True)
+    last_best_efforts_pbs_created = Column(Integer, nullable=True)
+
+    # --- Activity index backfill run state ---
+    last_index_task_id = Column(Text, nullable=True)
+    last_index_started_at = Column(DateTime(timezone=True), nullable=True)
+    last_index_finished_at = Column(DateTime(timezone=True), nullable=True)
+    # 'running' | 'success' | 'error'
+    last_index_status = Column(Text, nullable=True)
+    last_index_error = Column(Text, nullable=True)
+    last_index_pages_fetched = Column(Integer, nullable=True)
+    last_index_created = Column(Integer, nullable=True)
+    last_index_already_present = Column(Integer, nullable=True)
+    last_index_skipped_non_runs = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "provider", name="uq_ingestion_state_athlete_provider"),
+        Index("ix_ingestion_state_provider", "provider"),
+    )
+
+
 class Activity(Base):
     __tablename__ = "activity"
 
@@ -111,6 +159,11 @@ class Activity(Base):
     temperature_f = Column(Float, nullable=True)  # Temperature at start
     humidity_pct = Column(Float, nullable=True)  # Humidity percentage
     weather_condition = Column(Text, nullable=True)  # e.g., 'clear', 'cloudy', 'rain'
+
+    # --- INGESTION PROGRESS MARKERS ---
+    # Strava only returns `best_efforts` when an activity sets PRs; we still need a
+    # deterministic marker for "details fetched and extraction attempted".
+    best_efforts_extracted_at = Column(DateTime(timezone=True), nullable=True)
 
     # --- THE ARMOR: Unique Constraint prevents duplicates at the DB level ---
     __table_args__ = (

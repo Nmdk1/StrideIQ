@@ -90,7 +90,7 @@ export function useDeleteNote() {
  */
 export function useSendCoachMessage() {
   return useMutation({
-    mutationFn: (request: CoachMessageRequest) => 
-      calendarService.sendCoachMessage(request),
+    mutationFn: (args: { request: CoachMessageRequest; signal?: AbortSignal }) =>
+      calendarService.sendCoachMessage(args.request, { signal: args.signal }),
   });
 }

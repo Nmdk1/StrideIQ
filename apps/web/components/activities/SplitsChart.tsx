@@ -94,14 +94,13 @@ export function SplitsChart({ splits, className = '' }: SplitsChartProps) {
   const maxPace = Math.ceil(Math.max(...paceValues) / 60) * 60; // Round up to nearest minute
 
   return (
-    <div className={`bg-slate-800 rounded-lg border border-slate-700 p-6 ${className}`}>
-      <h3 className="text-lg font-semibold mb-4">Splits</h3>
+    <div className={className}>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
           <XAxis 
             dataKey="split" 
-            label={{ value: 'Mile', position: 'insideBottom', offset: -5 }}
+            label={{ value: 'Split', position: 'insideBottom', offset: -5 }}
             stroke="#9CA3AF"
           />
           <YAxis 

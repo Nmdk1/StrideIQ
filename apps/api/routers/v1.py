@@ -249,10 +249,18 @@ def create_activity(activity: ActivityCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/activities/{activity_id}/splits", response_model=List[ActivitySplitResponse])
-def get_activity_splits(activity_id: UUID, db: Session = Depends(get_db)):
-    """Get splits for a specific activity"""
-    # Verify activity exists
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+def get_activity_splits(
+    activity_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get splits for a specific activity (auth + ownership enforced)."""
+    # Verify activity exists AND belongs to the authenticated user
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id, Activity.athlete_id == current_user.id)
+        .first()
+    )
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
     
@@ -350,8 +358,11 @@ def sync_best_efforts_endpoint(id: UUID, limit: int = 50, db: Session = Depends(
     if not athlete.strava_access_token:
         raise HTTPException(status_code=400, detail="No Strava connection")
 
+    # NOTE: This endpoint is retained for backwards compatibility, but should not
+    # sleep for long periods inside an HTTP request. If Strava rate limits, it will
+    # return partial progress and the caller should retry or use the queued endpoint.
     try:
-        result = sync_strava_best_efforts(athlete, db, limit=limit)
+        result = sync_strava_best_efforts(athlete, db, limit=limit, allow_rate_limit_sleep=False)
         db.commit()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
@@ -364,6 +375,142 @@ def sync_best_efforts_endpoint(id: UUID, limit: int = 50, db: Session = Depends(
         "pbs_created": result.get('pbs_created', 0),
         "message": f"Checked {result.get('activities_checked', 0)} activities, stored {result.get('efforts_stored', 0)} efforts"
     }
+
+
+@router.post("/athletes/{id}/sync-best-efforts/queue")
+def queue_best_efforts_backfill(
+    id: UUID,
+    limit: int = 200,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Queue best-effort backfill in the background (recommended).
+
+    This avoids long-running HTTP requests and respects Strava rate limits naturally
+    via the worker process.
+    """
+    if current_user.id != id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    athlete = db.query(Athlete).filter(Athlete.id == id).first()
+    if not athlete:
+        raise HTTPException(status_code=404, detail="Athlete not found")
+    if not athlete.strava_access_token:
+        raise HTTPException(status_code=400, detail="No Strava connection")
+
+    from tasks.best_effort_tasks import backfill_best_efforts_task
+
+    task = backfill_best_efforts_task.delay(str(athlete.id), limit=limit)
+    return {
+        "status": "queued",
+        "athlete_id": str(athlete.id),
+        "task_id": task.id,
+        "message": "Best-effort backfill queued",
+    }
+
+
+@router.get("/athletes/{id}/best-efforts/status")
+def get_best_efforts_status(
+    id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get ingestion completeness for best-efforts (no external calls).
+    """
+    if current_user.id != id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    from services.ingestion_status import get_best_effort_ingestion_status
+    from services.ingestion_state import get_ingestion_state_snapshot
+
+    try:
+        status_obj = get_best_effort_ingestion_status(id, db, provider="strava")
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Athlete not found")
+    snapshot = get_ingestion_state_snapshot(db, id, provider="strava")
+    return {
+        "status": "success",
+        "best_efforts": status_obj.to_dict(),
+        "ingestion_state": snapshot.to_dict() if snapshot else None,
+    }
+
+
+@router.get("/tasks/{task_id}")
+def get_task_status(task_id: str, current_user: Athlete = Depends(get_current_user)):
+    """
+    Generic Celery task status endpoint (used by web polling).
+    """
+    from tasks import celery_app
+
+    task = celery_app.AsyncResult(task_id)
+    if task.state == "PENDING":
+        return {"task_id": task_id, "status": "pending"}
+    if task.state == "STARTED":
+        return {"task_id": task_id, "status": "started"}
+    if task.state == "SUCCESS":
+        return {"task_id": task_id, "status": "success", "result": task.result}
+    return {"task_id": task_id, "status": "error", "error": str(task.info) if task.info else "Unknown error"}
+
+
+@router.post("/athletes/{id}/strava/ingest-activity/{strava_activity_id}")
+def ingest_single_strava_activity(
+    id: UUID,
+    strava_activity_id: int,
+    mark_as_race: Optional[bool] = None,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Ingest a single Strava activity by Strava ID (authoritative link).
+
+    Use this when an activity is missing locally but Strava shows best-efforts for it.
+    """
+    if current_user.id != id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    athlete = db.query(Athlete).filter(Athlete.id == id).first()
+    if not athlete:
+        raise HTTPException(status_code=404, detail="Athlete not found")
+    if not athlete.strava_access_token:
+        raise HTTPException(status_code=400, detail="No Strava connection")
+
+    from services.strava_ingest import ingest_strava_activity_by_id
+
+    try:
+        res = ingest_strava_activity_by_id(athlete, db, int(strava_activity_id), mark_as_race=mark_as_race)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"status": "success", "athlete_id": str(athlete.id), "result": res.to_dict()}
+
+
+@router.post("/athletes/{id}/strava/backfill-index/queue")
+def queue_strava_activity_index_backfill(
+    id: UUID,
+    pages: int = 5,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Queue a Strava activity index backfill (paged /athlete/activities).
+
+    This creates missing Activity rows without per-activity detail calls.
+    """
+    if current_user.id != id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    athlete = db.query(Athlete).filter(Athlete.id == id).first()
+    if not athlete:
+        raise HTTPException(status_code=404, detail="Athlete not found")
+    if not athlete.strava_access_token:
+        raise HTTPException(status_code=400, detail="No Strava connection")
+
+    from tasks.strava_tasks import backfill_strava_activity_index_task
+
+    task = backfill_strava_activity_index_task.delay(str(athlete.id), pages=int(pages))
+    return {"status": "queued", "athlete_id": str(athlete.id), "task_id": task.id}
 
 
 @router.post("/activities/{activity_id}/mark-race")
@@ -410,61 +557,204 @@ def backfill_activity_splits(activity_id: UUID, db: Session = Depends(get_db)):
     if not athlete or not athlete.strava_access_token:
         raise HTTPException(status_code=404, detail="Athlete not found or missing Strava token")
     
-    from services.strava_service import get_activity_laps
+    from services.strava_service import get_activity_laps, get_activity_details
     from routers.strava import _coerce_int
-    import time
+    from services.pace_normalization import calculate_ngp_from_split
     
     try:
-        # Check if splits already exist
-        existing_splits = db.query(ActivitySplit).filter(
-            ActivitySplit.activity_id == activity.id
-        ).count()
+        def _gap_seconds_per_mile_from_lap(lap: dict) -> tuple[Optional[float], bool]:
+            """
+            Prefer Strava's grade-adjusted speed if available; otherwise fallback
+            to our NGP approximation using elevation gain.
+            """
+            try:
+                ga_speed = (
+                    lap.get("average_grade_adjusted_speed")
+                    or lap.get("avg_grade_adjusted_speed")
+                    or lap.get("grade_adjusted_speed")
+                )
+                if ga_speed is not None:
+                    ga = float(ga_speed)
+                    if ga > 0:
+                        return (1609.34 / ga, True)
+            except Exception:
+                pass
+
+            try:
+                distance_m = lap.get("distance")
+                moving_time_s = lap.get("moving_time")
+                elevation_gain_m = lap.get("total_elevation_gain")
+                if distance_m and moving_time_s:
+                    return (
+                        calculate_ngp_from_split(
+                        distance_m=float(distance_m),
+                        moving_time_s=int(moving_time_s),
+                        elevation_gain_m=elevation_gain_m,
+                    )
+                        , False
+                    )
+            except Exception:
+                return (None, False)
+            return (None, False)
+
+        def _extract_strava_mile_splits_from_details(details: dict) -> list[dict]:
+            splits = details.get("splits_standard") or []
+            if not isinstance(splits, list):
+                return []
+            out: list[dict] = []
+            for i, s in enumerate(splits, start=1):
+                if not isinstance(s, dict):
+                    continue
+                # Guard against pathological tiny splits (seen rarely in Strava payloads)
+                try:
+                    if s.get("distance") is not None and float(s.get("distance")) < 50:
+                        continue
+                    if s.get("moving_time") is not None and int(s.get("moving_time")) < 10:
+                        continue
+                except Exception:
+                    pass
+                out.append(
+                    {
+                        "split_number": int(s.get("split") or s.get("split_number") or i),
+                        "distance": s.get("distance"),
+                        "elapsed_time": s.get("elapsed_time"),
+                        "moving_time": s.get("moving_time"),
+                        "average_heartrate": s.get("average_heartrate"),
+                        "max_heartrate": s.get("max_heartrate"),
+                        "average_cadence": s.get("average_cadence"),
+                        "average_grade_adjusted_speed": s.get("average_grade_adjusted_speed"),
+                    }
+                )
+            return out
         
-        if existing_splits > 0:
-            return {
-                "status": "info",
-                "message": f"Activity already has {existing_splits} splits",
-                "splits_count": existing_splits
-            }
-        
-        # Fetch laps from Strava
         strava_activity_id = int(activity.external_activity_id)
+        details = get_activity_details(athlete, int(strava_activity_id), allow_rate_limit_sleep=True) or {}
+        mile_splits = _extract_strava_mile_splits_from_details(details)
+
+        # Prefer laps as the segmentation source if present (matches Strava "Laps" tab / user-defined laps).
         laps = get_activity_laps(athlete, strava_activity_id) or []
+        mile_map = {}
+        for ms in mile_splits:
+            try:
+                mile_map[int(ms["split_number"])] = ms
+            except Exception:
+                continue
+
+        source_splits = []
+        if laps:
+            for lap in laps:
+                idx = lap.get("lap_index") or lap.get("split")
+                if not idx:
+                    continue
+                split_num = int(idx)
+                # Enrich lap with Strava's canonical GA speed when the numbering aligns.
+                ms = mile_map.get(split_num) or {}
+                source_splits.append(
+                    {
+                        "split_number": split_num,
+                        "distance": lap.get("distance"),
+                        "elapsed_time": lap.get("elapsed_time"),
+                        "moving_time": lap.get("moving_time"),
+                        "average_heartrate": lap.get("average_heartrate"),
+                        "max_heartrate": lap.get("max_heartrate"),
+                        "average_cadence": lap.get("average_cadence"),
+                        "average_grade_adjusted_speed": ms.get("average_grade_adjusted_speed")
+                        or lap.get("average_grade_adjusted_speed"),
+                        "total_elevation_gain": lap.get("total_elevation_gain"),
+                    }
+                )
+        else:
+            source_splits = mile_splits
         
-        if not laps:
+        if not source_splits:
             return {
                 "status": "warning",
-                "message": "No lap data available from Strava for this activity",
+                "message": "No split/lap data available from Strava for this activity",
                 "splits_count": 0
             }
         
-        # Create split records
-        splits_created = 0
-        for lap in laps:
-            idx = lap.get("lap_index") or lap.get("split")
+        # Upsert split records (create missing + fill missing fields)
+        created = 0
+        updated = 0
+
+        existing = {
+            int(s.split_number): s
+            for s in db.query(ActivitySplit).filter(ActivitySplit.activity_id == activity.id).all()
+        }
+
+        for src in source_splits:
+            idx = src.get("split_number")
             if not idx:
                 continue
-            
-            split = ActivitySplit(
-                activity_id=activity.id,
-                split_number=int(idx),
-                distance=lap.get("distance"),
-                elapsed_time=lap.get("elapsed_time"),
-                moving_time=lap.get("moving_time"),
-                average_heartrate=_coerce_int(lap.get("average_heartrate")),
-                max_heartrate=_coerce_int(lap.get("max_heartrate")),
-                average_cadence=lap.get("average_cadence"),
-            )
-            db.add(split)
-            splits_created += 1
-        
+            split_num = int(idx)
+
+            # Guard against pathological tiny splits
+            try:
+                if src.get("distance") is not None and float(src.get("distance")) < 50:
+                    continue
+                if src.get("moving_time") is not None and int(src.get("moving_time")) < 10:
+                    continue
+            except Exception:
+                pass
+
+            gap_seconds_per_mile = None
+            is_auth = False
+            try:
+                ga = src.get("average_grade_adjusted_speed")
+                if ga is not None:
+                    ga = float(ga)
+                    if ga > 0:
+                        gap_seconds_per_mile = 1609.34 / ga
+                        is_auth = True
+            except Exception:
+                pass
+            if gap_seconds_per_mile is None:
+                gap_seconds_per_mile, is_auth = _gap_seconds_per_mile_from_lap(src)
+
+            if split_num in existing:
+                s = existing[split_num]
+                before = (s.average_cadence, s.gap_seconds_per_mile, s.max_heartrate, s.average_heartrate)
+                if s.max_heartrate is None:
+                    s.max_heartrate = _coerce_int(src.get("max_heartrate"))
+                if s.average_heartrate is None:
+                    s.average_heartrate = _coerce_int(src.get("average_heartrate"))
+                if s.average_cadence is None:
+                    s.average_cadence = src.get("average_cadence")
+                # Overwrite GAP when we have authoritative provider value; otherwise fill only if missing.
+                if gap_seconds_per_mile is not None:
+                    if is_auth:
+                        s.gap_seconds_per_mile = gap_seconds_per_mile
+                    elif s.gap_seconds_per_mile is None:
+                        s.gap_seconds_per_mile = gap_seconds_per_mile
+                after = (s.average_cadence, s.gap_seconds_per_mile, s.max_heartrate, s.average_heartrate)
+                if after != before:
+                    updated += 1
+            else:
+                db.add(
+                    ActivitySplit(
+                        activity_id=activity.id,
+                        split_number=split_num,
+                        distance=src.get("distance"),
+                        elapsed_time=src.get("elapsed_time"),
+                        moving_time=src.get("moving_time"),
+                        average_heartrate=_coerce_int(src.get("average_heartrate")),
+                        max_heartrate=_coerce_int(src.get("max_heartrate")),
+                        average_cadence=src.get("average_cadence"),
+                        gap_seconds_per_mile=gap_seconds_per_mile,
+                    )
+                )
+                created += 1
+
         db.commit()
-        
+
+        total = db.query(ActivitySplit).filter(ActivitySplit.activity_id == activity.id).count()
         return {
             "status": "success",
             "activity_id": str(activity_id),
-            "splits_created": splits_created,
-            "message": f"Successfully backfilled {splits_created} splits"
+            "splits_total": total,
+            "splits_created": created,
+            "splits_updated": updated,
+            "message": f"Splits refreshed (created {created}, updated {updated})",
         }
         
     except Exception as e:

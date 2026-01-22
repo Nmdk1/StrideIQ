@@ -97,8 +97,8 @@ class InsightPriority(int, Enum):
     INFO = 20           # General info
 
 
-# Premium insight types (require subscription)
-PREMIUM_INSIGHT_TYPES = {
+# Elite-only insight types (require paid access)
+ELITE_ONLY_INSIGHT_TYPES = {
     InsightType.CAUSAL_ATTRIBUTION,
     InsightType.PATTERN_DETECTION,
     InsightType.INJURY_RISK,
@@ -202,7 +202,8 @@ class InsightAggregator:
     def __init__(self, db: Session, athlete: Athlete):
         self.db = db
         self.athlete = athlete
-        self.is_premium = athlete.subscription_tier in ("pro", "premium", "elite")
+        # Elite is the single paid tier; legacy paid tiers still grant Elite access for now.
+        self.is_elite = bool(getattr(athlete, "has_active_subscription", False)) or athlete.subscription_tier == "elite"
     
     def generate_insights(
         self,
@@ -250,11 +251,11 @@ class InsightAggregator:
         except Exception as e:
             logger.error(f"Error generating insights: {e}")
         
-        # Filter by premium status
-        if not self.is_premium:
+        # Filter by Elite status
+        if not self.is_elite:
             all_insights = [
                 i for i in all_insights 
-                if i.insight_type not in PREMIUM_INSIGHT_TYPES
+                if i.insight_type not in ELITE_ONLY_INSIGHT_TYPES
             ]
         
         # Deduplicate

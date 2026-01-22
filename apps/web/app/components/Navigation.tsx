@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 
 export default function Navigation() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const { isAuthenticated, user, logout, isLoading } = useAuth();
 
   // Handle hash navigation on page load
@@ -85,6 +87,7 @@ export default function Navigation() {
     { href: '/home', label: 'Home', icon: '🏠' },
     { href: '/calendar', label: 'Calendar', icon: '📅' },
     { href: '/analytics', label: 'Analytics', icon: '📊' },
+    { href: '/insights', label: 'Insights', icon: '🧠' },
     { href: '/coach', label: 'Coach', icon: '🤖' },
   ];
   
@@ -96,7 +99,6 @@ export default function Navigation() {
     { href: '/compare', label: 'Compare', icon: '👻' },
     { href: '/personal-bests', label: 'PBs', icon: '🏆' },
     { href: '/tools', label: 'Tools', icon: '🧮' },
-    { href: '/diagnostic', label: 'Diagnostic', icon: '📋' },
   ];
   
   // Legacy - keeping for mobile menu only
@@ -104,6 +106,41 @@ export default function Navigation() {
     ...primaryNavItems,
     ...secondaryNavItems,
   ];
+
+  const isMoreActive =
+    pathname === '/settings' || secondaryNavItems.some((item) => item.href === pathname);
+
+  // Close menus on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setMoreMenuOpen(false);
+  }, [pathname]);
+
+  // Close "More" menu when clicking outside / pressing Escape
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (moreMenuRef.current && !moreMenuRef.current.contains(target)) {
+        setMoreMenuOpen(false);
+      }
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMoreMenuOpen(false);
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('touchstart', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('touchstart', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [moreMenuOpen]);
 
   const NavLink = ({ href, label, isHash = false, highlight = false }: { 
     href: string; 
@@ -143,7 +180,7 @@ export default function Navigation() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 bg-[#0a0a0f]/95 backdrop-blur-sm border-b border-slate-800 shadow-lg">
+    <nav className="sticky top-0 z-50 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800 shadow-lg">
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
@@ -177,39 +214,86 @@ export default function Navigation() {
                 {/* Divider */}
                 <div className="w-px h-4 bg-slate-700 mx-1" />
                 
-                {/* Secondary nav items - smaller */}
-                {secondaryNavItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                      pathname === item.href
-                        ? 'bg-slate-800 text-white'
-                        : 'text-slate-500 hover:text-slate-300'
+                {/* More menu (secondary nav + settings) */}
+                <div className="relative" ref={moreMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setMoreMenuOpen((v) => !v)}
+                    className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors border ${
+                      moreMenuOpen || isMoreActive
+                        ? 'bg-slate-800 text-white border-slate-600'
+                        : 'bg-slate-900/40 text-slate-200 border-slate-800 hover:bg-slate-800/70'
                     }`}
+                    aria-haspopup="menu"
+                    aria-expanded={moreMenuOpen}
                   >
-                    {item.label}
-                  </Link>
-                ))}
-                
-                {/* Settings */}
-                <Link
-                  href="/settings"
-                  className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                    pathname === '/settings'
-                      ? 'bg-slate-800 text-white'
-                      : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  Settings
-                </Link>
+                    <span>More</span>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-800/70 border border-slate-700 text-slate-200">
+                      {secondaryNavItems.length + 1}
+                    </span>
+                    <svg
+                      className={`h-4 w-4 text-slate-300 transition-transform ${moreMenuOpen ? 'rotate-180' : ''}`}
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+
+                  {moreMenuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 mt-2 w-56 rounded-lg border border-slate-700/60 bg-slate-900/95 backdrop-blur-md shadow-xl overflow-hidden"
+                    >
+                      <div className="py-2">
+                        {secondaryNavItems.map((item) => (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => setMoreMenuOpen(false)}
+                            className={`flex items-center justify-between px-4 py-2 text-sm transition-colors ${
+                              pathname === item.href
+                                ? 'bg-slate-800 text-white'
+                                : 'text-slate-200 hover:bg-slate-800/70'
+                            }`}
+                            role="menuitem"
+                          >
+                            <span>{item.label}</span>
+                            <span className="text-slate-500">{item.icon}</span>
+                          </Link>
+                        ))}
+
+                        <div className="my-2 border-t border-slate-800" />
+
+                        <Link
+                          href="/settings"
+                          onClick={() => setMoreMenuOpen(false)}
+                          className={`flex items-center justify-between px-4 py-2 text-sm transition-colors ${
+                            pathname === '/settings'
+                              ? 'bg-slate-800 text-white'
+                              : 'text-slate-200 hover:bg-slate-800/70'
+                          }`}
+                          role="menuitem"
+                        >
+                          <span>Settings</span>
+                          <span className="text-slate-500">⚙️</span>
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Admin link (if applicable) */}
                 {(user?.role === 'admin' || user?.role === 'owner') && (
                   <Link
                     href="/admin"
                     className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                      pathname === '/admin'
+                      pathname?.startsWith('/admin')
                         ? 'bg-slate-800 text-white'
                         : 'text-slate-500 hover:text-slate-300'
                     }`}

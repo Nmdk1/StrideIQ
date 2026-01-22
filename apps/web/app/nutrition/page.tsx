@@ -119,7 +119,7 @@ export default function NutritionPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
+      <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
         <div className="max-w-4xl mx-auto px-4">
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-2">Nutrition</h1>
@@ -147,7 +147,7 @@ export default function NutritionPage() {
                     <input
                       value={nlText}
                       onChange={(e) => setNlText(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                       placeholder='e.g., "oatmeal and black coffee"'
                     />
                     <button
@@ -196,7 +196,7 @@ export default function NutritionPage() {
                     <select
                       value={formData.entry_type}
                       onChange={(e) => setFormData({ ...formData, entry_type: e.target.value as any })}
-                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                     >
                       <option value="daily">Daily</option>
                       <option value="pre_activity">Pre-Run</option>
@@ -210,7 +210,7 @@ export default function NutritionPage() {
                       type="date"
                       value={formData.date}
                       onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                     />
                   </div>
                 </div>
@@ -222,7 +222,7 @@ export default function NutritionPage() {
                       type="number"
                       value={formData.calories || ''}
                       onChange={(e) => setFormData({ ...formData, calories: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                       placeholder="Optional"
                     />
                   </div>
@@ -233,7 +233,7 @@ export default function NutritionPage() {
                       step="0.1"
                       value={formData.protein_g || ''}
                       onChange={(e) => setFormData({ ...formData, protein_g: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                       placeholder="Optional"
                     />
                   </div>
@@ -244,7 +244,7 @@ export default function NutritionPage() {
                       step="0.1"
                       value={formData.carbs_g || ''}
                       onChange={(e) => setFormData({ ...formData, carbs_g: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                       placeholder="Optional"
                     />
                   </div>
@@ -255,7 +255,7 @@ export default function NutritionPage() {
                       step="0.1"
                       value={formData.fat_g || ''}
                       onChange={(e) => setFormData({ ...formData, fat_g: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                       placeholder="Optional"
                     />
                   </div>
@@ -267,7 +267,7 @@ export default function NutritionPage() {
                     value={formData.notes || ''}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     rows={2}
-                    className="w-full px-3 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                     placeholder="e.g., Pre-run fuel"
                   />
                 </div>
@@ -313,7 +313,7 @@ export default function NutritionPage() {
               <h2 className="text-lg font-semibold mb-4">Today&apos;s Entries</h2>
               <div className="space-y-3">
                 {entries.map((entry) => (
-                  <div key={entry.id} className="bg-[#0a0a0f] rounded p-4">
+                  <div key={entry.id} className="bg-slate-900 rounded p-4">
                     <div className="flex justify-between items-start mb-2">
                       <span className="text-sm font-medium capitalize">{entry.entry_type.replace('_', ' ')}</span>
                       {entry.calories && <span className="text-sm text-slate-400">{entry.calories} cal</span>}

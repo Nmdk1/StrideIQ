@@ -105,7 +105,7 @@ export function StravaConnection() {
           )}
 
           {syncStatus && (
-            <div className="bg-[#0a0a0f] rounded p-3">
+            <div className="bg-slate-900 rounded p-3">
               <div className="flex items-center gap-2">
                 {isSyncing && <LoadingSpinner size="sm" />}
                 <span className="text-sm">

@@ -103,8 +103,11 @@ export default function CreatePlanPage() {
   const [constraintAwareResult, setConstraintAwareResult] = useState<import('@/lib/api/services/plans').ConstraintAwarePlanResponse | null>(null);
   const [constraintAwarePreview, setConstraintAwarePreview] = useState<import('@/lib/api/services/plans').ConstraintAwarePreview | null>(null);
   
-  // Check if user is elite tier
-  const isEliteTier = user?.subscription_tier === 'elite';
+  // Elite is the single paid tier; preserve legacy paid tiers as "elite access" for now.
+  const hasEliteAccess =
+    user?.subscription_tier === 'elite' ||
+    (user?.subscription_tier !== undefined &&
+      ['pro', 'premium', 'guided', 'subscription'].includes(user.subscription_tier));
   
   // Check authentication
   useEffect(() => {
@@ -264,11 +267,9 @@ export default function CreatePlanPage() {
         ? parseTimeToSeconds(formData.recent_race_time) 
         : undefined;
       
-      // Check user tier
-      const isEliteTier = user?.subscription_tier && 
-        ['elite'].includes(user.subscription_tier);
-      const isPaidTier = user?.subscription_tier && 
-        ['elite', 'pro', 'premium', 'guided', 'subscription'].includes(user.subscription_tier);
+      // Check user tier (Elite is the only paid tier; legacy values still grant access until migration).
+      const isEliteTier = hasEliteAccess;
+      const isPaidTier = hasEliteAccess;
       const hasPaceData = formData.recent_race_distance && raceTimeSeconds;
       
       // Use auth state from hook, not local state
@@ -434,7 +435,7 @@ export default function CreatePlanPage() {
       : templateLabels;
   
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
+    <div className="min-h-screen bg-slate-900 text-slate-100">
       <div className="max-w-2xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
@@ -480,7 +481,7 @@ export default function CreatePlanPage() {
                   className={`w-full p-6 rounded-xl border-2 text-left transition-all ${
                     formData.planType === 'template'
                       ? 'border-pink-500 bg-pink-900/20'
-                      : 'border-slate-700/50 bg-[#0a0a0f] hover:border-slate-600'
+                      : 'border-slate-700/50 bg-slate-900 hover:border-slate-600'
                   }`}
                 >
                   <div className="flex items-start gap-4">
@@ -497,16 +498,16 @@ export default function CreatePlanPage() {
                 {/* Model-Driven Option */}
                 <button
                   onClick={() => {
-                    if (isEliteTier) {
+                    if (hasEliteAccess) {
                       setFormData({ ...formData, planType: 'model-driven' });
                     }
                   }}
-                  disabled={!isEliteTier}
+                  disabled={!hasEliteAccess}
                   className={`w-full p-6 rounded-xl border-2 text-left transition-all ${
                     formData.planType === 'model-driven'
                       ? 'border-purple-500 bg-purple-900/20'
-                      : isEliteTier
-                        ? 'border-slate-700/50 bg-[#0a0a0f] hover:border-purple-600'
+                      : hasEliteAccess
+                        ? 'border-slate-700/50 bg-slate-900 hover:border-purple-600'
                         : 'border-slate-800 bg-slate-900/50 opacity-60 cursor-not-allowed'
                   }`}
                 >
@@ -522,7 +523,7 @@ export default function CreatePlanPage() {
                       <div className="text-sm text-slate-400 mt-1">
                         Built from YOUR data. Calibrates τ1/τ2 from your training history, predicts race time, calculates optimal taper.
                       </div>
-                      {isEliteTier && (
+                      {hasEliteAccess && (
                         <div className="mt-3 flex flex-wrap gap-2">
                           <span className="px-2 py-1 bg-purple-900/50 text-purple-300 text-xs rounded">
                             Personal τ values
@@ -535,10 +536,10 @@ export default function CreatePlanPage() {
                           </span>
                         </div>
                       )}
-                      {!isEliteTier && (
+                      {!hasEliteAccess && (
                         <div className="mt-3">
-                          <a href="/pricing" className="text-purple-400 hover:text-purple-300 text-sm underline">
-                            Upgrade to Elite →
+                          <a href="/settings" className="text-purple-400 hover:text-purple-300 text-sm underline">
+                            Manage membership →
                           </a>
                         </div>
                       )}
@@ -549,16 +550,16 @@ export default function CreatePlanPage() {
                 {/* Constraint-Aware Option - The Premium N=1 Experience */}
                 <button
                   onClick={() => {
-                    if (isEliteTier) {
+                    if (hasEliteAccess) {
                       setFormData({ ...formData, planType: 'constraint-aware' });
                     }
                   }}
-                  disabled={!isEliteTier}
+                  disabled={!hasEliteAccess}
                   className={`w-full p-6 rounded-xl border-2 text-left transition-all ${
                     formData.planType === 'constraint-aware'
                       ? 'border-emerald-500 bg-emerald-900/20'
-                      : isEliteTier
-                        ? 'border-slate-700/50 bg-[#0a0a0f] hover:border-emerald-600'
+                      : hasEliteAccess
+                        ? 'border-slate-700/50 bg-slate-900 hover:border-emerald-600'
                         : 'border-slate-800 bg-slate-900/50 opacity-60 cursor-not-allowed'
                   }`}
                 >
@@ -578,7 +579,7 @@ export default function CreatePlanPage() {
                         Full N=1 experience. Analyzes your peak capabilities, detects constraints, respects your training patterns. 
                         Supports tune-up races.
                       </div>
-                      {isEliteTier && (
+                      {hasEliteAccess && (
                         <div className="mt-3 flex flex-wrap gap-2">
                           <span className="px-2 py-1 bg-emerald-900/50 text-emerald-300 text-xs rounded">
                             Peak 71mpw, 22mi long
@@ -594,10 +595,10 @@ export default function CreatePlanPage() {
                           </span>
                         </div>
                       )}
-                      {!isEliteTier && (
+                      {!hasEliteAccess && (
                         <div className="mt-3">
-                          <a href="/pricing" className="text-emerald-400 hover:text-emerald-300 text-sm underline">
-                            Upgrade to Elite →
+                          <a href="/settings" className="text-emerald-400 hover:text-emerald-300 text-sm underline">
+                            Manage membership →
                           </a>
                         </div>
                       )}
@@ -628,7 +629,7 @@ export default function CreatePlanPage() {
                         className={`p-4 rounded-xl border-2 text-left transition-all ${
                           formData.distance === d.value
                             ? 'border-purple-500 bg-purple-900/20'
-                            : 'border-slate-700/50 bg-[#0a0a0f] hover:border-slate-600'
+                            : 'border-slate-700/50 bg-slate-900 hover:border-slate-600'
                         }`}
                       >
                         <div className="font-bold text-white">{d.label}</div>
@@ -647,7 +648,7 @@ export default function CreatePlanPage() {
                     onChange={(e) => setFormData({ ...formData, race_date: e.target.value })}
                     min={new Date(Date.now() + 4 * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                     max={new Date(Date.now() + 52 * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                    className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white"
                   />
                   {formData.race_date && (
                     <div className="mt-2 text-sm text-slate-400">
@@ -664,7 +665,7 @@ export default function CreatePlanPage() {
                     value={formData.race_name}
                     onChange={(e) => setFormData({ ...formData, race_name: e.target.value })}
                     placeholder="e.g., Boston Marathon"
-                    className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
                   />
                 </div>
               </div>
@@ -698,7 +699,7 @@ export default function CreatePlanPage() {
                 </div>
                 
                 {/* Model Parameters */}
-                <div className="bg-[#0a0a0f] rounded-xl p-5">
+                <div className="bg-slate-900 rounded-xl p-5">
                   <div className="text-sm text-slate-400 mb-3">Your Model</div>
                   <div className="grid grid-cols-3 gap-4 mb-4">
                     <div>
@@ -740,15 +741,15 @@ export default function CreatePlanPage() {
                 
                 {/* Summary */}
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-[#0a0a0f] rounded-lg p-3 text-center">
+                  <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">{modelPlanResult.summary.total_weeks}</div>
                     <div className="text-xs text-slate-500">weeks</div>
                   </div>
-                  <div className="bg-[#0a0a0f] rounded-lg p-3 text-center">
+                  <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">{Math.round(modelPlanResult.summary.total_miles)}</div>
                     <div className="text-xs text-slate-500">total miles</div>
                   </div>
-                  <div className="bg-[#0a0a0f] rounded-lg p-3 text-center">
+                  <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">{Math.round(modelPlanResult.summary.total_tss)}</div>
                     <div className="text-xs text-slate-500">total TSS</div>
                   </div>
@@ -777,7 +778,7 @@ export default function CreatePlanPage() {
                         className={`p-4 rounded-xl border-2 text-left transition-all ${
                           formData.distance === d.value
                             ? 'border-emerald-500 bg-emerald-900/20'
-                            : 'border-slate-700/50 bg-[#0a0a0f] hover:border-slate-600'
+                            : 'border-slate-700/50 bg-slate-900 hover:border-slate-600'
                         }`}
                       >
                         <div className="font-bold text-white">{d.label}</div>
@@ -796,7 +797,7 @@ export default function CreatePlanPage() {
                     onChange={(e) => setFormData({ ...formData, race_date: e.target.value })}
                     min={new Date(Date.now() + 4 * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                     max={new Date(Date.now() + 52 * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                    className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white"
                   />
                   {formData.race_date && (
                     <div className="mt-2 text-sm text-slate-400">
@@ -813,7 +814,7 @@ export default function CreatePlanPage() {
                     value={formData.race_name}
                     onChange={(e) => setFormData({ ...formData, race_name: e.target.value })}
                     placeholder="e.g., Boston Marathon"
-                    className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
                   />
                 </div>
               </div>
@@ -830,7 +831,7 @@ export default function CreatePlanPage() {
               
               <div className="space-y-4">
                 {formData.tune_up_races.map((race, index) => (
-                  <div key={index} className="bg-[#0a0a0f] rounded-xl p-4 border border-slate-700/50">
+                  <div key={index} className="bg-slate-900 rounded-xl p-4 border border-slate-700/50">
                     <div className="flex justify-between items-start mb-4">
                       <div className="text-sm font-medium text-emerald-400">Tune-Up Race {index + 1}</div>
                       <button
@@ -949,7 +950,7 @@ export default function CreatePlanPage() {
                 </div>
                 
                 {/* Prediction */}
-                <div className="bg-[#0a0a0f] rounded-xl p-5">
+                <div className="bg-slate-900 rounded-xl p-5">
                   <div className="text-sm text-slate-400 mb-1">Predicted Finish</div>
                   <div className="text-3xl font-bold text-white">
                     {constraintAwareResult.prediction.time || 'N/A'}
@@ -960,7 +961,7 @@ export default function CreatePlanPage() {
                 </div>
                 
                 {/* Model Parameters */}
-                <div className="bg-[#0a0a0f] rounded-xl p-5">
+                <div className="bg-slate-900 rounded-xl p-5">
                   <div className="text-sm text-slate-400 mb-3">Your Response Model</div>
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
@@ -985,15 +986,15 @@ export default function CreatePlanPage() {
                 
                 {/* Plan Summary */}
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-[#0a0a0f] rounded-lg p-3 text-center">
+                  <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">{constraintAwareResult.summary.total_weeks}</div>
                     <div className="text-xs text-slate-500">weeks</div>
                   </div>
-                  <div className="bg-[#0a0a0f] rounded-lg p-3 text-center">
+                  <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">{Math.round(constraintAwareResult.summary.total_miles)}</div>
                     <div className="text-xs text-slate-500">total miles</div>
                   </div>
-                  <div className="bg-[#0a0a0f] rounded-lg p-3 text-center">
+                  <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">{Math.round(constraintAwareResult.summary.peak_miles)}</div>
                     <div className="text-xs text-slate-500">peak week</div>
                   </div>
@@ -1012,7 +1013,7 @@ export default function CreatePlanPage() {
                 )}
                 
                 {/* Week Themes Preview */}
-                <div className="bg-[#0a0a0f] rounded-xl p-5">
+                <div className="bg-slate-900 rounded-xl p-5">
                   <div className="text-sm text-slate-400 mb-3">Week Themes</div>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {constraintAwareResult.weeks.map((week, i) => (
@@ -1039,7 +1040,7 @@ export default function CreatePlanPage() {
                     className={`p-6 rounded-xl border-2 text-left transition-all ${
                       formData.distance === d.value
                         ? 'border-pink-500 bg-pink-900/20'
-                        : 'border-slate-700/50 bg-[#0a0a0f] hover:border-slate-600'
+                        : 'border-slate-700/50 bg-slate-900 hover:border-slate-600'
                     }`}
                   >
                     <div className="text-3xl mb-2">{d.icon}</div>
@@ -1063,7 +1064,7 @@ export default function CreatePlanPage() {
                     value={formData.race_date}
                     onChange={(e) => setFormData({ ...formData, race_date: e.target.value })}
                     min={new Date(Date.now() + 8 * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                    className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white"
                   />
                 </div>
                 
@@ -1074,12 +1075,12 @@ export default function CreatePlanPage() {
                     value={formData.race_name}
                     onChange={(e) => setFormData({ ...formData, race_name: e.target.value })}
                     placeholder="e.g., Boston Marathon"
-                    className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
                   />
                 </div>
                 
                 {formData.race_date && (
-                  <div className="p-4 bg-[#0a0a0f] rounded-lg">
+                  <div className="p-4 bg-slate-900 rounded-lg">
                     <div className="text-sm text-slate-400">Training Duration</div>
                     <div className="text-2xl font-bold text-white">
                       {weeksUntilRace} weeks
@@ -1140,7 +1141,7 @@ export default function CreatePlanPage() {
                   </div>
                 </div>
                 
-                <div className="p-4 bg-[#0a0a0f] rounded-lg">
+                <div className="p-4 bg-slate-900 rounded-lg">
                   <div className="text-sm text-slate-400">Your Volume Tier</div>
                   <div className="text-xl font-bold text-orange-400 capitalize">
                     {getVolumeTier().replace('_', ' ')}
@@ -1162,7 +1163,7 @@ export default function CreatePlanPage() {
                     className={`p-6 rounded-xl border-2 text-center transition-all ${
                       formData.days_per_week === days
                         ? 'border-pink-500 bg-pink-900/20'
-                        : 'border-slate-700/50 bg-[#0a0a0f] hover:border-slate-600'
+                        : 'border-slate-700/50 bg-slate-900 hover:border-slate-600'
                     }`}
                   >
                     <div className="text-3xl font-bold text-white">{days}</div>
@@ -1171,7 +1172,7 @@ export default function CreatePlanPage() {
                 ))}
               </div>
               
-              <div className="mt-6 p-4 bg-[#0a0a0f] rounded-lg">
+              <div className="mt-6 p-4 bg-slate-900 rounded-lg">
                 <p className="text-sm text-slate-400">
                   {formData.days_per_week === 5 && "5 days gives you flexibility with 2 rest days. Quality over quantity."}
                   {formData.days_per_week === 6 && "6 days is ideal for most runners. One rest day for recovery."}
@@ -1195,7 +1196,7 @@ export default function CreatePlanPage() {
                   <select
                     value={formData.recent_race_distance || ''}
                     onChange={(e) => setFormData({ ...formData, recent_race_distance: e.target.value || undefined })}
-                    className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white"
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white"
                   >
                     <option value="">No recent race (skip)</option>
                     <option value="5k">5K</option>
@@ -1215,7 +1216,7 @@ export default function CreatePlanPage() {
                           placeholder="Hours"
                           min="0"
                           max="10"
-                          className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                          className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
                           onChange={(e) => {
                             const hours = e.target.value || '0';
                             const [_, mins, secs] = (formData.recent_race_time || '0:00:00').split(':');
@@ -1230,7 +1231,7 @@ export default function CreatePlanPage() {
                           placeholder="Minutes"
                           min="0"
                           max="59"
-                          className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                          className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
                           onChange={(e) => {
                             const mins = e.target.value || '00';
                             const [hours, _, secs] = (formData.recent_race_time || '0:00:00').split(':');
@@ -1245,7 +1246,7 @@ export default function CreatePlanPage() {
                           placeholder="Seconds"
                           min="0"
                           max="59"
-                          className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                          className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
                           onChange={(e) => {
                             const secs = e.target.value || '00';
                             const [hours, mins, _] = (formData.recent_race_time || '0:00:00').split(':');
@@ -1281,7 +1282,7 @@ export default function CreatePlanPage() {
                     className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
                       formData.experience_level === level.value
                         ? 'border-pink-500 bg-pink-900/20'
-                        : 'border-slate-700/50 bg-[#0a0a0f] hover:border-slate-600'
+                        : 'border-slate-700/50 bg-slate-900 hover:border-slate-600'
                     }`}
                   >
                     <div className="font-bold text-white">{level.label}</div>
@@ -1299,7 +1300,7 @@ export default function CreatePlanPage() {
                   onChange={(e) => setFormData({ ...formData, injury_history: e.target.value })}
                   placeholder="e.g., Previous IT band issues, currently healthy"
                   rows={3}
-                  className="w-full px-4 py-3 bg-[#0a0a0f] border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
                 />
               </div>
             </div>
@@ -1350,24 +1351,24 @@ export default function CreatePlanPage() {
 
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-[#0a0a0f] rounded-lg p-4">
+                  <div className="bg-slate-900 rounded-lg p-4">
                     <div className="text-sm text-slate-400">Distance</div>
                     <div className="text-lg font-bold text-white capitalize">
                       {formData.distance.replace('_', ' ')}
                     </div>
                   </div>
 
-                  <div className="bg-[#0a0a0f] rounded-lg p-4">
+                  <div className="bg-slate-900 rounded-lg p-4">
                     <div className="text-sm text-slate-400">Duration</div>
                     <div className="text-lg font-bold text-white">{planDuration} weeks</div>
                   </div>
 
-                  <div className="bg-[#0a0a0f] rounded-lg p-4">
+                  <div className="bg-slate-900 rounded-lg p-4">
                     <div className="text-sm text-slate-400">Days/Week</div>
                     <div className="text-lg font-bold text-white">{formData.days_per_week}</div>
                   </div>
 
-                  <div className="bg-[#0a0a0f] rounded-lg p-4">
+                  <div className="bg-slate-900 rounded-lg p-4">
                     <div className="text-sm text-slate-400">Volume Tier</div>
                     <div className="text-lg font-bold text-orange-400 capitalize">
                       {getVolumeTier()}
@@ -1376,7 +1377,7 @@ export default function CreatePlanPage() {
                 </div>
                 
                 {formData.race_date && (
-                  <div className="bg-[#0a0a0f] rounded-lg p-4">
+                  <div className="bg-slate-900 rounded-lg p-4">
                     <div className="text-sm text-slate-400">Race Day</div>
                     <div className="text-lg font-bold text-white">
                       {new Date(formData.race_date).toLocaleDateString('en-US', {

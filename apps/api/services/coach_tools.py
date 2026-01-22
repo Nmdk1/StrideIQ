@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from models import Activity, TrainingPlan, PlannedWorkout, Athlete
 from services.efficiency_analytics import (
@@ -138,6 +139,125 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
             "total_distance_km": round(total_distance_m / 1000.0, 2),
             "total_duration_min": round(total_duration_s / 60.0, 1),
             "runs": run_rows,
+        },
+        "evidence": evidence,
+    }
+
+
+def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[str, Any]:
+    """
+    Calendar day context (plan + actual).
+
+    Use this when the athlete asks about a specific day from the calendar.
+    Returns planned workout + actual activities for that date with IDs for citations.
+    """
+    now = datetime.utcnow()
+    try:
+        day_date = date.fromisoformat(day)
+    except Exception:
+        return {
+            "ok": False,
+            "tool": "get_calendar_day_context",
+            "generated_at": _iso(now),
+            "error": "Invalid date format. Use YYYY-MM-DD.",
+            "data": {},
+            "evidence": [],
+        }
+
+    plan = (
+        db.query(TrainingPlan)
+        .filter(TrainingPlan.athlete_id == athlete_id, TrainingPlan.status == "active")
+        .first()
+    )
+
+    planned = None
+    if plan:
+        planned = (
+            db.query(PlannedWorkout)
+            .filter(PlannedWorkout.plan_id == plan.id, PlannedWorkout.scheduled_date == day_date)
+            .first()
+        )
+
+    acts = (
+        db.query(Activity)
+        .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
+        .filter(func.date(Activity.start_time) == day_date)
+        .order_by(Activity.start_time.asc())
+        .all()
+    )
+
+    planned_data: Optional[Dict[str, Any]] = None
+    evidence: List[Dict[str, Any]] = []
+    if planned:
+        planned_data = {
+            "planned_workout_id": str(planned.id),
+            "plan_id": str(planned.plan_id),
+            "date": planned.scheduled_date.isoformat() if planned.scheduled_date else None,
+            "week_number": planned.week_number,
+            "workout_type": planned.workout_type,
+            "workout_subtype": planned.workout_subtype,
+            "title": planned.title,
+            "coach_notes": planned.coach_notes,
+            "description": planned.description,
+            "target_distance_km": float(planned.target_distance_km) if planned.target_distance_km is not None else None,
+            "target_duration_minutes": planned.target_duration_minutes,
+            "completed": bool(planned.completed),
+            "skipped": bool(planned.skipped),
+        }
+        evidence.append(
+            {
+                "type": "planned_workout",
+                "id": str(planned.id),
+                "date": day_date.isoformat(),
+                "value": f"{planned.title} [{planned.workout_type}]",
+            }
+        )
+
+    activity_rows: List[Dict[str, Any]] = []
+    for a in acts:
+        distance_km = (float(a.distance_m) / 1000.0) if a.distance_m is not None else None
+        activity_rows.append(
+            {
+                "activity_id": str(a.id),
+                "start_time": _iso(a.start_time),
+                "name": a.name,
+                "distance_m": int(a.distance_m) if a.distance_m is not None else None,
+                "duration_s": int(a.duration_s) if a.duration_s is not None else None,
+                "avg_hr": int(a.avg_hr) if a.avg_hr is not None else None,
+                "pace_per_km": _pace_str(a.duration_s, a.distance_m),
+                "workout_type": a.workout_type,
+                "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
+            }
+        )
+
+        parts: List[str] = []
+        if distance_km is not None:
+            parts.append(f"{distance_km:.1f} km")
+        pace = _pace_str(a.duration_s, a.distance_m)
+        if pace:
+            parts.append(f"@ {pace}")
+        if a.avg_hr is not None:
+            parts.append(f"(avg HR {int(a.avg_hr)} bpm)")
+        if a.workout_type:
+            parts.append(f"[{a.workout_type}]")
+        evidence.append(
+            {
+                "type": "activity",
+                "id": str(a.id),
+                "date": day_date.isoformat(),
+                "value": " ".join(parts) if parts else "run",
+            }
+        )
+
+    return {
+        "ok": True,
+        "tool": "get_calendar_day_context",
+        "generated_at": _iso(now),
+        "data": {
+            "date": day_date.isoformat(),
+            "active_plan_id": str(plan.id) if plan else None,
+            "planned_workout": planned_data,
+            "activities": activity_rows,
         },
         "evidence": evidence,
     }

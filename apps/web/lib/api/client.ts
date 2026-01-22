@@ -29,6 +29,7 @@ export class ApiClientError extends Error {
 export interface RequestOptions extends RequestInit {
   skipAuth?: boolean;
   retries?: number;
+  timeoutMs?: number;
 }
 
 class ApiClient {
@@ -88,6 +89,7 @@ class ApiClient {
     const {
       skipAuth = false,
       retries = API_CONFIG.retries,
+      timeoutMs = API_CONFIG.timeout,
       ...fetchOptions
     } = options;
 
@@ -106,10 +108,27 @@ class ApiClient {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
+        // Timeout + cancellation support
+        const controller = new AbortController();
+        const originalSignal = fetchOptions.signal;
+        if (originalSignal) {
+          if (originalSignal.aborted) {
+            controller.abort();
+          } else {
+            originalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+          }
+        }
+        const timeoutHandle =
+          timeoutMs && timeoutMs > 0
+            ? setTimeout(() => controller.abort(), timeoutMs)
+            : null;
+
         const response = await fetch(url, {
           ...fetchOptions,
           headers,
+          signal: controller.signal,
         });
+        if (timeoutHandle) clearTimeout(timeoutHandle);
 
         if (!response.ok) {
           let errorData: ApiError | undefined;
@@ -136,6 +155,11 @@ class ApiClient {
         return undefined as T;
       } catch (error) {
         lastError = error as Error;
+
+        // Abort should never retry
+        if ((error as any)?.name === 'AbortError') {
+          throw new Error('Request cancelled or timed out');
+        }
 
         // Don't retry on client errors (4xx)
         if (error instanceof ApiClientError && error.status >= 400 && error.status < 500) {

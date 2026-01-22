@@ -29,6 +29,11 @@ def backfill_best_efforts_task(self: Task, athlete_id: str, limit: int = 100) ->
         Dictionary with backfill results
     """
     from services.strava_pbs import sync_strava_best_efforts
+    from services.ingestion_state import (
+        mark_best_efforts_started,
+        mark_best_efforts_finished,
+        mark_best_efforts_error,
+    )
     
     db: Session = get_db_sync()
     
@@ -39,8 +44,15 @@ def backfill_best_efforts_task(self: Task, athlete_id: str, limit: int = 100) ->
         
         if not athlete.strava_access_token:
             return {"status": "error", "error": "No Strava connection"}
+
+        # Durable ops marker: record task start
+        mark_best_efforts_started(db, athlete.id, "strava", task_id=str(self.request.id))
+        db.commit()
         
-        result = sync_strava_best_efforts(athlete, db, limit=limit)
+        # Production behavior: do NOT sleep for long periods inside a worker.
+        # If Strava rate limits, stop early and let the caller re-queue later.
+        result = sync_strava_best_efforts(athlete, db, limit=limit, allow_rate_limit_sleep=False)
+        mark_best_efforts_finished(db, athlete.id, "strava", result)
         db.commit()
         
         return {
@@ -49,10 +61,20 @@ def backfill_best_efforts_task(self: Task, athlete_id: str, limit: int = 100) ->
             "activities_checked": result.get('activities_checked', 0),
             "efforts_stored": result.get('efforts_stored', 0),
             "pbs_created": result.get('pbs_created', 0),
+            "rate_limited": result.get("rate_limited", False),
+            "retry_after_s": result.get("retry_after_s"),
         }
         
     except Exception as e:
         db.rollback()
+        try:
+            # Best-efforts ops marker: record error (best-effort; never break the task return)
+            athlete = db.get(Athlete, athlete_id)
+            if athlete:
+                mark_best_efforts_error(db, athlete.id, "strava", error=str(e), task_id=str(self.request.id))
+                db.commit()
+        except Exception:
+            db.rollback()
         traceback.print_exc()
         return {"status": "error", "error": str(e)}
     finally:

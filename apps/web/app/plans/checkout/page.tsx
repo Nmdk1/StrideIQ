@@ -66,7 +66,7 @@ function CheckoutContent() {
   
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
         <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-8 max-w-md w-full text-center">
           <h1 className="text-2xl font-bold text-white mb-4">Sign In Required</h1>
           <p className="text-slate-400 mb-6">
@@ -84,7 +84,7 @@ function CheckoutContent() {
   }
   
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-12">
+    <div className="min-h-screen bg-slate-900 text-slate-100 py-12">
       <div className="max-w-lg mx-auto px-4">
         {/* Header */}
         <div className="text-center mb-8">
@@ -198,7 +198,7 @@ function CheckoutContent() {
 export default function CheckoutPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     }>

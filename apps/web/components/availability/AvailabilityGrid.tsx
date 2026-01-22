@@ -11,6 +11,7 @@ import { useAvailabilityGrid, useBulkUpdateAvailability } from '@/lib/hooks/quer
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import type { TrainingAvailability } from '@/lib/api/types';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const TIME_BLOCKS: Array<'morning' | 'afternoon' | 'evening'> = ['morning', 'afternoon', 'evening'];
@@ -43,19 +44,25 @@ function AvailabilityCell({ slot, onToggle }: AvailabilityCellProps) {
   const nextStatus = STATUS_ORDER[(currentIndex + 1) % STATUS_ORDER.length];
 
   return (
-    <button
-      onClick={onToggle}
-      className={`
-        p-4 rounded border transition-all
-        ${STATUS_COLORS[slot.status]}
-        hover:opacity-80 cursor-pointer
-        text-sm text-left
-      `}
-      title={`Click to change to ${STATUS_LABELS[nextStatus]}`}
-    >
-      <div className="font-medium mb-1">{STATUS_LABELS[slot.status]}</div>
-      <div className="text-xs text-slate-400 capitalize">{slot.time_block}</div>
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onToggle}
+          className={`
+            p-4 rounded border transition-all
+            ${STATUS_COLORS[slot.status]}
+            hover:opacity-80 cursor-pointer
+            text-sm text-left
+          `}
+        >
+          <div className="font-medium mb-1">{STATUS_LABELS[slot.status]}</div>
+          <div className="text-xs text-slate-400 capitalize">{slot.time_block}</div>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        Click to change to {STATUS_LABELS[nextStatus]}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

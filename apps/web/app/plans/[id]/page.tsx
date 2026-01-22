@@ -58,6 +58,7 @@ const workoutStyles: Record<string, { bg: string; text: string }> = {
   medium_long: { bg: 'bg-sky-900/40', text: 'text-sky-400' },
   long: { bg: 'bg-blue-900/40', text: 'text-blue-400' },
   long_mp: { bg: 'bg-pink-900/40', text: 'text-pink-400' },
+  progression: { bg: 'bg-blue-900/40', text: 'text-blue-300' },
   threshold: { bg: 'bg-orange-900/40', text: 'text-orange-400' },
   tempo: { bg: 'bg-orange-900/40', text: 'text-orange-400' },
   intervals: { bg: 'bg-red-900/40', text: 'text-red-400' },
@@ -119,7 +120,7 @@ export default function PlanOverviewPage() {
   
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
+      <div className="min-h-screen bg-slate-900 text-slate-100">
         <div className="max-w-6xl mx-auto px-4 py-8">
           {/* Header */}
           <div className="mb-8">

@@ -7,12 +7,13 @@
  * Three sections:
  * 1. Active Insights - Auto-generated, ranked by importance
  * 2. Build Status - Phase-aware KPIs and trajectory (if active plan)
- * 3. Athlete Intelligence - What works for YOU (premium)
+ * 3. Athlete Intelligence - What works for YOU (Elite)
  */
 
 import React, { useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { 
+  useInsightFeed,
   useActiveInsights, 
   useBuildStatus, 
   useAthleteIntelligence,
@@ -21,7 +22,8 @@ import {
   useGenerateInsights,
 } from '@/lib/hooks/queries/insights';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import type { Insight, KPI } from '@/lib/api/services/insights';
+import type { Insight, KPI, InsightFeedCard } from '@/lib/api/services/insights';
+import { useAuth } from '@/lib/context/AuthContext';
 
 // Insight type styling
 const INSIGHT_STYLES: Record<string, { bg: string; border: string; icon: string }> = {
@@ -144,6 +146,115 @@ function InsightCard({
   );
 }
 
+function ConfidenceBadge({ card }: { card: InsightFeedCard }) {
+  const label = (card.confidence?.label || 'insufficient').toLowerCase();
+  const cls =
+    label === 'high'
+      ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/30'
+      : label === 'moderate'
+        ? 'bg-yellow-600/20 text-yellow-300 border-yellow-500/30'
+        : label === 'low'
+          ? 'bg-orange-600/20 text-orange-300 border-orange-500/30'
+          : 'bg-slate-700/40 text-slate-300 border-slate-600/40';
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded border ${cls}`}>
+      {label} confidence
+    </span>
+  );
+}
+
+function FeedSection() {
+  const { data, isLoading, error } = useInsightFeed(5);
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-10">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-10 text-slate-400">
+        Unable to load Insights feed right now.
+      </div>
+    );
+  }
+
+  const cards = data?.cards || [];
+  if (!cards.length) {
+    return (
+      <div className="text-center py-10 bg-slate-800/50 rounded-lg border border-slate-700/50">
+        <div className="text-5xl mb-4">🧠</div>
+        <h3 className="text-lg font-medium text-slate-300 mb-2">No insights yet</h3>
+        <p className="text-slate-500 max-w-md mx-auto">
+          Sync a few runs (with heart rate if possible) and we’ll start ranking what matters.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <span className="text-2xl">⚡</span>
+          Top Insights (Ranked)
+        </h2>
+        <p className="text-slate-400 text-sm mt-1">
+          Engine output → evidence → action
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {cards.map((card) => (
+          <div
+            key={card.key}
+            className="rounded-lg border border-slate-700/50 bg-slate-800/40 p-5"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-slate-500 uppercase tracking-wide">
+                    {card.type.replace(/_/g, ' ')}
+                  </span>
+                  <ConfidenceBadge card={card} />
+                </div>
+                <h3 className="font-semibold text-white mb-2">{card.title}</h3>
+                <p className="text-slate-300 text-sm leading-relaxed">{card.summary}</p>
+
+                {card.evidence?.length ? (
+                  <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {card.evidence.slice(0, 4).map((e, idx) => (
+                      <div key={idx} className="bg-slate-900/40 rounded-lg p-3 border border-slate-800">
+                        <div className="text-xs text-slate-500">{e.label}</div>
+                        <div className="text-sm text-slate-200 mt-0.5">{e.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {(card.actions || []).slice(0, 2).map((a) => (
+                  <a
+                    key={a.href}
+                    href={a.href}
+                    className="px-3 py-2 bg-slate-900/40 border border-slate-700/50 hover:border-slate-600 rounded-lg text-sm font-medium transition-colors text-center"
+                  >
+                    {a.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function KPICard({ kpi }: { kpi: KPI }) {
   const trendColor = kpi.trend === 'up' ? 'text-emerald-400' : kpi.trend === 'down' ? 'text-red-400' : 'text-slate-400';
   const trendIcon = kpi.trend === 'up' ? '↑' : kpi.trend === 'down' ? '↓' : null;
@@ -208,27 +319,6 @@ function ActiveInsightsSection() {
           {generateMutation.isPending ? 'Generating...' : 'Refresh'}
         </button>
       </div>
-      
-      {data?.premium_locked && data.premium_locked > 0 && (
-        <div className="bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-700/50 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-purple-300 font-medium">
-                {data.premium_locked} more insights available
-              </span>
-              <span className="text-slate-400 text-sm ml-2">
-                Upgrade to see causal attribution, pattern detection, and more
-              </span>
-            </div>
-            <a 
-              href="/settings" 
-              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-sm font-medium"
-            >
-              Upgrade
-            </a>
-          </div>
-        </div>
-      )}
       
       {hasInsights ? (
         <div className="space-y-4">
@@ -373,7 +463,13 @@ function BuildStatusSection() {
 }
 
 function AthleteIntelligenceSection() {
-  const { data, isLoading, error } = useAthleteIntelligence();
+  const { user } = useAuth();
+  const hasEliteAccess =
+    user?.subscription_tier === 'elite' ||
+    (user?.subscription_tier !== undefined &&
+      ['pro', 'premium', 'guided', 'subscription'].includes(user.subscription_tier));
+
+  const { data, isLoading, error } = useAthleteIntelligence(hasEliteAccess);
   
   if (isLoading) {
     return (
@@ -384,21 +480,69 @@ function AthleteIntelligenceSection() {
   }
   
   if (error) {
-    // Premium-gated
+    // If you are Elite and still seeing an error, it's a real failure—not a lock.
+    if (hasEliteAccess) {
+      const msg = (error as Error)?.message || 'Unable to load Athlete Intelligence.';
+      return (
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-medium text-white mb-1">Athlete Intelligence</h3>
+              <p className="text-slate-400 text-sm">{msg}</p>
+              <p className="text-slate-500 text-xs mt-2">
+                This is an Elite feature and should load for you—this message indicates a backend/API error.
+              </p>
+            </div>
+            <a
+              href="/settings"
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition-colors h-fit"
+            >
+              Settings
+            </a>
+          </div>
+        </div>
+      );
+    }
+
+    // Non-elite: show a real preview (not a blank "locked" box).
     return (
-      <div className="bg-gradient-to-r from-purple-900/20 to-pink-900/20 border border-purple-700/50 rounded-lg p-6 text-center">
-        <div className="text-4xl mb-3">💡</div>
-        <h3 className="text-lg font-medium text-white mb-2">Athlete Intelligence</h3>
-        <p className="text-slate-400 text-sm mb-4 max-w-md mx-auto">
-          See what works for YOU — patterns, injury signals, and personalized insights 
-          from your training history.
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-medium text-white mb-1">Athlete Intelligence</h3>
+            <p className="text-slate-400 text-sm">
+              Preview of what this will surface once Elite membership is enabled.
+            </p>
+          </div>
+          <a
+            href="/settings"
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition-colors h-fit"
+          >
+            Manage membership
+          </a>
+        </div>
+
+        <div className="mt-5 grid md:grid-cols-2 gap-4">
+          <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4">
+            <div className="text-xs text-slate-500 uppercase tracking-wide mb-2">What works (preview)</div>
+            <ul className="space-y-2 blur-sm select-none">
+              <li className="text-slate-200 text-sm">Long runs 90–120 min correlate with better efficiency the following week.</li>
+              <li className="text-slate-200 text-sm">2 quality sessions per 14 days is your current sweet spot.</li>
+              <li className="text-slate-200 text-sm">Your best weeks follow 1 deliberate cutback week every 3–4 weeks.</li>
+            </ul>
+          </div>
+          <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4">
+            <div className="text-xs text-slate-500 uppercase tracking-wide mb-2">What hurts (preview)</div>
+            <ul className="space-y-2 blur-sm select-none">
+              <li className="text-slate-200 text-sm">Hard sessions too close together precede your “harmful” load weeks.</li>
+              <li className="text-slate-200 text-sm">Fast “easy” days raise fatigue without improving outcomes.</li>
+              <li className="text-slate-200 text-sm">Low sleep weeks coincide with worse HR/pace efficiency.</li>
+            </ul>
+          </div>
+        </div>
+        <p className="text-xs text-slate-500 mt-3">
+          Preview items are illustrative; real output will be evidence-backed and personalized.
         </p>
-        <a 
-          href="/settings" 
-          className="inline-block px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-sm font-medium transition-colors"
-        >
-          Upgrade to Premium
-        </a>
       </div>
     );
   }
@@ -482,8 +626,8 @@ function AthleteIntelligenceSection() {
 export default function InsightsPage() {
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#0a0a0f] text-slate-100 py-8">
-        <div className="max-w-4xl mx-auto px-4">
+      <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
+        <div className="max-w-6xl mx-auto px-4">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-2">🧠 Insights</h1>
@@ -494,6 +638,11 @@ export default function InsightsPage() {
           
           {/* Three sections */}
           <div className="space-y-12">
+            {/* Section 0: Ranked feed */}
+            <section>
+              <FeedSection />
+            </section>
+
             {/* Section 1: Active Insights */}
             <section>
               <ActiveInsightsSection />

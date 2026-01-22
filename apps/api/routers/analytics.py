@@ -8,6 +8,7 @@ This is the core product differentiator.
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import Optional
+from datetime import date, timedelta
 from core.database import get_db
 from core.auth import get_current_user
 from core.cache import cached, cache_key, get_cache, set_cache
@@ -15,6 +16,7 @@ from core.feature_flags import is_feature_enabled
 from models import Athlete
 from services.efficiency_analytics import get_efficiency_trends
 from services.trend_attribution import get_trend_attribution, attribution_result_to_dict
+from services.load_response_explain import explain_load_response_week
 
 router = APIRouter(prefix="/v1/analytics", tags=["analytics"])
 
@@ -102,17 +104,10 @@ def get_trend_attribution_endpoint(
     Returns ranked attributions by contribution percentage with confidence badges.
     
     ADR-014: Why This Trend? Attribution Integration
-    
-    Requires feature flag: analytics.trend_attribution
     """
-    # Check feature flag
-    flag_enabled = is_feature_enabled("analytics.trend_attribution", str(current_user.id), db)
-    
-    if not flag_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Trend attribution feature is not enabled"
-        )
+    # Elite-only (paid access); admins always allowed
+    if current_user.role not in ("admin", "owner") and not getattr(current_user, "has_active_subscription", False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Trend attribution requires Elite membership")
     
     # Generate cache key
     cache_key_str = cache_key(
@@ -157,6 +152,47 @@ def get_trend_attribution_endpoint(
         )
 
 
+@router.get("/load-response-explain")
+def get_load_response_explain_endpoint(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    week_start: date = Query(..., description="Week start date (YYYY-MM-DD). Any date within the week is accepted; it will be normalized to Monday."),
+):
+    """
+    Explain a specific load-response week.
+
+    Returns:
+    - The week’s load metrics + efficiency delta (vs prior week)
+    - The exact rule used for load_type classification
+    - A ranked set of “signals” (sleep/stress/soreness/HRV/resting HR, etc.) vs a recent baseline
+
+    This is the “Harmful → Why?” drilldown for the Load → Response chart.
+    """
+    # Cache key per athlete per week
+    cache_key_str = cache_key(
+        "load_response_explain",
+        str(current_user.id),
+        week_start=week_start.isoformat(),
+    )
+
+    cached_result = get_cache(cache_key_str)
+    if cached_result is not None:
+        return cached_result
+
+    try:
+        payload = explain_load_response_week(
+            athlete_id=str(current_user.id),
+            week_start=week_start,
+            db=db,
+        )
+        set_cache(cache_key_str, payload, ttl=1800)  # 30 minutes
+        return payload
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error explaining load-response week: {str(e)}"
+        )
+
 # CS-prediction endpoint REMOVED
 # Archived to branch: archive/cs-model-2026-01
 # Reason: Redundant with Training Pace Calculator, low perceived value, user confusion
@@ -183,21 +219,15 @@ def get_diagnostic_report_endpoint(
     ADR-019: On-Demand Diagnostic Report
     
     Rate limited: 1 report per 15 minutes (cached for 1 hour)
-    Requires feature flag: analytics.diagnostic_report
+    Elite-only (paid access); admins always allowed
     """
     from services.athlete_diagnostic import (
         generate_diagnostic_report,
         diagnostic_report_to_dict
     )
     
-    # Check feature flag
-    flag_enabled = is_feature_enabled("analytics.diagnostic_report", str(current_user.id), db)
-    
-    if not flag_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Diagnostic report feature is not enabled"
-        )
+    if current_user.role not in ("admin", "owner") and not getattr(current_user, "has_active_subscription", False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Diagnostic report requires Elite membership")
     
     # Generate cache key
     cache_key_str = cache_key(

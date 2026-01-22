@@ -45,6 +45,7 @@ export interface CalendarInsight {
 
 export interface PlannedWorkout {
   id: string;
+  plan_id: string;
   scheduled_date: string;
   workout_type: string;
   workout_subtype?: string;
@@ -202,7 +203,16 @@ export const calendarService = {
   /**
    * Send a message to the coach
    */
-  async sendCoachMessage(request: CoachMessageRequest): Promise<CoachMessageResponse> {
-    return apiClient.post('/calendar/coach', request);
+  async sendCoachMessage(
+    request: CoachMessageRequest,
+    options?: { signal?: AbortSignal; timeoutMs?: number }
+  ): Promise<CoachMessageResponse> {
+    // Coach can legitimately take longer (tool calls + run)
+    return apiClient.post('/calendar/coach', request, {
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs ?? 120000,
+      // Never retry chat POSTs: retries can multiply perceived latency and can duplicate messages.
+      retries: 0,
+    });
   },
 };

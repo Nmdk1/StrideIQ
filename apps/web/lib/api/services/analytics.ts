@@ -63,6 +63,83 @@ export interface EfficiencyTrendsResponse {
   }>;
 }
 
+export interface LoadResponseExplainResponse {
+  week: { week_start: string; week_end: string };
+  load_type: 'productive' | 'wasted' | 'harmful' | 'neutral';
+  confidence: 'low' | 'moderate' | 'high';
+  interpretation: {
+    meaning: string;
+    taper_cutback_note: string;
+    volume_change_pct: number | null;
+  };
+  data_sources: {
+    activities_week: number;
+    activities_previous_week: number;
+    checkins_week: number;
+    checkins_baseline: number;
+    activities_baseline: number;
+  };
+  rule: {
+    productive_if_delta_lt: number;
+    harmful_if_delta_gt: number;
+    wasted_if_abs_delta_lt: number;
+    note: string;
+  };
+  metrics: {
+    current: {
+      total_distance_miles: number;
+      total_distance_km: number;
+      total_duration_hours: number;
+      activity_count: number;
+      avg_efficiency: number | null;
+    };
+    previous: {
+      total_distance_miles: number;
+      total_distance_km: number;
+      total_duration_hours: number;
+      activity_count: number;
+      avg_efficiency: number | null;
+    };
+    efficiency_delta: number | null;
+    volume_change_pct: number | null;
+  };
+  signals: Array<{
+    factor: string;
+    label: string;
+    week_avg: number;
+    baseline_avg: number;
+    delta: number;
+    z: number | null;
+    direction: 'higher_better' | 'lower_better';
+    is_worse: boolean | null;
+    sample_size_week: number;
+    sample_size_baseline: number;
+  }>;
+  activity_signals: Array<{
+    factor: string;
+    label: string;
+    week_avg: number;
+    baseline_avg: number;
+    delta: number;
+    direction: 'higher_more_strain' | 'higher_better' | 'lower_better';
+    is_worse: boolean | null;
+    sample_size_week: number;
+    sample_size_baseline: number;
+  }>;
+  week_vs_prev_activity_signals: Array<{
+    factor: string;
+    label: string;
+    week_avg: number;
+    previous_week_avg: number;
+    delta: number;
+    direction: 'higher_more_strain' | 'higher_better' | 'lower_better';
+    is_worse: boolean | null;
+    sample_size_week: number;
+    sample_size_previous_week: number;
+  }>;
+  generated_at: string;
+}
+
 export const analyticsService = {
   /**
    * Get efficiency trends over time
@@ -81,6 +158,12 @@ export const analyticsService = {
     });
     return apiClient.get<EfficiencyTrendsResponse>(
       `/v1/analytics/efficiency-trends?${params.toString()}`
+    );
+  },
+
+  async explainLoadResponseWeek(weekStart: string): Promise<LoadResponseExplainResponse> {
+    return apiClient.get<LoadResponseExplainResponse>(
+      `/v1/analytics/load-response-explain?week_start=${encodeURIComponent(weekStart)}`
     );
   },
 } as const;

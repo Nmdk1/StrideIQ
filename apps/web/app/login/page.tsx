@@ -46,14 +46,14 @@ export default function LoginPage() {
   // Show loading while checking auth or redirecting
   if (authLoading || isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f]">
+      <div className="min-h-screen flex items-center justify-center bg-slate-900">
         <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100 flex items-center justify-center py-12 px-4">
+    <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full">
         <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-8">
           <h1 className="text-3xl font-bold mb-2">Login</h1>
@@ -72,7 +72,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="you@example.com"
               />
             </div>
@@ -87,7 +87,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-4 py-2 bg-[#0a0a0f] border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-700/50 rounded text-white focus:outline-none focus:border-blue-600"
                 placeholder="••••••••"
               />
             </div>

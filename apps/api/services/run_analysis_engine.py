@@ -27,7 +27,10 @@ from sqlalchemy import func, and_, or_
 import statistics
 import logging
 
-from models import Activity, Athlete, DailyCheckin, NutritionEntry
+from models import Activity, Athlete, DailyCheckin, NutritionEntry, ActivitySplit
+
+from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
+from services.efficiency_trending import analyze_efficiency_trend, TrendDirection as EfTrendDirection, TrendConfidence as EfTrendConfidence
 
 logger = logging.getLogger(__name__)
 
@@ -476,7 +479,40 @@ class RunAnalysisEngine:
         start_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         if metric == "efficiency":
-            data_points = self._get_efficiency_data_points(athlete_id, start_date)
+            # Use EF (NGP/GAP-based) + statistical trend gating so sparse data
+            # doesn't misleadingly show "declining".
+            time_series = self._get_efficiency_time_series_for_trend(athlete_id, start_date)
+            eff_trend = analyze_efficiency_trend(time_series, min_sample_size=min_data_points)
+
+            analysis.data_points = eff_trend.sample_size
+            analysis.period_days = eff_trend.period_days
+
+            # Map to RunAnalysisEngine enums
+            if eff_trend.direction == EfTrendDirection.INSUFFICIENT:
+                analysis.direction = TrendDirection.INSUFFICIENT_DATA
+            elif eff_trend.direction == EfTrendDirection.IMPROVING:
+                analysis.direction = TrendDirection.IMPROVING
+            elif eff_trend.direction == EfTrendDirection.DECLINING:
+                analysis.direction = TrendDirection.DECLINING
+            else:
+                analysis.direction = TrendDirection.STABLE
+
+            analysis.magnitude = eff_trend.change_percent
+
+            # Confidence: map enum to a simple 0-1 scalar for UI (still surfaced via is_significant)
+            if eff_trend.confidence == EfTrendConfidence.HIGH:
+                analysis.confidence = 0.9
+            elif eff_trend.confidence == EfTrendConfidence.MODERATE:
+                analysis.confidence = 0.6
+            elif eff_trend.confidence == EfTrendConfidence.LOW:
+                analysis.confidence = 0.35
+            else:
+                analysis.confidence = 0.0
+
+            # Only mark significant when trend is statistically credible + meaningful.
+            # (prevents "declining" labels from sparse/noisy windows)
+            analysis.is_significant = bool(eff_trend.is_actionable)
+            return analysis
         elif metric == "volume":
             data_points = self._get_volume_data_points(athlete_id, start_date)
         else:
@@ -530,6 +566,74 @@ class RunAnalysisEngine:
         analysis.is_significant = analysis.confidence > 0.3 and abs(relative_change) > 0.05
         
         return analysis
+
+    def _get_efficiency_time_series_for_trend(
+        self,
+        athlete_id: UUID,
+        start_date: datetime,
+    ) -> List[Dict]:
+        """
+        Build an EF time-series suitable for statistical trending.
+
+        EF is calculated from splits using GAP/NGP when available and applies a cardio-lag filter.
+        This is more stable/meaningful than raw HR/pace ratios and aligns with our analytics stack.
+        """
+        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        max_hr = athlete.max_hr if athlete and athlete.max_hr else None
+
+        activities = (
+            self.db.query(Activity)
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.start_time >= start_date,
+                Activity.distance_m.isnot(None),
+                Activity.distance_m > 1609,
+                Activity.duration_s.isnot(None),
+                Activity.duration_s > 300,
+            )
+            .order_by(Activity.start_time.asc())
+            .all()
+        )
+
+        if not activities:
+            return []
+
+        activity_ids = [a.id for a in activities]
+        splits = (
+            self.db.query(ActivitySplit)
+            .filter(ActivitySplit.activity_id.in_(activity_ids))
+            .order_by(ActivitySplit.activity_id, ActivitySplit.split_number)
+            .all()
+        )
+
+        splits_by_activity: Dict[str, List[ActivitySplit]] = {}
+        for s in splits:
+            splits_by_activity.setdefault(str(s.activity_id), []).append(s)
+
+        time_series: List[Dict] = []
+        for a in activities:
+            s = splits_by_activity.get(str(a.id), [])
+            if not s:
+                continue
+
+            eff = calculate_activity_efficiency_with_decoupling(
+                activity=a,
+                splits=s,
+                max_hr=max_hr,
+            )
+            ef = eff.get("efficiency_factor")
+            if ef is None:
+                continue
+
+            time_series.append(
+                {
+                    "date": a.start_time.isoformat(),
+                    "efficiency_factor": ef,
+                    "activity_id": str(a.id),
+                }
+            )
+
+        return time_series
     
     def _get_efficiency_data_points(
         self, 
