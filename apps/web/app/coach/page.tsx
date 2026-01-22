@@ -200,20 +200,21 @@ export default function CoachPage() {
   
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
-        {/* Header */}
-        <div className="border-b border-slate-700 bg-slate-800/50 px-4 py-3">
-          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+      <div className="min-h-screen bg-slate-900 text-slate-100">
+        <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+          {/* Header (match Home page shell) */}
+          <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 ring-2 ring-orange-500/30">
-                <MessageSquare className="w-5 h-5 text-white" />
+              <div className="p-2.5 rounded-xl bg-orange-500/20 ring-1 ring-orange-500/30">
+                <MessageSquare className="w-6 h-6 text-orange-500" />
               </div>
               <div>
-                <h1 className="font-semibold flex items-center gap-2">
-                  StrideIQ Coach
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold">Coach</h1>
                   <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs">AI</Badge>
-                </h1>
-                <p className="text-xs text-slate-400">Data-driven training guidance</p>
+                </div>
+                <p className="text-sm text-slate-400">High-trust analysis and prescriptive training, backed by receipts.</p>
               </div>
             </div>
 
@@ -228,49 +229,105 @@ export default function CoachPage() {
               New conversation
             </Button>
           </div>
-        </div>
-        
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-6">
-          <div className="max-w-3xl mx-auto space-y-4">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <Card
-                  className={`max-w-[85%] ${
-                    message.role === 'user'
-                      ? 'bg-orange-600 border-orange-500 text-white'
-                      : 'bg-slate-800 border-slate-700'
-                  }`}
-                >
-                  <CardContent className="py-3 px-4">
-                    {message.role === 'assistant' ? (
-                      <div className="prose prose-invert prose-sm max-w-none">
-                        <ReactMarkdown>{message.content}</ReactMarkdown>
-                      </div>
-                    ) : (
-                      <p className="whitespace-pre-wrap">{message.content}</p>
-                    )}
-                    <p className={`text-xs mt-2 ${message.role === 'user' ? 'text-orange-200' : 'text-slate-500'}`}>
-                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-            ))}
 
-            {/* Empty-state suggestions (kept close to greeting; avoids the "void") */}
-            {messages.length <= 1 && suggestions.length > 0 && (
-              <div className="pt-2">
-                <div className="flex items-center gap-2 text-xs text-slate-400 mb-3">
-                  <Sparkles className="w-3.5 h-3.5 text-orange-500" />
-                  <span>Try one of these:</span>
+          {/* Main grid (align with Home bento rhythm) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+            {/* Chat panel */}
+            <Card className="lg:col-span-8 bg-slate-800/50 border-slate-700/50 overflow-hidden flex flex-col min-h-[68vh]">
+              <CardContent className="p-0 flex flex-col flex-1">
+                {/* Messages (taller + higher: less outer padding, more viewport usage) */}
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <Card
+                        className={`max-w-[92%] ${
+                          message.role === 'user'
+                            ? 'bg-orange-600 border-orange-500 text-white'
+                            : 'bg-slate-900/30 border-slate-700/60'
+                        }`}
+                      >
+                        <CardContent className="py-3 px-4">
+                          {message.role === 'assistant' ? (
+                            <div className="prose prose-invert prose-sm max-w-none">
+                              <ReactMarkdown>{message.content}</ReactMarkdown>
+                            </div>
+                          ) : (
+                            <p className="whitespace-pre-wrap">{message.content}</p>
+                          )}
+                          <p className={`text-xs mt-2 ${message.role === 'user' ? 'text-orange-200' : 'text-slate-500'}`}>
+                            {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  ))}
+
+                  {isLoading && (
+                    <div className="flex justify-start">
+                      <Card className="bg-slate-900/30 border-slate-700/60">
+                        <CardContent className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <LoadingSpinner size="sm" />
+                            <span className="text-slate-400">Thinking...</span>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+
+                  {error && (
+                    <div className="flex justify-center">
+                      <Card className="bg-red-900/50 border-red-700">
+                        <CardContent className="py-3 px-4 text-red-300">
+                          {error}
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+
+                  <div ref={messagesEndRef} />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {suggestions.map((prompt, i) => {
+                {/* Input (anchored inside chat panel) */}
+                <div className="border-t border-slate-700/60 bg-slate-900/40 px-4 py-4">
+                  <div className="flex gap-3">
+                    <textarea
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Ask your coach anything..."
+                      rows={1}
+                      className="flex-1 px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl text-white resize-none focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    />
+                    <Button
+                      onClick={() => handleSend()}
+                      disabled={!input.trim() || isLoading}
+                      className="px-6 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
+                    >
+                      <Send className="w-4 h-4 mr-1.5" />
+                      Send
+                    </Button>
+                  </div>
+                  <p className="text-xs text-slate-500 text-center mt-2">
+                    Receipts required for athlete-specific numbers (dates + activity ids + values).
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Capabilities / suggestions panel */}
+            <Card className="lg:col-span-4 bg-slate-800/50 border-slate-700/50 h-full">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-sm text-slate-300 mb-3">
+                  <Sparkles className="w-4 h-4 text-orange-500" />
+                  <span className="font-semibold">Try one of these</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+                  {(suggestions || []).slice(0, 5).map((prompt, i) => {
                     const card = buildSuggestionCard(prompt);
                     const Icon = card.Icon;
                     return (
@@ -279,10 +336,10 @@ export default function CoachPage() {
                         type="button"
                         onClick={() => handleSend(card.prompt)}
                         disabled={isLoading}
-                        className="text-left rounded-2xl border border-slate-700 bg-slate-800/50 hover:bg-slate-800 hover:border-orange-500/40 transition-colors p-4 disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="text-left rounded-lg border border-slate-700/60 bg-slate-900/30 hover:bg-slate-900/40 hover:border-orange-500/40 transition-colors p-4 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         <div className="flex items-start gap-3">
-                          <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-700">
+                          <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-700/60">
                             <Icon className="w-4 h-4 text-orange-400" />
                           </div>
                           <div className="min-w-0">
@@ -290,68 +347,15 @@ export default function CoachPage() {
                             <div className="text-sm text-slate-400 mt-1 leading-snug">
                               {card.description}
                             </div>
-                            <div className="text-xs text-slate-500 mt-3">
-                              Sends a structured prompt (hidden) • receipts required
-                            </div>
                           </div>
                         </div>
                       </button>
                     );
                   })}
                 </div>
-              </div>
-            )}
-            
-            {isLoading && (
-              <div className="flex justify-start">
-                <Card className="bg-slate-800 border-slate-700">
-                  <CardContent className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <LoadingSpinner size="sm" />
-                      <span className="text-slate-400">Thinking...</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-            
-            {error && (
-              <div className="flex justify-center">
-                <Card className="bg-red-900/50 border-red-700">
-                  <CardContent className="py-3 px-4 text-red-300">
-                    {error}
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-            
-            <div ref={messagesEndRef} />
+              </CardContent>
+            </Card>
           </div>
-        </div>
-        
-        {/* Input */}
-        <div className="sticky bottom-0 border-t border-slate-700 bg-slate-900/80 backdrop-blur px-4 py-4">
-          <div className="max-w-3xl mx-auto flex gap-3">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask your coach anything..."
-              rows={1}
-              className="flex-1 px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl text-white resize-none focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-            />
-            <Button
-              onClick={() => handleSend()}
-              disabled={!input.trim() || isLoading}
-              className="px-6 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
-            >
-              <Send className="w-4 h-4 mr-1.5" />
-              Send
-            </Button>
-          </div>
-          <p className="text-xs text-slate-500 text-center mt-2">
-            Every numeric claim should include receipts (dates + activity ids + values).
-          </p>
         </div>
       </div>
     </ProtectedRoute>
