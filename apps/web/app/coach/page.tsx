@@ -14,7 +14,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MessageSquare, Send, Sparkles, Activity, BedDouble, Target, TrendingUp, RotateCcw } from 'lucide-react';
+import { MessageSquare, Send, Sparkles, Activity, BedDouble, Target, TrendingUp, RotateCcw, ShieldCheck, Trophy, BrainCircuit } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface Message {
@@ -24,6 +24,13 @@ interface Message {
   timestamp: Date;
 }
 
+type SuggestionCard = {
+  title: string;
+  description: string;
+  prompt: string;
+  Icon: React.ComponentType<{ className?: string }>;
+};
+
 function getSuggestionIcon(text: string) {
   const t = text.toLowerCase();
   if (t.includes('long run')) return Target;
@@ -32,6 +39,63 @@ function getSuggestionIcon(text: string) {
   if (t.includes("today")) return Activity;
   if (t.includes("focus on this week") || t.includes("this week")) return BedDouble;
   return Sparkles;
+}
+
+function buildSuggestionCard(prompt: string): SuggestionCard {
+  const t = prompt.toLowerCase();
+
+  // Treat the raw prompt as an internal payload; surface a human-readable card.
+  if (t.includes("pr") || t.includes("personal best") || t.includes("get_pb_patterns")) {
+    return {
+      title: 'PR Analysis',
+      description: 'What preceded your PRs — with receipts (dates, activity ids, TSB).',
+      prompt,
+      Icon: Trophy,
+    };
+  }
+
+  if (t.includes("atl") || t.includes("ctl") || t.includes("tsb") || t.includes("training load")) {
+    return {
+      title: 'Training Load',
+      description: 'Where you are today (ATL/CTL/TSB) and what it implies — cited.',
+      prompt,
+      Icon: ShieldCheck,
+    };
+  }
+
+  if (t.includes("efficiency") || t.includes("get_efficiency")) {
+    return {
+      title: 'Efficiency Deep Dive',
+      description: 'Compare concrete runs and show what changed — cited.',
+      prompt,
+      Icon: TrendingUp,
+    };
+  }
+
+  if (t.includes("30-day") || t.includes("30 day") || t.includes("month") || t.includes("volume")) {
+    return {
+      title: 'Volume & Consistency',
+      description: 'Your recent volume rhythm and how it’s trending — cited.',
+      prompt,
+      Icon: Activity,
+    };
+  }
+
+  if (t.includes("this week") || t.includes("week")) {
+    return {
+      title: 'This Week',
+      description: 'What you’ve done + what’s next, grounded in your plan and runs.',
+      prompt,
+      Icon: BedDouble,
+    };
+  }
+
+  return {
+    title: 'Ask the Coach',
+    description: 'A focused question that triggers a data-backed answer with receipts.',
+    prompt,
+    Icon: BrainCircuit,
+  };
 }
 
 export default function CoachPage() {
@@ -53,14 +117,7 @@ export default function CoachPage() {
       setMessages([{
         id: 'greeting',
         role: 'assistant',
-        content: `👋 Hi! I'm your StrideIQ AI Coach. I have access to your training data and can help you with:
-
-- **Training analysis** - How your recent runs look
-- **Workout guidance** - What to do next
-- **Recovery advice** - When to push, when to rest
-- **Goal planning** - Am I on track for my goal?
-
-Ask me anything about your training!`,
+        content: `Hi — I’m your StrideIQ Coach.\n\nI don’t guess. If I use numbers, I’ll cite receipts from your training data (dates + activity ids + values).\n\nWhat do you want to understand or decide today?`,
         timestamp: new Date(),
       }]);
     }
@@ -146,7 +203,7 @@ Ask me anything about your training!`,
       <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
         {/* Header */}
         <div className="border-b border-slate-700 bg-slate-800/50 px-4 py-3">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 ring-2 ring-orange-500/30">
                 <MessageSquare className="w-5 h-5 text-white" />
@@ -175,7 +232,7 @@ Ask me anything about your training!`,
         
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-6">
-          <div className="max-w-4xl mx-auto space-y-4">
+          <div className="max-w-3xl mx-auto space-y-4">
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -203,6 +260,47 @@ Ask me anything about your training!`,
                 </Card>
               </div>
             ))}
+
+            {/* Empty-state suggestions (kept close to greeting; avoids the "void") */}
+            {messages.length <= 1 && suggestions.length > 0 && (
+              <div className="pt-2">
+                <div className="flex items-center gap-2 text-xs text-slate-400 mb-3">
+                  <Sparkles className="w-3.5 h-3.5 text-orange-500" />
+                  <span>Try one of these:</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {suggestions.map((prompt, i) => {
+                    const card = buildSuggestionCard(prompt);
+                    const Icon = card.Icon;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleSend(card.prompt)}
+                        disabled={isLoading}
+                        className="text-left rounded-2xl border border-slate-700 bg-slate-800/50 hover:bg-slate-800 hover:border-orange-500/40 transition-colors p-4 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-700">
+                            <Icon className="w-4 h-4 text-orange-400" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-100">{card.title}</div>
+                            <div className="text-sm text-slate-400 mt-1 leading-snug">
+                              {card.description}
+                            </div>
+                            <div className="text-xs text-slate-500 mt-3">
+                              Sends a structured prompt (hidden) • receipts required
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             
             {isLoading && (
               <div className="flex justify-start">
@@ -231,46 +329,16 @@ Ask me anything about your training!`,
           </div>
         </div>
         
-        {/* Suggestions (show only when no messages yet) */}
-        {messages.length <= 1 && suggestions.length > 0 && (
-          <div className="px-4 pb-4">
-            <div className="max-w-4xl mx-auto">
-              <p className="text-xs text-slate-400 mb-2 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-orange-500" />
-                Suggested questions:
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {suggestions.map((text, i) => {
-                  const Icon = getSuggestionIcon(text);
-                  return (
-                  <Button
-                    key={i}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSend(text)}
-                    disabled={isLoading}
-                    className="border-slate-700 hover:border-orange-500/50 hover:bg-slate-800 text-slate-300"
-                  >
-                    <Icon className="w-3.5 h-3.5 mr-1.5 text-orange-500" />
-                    {text}
-                  </Button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-        
         {/* Input */}
-        <div className="border-t border-slate-700 bg-slate-800/50 px-4 py-4">
-          <div className="max-w-4xl mx-auto flex gap-3">
+        <div className="sticky bottom-0 border-t border-slate-700 bg-slate-900/80 backdrop-blur px-4 py-4">
+          <div className="max-w-3xl mx-auto flex gap-3">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask your coach anything..."
               rows={1}
-              className="flex-1 px-4 py-3 bg-slate-900 border border-slate-600 rounded-xl text-white resize-none focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              className="flex-1 px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl text-white resize-none focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
             <Button
               onClick={() => handleSend()}
@@ -282,7 +350,7 @@ Ask me anything about your training!`,
             </Button>
           </div>
           <p className="text-xs text-slate-500 text-center mt-2">
-            The coach uses your actual training data to provide personalized advice.
+            Every numeric claim should include receipts (dates + activity ids + values).
           </p>
         </div>
       </div>

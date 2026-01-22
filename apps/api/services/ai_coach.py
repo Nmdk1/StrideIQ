@@ -12,6 +12,7 @@ Features:
 
 import os
 import json
+import re
 from datetime import date, datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple
 from uuid import UUID
@@ -933,6 +934,19 @@ When providing insights:
                     response_text = response_content.text.value
                 else:
                     response_text = str(response_content)
+
+                # Enforce citations contract: if the answer contains numeric claims,
+                # it must include receipts (dates and/or activity ids). If not, force a rewrite.
+                try:
+                    response_text = await self._enforce_citations_contract(
+                        thread_id=thread_id,
+                        prior_response=response_text,
+                        athlete_id=athlete_id,
+                        model=model,
+                    )
+                except Exception as e:
+                    # Never fail the whole request; return the original response.
+                    logger.warning(f"Citations enforcement failed: {e}")
                 
                 return {
                     "response": response_text,
@@ -951,6 +965,228 @@ When providing insights:
                 "response": f"An error occurred: {str(e)}",
                 "error": True
             }
+
+    _UUID_RE = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
+    _DATE_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
+
+    def _looks_like_uncited_numeric_answer(self, text: str) -> bool:
+        """
+        Heuristic gate (refined):
+        - We MUST not block prescription, exploration, or hypothesis generation.
+        - We DO enforce receipts for athlete-specific factual/causal claims (metrics, trends, correlations),
+          because those are trust-breaking when uncited.
+
+        Trigger only when:
+        - There are digits AND the answer appears to make athlete-specific factual/causal claims
+          (TSB/ATL/CTL/EF/pace/HR/volume/% trends, “last X days”, “you ran”, etc.)
+        - AND there are no receipt markers (ISO date / UUID / explicit Receipts/Citations section).
+        """
+        if not text:
+            return False
+
+        lower = text.lower()
+
+        receipt_section = ("receipts" in lower) or ("citations" in lower)
+        has_date = bool(self._DATE_RE.search(text))
+        has_uuid = bool(self._UUID_RE.search(text))
+        if receipt_section or has_date or has_uuid:
+            return False
+
+        has_digits = any(ch.isdigit() for ch in text)
+        if not has_digits:
+            return False
+
+        # Signals that the response is describing athlete-specific facts/metrics rather than prescribing.
+        metric_tokens = (
+            "tsb",
+            "atl",
+            "ctl",
+            "ef",
+            "efficiency",
+            "vdot",
+            "bpm",
+            "avg hr",
+            "heart rate",
+            "pace",
+            "min/mi",
+            "min/km",
+            "mi",
+            "miles",
+            "km",
+            "kilometer",
+            "kilometre",
+            "%",
+            "percent",
+            "pr",
+            "pb",
+            "personal best",
+            "trend",
+            "correlat",
+        )
+
+        past_context = (
+            "you ran" in lower
+            or "you did" in lower
+            or "you averaged" in lower
+            or "in the last" in lower
+            or "last " in lower
+            or "past " in lower
+            or "recent" in lower
+            or "since " in lower
+            or "this week" in lower
+            or "last week" in lower
+            or "over the" in lower
+        )
+
+        causal_language = (
+            "caus" in lower
+            or "caused" in lower
+            or "drives" in lower
+            or "drive " in lower
+            or "led to" in lower
+            or "because" in lower
+            or "resulted" in lower
+        )
+
+        looks_like_metric_claim = any(tok in lower for tok in metric_tokens) and (past_context or "your " in lower)
+        looks_like_causal_claim = causal_language and any(tok in lower for tok in metric_tokens)
+
+        # If this is pure prescription (“do 2 easy runs”, “run 30 min easy”), do not enforce receipts.
+        # We only enforce when it reads like analysis of the athlete’s data.
+        return looks_like_metric_claim or looks_like_causal_claim
+
+    async def _enforce_citations_contract(self, *, thread_id: str, prior_response: str, athlete_id: UUID, model: str) -> str:
+        """
+        If the model returned numeric claims without receipts, force a rewrite in the same thread.
+        """
+        if not self._looks_like_uncited_numeric_answer(prior_response):
+            return prior_response
+
+        # Ask for a rewrite with receipts. This stays inside the same thread so the
+        # assistant can reference tool outputs already generated during the run.
+        self.client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=(
+                "Rewrite your last answer to comply with the Evidence & Citations rules.\n\n"
+                "Rules:\n"
+                "- If you include any numbers (distances, times, paces, HR, EF, ATL/CTL/TSB, percentages), you MUST include receipts.\n"
+                "- Receipts must include at least one ISO date (YYYY-MM-DD) and, when applicable, an activity id (UUID).\n"
+                "- Add a final section titled 'Receipts' listing the supporting evidence lines.\n"
+                "- Do not add new claims; only restate with proper receipts.\n"
+                "- If you cannot cite the data, reply exactly: \"I don't have enough data to answer that.\""
+            ),
+        )
+
+        run = self.client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=self.assistant_id,
+            model=model,
+        )
+
+        import time
+
+        max_wait = 45
+        start = time.time()
+        while True:
+            run_status = self.client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+
+            if run_status.status == "completed":
+                break
+            elif run_status.status == "requires_action":
+                required = getattr(run_status, "required_action", None)
+                submit = getattr(required, "submit_tool_outputs", None) if required else None
+                tool_calls = getattr(submit, "tool_calls", None) if submit else None
+
+                if not tool_calls:
+                    break
+
+                tool_outputs = []
+                for call in tool_calls:
+                    try:
+                        fn = call.function
+                        tool_name = fn.name
+                        raw_args = fn.arguments or "{}"
+                        args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+
+                        # Tool dispatch (same as main run loop)
+                        if tool_name == "get_recent_runs":
+                            output = coach_tools.get_recent_runs(self.db, athlete_id, **args)
+                        elif tool_name == "get_calendar_day_context":
+                            output = coach_tools.get_calendar_day_context(self.db, athlete_id, **args)
+                        elif tool_name == "get_efficiency_trend":
+                            output = coach_tools.get_efficiency_trend(self.db, athlete_id, **args)
+                        elif tool_name == "get_plan_week":
+                            output = coach_tools.get_plan_week(self.db, athlete_id)
+                        elif tool_name == "get_training_load":
+                            output = coach_tools.get_training_load(self.db, athlete_id)
+                        elif tool_name == "get_correlations":
+                            output = coach_tools.get_correlations(self.db, athlete_id, **args)
+                        elif tool_name == "get_race_predictions":
+                            output = coach_tools.get_race_predictions(self.db, athlete_id)
+                        elif tool_name == "get_recovery_status":
+                            output = coach_tools.get_recovery_status(self.db, athlete_id)
+                        elif tool_name == "get_active_insights":
+                            output = coach_tools.get_active_insights(self.db, athlete_id, **args)
+                        elif tool_name == "get_pb_patterns":
+                            output = coach_tools.get_pb_patterns(self.db, athlete_id)
+                        elif tool_name == "get_efficiency_by_zone":
+                            output = coach_tools.get_efficiency_by_zone(self.db, athlete_id, **args)
+                        elif tool_name == "get_nutrition_correlations":
+                            output = coach_tools.get_nutrition_correlations(self.db, athlete_id, **args)
+                        else:
+                            output = {
+                                "ok": False,
+                                "tool": tool_name,
+                                "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+                                "error": f"Unknown tool: {tool_name}",
+                                "data": {},
+                                "evidence": [],
+                            }
+
+                        tool_outputs.append({"tool_call_id": call.id, "output": json.dumps(output)})
+                    except Exception as e:
+                        tool_outputs.append(
+                            {
+                                "tool_call_id": call.id,
+                                "output": json.dumps(
+                                    {
+                                        "ok": False,
+                                        "tool": getattr(getattr(call, "function", None), "name", "unknown"),
+                                        "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+                                        "error": f"Tool execution error: {str(e)}",
+                                        "data": {},
+                                        "evidence": [],
+                                    }
+                                ),
+                            }
+                        )
+
+                self.client.beta.threads.runs.submit_tool_outputs(thread_id=thread_id, run_id=run.id, tool_outputs=tool_outputs)
+            elif run_status.status in ["failed", "cancelled", "expired"]:
+                break
+
+            if time.time() - start > max_wait:
+                break
+            time.sleep(1)
+
+        # Pull the latest assistant message after the rewrite attempt.
+        rewritten = self.client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=1)
+        if rewritten.data:
+            content = rewritten.data[0].content[0]
+            if hasattr(content, "text"):
+                candidate = content.text.value
+            else:
+                candidate = str(content)
+
+            # Only accept the rewrite if it now has receipts (or is the explicit "not enough data").
+            if candidate.strip() == "I don't have enough data to answer that.":
+                return candidate
+            if not self._looks_like_uncited_numeric_answer(candidate):
+                return candidate
+
+        # If rewrite failed, return a safe refusal instead of uncited numbers.
+        return "I don't have enough data to answer that."
 
 
 def get_ai_coach(db: Session) -> AICoach:
