@@ -4,7 +4,7 @@
  */
 
 describe('Calculator Placeholders', () => {
-  test('VDOT Calculator should have correct placeholder', () => {
+  test('Training Pace Calculator should have correct placeholder', () => {
     // Placeholder should be "00:00:00" for race time input
     const expectedPlaceholder = '00:00:00';
     expect(expectedPlaceholder).toBe('00:00:00');

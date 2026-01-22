@@ -13,13 +13,13 @@ export const metadata: Metadata = {
     default: 'StrideIQ | AI-Powered Running Intelligence',
     template: '%s | StrideIQ'
   },
-  description: 'Discover what actually improves your running. AI-powered insights that correlate sleep, nutrition, and training with your performance. Free VDOT calculator and age-grading tools.',
+  description: 'Discover what actually improves your running. AI-powered insights that correlate sleep, nutrition, and training with your performance. Free training pace calculator and age-grading tools.',
   keywords: [
     'running intelligence',
     'AI running coach',
     'running efficiency',
     'runner performance analytics',
-    'VDOT calculator',
+    'training pace calculator',
     'age graded running',
     'heat adjusted pace',
     'masters running',

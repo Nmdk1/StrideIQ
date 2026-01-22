@@ -153,7 +153,7 @@ export default function PlanOverviewPage() {
                   </span>
                   {plan.baseline_vdot && (
                     <span className="px-2 py-1 bg-orange-600/30 text-orange-300 rounded text-xs">
-                      VDOT {plan.baseline_vdot}
+                      Fitness Index {plan.baseline_vdot}
                     </span>
                   )}
                     <span className={`px-2 py-1 rounded text-xs ${
