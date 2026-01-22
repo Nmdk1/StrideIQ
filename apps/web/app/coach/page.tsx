@@ -105,6 +105,7 @@ export default function CoachPage() {
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isEmptyConversation = messages.length <= 1;
   
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -236,34 +237,68 @@ export default function CoachPage() {
             <Card className="lg:col-span-8 bg-slate-800/50 border-slate-700/50 overflow-hidden flex flex-col min-h-[68vh]">
               <CardContent className="p-0 flex flex-col flex-1">
                 {/* Messages (taller + higher: less outer padding, more viewport usage) */}
-                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <Card
-                        className={`max-w-[92%] ${
-                          message.role === 'user'
-                            ? 'bg-orange-600 border-orange-500 text-white'
-                            : 'bg-slate-900/30 border-slate-700/60'
-                        }`}
-                      >
-                        <CardContent className="py-3 px-4">
-                          {message.role === 'assistant' ? (
-                            <div className="prose prose-invert prose-sm max-w-none">
-                              <ReactMarkdown>{message.content}</ReactMarkdown>
-                            </div>
-                          ) : (
-                            <p className="whitespace-pre-wrap">{message.content}</p>
-                          )}
-                          <p className={`text-xs mt-2 ${message.role === 'user' ? 'text-orange-200' : 'text-slate-500'}`}>
-                            {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </CardContent>
-                      </Card>
+                <div className="flex-1 overflow-y-auto px-4 py-4">
+                  {isEmptyConversation ? (
+                    <div className="h-full min-h-[52vh] flex items-center justify-center">
+                      {messages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} w-full`}
+                        >
+                          <Card
+                            className={`max-w-[92%] w-full ${
+                              message.role === 'user'
+                                ? 'bg-orange-600 border-orange-500 text-white'
+                                : 'bg-slate-900/30 border-slate-700/60'
+                            }`}
+                          >
+                            <CardContent className="py-4 px-5">
+                              {message.role === 'assistant' ? (
+                                <div className="prose prose-invert prose-sm max-w-none">
+                                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                                </div>
+                              ) : (
+                                <p className="whitespace-pre-wrap">{message.content}</p>
+                              )}
+                              <p className={`text-xs mt-3 ${message.role === 'user' ? 'text-orange-200' : 'text-slate-500'}`}>
+                                {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  ) : (
+                    <div className="space-y-4">
+                      {messages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <Card
+                            className={`max-w-[92%] ${
+                              message.role === 'user'
+                                ? 'bg-orange-600 border-orange-500 text-white'
+                                : 'bg-slate-900/30 border-slate-700/60'
+                            }`}
+                          >
+                            <CardContent className="py-3 px-4">
+                              {message.role === 'assistant' ? (
+                                <div className="prose prose-invert prose-sm max-w-none">
+                                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                                </div>
+                              ) : (
+                                <p className="whitespace-pre-wrap">{message.content}</p>
+                              )}
+                              <p className={`text-xs mt-2 ${message.role === 'user' ? 'text-orange-200' : 'text-slate-500'}`}>
+                                {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {isLoading && (
                     <div className="flex justify-start">
@@ -293,23 +328,26 @@ export default function CoachPage() {
 
                 {/* Input (anchored inside chat panel) */}
                 <div className="border-t border-slate-700/60 bg-slate-900/40 px-4 py-4">
-                  <div className="flex gap-3">
-                    <textarea
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Ask your coach anything..."
-                      rows={1}
-                      className="flex-1 px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl text-white resize-none focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                    />
-                    <Button
-                      onClick={() => handleSend()}
-                      disabled={!input.trim() || isLoading}
-                      className="px-6 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
-                    >
-                      <Send className="w-4 h-4 mr-1.5" />
-                      Send
-                    </Button>
+                  <div className="flex">
+                    <div className="relative flex-1">
+                      <textarea
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Ask your coach anything..."
+                        rows={1}
+                        className="w-full px-4 py-3 pr-12 bg-slate-950 border border-slate-700 rounded-xl text-white resize-none focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSend()}
+                        disabled={!input.trim() || isLoading}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center h-9 w-9 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white"
+                        aria-label="Send message"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs text-slate-500 text-center mt-2">
                     Receipts required for athlete-specific numbers (dates + activity ids + values).
@@ -326,7 +364,41 @@ export default function CoachPage() {
                   <span className="font-semibold">Try one of these</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+                {/* Mobile: collapsible to avoid clutter; Desktop: always visible */}
+                <details className="lg:hidden" open={isEmptyConversation}>
+                  <summary className="cursor-pointer select-none text-sm text-slate-400 mb-3">
+                    Suggestions
+                  </summary>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {(suggestions || []).slice(0, 5).map((prompt, i) => {
+                      const card = buildSuggestionCard(prompt);
+                      const Icon = card.Icon;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => handleSend(card.prompt)}
+                          disabled={isLoading}
+                          className="text-left rounded-lg border border-slate-700/60 bg-slate-900/30 hover:bg-slate-900/40 hover:border-orange-500/40 transition-colors p-4 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-700/60">
+                              <Icon className="w-4 h-4 text-orange-400" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-100">{card.title}</div>
+                              <div className="text-sm text-slate-400 mt-1 leading-snug">
+                                {card.description}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </details>
+
+                <div className="hidden lg:grid grid-cols-1 gap-3">
                   {(suggestions || []).slice(0, 5).map((prompt, i) => {
                     const card = buildSuggestionCard(prompt);
                     const Icon = card.Icon;
