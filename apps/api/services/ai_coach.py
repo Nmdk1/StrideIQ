@@ -371,6 +371,59 @@ When providing insights:
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_coach_intent_snapshot",
+                    "description": "Get the athlete's current self-guided intent snapshot (goals/constraints) with staleness indicator.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "ttl_days": {"type": "integer", "description": "How long the snapshot is considered fresh (default 7).", "minimum": 1, "maximum": 30}
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "set_coach_intent_snapshot",
+                    "description": "Update the athlete's self-guided intent snapshot (athlete-led) to avoid repetitive questioning.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "training_intent": {"type": "string", "description": "Athlete intent: through_fatigue | build_fitness | freshen_for_event (free text accepted)."},
+                            "next_event_date": {"type": "string", "description": "Optional YYYY-MM-DD for race/benchmark."},
+                            "next_event_type": {"type": "string", "description": "Optional: race | benchmark | other."},
+                            "pain_flag": {"type": "string", "description": "none | niggle | pain."},
+                            "time_available_min": {"type": "integer", "description": "Typical time available (minutes).", "minimum": 0, "maximum": 300},
+                            "weekly_mileage_target": {"type": "number", "description": "Athlete-stated target miles/week for current period.", "minimum": 0, "maximum": 250},
+                            "what_feels_off": {"type": "string", "description": "Optional: legs | lungs | motivation | life_stress | other."},
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_training_prescription_window",
+                    "description": "Deterministically prescribe training for 1-7 days (exact distances/paces/structure) using athlete history + intent snapshot.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "start_date": {"type": "string", "description": "Start date YYYY-MM-DD (default today)."},
+                            "days": {"type": "integer", "description": "How many days (1-7).", "minimum": 1, "maximum": 7},
+                            "time_available_min": {"type": "integer", "description": "Optional time cap for workouts (minutes).", "minimum": 0, "maximum": 300},
+                            "weekly_mileage_target": {"type": "number", "description": "Optional athlete target miles/week (overrides derived).", "minimum": 0, "maximum": 250},
+                            "facilities": {"type": "array", "items": {"type": "string"}, "description": "Optional facilities: road/treadmill/track/hills."},
+                            "pain_flag": {"type": "string", "description": "none | niggle | pain (overrides snapshot)."},
+                        },
+                        "required": [],
+                    },
+                },
+            },
         ]
     
     def _get_or_create_assistant(self) -> Optional[str]:
@@ -454,6 +507,56 @@ When providing insights:
             self.db.rollback()
             logger.error(f"Failed to create/persist thread: {e}")
             return None, False
+
+    def get_thread_history(self, athlete_id: UUID, limit: int = 50) -> Dict[str, Any]:
+        """
+        Fetch persisted coach thread messages for this athlete.
+
+        Returns:
+            {"thread_id": str|None, "messages": [{"role","content","created_at"}]}
+        """
+        limit = max(1, min(int(limit), 200))
+
+        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        thread_id = athlete.coach_thread_id if athlete else None
+        if not self.client or not thread_id:
+            return {"thread_id": thread_id, "messages": []}
+
+        try:
+            msgs = self.client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=limit)
+            out: List[Dict[str, Any]] = []
+            for m in msgs.data or []:
+                # Assistants API message content can be multiple parts; we take the first text part.
+                content_text = ""
+                try:
+                    if m.content and hasattr(m.content[0], "text"):
+                        content_text = m.content[0].text.value
+                    else:
+                        content_text = str(m.content[0]) if m.content else ""
+                except Exception:
+                    content_text = ""
+
+                created_at = None
+                try:
+                    # created_at is unix seconds
+                    if getattr(m, "created_at", None):
+                        created_at = datetime.utcfromtimestamp(int(m.created_at)).replace(microsecond=0).isoformat()
+                except Exception:
+                    created_at = None
+
+                out.append(
+                    {
+                        "role": getattr(m, "role", None) or "assistant",
+                        "content": content_text,
+                        "created_at": created_at,
+                    }
+                )
+
+            out.reverse()  # chronological
+            return {"thread_id": thread_id, "messages": out}
+        except Exception as e:
+            logger.warning(f"Failed to read coach thread history: {e}")
+            return {"thread_id": thread_id, "messages": []}
     
     def build_context(self, athlete_id: UUID, window_days: int = 30) -> str:
         """
@@ -807,8 +910,70 @@ When providing insights:
         # Persist units preference if the athlete explicitly requests it.
         self._maybe_update_units_preference(athlete_id, message)
 
-        # Deterministic answers for high-risk questions (avoid "reckless" responses).
+        # Persist athlete-led intent/constraints if they answered them.
+        # This supports self-guided coaching (collaborative, not imposed).
+        self._maybe_update_intent_snapshot(athlete_id, message)
+
         lower = (message or "").lower()
+
+        # Deterministic prescriptions (exact sessions) for "today / this week".
+        # IMPORTANT: fatigue can trigger a conversation, but never auto-imposes taper.
+        if self._is_prescription_request(message):
+            # Load state (N=1 personalized zones) and intent snapshot freshness.
+            load = coach_tools.get_training_load(self.db, athlete_id)
+            zone = (((load.get("data") or {}).get("tsb_zone") or {}).get("zone") or "").lower()
+
+            snap = coach_tools.get_coach_intent_snapshot(self.db, athlete_id, ttl_days=7)
+            snap_data = (snap.get("data") or {}).get("snapshot") or {}
+            snap_stale = bool((snap.get("data") or {}).get("is_stale", True))
+
+            # Fatigue-triggered collaboration gate: ask before prescribing if intent is missing/stale.
+            if zone in ("overreaching", "overtraining_risk") and (snap_stale or not snap_data.get("training_intent")):
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                return {
+                    "response": (
+                        "## Answer\n"
+                        "Before I prescribe this week, I need one quick check so this stays **athlete-led**.\n\n"
+                        "1) Are you deliberately **training through cumulative fatigue**, or are you trying to **freshen up for a race/benchmark** in the next 2–3 weeks?\n"
+                        "2) Any pain signals right now (none / niggle / pain)?\n\n"
+                        "## Evidence\n"
+                        f"- {date.today().isoformat()}: Load state is **{zone.replace('_', ' ')}** for you (from ATL/CTL/TSB zone).\n"
+                    ),
+                    "thread_id": thread_id,
+                    "error": False,
+                }
+
+            # Weekly prescriptions need athlete target mileage/time when available.
+            start_iso, req_days = self._extract_prescription_window(message)
+            if req_days >= 7 and (snap_stale or (snap_data.get("weekly_mileage_target") is None and snap_data.get("time_available_min") is None)):
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                return {
+                    "response": (
+                        "## Answer\n"
+                        "To make this **self-guided** (not imposed), give me one constraint and I’ll generate an exact 7‑day microcycle.\n\n"
+                        "Pick one:\n"
+                        "- Target weekly mileage (e.g. `45 mpw`), or\n"
+                        "- Typical time available per day (e.g. `45 min`).\n\n"
+                        "Also: any pain signals (none / niggle / pain)?\n"
+                    ),
+                    "thread_id": thread_id,
+                    "error": False,
+                }
+
+            tool_out = coach_tools.get_training_prescription_window(
+                self.db,
+                athlete_id,
+                start_date=start_iso,
+                days=req_days,
+            )
+            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            return {
+                "response": self._format_prescription_window(tool_out),
+                "thread_id": thread_id,
+                "error": False if tool_out.get("ok") else True,
+            }
+
+        # Deterministic answers for high-risk questions (avoid "reckless" responses).
         if any(phrase in lower for phrase in ("how far back", "how far can you look", "how far back can you look", "how far back do you go")):
             return {
                 "response": (
@@ -816,6 +981,17 @@ When providing insights:
                     "If you want a longest-run or high-volume comparison, I can pull a 365–730 day window and summarize it with receipts."
                 ),
                 "thread_id": self.get_or_create_thread(athlete_id),
+                "error": False,
+            }
+
+        # Deterministic: analyze today's completed run (NOT a prescription).
+        if ("run today" in lower or "today's run" in lower or "my run today" in lower or "today felt" in lower) and any(
+            k in lower for k in ("what effect", "what did it do", "how did it go", "what impact", "what changed", "did it help")
+        ):
+            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            return {
+                "response": self._today_run_effect(athlete_id),
+                "thread_id": thread_id,
                 "error": False,
             }
 
@@ -996,6 +1172,12 @@ When providing insights:
                                 output = coach_tools.get_best_runs(self.db, athlete_id, **args)
                             elif tool_name == "compare_training_periods":
                                 output = coach_tools.compare_training_periods(self.db, athlete_id, **args)
+                            elif tool_name == "get_coach_intent_snapshot":
+                                output = coach_tools.get_coach_intent_snapshot(self.db, athlete_id, **args)
+                            elif tool_name == "set_coach_intent_snapshot":
+                                output = coach_tools.set_coach_intent_snapshot(self.db, athlete_id, **args)
+                            elif tool_name == "get_training_prescription_window":
+                                output = coach_tools.get_training_prescription_window(self.db, athlete_id, **args)
                             else:
                                 output = {
                                     "ok": False,
@@ -1135,6 +1317,173 @@ When providing insights:
             except Exception:
                 pass
 
+    def _maybe_update_intent_snapshot(self, athlete_id: UUID, message: str) -> None:
+        """
+        Best-effort extraction of athlete intent/constraints from free text.
+
+        This supports self-guided coaching without requiring a rigid UI flow:
+        when the athlete answers an intent/pain/time question, we persist it.
+        """
+        try:
+            text = (message or "").strip()
+            if not text:
+                return
+
+            ml = text.lower()
+            updates: Dict[str, Any] = {}
+
+            # Intent keywords (athlete-led)
+            if any(k in ml for k in ("train through", "through fatigue", "cumulative fatigue", "build fatigue", "stack fatigue")):
+                updates["training_intent"] = "through_fatigue"
+            elif any(k in ml for k in ("freshen", "taper", "peak", "sharpen", "race soon", "benchmark")):
+                updates["training_intent"] = "freshen_for_event"
+
+            # Pain flags
+            if "niggle" in ml:
+                updates["pain_flag"] = "niggle"
+            if "pain" in ml and "no pain" not in ml:
+                updates["pain_flag"] = "pain"
+            if any(k in ml for k in ("no pain", "pain-free", "pain free")):
+                updates["pain_flag"] = "none"
+
+            # Time available (minutes)
+            m = re.search(r"\b(\d{2,3})\s*(min|mins|minutes)\b", ml)
+            if m:
+                try:
+                    updates["time_available_min"] = int(m.group(1))
+                except Exception:
+                    pass
+
+            # Weekly mileage target (mpw)
+            m2 = re.search(r"\b(\d{2,3})\s*(mpw|miles per week|mi per week)\b", ml)
+            if m2:
+                try:
+                    updates["weekly_mileage_target"] = float(m2.group(1))
+                except Exception:
+                    pass
+
+            # Optional event date (YYYY-MM-DD)
+            m3 = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", ml)
+            if m3:
+                updates["next_event_date"] = m3.group(1)
+                if "race" in ml:
+                    updates["next_event_type"] = "race"
+                elif "benchmark" in ml or "time trial" in ml:
+                    updates["next_event_type"] = "benchmark"
+
+            if not updates:
+                return
+
+            coach_tools.set_coach_intent_snapshot(self.db, athlete_id, **updates)
+        except Exception:
+            # Never block chat on snapshot parsing.
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+
+    def _is_prescription_request(self, message: str) -> bool:
+        ml = (message or "").lower()
+        # Keep intentionally narrow to avoid hijacking analytic questions.
+        explicit = any(
+            k in ml
+            for k in (
+                "what should i do",
+                "what do i do",
+                "what should i run",
+                "give me a workout",
+                "plan my week",
+                "this week",
+                "next week",
+            )
+        )
+        if explicit:
+            return True
+
+        # "today/tomorrow" only counts as a prescription request if paired with an explicit decision verb.
+        # IMPORTANT: do NOT treat generic "run today" analysis ("what effect did it have?") as prescription.
+        if ("today" in ml or "tomorrow" in ml) and any(k in ml for k in ("what should", "should i", "workout", "do today", "do tomorrow", "prescribe")):
+            return True
+
+        return False
+
+    def _extract_prescription_window(self, message: str) -> Tuple[Optional[str], int]:
+        """
+        Return (start_date_iso_or_none, days).
+        - 'this week'/'next week' => 7 days
+        - 'tomorrow' => start tomorrow, 1 day
+        - default => today, 1 day
+        """
+        ml = (message or "").lower()
+        if "next week" in ml or "this week" in ml or "plan my week" in ml:
+            return (date.today().isoformat(), 7)
+        if "tomorrow" in ml:
+            return ((date.today() + timedelta(days=1)).isoformat(), 1)
+        return (date.today().isoformat(), 1)
+
+    def _format_prescription_window(self, payload: Dict[str, Any]) -> str:
+        """
+        Convert tool output into a coach-facing, athlete-readable response.
+        """
+        data = (payload or {}).get("data") or {}
+        window = (data.get("window") or {})
+        days = window.get("days") or []
+        preferred_units = data.get("preferred_units") or "metric"
+
+        lines: List[str] = []
+        lines.append("## Answer")
+
+        if not days:
+            lines.append("I don't have enough data to answer that.")
+            return "\n".join(lines)
+
+        for d in days:
+            primary = d.get("primary") or {}
+            day_label = d.get("day_of_week") or ""
+            date_label = d.get("date") or ""
+            title = primary.get("title") or primary.get("name") or "Workout"
+            desc = (primary.get("description") or "").strip()
+
+            # Distances: prefer units already aligned by tool descriptions.
+            dist_mi = primary.get("target_distance_mi")
+            dist_km = primary.get("target_distance_km")
+            if preferred_units == "imperial" and isinstance(dist_mi, (int, float)) and dist_mi > 0:
+                dist_str = f"{dist_mi:.1f} mi"
+            elif preferred_units != "imperial" and isinstance(dist_km, (int, float)) and dist_km > 0:
+                dist_str = f"{dist_km:.1f} km"
+            elif isinstance(dist_mi, (int, float)) and dist_mi > 0:
+                dist_str = f"{dist_mi:.1f} mi"
+            else:
+                dist_str = None
+
+            headline = f"**{day_label.title()} ({date_label})** — {title}"
+            if dist_str:
+                headline += f" — {dist_str}"
+            lines.append(headline)
+            if desc:
+                lines.append(f"- {desc}")
+
+            variants = d.get("variants") or []
+            if variants:
+                lines.append("  - Variants:")
+                for v in variants[:3]:
+                    lines.append(f"    - {v.get('name')}: {v.get('description')}")
+
+            guardrails = d.get("guardrails") or []
+            if guardrails:
+                lines.append("  - Guardrails:")
+                for g in guardrails[:3]:
+                    lines.append(f"    - {g}")
+
+        # Evidence (facts only)
+        lines.append("")
+        lines.append("## Evidence")
+        for e in (payload.get("evidence") or [])[:6]:
+            if e.get("date") and e.get("value"):
+                lines.append(f"- {e['date']}: {e['value']}")
+
+        return "\n".join(lines)
+
     def _today_run_guidance(self, athlete_id: UUID) -> str:
         """
         Deterministic run-today guidance:
@@ -1243,6 +1592,137 @@ When providing insights:
                 lines.append(f"- {e.get('date')}: {e.get('value')}")
         if tsb is not None and atl is not None and ctl is not None:
             lines.append(f"- {today}: Training load — ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f}")
+
+        return "\n".join(lines)
+
+    def _today_run_effect(self, athlete_id: UUID) -> str:
+        """
+        Deterministic "what effect did my run today have?" analysis.
+
+        Uses:
+        - calendar day context (planned + actual)
+        - training load snapshot
+        - per-activity estimated TSS for the completed run
+        """
+        today_iso = date.today().isoformat()
+        day_ctx = coach_tools.get_calendar_day_context(self.db, athlete_id, day=today_iso)
+        load = coach_tools.get_training_load(self.db, athlete_id)
+
+        units = (day_ctx.get("data", {}) or {}).get("preferred_units") or "metric"
+        planned = (day_ctx.get("data", {}) or {}).get("planned_workout") or {}
+        acts = (day_ctx.get("data", {}) or {}).get("activities") or []
+
+        lines: List[str] = []
+        lines.append("## Answer")
+
+        if not acts:
+            if planned.get("title"):
+                lines.append(
+                    f"I don’t see a completed run logged for **today ({today_iso})** yet. I *do* see a planned workout: **{planned.get('title')}**."
+                )
+            else:
+                lines.append(f"I don’t see a completed run logged for **today ({today_iso})** yet.")
+            lines.append("")
+            lines.append("## Evidence")
+            if planned.get("title"):
+                lines.append(f"- {today_iso}: Planned — {planned.get('title')} ({planned.get('workout_type')})")
+            tsb = ((load.get("data") or {}).get("tsb"))
+            atl = ((load.get("data") or {}).get("atl"))
+            ctl = ((load.get("data") or {}).get("ctl"))
+            if tsb is not None and atl is not None and ctl is not None:
+                lines.append(f"- {today_iso}: Training load — ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f}")
+            return "\n".join(lines)
+
+        # Choose the most recent activity (by start_time)
+        act = sorted(acts, key=lambda a: a.get("start_time") or "")[-1]
+        name = (act.get("name") or "").strip() or "Run"
+        avg_hr = act.get("avg_hr")
+        pace_km = act.get("pace_per_km")
+        pace_mi = act.get("pace_per_mile")
+        dist_km = act.get("distance_km")
+        dist_mi = act.get("distance_mi")
+
+        if units == "imperial":
+            dist_str = f"{dist_mi:.1f} mi" if isinstance(dist_mi, (int, float)) else "distance n/a"
+            pace_str = pace_mi or "pace n/a"
+        else:
+            dist_str = f"{dist_km:.1f} km" if isinstance(dist_km, (int, float)) else "distance n/a"
+            pace_str = pace_km or "pace n/a"
+
+        hr_str = f", avg HR {int(avg_hr)} bpm" if avg_hr is not None else ""
+        lines.append(f"Today you ran **{name} — {dist_str} @ {pace_str}**{hr_str}.")
+
+        # If plan exists and is materially different, call it out explicitly.
+        plan_title = planned.get("title")
+        plan_mi = planned.get("target_distance_mi")
+        plan_km = planned.get("target_distance_km")
+        if plan_title and ((plan_mi is not None and dist_mi is not None and float(dist_mi) >= float(plan_mi) * 1.25) or (plan_km is not None and dist_km is not None and float(dist_km) >= float(plan_km) * 1.25)):
+            lines.append("")
+            lines.append("## Why")
+            if units == "imperial" and plan_mi is not None and dist_mi is not None:
+                lines.append(f"Your plan called for **{float(plan_mi):.1f} mi** today, but you ran **{float(dist_mi):.1f} mi**. That implies you’re intentionally overriding the plan (or the plan logic is too conservative for your return-from-injury reality).")
+            elif plan_km is not None and dist_km is not None:
+                lines.append(f"Your plan called for **{float(plan_km):.1f} km** today, but you ran **{float(dist_km):.1f} km**. That implies you’re intentionally overriding the plan (or the plan logic is too conservative for your return-from-injury reality).")
+            else:
+                lines.append("Your completed run differs materially from the planned workout, which suggests plan mismatch or deliberate override.")
+
+        # Estimated TSS for this activity (impact proxy).
+        tss = None
+        try:
+            from services.training_load import TrainingLoadCalculator
+            from models import Activity
+
+            arow = (
+                self.db.query(Activity)
+                .filter(Activity.id == UUID(str(act.get("activity_id"))))
+                .first()
+            )
+            if arow:
+                athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+                if athlete:
+                    calc = TrainingLoadCalculator(self.db)
+                    stress = calc.calculate_workout_tss(arow, athlete)
+                    tss = stress.tss
+        except Exception:
+            tss = None
+
+        lines.append("")
+        lines.append("## What to do next")
+        if tss is not None:
+            lines.append(
+                "- That run likely added a **moderate amount of training stress** today — meaning mostly **short‑term fatigue** over the next 24–72 hours."
+            )
+            lines.append(
+                f"- If you want the numeric score (for tracking), it’s about **{tss:.0f}**."
+            )
+        else:
+            lines.append(
+                "- That run likely added a **moderate amount of training stress** today — meaning mostly **short‑term fatigue** over the next 24–72 hours."
+            )
+
+        lines.append(
+            "- Quick intent check (so this stays athlete‑led): are you **training through cumulative fatigue**, or trying to **freshen up** for a race/benchmark in the next 2–3 weeks?"
+        )
+
+        lines.append("")
+        lines.append("## Evidence")
+        lines.append(f"- {today_iso}: Actual — {name} {dist_str} @ {pace_str}{hr_str}")
+        if plan_title:
+            if units == "imperial" and plan_mi is not None:
+                lines.append(f"- {today_iso}: Planned — {plan_title} ({float(plan_mi):.1f} mi)")
+            elif plan_km is not None:
+                lines.append(f"- {today_iso}: Planned — {plan_title} ({float(plan_km):.1f} km)")
+            else:
+                lines.append(f"- {today_iso}: Planned — {plan_title}")
+        tsb = ((load.get("data") or {}).get("tsb"))
+        atl = ((load.get("data") or {}).get("atl"))
+        ctl = ((load.get("data") or {}).get("ctl"))
+        zone_label = (((load.get("data") or {}).get("tsb_zone") or {}).get("label"))
+        if tsb is not None and atl is not None and ctl is not None:
+            if zone_label:
+                lines.append(f"- {today_iso}: Training load — ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f} ({zone_label})")
+            else:
+                lines.append(f"- {today_iso}: Training load — ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f}")
 
         return "\n".join(lines)
 
@@ -1422,6 +1902,12 @@ When providing insights:
                             output = coach_tools.get_best_runs(self.db, athlete_id, **args)
                         elif tool_name == "compare_training_periods":
                             output = coach_tools.compare_training_periods(self.db, athlete_id, **args)
+                        elif tool_name == "get_coach_intent_snapshot":
+                            output = coach_tools.get_coach_intent_snapshot(self.db, athlete_id, **args)
+                        elif tool_name == "set_coach_intent_snapshot":
+                            output = coach_tools.set_coach_intent_snapshot(self.db, athlete_id, **args)
+                        elif tool_name == "get_training_prescription_window":
+                            output = coach_tools.get_training_prescription_window(self.db, athlete_id, **args)
                         else:
                             output = {
                                 "ok": False,

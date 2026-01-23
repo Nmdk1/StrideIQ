@@ -7,7 +7,7 @@ Provides chat interface to the AI running coach.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 from core.database import get_db
 from core.auth import get_current_athlete
@@ -37,6 +37,17 @@ class ContextResponse(BaseModel):
 
 class NewConversationResponse(BaseModel):
     ok: bool
+
+
+class ThreadMessage(BaseModel):
+    role: str
+    content: str
+    created_at: Optional[str] = None
+
+
+class ThreadHistoryResponse(BaseModel):
+    thread_id: Optional[str] = None
+    messages: List[ThreadMessage]
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -109,3 +120,22 @@ async def get_suggested_questions(
     coach = AICoach(db)
     suggestions = coach.get_dynamic_suggestions(athlete.id)
     return {"suggestions": suggestions}
+
+
+@router.get("/history", response_model=ThreadHistoryResponse)
+async def get_coach_history(
+    limit: int = 50,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Get persisted coach thread history (if configured).
+    """
+    coach = AICoach(db)
+    hist = coach.get_thread_history(athlete.id, limit=limit)
+    msgs = [
+        ThreadMessage(role=m.get("role", "assistant"), content=m.get("content", ""), created_at=m.get("created_at"))
+        for m in (hist.get("messages") or [])
+        if (m.get("content") or "").strip()
+    ]
+    return ThreadHistoryResponse(thread_id=hist.get("thread_id"), messages=msgs)

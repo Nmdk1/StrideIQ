@@ -1302,3 +1302,40 @@ class AthleteLearning(Base):
         Index("ix_athlete_learning_type", "learning_type"),
         Index("ix_athlete_learning_athlete_type", "athlete_id", "learning_type"),
     )
+
+
+class CoachIntentSnapshot(Base):
+    """
+    Persisted self-guided coaching intent snapshot (athlete-led).
+
+    This is NOT plan state. It's a lightweight, auditable record of the athlete's
+    current intent + constraints so the coach can collaborate without asking
+    the same questions every time.
+
+    Key principle:
+      - fatigue can trigger a conversation; it does NOT auto-impose taper/phase shifts.
+    """
+
+    __tablename__ = "coach_intent_snapshot"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, unique=True, index=True)
+
+    # Athlete-led intent (free-form string constrained at service layer).
+    training_intent = Column(Text, nullable=True)  # e.g. 'through_fatigue', 'build_fitness', 'freshen_for_event'
+    next_event_date = Column(Date, nullable=True)
+    next_event_type = Column(Text, nullable=True)  # 'race', 'benchmark', etc.
+
+    # Constraints + subjective state (athlete input).
+    pain_flag = Column(Text, nullable=True)  # 'none' | 'niggle' | 'pain'
+    time_available_min = Column(Integer, nullable=True)  # Typical available time for workouts
+    weekly_mileage_target = Column(Float, nullable=True)  # Athlete-stated target for current period
+    what_feels_off = Column(Text, nullable=True)  # 'legs' | 'lungs' | 'motivation' | 'life_stress' | free text
+
+    # Optional extra structured fields (future-safe).
+    extra = Column(JSONB, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (Index("ix_coach_intent_snapshot_updated_at", "updated_at"),)
