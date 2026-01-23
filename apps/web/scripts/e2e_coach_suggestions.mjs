@@ -49,9 +49,12 @@ async function main() {
   const assistantMessage = page.locator(".prose").last();
   const responseText = ((await assistantMessage.innerText()) || "").trim();
 
-  // Receipts are collapsible; expand if present and ensure there is at least one ISO date.
+  // Evidence is collapsible; expand if present and ensure there is at least one ISO date.
+  const evidenceSummary = page.getByText("Evidence (expand)").last();
   const receiptsSummary = page.getByText("Receipts (expand)").last();
-  if (await receiptsSummary.count()) {
+  if (await evidenceSummary.count()) {
+    await evidenceSummary.click();
+  } else if (await receiptsSummary.count()) {
     await receiptsSummary.click();
   }
   await sleep(250);

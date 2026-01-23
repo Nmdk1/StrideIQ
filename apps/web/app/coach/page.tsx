@@ -119,17 +119,59 @@ export default function CoachPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [stickToBottom, setStickToBottom] = useState(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isEmptyConversation = messages.length <= 1;
   
-  // Scroll to bottom when new messages arrive
+  // Only auto-scroll if the user is already near the bottom.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!stickToBottom) return;
+    // rAF helps ensure the DOM has laid out (esp. when history loads)
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, [messages, stickToBottom]);
+
+  const handleTranscriptScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // If you're within ~80px of bottom, keep auto-scroll enabled.
+    setStickToBottom(distanceFromBottom <= 80);
+  };
   
-  // Add initial greeting
+  // Load persisted history (if available)
   useEffect(() => {
-    if (messages.length === 0) {
+    let cancelled = false;
+    aiCoachService.getHistory(80)
+      .then((res) => {
+        if (cancelled) return;
+        const hist = (res?.messages || [])
+          .filter((m) => (m.content || '').trim())
+          .map((m, idx) => ({
+            id: `hist_${idx}`,
+            role: (m.role === 'user' ? 'user' : 'assistant') as Message['role'],
+            content: m.content,
+            timestamp: m.created_at ? new Date(m.created_at) : new Date(),
+          }));
+        setMessages(hist);
+      })
+      .catch(() => {
+        // If history fetch fails, fall back to new session UX.
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Add initial greeting (only after we attempted to load history)
+  useEffect(() => {
+    if (historyLoaded && messages.length === 0) {
       setMessages([{
         id: 'greeting',
         role: 'assistant',
@@ -137,7 +179,7 @@ export default function CoachPage() {
         timestamp: new Date(),
       }]);
     }
-  }, [messages.length]);
+  }, [historyLoaded, messages.length]);
 
   // Fetch dynamic suggestions on load
   useEffect(() => {
@@ -216,11 +258,20 @@ export default function CoachPage() {
   
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-slate-900 text-slate-100">
-        <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      {/* IMPORTANT: Navigation is a sticky h-16 (4rem). Fit coach *under* it. */}
+      {/* The page should NOT scroll; only the transcript (and sidebar) should. */}
+      <div
+        data-testid="coach-shell"
+        className="h-[calc(100vh-4rem)] h-[calc(100dvh-4rem)] overflow-hidden bg-slate-900 text-slate-100"
+      >
+        {/* NOTE: min-h-0 is critical so inner flex children can become scroll containers */}
+        <div
+          data-testid="coach-shell-inner"
+          className="max-w-7xl mx-auto px-4 h-full min-h-0 flex flex-col"
+        >
 
           {/* Header (match Home page shell) */}
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-4 py-6 flex-none">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-xl bg-orange-500/20 ring-1 ring-orange-500/30">
                 <MessageSquare className="w-6 h-6 text-orange-500" />
@@ -246,13 +297,21 @@ export default function CoachPage() {
             </Button>
           </div>
 
-          {/* Main grid (align with Home bento rhythm) */}
-          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_20rem] gap-6 items-stretch">
+          {/* Main grid (fills viewport under header) */}
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_20rem] gap-6 items-stretch flex-1 min-h-0 pb-6">
             {/* Chat panel */}
-            <Card className="bg-slate-800/50 border-slate-700/50 overflow-hidden flex flex-col min-h-[68vh] min-w-0">
-              <CardContent className="p-0 flex flex-col flex-1">
+            <Card className="bg-slate-800/50 border-slate-700/50 overflow-hidden flex flex-col h-full min-h-0 min-w-0">
+              <CardContent
+                data-testid="coach-chat-cardcontent"
+                className="p-0 flex flex-col flex-1 min-h-0"
+              >
                 {/* Messages (taller + higher: less outer padding, more viewport usage) */}
-                <div className="flex-1 overflow-y-auto px-4 py-4">
+                <div
+                  data-testid="coach-transcript"
+                  ref={scrollContainerRef}
+                  onScroll={handleTranscriptScroll}
+                  className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4"
+                >
                   {isEmptyConversation ? (
                     <div className="h-full min-h-[52vh] flex flex-col items-center justify-center gap-6">
                       {messages.map((message) => (
@@ -413,8 +472,26 @@ export default function CoachPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
+                {/* When user scrolls up, offer a quick way back down */}
+                {!stickToBottom && (
+                  <div className="px-4 pt-3 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStickToBottom(true);
+                        requestAnimationFrame(() => {
+                          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                        });
+                      }}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-full border border-slate-700/60 bg-slate-950/40 text-slate-200 hover:border-orange-500/40 hover:text-white hover:bg-slate-950/60 transition-colors"
+                    >
+                      Jump to bottom
+                    </button>
+                  </div>
+                )}
+
                 {/* Input (anchored inside chat panel) */}
-                <div className="border-t border-slate-700/60 bg-slate-900/40 px-4 py-4">
+                <div className="border-t border-slate-700/60 bg-slate-900/40 px-4 py-4 flex-none">
                   <div className="flex">
                     <div className="relative flex-1">
                       <textarea
@@ -445,10 +522,10 @@ export default function CoachPage() {
 
             {/* Capabilities / suggestions panel */}
             <Card
-              className="hidden md:block bg-slate-800/50 border-slate-700/50 h-full w-80"
+              className="hidden md:flex flex-col bg-slate-800/50 border-slate-700/50 h-full min-h-0 w-80"
               data-testid="coach-suggestions-sidebar"
             >
-              <CardContent className="p-4">
+              <CardContent className="p-4 flex-1 min-h-0 overflow-y-auto">
                 <div className="flex items-center gap-2 text-sm text-slate-300 mb-3">
                   <Sparkles className="w-4 h-4 text-orange-500" />
                   <span className="font-semibold">Try one of these</span>

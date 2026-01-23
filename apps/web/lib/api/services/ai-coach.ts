@@ -23,6 +23,17 @@ export interface ContextResponse {
   context: string;
 }
 
+export interface ThreadMessage {
+  role: 'user' | 'assistant' | string;
+  content: string;
+  created_at?: string | null;
+}
+
+export interface HistoryResponse {
+  thread_id?: string;
+  messages: ThreadMessage[];
+}
+
 export interface NewConversationResponse {
   ok: boolean;
 }
@@ -55,5 +66,12 @@ export const aiCoachService = {
   async getContext(days?: number): Promise<ContextResponse> {
     const url = days ? `/v1/coach/context?days=${days}` : '/v1/coach/context';
     return apiClient.get<ContextResponse>(url);
+  },
+
+  /**
+   * Get persisted coach history (if available)
+   */
+  async getHistory(limit: number = 50): Promise<HistoryResponse> {
+    return apiClient.get<HistoryResponse>(`/v1/coach/history?limit=${limit}`);
   },
 };
