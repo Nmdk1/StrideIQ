@@ -3,7 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { adminService, type AdminUserDetail } from '../../api/services/admin';
+import { adminService, type AdminUserDetail, type FeatureFlag, type ThreeDSelectionMode } from '../../api/services/admin';
 import type { UserListResponse, SystemHealth, SiteMetrics, ImpersonationResponse } from '../../api/services/admin';
 
 export const adminKeys = {
@@ -13,6 +13,7 @@ export const adminKeys = {
   userDetail: (id: string) => [...adminKeys.users(), 'detail', id] as const,
   health: () => [...adminKeys.all, 'health'] as const,
   metrics: (days: number) => [...adminKeys.all, 'metrics', days] as const,
+  flags: (prefix?: string) => [...adminKeys.all, 'feature_flags', prefix || ''] as const,
 } as const;
 
 /**
@@ -76,6 +77,32 @@ export function useImpersonateUser() {
       localStorage.setItem('impersonated_user', JSON.stringify(data.user));
       // Reload page to switch user context
       window.location.reload();
+    },
+  });
+}
+
+/**
+ * List feature flags (admin)
+ */
+export function useAdminFeatureFlags(prefix?: string) {
+  return useQuery<{ flags: FeatureFlag[] }>({
+    queryKey: adminKeys.flags(prefix),
+    queryFn: () => adminService.listFeatureFlags(prefix),
+    staleTime: 10 * 1000,
+  });
+}
+
+/**
+ * Set 3D quality selection mode (admin)
+ */
+export function useSet3dQualitySelectionMode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { mode: ThreeDSelectionMode; rollout_percentage?: number; allowlist_emails?: string[] }) =>
+      adminService.set3dQualitySelectionMode(params),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.flags() });
+      qc.invalidateQueries({ queryKey: adminKeys.flags('plan.') });
     },
   });
 }

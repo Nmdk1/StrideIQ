@@ -8,19 +8,216 @@ Owner/admin role only.
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_, or_
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any, Literal
 from uuid import UUID
 from datetime import datetime, timedelta
 
 from core.database import get_db
 from core.auth import require_admin
-from models import Athlete, Activity, NutritionEntry, WorkPattern, BodyComposition, ActivityFeedback, InsightFeedback
+from models import Athlete, Activity, NutritionEntry, WorkPattern, BodyComposition, ActivityFeedback, InsightFeedback, FeatureFlag
 from schemas import AthleteResponse
+from pydantic import BaseModel, Field
+from services.plan_framework.feature_flags import FeatureFlagService
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
+
+class FeatureFlagResponse(BaseModel):
+    key: str
+    name: str
+    description: Optional[str] = None
+    enabled: bool
+    requires_subscription: bool
+    requires_tier: Optional[str] = None
+    requires_payment: Optional[float] = None
+    rollout_percentage: int
+    allowed_athlete_ids: List[str] = Field(default_factory=list)
+
+
+class FeatureFlagUpdateRequest(BaseModel):
+    enabled: Optional[bool] = None
+    rollout_percentage: Optional[int] = Field(default=None, ge=0, le=100)
+    allowed_athlete_ids: Optional[List[str]] = None
+
+
+class ThreeDSelectionModeRequest(BaseModel):
+    mode: Literal["off", "shadow", "on"]
+    rollout_percentage: Optional[int] = Field(default=None, ge=0, le=100)
+    # Admin-friendly: allow specifying emails rather than UUIDs.
+    allowlist_emails: Optional[List[str]] = None
+    allowlist_athlete_ids: Optional[List[str]] = None
+
+
+def _ensure_flag_exists(db: Session, key: str, name: str, description: str) -> None:
+    existing = db.query(FeatureFlag).filter(FeatureFlag.key == key).first()
+    if existing:
+        return
+    svc = FeatureFlagService(db)
+    svc.create_flag(
+        key=key,
+        name=name,
+        description=description,
+        enabled=False,
+        requires_subscription=False,
+        requires_tier="elite",
+        requires_payment=None,
+        rollout_percentage=0,
+    )
+
+
+@router.get("/feature-flags")
+def list_feature_flags(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+    prefix: Optional[str] = Query(None, description="Optional key prefix filter (e.g., 'plan.')"),
+):
+    """
+    List feature flags.
+    Admin/owner only.
+    """
+    q = db.query(FeatureFlag)
+    if prefix:
+        q = q.filter(FeatureFlag.key.ilike(f"{prefix}%"))
+    flags = q.order_by(FeatureFlag.key.asc()).all()
+
+    return {
+        "flags": [
+            FeatureFlagResponse(
+                key=f.key,
+                name=f.name,
+                description=f.description,
+                enabled=bool(f.enabled),
+                requires_subscription=bool(f.requires_subscription),
+                requires_tier=f.requires_tier,
+                requires_payment=float(f.requires_payment) if f.requires_payment is not None else None,
+                rollout_percentage=int(f.rollout_percentage or 0),
+                allowed_athlete_ids=[str(x) for x in (f.allowed_athlete_ids or [])],
+            ).model_dump()
+            for f in flags
+        ]
+    }
+
+
+@router.patch("/feature-flags/{flag_key}")
+def update_feature_flag(
+    flag_key: str,
+    request: FeatureFlagUpdateRequest,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Update a feature flag.
+    Admin/owner only.
+    """
+    flag = db.query(FeatureFlag).filter(FeatureFlag.key == flag_key).first()
+    if not flag:
+        raise HTTPException(status_code=404, detail="Feature flag not found")
+
+    updates: Dict[str, Any] = {}
+    if request.enabled is not None:
+        updates["enabled"] = request.enabled
+    if request.rollout_percentage is not None:
+        updates["rollout_percentage"] = request.rollout_percentage
+    if request.allowed_athlete_ids is not None:
+        updates["allowed_athlete_ids"] = request.allowed_athlete_ids
+
+    if not updates:
+        return {"success": True, "message": "No updates", "flag_key": flag_key}
+
+    svc = FeatureFlagService(db)
+    ok = svc.set_flag(flag_key, updates)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to update feature flag")
+
+    updated = db.query(FeatureFlag).filter(FeatureFlag.key == flag_key).first()
+    return {
+        "success": True,
+        "flag": FeatureFlagResponse(
+            key=updated.key,
+            name=updated.name,
+            description=updated.description,
+            enabled=bool(updated.enabled),
+            requires_subscription=bool(updated.requires_subscription),
+            requires_tier=updated.requires_tier,
+            requires_payment=float(updated.requires_payment) if updated.requires_payment is not None else None,
+            rollout_percentage=int(updated.rollout_percentage or 0),
+            allowed_athlete_ids=[str(x) for x in (updated.allowed_athlete_ids or [])],
+        ).model_dump(),
+    }
+
+
+@router.post("/features/3d-quality-selection")
+def set_3d_quality_selection_mode(
+    request: ThreeDSelectionModeRequest,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Admin-friendly control for ADR-036 3D quality-session selection.
+
+    This endpoint sets BOTH flags in a coherent way so admins don't have to
+    think about the underlying implementation details.
+    """
+    # Ensure flags exist (idempotent safety for environments that didn't run all migrations).
+    _ensure_flag_exists(
+        db,
+        key="plan.3d_workout_selection",
+        name="3D Workout Selection (ON)",
+        description="ADR-036: Serve 3D workout template selection for quality sessions (phase × progression × variance + N=1 weighting).",
+    )
+    _ensure_flag_exists(
+        db,
+        key="plan.3d_workout_selection_shadow",
+        name="3D Workout Selection (SHADOW)",
+        description="ADR-036: Compute 3D selection and log diffs, but continue serving legacy quality sessions.",
+    )
+
+    allowlist_ids: List[str] = []
+    if request.allowlist_athlete_ids:
+        allowlist_ids.extend([str(x) for x in request.allowlist_athlete_ids])
+
+    if request.allowlist_emails:
+        emails = [e.strip().lower() for e in request.allowlist_emails if e and e.strip()]
+        if emails:
+            athletes = db.query(Athlete).filter(func.lower(Athlete.email).in_(emails)).all()
+            allowlist_ids.extend([str(a.id) for a in athletes])
+
+    # De-dupe while preserving order.
+    seen = set()
+    allowlist_ids = [x for x in allowlist_ids if not (x in seen or seen.add(x))]
+
+    rollout = request.rollout_percentage
+
+    svc = FeatureFlagService(db)
+
+    if request.mode == "off":
+        svc.set_flag("plan.3d_workout_selection", {"enabled": False, "rollout_percentage": 0, "allowed_athlete_ids": []})
+        svc.set_flag("plan.3d_workout_selection_shadow", {"enabled": False, "rollout_percentage": 0, "allowed_athlete_ids": []})
+    elif request.mode == "shadow":
+        svc.set_flag("plan.3d_workout_selection", {"enabled": False, "rollout_percentage": 0, "allowed_athlete_ids": []})
+        payload: Dict[str, Any] = {"enabled": True}
+        if rollout is not None:
+            payload["rollout_percentage"] = rollout
+        if allowlist_ids:
+            payload["allowed_athlete_ids"] = allowlist_ids
+        svc.set_flag("plan.3d_workout_selection_shadow", payload)
+    else:  # "on"
+        svc.set_flag("plan.3d_workout_selection_shadow", {"enabled": False, "rollout_percentage": 0, "allowed_athlete_ids": []})
+        payload = {"enabled": True}
+        if rollout is not None:
+            payload["rollout_percentage"] = rollout
+        if allowlist_ids:
+            payload["allowed_athlete_ids"] = allowlist_ids
+        svc.set_flag("plan.3d_workout_selection", payload)
+
+    return {
+        "success": True,
+        "mode": request.mode,
+        "rollout_percentage": rollout,
+        "allowlist_athlete_ids": allowlist_ids,
+    }
 
 
 @router.get("/users")

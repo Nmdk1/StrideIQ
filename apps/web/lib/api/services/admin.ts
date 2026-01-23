@@ -79,6 +79,20 @@ export interface ImpersonationResponse {
   };
 }
 
+export interface FeatureFlag {
+  key: string;
+  name: string;
+  description?: string | null;
+  enabled: boolean;
+  requires_subscription: boolean;
+  requires_tier?: string | null;
+  requires_payment?: number | null;
+  rollout_percentage: number;
+  allowed_athlete_ids: string[];
+}
+
+export type ThreeDSelectionMode = 'off' | 'shadow' | 'on';
+
 export const adminService = {
   /**
    * List users with filtering
@@ -141,6 +155,30 @@ export const adminService = {
    */
   async crossAthleteQuery(queryType: string, minActivities: number = 10): Promise<any> {
     return apiClient.get(`/v1/admin/query?query_type=${queryType}&min_activities=${minActivities}`);
+  },
+
+  /**
+   * List feature flags
+   */
+  async listFeatureFlags(prefix?: string): Promise<{ flags: FeatureFlag[] }> {
+    const qs = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
+    return apiClient.get<{ flags: FeatureFlag[] }>(`/v1/admin/feature-flags${qs}`);
+  },
+
+  /**
+   * Admin-friendly control for 3D quality-session selection
+   */
+  async set3dQualitySelectionMode(params: {
+    mode: ThreeDSelectionMode;
+    rollout_percentage?: number;
+    allowlist_emails?: string[];
+  }): Promise<{
+    success: boolean;
+    mode: ThreeDSelectionMode;
+    rollout_percentage: number | null;
+    allowlist_athlete_ids: string[];
+  }> {
+    return apiClient.post(`/v1/admin/features/3d-quality-selection`, params);
   },
 } as const;
 

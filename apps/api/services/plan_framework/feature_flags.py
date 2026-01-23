@@ -83,18 +83,19 @@ class FeatureFlagService:
         
         if not flag.get("enabled", False):
             return False
-        
+
+        # Check beta list FIRST (always allows if on list).
+        # This matches the docstring and is required for safe shadow rollouts.
+        beta_list = flag.get("allowed_athlete_ids", [])
+        if beta_list and athlete_id:
+            if str(athlete_id) in [str(x) for x in beta_list]:
+                return True
+
         # Check rollout percentage
         rollout = flag.get("rollout_percentage", 100)
         if rollout < 100 and athlete_id:
             if not self._in_rollout(athlete_id, rollout, flag_key):
                 return False
-        
-        # Check beta list (always allows if on list)
-        beta_list = flag.get("allowed_athlete_ids", [])
-        if beta_list and athlete_id:
-            if str(athlete_id) in [str(x) for x in beta_list]:
-                return True
         
         return True
     

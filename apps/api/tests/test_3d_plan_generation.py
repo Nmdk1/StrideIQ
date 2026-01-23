@@ -53,21 +53,68 @@ class TestPlanGeneratorWith3DSelection:
         return MockFeatureFlags(enabled_flags={'plan.3d_workout_selection'})
     
     @pytest.fixture
+    def mock_flags_3d_shadow_enabled(self):
+        """Feature flags with 3D selection shadow enabled."""
+        return MockFeatureFlags(enabled_flags={'plan.3d_workout_selection_shadow'})
+
+    @pytest.fixture
     def mock_flags_3d_disabled(self):
         """Feature flags with 3D selection disabled."""
         return MockFeatureFlags(enabled_flags=set())
     
-    def test_3d_selection_flag_controls_behavior(self, mock_db, mock_flags_3d_enabled, mock_flags_3d_disabled):
-        """Feature flag should control whether 3D selection is used."""
+    def test_3d_selection_flag_controls_behavior(self, mock_db, mock_flags_3d_enabled, mock_flags_3d_shadow_enabled, mock_flags_3d_disabled):
+        """Feature flags should control off/shadow/on behavior."""
         from services.model_driven_plan_generator import ModelDrivenPlanGenerator
         
         # With flag disabled
         generator_off = ModelDrivenPlanGenerator(mock_db, feature_flags=mock_flags_3d_disabled)
-        assert not generator_off._use_3d_selection(uuid4())
+        assert generator_off._get_3d_selection_mode(uuid4()) == "off"
         
         # With flag enabled
         generator_on = ModelDrivenPlanGenerator(mock_db, feature_flags=mock_flags_3d_enabled)
-        assert generator_on._use_3d_selection(uuid4())
+        assert generator_on._get_3d_selection_mode(uuid4()) == "on"
+
+        # With shadow flag enabled
+        generator_shadow = ModelDrivenPlanGenerator(mock_db, feature_flags=mock_flags_3d_shadow_enabled)
+        assert generator_shadow._get_3d_selection_mode(uuid4()) == "shadow"
+
+    def test_shadow_mode_serves_legacy_but_does_not_crash(self, mock_db, mock_flags_3d_shadow_enabled):
+        """Shadow mode should continue returning legacy workouts while computing 3D selection for audit."""
+        from services.model_driven_plan_generator import ModelDrivenPlanGenerator
+        from services.optimal_load_calculator import TrainingPhase as GenPhase
+        from services.workout_templates import DataTier, DataSufficiencyAssessment
+
+        gen = ModelDrivenPlanGenerator(mock_db, feature_flags=mock_flags_3d_shadow_enabled)
+        gen._current_athlete_id = uuid4()
+        gen._plan_generation_id = "test-shadow"
+
+        with patch("services.workout_templates.assess_data_sufficiency") as mock_assess:
+            mock_assess.return_value = DataSufficiencyAssessment(
+                tier=DataTier.UNCALIBRATED,
+                total_activities=10,
+                days_of_data=30,
+                quality_sessions=2,
+                rpe_coverage=0.0,
+                race_count=0,
+                days_since_last_activity=1,
+                notes=[],
+            )
+
+            day = gen._create_day_plan(
+                date=date.today(),
+                day_of_week="Thursday",
+                workout_type="quality",
+                target_tss=80,
+                paces={"e_pace": "9:00/mi", "t_pace": "7:15/mi", "m_pace": "8:00/mi", "i_pace": "6:30/mi", "r_pace": "6:00/mi"},
+                race_distance="marathon",
+                phase=GenPhase.BUILD,
+                baseline={"weekly_miles": 40, "long_run_miles": 15, "peak_weekly_miles": 50, "is_returning_from_injury": False},
+                week_number=3,
+                total_weeks=16,
+            )
+
+        # Legacy day is still served in shadow mode.
+        assert day.workout_type in ("threshold", "race_pace", "sharpening", "easy", "long_run", "rest")
     
     def test_3d_selection_produces_varied_quality_workouts(self, mock_db, mock_flags_3d_enabled):
         """3D selection should produce variety in quality workouts."""

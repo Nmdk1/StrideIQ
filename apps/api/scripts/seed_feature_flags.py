@@ -207,6 +207,26 @@ REQUIRED_FLAGS = [
         "rollout_percentage": 100,  # Full rollout to elite tier
     },
     {
+        "key": "plan.3d_workout_selection",
+        "name": "3D Workout Selection (ON)",
+        "description": "ADR-036: Serve 3D workout template selection for quality sessions (phase × progression × variance + N=1 weighting).",
+        "enabled": True,
+        "requires_subscription": False,
+        "requires_tier": "elite",
+        "requires_payment": None,
+        "rollout_percentage": 0,  # Start at 0%, allowlist specific athletes via allowed_athlete_ids
+    },
+    {
+        "key": "plan.3d_workout_selection_shadow",
+        "name": "3D Workout Selection (SHADOW)",
+        "description": "ADR-036: Compute 3D selection and log diffs, but continue serving legacy quality sessions.",
+        "enabled": True,
+        "requires_subscription": False,
+        "requires_tier": "elite",
+        "requires_payment": None,
+        "rollout_percentage": 0,  # Start at 0%, allowlist specific athletes via allowed_athlete_ids
+    },
+    {
         "key": "ab.model_vs_template",
         "name": "A/B Test: Model vs Template Plans",
         "description": "A/B testing for model-driven vs template plan generation (ADR-026)",

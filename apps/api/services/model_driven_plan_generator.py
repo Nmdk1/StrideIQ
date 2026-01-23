@@ -46,6 +46,8 @@ from services.vdot_calculator import calculate_training_paces
 
 logger = logging.getLogger(__name__)
 
+import json
+
 
 # =============================================================================
 # CONFIGURATION
@@ -219,12 +221,50 @@ class ModelDrivenPlanGenerator:
         self._feature_flags = feature_flags
         self._workout_selector = None
         self._recent_quality_ids: List[str] = []  # Track for variance enforcement
+        self._recent_quality_ids_shadow: List[str] = []  # Shadow-mode tracker (no user impact)
         
-    def _use_3d_selection(self, athlete_id: UUID) -> bool:
-        """Check if 3D workout selection is enabled for this athlete."""
+    def _get_3d_selection_mode(self, athlete_id: UUID) -> str:
+        """
+        Get 3D selection rollout mode for this athlete.
+
+        Modes:
+        - "off": legacy only
+        - "shadow": compute 3D selection + log diffs, but serve legacy
+        - "on": serve 3D selection
+
+        Note: FeatureFlagService is boolean-only today; we implement tri-state
+        using two flags:
+          - plan.3d_workout_selection (ON)
+          - plan.3d_workout_selection_shadow (SHADOW)
+        """
         if self._feature_flags is None:
-            return False
-        return self._feature_flags.is_enabled("plan.3d_workout_selection", athlete_id)
+            return "off"
+
+        try:
+            if self._feature_flags.is_enabled("plan.3d_workout_selection", athlete_id):
+                return "on"
+            if self._feature_flags.is_enabled("plan.3d_workout_selection_shadow", athlete_id):
+                return "shadow"
+        except Exception:
+            # Safety: do not block plan generation; fall back to legacy behavior.
+            return "off"
+
+        return "off"
+
+    def _use_3d_selection(self, athlete_id: UUID) -> bool:
+        """Back-compat boolean check used in older call sites."""
+        return self._get_3d_selection_mode(athlete_id) == "on"
+
+    def _log_3d_selection_event(self, event: str, payload: Dict[str, Any]) -> None:
+        """
+        Structured audit log for 3D selection.
+
+        IMPORTANT: keep payload template-centric (ids/scores/counts), avoid dumping raw athlete data.
+        """
+        try:
+            logger.info("3d_workout_selection.%s %s", event, json.dumps(payload, default=str, sort_keys=True))
+        except Exception:
+            logger.info("3d_workout_selection.%s (unserializable payload)", event)
     
     def _get_workout_selector(self):
         """Lazy-load the workout selector."""
@@ -260,11 +300,14 @@ class ModelDrivenPlanGenerator:
         import uuid
         
         plan_id = str(uuid.uuid4())
+        # Used only for audit logging; not persisted as TrainingPlan.id.
+        self._plan_generation_id = plan_id
         race_distance_m = RACE_DISTANCES.get(race_distance.lower(), 42195)
         
         # Track athlete ID for 3D selection (ADR-036)
         self._current_athlete_id = athlete_id
         self._recent_quality_ids = []  # Reset for this plan generation
+        self._recent_quality_ids_shadow = []  # Reset shadow tracker
         
         # Step 1: Get or calibrate individual model
         model = get_or_calibrate_model(athlete_id, self.db)
@@ -451,11 +494,21 @@ class ModelDrivenPlanGenerator:
         }
         intensity = intensity_map.get(template.fatigue_cost.value, "moderate")
         
-        # Log audit info
-        logger.info(
-            f"3D selection: {template.id} for {date} "
-            f"(phase={phase.value}, mode={result.selection_mode}, tier={result.data_tier.value}, "
-            f"score={result.final_score:.2f})"
+        # Structured audit log (template-centric)
+        self._log_3d_selection_event(
+            "selected",
+            {
+                "plan_generation_id": getattr(self, "_plan_generation_id", None),
+                "athlete_id": str(getattr(self, "_current_athlete_id", "")),
+                "date": date.isoformat(),
+                "day_of_week": day_of_week,
+                "slot_type": "quality",
+                "phase": phase.value,
+                "selection_mode": result.selection_mode,
+                "selected_template_id": template.id,
+                "final_score": round(float(result.final_score), 4) if result.final_score is not None else None,
+                "selector_audit": result.audit_log,
+            },
         )
         
         return DayPlan(
@@ -471,6 +524,91 @@ class ModelDrivenPlanGenerator:
             rationale=rationale,
             notes=template.notes
         )
+
+    def _select_quality_workout_3d_shadow(
+        self,
+        *,
+        date: date,
+        day_of_week: str,
+        target_tss: float,
+        miles: float,
+        paces: Dict[str, str],
+        phase: TrainingPhase,
+        week_number: int,
+        total_weeks: int,
+        legacy_workout_type: str,
+        legacy_title: str,
+    ) -> None:
+        """
+        Shadow-mode selection: compute 3D result and log diff, but do not affect returned plan.
+        """
+        try:
+            from services.workout_templates import TrainingPhase as TemplatePhase
+
+            phase_map = {
+                TrainingPhase.BASE: TemplatePhase.BASE,
+                TrainingPhase.BUILD: TemplatePhase.BUILD,
+                TrainingPhase.PEAK: TemplatePhase.PEAK,
+                TrainingPhase.TAPER: TemplatePhase.TAPER,
+            }
+            template_phase = phase_map.get(phase, TemplatePhase.BUILD)
+
+            selector = self._get_workout_selector()
+
+            # Same approximation as _select_quality_workout_3d so shadow is comparable.
+            if phase == TrainingPhase.BASE:
+                phase_start_week = 1
+                phase_weeks = max(1, int(total_weeks * 0.25))
+            elif phase == TrainingPhase.BUILD:
+                phase_start_week = int(total_weeks * 0.25) + 1
+                phase_weeks = max(1, int(total_weeks * 0.50))
+            elif phase == TrainingPhase.PEAK:
+                phase_start_week = int(total_weeks * 0.75) + 1
+                phase_weeks = max(1, int(total_weeks * 0.20))
+            else:  # TAPER
+                phase_start_week = int(total_weeks * 0.95) + 1
+                phase_weeks = max(1, total_weeks - phase_start_week + 1)
+
+            week_in_phase = max(1, week_number - phase_start_week + 1)
+
+            result = selector.select_quality_workout(
+                athlete_id=str(self._current_athlete_id),
+                phase=template_phase,
+                week_in_phase=week_in_phase,
+                total_phase_weeks=phase_weeks,
+                recent_quality_ids=self._recent_quality_ids_shadow[-5:],
+                athlete_facilities=[],
+            )
+
+            self._recent_quality_ids_shadow.append(result.template.id)
+
+            self._log_3d_selection_event(
+                "shadow_diff",
+                {
+                    "plan_generation_id": getattr(self, "_plan_generation_id", None),
+                    "athlete_id": str(getattr(self, "_current_athlete_id", "")),
+                    "date": date.isoformat(),
+                    "day_of_week": day_of_week,
+                    "phase": phase.value,
+                    "legacy_workout_type": legacy_workout_type,
+                    "legacy_title": legacy_title,
+                    "shadow_selected_template_id": result.template.id,
+                    "shadow_selection_mode": result.selection_mode,
+                    "shadow_final_score": round(float(result.final_score), 4) if result.final_score is not None else None,
+                    "selector_audit": result.audit_log,
+                },
+            )
+        except Exception as e:
+            self._log_3d_selection_event(
+                "shadow_error",
+                {
+                    "plan_generation_id": getattr(self, "_plan_generation_id", None),
+                    "athlete_id": str(getattr(self, "_current_athlete_id", "")),
+                    "date": date.isoformat(),
+                    "phase": phase.value,
+                    "error": str(e),
+                },
+            )
     
     # =========================================================================
     # HELPER METHODS
@@ -1058,25 +1196,16 @@ class ModelDrivenPlanGenerator:
         elif workout_type == "quality":
             miles = target_tss * TSS_TO_MILES_QUALITY
             
-            # ADR-036: Use 3D workout selection when feature flag is enabled
-            if hasattr(self, '_use_3d_selection') and self._use_3d_selection(self._current_athlete_id):
-                return self._select_quality_workout_3d(
-                    date=date,
-                    day_of_week=day_of_week,
-                    target_tss=target_tss,
-                    miles=miles,
-                    paces=paces,
-                    phase=phase,
-                    week_number=week_number,
-                    total_weeks=total_weeks
-                )
+            mode = "off"
+            if hasattr(self, "_get_3d_selection_mode"):
+                mode = self._get_3d_selection_mode(self._current_athlete_id)
             
             # Legacy hardcoded selection (fallback)
             if phase == TrainingPhase.BUILD:
                 # TERMINOLOGY: Threshold = intervals with recovery (3x10min w/ 2min jog)
                 # Tempo = continuous sustained (25min straight)
                 # We prescribe threshold intervals - they're more manageable and effective
-                return DayPlan(
+                legacy = DayPlan(
                     date=date,
                     day_of_week=day_of_week,
                     workout_type="threshold",
@@ -1095,8 +1224,33 @@ class ModelDrivenPlanGenerator:
                         "Breaking into segments makes the effort sustainable while achieving same adaptation."
                     )
                 )
+                if mode == "shadow":
+                    self._select_quality_workout_3d_shadow(
+                        date=date,
+                        day_of_week=day_of_week,
+                        target_tss=target_tss,
+                        miles=miles,
+                        paces=paces,
+                        phase=phase,
+                        week_number=week_number,
+                        total_weeks=total_weeks,
+                        legacy_workout_type=legacy.workout_type,
+                        legacy_title=legacy.name,
+                    )
+                elif mode == "on":
+                    return self._select_quality_workout_3d(
+                        date=date,
+                        day_of_week=day_of_week,
+                        target_tss=target_tss,
+                        miles=miles,
+                        paces=paces,
+                        phase=phase,
+                        week_number=week_number,
+                        total_weeks=total_weeks,
+                    )
+                return legacy
             else:  # PEAK
-                return DayPlan(
+                legacy = DayPlan(
                     date=date,
                     day_of_week=day_of_week,
                     workout_type="race_pace",
@@ -1114,24 +1268,40 @@ class ModelDrivenPlanGenerator:
                         "This is dress rehearsal - same pace you'll run on race day."
                     )
                 )
+                if mode == "shadow":
+                    self._select_quality_workout_3d_shadow(
+                        date=date,
+                        day_of_week=day_of_week,
+                        target_tss=target_tss,
+                        miles=miles,
+                        paces=paces,
+                        phase=phase,
+                        week_number=week_number,
+                        total_weeks=total_weeks,
+                        legacy_workout_type=legacy.workout_type,
+                        legacy_title=legacy.name,
+                    )
+                elif mode == "on":
+                    return self._select_quality_workout_3d(
+                        date=date,
+                        day_of_week=day_of_week,
+                        target_tss=target_tss,
+                        miles=miles,
+                        paces=paces,
+                        phase=phase,
+                        week_number=week_number,
+                        total_weeks=total_weeks,
+                    )
+                return legacy
         
         elif workout_type == "sharpening":
             miles = target_tss * TSS_TO_MILES_QUALITY
             
-            # ADR-036: Use 3D workout selection for sharpening when feature flag is enabled
-            if hasattr(self, '_use_3d_selection') and self._use_3d_selection(self._current_athlete_id):
-                return self._select_quality_workout_3d(
-                    date=date,
-                    day_of_week=day_of_week,
-                    target_tss=target_tss,
-                    miles=miles,
-                    paces=paces,
-                    phase=phase,
-                    week_number=week_number,
-                    total_weeks=total_weeks
-                )
+            mode = "off"
+            if hasattr(self, "_get_3d_selection_mode"):
+                mode = self._get_3d_selection_mode(self._current_athlete_id)
             
-            return DayPlan(
+            legacy = DayPlan(
                 date=date,
                 day_of_week=day_of_week,
                 workout_type="sharpening",
@@ -1143,6 +1313,31 @@ class ModelDrivenPlanGenerator:
                 intensity="hard",
                 notes=["Keep volume low, intensity crisp"]
             )
+            if mode == "shadow":
+                self._select_quality_workout_3d_shadow(
+                    date=date,
+                    day_of_week=day_of_week,
+                    target_tss=target_tss,
+                    miles=miles,
+                    paces=paces,
+                    phase=phase,
+                    week_number=week_number,
+                    total_weeks=total_weeks,
+                    legacy_workout_type=legacy.workout_type,
+                    legacy_title=legacy.name,
+                )
+            elif mode == "on":
+                return self._select_quality_workout_3d(
+                    date=date,
+                    day_of_week=day_of_week,
+                    target_tss=target_tss,
+                    miles=miles,
+                    paces=paces,
+                    phase=phase,
+                    week_number=week_number,
+                    total_weeks=total_weeks,
+                )
+            return legacy
         
         elif workout_type == "long":
             # ========================================

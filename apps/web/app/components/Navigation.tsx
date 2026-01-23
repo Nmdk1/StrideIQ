@@ -77,6 +77,7 @@ export default function Navigation() {
     { href: '/', label: 'Home' },
     { href: '/#tools', label: 'Calculators' },
     { href: '/#pricing', label: 'Pricing' },
+    { href: '/about', label: 'About' },
     { href: '/mission', label: 'Mission' },
   ];
 

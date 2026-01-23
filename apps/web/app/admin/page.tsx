@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -27,13 +27,20 @@ export default function AdminPage() {
   const { user } = useAuth();
   const router = useRouter();
   const [search, setSearch] = useState('');
-  const [selectedTab, setSelectedTab] = useState<'users' | 'health' | 'metrics' | 'query' | 'testing'>('users');
+  const [selectedTab, setSelectedTab] = useState<'users' | 'health' | 'metrics' | 'flags' | 'query' | 'testing'>('users');
   
   // User management
   const { data: users, isLoading: usersLoading } = useAdminUsers({ search, limit: 50 });
   const { data: health, isLoading: healthLoading } = useSystemHealth();
   const { data: metrics, isLoading: metricsLoading } = useSiteMetrics(30);
   const impersonateUser = useImpersonateUser();
+
+  // Feature flags
+  const { data: flagsData, isLoading: flagsLoading } = useAdminFeatureFlags('plan.');
+  const set3dMode = useSet3dQualitySelectionMode();
+  const [desired3dMode, setDesired3dMode] = useState<'off' | 'shadow' | 'on'>('off');
+  const [desiredRollout, setDesiredRollout] = useState<number>(0);
+  const [allowlistEmails, setAllowlistEmails] = useState<string>('');
   
   // Query Engine
   const { data: templates } = useQueryTemplates();
@@ -151,6 +158,16 @@ export default function AdminPage() {
               }`}
             >
               Site Metrics
+            </button>
+            <button
+              onClick={() => setSelectedTab('flags')}
+              className={`px-4 py-2 font-medium ${
+                selectedTab === 'flags'
+                  ? 'border-b-2 border-blue-600 text-blue-400'
+                  : 'text-slate-400 hover:text-slate-300'
+              }`}
+            >
+              Feature Flags
             </button>
             <button
               onClick={() => setSelectedTab('query')}
@@ -353,6 +370,130 @@ export default function AdminPage() {
               ) : (
                 <ErrorMessage error={new Error('Failed to load metrics')} />
               )}
+            </div>
+          )}
+
+          {/* Feature Flags Tab */}
+          {selectedTab === 'flags' && (
+            <div className="space-y-6">
+              <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
+                <h3 className="text-lg font-semibold mb-2">3D Quality-Session Selection</h3>
+                <p className="text-slate-400 text-sm mb-4">
+                  Admin-friendly control for the new quality workout selector.
+                  You can run it in shadow (logs only) or turn it on for a rollout/allowlist.
+                </p>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-4">
+                    <div className="text-sm font-medium mb-2">Mode</div>
+                    <div className="space-y-2 text-sm">
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="mode" checked={desired3dMode === 'off'} onChange={() => setDesired3dMode('off')} />
+                        Off
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="mode" checked={desired3dMode === 'shadow'} onChange={() => setDesired3dMode('shadow')} />
+                        Shadow (log only)
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="mode" checked={desired3dMode === 'on'} onChange={() => setDesired3dMode('on')} />
+                        On (serve new selection)
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-4">
+                    <div className="text-sm font-medium mb-2">Rollout %</div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={desiredRollout}
+                      onChange={(e) => setDesiredRollout(Math.max(0, Math.min(100, parseInt(e.target.value || '0', 10))))}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700/50 rounded text-white"
+                    />
+                    <p className="text-xs text-slate-500 mt-2">
+                      Tip: set to 0 and use allowlist for targeted rollout.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-4">
+                    <div className="text-sm font-medium mb-2">Allowlist emails (optional)</div>
+                    <textarea
+                      value={allowlistEmails}
+                      onChange={(e) => setAllowlistEmails(e.target.value)}
+                      rows={4}
+                      placeholder="one email per line"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700/50 rounded text-white text-sm"
+                    />
+                    <p className="text-xs text-slate-500 mt-2">
+                      These users will get access even if rollout % is 0.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center gap-3">
+                  <button
+                    onClick={() =>
+                      set3dMode.mutate({
+                        mode: desired3dMode,
+                        rollout_percentage: desiredRollout,
+                        allowlist_emails: allowlistEmails
+                          .split('\n')
+                          .map((s) => s.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                    disabled={set3dMode.isPending}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded font-medium"
+                  >
+                    {set3dMode.isPending ? 'Saving...' : 'Save'}
+                  </button>
+                  {set3dMode.isSuccess && (
+                    <div className="text-sm text-green-400">✓ Updated</div>
+                  )}
+                  {set3dMode.isError && (
+                    <div className="text-sm text-red-400">Failed to update</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
+                <h3 className="text-lg font-semibold mb-2">Plan-related flags (read-only)</h3>
+                <p className="text-slate-400 text-sm mb-4">A quick view of `plan.*` flags in the system.</p>
+                {flagsLoading ? (
+                  <LoadingSpinner />
+                ) : flagsData?.flags ? (
+                  <div className="overflow-hidden rounded-lg border border-slate-700/50">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-900">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold">Key</th>
+                          <th className="px-4 py-3 text-left font-semibold">Enabled</th>
+                          <th className="px-4 py-3 text-left font-semibold">Rollout</th>
+                          <th className="px-4 py-3 text-left font-semibold">Allowlist</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {flagsData.flags.slice(0, 50).map((f) => (
+                          <tr key={f.key} className="border-t border-slate-700/50">
+                            <td className="px-4 py-3">{f.key}</td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-1 rounded text-xs ${f.enabled ? 'bg-green-900/40 text-green-300' : 'bg-slate-700 text-slate-300'}`}>
+                                {f.enabled ? 'true' : 'false'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">{f.rollout_percentage}%</td>
+                            <td className="px-4 py-3 text-slate-400">{f.allowed_athlete_ids?.length || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <ErrorMessage error={new Error('Failed to load feature flags')} />
+                )}
+              </div>
             </div>
           )}
 
