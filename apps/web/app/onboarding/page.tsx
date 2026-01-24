@@ -30,6 +30,9 @@ interface OnboardingData {
   goals?: string[];
   nutrition_setup?: boolean;
   work_setup?: boolean;
+  // Onboarding value artifact (optional, produced by Goals stage save)
+  pace_profile_status?: string;
+  pace_profile?: any;
 }
 
 export default function OnboardingPage() {
@@ -155,6 +158,8 @@ export default function OnboardingPage() {
 
           {currentStage === 'connect_strava' && (
             <ConnectStravaStage
+              paceProfileStatus={data.pace_profile_status}
+              paceProfile={data.pace_profile}
               onNext={() => handleNext({}, 'nutrition_setup')}
               onSkip={() => handleSkip('nutrition_setup')}
             />
@@ -336,6 +341,12 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
     },
     shoe_rotation: '',
     favorite_workouts: '',
+
+    // Pace calibration (race-result only; no inference from training data)
+    recent_race_distance: '',
+    recent_race_time: '',
+    recent_race_date: '',
+    recent_race_distance_m: '',
   });
 
   useEffect(() => {
@@ -384,9 +395,15 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
         time_available_min: Number(form.time_available_min) || null,
         weekly_mileage_target:
           form.weekly_mileage_target === '' ? null : Number(form.weekly_mileage_target) || null,
+        recent_race_distance_m:
+          form.recent_race_distance_m === '' ? null : Number(form.recent_race_distance_m) || null,
       };
-      await onboardingService.saveIntake('goals', payload, true);
-      onNext({ goals: payload.output_metric_priorities || [] });
+      const resp: any = await onboardingService.saveIntake('goals', payload, true);
+      onNext({
+        goals: payload.output_metric_priorities || [],
+        pace_profile_status: resp?.status,
+        pace_profile: resp?.pace_profile || null,
+      });
     } finally {
       setSaving(false);
     }
@@ -680,6 +697,65 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
             </div>
           </details>
 
+          <div className="bg-slate-900/30 border border-slate-700/50 rounded p-4">
+            <p className="text-sm font-medium text-slate-200">Training pace calibration (optional)</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Prescriptive paces are only computed from a race/time trial result. If you don&apos;t have one, we won&apos;t
+              guess.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Most recent race/time trial distance</label>
+                <select
+                  value={form.recent_race_distance}
+                  onChange={(e) => setField('recent_race_distance', e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+                >
+                  <option value="">(skip)</option>
+                  <option value="5k">5K</option>
+                  <option value="10k">10K</option>
+                  <option value="half_marathon">Half Marathon</option>
+                  <option value="marathon">Marathon</option>
+                  <option value="other">Other (meters)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Finish time</label>
+                <input
+                  type="text"
+                  value={form.recent_race_time || ''}
+                  onChange={(e) => setField('recent_race_time', e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+                  placeholder="MM:SS or HH:MM:SS"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Date</label>
+                <input
+                  type="date"
+                  value={form.recent_race_date || ''}
+                  onChange={(e) => setField('recent_race_date', e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+                />
+              </div>
+            </div>
+
+            {form.recent_race_distance === 'other' ? (
+              <div className="mt-4">
+                <label className="block text-sm font-medium mb-2">Distance (meters)</label>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={form.recent_race_distance_m}
+                  onChange={(e) => setField('recent_race_distance_m', e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+                  placeholder="e.g., 3000"
+                />
+              </div>
+            ) : null}
+          </div>
+
           <div className="flex gap-2">
             <button
               onClick={handleContinue}
@@ -737,7 +813,17 @@ function NutritionSetupStage({ data, onNext, onSkip }: { data: OnboardingData; o
   );
 }
 
-function ConnectStravaStage({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
+function ConnectStravaStage({
+  paceProfileStatus,
+  paceProfile,
+  onNext,
+  onSkip,
+}: {
+  paceProfileStatus?: string;
+  paceProfile?: any;
+  onNext: () => void;
+  onSkip: () => void;
+}) {
   const { data: status } = useOnboardingStatus(true);
   const bootstrap = useBootstrapOnboarding();
   const isConnected = !!status?.strava_connected;
@@ -779,6 +865,47 @@ function ConnectStravaStage({ onNext, onSkip }: { onNext: () => void; onSkip: ()
       <p className="text-slate-400 mb-6">
         Import your activities automatically.
       </p>
+
+      {paceProfileStatus === 'computed' && paceProfile ? (
+        <div className="mb-6 bg-slate-900/30 border border-slate-700/50 rounded p-4">
+          <p className="text-sm font-medium text-slate-200">Training pace profile saved</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Based on your most recent race/time trial (Training Pace Calculator).
+          </p>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+            <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
+              <span className="text-slate-300">Easy</span>
+              <span className="text-slate-100">{paceProfile?.paces?.easy?.display_mi || paceProfile?.paces?.easy?.mi || '—'}</span>
+            </div>
+            <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
+              <span className="text-slate-300">Threshold</span>
+              <span className="text-slate-100">{paceProfile?.paces?.threshold?.mi || '—'}</span>
+            </div>
+            <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
+              <span className="text-slate-300">Marathon</span>
+              <span className="text-slate-100">{paceProfile?.paces?.marathon?.mi || '—'}</span>
+            </div>
+            <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
+              <span className="text-slate-300">Interval</span>
+              <span className="text-slate-100">{paceProfile?.paces?.interval?.mi || '—'}</span>
+            </div>
+          </div>
+        </div>
+      ) : paceProfileStatus === 'missing_anchor' ? (
+        <div className="mb-6 bg-slate-900/30 border border-slate-700/50 rounded p-4">
+          <p className="text-sm font-medium text-slate-200">No prescriptive paces yet</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Add a recent race/time trial result in onboarding (or later in Settings) to unlock prescriptive pace targets.
+          </p>
+        </div>
+      ) : paceProfileStatus === 'invalid_anchor' ? (
+        <div className="mb-6 bg-slate-900/30 border border-slate-700/50 rounded p-4">
+          <p className="text-sm font-medium text-slate-200">Couldn&apos;t compute paces from that time</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Check the format (MM:SS or HH:MM:SS) and try again.
+          </p>
+        </div>
+      ) : null}
       
       <div className="space-y-4 mb-6">
         <div className="bg-slate-900 rounded p-4">

@@ -12,7 +12,7 @@ def main() -> int:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--email", default=os.getenv("STRIDEIQ_EMAIL"), help="athlete email (default: STRIDEIQ_EMAIL)")
-    parser.add_argument("--target-tier", default="elite", help="tier to set if updating (default: elite)")
+    parser.add_argument("--target-tier", default="pro", help="tier to set if updating (default: pro)")
     parser.add_argument("--commit", action="store_true", help="Persist tier update (default: dry-run)")
     args = parser.parse_args()
 

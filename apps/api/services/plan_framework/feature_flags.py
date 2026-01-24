@@ -135,7 +135,7 @@ class FeatureFlagService:
                 return AccessResult(
                     allowed=False,
                     reason="tier_upgrade_required",
-                    required_tier="elite",
+                    required_tier="pro",
                     upgrade_path="/settings"
                 )
         
@@ -291,20 +291,19 @@ class FeatureFlagService:
     
     def _tier_satisfies(self, athlete_tier: str, required_tier: str) -> bool:
         """Check if athlete's tier satisfies requirement."""
-        # Normalize legacy paid tiers to Elite access while we converge on a single paid tier.
+        # Phase 6: converge to Free vs Pro. Keep legacy aliases for backward compatibility.
         normalized_athlete_tier = (athlete_tier or "free").lower()
         normalized_required_tier = (required_tier or "free").lower()
 
-        legacy_paid = {"pro", "premium", "guided", "subscription"}
+        legacy_paid = {"elite", "pro", "premium", "guided", "subscription"}
         if normalized_athlete_tier in legacy_paid:
-            normalized_athlete_tier = "elite"
+            normalized_athlete_tier = "pro"
         if normalized_required_tier in legacy_paid:
-            normalized_required_tier = "elite"
+            normalized_required_tier = "pro"
 
         tier_hierarchy = {
             "free": 0,
-            "basic": 1,
-            "elite": 2,
+            "pro": 1,
         }
         
         athlete_level = tier_hierarchy.get(normalized_athlete_tier, 0)

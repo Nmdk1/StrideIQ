@@ -300,7 +300,7 @@ def generate_why_context(
         contexts.append(f"{phase_display} phase.")
     
     # Add workout-specific context
-    if 'threshold' in workout_type or 'tempo' in workout_type:
+    if 'threshold' in workout_type:
         contexts.append("Builds lactate clearance.")
     elif 'long' in workout_type:
         contexts.append("Builds endurance and fat metabolism.")

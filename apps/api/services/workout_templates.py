@@ -104,7 +104,7 @@ class WorkoutTemplate(BaseModel):
     
     workout_type: str = Field(
         ...,
-        description="Category: threshold, tempo, strides, hill_sprints, sharpening, race_pace"
+        description="Category: threshold, strides, hill_sprints, sharpening, race_pace"
     )
     
     # === Dimension 1: Periodization ===

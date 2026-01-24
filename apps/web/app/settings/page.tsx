@@ -8,7 +8,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { StravaConnection } from '@/components/integrations/StravaConnection';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -19,18 +19,50 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Settings, Link2, Watch, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight } from 'lucide-react';
+import { authService } from '@/lib/api/services/auth';
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const { units, setUnits } = useUnits();
   const [exporting, setExporting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [billingLoading, setBillingLoading] = useState<'checkout' | 'portal' | null>(null);
+  const [billingLoading, setBillingLoading] = useState<'checkout' | 'portal' | 'trial' | null>(null);
+  const [paceProfileStatus, setPaceProfileStatus] = useState<'loading' | 'computed' | 'missing' | 'error'>('loading');
+  const [paceProfile, setPaceProfile] = useState<any | null>(null);
 
-  // Phase 6: converge UI to Free vs Pro even if legacy paid tiers exist.
+  // Phase 6: paid access can come from Stripe OR an active trial.
   const rawTier = (user?.subscription_tier || 'free').toLowerCase();
-  const isPaid = rawTier !== 'free';
-  const displayTier = isPaid ? 'pro' : 'free';
+  const hasPaidAccess = !!user?.has_active_subscription || rawTier !== 'free';
+  const displayTier = hasPaidAccess ? 'pro' : 'free';
+  const trialUsed = !!user?.trial_started_at;
+  const trialEndsAt = user?.trial_ends_at ? new Date(user.trial_ends_at) : null;
+  const trialActive = !!trialEndsAt && trialEndsAt.getTime() > Date.now();
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!user?.id) return;
+      setPaceProfileStatus('loading');
+      try {
+        const resp = await authService.getTrainingPaceProfile();
+        if (!mounted) return;
+        if (resp?.status === 'computed' && resp?.pace_profile) {
+          setPaceProfile(resp.pace_profile);
+          setPaceProfileStatus('computed');
+        } else {
+          setPaceProfile(null);
+          setPaceProfileStatus('missing');
+        }
+      } catch (e) {
+        if (!mounted) return;
+        setPaceProfile(null);
+        setPaceProfileStatus('error');
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id]);
 
   const handleExportData = async () => {
     setExporting(true);
@@ -107,6 +139,27 @@ export default function SettingsPage() {
       window.location.href = data.url;
     } catch (err) {
       console.error('Portal failed:', err);
+    } finally {
+      setBillingLoading(null);
+    }
+  };
+
+  const handleStartTrial = async () => {
+    setBillingLoading('trial');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const resp = await fetch(`${API_CONFIG.baseURL}/v1/billing/trial/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days: 7 }),
+      });
+      if (!resp.ok) return;
+      // Refresh the page so AuthContext re-pulls /me and membership UI updates.
+      if (process.env.NODE_ENV !== 'test') {
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Trial start failed:', err);
     } finally {
       setBillingLoading(null);
     }
@@ -206,36 +259,120 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div>
-                      <p className="font-medium flex items-center gap-2">
+                      <div className="font-medium flex items-center gap-2">
                         {displayTier.toUpperCase()} Plan
                         <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Active</Badge>
+                      </div>
+                      <p className="text-sm text-slate-400">
+                        {trialActive ? (
+                          <>
+                            Trial ends{' '}
+                            <span className="text-slate-200">
+                              {trialEndsAt?.toLocaleDateString()}
+                            </span>
+                            . Upgrade anytime to keep Pro.
+                          </>
+                        ) : (
+                          <>Pro unlocks the full planning and intelligence stack.</>
+                        )}
                       </p>
-                      <p className="text-sm text-slate-400">Pro unlocks the full planning and intelligence stack.</p>
                     </div>
                   </div>
-                  {!isPaid ? (
-                    <Button className="bg-orange-600 hover:bg-orange-500" onClick={handleUpgrade} disabled={billingLoading !== null}>
-                      {billingLoading === 'checkout' ? <LoadingSpinner size="sm" /> : (
-                        <>
-                          Upgrade to Pro <ArrowUpRight className="w-4 h-4 ml-1" />
-                        </>
-                      )}
-                    </Button>
-                  ) : (
-                    <Button
-                      className="bg-slate-700 hover:bg-slate-600"
-                      onClick={user?.stripe_customer_id ? handleManageSubscription : handleUpgrade}
-                      disabled={billingLoading !== null}
-                      title={!user?.stripe_customer_id ? 'No billing profile linked yet — start Pro billing to enable portal' : undefined}
-                    >
-                      {billingLoading === 'portal' ? <LoadingSpinner size="sm" /> : (
-                        <>
-                          {user?.stripe_customer_id ? 'Manage subscription' : 'Start Pro billing'} <ArrowUpRight className="w-4 h-4 ml-1" />
-                        </>
-                      )}
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {!hasPaidAccess ? (
+                      <>
+                        {!trialUsed ? (
+                          <Button
+                            className="bg-slate-700 hover:bg-slate-600"
+                            onClick={handleStartTrial}
+                            disabled={billingLoading !== null}
+                            title="7-day free trial"
+                          >
+                            {billingLoading === 'trial' ? <LoadingSpinner size="sm" /> : 'Start 7-day trial'}
+                          </Button>
+                        ) : null}
+                        <Button className="bg-orange-600 hover:bg-orange-500" onClick={handleUpgrade} disabled={billingLoading !== null}>
+                          {billingLoading === 'checkout' ? <LoadingSpinner size="sm" /> : (
+                            <>
+                              Upgrade to Pro <ArrowUpRight className="w-4 h-4 ml-1" />
+                            </>
+                          )}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        className="bg-slate-700 hover:bg-slate-600"
+                        onClick={user?.stripe_customer_id ? handleManageSubscription : handleUpgrade}
+                        disabled={billingLoading !== null}
+                        title={!user?.stripe_customer_id ? 'No billing profile linked yet — start Pro billing to enable portal' : undefined}
+                      >
+                        {billingLoading === 'portal' ? <LoadingSpinner size="sm" /> : (
+                          <>
+                            {user?.stripe_customer_id ? 'Manage subscription' : 'Start Pro billing'} <ArrowUpRight className="w-4 h-4 ml-1" />
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Training pace profile */}
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Gauge className="w-5 h-5 text-emerald-400" />
+                  Training paces
+                </CardTitle>
+                <CardDescription>Prescriptive paces from your most recent race/time trial</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {paceProfileStatus === 'loading' ? (
+                  <div className="py-4 flex items-center justify-center">
+                    <LoadingSpinner size="sm" />
+                  </div>
+                ) : paceProfileStatus === 'computed' && paceProfile ? (
+                  <div className="space-y-3">
+                    <div className="text-xs text-slate-500">
+                      Anchor: {paceProfile?.anchor?.distance_key || '—'} in {paceProfile?.anchor?.time_display || '—'}
+                      {paceProfile?.anchor?.race_date ? ` (${paceProfile.anchor.race_date})` : ''}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                      <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
+                        <span className="text-slate-300">Easy</span>
+                        <span className="text-slate-100">{paceProfile?.paces?.easy?.display_mi || paceProfile?.paces?.easy?.mi || '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
+                        <span className="text-slate-300">Marathon</span>
+                        <span className="text-slate-100">{paceProfile?.paces?.marathon?.mi || '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
+                        <span className="text-slate-300">Threshold</span>
+                        <span className="text-slate-100">{paceProfile?.paces?.threshold?.mi || '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
+                        <span className="text-slate-300">Interval</span>
+                        <span className="text-slate-100">{paceProfile?.paces?.interval?.mi || '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
+                        <span className="text-slate-300">Repetition</span>
+                        <span className="text-slate-100">{paceProfile?.paces?.repetition?.mi || '—'}</span>
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      If you haven&apos;t raced recently, do a short time trial to unlock accurate prescriptive paces.
+                    </div>
+                  </div>
+                ) : paceProfileStatus === 'missing' ? (
+                  <div className="text-sm text-slate-400">
+                    No prescriptive paces yet. Add a recent race/time trial result during onboarding (Goals stage) to compute them.
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-400">
+                    Couldn&apos;t load training paces right now.
+                  </div>
+                )}
               </CardContent>
             </Card>
 

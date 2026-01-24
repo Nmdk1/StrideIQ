@@ -5,6 +5,7 @@ from sqlalchemy.sql import func
 from core.database import Base
 import uuid
 from typing import Optional
+from datetime import datetime, timezone
 
 
 class Athlete(Base):
@@ -25,6 +26,13 @@ class Athlete(Base):
     # Pre-Phase-6: may be null for all users.
     stripe_customer_id = Column(Text, nullable=True)
 
+    # --- TRIALS (Phase 6: 7-day Pro access) ---
+    # Trial-based access is additive: if trial_ends_at is in the future, athlete is treated as paid.
+    trial_started_at = Column(DateTime(timezone=True), nullable=True)
+    trial_ends_at = Column(DateTime(timezone=True), nullable=True)
+    # e.g., "self_serve" | "admin_grant" | "invite"
+    trial_source = Column(Text, nullable=True)
+
     # --- ADMIN RBAC SEAM (Phase 4) ---
     # Keep an explicit "permissions seam" so we can introduce finer-grained roles
     # without rewriting endpoint guard patterns. This is intentionally lightweight
@@ -38,10 +46,23 @@ class Athlete(Base):
     @property
     def has_active_subscription(self) -> bool:
         """Check if athlete has an active paid subscription."""
-        return self.subscription_tier in self.PAID_TIERS
+        # Stripe / DB-tier based access (legacy + current)
+        if self.subscription_tier in self.PAID_TIERS:
+            return True
+        # Trial access (time-bound)
+        try:
+            ends = getattr(self, "trial_ends_at", None)
+            if ends is not None:
+                now = datetime.now(timezone.utc)
+                if ends > now:
+                    return True
+        except Exception:
+            pass
+        return False
     
     # User preferences
-    preferred_units = Column(Text, default="metric", nullable=False)  # 'metric' (km) or 'imperial' (miles)
+    # Product default: imperial (US-first). Athlete can switch in Settings.
+    preferred_units = Column(Text, default="imperial", nullable=False)  # 'metric' (km) or 'imperial' (miles)
 
     # --- ACCOUNT SAFETY (Phase 4) ---
     # Hard block a user from accessing the product (admin-only action).
@@ -564,6 +585,63 @@ class IntakeQuestionnaire(Base):
     )
 
 
+class AthleteRaceResultAnchor(Base):
+    """
+    Athlete-provided performance anchor used for prescriptive training paces.
+
+    Trust contract:
+    - We do NOT derive prescriptive paces from general training data in v1.
+    - The anchor must come from a race/time-trial result (distance + time).
+    """
+
+    __tablename__ = "athlete_race_result_anchor"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, unique=True, index=True)
+
+    # e.g., "5k" | "10k" | "half_marathon" | "marathon" | "other"
+    distance_key = Column(Text, nullable=False)
+    distance_meters = Column(Integer, nullable=True)
+
+    time_seconds = Column(Integer, nullable=False)
+    race_date = Column(Date, nullable=True)
+
+    # e.g., "user" (onboarding) | "admin" (support) | "import" (future)
+    source = Column(Text, nullable=False, default="user")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class AthleteTrainingPaceProfile(Base):
+    """
+    Derived training paces computed from a race anchor using the Training Pace Calculator.
+
+    Safety invariant:
+    - Stored separately from Athlete columns so existing plans/behavior do not change
+      unless explicitly wired to use this profile.
+    """
+
+    __tablename__ = "athlete_training_pace_profile"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, unique=True, index=True)
+
+    race_anchor_id = Column(UUID(as_uuid=True), ForeignKey("athlete_race_result_anchor.id"), nullable=False, index=True)
+
+    # Named "fitness_score" in DB surface to avoid trademark issues in product UI.
+    # Internally this is the same scalar used by the Training Pace Calculator.
+    fitness_score = Column(Float, nullable=True)
+
+    # JSON payload with paces and units, shaped for UI rendering + auditability.
+    # Example keys: easy, marathon, threshold, interval, repetition, (each with mi/km)
+    paces = Column(JSONB, nullable=False, default=dict)
+
+    computed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
 class WorkoutTemplate(Base):
     """
     Workout Template Registry (authoritative, DB-backed).
@@ -893,7 +971,8 @@ class PlannedWorkout(Base):
     day_of_week = Column(Integer, nullable=False)  # 0=Sunday, 6=Saturday
     
     # Workout definition
-    workout_type = Column(Text, nullable=False)  # 'easy', 'long', 'tempo', 'intervals', 'recovery', 'rest', 'race'
+    # Canonical naming: avoid ambiguous "tempo" (use threshold + subtype/segments instead).
+    workout_type = Column(Text, nullable=False)  # 'easy', 'long', 'threshold', 'threshold_intervals', 'intervals', 'recovery', 'rest', 'race'
     workout_subtype = Column(Text, nullable=True)  # e.g., 'progression', 'fartlek', 'cruise_intervals'
     title = Column(Text, nullable=False)  # e.g., "Easy Run", "Long Run with Fast Finish"
     description = Column(Text, nullable=True)  # Detailed workout description

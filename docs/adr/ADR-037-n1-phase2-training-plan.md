@@ -22,7 +22,7 @@ The code uses `min(volume_cap, time_cap, proven_cap)`, which means population ru
 ### Additional Phase 2 Gaps
 
 1. **Zero strides/hill sprints** despite 75 mpw elite volume
-2. **Tempo and threshold treated identically** (different physiological targets)
+2. **Imprecise intensity labels ("tempo")** hiding distinct prescriptions (threshold vs marathon pace vs sub-threshold)
 3. **3-week taper** when 2 weeks is evidence-based for fast adapters (τ1=25)
 4. **Monotonous easy runs** (same distance every day, no variety)
 
@@ -83,12 +83,18 @@ Strides are neuromuscular activation, not quality work. They're added to existin
 
 ### 3. Distinguish Tempo vs Threshold
 
-| Type | Pace | Duration | HR Zone | Purpose |
-|------|------|----------|---------|---------|
-| Tempo | ~85% max HR | 20-40 min sustained | "Comfortably hard" | Aerobic efficiency |
-| Threshold | Lactate threshold | 20-30 min intervals | ~88-90% max HR | Lactate clearance |
+**Decision:** StrideIQ does **not** use "tempo" as an athlete-facing label because it is a catch-all term in the running world.
 
-Plan generator will alternate between tempo and threshold in BUILD phase, not treat them as identical.
+Instead, we use **precise prescription labels**:
+
+| Label | What it actually is | Primary purpose |
+|------|----------------------|-----------------|
+| **Threshold (continuous)** | 20–40 min continuous @ **T pace** | Lactate clearance / raise LT |
+| **Threshold (cruise intervals)** | e.g. 5×5min @ T w/ short jog | Accumulate time at LT with controlled stress |
+| **Marathon Pace (MP) / Goal Pace** | work at goal race pace (inside long runs) | Specific durability + pacing + fueling |
+| **Sub-threshold steady** | “steady” aerobic, not LT | Aerobic endurance without LT stress |
+
+Plan generator will vary **threshold formats** (continuous vs cruise) and keep **MP/goal pace** separate and explicit.
 
 ### 4. τ1-Driven Taper Length
 
@@ -137,7 +143,7 @@ Pattern creates psychological freshness and varied stimulus.
    - Ensure 2-week taper for fast adapters
 
 3. `apps/api/data/workout_templates.json`
-   - Add tempo workout templates (distinct from threshold)
+   - Add **threshold** variants (continuous + cruise)
    - Add hill sprint templates
    - Add strides templates
 

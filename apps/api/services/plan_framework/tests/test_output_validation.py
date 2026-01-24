@@ -264,7 +264,11 @@ class TestWeeklyStructure:
         
         for week in range(1, 17):  # Exclude taper/race
             week_workouts = plan.get_week(week)
-            long_runs = [w for w in week_workouts if "long" in w.workout_type]
+            # Long run anchor should be Sunday. Exclude "medium_long" (mid-week endurance run).
+            long_runs = [
+                w for w in week_workouts
+                if "long" in w.workout_type and w.workout_type != "medium_long"
+            ]
             
             if long_runs:
                 for lr in long_runs:

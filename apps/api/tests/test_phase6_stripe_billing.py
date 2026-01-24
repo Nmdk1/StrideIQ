@@ -45,9 +45,12 @@ class _DummySubObj:
         self.customer = customer
         self.id = subscription_id
         self.status = status
-        self.current_period_end = 1234567890
+        # Newer Stripe API versions place billing period fields on subscription items.
+        # Keep top-level period fields absent to ensure our compatibility parsing works.
         self.cancel_at_period_end = False
-        self.items = type("items", (), {"data": []})
+        self.cancel_at = None
+        item = type("item", (), {"current_period_end": 1234567890, "price": type("price", (), {"id": "price_dummy"})()})()
+        self.items = type("items", (), {"data": [item]})
 
 
 def test_checkout_and_portal_endpoints(monkeypatch):
@@ -56,6 +59,7 @@ def test_checkout_and_portal_endpoints(monkeypatch):
     monkeypatch.setattr(ss, "_get_stripe_config", lambda: _DummyStripeConfig())
     monkeypatch.setattr(ss.StripeService, "create_checkout_session", lambda self, athlete: "https://stripe.test/checkout")
     monkeypatch.setattr(ss.StripeService, "create_portal_session", lambda self, athlete: "https://stripe.test/portal")
+    monkeypatch.setattr(ss.StripeService, "best_effort_sync_customer_subscription", lambda self, db, athlete: None)
 
     db = SessionLocal()
     try:
@@ -132,7 +136,7 @@ def test_webhook_idempotency_and_entitlement_update(monkeypatch):
         ev_count = db.query(StripeEvent).filter(StripeEvent.event_id == "evt_1").count()
         assert ev_count == 1
 
-        sub = db.query(Subscription).filter(Subscription.athlete_id == str(updated.id)).first()
+        sub = db.query(Subscription).filter(Subscription.athlete_id == updated.id).first()
         assert sub is not None
         assert sub.status == "active"
         assert sub.stripe_customer_id == "cus_evt_1"

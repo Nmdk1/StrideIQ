@@ -81,7 +81,7 @@ export default function WhyGuidedCoaching() {
             <div>
               <h4 className="font-semibold text-slate-300 mb-3">Cost & Accessibility</h4>
               <p className="text-slate-400 text-sm mb-4">
-                <strong className="text-orange-400">Elite:</strong> Pricing TBA. Available everywhere, no geographic limitations.
+                <strong className="text-orange-400">Elite:</strong> $18.99/month. Available everywhere, no geographic limitations.
               </p>
               <p className="text-slate-500 text-sm">
                 <strong>Human Coach:</strong> Typically $50-$300/month. Limited by location and availability.

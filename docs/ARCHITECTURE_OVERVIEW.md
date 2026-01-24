@@ -32,6 +32,7 @@ StrideIQ is built to produce **N=1, evidence-backed coaching** and to remain **v
 ### 3) Coaching (trust contract)
 1. Coach responses must be grounded in athlete data with **receipts** (date + run + values).
 2. Prescriptions and analytics are produced by deterministic services; LLM usage (where present) is constrained by citations/tools.
+3. **Planned (post–Phase 9, high priority): Coach Action Automation** will follow a strict **propose → athlete confirm → apply** pattern so training changes are **explicitly authorized**, **deterministic**, and **fully audited** (no silent/autonomous execution).
 
 ### 4) Admin operations (safety first)
 1. `/admin` and `/v1/admin/*` are protected by role checks with a **permissions seam** (`admin_permissions`).

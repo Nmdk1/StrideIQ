@@ -34,7 +34,7 @@ async def get_preferences(
 ):
     """Get current user preferences."""
     return PreferencesResponse(
-        preferred_units=athlete.preferred_units or "metric"
+        preferred_units=athlete.preferred_units or "imperial"
     )
 
 
@@ -52,5 +52,5 @@ async def update_preferences(
     db.refresh(athlete)
     
     return PreferencesResponse(
-        preferred_units=athlete.preferred_units or "metric"
+        preferred_units=athlete.preferred_units or "imperial"
     )

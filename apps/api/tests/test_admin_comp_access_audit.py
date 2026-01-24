@@ -17,7 +17,7 @@ def admin_user():
     athlete = Athlete(
         email=f"admin_comp_{uuid4()}@example.com",
         display_name="Admin",
-        subscription_tier="elite",
+        subscription_tier="pro",
         role="admin",
         # Leave admin_permissions empty to exercise "bootstrap mode" (full admin).
     )
@@ -54,20 +54,20 @@ def test_admin_can_comp_access_and_audits(admin_headers, admin_user, normal_user
     reason = "VIP tester"
     resp = client.post(
         f"/v1/admin/users/{normal_user.id}/comp",
-        json={"tier": "elite", "reason": reason},
+        json={"tier": "pro", "reason": reason},
         headers=admin_headers,
     )
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["success"] is True
     assert payload["user"]["id"] == str(normal_user.id)
-    assert payload["user"]["subscription_tier"] == "elite"
+    assert payload["user"]["subscription_tier"] == "pro"
 
     db = SessionLocal()
     try:
         updated = db.query(Athlete).filter(Athlete.id == normal_user.id).first()
         assert updated is not None
-        assert updated.subscription_tier == "elite"
+        assert updated.subscription_tier == "pro"
 
         ev = (
             db.query(AdminAuditEvent)
@@ -82,7 +82,7 @@ def test_admin_can_comp_access_and_audits(admin_headers, admin_user, normal_user
         assert ev is not None
         assert ev.reason == reason
         assert ev.payload.get("before", {}).get("subscription_tier") == "free"
-        assert ev.payload.get("after", {}).get("subscription_tier") == "elite"
+        assert ev.payload.get("after", {}).get("subscription_tier") == "pro"
     finally:
         try:
             # Best-effort cleanup for non-transactional tests.
@@ -105,7 +105,7 @@ def test_non_admin_cannot_comp_access(normal_user):
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.post(
         f"/v1/admin/users/{normal_user.id}/comp",
-        json={"tier": "elite", "reason": "nope"},
+        json={"tier": "pro", "reason": "nope"},
         headers=headers,
     )
     assert resp.status_code == 403

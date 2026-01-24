@@ -454,6 +454,34 @@ def get_calendar(
         TrainingPlan.athlete_id == current_user.id,
         TrainingPlan.status == "active"
     ).first()
+
+    # Trust fix:
+    # - If onboarding is complete but there is no plan, auto-provision one.
+    # - If an older starter plan exists (effort-only) but we have a race anchor, upgrade it to paced.
+    if bool(getattr(current_user, "onboarding_completed", False)):
+        enabled = True
+        try:
+            from services.plan_framework.feature_flags import FeatureFlagService
+
+            svc = FeatureFlagService(db)
+            flag = svc.get_flag("onboarding.auto_starter_plan_v1")
+            # If flag exists, respect its enabled/rollout rules. If missing, default ON (trust fix).
+            enabled = True if not flag else svc.is_enabled("onboarding.auto_starter_plan_v1", current_user.id)
+        except Exception:
+            enabled = True
+
+        if enabled:
+            try:
+                from services.starter_plan import ensure_starter_plan
+
+                # If no plan OR plan is eligible for upgrade, ensure_starter_plan will handle it.
+                if (not active_plan) or ((active_plan.generation_method or "") in ("starter_v1", "starter_v1_effort")):
+                    created = ensure_starter_plan(db, athlete=current_user)
+                    if created:
+                        active_plan = created
+            except Exception:
+                # Fail open: Calendar still works, just shows no plan CTA.
+                pass
     
     # Get planned workouts in range
     planned_workouts = {}
@@ -602,11 +630,11 @@ def get_calendar(
             
             quality_planned = sum(
                 1 for d in week_days
-                if d.planned_workout and d.planned_workout.workout_type in ['threshold', 'intervals', 'tempo', 'long_mp']
+                if d.planned_workout and d.planned_workout.workout_type in ['threshold', 'threshold_intervals', 'intervals', 'long_mp']
             )
             quality_completed = sum(
                 1 for d in week_days
-                if d.status == "completed" and d.planned_workout and d.planned_workout.workout_type in ['threshold', 'intervals', 'tempo', 'long_mp']
+                if d.status == "completed" and d.planned_workout and d.planned_workout.workout_type in ['threshold', 'threshold_intervals', 'intervals', 'long_mp']
             )
             
             week_summaries.append(WeekSummaryResponse(

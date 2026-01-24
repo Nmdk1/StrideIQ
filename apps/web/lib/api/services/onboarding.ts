@@ -49,6 +49,14 @@ export interface OnboardingIntakeGetResponse {
   completed_at?: string | null;
 }
 
+export interface OnboardingIntakeSaveResponse {
+  ok: boolean;
+  stage?: IntakeStage;
+  status?: 'computed' | 'missing_anchor' | 'invalid_anchor' | string;
+  error?: string;
+  pace_profile?: Record<string, any> | null;
+}
+
 export const onboardingService = {
   async getStatus(): Promise<OnboardingStatusResponse> {
     return apiClient.get<OnboardingStatusResponse>('/v1/onboarding/status');
@@ -62,8 +70,8 @@ export const onboardingService = {
     return apiClient.get<OnboardingIntakeGetResponse>(`/v1/onboarding/intake?stage=${encodeURIComponent(stage)}`);
   },
 
-  async saveIntake(stage: IntakeStage, responses: Record<string, any>, completed?: boolean): Promise<{ ok: boolean }> {
-    return apiClient.post<{ ok: boolean }>('/v1/onboarding/intake', { stage, responses, completed });
+  async saveIntake(stage: IntakeStage, responses: Record<string, any>, completed?: boolean): Promise<OnboardingIntakeSaveResponse> {
+    return apiClient.post<OnboardingIntakeSaveResponse>('/v1/onboarding/intake', { stage, responses, completed });
   },
 } as const;
 

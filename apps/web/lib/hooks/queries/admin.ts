@@ -113,6 +113,28 @@ export function useCompAccess() {
   });
 }
 
+export function useGrantTrial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string; days?: number; reason?: string | null }) =>
+      adminService.grantTrial(params.userId, { days: params.days, reason: params.reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
+    },
+  });
+}
+
+export function useRevokeTrial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string; reason?: string | null }) =>
+      adminService.revokeTrial(params.userId, { reason: params.reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
+    },
+  });
+}
+
 export function useResetOnboarding() {
   const qc = useQueryClient();
   return useMutation({
@@ -129,6 +151,17 @@ export function useRetryIngestion() {
   return useMutation({
     mutationFn: (params: { userId: string; pages?: number; reason?: string }) =>
       adminService.retryIngestion(params.userId, { pages: params.pages, reason: params.reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
+    },
+  });
+}
+
+export function useRegenerateStarterPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string; reason?: string | null }) =>
+      adminService.regenerateStarterPlan(params.userId, { reason: params.reason }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
     },

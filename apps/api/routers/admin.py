@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_, or_
 from typing import List, Optional, Dict, Any, Literal
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from datetime import timezone
 
 from core.database import get_db
@@ -28,6 +28,8 @@ from models import (
     IntakeQuestionnaire,
     AthleteIngestionState,
     TrainingPlan,
+    PlannedWorkout,
+    Subscription,
 )
 from schemas import AthleteResponse
 from pydantic import BaseModel, Field
@@ -75,8 +77,17 @@ class InviteRevokeRequest(BaseModel):
 
 
 class CompAccessRequest(BaseModel):
-    tier: str = Field(..., description="Subscription tier to set (e.g., 'elite')")
+    tier: Literal["free", "pro"] = Field(..., description="Subscription tier to set (free|pro)")
     reason: Optional[str] = Field(default=None, description="Why this comp was granted (audited)")
+
+
+class TrialGrantRequest(BaseModel):
+    days: int = Field(default=7, ge=1, le=30, description="Trial length in days (bounded)")
+    reason: Optional[str] = Field(default=None, description="Why trial was granted (audited)")
+
+
+class TrialRevokeRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, description="Why trial was revoked (audited)")
 
 
 class ResetOnboardingRequest(BaseModel):
@@ -107,6 +118,10 @@ class PauseIngestionRequest(BaseModel):
 class AdminPermissionsUpdateRequest(BaseModel):
     permissions: List[str] = Field(default_factory=list, description="Explicit admin permission keys")
     reason: Optional[str] = Field(default=None, description="Why permissions were changed (audited)")
+
+
+class RegenerateStarterPlanRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, description="Why this plan regeneration was performed (audited)")
 
 
 def _utcnow() -> datetime:
@@ -722,6 +737,9 @@ def get_user(
         .first()
     )
 
+    # Stripe subscription mirror (best-effort; may be missing).
+    sub = db.query(Subscription).filter(Subscription.athlete_id == user_id).first()
+
     return {
         "id": str(user.id),
         "email": user.email,
@@ -729,6 +747,19 @@ def get_user(
         "role": user.role,
         "subscription_tier": user.subscription_tier,
         "stripe_customer_id": getattr(user, "stripe_customer_id", None),
+        "trial_started_at": user.trial_started_at.isoformat() if getattr(user, "trial_started_at", None) else None,
+        "trial_ends_at": user.trial_ends_at.isoformat() if getattr(user, "trial_ends_at", None) else None,
+        "trial_source": getattr(user, "trial_source", None),
+        "has_active_subscription": bool(getattr(user, "has_active_subscription", False)),
+        "subscription": None
+        if not sub
+        else {
+            "status": sub.status,
+            "cancel_at_period_end": bool(sub.cancel_at_period_end),
+            "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+            "stripe_subscription_id": sub.stripe_subscription_id,
+            "stripe_price_id": sub.stripe_price_id,
+        },
         "is_blocked": bool(getattr(user, "is_blocked", False)),
         "created_at": user.created_at.isoformat(),
         "onboarding_completed": user.onboarding_completed,
@@ -787,6 +818,95 @@ def get_user(
             "body_composition_entries": body_comp_count,
         },
     }
+
+
+@router.post("/users/{user_id}/trial/grant")
+def grant_trial(
+    user_id: UUID,
+    request: TrialGrantRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_permission("billing.trial.grant")),
+    db: Session = Depends(get_db),
+):
+    """
+    Admin action: grant/extend a user's trial (audited).
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    from services.admin_audit import record_admin_audit_event
+
+    before = {
+        "trial_started_at": target.trial_started_at.isoformat() if getattr(target, "trial_started_at", None) else None,
+        "trial_ends_at": target.trial_ends_at.isoformat() if getattr(target, "trial_ends_at", None) else None,
+        "trial_source": getattr(target, "trial_source", None),
+    }
+
+    now = _utcnow()
+    if getattr(target, "trial_started_at", None) is None:
+        target.trial_started_at = now
+    target.trial_ends_at = now + timedelta(days=int(request.days))
+    target.trial_source = "admin_grant"
+    db.add(target)
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="billing.trial.grant",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"before": before, "after": {"trial_started_at": target.trial_started_at.isoformat() if target.trial_started_at else None, "trial_ends_at": target.trial_ends_at.isoformat() if target.trial_ends_at else None, "trial_source": target.trial_source}, "days": int(request.days)},
+    )
+
+    db.commit()
+    db.refresh(target)
+    return {"success": True, "user_id": str(target.id), "trial_ends_at": target.trial_ends_at.isoformat() if target.trial_ends_at else None}
+
+
+@router.post("/users/{user_id}/trial/revoke")
+def revoke_trial(
+    user_id: UUID,
+    request: TrialRevokeRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_permission("billing.trial.revoke")),
+    db: Session = Depends(get_db),
+):
+    """
+    Admin action: revoke a user's trial immediately (audited).
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    from services.admin_audit import record_admin_audit_event
+
+    before = {
+        "trial_started_at": target.trial_started_at.isoformat() if getattr(target, "trial_started_at", None) else None,
+        "trial_ends_at": target.trial_ends_at.isoformat() if getattr(target, "trial_ends_at", None) else None,
+        "trial_source": getattr(target, "trial_source", None),
+    }
+
+    now = _utcnow()
+    target.trial_ends_at = now
+    if not getattr(target, "trial_source", None):
+        target.trial_source = "admin_grant"
+    db.add(target)
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="billing.trial.revoke",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"before": before, "after": {"trial_ends_at": target.trial_ends_at.isoformat() if target.trial_ends_at else None}},
+    )
+
+    db.commit()
+    db.refresh(target)
+    return {"success": True, "user_id": str(target.id), "trial_ends_at": target.trial_ends_at.isoformat() if target.trial_ends_at else None}
 
 
 @router.post("/users/{user_id}/comp")
@@ -933,6 +1053,93 @@ def retry_ingestion(
 
     db.commit()
     return {"success": True, "queued": True, "index_task_id": index_task.id, "sync_task_id": sync_task.id}
+
+
+@router.post("/users/{user_id}/plans/starter/regenerate")
+def regenerate_starter_plan(
+    user_id: UUID,
+    request: RegenerateStarterPlanRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_permission("plan.starter.regenerate")),
+    db: Session = Depends(get_db),
+):
+    """
+    Beta support action: archive the user's current active plan (if any) and regenerate a new
+    starter plan from their saved intake (goals) + race anchor (if present).
+
+    This is intentionally deterministic and fully auditable.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Ensure goals intake exists (otherwise regen would silently do nothing).
+    has_goals = (
+        db.query(IntakeQuestionnaire)
+        .filter(IntakeQuestionnaire.athlete_id == target.id, IntakeQuestionnaire.stage == "goals")
+        .count()
+        > 0
+    )
+    if not has_goals:
+        raise HTTPException(status_code=409, detail="Cannot regenerate starter plan: missing goals intake")
+
+    existing = (
+        db.query(TrainingPlan)
+        .filter(TrainingPlan.athlete_id == target.id, TrainingPlan.status == "active")
+        .all()
+    )
+    before = {"active_plan_ids": [str(p.id) for p in existing], "active_plan_generation_methods": [p.generation_method for p in existing]}
+
+    today = date.today()
+    archived_ids: List[str] = []
+    for p in existing:
+        p.status = "archived"
+        archived_ids.append(str(p.id))
+
+        # Mark future planned workouts as skipped so the calendar doesn't show two competing plans.
+        db.query(PlannedWorkout).filter(
+            PlannedWorkout.plan_id == p.id,
+            PlannedWorkout.scheduled_date >= today,
+            PlannedWorkout.completed == False,
+        ).update({"skipped": True})
+
+    db.commit()
+
+    # Create new starter plan from intake (best-effort deterministic).
+    from services.starter_plan import ensure_starter_plan
+    from services.admin_audit import record_admin_audit_event
+
+    created = ensure_starter_plan(db, athlete=target)
+    if not created:
+        record_admin_audit_event(
+            db,
+            request=http_request,
+            actor=current_user,
+            action="plan.starter.regenerate.failed",
+            target_athlete_id=str(target.id),
+            reason=request.reason,
+            payload={"before": before, "after": {"archived_plan_ids": archived_ids}, "error": "ensure_starter_plan returned None"},
+        )
+        db.commit()
+        raise HTTPException(status_code=500, detail="Failed to regenerate starter plan")
+
+    after = {
+        "archived_plan_ids": archived_ids,
+        "new_plan_id": str(created.id),
+        "new_generation_method": getattr(created, "generation_method", None),
+    }
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="plan.starter.regenerate",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"before": before, "after": after},
+    )
+    db.commit()
+    return {"success": True, **after}
 
 
 @router.post("/users/{user_id}/block")

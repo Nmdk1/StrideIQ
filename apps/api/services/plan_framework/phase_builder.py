@@ -155,8 +155,8 @@ class PhaseBuilder:
             quality_sessions=1,
             volume_modifier=0.85,
             long_run_modifier=0.8,
-            allowed_workouts=["easy", "long", "threshold_intervals", "tempo", "recovery"],
-            key_sessions=["threshold_intervals", "tempo"]
+            allowed_workouts=["easy", "long", "threshold_intervals", "threshold", "recovery"],
+            key_sessions=["threshold_intervals", "threshold"]
         ))
         current_week += threshold_weeks
         
@@ -169,7 +169,7 @@ class PhaseBuilder:
             quality_sessions=2,  # T + MP in long run
             volume_modifier=0.95,
             long_run_modifier=0.9,
-            allowed_workouts=["easy", "long", "long_mp", "threshold", "tempo", "medium_long_mp"],
+            allowed_workouts=["easy", "long", "long_mp", "threshold", "threshold_intervals", "medium_long_mp", "easy_strides"],
             key_sessions=["marathon_pace_long", "threshold"]
         ))
         current_week += mp_intro_weeks
@@ -184,7 +184,7 @@ class PhaseBuilder:
             quality_sessions=2,
             volume_modifier=1.0,  # Peak
             long_run_modifier=1.0,  # Peak
-            allowed_workouts=["easy", "long", "long_mp", "threshold", "race", "medium_long_mp"],
+            allowed_workouts=["easy", "long", "long_mp", "threshold", "threshold_intervals", "race", "medium_long_mp", "easy_strides"],
             key_sessions=["dress_rehearsal", "continuous_mp"]
         ))
         current_week += race_specific_weeks

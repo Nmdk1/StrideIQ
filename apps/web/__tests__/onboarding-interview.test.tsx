@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 jest.mock('@/components/auth/ProtectedRoute', () => ({
@@ -73,14 +73,18 @@ describe('Onboarding interview (goals stage)', () => {
     onboardingMod.__mocks.getIntake = onboardingMod.onboardingService.getIntake;
     onboardingMod.__mocks.saveIntake = onboardingMod.onboardingService.saveIntake;
 
-    render(<OnboardingPage />);
+    await act(async () => {
+      render(<OnboardingPage />);
+    });
 
     expect(await screen.findByText('Interview')).toBeInTheDocument();
     await waitFor(() => expect(onboardingMod.__mocks.getIntake).toHaveBeenCalledWith('goals'));
 
     const user = userEvent.setup();
     const next = screen.getByRole('button', { name: 'Next' });
-    await user.click(next);
+    await act(async () => {
+      await user.click(next);
+    });
 
     await waitFor(() => expect(onboardingMod.__mocks.saveIntake).toHaveBeenCalled());
     await waitFor(() => expect(authMod.__mocks.updateProfile).toHaveBeenCalled());

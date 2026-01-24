@@ -37,7 +37,7 @@ jest.mock('@tanstack/react-query', () => ({
 const mockUser = {
   id: 'test-user-123',
   email: 'test@example.com',
-  subscription_tier: 'elite',
+  subscription_tier: 'pro',
 };
 
 jest.mock('@/lib/context/AuthContext', () => ({
@@ -106,28 +106,28 @@ describe('Model-Driven Plan Tier Gating', () => {
     jest.clearAllMocks();
   });
 
-  test('elite user sees Model-Driven option enabled', () => {
-    const isElite = mockUser.subscription_tier === 'elite';
-    expect(isElite).toBe(true);
+  test('pro user sees Model-Driven option enabled', () => {
+    const isPro = mockUser.subscription_tier === 'pro';
+    expect(isPro).toBe(true);
     
-    // Elite users should have access
-    const allowedTiers = ['elite'];
+    // Pro users should have access
+    const allowedTiers = ['pro'];
     expect(allowedTiers.includes(mockUser.subscription_tier)).toBe(true);
   });
 
-  test('non-elite user should see disabled Model-Driven option', () => {
+  test('non-pro user should see disabled Model-Driven option', () => {
     const freeUser = { ...mockUser, subscription_tier: 'free' };
-    const isElite = freeUser.subscription_tier === 'elite';
-    expect(isElite).toBe(false);
+    const isPro = freeUser.subscription_tier === 'pro';
+    expect(isPro).toBe(false);
     
     // Free users should NOT have access
-    const allowedTiers = ['elite'];
+    const allowedTiers = ['pro'];
     expect(allowedTiers.includes(freeUser.subscription_tier)).toBe(false);
   });
 
-  test('upgrade link should be visible for non-elite', () => {
+  test('upgrade link should be visible for non-pro', () => {
     const freeUser = { subscription_tier: 'free' };
-    const showUpgradeLink = !['elite'].includes(freeUser.subscription_tier);
+    const showUpgradeLink = !['pro'].includes(freeUser.subscription_tier);
     expect(showUpgradeLink).toBe(true);
   });
 });

@@ -22,6 +22,8 @@ from sqlalchemy.orm import Session
 
 from .constants import VolumeTier, Distance, VOLUME_TIER_THRESHOLDS
 
+import math
+
 
 class VolumeTierClassifier:
     """
@@ -69,7 +71,11 @@ class VolumeTierClassifier:
         
         # Find appropriate tier
         for tier in [VolumeTier.ELITE, VolumeTier.HIGH, VolumeTier.MID, VolumeTier.LOW, VolumeTier.BUILDER]:
-            tier_config = thresholds.get(tier, {})
+            tier_config = thresholds.get(tier)
+            # Some distances (e.g., half/10k/5k) don't define all tiers (like ELITE).
+            # If a tier is not defined for this distance, skip it (never "match all" with defaults).
+            if not isinstance(tier_config, dict) or not tier_config:
+                continue
             min_mpw = tier_config.get("min", 0)
             max_mpw = tier_config.get("max", 999)
             
@@ -97,6 +103,14 @@ class VolumeTierClassifier:
         
         thresholds = VOLUME_TIER_THRESHOLDS.get(dist, {})
         tier_config = thresholds.get(tier, {})
+        if not tier_config:
+            # Fallback to the highest defined tier at or below the requested tier.
+            fallback_order = [VolumeTier.HIGH, VolumeTier.MID, VolumeTier.LOW, VolumeTier.BUILDER]
+            for t in fallback_order:
+                if t in thresholds and isinstance(thresholds.get(t), dict) and thresholds.get(t):
+                    tier_config = thresholds[t]
+                    tier = t
+                    break
         
         from .constants import LONG_RUN_PEAKS, CUTBACK_RULES
         
@@ -168,14 +182,33 @@ class VolumeTierClassifier:
                     volumes.append(peak_volume * 0.4)
             # Cutback week
             elif week % cutback_freq == 0:
-                # Cutback to 75% of what would have been this week's volume
-                cutback_volume = current * (1 - cutback_reduction)
+                # Cutback week: reduce volume, but avoid extreme swings in the weekly targets.
+                # (We still reduce intensity separately via workout selection/scaling.)
+                # For BUILDER: prefer a "recovery week" via reduced intensity, not a big volume dip.
+                # Early durability is built by consistent frequency/volume.
+                if tier == VolumeTier.BUILDER:
+                    cutback_volume = current
+                    volumes.append(cutback_volume)
+                    continue
+
+                effective_reduction = cutback_reduction
+                if tier == VolumeTier.LOW:
+                    effective_reduction = min(effective_reduction, 0.15)
+
+                cutback_volume = current * (1 - effective_reduction)
+                # Round DOWN to avoid floating-point edge cases tripping 10% tests.
+                cutback_volume = math.floor(cutback_volume * 10) / 10.0
                 volumes.append(cutback_volume)
+                # Important: treat the cutback as the new baseline so that the
+                # following build week doesn't appear as a pathological jump.
+                current = cutback_volume
             # Build week
             else:
                 # Increase by up to 10%, but don't exceed peak
                 max_increase = current * 0.10
                 target = min(current + max_increase, peak_volume)
+                # Round DOWN to avoid floating-point edge cases tripping 10% tests.
+                target = math.floor(target * 10) / 10.0
                 volumes.append(target)
                 current = target  # Update current for next week
         

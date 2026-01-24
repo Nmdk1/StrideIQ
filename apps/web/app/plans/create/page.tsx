@@ -103,11 +103,9 @@ export default function CreatePlanPage() {
   const [constraintAwareResult, setConstraintAwareResult] = useState<import('@/lib/api/services/plans').ConstraintAwarePlanResponse | null>(null);
   const [constraintAwarePreview, setConstraintAwarePreview] = useState<import('@/lib/api/services/plans').ConstraintAwarePreview | null>(null);
   
-  // Elite is the single paid tier; preserve legacy paid tiers as "elite access" for now.
-  const hasEliteAccess =
-    user?.subscription_tier === 'elite' ||
-    (user?.subscription_tier !== undefined &&
-      ['pro', 'premium', 'guided', 'subscription'].includes(user.subscription_tier));
+  // Phase 6: paid access is Free vs Pro (Stripe subscription or active trial).
+  const rawTier = (user?.subscription_tier || 'free').toLowerCase();
+  const hasProAccess = !!(user as any)?.has_active_subscription || rawTier !== 'free';
   
   // Check authentication
   useEffect(() => {
@@ -267,9 +265,8 @@ export default function CreatePlanPage() {
         ? parseTimeToSeconds(formData.recent_race_time) 
         : undefined;
       
-      // Check user tier (Elite is the only paid tier; legacy values still grant access until migration).
-      const isEliteTier = hasEliteAccess;
-      const isPaidTier = hasEliteAccess;
+      // Check paid access (Stripe subscription or active trial).
+      const isProTier = hasProAccess;
       const hasPaceData = formData.recent_race_distance && raceTimeSeconds;
       
       // Use auth state from hook, not local state
@@ -279,19 +276,18 @@ export default function CreatePlanPage() {
       // Debug logging
       console.log('[Plan Create] Creating plan:', {
         tier: user?.subscription_tier,
-        isEliteTier,
-        isPaidTier,
+        isProTier,
         hasPaceData,
         authValid,
         localIsAuthenticated: isAuthenticated,
       });
       
       // Route based on tier
-      console.log('[Plan Create] Routing decision:', { authValid, isEliteTier, hasPaceData, isPaidTier });
+      console.log('[Plan Create] Routing decision:', { authValid, isProTier, hasPaceData });
       
-      if (authValid && isEliteTier) {
-        // ELITE TIER: Fully custom plan
-        console.log('[Plan Create] >>> TAKING ELITE/CUSTOM PATH');
+      if (authValid && isProTier) {
+        // PRO: Fully custom plan (includes model-driven / constraint-aware flows)
+        console.log('[Plan Create] >>> TAKING PRO/CUSTOM PATH');
         await planService.createCustom({
           distance: formData.distance,
           race_date: formData.race_date,
@@ -302,36 +298,9 @@ export default function CreatePlanPage() {
           recent_race_time_seconds: raceTimeSeconds ?? undefined,
         });
       } else if (authValid && hasPaceData) {
-        // SEMI-CUSTOM: Paid tier or one-time purchase
-        console.log('[Plan Create] >>> TAKING SEMI-CUSTOM PATH');
-        if (!isPaidTier) {
-          // Check if already purchased (via session storage)
-          const purchaseData = sessionStorage.getItem('plan_purchased');
-          if (!purchaseData) {
-            // Redirect to checkout for $5 payment
-            const params = new URLSearchParams({
-              tier: 'semi_custom',
-              distance: formData.distance,
-              duration: planDuration.toString(),
-              days: formData.days_per_week.toString(),
-              volume: getVolumeTier(),
-            });
-            router.push(`/plans/checkout?${params.toString()}`);
-            return;
-          }
-          sessionStorage.removeItem('plan_purchased');
-        }
-        
-        // Create semi-custom plan with personalized paces
-        await planService.createSemiCustom({
-          distance: formData.distance,
-          race_date: formData.race_date,
-          days_per_week: formData.days_per_week,
-          current_weekly_miles: formData.current_weekly_miles,
-          recent_race_distance: formData.recent_race_distance,
-          recent_race_time_seconds: raceTimeSeconds,
-          race_name: formData.race_name || undefined,
-        });
+        // Personalized paces require Pro now (no one-time checkout paths).
+        router.push('/settings');
+        return;
       } else {
         // STANDARD: Free plan, effort descriptions only
         console.log('[Plan Create] >>> TAKING STANDARD PATH (fallback)');
@@ -498,15 +467,15 @@ export default function CreatePlanPage() {
                 {/* Model-Driven Option */}
                 <button
                   onClick={() => {
-                    if (hasEliteAccess) {
+                    if (hasProAccess) {
                       setFormData({ ...formData, planType: 'model-driven' });
                     }
                   }}
-                  disabled={!hasEliteAccess}
+                  disabled={!hasProAccess}
                   className={`w-full p-6 rounded-xl border-2 text-left transition-all ${
                     formData.planType === 'model-driven'
                       ? 'border-purple-500 bg-purple-900/20'
-                      : hasEliteAccess
+                      : hasProAccess
                         ? 'border-slate-700/50 bg-slate-900 hover:border-purple-600'
                         : 'border-slate-800 bg-slate-900/50 opacity-60 cursor-not-allowed'
                   }`}
@@ -517,13 +486,13 @@ export default function CreatePlanPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-white text-lg">Model-Driven Plan</span>
                         <span className="px-2 py-0.5 bg-purple-600 text-purple-100 text-xs rounded-full font-medium">
-                          Elite
+                          Pro
                         </span>
                       </div>
                       <div className="text-sm text-slate-400 mt-1">
                         Built from YOUR data. Calibrates τ1/τ2 from your training history, predicts race time, calculates optimal taper.
                       </div>
-                      {hasEliteAccess && (
+                      {hasProAccess && (
                         <div className="mt-3 flex flex-wrap gap-2">
                           <span className="px-2 py-1 bg-purple-900/50 text-purple-300 text-xs rounded">
                             Personal τ values
@@ -536,7 +505,7 @@ export default function CreatePlanPage() {
                           </span>
                         </div>
                       )}
-                      {!hasEliteAccess && (
+                      {!hasProAccess && (
                         <div className="mt-3">
                           <a href="/settings" className="text-purple-400 hover:text-purple-300 text-sm underline">
                             Manage membership →
@@ -550,15 +519,15 @@ export default function CreatePlanPage() {
                 {/* Constraint-Aware Option - The Premium N=1 Experience */}
                 <button
                   onClick={() => {
-                    if (hasEliteAccess) {
+                    if (hasProAccess) {
                       setFormData({ ...formData, planType: 'constraint-aware' });
                     }
                   }}
-                  disabled={!hasEliteAccess}
+                  disabled={!hasProAccess}
                   className={`w-full p-6 rounded-xl border-2 text-left transition-all ${
                     formData.planType === 'constraint-aware'
                       ? 'border-emerald-500 bg-emerald-900/20'
-                      : hasEliteAccess
+                      : hasProAccess
                         ? 'border-slate-700/50 bg-slate-900 hover:border-emerald-600'
                         : 'border-slate-800 bg-slate-900/50 opacity-60 cursor-not-allowed'
                   }`}
@@ -569,7 +538,7 @@ export default function CreatePlanPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-white text-lg">Fitness Bank Plan</span>
                         <span className="px-2 py-0.5 bg-emerald-600 text-emerald-100 text-xs rounded-full font-medium">
-                          Elite
+                          Pro
                         </span>
                         <span className="px-2 py-0.5 bg-amber-600 text-amber-100 text-xs rounded-full font-medium">
                           Recommended
@@ -579,7 +548,7 @@ export default function CreatePlanPage() {
                         Full N=1 experience. Analyzes your peak capabilities, detects constraints, respects your training patterns. 
                         Supports tune-up races.
                       </div>
-                      {hasEliteAccess && (
+                      {hasProAccess && (
                         <div className="mt-3 flex flex-wrap gap-2">
                           <span className="px-2 py-1 bg-emerald-900/50 text-emerald-300 text-xs rounded">
                             Peak 71mpw, 22mi long
@@ -595,7 +564,7 @@ export default function CreatePlanPage() {
                           </span>
                         </div>
                       )}
-                      {!hasEliteAccess && (
+                      {!hasProAccess && (
                         <div className="mt-3">
                           <a href="/settings" className="text-emerald-400 hover:text-emerald-300 text-sm underline">
                             Manage membership →
@@ -1313,7 +1282,7 @@ export default function CreatePlanPage() {
 
               {/* Plan Tier Indicator */}
               <div className={`mb-6 p-4 rounded-lg border ${
-                user?.subscription_tier === 'elite' 
+                hasProAccess
                   ? 'bg-gradient-to-r from-purple-900/50 to-pink-900/50 border-purple-500'
                   : 'bg-slate-800 border-slate-600'
               }`}>
@@ -1321,9 +1290,9 @@ export default function CreatePlanPage() {
                   <div>
                     <div className="text-sm text-slate-400">Plan Type</div>
                     <div className={`text-lg font-bold ${
-                      user?.subscription_tier === 'elite' ? 'text-purple-300' : 'text-slate-300'
+                      hasProAccess ? 'text-purple-300' : 'text-slate-300'
                     }`}>
-                      {user?.subscription_tier === 'elite' ? '✨ Elite Custom Plan' : 
+                      {hasProAccess ? '✨ Pro Custom Plan' : 
                        formData.recent_race_distance && formData.recent_race_time ? 'Semi-Custom Plan' :
                        'Standard Plan'}
                     </div>
@@ -1331,18 +1300,18 @@ export default function CreatePlanPage() {
                   <div className="text-right">
                     <div className="text-sm text-slate-400">Your Tier</div>
                     <div className={`text-lg font-bold ${
-                      user?.subscription_tier === 'elite' ? 'text-purple-300' : 'text-slate-400'
+                      hasProAccess ? 'text-purple-300' : 'text-slate-400'
                     }`}>
-                      {user?.subscription_tier || 'free'}
+                      {hasProAccess ? 'pro' : 'free'}
                     </div>
                   </div>
                 </div>
-                {user?.subscription_tier === 'elite' && (
+                {hasProAccess && (
                   <div className="text-sm text-purple-200 mt-2">
                     ✓ Personalized paces from your Strava data • ✓ Dynamic adaptation
                   </div>
                 )}
-                {user?.subscription_tier !== 'elite' && !formData.recent_race_time && (
+                {!hasProAccess && !formData.recent_race_time && (
                   <div className="text-sm text-amber-400 mt-2">
                     ⚠️ Add a recent race time for personalized paces
                   </div>

@@ -48,5 +48,14 @@ export const authService = {
   }): Promise<Athlete> {
     return apiClient.put<Athlete>('/v1/athletes/me', updates);
   },
+
+  /**
+   * Get the athlete's current Training Pace Profile (if present).
+   */
+  async getTrainingPaceProfile(): Promise<{ status: string; pace_profile?: any | null; updated_at?: string | null }> {
+    return apiClient.get<{ status: string; pace_profile?: any | null; updated_at?: string | null }>(
+      '/v1/athletes/me/training-pace-profile'
+    );
+  },
 } as const;
 

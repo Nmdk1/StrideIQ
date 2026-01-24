@@ -29,6 +29,30 @@ Use Stripe as the billing source of truth and implement a minimal, robust integr
 - `active` / `trialing` → `pro`
 - everything else → `free`
 
+## Configuration (required)
+This integration is designed to be Stripe-hosted (no custom payment UI).
+
+**Required environment variables (API):**
+- `STRIPE_SECRET_KEY` (Stripe secret key; test in dev, live in prod)
+- `STRIPE_PRICE_PRO_MONTHLY_ID` (Price id for Pro monthly subscription)
+
+**Required for webhooks:**
+- `STRIPE_WEBHOOK_SECRET` (signing secret for the configured webhook endpoint)
+
+**Optional (defaults to `WEB_APP_BASE_URL`):**
+- `STRIPE_CHECKOUT_SUCCESS_URL` (defaults to `.../settings?stripe=success`)
+- `STRIPE_CHECKOUT_CANCEL_URL` (defaults to `.../settings?stripe=cancel`)
+- `STRIPE_PORTAL_RETURN_URL` (defaults to `.../settings`)
+
+**Webhook endpoint (API):**
+- `POST /v1/billing/webhooks/stripe`
+
+## Local dev notes
+- Checkout/portal can work without configuring webhooks (useful for early UI testing).
+- For webhook testing in local dev, use the Stripe CLI (or equivalent) to forward events to your API:
+  - Forward to `http://localhost:8000/v1/billing/webhooks/stripe`
+  - Set `STRIPE_WEBHOOK_SECRET` to the signing secret provided by your local forwarding tool.
+
 ## Considered Options (Rejected)
 - **Custom billing UI** (too much surface area; reinvents Stripe; higher risk).
 - **Annual plans** in MVP (more proration/refund complexity; not needed to test willingness to pay).

@@ -176,11 +176,11 @@ def select_quality_workout(
 
 Guardrails are safety limits, not prescriptions:
 
-| Distance | Max Long Run | MP Work | Primary Quality Focus |
+| Distance | Guardrail long run (fallback) | MP Work | Primary quality focus |
 |----------|--------------|---------|----------------------|
 | 5K       | 12 mi        | No      | VO2max, Speed        |
 | 10K      | 14 mi        | Minimal | Threshold, VO2max    |
-| Half     | 16 mi        | Late build | Threshold, Tempo  |
+| Half     | 16 mi        | Late build | Threshold (continuous or cruise) |
 | Marathon | 22 mi        | Yes     | MP, Threshold        |
 
 These caps prevent absurd plans (5K athlete doing 22mi long runs), but progression WITHIN these limits is individualized by τ1 and proven capabilities.
@@ -217,17 +217,17 @@ External JSON file (`workout_templates.json`):
 {
   "templates": [
     {
-      "id": "tempo_2x3mi",
-      "name": "2x3mi @ T",
+      "id": "threshold_cruise_2x3mi",
+      "name": "2×3mi Cruise @ Threshold",
       "stimulus_type": "threshold",
       "phases": ["build", "peak"],
       "progression_week_range": [0.3, 0.9],
-      "description_template": "{warm}E + 2x3mi @ {t_pace} w/ 2min jog + {cool}E",
+      "description_template": "{warm}E + 2×3mi @ {t_pace} w/ 2min jog + {cool}E",
       "total_miles": 10,
       "quality_miles": 6,
       "fatigue_cost": 0.7,
       "requires": [],
-      "dont_follow": ["tempo_3x2mi", "tempo_4mi_straight"],
+      "dont_follow": ["threshold_cruise_3x2mi", "threshold_continuous_4mi"],
       "experience_minimum": "intermediate"
     }
   ]
@@ -289,12 +289,12 @@ Every workout selection MUST log:
   "candidates_after_variance": 8,
   "candidates_after_constraints": 7,
   "selection_mode": "exploit",
-  "selected_template_id": "tempo_2x3mi",
+  "selected_template_id": "threshold_cruise_2x3mi",
   "selected_score": 1.35,
-  "runner_up_id": "tempo_3x2mi",
+  "runner_up_id": "threshold_cruise_3x2mi",
   "runner_up_score": 1.28,
   "tau1_used": 38.5,
-  "recent_quality_ids": ["intervals_5x1k", "tempo_4mi"]
+  "recent_quality_ids": ["intervals_5x1k", "threshold_continuous_4mi"]
 }
 ```
 

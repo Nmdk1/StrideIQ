@@ -24,6 +24,16 @@ From `apps/web`:
 - `npm ci`
 - `npm test`
 
+## Stripe (Phase 6) local dev (optional)
+Stripe is integrated via hosted Checkout + Portal, so local dev generally only needs the API env vars and the app will redirect you to Stripe-hosted pages.
+
+- **Required (API)**:
+  - `STRIPE_SECRET_KEY`
+  - `STRIPE_PRICE_PRO_MONTHLY_ID`
+- **Webhook testing (optional)**:
+  - `STRIPE_WEBHOOK_SECRET`
+  - Forward Stripe events to `http://localhost:8000/v1/billing/webhooks/stripe`
+
 ## Common troubleshooting
 - **DB state looks odd**: restart services: `docker compose down -v` then `docker compose up -d --build`
 - **Port conflicts**: stop any other local services on 5432/6379/8000/3000

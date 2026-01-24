@@ -62,7 +62,9 @@ class TrainingPaces:
         elif workout_type in ["marathon", "mp", "marathon_pace", "long_mp"]:
             pace = f"{self._format_pace(self.marathon_pace)}/mi"
             return f"{pace} (goal race pace)"
-        elif workout_type in ["threshold", "tempo", "t_run", "threshold_intervals"]:
+        # Canonical: "threshold" is Training Pace Calculator threshold (T pace).
+        # We do not use the ambiguous term "tempo" in athlete-facing outputs.
+        elif workout_type in ["threshold", "t_run", "threshold_intervals"]:
             pace = f"{self._format_pace(self.threshold_pace)}/mi"
             return f"{pace} (comfortably hard)"
         elif workout_type in ["interval", "vo2max", "i_run", "intervals"]:
@@ -207,7 +209,6 @@ class PaceEngine:
             "long": "Easy effort, building endurance through time on feet",
             "marathon_pace": "Goal marathon race pace - comfortably hard",
             "threshold": "Comfortably hard - can speak in short sentences",
-            "tempo": "Comfortably hard, sustainable for 20-30 minutes",
             "interval": "Hard effort, short recovery between reps",
             "vo2max": "Near-maximum effort, very hard breathing",
             "repetition": "Fast and controlled, with full recovery",

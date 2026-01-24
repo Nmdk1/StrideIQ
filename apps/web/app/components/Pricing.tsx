@@ -18,8 +18,9 @@ export default function Pricing() {
 
         {/* Pricing Grid Container */}
         <div className="w-full">
-          {/* All Tiers in One View - Premium Highlighted */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {/* Power couple: centered Free vs Elite */}
+          <div className="max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
           {/* Free Tier */}
           <div className="bg-slate-900 rounded-lg p-6 border border-slate-700/50">
             <h3 className="text-xl font-bold mb-2">Free</h3>
@@ -35,40 +36,6 @@ export default function Pricing() {
             </Link>
           </div>
 
-          {/* Fixed Plan */}
-          <div className="bg-slate-900 rounded-lg p-6 border border-slate-700/50">
-            <h3 className="text-xl font-bold mb-2">Fixed Plan</h3>
-            <div className="text-3xl font-bold mb-4">$9<span className="text-base">/plan</span></div>
-            <p className="text-xs text-slate-500 mb-4">One-time purchase</p>
-            <ul className="space-y-2 text-sm text-slate-400 mb-6">
-              <li>✓ Everything in Free</li>
-              <li>✓ Custom training plan</li>
-              <li>✓ 4-18 week duration</li>
-              <li>✓ Instant delivery</li>
-              <li>✓ Static plan</li>
-            </ul>
-            <Link href="/register" className="block w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition-colors text-sm text-center">
-              Choose Plan
-            </Link>
-          </div>
-
-          {/* Race-Specific Plan */}
-          <div className="bg-slate-900 rounded-lg p-6 border border-slate-700/50">
-            <h3 className="text-xl font-bold mb-2">Race-Specific</h3>
-            <div className="text-3xl font-bold mb-4">$12<span className="text-base">/plan</span></div>
-            <p className="text-xs text-slate-500 mb-4">One-time • Race-targeted</p>
-            <ul className="space-y-2 text-sm text-slate-400 mb-6">
-              <li>✓ Everything in Fixed</li>
-              <li>✓ Intake questionnaire</li>
-              <li>✓ Race date-specific</li>
-              <li>✓ Optimized plan</li>
-              <li>✓ Race partnerships</li>
-            </ul>
-            <Link href="/register" className="block w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition-colors text-sm text-center">
-              Get Race Plan
-            </Link>
-          </div>
-
           {/* Elite Subscription (single paid tier) */}
           <div className="bg-gradient-to-br from-orange-900/40 to-slate-900 rounded-lg p-6 border-2 border-orange-500 relative md:shadow-xl md:shadow-orange-500/20">
             <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-orange-500 text-white px-3 py-1 text-xs font-semibold rounded-full whitespace-nowrap">
@@ -76,11 +43,11 @@ export default function Pricing() {
             </div>
             <h3 className="text-xl font-bold mb-2 mt-2">Elite</h3>
             <div className="text-3xl font-bold mb-4">
-              <span className="text-slate-200">Pricing TBA</span>
+              $18.99<span className="text-base">/month</span>
             </div>
             <p className="text-xs text-orange-300 mb-4">Full product access • Adaptive insights</p>
             <ul className="space-y-2 text-sm text-slate-300 mb-6">
-              <li>✓ Everything in Race-Specific</li>
+              <li>✓ Everything in Free</li>
               <li>✓ <strong>Adaptive updates</strong></li>
               <li>✓ <strong>Efficiency analysis</strong></li>
               <li>✓ <strong>Performance diagnostics</strong></li>
@@ -91,6 +58,7 @@ export default function Pricing() {
               Start Elite
             </Link>
           </div>
+        </div>
         </div>
         </div>
 
@@ -118,7 +86,7 @@ export default function Pricing() {
               <div className="space-y-2">
                 <p>✓ <strong>Always available:</strong> 24/7 analysis</p>
                 <p>✓ <strong>Accessible everywhere:</strong> NYC to rural Montana</p>
-                <p>✓ <strong>Affordable:</strong> $24/month vs. $50-$300 for coaches</p>
+                <p>✓ <strong>Affordable:</strong> $18.99/month vs. $50-$300 for coaches</p>
               </div>
             </div>
           </div>

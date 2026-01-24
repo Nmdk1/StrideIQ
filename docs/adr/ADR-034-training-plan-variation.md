@@ -55,10 +55,10 @@ For each workout type, appropriate variation includes:
 - Terrain: Flat, rolling, trail (if athlete history shows trail use)
 - Time-based vs distance-based alternation
 
-**Threshold/Tempo Work:**
+**Threshold Work (precise labels, no “tempo” catch-all):**
 - Week 1: 3×10min at T-pace (2min jog recovery)
 - Week 2: 2×15min cruise intervals
-- Week 3: 20min tempo (continuous)
+- Week 3: 20min continuous threshold
 - Week 4: 4×8min at T-pace (hills if applicable)
 - Progression: Extend duration or reduce recovery as fitness builds
 
@@ -94,8 +94,8 @@ THRESHOLD_VARIANTS = [
         "fatigue_cost": "moderate"
     },
     {
-        "id": "tempo_continuous_20",
-        "name": "Tempo Run",
+        "id": "threshold_continuous_20",
+        "name": "Threshold Run (continuous)",
         "structure": "20min continuous @ T-pace",
         "total_quality_minutes": 20,
         "progression_week": [2, 6, 10],

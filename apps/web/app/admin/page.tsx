@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useResetOnboarding, useRetryIngestion, useSetBlocked, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -30,7 +30,7 @@ export default function AdminPage() {
   const [selectedTab, setSelectedTab] = useState<'users' | 'ops' | 'health' | 'metrics' | 'flags' | 'query' | 'testing'>('users');
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [adminReason, setAdminReason] = useState<string>('');
-  const [desiredTier, setDesiredTier] = useState<string>('elite');
+  const [desiredTier, setDesiredTier] = useState<string>('pro');
   
   // User management
   const { data: users, isLoading: usersLoading } = useAdminUsers({ search, limit: 50 });
@@ -39,8 +39,11 @@ export default function AdminPage() {
   const { data: metrics, isLoading: metricsLoading } = useSiteMetrics(30);
   const impersonateUser = useImpersonateUser();
   const compAccess = useCompAccess();
+  const grantTrial = useGrantTrial();
+  const revokeTrial = useRevokeTrial();
   const resetOnboarding = useResetOnboarding();
   const retryIngestion = useRetryIngestion();
+  const regenerateStarterPlan = useRegenerateStarterPlan();
   const setBlocked = useSetBlocked();
   const { data: opsQueue, isLoading: opsQueueLoading } = useOpsQueue();
   const { data: opsStuck, isLoading: opsStuckLoading } = useOpsStuckIngestion({ minutes: 30, limit: 100 });
@@ -345,7 +348,7 @@ export default function AdminPage() {
                               className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
                             >
                               <option value="free">free</option>
-                              <option value="elite">elite</option>
+                              <option value="pro">pro</option>
                             </select>
                             <button
                               onClick={() =>
@@ -372,11 +375,50 @@ export default function AdminPage() {
                               <span className="text-slate-500">not linked</span>
                             )}
                           </div>
+                          {selectedUser.subscription?.stripe_subscription_id ? (
+                            <div className="text-xs text-slate-400">
+                              Subscription:{' '}
+                              <a
+                                href={`https://dashboard.stripe.com/subscriptions/${selectedUser.subscription.stripe_subscription_id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-blue-400 hover:text-blue-300"
+                              >
+                                Open subscription
+                              </a>
+                              <span className="text-slate-500"> • {selectedUser.subscription.status || '—'}</span>
+                            </div>
+                          ) : null}
+                          <div className="text-xs text-slate-400">
+                            Trial:{' '}
+                            {selectedUser.trial_ends_at ? (
+                              <span className="text-slate-200">
+                                ends {new Date(selectedUser.trial_ends_at).toLocaleDateString()}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500">none</span>
+                            )}
+                            {selectedUser.trial_source ? <span className="text-slate-500"> • {selectedUser.trial_source}</span> : null}
+                          </div>
                         </div>
 
                         <div className="space-y-2">
                           <div className="text-xs font-semibold text-slate-300">Actions</div>
                           <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => grantTrial.mutate({ userId: selectedUser.id, days: 7, reason: adminReason || null })}
+                              disabled={grantTrial.isPending}
+                              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-700 rounded text-xs"
+                            >
+                              {grantTrial.isPending ? 'Granting…' : 'Grant 7-day trial'}
+                            </button>
+                            <button
+                              onClick={() => revokeTrial.mutate({ userId: selectedUser.id, reason: adminReason || null })}
+                              disabled={revokeTrial.isPending}
+                              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-700 rounded text-xs"
+                            >
+                              {revokeTrial.isPending ? 'Revoking…' : 'Revoke trial'}
+                            </button>
                             <button
                               onClick={() => resetOnboarding.mutate({ userId: selectedUser.id, stage: 'initial', reason: adminReason || undefined })}
                               disabled={resetOnboarding.isPending}
@@ -424,6 +466,23 @@ export default function AdminPage() {
                                 <div>{selectedUser.active_plan.name}</div>
                                 <div>Type: {selectedUser.active_plan.plan_type}</div>
                                 <div>Goal: {selectedUser.active_plan.goal_race_name ?? '—'} ({selectedUser.active_plan.goal_race_date ?? '—'})</div>
+                                <div className="pt-2">
+                                  <button
+                                    onClick={() =>
+                                      regenerateStarterPlan.mutate({
+                                        userId: selectedUser.id,
+                                        reason: adminReason || 'beta support: regenerate starter plan',
+                                      })
+                                    }
+                                    disabled={regenerateStarterPlan.isPending}
+                                    className="px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-700 rounded text-xs"
+                                  >
+                                    {regenerateStarterPlan.isPending ? 'Regenerating…' : 'Regenerate starter plan'}
+                                  </button>
+                                  <div className="text-[11px] text-slate-500 mt-1">
+                                    Archives current plan and rebuilds from saved intake (use for beta support).
+                                  </div>
+                                </div>
                               </div>
                             ) : (
                               <div className="text-slate-500">No active plan</div>

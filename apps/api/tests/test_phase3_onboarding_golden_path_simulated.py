@@ -91,7 +91,7 @@ def test_phase3_simulated_golden_path_invite_register_oauth_callback_and_bootstr
             json={"email": invited_email, "password": password, "display_name": "Invited User"},
         )
         assert resp.status_code == 201, resp.text
-        created_id = resp.json().get("id")
+        created_id = resp.json().get("athlete", {}).get("id")
         assert created_id
 
         created_athlete = db.query(Athlete).filter(Athlete.email == invited_email.lower()).first()

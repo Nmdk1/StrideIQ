@@ -2,10 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
+from datetime import datetime
+from pydantic import BaseModel
 
 from core.database import get_db
 from core.auth import get_current_user, require_admin
-from models import Athlete, Activity, DailyCheckin, ActivitySplit
+from models import Athlete, Activity, DailyCheckin, ActivitySplit, AthleteTrainingPaceProfile, AthleteRaceResultAnchor
 from schemas import (
     AthleteCreate,
     AthleteUpdate,
@@ -152,6 +154,9 @@ def update_current_athlete(
     
     Athletes can update their own profile information.
     """
+    # Track onboarding completion transition for auto-provisioning.
+    was_completed = bool(getattr(current_user, "onboarding_completed", False))
+
     # Update fields if provided
     if athlete_update.display_name is not None:
         current_user.display_name = athlete_update.display_name
@@ -180,6 +185,30 @@ def update_current_athlete(
     
     db.commit()
     db.refresh(current_user)
+
+    # Trust fix: once onboarding is marked complete, ensure the athlete immediately has
+    # a starter plan (so the calendar isn't empty even before visiting /calendar).
+    try:
+        now_completed = bool(getattr(current_user, "onboarding_completed", False))
+        if (not was_completed) and now_completed:
+            enabled = True
+            try:
+                from services.plan_framework.feature_flags import FeatureFlagService
+
+                svc = FeatureFlagService(db)
+                flag = svc.get_flag("onboarding.auto_starter_plan_v1")
+                enabled = True if not flag else svc.is_enabled("onboarding.auto_starter_plan_v1", current_user.id)
+            except Exception:
+                enabled = True
+
+            if enabled:
+                from services.starter_plan import ensure_starter_plan
+
+                ensure_starter_plan(db, athlete=current_user)
+                # If plan creation succeeded, it will have committed. If not, it's best-effort.
+    except Exception:
+        # Do not block profile updates; calendar still has lazy provisioning as fallback.
+        pass
     
     # Calculate age category if birthdate updated
     from services.performance_engine import calculate_age_at_date, get_age_category
@@ -210,6 +239,34 @@ def update_current_athlete(
     }
     
     return AthleteResponse(**athlete_dict)
+
+
+class TrainingPaceProfileResponse(BaseModel):
+    status: str  # computed | missing
+    pace_profile: Optional[dict] = None
+    updated_at: Optional[datetime] = None
+
+
+@router.get("/athletes/me/training-pace-profile", response_model=TrainingPaceProfileResponse)
+def get_my_training_pace_profile(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return the athlete's current Training Pace Profile (if present).
+
+    Trust contract:
+    - This profile is computed from a race/time-trial anchor (not inferred from training).
+    - Stored separately from Athlete.vdot/threshold fields to avoid unintended plan changes.
+    """
+    prof = db.query(AthleteTrainingPaceProfile).filter(AthleteTrainingPaceProfile.athlete_id == current_user.id).first()
+    if not prof:
+        return TrainingPaceProfileResponse(status="missing", pace_profile=None, updated_at=None)
+    return TrainingPaceProfileResponse(
+        status="computed",
+        pace_profile=prof.paces,
+        updated_at=prof.updated_at,
+    )
 
 
 def format_pace(pace_per_mile: Optional[float]) -> Optional[str]:

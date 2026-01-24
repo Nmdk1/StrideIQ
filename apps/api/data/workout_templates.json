@@ -39,7 +39,7 @@
       "validation_criteria": "Power output maintained across reps, no quad/glute soreness lasting >24 hours",
       "fallback_if_fails": "strides_6x20",
       "rationale": "Hill sprints develop force production capacity that transfers to late-race power.",
-      "notes": ["These are TRUE max effort - not tempo", "Full recovery between each (walk down + 30s)"]
+      "notes": ["These are TRUE max effort - not threshold", "Full recovery between each (walk down + 30s)"]
     },
     {
       "id": "threshold_intervals_2x10",
@@ -99,42 +99,42 @@
       "rationale": "Progresses interval duration while maintaining total quality minutes."
     },
     {
-      "id": "tempo_continuous_20",
-      "name": "Tempo Run 20min",
-      "workout_type": "tempo",
+      "id": "threshold_continuous_20",
+      "name": "Threshold Run 20min",
+      "workout_type": "threshold",
       "phases": ["build"],
       "progression_week_range": [0.3, 0.7],
       "stimulus_type": "continuous",
-      "dont_follow": ["tempo_continuous_25"],
+      "dont_follow": ["threshold_continuous_25"],
       "requires": [],
       "fatigue_cost": "moderate",
       "total_quality_minutes": 20,
       "expected_rpe_range": {"min": 6, "max": 7, "midpoint": 6.5},
-      "structure": "20min continuous @ tempo pace",
-      "description_template": "Warm up 2mi easy. Main set: 20min continuous at tempo pace (slightly slower than {t_pace}, about 10-15sec/mi slower). Cool down 1mi easy.",
-      "hypothesis": "Continuous tempo builds sustained effort capacity and pacing discipline.",
+      "structure": "20min continuous @ threshold (T pace)",
+      "description_template": "Warm up 2mi easy. Main set: 20min continuous at {t_pace}. Cool down 1mi easy. This is threshold (T) — comfortably hard, controlled, not a race.",
+      "hypothesis": "Continuous threshold builds sustained lactate-clearance capacity and pacing discipline.",
       "validation_criteria": "Even pacing throughout, HR stays stable, finishes feeling 'one more mile possible'",
       "fallback_if_fails": "threshold_intervals_2x10",
-      "rationale": "Different stimulus than intervals - teaches sustained effort without recovery breaks."
+      "rationale": "Continuous threshold is a different stimulus than cruise intervals — no breaks, more pacing control."
     },
     {
-      "id": "tempo_continuous_25",
-      "name": "Tempo Run 25min",
-      "workout_type": "tempo",
+      "id": "threshold_continuous_25",
+      "name": "Threshold Run 25min",
+      "workout_type": "threshold",
       "phases": ["build"],
       "progression_week_range": [0.5, 0.9],
       "stimulus_type": "continuous",
-      "dont_follow": ["tempo_continuous_20"],
+      "dont_follow": ["threshold_continuous_20"],
       "requires": [],
       "fatigue_cost": "high",
       "total_quality_minutes": 25,
       "expected_rpe_range": {"min": 7, "max": 8, "midpoint": 7.5},
-      "structure": "25min continuous @ tempo pace",
-      "description_template": "Warm up 2mi easy. Main set: 25min continuous at tempo pace (slightly slower than {t_pace}, about 10-15sec/mi slower). Cool down 1mi easy.",
-      "hypothesis": "Extended continuous tempo builds race-like sustained effort.",
+      "structure": "25min continuous @ threshold (T pace)",
+      "description_template": "Warm up 2mi easy. Main set: 25min continuous at {t_pace}. Cool down 1mi easy. Stay controlled; this should feel like you could hold it longer if you had to.",
+      "hypothesis": "Extended continuous threshold builds race-like sustained effort while staying below redline.",
       "validation_criteria": "Pacing stays even or slight negative split, RPE 7-8",
-      "fallback_if_fails": "tempo_continuous_20",
-      "rationale": "Progression from 20min tempo - builds confidence in sustained effort."
+      "fallback_if_fails": "threshold_continuous_20",
+      "rationale": "Progression from 20min continuous threshold."
     },
     {
       "id": "goal_pace_4mi",

@@ -93,6 +93,18 @@ services:
     depends_on:
       - api
 
+  # Test-only service: uses the Dockerfile "builder" stage so the full source tree
+  # (including `__tests__`) exists in the container. This keeps prod `web` image lean.
+  web_test:
+    build:
+      context: ./apps/web
+      target: builder
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    command: npm test -- --runInBand
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
     external: true

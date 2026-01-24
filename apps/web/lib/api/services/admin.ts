@@ -20,6 +20,17 @@ export interface AdminUser {
 export interface AdminUserDetail extends AdminUser {
   onboarding_stage: string | null;
   stripe_customer_id?: string | null;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  trial_source?: string | null;
+  has_active_subscription?: boolean;
+  subscription?: {
+    status?: string | null;
+    cancel_at_period_end?: boolean;
+    current_period_end?: string | null;
+    stripe_subscription_id?: string | null;
+    stripe_price_id?: string | null;
+  } | null;
   is_blocked?: boolean;
   integrations?: {
     preferred_units?: string | null;
@@ -227,6 +238,14 @@ export const adminService = {
     return apiClient.post(`/v1/admin/users/${userId}/comp`, params);
   },
 
+  async grantTrial(userId: string, params: { days?: number; reason?: string | null }): Promise<any> {
+    return apiClient.post(`/v1/admin/users/${userId}/trial/grant`, params);
+  },
+
+  async revokeTrial(userId: string, params: { reason?: string | null }): Promise<any> {
+    return apiClient.post(`/v1/admin/users/${userId}/trial/revoke`, params);
+  },
+
   async resetOnboarding(userId: string, params: { stage?: string; reason?: string | null }): Promise<any> {
     return apiClient.post(`/v1/admin/users/${userId}/onboarding/reset`, params);
   },
@@ -237,6 +256,15 @@ export const adminService = {
 
   async setBlocked(userId: string, params: { blocked: boolean; reason?: string | null }): Promise<any> {
     return apiClient.post(`/v1/admin/users/${userId}/block`, params);
+  },
+
+  async regenerateStarterPlan(userId: string, params: { reason?: string | null }): Promise<{
+    success: boolean;
+    archived_plan_ids: string[];
+    new_plan_id: string;
+    new_generation_method?: string | null;
+  }> {
+    return apiClient.post(`/v1/admin/users/${userId}/plans/starter/regenerate`, params);
   },
 
   async getOpsQueue(): Promise<OpsQueueSnapshot> {

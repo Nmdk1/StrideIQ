@@ -41,10 +41,11 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 | 3 | Onboarding Workflow (“Latency Bridge”) | Complete | Invite allowlist gating is enforced and auditable; Strava OAuth is state-signed and returns to web; ingestion is queued and progress is deterministic (no “dead air” even if ingestion_state is pending). |
 | 4 | Admin “Heartbeat” | Complete | Secure `/admin` + `/v1/admin/*` (role + permission seam), “God Mode” athlete detail, auditable operator actions (comp/reset/retry/block), and impersonation hardened (owner-only + time-boxed + banner + audit). |
 | 5 | Operational Visibility + Reliability | Complete | Viral-Safe Shield delivered: Ops Pulse (queue/stuck/errors/deferred), Rate Limit Armor (429 deferral + retry), and Emergency Brake (global ingestion pause + UI banner). |
-| 6 | Subscription/Tier/Payment Productionization | In progress | Stripe MVP in flight: hosted Checkout + Portal + webhook-driven subscription mirror + `pro` tier entitlements. |
+| 6 | Subscription/Tier/Payment Productionization | Complete | Stripe MVP delivered: hosted Checkout + Portal + webhook-driven subscription mirror + idempotency. Added 7-day trial (self-serve + admin grant/revoke) and converged entitlements to Free vs Pro. Deprecated legacy one-time plan checkout paths. |
 | 7 | Data Provider Expansion (Garmin/Coros) | Not started | |
 | 8 | Security, Privacy, Compliance Hardening | Not started | |
 | 9 | Automated Release Safety (Golden Paths + CI) | In progress | Seeded CI “smoke” runs for the highest-value Phase 3 + Phase 5 golden paths (backend + web). |
+| 10 | Coach Action Automation (Propose → Confirm → Apply) | Not started | **HIGH PRIORITY immediately after Phase 9 completes.** Enables deterministic, auditable plan changes from Coach with explicit athlete confirmation (no silent/autonomous execution). |
 
 ---
 
@@ -64,6 +65,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 - **2026-01-24 (Phase 5 - complete)**: Delivered the “Viral-Safe Shield”: **Ops Pulse** (queue + stuck + errors + deferred + pause toggle), **Rate Limit Armor** (Strava 429 → defer + retry without worker sleep), and **Emergency Brake** (`system.ingestion_paused` enforced in Strava callback + admin retry; calm Home banner when paused). Added targeted backend and web regression tests to prevent meltdown regressions.
 - **2026-01-24 (Phase 5 - closure hardening)**: Locked down system-level controls so `system.*` actions (including global ingestion pause) require **explicit permissions** for admins (no implicit bootstrap access). Added an owner-only endpoint to set `admin_permissions` (audited + tested), and added CI smoke suites to continuously exercise the Phase 3 + Phase 5 golden paths (backend + web) to prevent regressions.
 - **2026-01-24 (Phase 6 / Stripe MVP - foundation)**: Added `subscriptions` + `stripe_events` tables, implemented signature-verified Stripe webhooks with idempotency, and wired hosted Checkout/Portal endpoints to enable `pro` monthly upgrades with minimal billing surface area (ADR-055).
+- **2026-01-24 (Phase 6 - complete)**: Completed Phase 6 monetization + entitlement productionization: fixed Stripe subscription cancellation mirroring under newer API versions, added a self-serve **7-day trial** (plus admin grant/revoke) and exposed trial/subscription mirror in Admin for support. Converged UI/ops semantics to **Free vs Pro** and deprecated legacy one-time plan checkout routes.
 
 ---
 
@@ -257,6 +259,69 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 
 ---
 
+## Phase 10 (Post-Phase 9): Coach Action Automation (Propose → Confirm → Apply) (HIGH PRIORITY)
+
+**Owner intent:** After Phase 9 is complete (golden paths + CI gates), prioritize unlocking **coaching automation** in a way that preserves the Coach **trust contract** and the platform’s **auditability**.
+
+**Goal:** The Coach can propose precise training changes; the athlete explicitly confirms; the system applies changes via deterministic plan-modification services. **No autonomous execution.**
+
+### Product contract (non-negotiable)
+- **Explicit confirmation**: nothing modifies the athlete’s plan until the athlete confirms.
+- **Deterministic execution**: the “apply” step is performed by existing deterministic services/endpoints (not by free-form model output).
+- **Auditable**: propose/confirm/apply/fail events are append-only and attributable (actor/target/reason/payload).
+- **Safe-by-default**: only allow a small, well-defined action catalog behind a feature flag.
+
+### Action catalog (MVP)
+MVP should start with an allowlist of “safe, reversible” actions that map cleanly to existing plan operations:
+- **Swap days** (move planned workouts across days within a bounded window)
+- **Adjust load** (scale a planned workout up/down within validated bounds)
+- **Replace workout (template-based)** (swap a planned workout for a known `WorkoutTemplate` variant)
+- **Skip / restore** (toggle `skipped` for a planned workout)
+
+Out of scope for MVP (do later, after safety/telemetry exists):
+- **Add new workouts** (creates new calendar objects; easy to misuse without constraints)
+- **Modify future weeks globally** (requires stronger guardrails and rollback tooling)
+
+### UX requirements (web)
+- In Coach chat, proposals render as a **structured “Proposed changes” card** with:
+  - **Diff view** (before/after for each affected workout)
+  - **Reason** in plain language
+  - **Risk notes** (when relevant; non-alarmist)
+  - Buttons: **Confirm & apply**, **Reject**, **Ask a follow-up**
+- On confirm, show an **apply receipt**: exactly what changed, with timestamps.
+- If apply fails, show a deterministic error and keep the proposal for retry (no silent drops).
+
+### Backend requirements (API)
+- Add a durable proposal object (example name): `CoachProposedAction` / `CoachActionProposal`
+  - Fields (minimum): `id`, `athlete_id`, `created_by` (athlete/admin/coach-system), `status` (proposed/confirmed/rejected/applied/failed),
+    `actions_json` (validated schema), `reason`, `created_at`, `confirmed_at`, `applied_at`, `error` (nullable)
+- Endpoints (shape; names can vary, but responsibilities must match):
+  - `POST /v2/coach/actions/propose` → validates and stores proposal (does not apply)
+  - `POST /v2/coach/actions/{id}/confirm` → athlete-confirmed transition + apply (transactional)
+  - `POST /v2/coach/actions/{id}/reject` → marks rejected with optional reason
+- **Validation**: server-side schema validation + bounds checks; reject proposals that exceed limits (count of actions, date range, intensity bounds).
+- **Idempotency**: confirm/apply should be safe against retries and double-submits.
+- **Authorization**:
+  - Only the athlete (or owner/admin with explicit permission) can confirm/apply.
+  - If using impersonation, confirm/apply should be either blocked or explicitly audited with elevated labeling.
+
+### Safety + ops requirements
+- Feature flag: `coach.action_automation_v1` (default off)
+- Metrics/logging: counts of proposed/confirmed/applied/failed; top failure reasons; latency.
+- Audit events (examples):
+  - `coach.action.proposed`, `coach.action.confirmed`, `coach.action.rejected`, `coach.action.applied`, `coach.action.apply_failed`
+
+### Test plan (required for acceptance)
+- **Backend**:
+  - Unit tests for action validation/bounds.
+  - Integration “golden path”: propose → confirm → apply modifies plan exactly once + emits audit events.
+  - Regression: proposal cannot apply without confirm; confirm cannot apply twice.
+- **Frontend**:
+  - Renders proposal card with diff + buttons.
+  - Confirm triggers apply and displays receipt; reject updates state.
+
+---
+
 ## Suggested Execution Order (recommended)
 1. **Phase 1**: Logged-in UX uniformity (so new users land in a polished product)
 2. **Phase 2**: Landing + About (so acquisition messaging matches reality)
@@ -264,4 +329,5 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 4. **Phase 4**: Admin heartbeat (so you can safely scale support)
 5. **Phase 5**: Ops visibility (so spikes become manageable)
 6. **Phase 6+**: Payments and broader productionization
+7. **Phase 9 → Phase 10**: After release safety gates are in place, prioritize Coach Action Automation (propose → confirm → apply)
 

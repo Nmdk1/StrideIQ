@@ -206,9 +206,9 @@ def get_athlete_or_admin(
         return current_user
 
 
-# Tier-based access control
-# Elite is the single paid tier; legacy tiers still grant Elite access until migration.
-TOP_TIERS = ("elite", "pro", "premium", "guided", "subscription")  # Legacy values included for compatibility
+# Tier-based access control (legacy)
+# Phase 6: converge to Free vs Pro. Keep legacy paid values for backward compatibility.
+TOP_TIERS = ("pro", "elite", "premium", "guided", "subscription")
 
 
 def require_query_access(
@@ -219,7 +219,7 @@ def require_query_access(
     
     Access granted to:
     - Admin/owner roles (always)
-    - Elite (paid) subscription tier (legacy values included)
+    - Pro (paid) access (legacy values included)
     
     This enables top-tier athletes to use advanced data mining features.
     """
@@ -233,7 +233,7 @@ def require_query_access(
     
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Query access requires Elite membership or admin role.",
+        detail="Query access requires Pro membership or admin role.",
     )
 
 

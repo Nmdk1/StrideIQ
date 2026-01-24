@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
 from typing import Any, Optional
+from uuid import UUID
 
 import stripe
 from sqlalchemy.exc import IntegrityError
@@ -119,8 +120,76 @@ class StripeService:
             secret=self.cfg.webhook_secret,
         )
 
+    def best_effort_sync_customer_subscription(self, db: Session, *, athlete: Athlete) -> None:
+        """
+        Failsafe reconciliation:
+        Webhooks are the primary integration path, but in practice deliveries can be
+        delayed/missed in local dev or during outages. This performs a best-effort
+        pull of the customer's current subscription and mirrors it to our DB.
 
-def _ensure_subscription_row(db: Session, *, athlete_id: str) -> Subscription:
+        This MUST NOT block portal access; failures are swallowed.
+        """
+        try:
+            customer_id = getattr(athlete, "stripe_customer_id", None)
+            if not customer_id:
+                return
+
+            # Stripe returns the newest subscription first by default.
+            resp = stripe.Subscription.list(customer=str(customer_id), status="all", limit=10)
+            subs = list(getattr(resp, "data", None) or [])
+            if not subs:
+                return
+
+            # Prefer active/trialing if present; otherwise fall back to newest.
+            def _rank(s: Any) -> int:
+                st = str(getattr(s, "status", "") or "").lower()
+                if st == "active":
+                    return 0
+                if st == "trialing":
+                    return 1
+                return 2
+
+            subs_sorted = sorted(subs, key=_rank)
+            s = subs_sorted[0]
+
+            sub_row = _ensure_subscription_row(db, athlete_id=athlete.id)
+            sub_row.stripe_customer_id = str(customer_id)
+            sub_row.stripe_subscription_id = str(getattr(s, "id", None) or "") or None
+            sub_row.status = str(getattr(s, "status", None) or "") or None
+
+            current_period_end_ts = _extract_current_period_end_ts(s)
+            cancel_at_ts = _extract_cancel_at_ts(s)
+            if current_period_end_ts is None and cancel_at_ts is not None:
+                current_period_end_ts = cancel_at_ts
+            sub_row.current_period_end = _maybe_parse_period_end(current_period_end_ts)
+            sub_row.cancel_at_period_end = _derive_cancel_at_period_end(s, current_period_end_ts=current_period_end_ts)
+
+            # Best-effort price id from first subscription item.
+            try:
+                items = getattr(s, "items", None)
+                data = getattr(items, "data", None) if items else None
+                first = data[0] if data else None
+                price = getattr(first, "price", None) if first else None
+                price_id = getattr(price, "id", None) if price else None
+                if price_id:
+                    sub_row.stripe_price_id = str(price_id)
+            except Exception:
+                pass
+
+            # Mirror entitlement on athlete (keep "pro" through end-of-period).
+            athlete.subscription_tier = _entitlement_tier_for_subscription_status(sub_row.status)
+            db.add(athlete)
+            db.add(sub_row)
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return
+
+
+def _ensure_subscription_row(db: Session, *, athlete_id: UUID) -> Subscription:
     sub = db.query(Subscription).filter(Subscription.athlete_id == athlete_id).first()
     if sub:
         return sub
@@ -137,6 +206,70 @@ def _maybe_parse_period_end(ts: Any) -> Optional[datetime]:
         return datetime.fromtimestamp(int(ts), tz=timezone.utc)
     except Exception:
         return None
+
+
+def _extract_current_period_end_ts(obj: Any) -> Optional[int]:
+    """
+    Stripe API compatibility:
+    - Older API versions: `subscription.current_period_end` (top-level)
+    - Newer API versions: billing period fields live on `subscription.items.data[*].current_period_end`
+    """
+    try:
+        ts = getattr(obj, "current_period_end", None)
+        if ts is not None:
+            return int(ts)
+    except Exception:
+        pass
+
+    try:
+        items = getattr(obj, "items", None)
+        data = getattr(items, "data", None) if items else None
+        if data is None and isinstance(items, dict):
+            data = items.get("data")
+
+        ends: list[int] = []
+        for it in (data or []):
+            if isinstance(it, dict):
+                it_end = it.get("current_period_end")
+            else:
+                it_end = getattr(it, "current_period_end", None)
+            if it_end is not None:
+                ends.append(int(it_end))
+        if ends:
+            return max(ends)
+    except Exception:
+        pass
+
+    return None
+
+
+def _extract_cancel_at_ts(obj: Any) -> Optional[int]:
+    try:
+        v = getattr(obj, "cancel_at", None)
+        if v is None and isinstance(obj, dict):
+            v = obj.get("cancel_at")
+        return int(v) if v is not None else None
+    except Exception:
+        return None
+
+
+def _derive_cancel_at_period_end(obj: Any, *, current_period_end_ts: Optional[int]) -> bool:
+    # Legacy behavior (still present in some versions/paths)
+    try:
+        if bool(getattr(obj, "cancel_at_period_end", False)):
+            return True
+    except Exception:
+        pass
+    if isinstance(obj, dict) and bool(obj.get("cancel_at_period_end", False)):
+        return True
+
+    # Newer Stripe API uses `cancel_at` timestamps for scheduled cancellation.
+    cancel_at = _extract_cancel_at_ts(obj)
+    if cancel_at is None:
+        return False
+    if current_period_end_ts is None:
+        return True
+    return int(cancel_at) == int(current_period_end_ts)
 
 
 def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
@@ -194,7 +327,7 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
             athlete.stripe_customer_id = customer_id
         db.add(athlete)
 
-        sub = _ensure_subscription_row(db, athlete_id=str(athlete.id))
+        sub = _ensure_subscription_row(db, athlete_id=athlete.id)
         if customer_id:
             sub.stripe_customer_id = customer_id
         if subscription_id:
@@ -213,8 +346,13 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
         customer_id = str(getattr(obj, "customer", None) or "")
         subscription_id = str(getattr(obj, "id", None) or "")
         status = str(getattr(obj, "status", None) or "") or None
-        current_period_end = _maybe_parse_period_end(getattr(obj, "current_period_end", None))
-        cancel_at_period_end = bool(getattr(obj, "cancel_at_period_end", False))
+        current_period_end_ts = _extract_current_period_end_ts(obj)
+        cancel_at_ts = _extract_cancel_at_ts(obj)
+        if current_period_end_ts is None and cancel_at_ts is not None:
+            # Some objects may omit period fields but include cancellation timestamp.
+            current_period_end_ts = cancel_at_ts
+        current_period_end = _maybe_parse_period_end(current_period_end_ts)
+        cancel_at_period_end = _derive_cancel_at_period_end(obj, current_period_end_ts=current_period_end_ts)
 
         athlete = _find_athlete_by_customer_id(customer_id)
         if not athlete and subscription_id:
@@ -231,7 +369,7 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
             athlete.stripe_customer_id = customer_id
         db.add(athlete)
 
-        sub = _ensure_subscription_row(db, athlete_id=str(athlete.id))
+        sub = _ensure_subscription_row(db, athlete_id=athlete.id)
         if customer_id:
             sub.stripe_customer_id = customer_id
         if subscription_id:

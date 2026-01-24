@@ -179,6 +179,10 @@ export interface Athlete {
   height_cm?: number;
   subscription_tier: string;
   stripe_customer_id?: string | null;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  trial_source?: string | null;
+  has_active_subscription?: boolean;
   onboarding_stage?: string;
   onboarding_completed: boolean;
   role?: 'athlete' | 'coach' | 'admin' | 'owner';

@@ -14,7 +14,13 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.auth import get_current_user
-from models import Athlete, IntakeQuestionnaire, CoachIntentSnapshot
+from models import (
+    Athlete,
+    IntakeQuestionnaire,
+    CoachIntentSnapshot,
+    AthleteRaceResultAnchor,
+    AthleteTrainingPaceProfile,
+)
 
 
 router = APIRouter(prefix="/v1/onboarding", tags=["onboarding"])
@@ -133,7 +139,108 @@ def _maybe_seed_intent_snapshot_from_goals(db: Session, athlete_id, responses: d
         extra["policy_stance"] = policy
     if output_priorities is not None:
         extra["output_metric_priorities"] = output_priorities
+
+    # Optional: race anchor (used for pace calibration) — store as a prior, not as settings.
+    # This keeps Coach context aligned without claiming prescriptive validity if missing.
+    try:
+        rr_dist = responses.get("recent_race_distance")
+        rr_time = responses.get("recent_race_time")
+        rr_m = responses.get("recent_race_distance_m")
+        rr_date = responses.get("recent_race_date")
+        if rr_dist or rr_time:
+            extra["recent_race_anchor"] = {
+                "distance": rr_dist,
+                "time": rr_time,
+                "distance_meters": rr_m,
+                "date": rr_date,
+            }
+    except Exception:
+        pass
     snap.extra = extra
+
+
+def _maybe_compute_and_persist_training_paces_from_goals(
+    db: Session, *, athlete: Athlete, responses: dict
+) -> dict | None:
+    """
+    Compute and persist a Training Pace Profile from Goals-stage race anchor, if present.
+
+    Trust contract:
+    - Race/time-trial result only (no inference from training data).
+    - Does NOT mutate Athlete.vdot/threshold pace columns (safety).
+    - Best-effort: failures should not block onboarding progression.
+    """
+    if not isinstance(responses, dict):
+        return None
+
+    # Feature gate: if flag missing/disabled, behave as if unsupported.
+    try:
+        from services.plan_framework.feature_flags import FeatureFlagService
+
+        if not FeatureFlagService(db).is_enabled("onboarding.pace_calibration_v1", athlete.id):
+            return None
+    except Exception:
+        return None
+
+    dist_key = responses.get("recent_race_distance")
+    time_str = responses.get("recent_race_time")
+    dist_m = responses.get("recent_race_distance_m")
+    race_date_str = responses.get("recent_race_date")
+
+    if not dist_key or not time_str:
+        return None
+
+    from services.training_pace_profile import RaceAnchor, parse_time_to_seconds, compute_training_pace_profile
+    from datetime import date as _date
+
+    time_seconds = parse_time_to_seconds(str(time_str))
+    if not time_seconds:
+        return {"status": "invalid_anchor", "error": "invalid_time_format"}
+
+    rd = None
+    if race_date_str:
+        try:
+            rd = _date.fromisoformat(str(race_date_str))
+        except Exception:
+            rd = None
+
+    anchor = RaceAnchor(
+        distance_key=str(dist_key),
+        time_seconds=int(time_seconds),
+        distance_meters=int(dist_m) if dist_m is not None else None,
+        race_date=rd,
+    )
+
+    payload, err = compute_training_pace_profile(anchor)
+    if err or not payload:
+        return {"status": "invalid_anchor", "error": err or "calc_failed"}
+
+    # Upsert anchor (one per athlete).
+    a = db.query(AthleteRaceResultAnchor).filter(AthleteRaceResultAnchor.athlete_id == athlete.id).first()
+    if not a:
+        a = AthleteRaceResultAnchor(athlete_id=athlete.id)
+        db.add(a)
+
+    a.distance_key = str(payload.get("anchor", {}).get("distance_key") or dist_key)
+    a.distance_meters = int(payload.get("anchor", {}).get("distance_meters") or 0) or None
+    a.time_seconds = int(payload.get("anchor", {}).get("time_seconds") or time_seconds)
+    a.race_date = rd
+    a.source = "user"
+
+    db.flush()  # ensure a.id exists
+
+    # Upsert pace profile (one per athlete).
+    p = db.query(AthleteTrainingPaceProfile).filter(AthleteTrainingPaceProfile.athlete_id == athlete.id).first()
+    if not p:
+        p = AthleteTrainingPaceProfile(athlete_id=athlete.id, race_anchor_id=a.id)
+        db.add(p)
+    else:
+        p.race_anchor_id = a.id
+
+    p.fitness_score = float(payload.get("fitness_score")) if payload.get("fitness_score") is not None else None
+    p.paces = payload
+
+    return {"status": "computed", "pace_profile": payload}
 
 
 @router.get("/intake")
@@ -188,12 +295,29 @@ def upsert_intake(
         raise HTTPException(status_code=400, detail="responses must be an object")
 
     row = _upsert_intake_row(db, current_user.id, st, payload.responses, payload.completed)
+    pace_result = None
+    pace_flag_enabled = False
     if st == "goals":
         _maybe_seed_intent_snapshot_from_goals(db, current_user.id, payload.responses)
+        try:
+            from services.plan_framework.feature_flags import FeatureFlagService
+
+            pace_flag_enabled = FeatureFlagService(db).is_enabled("onboarding.pace_calibration_v1", current_user.id)
+        except Exception:
+            pace_flag_enabled = False
+        pace_result = _maybe_compute_and_persist_training_paces_from_goals(db, athlete=current_user, responses=payload.responses)
 
     db.commit()
     db.refresh(row)
-    return {"ok": True, "stage": st, "saved_at": row.created_at, "completed_at": row.completed_at}
+    out = {"ok": True, "stage": st, "saved_at": row.created_at, "completed_at": row.completed_at}
+    if pace_result:
+        out.update(pace_result)
+    else:
+        # Explicitly tell clients this surface is locked until a race result exists,
+        # so we don't "appease" with low-quality inference.
+        if st == "goals" and pace_flag_enabled:
+            out["status"] = "missing_anchor"
+    return out
 
 
 @router.get("/status")

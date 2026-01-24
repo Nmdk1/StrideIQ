@@ -96,15 +96,22 @@ class WorkoutScaler:
         # Route to specific scaler
         if workout_type in ["easy", "recovery", "easy_run"]:
             return self._scale_easy(weekly_volume, workout_type)
+
+        # Easy run with strides appended (neuromuscular touch; NOT a "quality session")
+        elif workout_type in ["easy_strides"]:
+            return self._scale_easy_with_strides(weekly_volume)
         
         elif workout_type in ["long", "long_run"]:
             return self._scale_long_run(weekly_volume, tier, distance)
         
-        elif workout_type in ["threshold", "threshold_intervals", "t_intervals"]:
+        elif workout_type in ["threshold_intervals", "t_intervals"]:
             return self._scale_threshold_intervals(weekly_volume, tier, week_in_phase)
         
-        elif workout_type in ["tempo", "t_run"]:
-            return self._scale_tempo(weekly_volume, tier, week_in_phase)
+        # Canonical: "threshold" is the Training Pace Calculator threshold (T pace).
+        # We treat continuous threshold runs as workout_type="threshold" (not "tempo").
+        # Back-compat: accept "tempo" as an alias but DO NOT emit it.
+        elif workout_type in ["threshold", "t_run", "tempo"]:
+            return self._scale_threshold_continuous(weekly_volume, tier, week_in_phase)
         
         elif workout_type in ["long_mp", "marathon_pace_long"]:
             return self._scale_mp_long_run(weekly_volume, tier, distance, week_in_phase, mp_week)
@@ -174,8 +181,13 @@ class WorkoutScaler:
         # Get peak long run for this tier/distance
         peak = LONG_RUN_PEAKS.get(dist, {}).get(vol_tier, 18)
         
-        # Long run is typically 25-30% of weekly
-        target = min(weekly_volume * 0.28, peak)
+        # Long run target (default): ~28% of weekly.
+        # For high-volume marathon training, allow slightly higher by default
+        # (durability requirement), but still cap by tier/distance peak.
+        pct = 0.28
+        if (distance or "").strip().lower() in ("marathon",) and weekly_volume >= 60:
+            pct = 0.30
+        target = min(weekly_volume * pct, peak)
         target = max(target, 10)  # Minimum 10 miles
         
         return ScaledWorkout(
@@ -244,13 +256,13 @@ class WorkoutScaler:
             option="A"
         )
     
-    def _scale_tempo(
+    def _scale_threshold_continuous(
         self,
         weekly_volume: float,
         tier: str,
         week_in_phase: int
     ) -> ScaledWorkout:
-        """Scale continuous tempo run."""
+        """Scale continuous threshold run (T pace)."""
         # Max threshold volume
         max_t_miles = weekly_volume * self.limits["threshold_pct"]
         max_t_minutes = max_t_miles * 6
@@ -264,15 +276,15 @@ class WorkoutScaler:
         total_distance = 3 + (tempo_duration * 0.17)  # WU/CD + tempo
         
         return ScaledWorkout(
-            workout_type="tempo",
+            workout_type="threshold",
             category=WorkoutCategory.THRESHOLD,
-            title=f"Tempo Run: {int(tempo_duration)} min",
+            title=f"Threshold Run: {int(tempo_duration)} min",
             description=f"Continuous {int(tempo_duration)} min at threshold pace",
             total_distance_miles=round(total_distance, 1),
             duration_minutes=int(25 + tempo_duration),
             segments=[
                 {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-                {"type": "tempo", "duration_min": int(tempo_duration), "pace": "threshold"},
+                {"type": "threshold", "duration_min": int(tempo_duration), "pace": "threshold"},
                 {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
             ],
             pace_description="comfortably hard, sustainable for the full duration",
@@ -396,7 +408,8 @@ class WorkoutScaler:
         return ScaledWorkout(
             workout_type="medium_long",
             category=WorkoutCategory.LONG,
-            title=f"Medium-Long Run: {distance} mi",
+            # Avoid the phrase "Long Run" in the title (tests/UI treat "Long Run" as the weekly anchor).
+            title=f"Medium Long: {distance} mi",
             description="Steady aerobic effort. Builds endurance between long runs.",
             total_distance_miles=distance,
             duration_minutes=int(distance * 9),
@@ -414,10 +427,34 @@ class WorkoutScaler:
         """Scale VO2max intervals."""
         # Max interval volume (8%)
         max_i_miles = weekly_volume * self.limits["interval_pct"]
-        
-        # Standard: 5-6 x 1km (or 5x1000m)
+
+        phase_norm = (phase or "").strip().lower()
+
+        # For high-volume contexts early in cycle, short reps are a safer VO2 “touch”
+        # while still delivering meaningful ceiling work.
+        if phase_norm in ("base_speed", "base") and weekly_volume >= 60:
+            rep_miles = 400 / 1609.344  # 400m in miles
+            reps = int(max_i_miles / rep_miles) if rep_miles > 0 else 12
+            reps = max(10, min(16, reps))
+
+            return ScaledWorkout(
+                workout_type="intervals",
+                category=WorkoutCategory.INTERVAL,
+                title=f"Intervals: {reps}x400m",
+                description=f"{reps}x400m at VO2max pace with 200m jog recovery",
+                total_distance_miles=round(3 + reps * 0.35, 1),
+                duration_minutes=int(30 + reps * 2),
+                segments=[
+                    {"type": "warmup", "distance_miles": 2, "pace": "easy"},
+                    {"type": "intervals", "reps": reps, "distance_m": 400, "rest_m": 200, "pace": "interval"},
+                    {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
+                ],
+                pace_description="hard effort, controlled — smooth mechanics, not a sprint",
+                option="A",
+            )
+
+        # Default: 1K reps (classic VO2)
         reps = min(6, max(4, int(max_i_miles / 0.62)))  # 1km = 0.62 mi
-        
         return ScaledWorkout(
             workout_type="intervals",
             category=WorkoutCategory.INTERVAL,
@@ -431,7 +468,7 @@ class WorkoutScaler:
                 {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
             ],
             pace_description="hard effort, controlled - NOT all-out",
-            option="A"
+            option="A",
         )
     
     def _scale_strides(self) -> ScaledWorkout:
@@ -449,6 +486,31 @@ class WorkoutScaler:
             ],
             pace_description="strides: quick turnover, controlled, focus on form",
             option="A"
+        )
+
+    def _scale_easy_with_strides(self, weekly_volume: float) -> ScaledWorkout:
+        """
+        Easy run with strides appended.
+
+        Preserves weekly volume targets while adding a low-fatigue neuromuscular touch.
+        """
+        base = self._scale_easy(weekly_volume, "easy")
+        distance = base.total_distance_miles or 6
+        easy_portion = max(0.0, distance - 0.5)  # leave room for strides + walk recovery
+        segments = [
+            {"type": "easy", "distance_miles": round(easy_portion, 1), "pace": "easy"},
+            {"type": "strides", "reps": 6, "duration_sec": 25, "rest_sec": 60, "pace": "fast_controlled"},
+        ]
+        return ScaledWorkout(
+            workout_type="easy_strides",
+            category=WorkoutCategory.EASY,
+            title="Easy + Strides",
+            description="Easy run, then 6×20–30s strides with full recovery. Stay relaxed.",
+            total_distance_miles=distance,
+            duration_minutes=base.duration_minutes,
+            segments=segments,
+            pace_description="easy + strides: relaxed, quick turnover (not hard breathing)",
+            option="A",
         )
     
     def _scale_hills(self, tier: str) -> ScaledWorkout:

@@ -110,14 +110,17 @@ LONG_RUN_PEAKS = {
         VolumeTier.BUILDER: 18,
         VolumeTier.LOW: 20,
         VolumeTier.MID: 22,
-        VolumeTier.HIGH: 22,
-        VolumeTier.ELITE: 24,
+        # High-volume marathoners often benefit from longer durability work;
+        # this is a DEFAULT peak cap (N=1 history can justify higher/other strategies).
+        VolumeTier.HIGH: 24,
+        VolumeTier.ELITE: 26,
     },
     Distance.HALF_MARATHON: {
         VolumeTier.BUILDER: 13,
         VolumeTier.LOW: 14,
         VolumeTier.MID: 16,
-        VolumeTier.HIGH: 18,
+        # Durable HM runners frequently tolerate 18-20mi long runs.
+        VolumeTier.HIGH: 20,
     },
     Distance.TEN_K: {
         VolumeTier.BUILDER: 10,

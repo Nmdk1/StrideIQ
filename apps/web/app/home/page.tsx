@@ -301,8 +301,8 @@ export default function HomePage() {
           )}
 
           {/* Phase 3: Latency bridge (connected, importing) */}
-          {/* Phase 5: Emergency brake banner */}
-          {ingestion_paused ? (
+          {/* Phase 5: Emergency brake banner (only meaningful if Strava is connected) */}
+          {ingestion_paused && isStravaConnected ? (
             <Card className="bg-amber-500/10 border-amber-500/30">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm text-amber-200 flex items-center gap-2">
