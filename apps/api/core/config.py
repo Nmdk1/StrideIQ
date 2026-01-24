@@ -121,6 +121,14 @@ class Settings(BaseSettings):
     # Impersonation (owner-only) controls
     # Short-lived tokens reduce blast radius if leaked.
     IMPERSONATION_TOKEN_TTL_MINUTES: int = Field(default=20, ge=5, le=120)
+
+    # Stripe (Phase 6: hosted checkout/portal)
+    STRIPE_SECRET_KEY: Optional[str] = Field(default=None)
+    STRIPE_WEBHOOK_SECRET: Optional[str] = Field(default=None)
+    STRIPE_PRICE_PRO_MONTHLY_ID: Optional[str] = Field(default=None)
+    STRIPE_CHECKOUT_SUCCESS_URL: Optional[str] = Field(default=None)
+    STRIPE_CHECKOUT_CANCEL_URL: Optional[str] = Field(default=None)
+    STRIPE_PORTAL_RETURN_URL: Optional[str] = Field(default=None)
     
     # Sentry Error Tracking
     SENTRY_DSN: Optional[str] = Field(default=None)

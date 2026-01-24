@@ -56,6 +56,7 @@ class UserResponse(BaseModel):
     display_name: Optional[str]
     role: str
     subscription_tier: str
+    stripe_customer_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
     
@@ -208,7 +209,8 @@ def login(
             "email": user.email,
             "display_name": user.display_name,
             "role": user.role,
-            "subscription_tier": user.subscription_tier
+            "subscription_tier": user.subscription_tier,
+            "stripe_customer_id": getattr(user, "stripe_customer_id", None),
         }
     }
 

@@ -120,6 +120,58 @@ class InviteAllowlist(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
+class Subscription(Base):
+    """
+    Stripe subscription mirror (Phase 6).
+
+    Stripe is the billing source of truth; this table stores a minimal, queryable
+    mirror for entitlement decisions and admin/support visibility.
+    """
+
+    __tablename__ = "subscriptions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, unique=True, index=True)
+
+    stripe_customer_id = Column(Text, nullable=True, index=True)
+    stripe_subscription_id = Column(Text, nullable=True, index=True)
+    stripe_price_id = Column(Text, nullable=True)
+
+    status = Column(Text, nullable=True, index=True)  # active|trialing|past_due|canceled|...
+    current_period_end = Column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end = Column(Boolean, default=False, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    athlete = relationship("Athlete", lazy="joined")
+
+    __table_args__ = (
+        Index("ix_subscriptions_stripe_customer_id", "stripe_customer_id"),
+        Index("ix_subscriptions_stripe_subscription_id", "stripe_subscription_id"),
+    )
+
+
+class StripeEvent(Base):
+    """
+    Processed Stripe events (idempotency guard).
+
+    Stripe retries webhook deliveries; storing event ids makes webhook handling safe.
+    """
+
+    __tablename__ = "stripe_events"
+
+    event_id = Column(Text, primary_key=True)  # Stripe event id (e.g., evt_*)
+    event_type = Column(Text, nullable=False, index=True)
+    stripe_created = Column(Integer, nullable=True)
+
+    received_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_stripe_events_event_type", "event_type"),
+    )
+
+
 class InviteAuditEvent(Base):
     """
     Audit log for invite operations.
