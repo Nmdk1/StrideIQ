@@ -103,6 +103,7 @@ export default function AdminPage() {
   };
 
   const isAdmin = !!user && (user.role === 'admin' || user.role === 'owner');
+  const isOwner = !!user && user.role === 'owner';
 
   // Hard redirect non-admins away from /admin.
   // IMPORTANT: treat "authenticated but no user yet" as unauthorized until proven otherwise.
@@ -273,13 +274,15 @@ export default function AdminPage() {
                               >
                                 View
                               </button>
-                              <button
-                                onClick={() => impersonateUser.mutate({ userId: user.id })}
-                                disabled={impersonateUser.isPending}
-                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs"
-                              >
-                                {impersonateUser.isPending ? <LoadingSpinner size="sm" /> : 'Impersonate'}
-                              </button>
+                              {isOwner ? (
+                                <button
+                                  onClick={() => impersonateUser.mutate({ userId: user.id })}
+                                  disabled={impersonateUser.isPending}
+                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs"
+                                >
+                                  {impersonateUser.isPending ? <LoadingSpinner size="sm" /> : 'Impersonate'}
+                                </button>
+                              ) : null}
                             </div>
                           </td>
                         </tr>
