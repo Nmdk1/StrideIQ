@@ -15,6 +15,9 @@ jest.mock('@/lib/hooks/queries/admin', () => ({
   useSetBlocked: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
   useAdminFeatureFlags: () => ({ data: { flags: [] }, isLoading: false }),
   useSet3dQualitySelectionMode: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
+  useOpsQueue: () => ({ data: { available: false, active_count: 0, reserved_count: 0, scheduled_count: 0, workers_seen: [] }, isLoading: false }),
+  useOpsStuckIngestion: () => ({ data: { cutoff: new Date().toISOString(), count: 0, items: [] }, isLoading: false }),
+  useOpsIngestionErrors: () => ({ data: { cutoff: new Date().toISOString(), count: 0, items: [] }, isLoading: false }),
 }));
 
 jest.mock('@/lib/hooks/queries/query-engine', () => ({

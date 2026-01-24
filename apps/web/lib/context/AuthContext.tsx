@@ -81,7 +81,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         })
         .catch(() => {
-          // Token is invalid/expired - clear auth state
+          // Token is invalid/expired.
+          // If we are impersonating, restore original admin token (fail-safe),
+          // otherwise clear auth state.
+          const original = localStorage.getItem('impersonation_original_auth_token');
+          if (original) {
+            localStorage.setItem(AUTH_TOKEN_KEY, original);
+            localStorage.removeItem('impersonation_active');
+            localStorage.removeItem('impersonation_token');
+            localStorage.removeItem('impersonation_expires_at');
+            localStorage.removeItem('impersonated_user');
+            localStorage.removeItem('impersonation_original_auth_token');
+            apiClient.setAuthToken(original);
+            if (process.env.NODE_ENV !== 'test') {
+              window.location.reload();
+            }
+            return;
+          }
+
           localStorage.removeItem(AUTH_TOKEN_KEY);
           localStorage.removeItem(AUTH_USER_KEY);
           apiClient.setAuthToken(null);

@@ -74,13 +74,27 @@ export function useSiteMetrics(days: number = 30) {
  */
 export function useImpersonateUser() {
   return useMutation({
-    mutationFn: (userId: string) => adminService.impersonateUser(userId),
+    mutationFn: (params: { userId: string; reason?: string | null; ttl_minutes?: number | null }) =>
+      adminService.impersonateUser(params.userId, { reason: params.reason, ttl_minutes: params.ttl_minutes }),
     onSuccess: (data) => {
-      // Store impersonation token
+      // Switch session token to impersonation token (time-boxed), but preserve original admin session.
+      const original = localStorage.getItem('auth_token');
+      if (original) {
+        localStorage.setItem('impersonation_original_auth_token', original);
+      }
+
       localStorage.setItem('impersonation_token', data.token);
+      localStorage.setItem('impersonation_active', 'true');
+      if (data.expires_at) localStorage.setItem('impersonation_expires_at', data.expires_at);
       localStorage.setItem('impersonated_user', JSON.stringify(data.user));
-      // Reload page to switch user context
-      window.location.reload();
+
+      // AuthContext + ApiClient read from auth_token/auth_user; write them to make impersonation actually take effect.
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('auth_user', JSON.stringify(data.user));
+
+      if (process.env.NODE_ENV !== 'test') {
+        window.location.reload();
+      }
     },
   });
 }

@@ -6,6 +6,7 @@ import { UnitsProvider } from '@/lib/context/UnitsContext'
 import { CompareProvider } from '@/lib/context/CompareContext'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ImpersonationBanner } from '@/components/admin/ImpersonationBanner'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -80,6 +81,7 @@ export default function RootLayout({
                 <CompareProvider>
                   <TooltipProvider>
                     <Navigation />
+                    <ImpersonationBanner />
                     <main>{children}</main>
                   </TooltipProvider>
                 </CompareProvider>

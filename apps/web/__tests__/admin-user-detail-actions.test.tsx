@@ -69,6 +69,9 @@ jest.mock('@/lib/hooks/queries/admin', () => ({
   useResetOnboarding: () => ({ mutate: jest.fn(), isPending: false }),
   useRetryIngestion: () => ({ mutate: jest.fn(), isPending: false }),
   useSetBlocked: () => ({ mutate: jest.fn(), isPending: false }),
+  useOpsQueue: () => ({ isLoading: false, data: { available: false, active_count: 0, reserved_count: 0, scheduled_count: 0, workers_seen: [] } }),
+  useOpsStuckIngestion: () => ({ isLoading: false, data: { cutoff: new Date().toISOString(), count: 0, items: [] } }),
+  useOpsIngestionErrors: () => ({ isLoading: false, data: { cutoff: new Date().toISOString(), count: 0, items: [] } }),
 }));
 
 jest.mock('@/lib/hooks/queries/query-engine', () => ({

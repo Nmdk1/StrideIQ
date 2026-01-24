@@ -274,7 +274,7 @@ export default function AdminPage() {
                                 View
                               </button>
                               <button
-                                onClick={() => impersonateUser.mutate(user.id)}
+                                onClick={() => impersonateUser.mutate({ userId: user.id })}
                                 disabled={impersonateUser.isPending}
                                 className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs"
                               >

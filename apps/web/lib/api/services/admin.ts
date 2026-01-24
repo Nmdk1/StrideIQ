@@ -157,6 +157,8 @@ export interface ImpersonationResponse {
     id: string;
     email: string | null;
   };
+  expires_at?: string | null;
+  ttl_minutes?: number | null;
 }
 
 export interface FeatureFlag {
@@ -241,8 +243,11 @@ export const adminService = {
   /**
    * Start impersonation session
    */
-  async impersonateUser(userId: string): Promise<ImpersonationResponse> {
-    return apiClient.post<ImpersonationResponse>(`/v1/admin/users/${userId}/impersonate`);
+  async impersonateUser(
+    userId: string,
+    params?: { reason?: string | null; ttl_minutes?: number | null }
+  ): Promise<ImpersonationResponse> {
+    return apiClient.post<ImpersonationResponse>(`/v1/admin/users/${userId}/impersonate`, params || undefined);
   },
 
   /**
