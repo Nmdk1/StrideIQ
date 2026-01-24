@@ -265,6 +265,51 @@ class ModelDrivenPlanGenerator:
             logger.info("3d_workout_selection.%s %s", event, json.dumps(payload, default=str, sort_keys=True))
         except Exception:
             logger.info("3d_workout_selection.%s (unserializable payload)", event)
+
+        # Persist a bounded audit record when we have a real DB session.
+        try:
+            from sqlalchemy.orm import Session as OrmSession
+
+            if not isinstance(self.db, OrmSession):
+                return
+            athlete_id = getattr(self, "_current_athlete_id", None)
+            if not athlete_id:
+                return
+
+            from services.workout_audit_logger import record_workout_selection_event
+
+            selected_template_id = (
+                payload.get("selected_template_id")
+                or (payload.get("selected") or {}).get("template_id")
+                or payload.get("shadow_selected_template_id")
+            )
+            selection_mode = payload.get("selection_mode") or payload.get("shadow_selection_mode")
+            phase = payload.get("phase")
+            phase_week = payload.get("week_in_phase") or payload.get("phase_week")
+            target_date = payload.get("date")
+            trigger = "plan_gen"
+            if "shadow" in (event or "") or payload.get("legacy_workout_type") or payload.get("shadow_selected_template_id"):
+                trigger = "shadow"
+
+            record_workout_selection_event(
+                db=self.db,
+                athlete_id=athlete_id,
+                trigger=trigger,
+                payload=payload,
+                plan_generation_id=payload.get("plan_generation_id") or getattr(self, "_plan_generation_id", None),
+                plan_id=None,
+                target_date=target_date,
+                phase=phase,
+                phase_week=phase_week,
+                selected_template_id=selected_template_id,
+                selection_mode=selection_mode,
+            )
+        except Exception:
+            # Never block generation on audit persistence.
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
     
     def _get_workout_selector(self):
         """Lazy-load the workout selector."""
@@ -427,6 +472,129 @@ class ModelDrivenPlanGenerator:
         
         ADR-036: N=1 Learning Workout Selection Engine
         """
+        # Use DB-backed workout template registry when running against a real Session.
+        # In unit tests that mock the DB (MagicMock), fall back to the legacy selector.
+        from sqlalchemy.orm import Session as OrmSession
+
+        if isinstance(self.db, OrmSession):
+            try:
+                from services.workout_template_selector import select_quality_template
+                from models import CoachIntentSnapshot
+
+                # Map internal phase enum to registry phase string.
+                phase_str = (phase.value if hasattr(phase, "value") else str(phase)).lower()
+
+                # Approximate week-in-phase (same logic as earlier implementation).
+                if phase == TrainingPhase.BASE:
+                    phase_start_week = 1
+                    phase_weeks = max(1, int(total_weeks * 0.25))
+                elif phase == TrainingPhase.BUILD:
+                    phase_start_week = int(total_weeks * 0.25) + 1
+                    phase_weeks = max(1, int(total_weeks * 0.50))
+                elif phase == TrainingPhase.PEAK:
+                    phase_start_week = int(total_weeks * 0.75) + 1
+                    phase_weeks = max(1, int(total_weeks * 0.20))
+                else:  # TAPER
+                    phase_start_week = int(total_weeks * 0.95) + 1
+                    phase_weeks = max(1, total_weeks - phase_start_week + 1)
+
+                week_in_phase = max(1, week_number - phase_start_week + 1)
+
+                # Pull athlete-led constraint priors (if available).
+                time_available_min = None
+                try:
+                    snap = (
+                        self.db.query(CoachIntentSnapshot)
+                        .filter(CoachIntentSnapshot.athlete_id == self._current_athlete_id)
+                        .first()
+                    )
+                    if snap and getattr(snap, "time_available_min", None) is not None:
+                        time_available_min = int(snap.time_available_min)
+                except Exception:
+                    time_available_min = None
+
+                selection = select_quality_template(
+                    db=self.db,
+                    athlete_id=self._current_athlete_id,
+                    phase=phase_str,
+                    week_in_phase=week_in_phase,
+                    total_phase_weeks=phase_weeks,
+                    recent_template_ids=self._recent_quality_ids[-5:],
+                    constraints={"time_available_min": time_available_min, "facilities": []},
+                )
+                if not selection.get("ok"):
+                    raise RuntimeError(selection.get("error") or "selection failed")
+
+                sel = selection["selected"]
+                self._recent_quality_ids.append(sel["template_id"])
+
+                # Render description with paces (placeholders).
+                step = sel.get("progression_step") or {}
+                desc = (step.get("description_template") or "").strip() or (step.get("structure") or "")
+                for pace_key in ["e_pace", "t_pace", "m_pace", "i_pace", "r_pace"]:
+                    if "{" + pace_key + "}" in desc:
+                        desc = desc.replace("{" + pace_key + "}", paces.get(pace_key, "target pace"))
+
+                intensity_tier = (sel.get("intensity_tier") or "").upper()
+                workout_type_map = {
+                    "RECOVERY": "easy",
+                    "AEROBIC": "easy",
+                    "THRESHOLD": "threshold",
+                    "VO2MAX": "intervals",
+                    "ANAEROBIC": "sharpening",
+                }
+                workout_type = workout_type_map.get(intensity_tier, "threshold")
+                intensity_map = {
+                    "RECOVERY": "easy",
+                    "AEROBIC": "easy",
+                    "THRESHOLD": "hard",
+                    "VO2MAX": "hard",
+                    "ANAEROBIC": "hard",
+                }
+                intensity = intensity_map.get(intensity_tier, "moderate")
+
+                # Structured audit log (template-centric, bounded)
+                self._log_3d_selection_event(
+                    "selected_db_registry",
+                    {
+                        "plan_generation_id": getattr(self, "_plan_generation_id", None),
+                        "athlete_id": str(getattr(self, "_current_athlete_id", "")),
+                        "date": date.isoformat(),
+                        "day_of_week": day_of_week,
+                        "slot_type": "quality",
+                        "phase": phase_str,
+                        "week_in_phase": week_in_phase,
+                        "selected_template_id": sel.get("template_id"),
+                        "selected_step": step.get("key"),
+                        "filters_applied": selection.get("filters_applied"),
+                        "audit": selection.get("audit"),
+                    },
+                )
+
+                return DayPlan(
+                    date=date,
+                    day_of_week=day_of_week,
+                    workout_type=workout_type,
+                    name=sel.get("template_name") or "Quality Session",
+                    description=desc,
+                    target_tss=target_tss,
+                    target_miles=miles,
+                    target_pace=(
+                        paces.get("t_pace")
+                        if intensity_tier == "THRESHOLD"
+                        else paces.get("i_pace")
+                        if intensity_tier == "VO2MAX"
+                        else paces.get("e_pace")
+                    ),
+                    intensity=intensity,
+                    rationale="Selected via deterministic 3D registry selector.",
+                    notes=[],
+                )
+            except Exception:
+                # Safety: do not block plan generation; fall through to legacy selector.
+                pass
+
+        # Legacy selector fallback (JSON library + explore/exploit logic)
         from services.workout_templates import TrainingPhase as TemplatePhase
         
         # Map internal phase to template phase
@@ -542,6 +710,74 @@ class ModelDrivenPlanGenerator:
         """
         Shadow-mode selection: compute 3D result and log diff, but do not affect returned plan.
         """
+        from sqlalchemy.orm import Session as OrmSession
+
+        if isinstance(self.db, OrmSession):
+            try:
+                from services.workout_template_selector import select_quality_template
+                from models import CoachIntentSnapshot
+
+                phase_str = (phase.value if hasattr(phase, "value") else str(phase)).lower()
+                if phase == TrainingPhase.BASE:
+                    phase_start_week = 1
+                    phase_weeks = max(1, int(total_weeks * 0.25))
+                elif phase == TrainingPhase.BUILD:
+                    phase_start_week = int(total_weeks * 0.25) + 1
+                    phase_weeks = max(1, int(total_weeks * 0.50))
+                elif phase == TrainingPhase.PEAK:
+                    phase_start_week = int(total_weeks * 0.75) + 1
+                    phase_weeks = max(1, int(total_weeks * 0.20))
+                else:  # TAPER
+                    phase_start_week = int(total_weeks * 0.95) + 1
+                    phase_weeks = max(1, total_weeks - phase_start_week + 1)
+
+                week_in_phase = max(1, week_number - phase_start_week + 1)
+
+                time_available_min = None
+                try:
+                    snap = (
+                        self.db.query(CoachIntentSnapshot)
+                        .filter(CoachIntentSnapshot.athlete_id == self._current_athlete_id)
+                        .first()
+                    )
+                    if snap and getattr(snap, "time_available_min", None) is not None:
+                        time_available_min = int(snap.time_available_min)
+                except Exception:
+                    time_available_min = None
+
+                shadow = select_quality_template(
+                    db=self.db,
+                    athlete_id=self._current_athlete_id,
+                    phase=phase_str,
+                    week_in_phase=week_in_phase,
+                    total_phase_weeks=phase_weeks,
+                    recent_template_ids=self._recent_quality_ids_shadow[-5:],
+                    constraints={"time_available_min": time_available_min, "facilities": []},
+                )
+                if shadow.get("ok"):
+                    sel = shadow["selected"]
+                    self._recent_quality_ids_shadow.append(sel["template_id"])
+                    self._log_3d_selection_event(
+                        "shadow_diff_db_registry",
+                        {
+                            "plan_generation_id": getattr(self, "_plan_generation_id", None),
+                            "athlete_id": str(getattr(self, "_current_athlete_id", "")),
+                            "date": date.isoformat(),
+                            "day_of_week": day_of_week,
+                            "phase": phase_str,
+                            "legacy_workout_type": legacy_workout_type,
+                            "legacy_title": legacy_title,
+                            "shadow_selected_template_id": sel.get("template_id"),
+                            "shadow_selected_step": (sel.get("progression_step") or {}).get("key"),
+                            "filters_applied": shadow.get("filters_applied"),
+                            "audit": shadow.get("audit"),
+                        },
+                    )
+                return
+            except Exception:
+                # Fall through to legacy shadow selection if registry shadow fails.
+                pass
+
         try:
             from services.workout_templates import TrainingPhase as TemplatePhase
 

@@ -466,6 +466,83 @@ class IntakeQuestionnaire(Base):
     )
 
 
+class WorkoutTemplate(Base):
+    """
+    Workout Template Registry (authoritative, DB-backed).
+
+    This is the deterministic core for quality session selection (ADR-036 "3D model"):
+    - Periodization: phase_compatibility
+    - Progression: progression_logic (step selection)
+    - Variance: variance_tags + optional dont_follow
+    - Constraints: constraints JSON (e.g., min_time_min)
+
+    Note: This is a registry of workout templates, not an athlete plan.
+    """
+
+    __tablename__ = "workout_template"
+
+    # NOTE: Use a stable, human-readable ID (e.g., "base_aerobic_strides").
+    id = Column(Text, primary_key=True)
+
+    # Display + classification
+    name = Column(Text, nullable=False)
+    intensity_tier = Column(Text, nullable=False)  # RECOVERY | AEROBIC | THRESHOLD | VO2MAX | ANAEROBIC
+
+    # Core 3D metadata
+    phase_compatibility = Column(JSONB, nullable=False)  # ["base","build","peak","taper"]
+    progression_logic = Column(JSONB, nullable=False)  # e.g., {"type":"steps","steps":[...]}
+    variance_tags = Column(JSONB, nullable=False, default=list)  # e.g., ["TIME_CRUNCHED","TREADMILL_FRIENDLY"]
+    constraints = Column(JSONB, nullable=False, default=dict)  # e.g., {"min_time_min": 45}
+
+    # Optional variance/constraint helpers
+    dont_follow = Column(JSONB, nullable=True)  # ["other_template_id", ...]
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_workout_template_intensity_tier", "intensity_tier"),
+    )
+
+
+class WorkoutSelectionAuditEvent(Base):
+    """
+    Append-only audit log for workout template selection.
+
+    This is designed for production debugability:
+    - what we selected
+    - what we filtered out and why
+    - which constraints/variance rules applied
+    - without dumping sensitive athlete data into logs
+    """
+
+    __tablename__ = "workout_selection_audit_event"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+
+    # Provenance / context
+    trigger = Column(Text, nullable=False)  # plan_gen | rebuild | coach_prescription | shadow
+    plan_generation_id = Column(Text, nullable=True, index=True)  # generator's run id
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("training_plan.id"), nullable=True, index=True)
+    target_date = Column(Date, nullable=True, index=True)
+    phase = Column(Text, nullable=True, index=True)  # base/build/peak/taper
+    phase_week = Column(Integer, nullable=True)
+
+    # Decision
+    selected_template_id = Column(Text, ForeignKey("workout_template.id"), nullable=True, index=True)
+    selection_mode = Column(Text, nullable=True)  # on | shadow | fallback
+
+    # Bounded payload (ids, counts, reasons, diffs)
+    payload = Column(JSONB, nullable=False, default=dict)
+
+    __table_args__ = (
+        Index("ix_workout_selection_audit_event_created_at", "created_at"),
+    )
+
+
 class CoachingKnowledgeEntry(Base):
     """
     Knowledge base entries for coaching principles.
