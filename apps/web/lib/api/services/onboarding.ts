@@ -35,6 +35,20 @@ export interface OnboardingBootstrapResponse {
   message?: string;
 }
 
+export type IntakeStage =
+  | 'initial'
+  | 'basic_profile'
+  | 'goals'
+  | 'connect_strava'
+  | 'nutrition_setup'
+  | 'work_setup';
+
+export interface OnboardingIntakeGetResponse {
+  stage: IntakeStage;
+  responses: Record<string, any> | null;
+  completed_at?: string | null;
+}
+
 export const onboardingService = {
   async getStatus(): Promise<OnboardingStatusResponse> {
     return apiClient.get<OnboardingStatusResponse>('/v1/onboarding/status');
@@ -42,6 +56,14 @@ export const onboardingService = {
 
   async bootstrap(): Promise<OnboardingBootstrapResponse> {
     return apiClient.post<OnboardingBootstrapResponse>('/v1/onboarding/bootstrap', {});
+  },
+
+  async getIntake(stage: IntakeStage): Promise<OnboardingIntakeGetResponse> {
+    return apiClient.get<OnboardingIntakeGetResponse>(`/v1/onboarding/intake?stage=${encodeURIComponent(stage)}`);
+  },
+
+  async saveIntake(stage: IntakeStage, responses: Record<string, any>, completed?: boolean): Promise<{ ok: boolean }> {
+    return apiClient.post<{ ok: boolean }>('/v1/onboarding/intake', { stage, responses, completed });
   },
 } as const;
 
