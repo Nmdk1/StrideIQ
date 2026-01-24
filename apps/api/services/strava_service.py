@@ -95,7 +95,7 @@ def _release_strava_detail_slot() -> None:
         return
 
 
-def get_auth_url() -> str:
+def get_auth_url(state: str | None = None) -> str:
     if not STRAVA_CLIENT_ID:
         raise ValueError("STRAVA_CLIENT_ID is not set")
 
@@ -106,6 +106,8 @@ def get_auth_url() -> str:
         "scope": "activity:read_all,read_all",
         "approval_prompt": "force",
     }
+    if state:
+        params["state"] = state
 
     query = "&".join(f"{k}={v}" for k, v in params.items())
     return f"https://www.strava.com/oauth/authorize?{query}"

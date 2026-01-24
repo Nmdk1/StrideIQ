@@ -75,6 +75,53 @@ class Athlete(Base):
     last_streak_update = Column(DateTime(timezone=True), nullable=True)
 
 
+class InviteAllowlist(Base):
+    """
+    Invite allowlist entry (Phase 3: onboarding gating).
+
+    Invites are first-class, auditable domain objects:
+    - One row per invited email (stored lowercased).
+    - Can be revoked.
+    - Marked as used when a matching account is created.
+    """
+
+    __tablename__ = "invite_allowlist"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(Text, unique=True, nullable=False, index=True)  # stored lowercased
+
+    is_active = Column(Boolean, default=True, nullable=False)
+    note = Column(Text, nullable=True)
+
+    invited_by_athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=True)
+    invited_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_by_athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=True)
+
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    used_by_athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class InviteAuditEvent(Base):
+    """
+    Audit log for invite operations.
+    """
+
+    __tablename__ = "invite_audit_event"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    invite_id = Column(UUID(as_uuid=True), ForeignKey("invite_allowlist.id"), nullable=False, index=True)
+    actor_athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=True, index=True)
+    action = Column(Text, nullable=False, index=True)  # invite.created | invite.revoked | invite.used
+    target_email = Column(Text, nullable=False, index=True)  # lowercased
+    event_metadata = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class AthleteIngestionState(Base):
     """
     Durable per-athlete ingestion state for operational visibility.

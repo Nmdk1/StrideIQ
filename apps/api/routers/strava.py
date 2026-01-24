@@ -6,13 +6,14 @@ Updated to work with authenticated users.
 """
 import traceback
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 
 from core.database import get_db
 from core.auth import get_current_user
+from core.config import settings
 from models import Athlete, Activity, ActivitySplit
 from services.strava_service import (
     get_auth_url,
@@ -26,6 +27,7 @@ from services.performance_engine import (
     calculate_age_graded_performance,
     detect_race_candidate,
 )
+from services.oauth_state import create_oauth_state, verify_oauth_state
 
 router = APIRouter(prefix="/v1/strava", tags=["strava"])
 
@@ -119,13 +121,24 @@ def get_strava_status(
 @router.get("/auth-url")
 def get_strava_auth_url(
     current_user: Athlete = Depends(get_current_user),
+    return_to: str = Query("/onboarding", description="UI path to return to after OAuth (must start with /)"),
 ):
     """
     Get Strava OAuth authorization URL for current user.
     Returns URL that user should be redirected to.
     """
     try:
-        auth_url = get_auth_url()
+        # Prevent open redirect.
+        if not return_to.startswith("/") or return_to.startswith("//"):
+            raise HTTPException(status_code=400, detail="Invalid return_to")
+
+        state = create_oauth_state(
+            {
+                "athlete_id": str(current_user.id),
+                "return_to": return_to,
+            }
+        )
+        auth_url = get_auth_url(state=state)
         return {"auth_url": auth_url}
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -134,17 +147,27 @@ def get_strava_auth_url(
 @router.get("/callback")
 def strava_callback(
     code: str = Query(..., description="Authorization code from Strava"),
-    state: str = Query(None, description="Optional state parameter (athlete_id)"),
+    state: str = Query(None, description="Signed state token"),
     db: Session = Depends(get_db),
 ):
     """
     Handle Strava OAuth callback.
-    If state contains athlete_id, associate with that athlete.
-    Otherwise, creates/finds by strava_athlete_id.
+
+    Phase 3: MUST NOT create new athletes here.
+    Callback only links Strava to an existing athlete identified by signed `state`.
     """
     try:
         from services.token_encryption import encrypt_token
+        from tasks.strava_tasks import backfill_strava_activity_index_task
         
+        payload = verify_oauth_state(state or "")
+        if not payload or not payload.get("athlete_id"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid OAuth state")
+
+        athlete = db.query(Athlete).filter(Athlete.id == payload["athlete_id"]).first()
+        if not athlete:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid OAuth state")
+
         token_data = exchange_code_for_token(code)
         
         access_token = token_data["access_token"]
@@ -160,49 +183,30 @@ def strava_callback(
         
         display_name = (athlete_info.get("firstname", "") + " " + athlete_info.get("lastname", "")).strip()
         
-        # If state contains athlete_id, use that
-        athlete = None
-        if state:
-            try:
-                from uuid import UUID
-                athlete_id = UUID(state)
-                athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-            except:
-                pass
-        
-        # Otherwise, find by strava_athlete_id
-        if not athlete:
-            athlete = (
-                db.query(Athlete)
-                .filter(Athlete.strava_athlete_id == strava_athlete_id)
-                .first()
-            )
-        
-        if not athlete:
-            athlete = Athlete(
-                strava_athlete_id=strava_athlete_id,
-                display_name=display_name or None,
-                strava_access_token=encrypted_access_token,
-                strava_refresh_token=encrypted_refresh_token,
-            )
-            db.add(athlete)
-        else:
-            athlete.strava_access_token = encrypted_access_token
-            if encrypted_refresh_token:
-                athlete.strava_refresh_token = encrypted_refresh_token
-            if display_name and not athlete.display_name:
-                athlete.display_name = display_name
-            athlete.strava_athlete_id = strava_athlete_id
+        athlete.strava_access_token = encrypted_access_token
+        if encrypted_refresh_token:
+            athlete.strava_refresh_token = encrypted_refresh_token
+        if display_name and not athlete.display_name:
+            athlete.display_name = display_name
+        athlete.strava_athlete_id = strava_athlete_id
         
         db.commit()
         db.refresh(athlete)
-        
-        return {
-            "status": "success",
-            "message": "Strava account connected successfully",
-            "athlete_id": str(athlete.id),
-            "strava_athlete_id": strava_athlete_id,
-        }
+
+        # Latency bridge: enqueue cheap index backfill immediately (background).
+        try:
+            backfill_strava_activity_index_task.delay(str(athlete.id), pages=5)
+        except Exception:
+            # Best-effort enqueue; UI will still show "connected" and user can retry.
+            pass
+
+        return_to = payload.get("return_to") or "/onboarding"
+        # Avoid open redirect (defense-in-depth).
+        if not isinstance(return_to, str) or not return_to.startswith("/") or return_to.startswith("//"):
+            return_to = "/onboarding"
+        sep = "&" if "?" in return_to else "?"
+        redirect_url = f"{settings.WEB_APP_BASE_URL}{return_to}{sep}strava=connected"
+        return RedirectResponse(url=redirect_url, status_code=302)
         
     except HTTPException:
         raise

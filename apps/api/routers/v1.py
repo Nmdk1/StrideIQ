@@ -4,7 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from core.database import get_db
-from core.auth import get_current_user
+from core.auth import get_current_user, require_admin
 from models import Athlete, Activity, DailyCheckin, ActivitySplit
 from schemas import (
     AthleteCreate,
@@ -56,8 +56,12 @@ def get_athletes(db: Session = Depends(get_db)):
 
 
 @router.post("/athletes", response_model=AthleteResponse, status_code=201)
-def create_athlete(athlete: AthleteCreate, db: Session = Depends(get_db)):
-    """Create a new athlete"""
+def create_athlete(
+    athlete: AthleteCreate,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Create a new athlete (admin only)."""
     db_athlete = Athlete(**athlete.dict())
     db.add(db_athlete)
     db.commit()

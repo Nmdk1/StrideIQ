@@ -110,6 +110,13 @@ class Settings(BaseSettings):
     # CORS - comma-separated list of allowed origins for production
     # e.g., "https://strideiq.run,https://www.strideiq.run"
     CORS_ORIGINS: Optional[str] = Field(default=None)
+
+    # Web app base URL (for OAuth redirects back to the UI).
+    # e.g., "http://localhost:3000" or "https://strideiq.run"
+    WEB_APP_BASE_URL: str = Field(default="http://localhost:3000")
+
+    # OAuth state TTL for provider callbacks (seconds).
+    OAUTH_STATE_TTL_S: int = Field(default=600)
     
     # Sentry Error Tracking
     SENTRY_DSN: Optional[str] = Field(default=None)

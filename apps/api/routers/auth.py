@@ -30,6 +30,7 @@ from core.account_security import (
     get_remaining_attempts
 )
 from models import Athlete
+from services.invite_service import is_invited, mark_invite_used, normalize_email
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 security = HTTPBearer()
@@ -83,8 +84,18 @@ def register(
     
     Creates an athlete account with email/password authentication.
     """
+    email = normalize_email(user_data.email)
+
+    # Enforce invite allowlist (Phase 3, Option B).
+    ok, invite = is_invited(db, email)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invite required",
+        )
+
     # Check if email already exists
-    existing = db.query(Athlete).filter(Athlete.email == user_data.email).first()
+    existing = db.query(Athlete).filter(Athlete.email == email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -100,9 +111,9 @@ def register(
     
     # Create new athlete
     athlete = Athlete(
-        email=user_data.email,
+        email=email,
         password_hash=get_password_hash(user_data.password),
-        display_name=user_data.display_name or user_data.email.split("@")[0],
+        display_name=user_data.display_name or email.split("@")[0],
         role="athlete",  # Default role
         subscription_tier="free"  # Default tier
     )
@@ -110,6 +121,14 @@ def register(
     db.add(athlete)
     db.commit()
     db.refresh(athlete)
+
+    # Mark invite as used (auditable domain object).
+    if invite:
+        try:
+            mark_invite_used(db, invite=invite, used_by_athlete_id=athlete.id)
+            db.commit()
+        except Exception:
+            db.rollback()
     
     return athlete
 

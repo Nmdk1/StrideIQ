@@ -100,6 +100,7 @@ class HomeResponse(BaseModel):
     has_any_activities: bool = False  # Whether user has any synced activities
     total_activities: int = 0  # Total number of activities
     last_sync: Optional[str] = None  # When Strava was last synced
+    ingestion_state: Optional[dict] = None  # Phase 3: ingestion progress snapshot (durable)
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -644,6 +645,17 @@ async def get_home_data(
     last_sync = None
     if current_user.last_strava_sync:
         last_sync = current_user.last_strava_sync.isoformat()
+
+    # Phase 3: ingestion progress snapshot (latency bridge)
+    ingestion_state = None
+    if strava_connected:
+        try:
+            from services.ingestion_state import get_ingestion_state_snapshot
+
+            snap = get_ingestion_state_snapshot(db, current_user.id, provider="strava")
+            ingestion_state = snap.to_dict() if snap else None
+        except Exception:
+            ingestion_state = None
     
     # Generate hero narrative (ADR-033)
     hero_narrative = None
@@ -703,7 +715,8 @@ async def get_home_data(
         strava_connected=strava_connected,
         has_any_activities=has_any_activities,
         total_activities=total_activities,
-        last_sync=last_sync
+        last_sync=last_sync,
+        ingestion_state=ingestion_state,
     )
 
 

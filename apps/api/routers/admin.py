@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 from core.database import get_db
 from core.auth import require_admin
-from models import Athlete, Activity, NutritionEntry, WorkPattern, BodyComposition, ActivityFeedback, InsightFeedback, FeatureFlag
+from models import Athlete, Activity, NutritionEntry, WorkPattern, BodyComposition, ActivityFeedback, InsightFeedback, FeatureFlag, InviteAllowlist
 from schemas import AthleteResponse
 from pydantic import BaseModel, Field
 from services.plan_framework.feature_flags import FeatureFlagService
@@ -48,6 +48,16 @@ class ThreeDSelectionModeRequest(BaseModel):
     # Admin-friendly: allow specifying emails rather than UUIDs.
     allowlist_emails: Optional[List[str]] = None
     allowlist_athlete_ids: Optional[List[str]] = None
+
+
+class InviteCreateRequest(BaseModel):
+    email: str
+    note: Optional[str] = None
+
+
+class InviteRevokeRequest(BaseModel):
+    email: str
+    reason: Optional[str] = None
 
 
 def _ensure_flag_exists(db: Session, key: str, name: str, description: str) -> None:
@@ -98,6 +108,77 @@ def list_feature_flags(
             for f in flags
         ]
     }
+
+
+@router.get("/invites")
+def list_invites(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+    active_only: bool = Query(False),
+    limit: int = Query(200, ge=1, le=1000),
+):
+    """
+    List invite allowlist entries.
+    Admin/owner only.
+    """
+    q = db.query(InviteAllowlist)
+    if active_only:
+        q = q.filter(InviteAllowlist.is_active.is_(True), InviteAllowlist.used_at.is_(None))
+    rows = q.order_by(InviteAllowlist.created_at.desc()).limit(limit).all()
+    return {
+        "invites": [
+            {
+                "id": str(r.id),
+                "email": r.email,
+                "is_active": bool(r.is_active),
+                "note": r.note,
+                "invited_at": r.invited_at.isoformat() if r.invited_at else None,
+                "revoked_at": r.revoked_at.isoformat() if r.revoked_at else None,
+                "used_at": r.used_at.isoformat() if r.used_at else None,
+                "invited_by_athlete_id": str(r.invited_by_athlete_id) if r.invited_by_athlete_id else None,
+                "revoked_by_athlete_id": str(r.revoked_by_athlete_id) if r.revoked_by_athlete_id else None,
+                "used_by_athlete_id": str(r.used_by_athlete_id) if r.used_by_athlete_id else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.post("/invites")
+def create_invite_endpoint(
+    request: InviteCreateRequest,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Create or re-activate an invite allowlist entry.
+    Admin/owner only.
+    """
+    from services.invite_service import create_invite
+
+    inv = create_invite(db, email=request.email, invited_by_athlete_id=current_user.id, note=request.note)
+    db.commit()
+    db.refresh(inv)
+    return {"success": True, "invite": {"id": str(inv.id), "email": inv.email, "is_active": inv.is_active, "used_at": inv.used_at}}
+
+
+@router.post("/invites/revoke")
+def revoke_invite_endpoint(
+    request: InviteRevokeRequest,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Revoke an invite allowlist entry.
+    Admin/owner only.
+    """
+    from services.invite_service import revoke_invite
+
+    inv = revoke_invite(db, email=request.email, revoked_by_athlete_id=current_user.id, reason=request.reason)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    db.commit()
+    return {"success": True, "invite": {"id": str(inv.id), "email": inv.email, "is_active": inv.is_active}}
 
 
 @router.patch("/feature-flags/{flag_key}")
