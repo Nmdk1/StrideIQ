@@ -27,6 +27,11 @@ export default function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [billingLoading, setBillingLoading] = useState<'checkout' | 'portal' | null>(null);
 
+  // Phase 6: converge UI to Free vs Pro even if legacy paid tiers exist.
+  const rawTier = (user?.subscription_tier || 'free').toLowerCase();
+  const isPaid = rawTier !== 'free';
+  const displayTier = isPaid ? 'pro' : 'free';
+
   const handleExportData = async () => {
     setExporting(true);
     try {
@@ -202,13 +207,13 @@ export default function SettingsPage() {
                   <div className="flex items-center gap-3">
                     <div>
                       <p className="font-medium flex items-center gap-2">
-                        {(user?.subscription_tier || 'free').toUpperCase()} Plan
+                        {displayTier.toUpperCase()} Plan
                         <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Active</Badge>
                       </p>
                       <p className="text-sm text-slate-400">Pro unlocks the full planning and intelligence stack.</p>
                     </div>
                   </div>
-                  {(user?.subscription_tier || 'free') === 'free' ? (
+                  {!isPaid ? (
                     <Button className="bg-orange-600 hover:bg-orange-500" onClick={handleUpgrade} disabled={billingLoading !== null}>
                       {billingLoading === 'checkout' ? <LoadingSpinner size="sm" /> : (
                         <>
@@ -219,13 +224,13 @@ export default function SettingsPage() {
                   ) : (
                     <Button
                       className="bg-slate-700 hover:bg-slate-600"
-                      onClick={handleManageSubscription}
-                      disabled={billingLoading !== null || !user?.stripe_customer_id}
-                      title={!user?.stripe_customer_id ? 'No Stripe customer linked yet' : undefined}
+                      onClick={user?.stripe_customer_id ? handleManageSubscription : handleUpgrade}
+                      disabled={billingLoading !== null}
+                      title={!user?.stripe_customer_id ? 'No billing profile linked yet — start Pro billing to enable portal' : undefined}
                     >
                       {billingLoading === 'portal' ? <LoadingSpinner size="sm" /> : (
                         <>
-                          Manage subscription <ArrowUpRight className="w-4 h-4 ml-1" />
+                          {user?.stripe_customer_id ? 'Manage subscription' : 'Start Pro billing'} <ArrowUpRight className="w-4 h-4 ml-1" />
                         </>
                       )}
                     </Button>
