@@ -117,6 +117,10 @@ class Settings(BaseSettings):
 
     # OAuth state TTL for provider callbacks (seconds).
     OAUTH_STATE_TTL_S: int = Field(default=600)
+
+    # Impersonation (owner-only) controls
+    # Short-lived tokens reduce blast radius if leaked.
+    IMPERSONATION_TOKEN_TTL_MINUTES: int = Field(default=20, ge=5, le=120)
     
     # Sentry Error Tracking
     SENTRY_DSN: Optional[str] = Field(default=None)

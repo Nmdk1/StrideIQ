@@ -5,7 +5,7 @@ Comprehensive command center for site management, monitoring, testing, and debug
 Owner/admin role only.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_, or_
 from typing import List, Optional, Dict, Any, Literal
@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from datetime import timezone
 
 from core.database import get_db
-from core.auth import require_admin, require_permission
+from core.auth import require_admin, require_owner, require_permission
 from models import (
     Athlete,
     Activity,
@@ -92,6 +92,11 @@ class RetryIngestionRequest(BaseModel):
 class BlockUserRequest(BaseModel):
     blocked: bool = Field(..., description="Whether the user is blocked")
     reason: Optional[str] = Field(default=None, description="Why this block/unblock was performed (audited)")
+
+
+class ImpersonateUserRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, description="Why impersonation was started (audited)")
+    ttl_minutes: Optional[int] = Field(default=None, ge=5, le=120, description="Override token TTL (bounded)")
 
 
 def _utcnow() -> datetime:
@@ -821,20 +826,28 @@ def set_blocked(
 @router.post("/users/{user_id}/impersonate")
 def start_impersonation(
     user_id: UUID,
-    current_user: Athlete = Depends(require_admin),
+    http_request: Request,
+    request: Optional[ImpersonateUserRequest] = Body(default=None),
+    current_user: Athlete = Depends(require_owner),
     db: Session = Depends(get_db),
 ):
     """
     Start impersonation session for a user.
     Returns a temporary token that can be used to act as that user.
-    Admin/owner only.
+    Owner only (time-boxed token + audited).
     """
     target_user = db.query(Athlete).filter(Athlete.id == user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    # Generate impersonation token (simplified - in production, use proper JWT with impersonation claim)
-    from core.security import create_access_token
+
+    from core.security import create_access_token, decode_access_token
+    from core.config import settings
+    from datetime import timedelta, datetime, timezone
+
+    ttl_min = int(getattr(settings, "IMPERSONATION_TOKEN_TTL_MINUTES", 20))
+    if request and request.ttl_minutes is not None:
+        ttl_min = int(request.ttl_minutes)
+
     impersonation_token = create_access_token(
         data={
             "sub": str(target_user.id),
@@ -842,11 +855,43 @@ def start_impersonation(
             "role": target_user.role,
             "impersonated_by": str(current_user.id),
             "is_impersonation": True,
-        }
+        },
+        expires_delta=timedelta(minutes=ttl_min),
     )
-    
-    logger.warning(f"Admin {current_user.email} started impersonation of {target_user.email}")
-    
+
+    exp = None
+    payload = decode_access_token(impersonation_token) or {}
+    if payload.get("exp"):
+        try:
+            exp = datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc)
+        except Exception:
+            exp = None
+
+    # Hard audit (best-effort: should not block primary path).
+    try:
+        from services.admin_audit import record_admin_audit_event
+
+        record_admin_audit_event(
+            db,
+            request=http_request,
+            actor=current_user,
+            action="auth.impersonate.start",
+            target_athlete_id=str(target_user.id),
+            reason=(request.reason if request else None),
+            payload={
+                "ttl_minutes": ttl_min,
+                "expires_at": exp.isoformat() if exp else None,
+            },
+        )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+    logger.warning(f"Owner {current_user.email} started impersonation of {target_user.email} (ttl={ttl_min}m)")
+
     return {
         "token": impersonation_token,
         "user": {
@@ -858,6 +903,8 @@ def start_impersonation(
             "id": str(current_user.id),
             "email": current_user.email,
         },
+        "expires_at": exp.isoformat() if exp else None,
+        "ttl_minutes": ttl_min,
     }
 
 

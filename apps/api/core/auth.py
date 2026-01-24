@@ -119,6 +119,13 @@ def require_admin(
     return current_user
 
 
+def require_owner(
+    current_user: Athlete = Depends(require_role(["owner"]))
+) -> Athlete:
+    """Require owner role (highest privilege)."""
+    return current_user
+
+
 def require_permission(permission_key: str):
     """
     Dependency factory for admin permission checks.
