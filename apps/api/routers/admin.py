@@ -11,6 +11,7 @@ from sqlalchemy import func, desc, and_, or_
 from typing import List, Optional, Dict, Any, Literal
 from uuid import UUID
 from datetime import datetime, timedelta
+from datetime import timezone
 
 from core.database import get_db
 from core.auth import require_admin, require_permission
@@ -91,6 +92,164 @@ class RetryIngestionRequest(BaseModel):
 class BlockUserRequest(BaseModel):
     blocked: bool = Field(..., description="Whether the user is blocked")
     reason: Optional[str] = Field(default=None, description="Why this block/unblock was performed (audited)")
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+@router.get("/ops/queue")
+def get_ops_queue_snapshot(
+    current_user: Athlete = Depends(require_admin),
+):
+    """
+    Ops Visibility v0: best-effort queue snapshot.
+
+    We intentionally avoid failing the admin page if Celery inspect is unavailable.
+    """
+    try:
+        from tasks import celery_app
+
+        insp = celery_app.control.inspect(timeout=1.0)
+        active = insp.active() or {}
+        reserved = insp.reserved() or {}
+        scheduled = insp.scheduled() or {}
+
+        def _count(d: dict) -> int:
+            return sum(len(v or []) for v in (d or {}).values())
+
+        return {
+            "available": True,
+            "active_count": _count(active),
+            "reserved_count": _count(reserved),
+            "scheduled_count": _count(scheduled),
+            "workers_seen": sorted(list({*active.keys(), *reserved.keys(), *scheduled.keys()})),
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "error": str(e),
+            "active_count": 0,
+            "reserved_count": 0,
+            "scheduled_count": 0,
+            "workers_seen": [],
+        }
+
+
+@router.get("/ops/ingestion/stuck")
+def list_stuck_ingestion(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+    minutes: int = Query(30, ge=5, le=24 * 60, description="Consider a task stuck after this many minutes"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """
+    Ops Visibility v0: list athletes whose ingestion appears stuck.
+
+    Heuristic:
+    - last_index_status == 'running' and started_at older than threshold
+    - last_best_efforts_status == 'running' and started_at older than threshold
+    """
+    cutoff = _utcnow() - timedelta(minutes=int(minutes))
+
+    rows = (
+        db.query(AthleteIngestionState, Athlete)
+        .join(Athlete, Athlete.id == AthleteIngestionState.athlete_id)
+        .filter(
+            AthleteIngestionState.provider == "strava",
+            or_(
+                and_(AthleteIngestionState.last_index_status == "running", AthleteIngestionState.last_index_started_at.isnot(None), AthleteIngestionState.last_index_started_at < cutoff),
+                and_(
+                    AthleteIngestionState.last_best_efforts_status == "running",
+                    AthleteIngestionState.last_best_efforts_started_at.isnot(None),
+                    AthleteIngestionState.last_best_efforts_started_at < cutoff,
+                ),
+            ),
+        )
+        .order_by(AthleteIngestionState.updated_at.asc())
+        .limit(limit)
+        .all()
+    )
+
+    out: list[dict] = []
+    for st, athlete in rows:
+        # Prefer showing whichever process is the stuck one.
+        kind = None
+        started_at = None
+        task_id = None
+        if st.last_index_status == "running" and st.last_index_started_at and st.last_index_started_at < cutoff:
+            kind = "index"
+            started_at = st.last_index_started_at
+            task_id = st.last_index_task_id
+        elif st.last_best_efforts_status == "running" and st.last_best_efforts_started_at and st.last_best_efforts_started_at < cutoff:
+            kind = "best_efforts"
+            started_at = st.last_best_efforts_started_at
+            task_id = st.last_best_efforts_task_id
+
+        out.append(
+            {
+                "athlete_id": str(athlete.id),
+                "email": athlete.email,
+                "display_name": athlete.display_name,
+                "kind": kind,
+                "started_at": started_at.isoformat() if started_at else None,
+                "task_id": task_id,
+                "updated_at": st.updated_at.isoformat() if st.updated_at else None,
+                "last_index_status": st.last_index_status,
+                "last_index_error": st.last_index_error,
+                "last_best_efforts_status": st.last_best_efforts_status,
+                "last_best_efforts_error": st.last_best_efforts_error,
+            }
+        )
+
+    return {"cutoff": cutoff.isoformat(), "count": len(out), "items": out}
+
+
+@router.get("/ops/ingestion/errors")
+def list_recent_ingestion_errors(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+    days: int = Query(7, ge=1, le=90),
+    limit: int = Query(200, ge=1, le=1000),
+):
+    """
+    Ops Visibility v0: recent ingestion errors (index or best-efforts).
+    """
+    cutoff = _utcnow() - timedelta(days=int(days))
+
+    rows = (
+        db.query(AthleteIngestionState, Athlete)
+        .join(Athlete, Athlete.id == AthleteIngestionState.athlete_id)
+        .filter(
+            AthleteIngestionState.provider == "strava",
+            AthleteIngestionState.updated_at.isnot(None),
+            AthleteIngestionState.updated_at >= cutoff,
+            or_(
+                AthleteIngestionState.last_index_error.isnot(None),
+                AthleteIngestionState.last_best_efforts_error.isnot(None),
+            ),
+        )
+        .order_by(AthleteIngestionState.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    out: list[dict] = []
+    for st, athlete in rows:
+        out.append(
+            {
+                "athlete_id": str(athlete.id),
+                "email": athlete.email,
+                "display_name": athlete.display_name,
+                "updated_at": st.updated_at.isoformat() if st.updated_at else None,
+                "last_index_status": st.last_index_status,
+                "last_index_error": st.last_index_error,
+                "last_best_efforts_status": st.last_best_efforts_status,
+                "last_best_efforts_error": st.last_best_efforts_error,
+            }
+        )
+
+    return {"cutoff": cutoff.isoformat(), "count": len(out), "items": out}
 
 
 def _ensure_flag_exists(db: Session, key: str, name: str, description: str) -> None:

@@ -104,6 +104,48 @@ export interface SiteMetrics {
   timestamp: string;
 }
 
+export interface OpsQueueSnapshot {
+  available: boolean;
+  error?: string;
+  active_count: number;
+  reserved_count: number;
+  scheduled_count: number;
+  workers_seen: string[];
+}
+
+export interface OpsIngestionStuckResponse {
+  cutoff: string;
+  count: number;
+  items: Array<{
+    athlete_id: string;
+    email: string | null;
+    display_name: string | null;
+    kind: 'index' | 'best_efforts' | null;
+    started_at: string | null;
+    task_id: string | null;
+    updated_at: string | null;
+    last_index_status: string | null;
+    last_index_error: string | null;
+    last_best_efforts_status: string | null;
+    last_best_efforts_error: string | null;
+  }>;
+}
+
+export interface OpsIngestionErrorsResponse {
+  cutoff: string;
+  count: number;
+  items: Array<{
+    athlete_id: string;
+    email: string | null;
+    display_name: string | null;
+    updated_at: string | null;
+    last_index_status: string | null;
+    last_index_error: string | null;
+    last_best_efforts_status: string | null;
+    last_best_efforts_error: string | null;
+  }>;
+}
+
 export interface ImpersonationResponse {
   token: string;
   user: {
@@ -174,6 +216,26 @@ export const adminService = {
 
   async setBlocked(userId: string, params: { blocked: boolean; reason?: string | null }): Promise<any> {
     return apiClient.post(`/v1/admin/users/${userId}/block`, params);
+  },
+
+  async getOpsQueue(): Promise<OpsQueueSnapshot> {
+    return apiClient.get<OpsQueueSnapshot>('/v1/admin/ops/queue');
+  },
+
+  async getOpsStuckIngestion(params?: { minutes?: number; limit?: number }): Promise<OpsIngestionStuckResponse> {
+    const qs = new URLSearchParams();
+    if (params?.minutes != null) qs.set('minutes', String(params.minutes));
+    if (params?.limit != null) qs.set('limit', String(params.limit));
+    const tail = qs.toString() ? `?${qs.toString()}` : '';
+    return apiClient.get<OpsIngestionStuckResponse>(`/v1/admin/ops/ingestion/stuck${tail}`);
+  },
+
+  async getOpsIngestionErrors(params?: { days?: number; limit?: number }): Promise<OpsIngestionErrorsResponse> {
+    const qs = new URLSearchParams();
+    if (params?.days != null) qs.set('days', String(params.days));
+    if (params?.limit != null) qs.set('limit', String(params.limit));
+    const tail = qs.toString() ? `?${qs.toString()}` : '';
+    return apiClient.get<OpsIngestionErrorsResponse>(`/v1/admin/ops/ingestion/errors${tail}`);
   },
 
   /**

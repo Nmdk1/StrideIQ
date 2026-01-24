@@ -4,7 +4,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminService, type AdminUserDetail, type FeatureFlag, type ThreeDSelectionMode } from '../../api/services/admin';
-import type { UserListResponse, SystemHealth, SiteMetrics, ImpersonationResponse } from '../../api/services/admin';
+import type { UserListResponse, SystemHealth, SiteMetrics, ImpersonationResponse, OpsQueueSnapshot, OpsIngestionStuckResponse, OpsIngestionErrorsResponse } from '../../api/services/admin';
 
 export const adminKeys = {
   all: ['admin'] as const,
@@ -14,6 +14,10 @@ export const adminKeys = {
   health: () => [...adminKeys.all, 'health'] as const,
   metrics: (days: number) => [...adminKeys.all, 'metrics', days] as const,
   flags: (prefix?: string) => [...adminKeys.all, 'feature_flags', prefix || ''] as const,
+  ops: () => [...adminKeys.all, 'ops'] as const,
+  opsQueue: () => [...adminKeys.ops(), 'queue'] as const,
+  opsStuck: (params?: any) => [...adminKeys.ops(), 'stuck', params] as const,
+  opsErrors: (params?: any) => [...adminKeys.ops(), 'errors', params] as const,
 } as const;
 
 /**
@@ -124,6 +128,30 @@ export function useSetBlocked() {
       qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
       qc.invalidateQueries({ queryKey: adminKeys.userList() });
     },
+  });
+}
+
+export function useOpsQueue() {
+  return useQuery<OpsQueueSnapshot>({
+    queryKey: adminKeys.opsQueue(),
+    queryFn: () => adminService.getOpsQueue(),
+    refetchInterval: 15 * 1000,
+  });
+}
+
+export function useOpsStuckIngestion(params?: { minutes?: number; limit?: number }) {
+  return useQuery<OpsIngestionStuckResponse>({
+    queryKey: adminKeys.opsStuck(params),
+    queryFn: () => adminService.getOpsStuckIngestion(params),
+    refetchInterval: 30 * 1000,
+  });
+}
+
+export function useOpsIngestionErrors(params?: { days?: number; limit?: number }) {
+  return useQuery<OpsIngestionErrorsResponse>({
+    queryKey: adminKeys.opsErrors(params),
+    queryFn: () => adminService.getOpsIngestionErrors(params),
+    refetchInterval: 60 * 1000,
   });
 }
 

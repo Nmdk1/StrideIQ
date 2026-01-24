@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useResetOnboarding, useRetryIngestion, useSetBlocked } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useResetOnboarding, useRetryIngestion, useSetBlocked, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -27,7 +27,7 @@ export default function AdminPage() {
   const { user, isLoading, isAuthenticated } = useAuth();
   const router = useRouter();
   const [search, setSearch] = useState('');
-  const [selectedTab, setSelectedTab] = useState<'users' | 'health' | 'metrics' | 'flags' | 'query' | 'testing'>('users');
+  const [selectedTab, setSelectedTab] = useState<'users' | 'ops' | 'health' | 'metrics' | 'flags' | 'query' | 'testing'>('users');
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [adminReason, setAdminReason] = useState<string>('');
   const [desiredTier, setDesiredTier] = useState<string>('elite');
@@ -42,6 +42,9 @@ export default function AdminPage() {
   const resetOnboarding = useResetOnboarding();
   const retryIngestion = useRetryIngestion();
   const setBlocked = useSetBlocked();
+  const { data: opsQueue, isLoading: opsQueueLoading } = useOpsQueue();
+  const { data: opsStuck, isLoading: opsStuckLoading } = useOpsStuckIngestion({ minutes: 30, limit: 100 });
+  const { data: opsErrors, isLoading: opsErrorsLoading } = useOpsIngestionErrors({ days: 7, limit: 200 });
 
   // Feature flags
   const { data: flagsData, isLoading: flagsLoading } = useAdminFeatureFlags('plan.');
@@ -152,6 +155,16 @@ export default function AdminPage() {
               }`}
             >
               Users
+            </button>
+            <button
+              onClick={() => setSelectedTab('ops')}
+              className={`px-4 py-2 font-medium ${
+                selectedTab === 'ops'
+                  ? 'border-b-2 border-orange-600 text-orange-400'
+                  : 'text-slate-400 hover:text-slate-300'
+              }`}
+            >
+              Ops
             </button>
             <button
               onClick={() => setSelectedTab('health')}
@@ -438,6 +451,152 @@ export default function AdminPage() {
               ) : (
                 <ErrorMessage error={new Error('Failed to load users')} />
               )}
+            </div>
+          )}
+
+          {/* Ops Tab */}
+          {selectedTab === 'ops' && (
+            <div className="space-y-6">
+              <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
+                <h3 className="text-lg font-semibold mb-2">Queue snapshot</h3>
+                <p className="text-slate-400 text-sm mb-4">
+                  Best-effort Celery visibility. If unavailable, it won’t block admin operations.
+                </p>
+
+                {opsQueueLoading ? (
+                  <LoadingSpinner />
+                ) : opsQueue ? (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-4">
+                      <div className="text-xs text-slate-400 mb-1">Inspect</div>
+                      <div className={`text-xl font-bold ${opsQueue.available ? 'text-green-400' : 'text-red-400'}`}>
+                        {opsQueue.available ? 'Available' : 'Unavailable'}
+                      </div>
+                      {!opsQueue.available && opsQueue.error ? (
+                        <div className="text-xs text-slate-500 mt-2 break-words">{opsQueue.error}</div>
+                      ) : null}
+                    </div>
+                    <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-4">
+                      <div className="text-xs text-slate-400 mb-1">Active</div>
+                      <div className="text-2xl font-bold">{opsQueue.active_count}</div>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-4">
+                      <div className="text-xs text-slate-400 mb-1">Reserved</div>
+                      <div className="text-2xl font-bold">{opsQueue.reserved_count}</div>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-4">
+                      <div className="text-xs text-slate-400 mb-1">Scheduled</div>
+                      <div className="text-2xl font-bold">{opsQueue.scheduled_count}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <ErrorMessage error={new Error('Failed to load queue snapshot')} />
+                )}
+              </div>
+
+              <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold">Stuck ingestion</h3>
+                    <p className="text-slate-400 text-sm">Heuristic: running longer than 30 minutes.</p>
+                  </div>
+                  <div className="w-full max-w-sm">
+                    <div className="text-xs font-semibold text-slate-300 mb-1">Operator reason (for audit)</div>
+                    <input
+                      value={adminReason}
+                      onChange={(e) => setAdminReason(e.target.value)}
+                      placeholder="e.g., stuck ingestion"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                    />
+                  </div>
+                </div>
+
+                {opsStuckLoading ? (
+                  <LoadingSpinner />
+                ) : opsStuck ? (
+                  opsStuck.items.length === 0 ? (
+                    <div className="text-sm text-slate-400">No stuck athletes detected.</div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border border-slate-700/50">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-900">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-semibold">Athlete</th>
+                            <th className="px-4 py-3 text-left font-semibold">Kind</th>
+                            <th className="px-4 py-3 text-left font-semibold">Started</th>
+                            <th className="px-4 py-3 text-left font-semibold">Last error</th>
+                            <th className="px-4 py-3 text-left font-semibold">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {opsStuck.items.map((it) => (
+                            <tr key={it.athlete_id} className="border-t border-slate-700/50">
+                              <td className="px-4 py-3">
+                                <div className="font-medium">{it.display_name || '—'}</div>
+                                <div className="text-xs text-slate-400">{it.email || it.athlete_id}</div>
+                              </td>
+                              <td className="px-4 py-3">{it.kind || '—'}</td>
+                              <td className="px-4 py-3 text-slate-400">{it.started_at || '—'}</td>
+                              <td className="px-4 py-3 text-red-300">
+                                {it.last_index_error || it.last_best_efforts_error || '—'}
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => setSelectedUserId(it.athlete_id)}
+                                    className="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+                                  >
+                                    View
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      retryIngestion.mutate({
+                                        userId: it.athlete_id,
+                                        pages: 5,
+                                        reason: adminReason || 'stuck ingestion',
+                                      })
+                                    }
+                                    disabled={retryIngestion.isPending}
+                                    className="px-3 py-1 bg-orange-700 hover:bg-orange-600 disabled:bg-slate-700 rounded text-xs"
+                                  >
+                                    Retry ingestion
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                ) : (
+                  <ErrorMessage error={new Error('Failed to load stuck ingestion list')} />
+                )}
+              </div>
+
+              <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
+                <h3 className="text-lg font-semibold mb-2">Recent ingestion errors (7d)</h3>
+                {opsErrorsLoading ? (
+                  <LoadingSpinner />
+                ) : opsErrors ? (
+                  opsErrors.items.length === 0 ? (
+                    <div className="text-sm text-slate-400">No recent ingestion errors.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {opsErrors.items.slice(0, 20).map((it) => (
+                        <div key={`${it.athlete_id}-${it.updated_at}`} className="bg-slate-900/40 border border-slate-700/50 rounded p-3">
+                          <div className="text-sm font-medium">{it.display_name || it.email || it.athlete_id}</div>
+                          <div className="text-xs text-slate-400">{it.updated_at || '—'}</div>
+                          {it.last_index_error ? <div className="text-xs text-red-300 mt-1">Index: {it.last_index_error}</div> : null}
+                          {it.last_best_efforts_error ? <div className="text-xs text-red-300 mt-1">Best efforts: {it.last_best_efforts_error}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  <ErrorMessage error={new Error('Failed to load ingestion errors')} />
+                )}
+              </div>
             </div>
           )}
 
