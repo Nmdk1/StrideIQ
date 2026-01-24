@@ -8,6 +8,8 @@
 - Product manifesto: `_AI_CONTEXT_/00_MANIFESTO.md`
 - Brand voice: `TONE_GUIDE.md`
 
+**Docs index (start here):** `docs/README.md`
+
 ---
 
 ## Workflow Contract (How we execute every phase)
