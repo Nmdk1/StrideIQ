@@ -39,8 +39,9 @@ export const stravaService = {
   /**
    * Get Strava OAuth authorization URL
    */
-  async getAuthUrl(): Promise<StravaAuthUrl> {
-    return apiClient.get<StravaAuthUrl>('/v1/strava/auth-url');
+  async getAuthUrl(returnTo: string = '/onboarding'): Promise<StravaAuthUrl> {
+    const qp = encodeURIComponent(returnTo || '/onboarding');
+    return apiClient.get<StravaAuthUrl>(`/v1/strava/auth-url?return_to=${qp}`);
   },
 
   /**

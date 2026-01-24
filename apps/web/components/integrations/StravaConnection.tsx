@@ -21,29 +21,21 @@ export function StravaConnection() {
   useEffect(() => {
     // Check if we're returning from Strava OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
+    const connected = urlParams.get('strava');
 
-    if (code) {
-      // OAuth callback - redirect will happen server-side
-      // Just refetch status after a delay
+    if (connected === 'connected') {
+      // Server-side callback redirects here; refresh status and clean the URL.
       setTimeout(() => {
         refetchStatus();
-        // Clean URL
         window.history.replaceState({}, document.title, window.location.pathname);
-      }, 2000);
+      }, 500);
     }
   }, [refetchStatus]);
 
   const handleConnect = async () => {
     try {
-      const { auth_url } = await stravaService.getAuthUrl();
-      // Store current user ID in state for callback
-      if (status) {
-        window.location.href = `${auth_url}&state=${status.strava_athlete_id || 'new'}`;
-      } else {
-        window.location.href = auth_url;
-      }
+      const { auth_url } = await stravaService.getAuthUrl('/settings');
+      window.location.href = auth_url;
     } catch (error) {
       console.error('Error getting auth URL:', error);
     }

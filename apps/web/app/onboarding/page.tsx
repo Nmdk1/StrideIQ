@@ -16,7 +16,8 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { authService } from '@/lib/api/services/auth';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
-import { API_CONFIG } from '@/lib/api/config';
+import { stravaService } from '@/lib/api/services/strava';
+import { useBootstrapOnboarding, useOnboardingStatus } from '@/lib/hooks/queries/onboarding';
 
 type OnboardingStage = 'initial' | 'basic_profile' | 'goals' | 'connect_strava' | 'nutrition_setup' | 'work_setup' | 'complete';
 
@@ -395,10 +396,40 @@ function NutritionSetupStage({ data, onNext, onSkip }: { data: OnboardingData; o
 }
 
 function ConnectStravaStage({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
-  const handleConnect = () => {
-    // Redirect to Strava OAuth
-    window.location.href = `${API_CONFIG.baseURL}/v1/strava/auth`;
+  const { data: status } = useOnboardingStatus(true);
+  const bootstrap = useBootstrapOnboarding();
+  const isConnected = !!status?.strava_connected;
+  const lastIndexStatus = status?.ingestion_state?.last_index_status || null;
+
+  const handleConnect = async () => {
+    try {
+      const { auth_url } = await stravaService.getAuthUrl('/onboarding');
+      window.location.href = auth_url;
+    } catch (e) {
+      // Keep UI quiet; user can retry.
+    }
   };
+
+  const handleBootstrap = async () => {
+    if (!isConnected) return;
+    try {
+      await bootstrap.mutateAsync();
+    } catch (e) {
+      // Best-effort; status will still show connected.
+    }
+  };
+
+  // If we just returned from OAuth, the URL contains ?strava=connected.
+  // Trigger a bootstrap once to start ingesting deterministically.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('strava') === 'connected') {
+      handleBootstrap();
+      // Clean URL for aesthetics.
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
@@ -420,10 +451,30 @@ function ConnectStravaStage({ onNext, onSkip }: { onNext: () => void; onSkip: ()
           </div>
           <button
             onClick={handleConnect}
+            disabled={isConnected}
             className="w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded text-white font-medium transition-colors"
           >
-            Connect Strava
+            {isConnected ? 'Connected' : 'Connect Strava'}
           </button>
+          {isConnected && (
+            <div className="mt-3 text-xs text-slate-400">
+              {lastIndexStatus === 'running'
+                ? 'Import in progress.'
+                : lastIndexStatus === 'success'
+                  ? 'Import started.'
+                  : 'Connected. Import will start in the background.'}
+              {bootstrap.isPending ? ' (queueing...)' : null}
+            </div>
+          )}
+          {isConnected && !bootstrap.isPending && lastIndexStatus !== 'running' && (
+            <button
+              type="button"
+              onClick={handleBootstrap}
+              className="mt-3 w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-white font-medium transition-colors"
+            >
+              Start Import
+            </button>
+          )}
         </div>
         <p className="text-xs text-slate-500">
           You can connect anytime from Settings.
@@ -435,7 +486,7 @@ function ConnectStravaStage({ onNext, onSkip }: { onNext: () => void; onSkip: ()
           onClick={onNext}
           className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-white font-medium"
         >
-          Continue Without Connecting
+          {isConnected ? 'Continue' : 'Continue Without Connecting'}
         </button>
         <button
           onClick={onSkip}

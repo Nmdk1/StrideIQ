@@ -235,13 +235,15 @@ export default function HomePage() {
     );
   }
 
-  const { today, yesterday, week, hero_narrative, strava_connected, has_any_activities, total_activities } = data;
+  const { today, yesterday, week, hero_narrative, strava_connected, has_any_activities, total_activities, ingestion_state } = data;
 
   const isStravaConnected = strava_connected;
   const hasAnyData = has_any_activities || yesterday.has_activity || week.completed_mi > 0;
   const showWelcomeCard = !isStravaConnected && !hasAnyData;
   const hasLastActivity = yesterday.last_activity_date && yesterday.days_since_last !== undefined;
   const workoutConfig = getWorkoutConfig(today.workout_type);
+  const indexStatus = (ingestion_state?.last_index_status as string | undefined) || undefined;
+  const showIngestionCard = isStravaConnected && !has_any_activities && !!indexStatus;
 
   return (
     <ProtectedRoute>
@@ -282,6 +284,40 @@ export default function HomePage() {
                 <Button asChild variant="outline" className="border-slate-600 hover:bg-slate-800">
                   <Link href="/calendar">Create Plan</Link>
                 </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Phase 3: Latency bridge (connected, importing) */}
+          {showIngestionCard && (
+            <Card className="bg-slate-800/50 border-slate-700/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm text-slate-300 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-orange-400" />
+                  Import in progress
+                </CardTitle>
+                <CardDescription>
+                  Connected to Strava. Activities will appear as they’re ingested.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="text-sm text-slate-300">
+                  {indexStatus === 'running'
+                    ? 'Indexing activities…'
+                    : indexStatus === 'success'
+                      ? 'Indexed. Fetching details next…'
+                      : indexStatus === 'error'
+                        ? 'Import hit an error. You can retry from Settings.'
+                        : 'Working…'}
+                </div>
+                {typeof ingestion_state?.last_index_pages_fetched === 'number' ? (
+                  <div className="text-xs text-slate-500">
+                    Pages fetched: {ingestion_state.last_index_pages_fetched}
+                    {typeof ingestion_state?.last_index_created === 'number'
+                      ? ` · new: ${ingestion_state.last_index_created}`
+                      : ''}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           )}
