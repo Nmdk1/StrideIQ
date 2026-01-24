@@ -42,7 +42,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 | 6 | Subscription/Tier/Payment Productionization | Not started | |
 | 7 | Data Provider Expansion (Garmin/Coros) | Not started | |
 | 8 | Security, Privacy, Compliance Hardening | Not started | |
-| 9 | Automated Release Safety (Golden Paths + CI) | Not started | |
+| 9 | Automated Release Safety (Golden Paths + CI) | In progress | Seeded CI “smoke” runs for the highest-value Phase 3 + Phase 5 golden paths (backend + web). |
 
 ---
 
@@ -60,6 +60,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 - **2026-01-24 (Phase 4 - complete)**: Phase 4 closed. Delivered a business-critical admin console: secure `/admin` routes, RBAC seam (`admin_permissions`), append-only admin audit log, “God Mode” athlete detail, and operator actions (comp access, reset onboarding, retry ingestion, block/unblock). **Impersonation hardened** to owner-only with a **time-boxed token**, **global banner**, and **hard audit event** to prevent silent privilege escalation.
 - **2026-01-24 (Phase 5 / Ops Visibility v0)**: Added an Ops tab for fast triage: best-effort queue snapshot, stuck ingestion list, and recent ingestion errors, plus API + web regression tests.
 - **2026-01-24 (Phase 5 - complete)**: Delivered the “Viral-Safe Shield”: **Ops Pulse** (queue + stuck + errors + deferred + pause toggle), **Rate Limit Armor** (Strava 429 → defer + retry without worker sleep), and **Emergency Brake** (`system.ingestion_paused` enforced in Strava callback + admin retry; calm Home banner when paused). Added targeted backend and web regression tests to prevent meltdown regressions.
+- **2026-01-24 (Phase 5 - closure hardening)**: Locked down system-level controls so `system.*` actions (including global ingestion pause) require **explicit permissions** for admins (no implicit bootstrap access). Added an owner-only endpoint to set `admin_permissions` (audited + tested), and added CI smoke suites to continuously exercise the Phase 3 + Phase 5 golden paths (backend + web) to prevent regressions.
 
 ---
 
