@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import os
 from typing import Any, Optional
 
 import stripe
@@ -15,7 +16,7 @@ from models import Athlete, Subscription, StripeEvent
 @dataclass(frozen=True)
 class StripeConfig:
     secret_key: str
-    webhook_secret: str
+    webhook_secret: Optional[str]
     pro_monthly_price_id: str
     checkout_success_url: str
     checkout_cancel_url: str
@@ -28,31 +29,33 @@ def _get_stripe_config() -> StripeConfig:
 
     Fail closed: if configuration is missing, billing endpoints should not proceed.
     """
-    secret_key = getattr(settings, "STRIPE_SECRET_KEY", None)
-    webhook_secret = getattr(settings, "STRIPE_WEBHOOK_SECRET", None)
-    price_id = getattr(settings, "STRIPE_PRICE_PRO_MONTHLY_ID", None)
-    success_url = getattr(settings, "STRIPE_CHECKOUT_SUCCESS_URL", None)
-    cancel_url = getattr(settings, "STRIPE_CHECKOUT_CANCEL_URL", None)
-    portal_return_url = getattr(settings, "STRIPE_PORTAL_RETURN_URL", None)
+    # Support both "STRIPE_SECRET_KEY" and convenience local names (test/prod).
+    secret_key = (
+        getattr(settings, "STRIPE_SECRET_KEY", None)
+        or os.getenv("STRIPE_SECRET_TEST_KEY")
+        or os.getenv("STRIPE_SECRET_LIVE_KEY")
+    )
 
-    missing = [
-        name
-        for name, val in [
-            ("STRIPE_SECRET_KEY", secret_key),
-            ("STRIPE_WEBHOOK_SECRET", webhook_secret),
-            ("STRIPE_PRICE_PRO_MONTHLY_ID", price_id),
-            ("STRIPE_CHECKOUT_SUCCESS_URL", success_url),
-            ("STRIPE_CHECKOUT_CANCEL_URL", cancel_url),
-            ("STRIPE_PORTAL_RETURN_URL", portal_return_url),
-        ]
-        if not val
-    ]
+    # Webhook secret is only required for the webhook endpoint; allow checkout/portal
+    # to work without it for local development before Stripe CLI is configured.
+    webhook_secret = getattr(settings, "STRIPE_WEBHOOK_SECRET", None) or os.getenv("STRIPE_WEBHOOK_TEST_SECRET") or os.getenv("STRIPE_WEBHOOK_LIVE_SECRET")
+
+    price_id = getattr(settings, "STRIPE_PRICE_PRO_MONTHLY_ID", None)
+
+    # Default redirect/return URLs to WEB_APP_BASE_URL so local dev can proceed
+    # without forcing extra env config.
+    base = getattr(settings, "WEB_APP_BASE_URL", "http://localhost:3000").rstrip("/")
+    success_url = getattr(settings, "STRIPE_CHECKOUT_SUCCESS_URL", None) or f"{base}/settings?stripe=success"
+    cancel_url = getattr(settings, "STRIPE_CHECKOUT_CANCEL_URL", None) or f"{base}/settings?stripe=cancel"
+    portal_return_url = getattr(settings, "STRIPE_PORTAL_RETURN_URL", None) or f"{base}/settings"
+
+    missing = [name for name, val in [("STRIPE_SECRET_KEY", secret_key), ("STRIPE_PRICE_PRO_MONTHLY_ID", price_id)] if not val]
     if missing:
         raise RuntimeError(f"Stripe not configured (missing: {', '.join(missing)})")
 
     return StripeConfig(
         secret_key=str(secret_key),
-        webhook_secret=str(webhook_secret),
+        webhook_secret=str(webhook_secret) if webhook_secret else None,
         pro_monthly_price_id=str(price_id),
         checkout_success_url=str(success_url),
         checkout_cancel_url=str(cancel_url),
@@ -108,6 +111,8 @@ class StripeService:
         return str(sess.url)
 
     def construct_event(self, *, payload: bytes, sig_header: str):
+        if not self.cfg.webhook_secret:
+            raise RuntimeError("Stripe webhook secret not configured")
         return stripe.Webhook.construct_event(
             payload=payload,
             sig_header=sig_header,
