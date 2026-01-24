@@ -19,6 +19,44 @@ export interface AdminUser {
 
 export interface AdminUserDetail extends AdminUser {
   onboarding_stage: string | null;
+  stripe_customer_id?: string | null;
+  is_blocked?: boolean;
+  integrations?: {
+    preferred_units?: string | null;
+    strava_athlete_id?: number | null;
+    last_strava_sync?: string | null;
+    garmin_connected?: boolean;
+    last_garmin_sync?: string | null;
+  };
+  ingestion_state?: {
+    provider: string;
+    updated_at?: string | null;
+    last_index_status?: string | null;
+    last_index_error?: string | null;
+    last_index_started_at?: string | null;
+    last_index_finished_at?: string | null;
+    last_best_efforts_status?: string | null;
+    last_best_efforts_error?: string | null;
+    last_best_efforts_started_at?: string | null;
+    last_best_efforts_finished_at?: string | null;
+  } | null;
+  intake_history?: Array<{
+    id: string;
+    stage: string;
+    responses: Record<string, any>;
+    completed_at?: string | null;
+    created_at?: string | null;
+  }>;
+  active_plan?: {
+    id: string;
+    name: string;
+    status: string;
+    plan_type: string;
+    plan_start_date?: string | null;
+    plan_end_date?: string | null;
+    goal_race_name?: string | null;
+    goal_race_date?: string | null;
+  } | null;
   stats: {
     activities: number;
     nutrition_entries: number;
@@ -120,6 +158,22 @@ export const adminService = {
    */
   async getUser(userId: string): Promise<AdminUserDetail> {
     return apiClient.get<AdminUserDetail>(`/v1/admin/users/${userId}`);
+  },
+
+  async compAccess(userId: string, params: { tier: string; reason?: string | null }): Promise<{ success: boolean; user: { id: string; email: string | null; subscription_tier: string } }> {
+    return apiClient.post(`/v1/admin/users/${userId}/comp`, params);
+  },
+
+  async resetOnboarding(userId: string, params: { stage?: string; reason?: string | null }): Promise<any> {
+    return apiClient.post(`/v1/admin/users/${userId}/onboarding/reset`, params);
+  },
+
+  async retryIngestion(userId: string, params: { pages?: number; reason?: string | null }): Promise<any> {
+    return apiClient.post(`/v1/admin/users/${userId}/ingestion/retry`, params);
+  },
+
+  async setBlocked(userId: string, params: { blocked: boolean; reason?: string | null }): Promise<any> {
+    return apiClient.post(`/v1/admin/users/${userId}/block`, params);
   },
 
   /**

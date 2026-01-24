@@ -17,23 +17,31 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useResetOnboarding, useRetryIngestion, useSetBlocked } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { useRouter } from 'next/navigation';
 
 export default function AdminPage() {
-  const { user } = useAuth();
+  const { user, isLoading, isAuthenticated } = useAuth();
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [selectedTab, setSelectedTab] = useState<'users' | 'health' | 'metrics' | 'flags' | 'query' | 'testing'>('users');
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [adminReason, setAdminReason] = useState<string>('');
+  const [desiredTier, setDesiredTier] = useState<string>('elite');
   
   // User management
   const { data: users, isLoading: usersLoading } = useAdminUsers({ search, limit: 50 });
+  const { data: selectedUser, isLoading: userLoading } = useAdminUser(selectedUserId);
   const { data: health, isLoading: healthLoading } = useSystemHealth();
   const { data: metrics, isLoading: metricsLoading } = useSiteMetrics(30);
   const impersonateUser = useImpersonateUser();
+  const compAccess = useCompAccess();
+  const resetOnboarding = useResetOnboarding();
+  const retryIngestion = useRetryIngestion();
+  const setBlocked = useSetBlocked();
 
   // Feature flags
   const { data: flagsData, isLoading: flagsLoading } = useAdminFeatureFlags('plan.');
@@ -91,14 +99,20 @@ export default function AdminPage() {
     setQueryResults(result);
   };
 
-  // Hard redirect non-admins away from /admin
+  const isAdmin = !!user && (user.role === 'admin' || user.role === 'owner');
+
+  // Hard redirect non-admins away from /admin.
+  // IMPORTANT: treat "authenticated but no user yet" as unauthorized until proven otherwise.
   useEffect(() => {
-    if (user && user.role !== 'admin' && user.role !== 'owner') {
+    if (isLoading) return;
+    if (!isAuthenticated) return;
+    if (!isAdmin) {
       router.replace('/home');
     }
-  }, [router, user]);
+  }, [router, isAdmin, isAuthenticated, isLoading]);
 
-  if (user && user.role !== 'admin' && user.role !== 'owner') {
+  // Never render admin content unless we have a confirmed admin/owner.
+  if (isLoading || !isAuthenticated || !isAdmin) {
     return (
       <ProtectedRoute>
         <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -207,8 +221,9 @@ export default function AdminPage() {
               {usersLoading ? (
                 <LoadingSpinner />
               ) : users ? (
-                <div className="bg-slate-800 rounded-lg border border-slate-700/50 overflow-hidden">
-                  <table className="w-full">
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                  <div className="xl:col-span-2 bg-slate-800 rounded-lg border border-slate-700/50 overflow-hidden">
+                    <table className="w-full">
                     <thead className="bg-slate-900">
                       <tr>
                         <th className="px-4 py-3 text-left text-sm font-semibold">Email</th>
@@ -238,13 +253,21 @@ export default function AdminPage() {
                             {new Date(user.created_at).toLocaleDateString()}
                           </td>
                           <td className="px-4 py-3 text-sm">
-                            <button
-                              onClick={() => impersonateUser.mutate(user.id)}
-                              disabled={impersonateUser.isPending}
-                              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs"
-                            >
-                              {impersonateUser.isPending ? <LoadingSpinner size="sm" /> : 'Impersonate'}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setSelectedUserId(user.id)}
+                                className="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+                              >
+                                View
+                              </button>
+                              <button
+                                onClick={() => impersonateUser.mutate(user.id)}
+                                disabled={impersonateUser.isPending}
+                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs"
+                              >
+                                {impersonateUser.isPending ? <LoadingSpinner size="sm" /> : 'Impersonate'}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -252,6 +275,164 @@ export default function AdminPage() {
                   </table>
                   <div className="px-4 py-3 bg-slate-900 border-t border-slate-700/50 text-sm text-slate-400">
                     Showing {users.users.length} of {users.total} users
+                  </div>
+                  </div>
+
+                  <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-4">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div>
+                        <div className="text-sm font-semibold">User detail</div>
+                        <div className="text-xs text-slate-400">Select a user to see “God Mode” controls.</div>
+                      </div>
+                      {selectedUserId && (
+                        <button onClick={() => setSelectedUserId('')} className="text-xs text-slate-400 hover:text-slate-200">
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    {selectedUserId && userLoading ? (
+                      <LoadingSpinner />
+                    ) : selectedUserId && selectedUser ? (
+                      <div className="space-y-4">
+                        <div className="space-y-1">
+                          <div className="text-sm font-semibold">{selectedUser.display_name || '—'}</div>
+                          <div className="text-xs text-slate-400">{selectedUser.email || '—'}</div>
+                          <div className="text-xs text-slate-400">
+                            Role: <span className="text-slate-200">{selectedUser.role}</span> • Tier:{' '}
+                            <span className="text-slate-200">{selectedUser.subscription_tier}</span> • Blocked:{' '}
+                            <span className={selectedUser.is_blocked ? 'text-red-400' : 'text-green-400'}>
+                              {selectedUser.is_blocked ? 'yes' : 'no'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="text-xs font-semibold text-slate-300">Operator reason (for audit)</div>
+                          <input
+                            value={adminReason}
+                            onChange={(e) => setAdminReason(e.target.value)}
+                            placeholder="e.g., VIP tester / stuck ingestion / support reset"
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="text-xs font-semibold text-slate-300">Billing: Comp access</div>
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={desiredTier}
+                              onChange={(e) => setDesiredTier(e.target.value)}
+                              className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                            >
+                              <option value="free">free</option>
+                              <option value="elite">elite</option>
+                            </select>
+                            <button
+                              onClick={() =>
+                                compAccess.mutate({ userId: selectedUser.id, tier: desiredTier, reason: adminReason || undefined })
+                              }
+                              disabled={compAccess.isPending}
+                              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded text-xs font-semibold"
+                            >
+                              {compAccess.isPending ? 'Saving…' : 'Apply'}
+                            </button>
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            Stripe:{' '}
+                            {selectedUser.stripe_customer_id ? (
+                              <a
+                                href={`https://dashboard.stripe.com/customers/${selectedUser.stripe_customer_id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-blue-400 hover:text-blue-300"
+                              >
+                                Open customer
+                              </a>
+                            ) : (
+                              <span className="text-slate-500">not linked</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="text-xs font-semibold text-slate-300">Actions</div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => resetOnboarding.mutate({ userId: selectedUser.id, stage: 'initial', reason: adminReason || undefined })}
+                              disabled={resetOnboarding.isPending}
+                              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-700 rounded text-xs"
+                            >
+                              {resetOnboarding.isPending ? 'Resetting…' : 'Reset onboarding'}
+                            </button>
+                            <button
+                              onClick={() => retryIngestion.mutate({ userId: selectedUser.id, pages: 5, reason: adminReason || undefined })}
+                              disabled={retryIngestion.isPending}
+                              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-700 rounded text-xs"
+                            >
+                              {retryIngestion.isPending ? 'Queuing…' : 'Retry ingestion'}
+                            </button>
+                            <button
+                              onClick={() => setBlocked.mutate({ userId: selectedUser.id, blocked: !selectedUser.is_blocked, reason: adminReason || undefined })}
+                              disabled={setBlocked.isPending}
+                              className={`px-3 py-2 rounded text-xs ${
+                                selectedUser.is_blocked ? 'bg-green-700 hover:bg-green-600' : 'bg-red-700 hover:bg-red-600'
+                              } disabled:bg-slate-700`}
+                            >
+                              {setBlocked.isPending ? 'Saving…' : selectedUser.is_blocked ? 'Unblock' : 'Block'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <details className="bg-slate-900/40 border border-slate-700/50 rounded p-3">
+                          <summary className="cursor-pointer text-sm text-slate-200">Integrations / ingestion</summary>
+                          <div className="mt-2 text-xs text-slate-300 space-y-1">
+                            <div>Units: {selectedUser.integrations?.preferred_units ?? '—'}</div>
+                            <div>Strava athlete id: {String(selectedUser.integrations?.strava_athlete_id ?? '—')}</div>
+                            <div>Last sync: {selectedUser.integrations?.last_strava_sync ?? '—'}</div>
+                            <div>Ingestion status: {selectedUser.ingestion_state?.last_index_status ?? '—'}</div>
+                            {selectedUser.ingestion_state?.last_index_error ? (
+                              <div className="text-red-300">Index error: {selectedUser.ingestion_state.last_index_error}</div>
+                            ) : null}
+                          </div>
+                        </details>
+
+                        <details className="bg-slate-900/40 border border-slate-700/50 rounded p-3">
+                          <summary className="cursor-pointer text-sm text-slate-200">Active plan</summary>
+                          <div className="mt-2 text-xs text-slate-300">
+                            {selectedUser.active_plan ? (
+                              <div className="space-y-1">
+                                <div>{selectedUser.active_plan.name}</div>
+                                <div>Type: {selectedUser.active_plan.plan_type}</div>
+                                <div>Goal: {selectedUser.active_plan.goal_race_name ?? '—'} ({selectedUser.active_plan.goal_race_date ?? '—'})</div>
+                              </div>
+                            ) : (
+                              <div className="text-slate-500">No active plan</div>
+                            )}
+                          </div>
+                        </details>
+
+                        <details className="bg-slate-900/40 border border-slate-700/50 rounded p-3">
+                          <summary className="cursor-pointer text-sm text-slate-200">Intake history</summary>
+                          <div className="mt-2 space-y-3">
+                            {(selectedUser.intake_history || []).length === 0 ? (
+                              <div className="text-xs text-slate-500">No intake records</div>
+                            ) : (
+                              (selectedUser.intake_history || []).slice(0, 5).map((row) => (
+                                <div key={row.id} className="text-xs text-slate-300">
+                                  <div className="font-semibold">{row.stage}</div>
+                                  <pre className="mt-1 p-2 bg-slate-950/60 rounded overflow-x-auto max-h-40">
+                                    {JSON.stringify(row.responses, null, 2)}
+                                  </pre>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </details>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-slate-500">No user selected</div>
+                    )}
                   </div>
                 </div>
               ) : (

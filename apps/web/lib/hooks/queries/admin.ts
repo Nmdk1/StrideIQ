@@ -81,6 +81,52 @@ export function useImpersonateUser() {
   });
 }
 
+export function useCompAccess() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string; tier: string; reason?: string }) =>
+      adminService.compAccess(params.userId, { tier: params.tier, reason: params.reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
+      qc.invalidateQueries({ queryKey: adminKeys.userList() });
+    },
+  });
+}
+
+export function useResetOnboarding() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string; stage?: string; reason?: string }) =>
+      adminService.resetOnboarding(params.userId, { stage: params.stage, reason: params.reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
+    },
+  });
+}
+
+export function useRetryIngestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string; pages?: number; reason?: string }) =>
+      adminService.retryIngestion(params.userId, { pages: params.pages, reason: params.reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
+    },
+  });
+}
+
+export function useSetBlocked() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string; blocked: boolean; reason?: string }) =>
+      adminService.setBlocked(params.userId, { blocked: params.blocked, reason: params.reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
+      qc.invalidateQueries({ queryKey: adminKeys.userList() });
+    },
+  });
+}
+
 /**
  * List feature flags (admin)
  */

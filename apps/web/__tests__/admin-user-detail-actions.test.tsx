@@ -1,0 +1,99 @@
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+
+import AdminPage from '@/app/admin/page';
+
+jest.mock('@/components/auth/ProtectedRoute', () => ({
+  ProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: jest.fn() }),
+}));
+
+jest.mock('@/lib/hooks/useAuth', () => ({
+  useAuth: () => ({ isAuthenticated: true, isLoading: false, user: { role: 'admin', display_name: 'Admin' } }),
+}));
+
+const mutateComp = jest.fn();
+
+jest.mock('@/lib/hooks/queries/admin', () => ({
+  useAdminUsers: () => ({
+    isLoading: false,
+    data: {
+      total: 1,
+      users: [
+        {
+          id: 'u1',
+          email: 'user@example.com',
+          display_name: 'User',
+          role: 'athlete',
+          subscription_tier: 'free',
+          created_at: new Date().toISOString(),
+          onboarding_completed: false,
+        },
+      ],
+      offset: 0,
+      limit: 50,
+    },
+  }),
+  useAdminUser: (id: string) => ({
+    isLoading: false,
+    data:
+      id === 'u1'
+        ? {
+            id: 'u1',
+            email: 'user@example.com',
+            display_name: 'User',
+            role: 'athlete',
+            subscription_tier: 'free',
+            created_at: new Date().toISOString(),
+            onboarding_completed: false,
+            onboarding_stage: 'initial',
+            stripe_customer_id: null,
+            is_blocked: false,
+            integrations: { preferred_units: 'imperial', strava_athlete_id: 123, last_strava_sync: null },
+            ingestion_state: null,
+            intake_history: [],
+            active_plan: null,
+            stats: { activities: 0, nutrition_entries: 0, work_patterns: 0, body_composition_entries: 0 },
+          }
+        : null,
+  }),
+  useSystemHealth: () => ({ isLoading: false, data: null }),
+  useSiteMetrics: () => ({ isLoading: false, data: null }),
+  useImpersonateUser: () => ({ mutate: jest.fn(), isPending: false }),
+  useAdminFeatureFlags: () => ({ isLoading: false, data: { flags: [] } }),
+  useSet3dQualitySelectionMode: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
+  useCompAccess: () => ({ mutate: mutateComp, isPending: false }),
+  useResetOnboarding: () => ({ mutate: jest.fn(), isPending: false }),
+  useRetryIngestion: () => ({ mutate: jest.fn(), isPending: false }),
+  useSetBlocked: () => ({ mutate: jest.fn(), isPending: false }),
+}));
+
+jest.mock('@/lib/hooks/queries/query-engine', () => ({
+  useQueryTemplates: () => ({ data: { templates: [] } }),
+  useQueryEntities: () => ({ data: { entities: {} } }),
+  useExecuteTemplate: () => ({ mutateAsync: jest.fn(), isPending: false }),
+  useExecuteCustomQuery: () => ({ mutateAsync: jest.fn(), isPending: false }),
+}));
+
+describe('Admin user detail panel', () => {
+  beforeEach(() => {
+    mutateComp.mockClear();
+  });
+
+  it('allows selecting a user and applying comp access', () => {
+    render(<AdminPage />);
+
+    fireEvent.click(screen.getByText('View'));
+    expect(screen.getByText('User detail')).toBeInTheDocument();
+    expect(screen.getAllByText('user@example.com').length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByPlaceholderText(/VIP tester/i), { target: { value: 'VIP tester' } });
+    fireEvent.click(screen.getByText('Apply'));
+
+    expect(mutateComp).toHaveBeenCalledWith({ userId: 'u1', tier: 'elite', reason: 'VIP tester' });
+  });
+});
+
