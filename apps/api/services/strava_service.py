@@ -141,6 +141,12 @@ def refresh_access_token(refresh_token: str) -> Dict:
     return r.json()
 
 
+class StravaRateLimitError(RuntimeError):
+    def __init__(self, message: str, *, retry_after_s: int):
+        super().__init__(message)
+        self.retry_after_s = int(retry_after_s)
+
+
 def poll_activities_page(
     athlete,
     after_timestamp: Optional[int] = None,
@@ -184,7 +190,10 @@ def poll_activities_page(
             if r.status_code == 429:
                 retry_after = int(r.headers.get('Retry-After', 60 * (2 ** attempt)))  # Default: 60s, 120s, 240s
                 if not allow_rate_limit_sleep:
-                    raise RuntimeError(f"429 Rate limited for poll_activities_page (Retry-After {retry_after}s)")
+                    raise StravaRateLimitError(
+                        f"429 Rate limited for poll_activities_page (Retry-After {retry_after}s)",
+                        retry_after_s=retry_after,
+                    )
                 print(f"DEBUG: Rate limited (429) on poll_activities_page, waiting {retry_after}s before retry {attempt + 1}/{max_retries}")
                 time.sleep(retry_after)
                 continue
@@ -224,7 +233,12 @@ def poll_activities_page(
     raise Exception("Failed to poll activities after all retries")
 
 
-def poll_activities(athlete, after_timestamp: Optional[int] = None, max_retries: int = 3) -> List[Dict]:
+def poll_activities(
+    athlete,
+    after_timestamp: Optional[int] = None,
+    max_retries: int = 3,
+    allow_rate_limit_sleep: bool = True,
+) -> List[Dict]:
     """
     Backwards-compatible wrapper for polling the first page of activities.
     """
@@ -238,7 +252,7 @@ def poll_activities(athlete, after_timestamp: Optional[int] = None, max_retries:
         page=1,
         per_page=200,
         max_retries=max_retries,
-        allow_rate_limit_sleep=True,
+        allow_rate_limit_sleep=allow_rate_limit_sleep,
     )
 
 
@@ -285,7 +299,10 @@ def get_activity_details(
                     if not allow_rate_limit_sleep:
                         # Let callers decide how to handle rate limiting (e.g. stop early
                         # in HTTP requests, retry later in background jobs).
-                        raise RuntimeError(f"429 Rate limited for activity details {activity_id} (Retry-After {retry_after}s)")
+                        raise StravaRateLimitError(
+                            f"429 Rate limited for activity details {activity_id} (Retry-After {retry_after}s)",
+                            retry_after_s=retry_after,
+                        )
                     print(f"DEBUG: Rate limited (429) for activity details {activity_id}, waiting {retry_after}s")
                     time.sleep(retry_after)
                     continue
@@ -322,7 +339,12 @@ def get_activity_details(
         _release_strava_detail_slot()
 
 
-def get_activity_laps(athlete, activity_id: int, max_retries: int = 3) -> List[Dict]:
+def get_activity_laps(
+    athlete,
+    activity_id: int,
+    max_retries: int = 3,
+    allow_rate_limit_sleep: bool = True,
+) -> List[Dict]:
     """
     Fetch activity laps with rate limiting and retry logic.
     Strava rate limits: 100 requests per 15 minutes, 1000 per day.
@@ -345,6 +367,11 @@ def get_activity_laps(athlete, activity_id: int, max_retries: int = 3) -> List[D
             if r.status_code == 429:
                 # Get retry-after header if available, otherwise use exponential backoff
                 retry_after = int(r.headers.get('Retry-After', 60 * (2 ** attempt)))  # Default: 60s, 120s, 240s
+                if not allow_rate_limit_sleep:
+                    raise StravaRateLimitError(
+                        f"429 Rate limited for activity laps {activity_id} (Retry-After {retry_after}s)",
+                        retry_after_s=retry_after,
+                    )
                 print(f"DEBUG: Rate limited (429) for activity {activity_id}, waiting {retry_after}s before retry {attempt + 1}/{max_retries}")
                 time.sleep(retry_after)
                 continue

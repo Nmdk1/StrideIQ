@@ -45,6 +45,9 @@ def mark_best_efforts_started(db: Session, athlete_id: UUID, provider: str, task
     state.last_best_efforts_status = "running"
     state.last_best_efforts_error = None
     state.last_best_efforts_retry_after_s = None
+    # Clear any prior deferral when work resumes.
+    state.deferred_until = None
+    state.deferred_reason = None
     db.add(state)
 
 
@@ -59,6 +62,9 @@ def mark_best_efforts_finished(db: Session, athlete_id: UUID, provider: str, res
     state.last_best_efforts_activities_checked = result.get("activities_checked")
     state.last_best_efforts_efforts_stored = result.get("efforts_stored")
     state.last_best_efforts_pbs_created = result.get("pbs_created")
+    # Completion clears deferral.
+    state.deferred_until = None
+    state.deferred_reason = None
     db.add(state)
 
 
@@ -79,6 +85,9 @@ def mark_index_started(db: Session, athlete_id: UUID, provider: str, task_id: st
     state.last_index_finished_at = None
     state.last_index_status = "running"
     state.last_index_error = None
+    # Clear any prior deferral when work resumes.
+    state.deferred_until = None
+    state.deferred_reason = None
     db.add(state)
 
 
@@ -91,6 +100,9 @@ def mark_index_finished(db: Session, athlete_id: UUID, provider: str, result: Di
     state.last_index_created = result.get("created")
     state.last_index_already_present = result.get("already_present")
     state.last_index_skipped_non_runs = result.get("skipped_non_runs")
+    # Completion clears deferral.
+    state.deferred_until = None
+    state.deferred_reason = None
     db.add(state)
 
 
@@ -101,6 +113,39 @@ def mark_index_error(db: Session, athlete_id: UUID, provider: str, error: str, t
     state.last_index_finished_at = _utcnow()
     state.last_index_status = "error"
     state.last_index_error = error
+    db.add(state)
+
+
+def mark_ingestion_deferred(
+    db: Session,
+    athlete_id: UUID,
+    provider: str,
+    *,
+    scope: str,
+    deferred_until: datetime,
+    reason: str,
+    task_id: Optional[str] = None,
+) -> None:
+    """
+    Phase 5: mark ingestion as intentionally deferred (e.g. rate limit, global pause).
+
+    This must NOT be treated as an error.
+    """
+    state = _get_or_create_state(db, athlete_id, provider)
+    state.deferred_until = deferred_until
+    state.deferred_reason = reason
+
+    if scope == "index":
+        if task_id:
+            state.last_index_task_id = task_id
+        state.last_index_status = "deferred"
+        state.last_index_error = None
+    elif scope == "best_efforts":
+        if task_id:
+            state.last_best_efforts_task_id = task_id
+        state.last_best_efforts_status = "deferred"
+        state.last_best_efforts_error = None
+
     db.add(state)
 
 

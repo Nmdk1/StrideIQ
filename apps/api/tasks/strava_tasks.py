@@ -200,6 +200,12 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
     db: Session = get_db_sync()
     print(f"DEBUG: Starting sync for athlete_id={athlete_id}")
     
+    from services.strava_service import StravaRateLimitError
+    from services.ingestion_state import mark_ingestion_deferred
+    from datetime import timedelta
+
+    from celery.exceptions import Retry
+
     try:
         # Get athlete
         print(f"DEBUG: Looking up athlete in database...")
@@ -250,9 +256,25 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 after_timestamp = int(last_sync_raw)
             after_timestamp = max(0, int(after_timestamp) - int(SYNC_OVERLAP_SECONDS))
         
-        # Poll activities from Strava
+        # Poll activities from Strava (viral-safe: do not sleep on 429; defer + retry).
         print(f"DEBUG: Polling activities with after_timestamp={after_timestamp}")
-        strava_activities = poll_activities(athlete, after_timestamp)
+        try:
+            strava_activities = poll_activities(athlete, after_timestamp, allow_rate_limit_sleep=False)
+        except StravaRateLimitError as e:
+            retry_after_s = int(getattr(e, "retry_after_s", 900) or 900)
+            countdown = max(60, min(retry_after_s, 60 * 60))
+            until = datetime.now(timezone.utc) + timedelta(seconds=countdown)
+            mark_ingestion_deferred(
+                db,
+                athlete.id,
+                "strava",
+                scope="index",
+                deferred_until=until,
+                reason="rate_limit",
+                task_id=str(self.request.id),
+            )
+            db.commit()
+            raise self.retry(countdown=countdown)
         print(f"DEBUG: Got {len(strava_activities)} activities from Strava")
         
         synced_new = 0
@@ -352,7 +374,24 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                             time.sleep(LAP_FETCH_DELAY)
 
                         # Fetch both: details (canonical GA speed) + laps (canonical segmentation)
-                        details = get_activity_details(athlete, int(strava_activity_id), allow_rate_limit_sleep=True) or {}
+                        # Viral-safe: do not sleep on 429; defer + retry.
+                        try:
+                            details = get_activity_details(athlete, int(strava_activity_id), allow_rate_limit_sleep=False) or {}
+                        except StravaRateLimitError as e:
+                            retry_after_s = int(getattr(e, "retry_after_s", 900) or 900)
+                            countdown = max(60, min(retry_after_s, 60 * 60))
+                            until = datetime.now(timezone.utc) + timedelta(seconds=countdown)
+                            mark_ingestion_deferred(
+                                db,
+                                athlete.id,
+                                "strava",
+                                scope="index",
+                                deferred_until=until,
+                                reason="rate_limit",
+                                task_id=str(self.request.id),
+                            )
+                            db.commit()
+                            raise self.retry(countdown=countdown)
                         mile_splits = _extract_strava_mile_splits_from_details(details)
                         mile_map = {}
                         for ms in mile_splits:
@@ -361,7 +400,23 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                             except Exception:
                                 continue
 
-                        laps = get_activity_laps(athlete, strava_activity_id) or []
+                        try:
+                            laps = get_activity_laps(athlete, strava_activity_id, allow_rate_limit_sleep=False) or []
+                        except StravaRateLimitError as e:
+                            retry_after_s = int(getattr(e, "retry_after_s", 900) or 900)
+                            countdown = max(60, min(retry_after_s, 60 * 60))
+                            until = datetime.now(timezone.utc) + timedelta(seconds=countdown)
+                            mark_ingestion_deferred(
+                                db,
+                                athlete.id,
+                                "strava",
+                                scope="index",
+                                deferred_until=until,
+                                reason="rate_limit",
+                                task_id=str(self.request.id),
+                            )
+                            db.commit()
+                            raise self.retry(countdown=countdown)
                         source_splits = []
                         if laps:
                             for lap in laps:
@@ -702,6 +757,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             "insights_generated": insights_generated,
         }
         
+    except Retry:
+        # Phase 5 armor: allow Celery retries to propagate (not an error).
+        raise
     except Exception as e:
         db.rollback()
         error_msg = f"Error syncing activities: {str(e)}"
@@ -728,7 +786,12 @@ def backfill_strava_activity_index_task(self: Task, athlete_id: str, pages: int 
         mark_index_started,
         mark_index_finished,
         mark_index_error,
+        mark_ingestion_deferred,
     )
+    from services.strava_service import StravaRateLimitError
+    from datetime import timedelta
+
+    from celery.exceptions import Retry
 
     db: Session = get_db_sync()
     try:
@@ -747,15 +810,33 @@ def backfill_strava_activity_index_task(self: Task, athlete_id: str, pages: int 
         pages_fetched = 0
 
         for page in range(1, max(1, int(pages)) + 1):
-            summaries = poll_activities_page(
-                athlete,
-                after_timestamp=0,
-                before_timestamp=None,
-                page=page,
-                per_page=200,
-                max_retries=3,
-                allow_rate_limit_sleep=True,
-            )
+            try:
+                summaries = poll_activities_page(
+                    athlete,
+                    after_timestamp=0,
+                    before_timestamp=None,
+                    page=page,
+                    per_page=200,
+                    max_retries=3,
+                    allow_rate_limit_sleep=False,
+                )
+            except StravaRateLimitError as e:
+                # Phase 5 armor: treat 429 as deferral (not an error) and re-queue.
+                retry_after_s = int(getattr(e, "retry_after_s", 900) or 900)
+                countdown = max(60, min(retry_after_s, 60 * 60))  # bound: 1m..60m
+                until = datetime.now(timezone.utc) + timedelta(seconds=countdown)
+
+                mark_ingestion_deferred(
+                    db,
+                    athlete.id,
+                    "strava",
+                    scope="index",
+                    deferred_until=until,
+                    reason="rate_limit",
+                    task_id=str(self.request.id),
+                )
+                db.commit()
+                raise self.retry(countdown=countdown)
             pages_fetched += 1
             if not summaries:
                 break
@@ -778,6 +859,9 @@ def backfill_strava_activity_index_task(self: Task, athlete_id: str, pages: int 
         mark_index_finished(db, athlete.id, "strava", result)
         db.commit()
         return result
+    except Retry:
+        # Phase 5 armor: allow Celery retries to propagate (not an error).
+        raise
     except Exception as e:
         db.rollback()
         try:

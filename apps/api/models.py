@@ -203,6 +203,12 @@ class AthleteIngestionState(Base):
     last_index_already_present = Column(Integer, nullable=True)
     last_index_skipped_non_runs = Column(Integer, nullable=True)
 
+    # --- Phase 5: Viral-safe deferral (rate limit / global pause) ---
+    # When set, ingestion is intentionally deferred until this timestamp.
+    deferred_until = Column(DateTime(timezone=True), nullable=True)
+    # e.g., "rate_limit" | "paused"
+    deferred_reason = Column(Text, nullable=True)
+
     __table_args__ = (
         UniqueConstraint("athlete_id", "provider", name="uq_ingestion_state_athlete_provider"),
         Index("ix_ingestion_state_provider", "provider"),
