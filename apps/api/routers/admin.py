@@ -104,6 +104,11 @@ class PauseIngestionRequest(BaseModel):
     reason: Optional[str] = Field(default=None, description="Why ingestion was paused/unpaused (audited)")
 
 
+class AdminPermissionsUpdateRequest(BaseModel):
+    permissions: List[str] = Field(default_factory=list, description="Explicit admin permission keys")
+    reason: Optional[str] = Field(default=None, description="Why permissions were changed (audited)")
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -181,6 +186,49 @@ def set_ingestion_pause_status(
     )
     db.commit()
     return {"success": True, "paused": bool(request.paused)}
+
+
+@router.post("/users/{user_id}/permissions")
+def set_admin_permissions(
+    user_id: UUID,
+    request: AdminPermissionsUpdateRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_owner),
+    db: Session = Depends(get_db),
+):
+    """
+    Owner-only: set explicit admin permissions for a target user.
+
+    This is the safety valve that makes the RBAC seam usable without DB access.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.role not in ("admin", "owner"):
+        raise HTTPException(status_code=400, detail="Target user is not admin/owner")
+
+    before = {"admin_permissions": list(getattr(target, "admin_permissions", []) or [])}
+    # Normalize + de-dupe while preserving order.
+    perms_in = [p.strip() for p in (request.permissions or []) if isinstance(p, str) and p.strip()]
+    seen = set()
+    perms = [p for p in perms_in if not (p in seen or seen.add(p))]
+    target.admin_permissions = perms
+    db.add(target)
+
+    from services.admin_audit import record_admin_audit_event
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="admin.permissions.set",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"before": before, "after": {"admin_permissions": perms}},
+    )
+    db.commit()
+    db.refresh(target)
+    return {"success": True, "user_id": str(target.id), "admin_permissions": target.admin_permissions}
 
 
 @router.get("/ops/ingestion/deferred")

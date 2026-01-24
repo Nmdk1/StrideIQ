@@ -144,8 +144,14 @@ def require_permission(permission_key: str):
             return current_user
 
         perms = getattr(current_user, "admin_permissions", None) or []
-        # Bootstrap mode: if no explicit permissions set, treat as full admin.
+        # Bootstrap mode: if no explicit permissions set, treat as full admin EXCEPT
+        # for system-level controls which must be explicitly granted.
         if len(perms) == 0:
+            if (permission_key or "").startswith("system."):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Missing permission: {permission_key}",
+                )
             return current_user
 
         if permission_key not in perms:

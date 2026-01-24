@@ -83,6 +83,17 @@ def test_reset_onboarding_is_audited(admin_headers, admin_user, normal_user):
 
 
 def test_retry_ingestion_queues_tasks_and_is_audited(admin_headers, admin_user, normal_user, monkeypatch):
+    # Ensure the Phase 5 emergency brake does not interfere with this test.
+    from services.plan_framework.feature_flags import FeatureFlagService
+
+    db = SessionLocal()
+    try:
+        svc = FeatureFlagService(db)
+        if svc.get_flag("system.ingestion_paused"):
+            svc.set_flag("system.ingestion_paused", {"enabled": False})
+    finally:
+        db.close()
+
     index_mock = Mock()
     index_mock.id = "task_index_123"
     sync_mock = Mock()
@@ -161,6 +172,15 @@ def test_retry_ingestion_returns_409_when_system_paused(admin_headers, admin_use
     )
     assert resp.status_code == 409
     assert "paused" in resp.text.lower()
+
+    # Reset the brake so other tests aren't affected.
+    db = SessionLocal()
+    try:
+        svc = FeatureFlagService(db)
+        if svc.get_flag("system.ingestion_paused"):
+            svc.set_flag("system.ingestion_paused", {"enabled": False})
+    finally:
+        db.close()
 
 
 def test_block_prevents_auth_and_is_audited(admin_headers, admin_user, normal_user):
