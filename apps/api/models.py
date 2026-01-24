@@ -20,6 +20,16 @@ class Athlete(Base):
     birthdate = Column(Date, nullable=True)
     sex = Column(Text, nullable=True)
     subscription_tier = Column(Text, default="free", nullable=False)
+
+    # --- PAYMENTS / ENTITLEMENTS (Phase 6-ready) ---
+    # Pre-Phase-6: may be null for all users.
+    stripe_customer_id = Column(Text, nullable=True)
+
+    # --- ADMIN RBAC SEAM (Phase 4) ---
+    # Keep an explicit "permissions seam" so we can introduce finer-grained roles
+    # without rewriting endpoint guard patterns. This is intentionally lightweight
+    # (JSONB) until Phase 6+ stabilizes billing/employee auth architecture.
+    admin_permissions = Column(JSONB, nullable=False, default=list)
     
     # Paid subscription tiers that grant Elite access.
     # We keep legacy values for backward compatibility while converging on a single paid tier ("elite").
@@ -32,6 +42,10 @@ class Athlete(Base):
     
     # User preferences
     preferred_units = Column(Text, default="metric", nullable=False)  # 'metric' (km) or 'imperial' (miles)
+
+    # --- ACCOUNT SAFETY (Phase 4) ---
+    # Hard block a user from accessing the product (admin-only action).
+    is_blocked = Column(Boolean, default=False, nullable=False)
     
     strava_athlete_id = Column(Integer, nullable=True)
     strava_access_token = Column(Text, nullable=True)  # Encrypted
@@ -120,6 +134,32 @@ class InviteAuditEvent(Base):
     target_email = Column(Text, nullable=False, index=True)  # lowercased
     event_metadata = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AdminAuditEvent(Base):
+    """
+    Append-only audit log for admin actions (Phase 4).
+
+    Non-negotiable invariants:
+    - write-only from the application (no update/delete in code paths)
+    - bounded payload (no secrets; minimal PII)
+    """
+
+    __tablename__ = "admin_audit_event"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+    actor_athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    action = Column(Text, nullable=False, index=True)  # e.g., billing.comp | athlete.block | ingest.retry
+
+    target_athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=True, index=True)
+    reason = Column(Text, nullable=True)
+
+    ip_address = Column(Text, nullable=True)
+    user_agent = Column(Text, nullable=True)
+
+    payload = Column(JSONB, nullable=False, default=dict)
 
 
 class AthleteIngestionState(Base):

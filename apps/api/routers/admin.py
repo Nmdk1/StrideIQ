@@ -5,7 +5,7 @@ Comprehensive command center for site management, monitoring, testing, and debug
 Owner/admin role only.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_, or_
 from typing import List, Optional, Dict, Any, Literal
@@ -13,8 +13,21 @@ from uuid import UUID
 from datetime import datetime, timedelta
 
 from core.database import get_db
-from core.auth import require_admin
-from models import Athlete, Activity, NutritionEntry, WorkPattern, BodyComposition, ActivityFeedback, InsightFeedback, FeatureFlag, InviteAllowlist
+from core.auth import require_admin, require_permission
+from models import (
+    Athlete,
+    Activity,
+    NutritionEntry,
+    WorkPattern,
+    BodyComposition,
+    ActivityFeedback,
+    InsightFeedback,
+    FeatureFlag,
+    InviteAllowlist,
+    IntakeQuestionnaire,
+    AthleteIngestionState,
+    TrainingPlan,
+)
 from schemas import AthleteResponse
 from pydantic import BaseModel, Field
 from services.plan_framework.feature_flags import FeatureFlagService
@@ -58,6 +71,26 @@ class InviteCreateRequest(BaseModel):
 class InviteRevokeRequest(BaseModel):
     email: str
     reason: Optional[str] = None
+
+
+class CompAccessRequest(BaseModel):
+    tier: str = Field(..., description="Subscription tier to set (e.g., 'elite')")
+    reason: Optional[str] = Field(default=None, description="Why this comp was granted (audited)")
+
+
+class ResetOnboardingRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, description="Why this reset was performed (audited)")
+    stage: Optional[str] = Field(default="initial", description="Stage to reset to (default: initial)")
+
+
+class RetryIngestionRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, description="Why this retry was performed (audited)")
+    pages: int = Field(default=5, ge=1, le=50, description="Strava index backfill pages (bounded)")
+
+
+class BlockUserRequest(BaseModel):
+    blocked: bool = Field(..., description="Whether the user is blocked")
+    reason: Optional[str] = Field(default=None, description="Why this block/unblock was performed (audited)")
 
 
 def _ensure_flag_exists(db: Session, key: str, name: str, description: str) -> None:
@@ -371,15 +404,87 @@ def get_user(
     work_pattern_count = db.query(WorkPattern).filter(WorkPattern.athlete_id == user_id).count()
     body_comp_count = db.query(BodyComposition).filter(BodyComposition.athlete_id == user_id).count()
     
+    # Integration / ingestion state (best-effort; may be missing).
+    ingestion = (
+        db.query(AthleteIngestionState)
+        .filter(AthleteIngestionState.athlete_id == user_id, AthleteIngestionState.provider == "strava")
+        .first()
+    )
+
+    # Intake interview history (append-only-ish: one row per stage; we return latest first).
+    intake_rows = (
+        db.query(IntakeQuestionnaire)
+        .filter(IntakeQuestionnaire.athlete_id == user_id)
+        .order_by(IntakeQuestionnaire.created_at.desc())
+        .all()
+    )
+
+    # Active plan (if any).
+    active_plan = (
+        db.query(TrainingPlan)
+        .filter(TrainingPlan.athlete_id == user_id, TrainingPlan.status == "active")
+        .order_by(TrainingPlan.created_at.desc())
+        .first()
+    )
+
     return {
         "id": str(user.id),
         "email": user.email,
         "display_name": user.display_name,
         "role": user.role,
         "subscription_tier": user.subscription_tier,
+        "stripe_customer_id": getattr(user, "stripe_customer_id", None),
+        "is_blocked": bool(getattr(user, "is_blocked", False)),
         "created_at": user.created_at.isoformat(),
         "onboarding_completed": user.onboarding_completed,
         "onboarding_stage": user.onboarding_stage,
+        "integrations": {
+            "preferred_units": getattr(user, "preferred_units", None),
+            "strava_athlete_id": user.strava_athlete_id,
+            "last_strava_sync": user.last_strava_sync.isoformat() if user.last_strava_sync else None,
+            "garmin_connected": getattr(user, "garmin_connected", False),
+            "last_garmin_sync": user.last_garmin_sync.isoformat() if getattr(user, "last_garmin_sync", None) else None,
+        },
+        "ingestion_state": None
+        if not ingestion
+        else {
+            "provider": ingestion.provider,
+            "updated_at": ingestion.updated_at.isoformat() if ingestion.updated_at else None,
+            "last_index_status": ingestion.last_index_status,
+            "last_index_error": ingestion.last_index_error,
+            "last_index_started_at": ingestion.last_index_started_at.isoformat() if ingestion.last_index_started_at else None,
+            "last_index_finished_at": ingestion.last_index_finished_at.isoformat() if ingestion.last_index_finished_at else None,
+            "last_best_efforts_status": ingestion.last_best_efforts_status,
+            "last_best_efforts_error": ingestion.last_best_efforts_error,
+            "last_best_efforts_started_at": ingestion.last_best_efforts_started_at.isoformat()
+            if ingestion.last_best_efforts_started_at
+            else None,
+            "last_best_efforts_finished_at": ingestion.last_best_efforts_finished_at.isoformat()
+            if ingestion.last_best_efforts_finished_at
+            else None,
+        },
+        "intake_history": [
+            {
+                "id": str(r.id),
+                "stage": r.stage,
+                "responses": r.responses,
+                "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in intake_rows
+        ],
+        "active_plan": None
+        if not active_plan
+        else {
+            "id": str(active_plan.id),
+            "name": active_plan.name,
+            "status": active_plan.status,
+            "plan_type": active_plan.plan_type,
+            "plan_start_date": active_plan.plan_start_date.isoformat() if active_plan.plan_start_date else None,
+            "plan_end_date": active_plan.plan_end_date.isoformat() if active_plan.plan_end_date else None,
+            "goal_race_name": active_plan.goal_race_name,
+            "goal_race_date": active_plan.goal_race_date.isoformat() if active_plan.goal_race_date else None,
+        },
         "stats": {
             "activities": activity_count,
             "nutrition_entries": nutrition_count,
@@ -387,6 +492,171 @@ def get_user(
             "body_composition_entries": body_comp_count,
         },
     }
+
+
+@router.post("/users/{user_id}/comp")
+def comp_access(
+    user_id: UUID,
+    request: CompAccessRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_permission("billing.comp")),
+    db: Session = Depends(get_db),
+):
+    """
+    Manually grant (or change) a user's subscription tier.
+
+    Pre-Phase-6: DB is the source of truth for entitlements.
+    This endpoint is the MVP of billing control and is fully auditable.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    old_tier = target.subscription_tier
+    target.subscription_tier = request.tier
+    db.add(target)
+
+    from services.admin_audit import record_admin_audit_event
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="billing.comp",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"before": {"subscription_tier": old_tier}, "after": {"subscription_tier": target.subscription_tier}},
+    )
+
+    db.commit()
+    db.refresh(target)
+
+    return {
+        "success": True,
+        "user": {
+            "id": str(target.id),
+            "email": target.email,
+            "subscription_tier": target.subscription_tier,
+        },
+    }
+
+
+@router.post("/users/{user_id}/onboarding/reset")
+def reset_onboarding(
+    user_id: UUID,
+    request: ResetOnboardingRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_permission("onboarding.reset")),
+    db: Session = Depends(get_db),
+):
+    """
+    Reset a user's onboarding state (soft reset).
+
+    Policy:
+    - Does not delete intake history by default (we want evidence + context).
+    - Only resets the onboarding stage/completion flags.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    before = {"onboarding_stage": target.onboarding_stage, "onboarding_completed": bool(target.onboarding_completed)}
+    target.onboarding_stage = request.stage or "initial"
+    target.onboarding_completed = False
+    db.add(target)
+
+    from services.admin_audit import record_admin_audit_event
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="onboarding.reset",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"before": before, "after": {"onboarding_stage": target.onboarding_stage, "onboarding_completed": False}},
+    )
+
+    db.commit()
+    db.refresh(target)
+    return {"success": True, "user_id": str(target.id), "onboarding_stage": target.onboarding_stage, "onboarding_completed": target.onboarding_completed}
+
+
+@router.post("/users/{user_id}/ingestion/retry")
+def retry_ingestion(
+    user_id: UUID,
+    request: RetryIngestionRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_permission("ingestion.retry")),
+    db: Session = Depends(get_db),
+):
+    """
+    Retry ingestion for a user (Phase 4 operator action).
+
+    Mirrors Phase 3 bootstrap behavior (cheap index backfill + full sync),
+    but targets an arbitrary athlete and is auditable.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not target.strava_access_token:
+        raise HTTPException(status_code=400, detail="Strava not connected")
+
+    from tasks.strava_tasks import backfill_strava_activity_index_task, sync_strava_activities_task
+
+    index_task = backfill_strava_activity_index_task.delay(str(target.id), pages=int(request.pages))
+    sync_task = sync_strava_activities_task.delay(str(target.id))
+
+    from services.admin_audit import record_admin_audit_event
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="ingestion.retry",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"provider": "strava", "pages": int(request.pages), "index_task_id": index_task.id, "sync_task_id": sync_task.id},
+    )
+
+    db.commit()
+    return {"success": True, "queued": True, "index_task_id": index_task.id, "sync_task_id": sync_task.id}
+
+
+@router.post("/users/{user_id}/block")
+def set_blocked(
+    user_id: UUID,
+    request: BlockUserRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_permission("athlete.block")),
+    db: Session = Depends(get_db),
+):
+    """
+    Block/unblock a user from accessing authenticated endpoints.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    before = {"is_blocked": bool(getattr(target, "is_blocked", False))}
+    target.is_blocked = bool(request.blocked)
+    db.add(target)
+
+    from services.admin_audit import record_admin_audit_event
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="athlete.block" if request.blocked else "athlete.unblock",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"before": before, "after": {"is_blocked": bool(target.is_blocked)}},
+    )
+
+    db.commit()
+    db.refresh(target)
+    return {"success": True, "user_id": str(target.id), "is_blocked": bool(target.is_blocked)}
 
 
 @router.post("/users/{user_id}/impersonate")

@@ -10,9 +10,34 @@ import sys
 import os
 from uuid import uuid4
 from datetime import datetime, date
+from pathlib import Path
 
 # Add the parent directory to the path so we can import from services
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_db_schema_is_at_head():
+    """
+    Ensure the test database schema includes the latest Alembic migrations.
+
+    This prevents "UndefinedTable" failures when new migrations are added but the
+    dev/test database wasn't manually upgraded.
+    """
+    try:
+        from alembic import command
+        from alembic.config import Config
+
+        api_root = Path(__file__).resolve().parents[1]
+        alembic_ini = api_root / "alembic.ini"
+
+        cfg = Config(str(alembic_ini))
+        # Alembic's script_location in alembic.ini is relative ("alembic")
+        # so we set the working directory explicitly.
+        cfg.set_main_option("script_location", str(api_root / "alembic"))
+        command.upgrade(cfg, "head")
+    except Exception as e:
+        # Tests should fail loudly if migrations cannot be applied.
+        raise RuntimeError(f"Failed to upgrade DB to Alembic head: {e}") from e
 
 from sqlalchemy import event
 from sqlalchemy.orm import Session

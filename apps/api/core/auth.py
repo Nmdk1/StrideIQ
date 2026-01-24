@@ -68,6 +68,14 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
+
+    # Hard block enforcement (Phase 4). This prevents blocked users from accessing
+    # any authenticated endpoints, including /v1/auth/me.
+    if getattr(user, "is_blocked", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is blocked",
+        )
     
     return user
 
@@ -109,6 +117,38 @@ def require_admin(
 ) -> Athlete:
     """Require admin or owner role."""
     return current_user
+
+
+def require_permission(permission_key: str):
+    """
+    Dependency factory for admin permission checks.
+
+    Phase 4 policy:
+    - owner: always allowed
+    - admin: allowed iff permission is present OR admin has no explicit permissions yet
+      (bootstrap mode to avoid breaking existing admin workflows).
+
+    Note: This is a deliberate "permissions seam" to allow later expansion to
+    support/ops/finance roles without rewriting endpoint guards.
+    """
+
+    def permission_checker(current_user: Athlete = Depends(require_admin)) -> Athlete:
+        if current_user.role == "owner":
+            return current_user
+
+        perms = getattr(current_user, "admin_permissions", None) or []
+        # Bootstrap mode: if no explicit permissions set, treat as full admin.
+        if len(perms) == 0:
+            return current_user
+
+        if permission_key not in perms:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permission: {permission_key}",
+            )
+        return current_user
+
+    return permission_checker
 
 
 def require_athlete_or_admin(
