@@ -235,7 +235,17 @@ export default function HomePage() {
     );
   }
 
-  const { today, yesterday, week, hero_narrative, strava_connected, has_any_activities, total_activities, ingestion_state } = data;
+  const {
+    today,
+    yesterday,
+    week,
+    hero_narrative,
+    strava_connected,
+    has_any_activities,
+    total_activities,
+    ingestion_state,
+    ingestion_paused,
+  } = data;
 
   const isStravaConnected = strava_connected;
   const hasAnyData = has_any_activities || yesterday.has_activity || week.completed_mi > 0;
@@ -291,6 +301,21 @@ export default function HomePage() {
           )}
 
           {/* Phase 3: Latency bridge (connected, importing) */}
+          {/* Phase 5: Emergency brake banner */}
+          {ingestion_paused ? (
+            <Card className="bg-amber-500/10 border-amber-500/30">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm text-amber-200 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-300" />
+                  Import delayed
+                </CardTitle>
+                <CardDescription className="text-slate-300">
+                  High traffic volume. Your data import is queued and will start shortly.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          ) : null}
+
           {showIngestionCard && (
             <Card className="bg-slate-800/50 border-slate-700/50">
               <CardHeader className="pb-3">

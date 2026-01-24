@@ -131,6 +131,38 @@ def test_retry_ingestion_queues_tasks_and_is_audited(admin_headers, admin_user, 
         db.close()
 
 
+def test_retry_ingestion_returns_409_when_system_paused(admin_headers, admin_user, normal_user, monkeypatch):
+    # Enable system.ingestion_paused
+    from services.plan_framework.feature_flags import FeatureFlagService
+
+    db = SessionLocal()
+    try:
+        svc = FeatureFlagService(db)
+        if not svc.get_flag("system.ingestion_paused"):
+            svc.create_flag(
+                key="system.ingestion_paused",
+                name="Pause global ingestion",
+                description="test",
+                enabled=True,
+                requires_subscription=False,
+                requires_tier=None,
+                requires_payment=None,
+                rollout_percentage=100,
+            )
+        else:
+            svc.set_flag("system.ingestion_paused", {"enabled": True})
+    finally:
+        db.close()
+
+    resp = client.post(
+        f"/v1/admin/users/{normal_user.id}/ingestion/retry",
+        json={"reason": "paused test", "pages": 5},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 409
+    assert "paused" in resp.text.lower()
+
+
 def test_block_prevents_auth_and_is_audited(admin_headers, admin_user, normal_user):
     # Block
     resp = client.post(

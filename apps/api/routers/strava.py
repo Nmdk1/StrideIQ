@@ -195,7 +195,10 @@ def strava_callback(
 
         # Latency bridge: enqueue cheap index backfill immediately (background).
         try:
-            backfill_strava_activity_index_task.delay(str(athlete.id), pages=5)
+            from services.system_flags import is_ingestion_paused
+
+            if not is_ingestion_paused(db):
+                backfill_strava_activity_index_task.delay(str(athlete.id), pages=5)
         except Exception:
             # Best-effort enqueue; UI will still show "connected" and user can retry.
             pass

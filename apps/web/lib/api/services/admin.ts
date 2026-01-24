@@ -146,6 +146,25 @@ export interface OpsIngestionErrorsResponse {
   }>;
 }
 
+export interface OpsIngestionDeferredResponse {
+  now: string;
+  count: number;
+  items: Array<{
+    athlete_id: string;
+    email: string | null;
+    display_name: string | null;
+    deferred_until: string | null;
+    deferred_reason: string | null;
+    last_index_status: string | null;
+    last_best_efforts_status: string | null;
+    updated_at: string | null;
+  }>;
+}
+
+export interface OpsIngestionPauseResponse {
+  paused: boolean;
+}
+
 export interface ImpersonationResponse {
   token: string;
   user: {
@@ -224,6 +243,14 @@ export const adminService = {
     return apiClient.get<OpsQueueSnapshot>('/v1/admin/ops/queue');
   },
 
+  async getOpsIngestionPause(): Promise<OpsIngestionPauseResponse> {
+    return apiClient.get<OpsIngestionPauseResponse>('/v1/admin/ops/ingestion/pause');
+  },
+
+  async setOpsIngestionPause(params: { paused: boolean; reason?: string | null }): Promise<{ success: boolean; paused: boolean }> {
+    return apiClient.post('/v1/admin/ops/ingestion/pause', params);
+  },
+
   async getOpsStuckIngestion(params?: { minutes?: number; limit?: number }): Promise<OpsIngestionStuckResponse> {
     const qs = new URLSearchParams();
     if (params?.minutes != null) qs.set('minutes', String(params.minutes));
@@ -238,6 +265,13 @@ export const adminService = {
     if (params?.limit != null) qs.set('limit', String(params.limit));
     const tail = qs.toString() ? `?${qs.toString()}` : '';
     return apiClient.get<OpsIngestionErrorsResponse>(`/v1/admin/ops/ingestion/errors${tail}`);
+  },
+
+  async getOpsDeferredIngestion(params?: { limit?: number }): Promise<OpsIngestionDeferredResponse> {
+    const qs = new URLSearchParams();
+    if (params?.limit != null) qs.set('limit', String(params.limit));
+    const tail = qs.toString() ? `?${qs.toString()}` : '';
+    return apiClient.get<OpsIngestionDeferredResponse>(`/v1/admin/ops/ingestion/deferred${tail}`);
   },
 
   /**

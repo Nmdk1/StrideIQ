@@ -101,6 +101,7 @@ class HomeResponse(BaseModel):
     total_activities: int = 0  # Total number of activities
     last_sync: Optional[str] = None  # When Strava was last synced
     ingestion_state: Optional[dict] = None  # Phase 3: ingestion progress snapshot (durable)
+    ingestion_paused: bool = False  # Phase 5: global ingestion pause banner
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -656,6 +657,15 @@ async def get_home_data(
             ingestion_state = snap.to_dict() if snap else None
         except Exception:
             ingestion_state = None
+
+    # Phase 5: global ingestion pause (emergency brake).
+    ingestion_paused = False
+    try:
+        from services.system_flags import is_ingestion_paused
+
+        ingestion_paused = bool(is_ingestion_paused(db))
+    except Exception:
+        ingestion_paused = False
     
     # Generate hero narrative (ADR-033)
     hero_narrative = None
@@ -717,6 +727,7 @@ async def get_home_data(
         total_activities=total_activities,
         last_sync=last_sync,
         ingestion_state=ingestion_state,
+        ingestion_paused=ingestion_paused,
     )
 
 

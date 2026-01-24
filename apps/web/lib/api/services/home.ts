@@ -70,6 +70,7 @@ export interface HomeData {
   total_activities: number;
   last_sync?: string;
   ingestion_state?: Record<string, any> | null;
+  ingestion_paused?: boolean;
 }
 
 // --- API Functions ---

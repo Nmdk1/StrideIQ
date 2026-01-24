@@ -99,6 +99,11 @@ class ImpersonateUserRequest(BaseModel):
     ttl_minutes: Optional[int] = Field(default=None, ge=5, le=120, description="Override token TTL (bounded)")
 
 
+class PauseIngestionRequest(BaseModel):
+    paused: bool = Field(..., description="Whether global ingestion is paused")
+    reason: Optional[str] = Field(default=None, description="Why ingestion was paused/unpaused (audited)")
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -139,6 +144,84 @@ def get_ops_queue_snapshot(
             "scheduled_count": 0,
             "workers_seen": [],
         }
+
+
+@router.get("/ops/ingestion/pause")
+def get_ingestion_pause_status(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    from services.system_flags import is_ingestion_paused
+
+    return {"paused": bool(is_ingestion_paused(db))}
+
+
+@router.post("/ops/ingestion/pause")
+def set_ingestion_pause_status(
+    request: PauseIngestionRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_permission("system.ingestion.pause")),
+    db: Session = Depends(get_db),
+):
+    from services.system_flags import is_ingestion_paused, set_ingestion_paused
+    from services.admin_audit import record_admin_audit_event
+
+    before = {"paused": bool(is_ingestion_paused(db))}
+    ok = set_ingestion_paused(db, paused=bool(request.paused))
+    after = {"paused": bool(request.paused)}
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="system.ingestion.pause" if request.paused else "system.ingestion.resume",
+        target_athlete_id=None,
+        reason=request.reason,
+        payload={"before": before, "after": after, "ok": bool(ok)},
+    )
+    db.commit()
+    return {"success": True, "paused": bool(request.paused)}
+
+
+@router.get("/ops/ingestion/deferred")
+def list_deferred_ingestion(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+    limit: int = Query(200, ge=1, le=1000),
+):
+    """
+    Ops Visibility v0+: list athletes with deferred ingestion (e.g. rate limit / paused).
+    """
+    now = _utcnow()
+    rows = (
+        db.query(AthleteIngestionState, Athlete)
+        .join(Athlete, Athlete.id == AthleteIngestionState.athlete_id)
+        .filter(
+            AthleteIngestionState.provider == "strava",
+            AthleteIngestionState.deferred_until.isnot(None),
+            AthleteIngestionState.deferred_until > now,
+        )
+        .order_by(AthleteIngestionState.deferred_until.asc())
+        .limit(limit)
+        .all()
+    )
+
+    out: list[dict] = []
+    for st, athlete in rows:
+        out.append(
+            {
+                "athlete_id": str(athlete.id),
+                "email": athlete.email,
+                "display_name": athlete.display_name,
+                "deferred_until": st.deferred_until.isoformat() if st.deferred_until else None,
+                "deferred_reason": st.deferred_reason,
+                "last_index_status": st.last_index_status,
+                "last_best_efforts_status": st.last_best_efforts_status,
+                "updated_at": st.updated_at.isoformat() if st.updated_at else None,
+            }
+        )
+
+    return {"now": now.isoformat(), "count": len(out), "items": out}
 
 
 @router.get("/ops/ingestion/stuck")
@@ -765,6 +848,23 @@ def retry_ingestion(
         raise HTTPException(status_code=404, detail="User not found")
     if not target.strava_access_token:
         raise HTTPException(status_code=400, detail="Strava not connected")
+
+    from services.system_flags import is_ingestion_paused
+
+    if is_ingestion_paused(db):
+        from services.admin_audit import record_admin_audit_event
+
+        record_admin_audit_event(
+            db,
+            request=http_request,
+            actor=current_user,
+            action="ingestion.retry.blocked_by_pause",
+            target_athlete_id=str(target.id),
+            reason=request.reason,
+            payload={"paused": True},
+        )
+        db.commit()
+        raise HTTPException(status_code=409, detail="Ingestion paused by system")
 
     from tasks.strava_tasks import backfill_strava_activity_index_task, sync_strava_activities_task
 

@@ -52,6 +52,13 @@ def test_phase3_simulated_golden_path_invite_register_oauth_callback_and_bootstr
     created_athlete = None
     invite_row = None
     try:
+        # Ensure the Phase 5 emergency brake does not interfere with Phase 3 golden path.
+        from services.plan_framework.feature_flags import FeatureFlagService
+
+        svc = FeatureFlagService(db)
+        if svc.get_flag("system.ingestion_paused"):
+            svc.set_flag("system.ingestion_paused", {"enabled": False})
+
         # --- Admin setup: create admin + auth header ---
         admin = Athlete(
             email=f"admin_phase3_{uuid4()}@example.com",
@@ -189,6 +196,99 @@ def test_phase3_simulated_golden_path_invite_register_oauth_callback_and_bootstr
         # Best-effort cleanup (test suite also uses transaction rollback in many places,
         # but we avoid leaving rows behind).
         try:
+            if created_athlete is not None:
+                created_athlete = db.query(Athlete).filter(Athlete.id == created_athlete.id).first()
+                if created_athlete:
+                    db.delete(created_athlete)
+            if invite_row is not None:
+                invite_row = db.query(InviteAllowlist).filter(InviteAllowlist.id == invite_row.id).first()
+                if invite_row:
+                    db.delete(invite_row)
+            if admin is not None:
+                admin = db.query(Athlete).filter(Athlete.id == admin.id).first()
+                if admin:
+                    db.delete(admin)
+            db.commit()
+        except Exception:
+            db.rollback()
+        db.close()
+
+
+def test_strava_callback_skips_enqueue_when_ingestion_paused(monkeypatch):
+    """
+    Phase 5 brake: when system.ingestion_paused is enabled, the OAuth callback must
+    still link tokens but must NOT enqueue ingestion.
+    """
+    from services.plan_framework.feature_flags import FeatureFlagService
+
+    db = SessionLocal()
+    admin = None
+    created_athlete = None
+    invite_row = None
+    try:
+        admin = Athlete(
+            email=f"admin_pause_{uuid4()}@example.com",
+            display_name="Admin",
+            subscription_tier="elite",
+            role="admin",
+        )
+        db.add(admin)
+        db.commit()
+        db.refresh(admin)
+
+        admin_headers = {"Authorization": f"Bearer {create_access_token({'sub': str(admin.id)})}"}
+
+        invited_email = f"paused_{uuid4()}@example.com"
+        resp = client.post("/v1/admin/invites", json={"email": invited_email, "note": "pause test"}, headers=admin_headers)
+        assert resp.status_code == 200, resp.text
+
+        password = "password123"
+        resp = client.post("/v1/auth/register", json={"email": invited_email, "password": password, "display_name": "User"})
+        assert resp.status_code == 201, resp.text
+
+        created_athlete = db.query(Athlete).filter(Athlete.email == invited_email.lower()).first()
+        assert created_athlete is not None
+
+        # Enable the pause flag
+        svc = FeatureFlagService(db)
+        if not svc.get_flag("system.ingestion_paused"):
+            svc.create_flag(key="system.ingestion_paused", name="Pause global ingestion", enabled=True, description="test")
+        else:
+            svc.set_flag("system.ingestion_paused", {"enabled": True})
+        db.commit()
+
+        # Login to get state
+        resp = client.post("/v1/auth/login", json={"email": invited_email, "password": password})
+        user_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        resp = client.get("/v1/strava/auth-url?return_to=/onboarding", headers=user_headers)
+        state = _extract_state_from_auth_url(resp.json()["auth_url"])
+
+        # Mock Strava edge + token encryption
+        monkeypatch.setattr(
+            "routers.strava.exchange_code_for_token",
+            lambda _code: {"access_token": "access123", "refresh_token": "refresh123", "athlete": {"id": 999, "firstname": "T", "lastname": "U"}},
+        )
+        monkeypatch.setattr("services.token_encryption.encrypt_token", lambda x: f"enc:{x}")
+
+        # Capture delay calls; should stay empty.
+        delay_calls: list[_DelayCall] = []
+        monkeypatch.setattr("tasks.strava_tasks.backfill_strava_activity_index_task.delay", lambda *a, **k: delay_calls.append(_DelayCall(args=a, kwargs=k)))
+
+        resp = client.get(f"/v1/strava/callback?code=fake&state={state}", follow_redirects=False)
+        assert resp.status_code == 302
+        db.refresh(created_athlete)
+        assert created_athlete.strava_athlete_id == 999
+        assert created_athlete.strava_access_token == "enc:access123"
+        assert delay_calls == []
+    finally:
+        try:
+            # Reset emergency brake so other tests aren't affected.
+            from services.plan_framework.feature_flags import FeatureFlagService
+
+            svc = FeatureFlagService(db)
+            if svc.get_flag("system.ingestion_paused"):
+                svc.set_flag("system.ingestion_paused", {"enabled": False})
+
             if created_athlete is not None:
                 created_athlete = db.query(Athlete).filter(Athlete.id == created_athlete.id).first()
                 if created_athlete:

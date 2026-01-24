@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useResetOnboarding, useRetryIngestion, useSetBlocked, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useResetOnboarding, useRetryIngestion, useSetBlocked, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -45,6 +45,9 @@ export default function AdminPage() {
   const { data: opsQueue, isLoading: opsQueueLoading } = useOpsQueue();
   const { data: opsStuck, isLoading: opsStuckLoading } = useOpsStuckIngestion({ minutes: 30, limit: 100 });
   const { data: opsErrors, isLoading: opsErrorsLoading } = useOpsIngestionErrors({ days: 7, limit: 200 });
+  const { data: opsPause, isLoading: opsPauseLoading } = useOpsIngestionPause();
+  const setOpsPause = useSetOpsIngestionPause();
+  const { data: opsDeferred, isLoading: opsDeferredLoading } = useOpsDeferredIngestion({ limit: 200 });
 
   // Feature flags
   const { data: flagsData, isLoading: flagsLoading } = useAdminFeatureFlags('plan.');
@@ -461,9 +464,35 @@ export default function AdminPage() {
           {selectedTab === 'ops' && (
             <div className="space-y-6">
               <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
-                <h3 className="text-lg font-semibold mb-2">Queue snapshot</h3>
+                <div className="flex items-start justify-between gap-4 mb-2">
+                  <div>
+                    <h3 className="text-lg font-semibold">Queue snapshot</h3>
+                    <p className="text-slate-400 text-sm">
+                      Best-effort Celery visibility. If unavailable, it won’t block admin operations.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs text-slate-400">Pause global ingestion</div>
+                    {opsPauseLoading ? (
+                      <LoadingSpinner size="sm" />
+                    ) : (
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={!!opsPause?.paused}
+                          onChange={(e) =>
+                            setOpsPause.mutate({ paused: e.target.checked, reason: adminReason || null })
+                          }
+                        />
+                        <span className={opsPause?.paused ? 'text-amber-300' : 'text-slate-300'}>
+                          {opsPause?.paused ? 'Paused' : 'Running'}
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                </div>
                 <p className="text-slate-400 text-sm mb-4">
-                  Best-effort Celery visibility. If unavailable, it won’t block admin operations.
+                  When paused, Strava connect will still save tokens but will not enqueue ingestion until resumed.
                 </p>
 
                 {opsQueueLoading ? (
@@ -494,6 +523,55 @@ export default function AdminPage() {
                   </div>
                 ) : (
                   <ErrorMessage error={new Error('Failed to load queue snapshot')} />
+                )}
+              </div>
+
+              <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
+                <h3 className="text-lg font-semibold mb-2">Deferred ingestion</h3>
+                <p className="text-slate-400 text-sm mb-4">
+                  Athletes intentionally deferred (e.g., Strava rate limits). These are not errors.
+                </p>
+                {opsDeferredLoading ? (
+                  <LoadingSpinner />
+                ) : opsDeferred ? (
+                  opsDeferred.items.length === 0 ? (
+                    <div className="text-sm text-slate-400">No deferred athletes right now.</div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border border-slate-700/50">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-900">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-semibold">Athlete</th>
+                            <th className="px-4 py-3 text-left font-semibold">Reason</th>
+                            <th className="px-4 py-3 text-left font-semibold">Deferred until</th>
+                            <th className="px-4 py-3 text-left font-semibold">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {opsDeferred.items.slice(0, 50).map((it) => (
+                            <tr key={it.athlete_id} className="border-t border-slate-700/50">
+                              <td className="px-4 py-3">
+                                <div className="font-medium">{it.display_name || '—'}</div>
+                                <div className="text-xs text-slate-400">{it.email || it.athlete_id}</div>
+                              </td>
+                              <td className="px-4 py-3">{it.deferred_reason || '—'}</td>
+                              <td className="px-4 py-3 text-slate-400">{it.deferred_until || '—'}</td>
+                              <td className="px-4 py-3">
+                                <button
+                                  onClick={() => setSelectedUserId(it.athlete_id)}
+                                  className="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+                                >
+                                  View
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                ) : (
+                  <ErrorMessage error={new Error('Failed to load deferred ingestion list')} />
                 )}
               </div>
 

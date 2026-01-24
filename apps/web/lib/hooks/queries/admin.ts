@@ -4,7 +4,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminService, type AdminUserDetail, type FeatureFlag, type ThreeDSelectionMode } from '../../api/services/admin';
-import type { UserListResponse, SystemHealth, SiteMetrics, ImpersonationResponse, OpsQueueSnapshot, OpsIngestionStuckResponse, OpsIngestionErrorsResponse } from '../../api/services/admin';
+import type { UserListResponse, SystemHealth, SiteMetrics, ImpersonationResponse, OpsQueueSnapshot, OpsIngestionStuckResponse, OpsIngestionErrorsResponse, OpsIngestionDeferredResponse, OpsIngestionPauseResponse } from '../../api/services/admin';
 
 export const adminKeys = {
   all: ['admin'] as const,
@@ -18,6 +18,8 @@ export const adminKeys = {
   opsQueue: () => [...adminKeys.ops(), 'queue'] as const,
   opsStuck: (params?: any) => [...adminKeys.ops(), 'stuck', params] as const,
   opsErrors: (params?: any) => [...adminKeys.ops(), 'errors', params] as const,
+  opsDeferred: (params?: any) => [...adminKeys.ops(), 'deferred', params] as const,
+  opsPause: () => [...adminKeys.ops(), 'pause'] as const,
 } as const;
 
 /**
@@ -153,6 +155,24 @@ export function useOpsQueue() {
   });
 }
 
+export function useOpsIngestionPause() {
+  return useQuery<OpsIngestionPauseResponse>({
+    queryKey: adminKeys.opsPause(),
+    queryFn: () => adminService.getOpsIngestionPause(),
+    refetchInterval: 10 * 1000,
+  });
+}
+
+export function useSetOpsIngestionPause() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { paused: boolean; reason?: string | null }) => adminService.setOpsIngestionPause(params),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.opsPause() });
+    },
+  });
+}
+
 export function useOpsStuckIngestion(params?: { minutes?: number; limit?: number }) {
   return useQuery<OpsIngestionStuckResponse>({
     queryKey: adminKeys.opsStuck(params),
@@ -166,6 +186,14 @@ export function useOpsIngestionErrors(params?: { days?: number; limit?: number }
     queryKey: adminKeys.opsErrors(params),
     queryFn: () => adminService.getOpsIngestionErrors(params),
     refetchInterval: 60 * 1000,
+  });
+}
+
+export function useOpsDeferredIngestion(params?: { limit?: number }) {
+  return useQuery<OpsIngestionDeferredResponse>({
+    queryKey: adminKeys.opsDeferred(params),
+    queryFn: () => adminService.getOpsDeferredIngestion(params),
+    refetchInterval: 30 * 1000,
   });
 }
 
