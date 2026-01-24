@@ -11,13 +11,16 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
 }));
 
-const updateProfile = jest.fn(async () => ({
-  onboarding_stage: 'connect_strava',
-  onboarding_completed: false,
-}));
 jest.mock('@/lib/api/services/auth', () => ({
   authService: {
-    updateProfile: (...args: any[]) => updateProfile(...args),
+    updateProfile: jest.fn(async () => ({
+      onboarding_stage: 'connect_strava',
+      onboarding_completed: false,
+    })),
+  },
+  __mocks: {
+    // expose mocks for assertions without hoist/TDZ issues
+    updateProfile: undefined as any,
   },
 }));
 
@@ -33,16 +36,18 @@ jest.mock('@/lib/hooks/useAuth', () => ({
   }),
 }));
 
-const getIntake = jest.fn(async () => ({
-  stage: 'goals',
-  responses: { goal_event_type: '5k' },
-  completed_at: null,
-}));
-const saveIntake = jest.fn(async () => ({ ok: true }));
 jest.mock('@/lib/api/services/onboarding', () => ({
   onboardingService: {
-    getIntake: (...args: any[]) => getIntake(...args),
-    saveIntake: (...args: any[]) => saveIntake(...args),
+    getIntake: jest.fn(async () => ({
+      stage: 'goals',
+      responses: { goal_event_type: '5k' },
+      completed_at: null,
+    })),
+    saveIntake: jest.fn(async () => ({ ok: true })),
+  },
+  __mocks: {
+    getIntake: undefined as any,
+    saveIntake: undefined as any,
   },
 }));
 
@@ -62,17 +67,23 @@ import OnboardingPage from '@/app/onboarding/page';
 
 describe('Onboarding interview (goals stage)', () => {
   test('loads saved intake and saves before advancing stage', async () => {
+    const authMod = require('@/lib/api/services/auth');
+    authMod.__mocks.updateProfile = authMod.authService.updateProfile;
+    const onboardingMod = require('@/lib/api/services/onboarding');
+    onboardingMod.__mocks.getIntake = onboardingMod.onboardingService.getIntake;
+    onboardingMod.__mocks.saveIntake = onboardingMod.onboardingService.saveIntake;
+
     render(<OnboardingPage />);
 
     expect(await screen.findByText('Interview')).toBeInTheDocument();
-    await waitFor(() => expect(getIntake).toHaveBeenCalledWith('goals'));
+    await waitFor(() => expect(onboardingMod.__mocks.getIntake).toHaveBeenCalledWith('goals'));
 
     const user = userEvent.setup();
     const next = screen.getByRole('button', { name: 'Next' });
     await user.click(next);
 
-    await waitFor(() => expect(saveIntake).toHaveBeenCalled());
-    await waitFor(() => expect(updateProfile).toHaveBeenCalled());
+    await waitFor(() => expect(onboardingMod.__mocks.saveIntake).toHaveBeenCalled());
+    await waitFor(() => expect(authMod.__mocks.updateProfile).toHaveBeenCalled());
   });
 });
 

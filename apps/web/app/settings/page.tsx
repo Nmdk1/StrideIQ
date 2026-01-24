@@ -25,6 +25,7 @@ export default function SettingsPage() {
   const { units, setUnits } = useUnits();
   const [exporting, setExporting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [billingLoading, setBillingLoading] = useState<'checkout' | 'portal' | null>(null);
 
   const handleExportData = async () => {
     setExporting(true);
@@ -67,6 +68,42 @@ export default function SettingsPage() {
       window.location.href = '/';
     } catch (err) {
       console.error('Delete failed:', err);
+    }
+  };
+
+  const handleUpgrade = async () => {
+    setBillingLoading('checkout');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const resp = await fetch(`${API_CONFIG.baseURL}/v1/billing/checkout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data?.url) return;
+      window.location.href = data.url;
+    } catch (err) {
+      console.error('Upgrade failed:', err);
+    } finally {
+      setBillingLoading(null);
+    }
+  };
+
+  const handleManageSubscription = async () => {
+    setBillingLoading('portal');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const resp = await fetch(`${API_CONFIG.baseURL}/v1/billing/portal`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data?.url) return;
+      window.location.href = data.url;
+    } catch (err) {
+      console.error('Portal failed:', err);
+    } finally {
+      setBillingLoading(null);
     }
   };
 
@@ -158,22 +195,41 @@ export default function SettingsPage() {
                   <CreditCard className="w-5 h-5 text-purple-500" />
                   Membership
                 </CardTitle>
-                <CardDescription>Elite access and billing</CardDescription>
+                <CardDescription>Free vs Pro</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div>
                       <p className="font-medium flex items-center gap-2">
-                        {(user?.subscription_tier || 'Free')} Plan
+                        {(user?.subscription_tier || 'free').toUpperCase()} Plan
                         <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Active</Badge>
                       </p>
-                      <p className="text-sm text-slate-400">We’re moving to a single paid tier: Elite</p>
+                      <p className="text-sm text-slate-400">Pro unlocks the full planning and intelligence stack.</p>
                     </div>
                   </div>
-                  <Button className="bg-slate-700 hover:bg-slate-600" disabled>
-                    Membership coming soon <ArrowUpRight className="w-4 h-4 ml-1" />
-                  </Button>
+                  {(user?.subscription_tier || 'free') === 'free' ? (
+                    <Button className="bg-orange-600 hover:bg-orange-500" onClick={handleUpgrade} disabled={billingLoading !== null}>
+                      {billingLoading === 'checkout' ? <LoadingSpinner size="sm" /> : (
+                        <>
+                          Upgrade to Pro <ArrowUpRight className="w-4 h-4 ml-1" />
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button
+                      className="bg-slate-700 hover:bg-slate-600"
+                      onClick={handleManageSubscription}
+                      disabled={billingLoading !== null || !user?.stripe_customer_id}
+                      title={!user?.stripe_customer_id ? 'No Stripe customer linked yet' : undefined}
+                    >
+                      {billingLoading === 'portal' ? <LoadingSpinner size="sm" /> : (
+                        <>
+                          Manage subscription <ArrowUpRight className="w-4 h-4 ml-1" />
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>

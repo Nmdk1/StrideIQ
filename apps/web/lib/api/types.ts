@@ -178,6 +178,7 @@ export interface Athlete {
   sex?: string;
   height_cm?: number;
   subscription_tier: string;
+  stripe_customer_id?: string | null;
   onboarding_stage?: string;
   onboarding_completed: boolean;
   role?: 'athlete' | 'coach' | 'admin' | 'owner';
