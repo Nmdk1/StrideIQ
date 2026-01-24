@@ -38,7 +38,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 | 2 | Public Pages (Landing + About) | Complete | Landing + About now match manifesto voice and product reality; conversion CTAs are coherent; About includes founder story + photo; preview/mock routes removed. |
 | 3 | Onboarding Workflow (“Latency Bridge”) | Complete | Invite allowlist gating is enforced and auditable; Strava OAuth is state-signed and returns to web; ingestion is queued and progress is deterministic (no “dead air” even if ingestion_state is pending). |
 | 4 | Admin “Heartbeat” | Complete | Secure `/admin` + `/v1/admin/*` (role + permission seam), “God Mode” athlete detail, auditable operator actions (comp/reset/retry/block), and impersonation hardened (owner-only + time-boxed + banner + audit). |
-| 5 | Operational Visibility + Reliability | In progress | Ops Visibility v0 is live: queue snapshot + stuck-ingestion list + recent ingestion errors. Reliability controls (rate-limit deferral + global pause) are next. |
+| 5 | Operational Visibility + Reliability | Complete | Viral-Safe Shield delivered: Ops Pulse (queue/stuck/errors/deferred), Rate Limit Armor (429 deferral + retry), and Emergency Brake (global ingestion pause + UI banner). |
 | 6 | Subscription/Tier/Payment Productionization | Not started | |
 | 7 | Data Provider Expansion (Garmin/Coros) | Not started | |
 | 8 | Security, Privacy, Compliance Hardening | Not started | |
@@ -59,6 +59,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 - **2026-01-24 (Phase 3 - complete)**: Phase 3 closed. Verified: invite-only gating at registration, signed OAuth state round-trip, Strava callback queues ingestion, onboarding intake persists and seeds intent snapshot, Home shows deterministic import status (queued/running), and black-box wiring confirms Intake priors influence deterministic selection.
 - **2026-01-24 (Phase 4 - complete)**: Phase 4 closed. Delivered a business-critical admin console: secure `/admin` routes, RBAC seam (`admin_permissions`), append-only admin audit log, “God Mode” athlete detail, and operator actions (comp access, reset onboarding, retry ingestion, block/unblock). **Impersonation hardened** to owner-only with a **time-boxed token**, **global banner**, and **hard audit event** to prevent silent privilege escalation.
 - **2026-01-24 (Phase 5 / Ops Visibility v0)**: Added an Ops tab for fast triage: best-effort queue snapshot, stuck ingestion list, and recent ingestion errors, plus API + web regression tests.
+- **2026-01-24 (Phase 5 - complete)**: Delivered the “Viral-Safe Shield”: **Ops Pulse** (queue + stuck + errors + deferred + pause toggle), **Rate Limit Armor** (Strava 429 → defer + retry without worker sleep), and **Emergency Brake** (`system.ingestion_paused` enforced in Strava callback + admin retry; calm Home banner when paused). Added targeted backend and web regression tests to prevent meltdown regressions.
 
 ---
 
