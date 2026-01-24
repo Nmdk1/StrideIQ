@@ -37,8 +37,8 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 | 1 | Finish the Subscriber Experience | Complete | Sprints 1–3 accepted: fixed 500s, improved Home/Insights trust, hardened coach UX (units + receipts), mobile responsiveness + mobile QA sweep, and removed hardcoded credential strings with CI guardrails. |
 | 2 | Public Pages (Landing + About) | Complete | Landing + About now match manifesto voice and product reality; conversion CTAs are coherent; About includes founder story + photo; preview/mock routes removed. |
 | 3 | Onboarding Workflow (“Latency Bridge”) | Complete | Invite allowlist gating is enforced and auditable; Strava OAuth is state-signed and returns to web; ingestion is queued and progress is deterministic (no “dead air” even if ingestion_state is pending). |
-| 4 | Admin “Heartbeat” | Not started | |
-| 5 | Operational Visibility + Reliability | Not started | |
+| 4 | Admin “Heartbeat” | Complete | Secure `/admin` + `/v1/admin/*` (role + permission seam), “God Mode” athlete detail, auditable operator actions (comp/reset/retry/block), and impersonation hardened (owner-only + time-boxed + banner + audit). |
+| 5 | Operational Visibility + Reliability | In progress | Ops Visibility v0 is live: queue snapshot + stuck-ingestion list + recent ingestion errors. Reliability controls (rate-limit deferral + global pause) are next. |
 | 6 | Subscription/Tier/Payment Productionization | Not started | |
 | 7 | Data Provider Expansion (Garmin/Coros) | Not started | |
 | 8 | Security, Privacy, Compliance Hardening | Not started | |
@@ -57,6 +57,8 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 - **2026-01-24 (Phase 3 / Sprint 1 - in progress)**: Began “Latency Bridge” onboarding: added **DB-backed invite allowlist** (auditable) and enforced it at **all account-creation boundaries** (register + Strava OAuth callback, plus secured legacy athlete-create). Strava OAuth now uses **signed state** to bind to existing athletes, redirects back to the web app (no JSON dead-end), and queues a **cheap index backfill** immediately. Added onboarding endpoints to bootstrap ingestion and expose ingestion status. Web onboarding + Home now surface deterministic “import in progress” status.
 - **2026-01-24 (Phase 3 / Sprint 2 - accepted)**: Eliminated the remaining “dead air” edge case on Home: when Strava is connected but `ingestion_state` hasn’t populated yet, Home now shows an explicit **Import queued** card instead of rendering an ambiguous empty dashboard. Added web regression tests covering both queued and running states.
 - **2026-01-24 (Phase 3 - complete)**: Phase 3 closed. Verified: invite-only gating at registration, signed OAuth state round-trip, Strava callback queues ingestion, onboarding intake persists and seeds intent snapshot, Home shows deterministic import status (queued/running), and black-box wiring confirms Intake priors influence deterministic selection.
+- **2026-01-24 (Phase 4 - complete)**: Phase 4 closed. Delivered a business-critical admin console: secure `/admin` routes, RBAC seam (`admin_permissions`), append-only admin audit log, “God Mode” athlete detail, and operator actions (comp access, reset onboarding, retry ingestion, block/unblock). **Impersonation hardened** to owner-only with a **time-boxed token**, **global banner**, and **hard audit event** to prevent silent privilege escalation.
+- **2026-01-24 (Phase 5 / Ops Visibility v0)**: Added an Ops tab for fast triage: best-effort queue snapshot, stuck ingestion list, and recent ingestion errors, plus API + web regression tests.
 
 ---
 
