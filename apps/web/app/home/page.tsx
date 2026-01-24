@@ -243,7 +243,9 @@ export default function HomePage() {
   const hasLastActivity = yesterday.last_activity_date && yesterday.days_since_last !== undefined;
   const workoutConfig = getWorkoutConfig(today.workout_type);
   const indexStatus = (ingestion_state?.last_index_status as string | undefined) || undefined;
-  const showIngestionCard = isStravaConnected && !has_any_activities && !!indexStatus;
+  // Phase 3 "no dead air": if Strava is connected but we have no activities yet,
+  // always show a deterministic progress card (even if ingestion_state hasn't populated yet).
+  const showIngestionCard = isStravaConnected && !has_any_activities;
 
   return (
     <ProtectedRoute>
@@ -294,7 +296,7 @@ export default function HomePage() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm text-slate-300 flex items-center gap-2">
                   <Clock className="w-4 h-4 text-orange-400" />
-                  Import in progress
+                  {indexStatus ? 'Import in progress' : 'Import queued'}
                 </CardTitle>
                 <CardDescription>
                   Connected to Strava. Activities will appear as they’re ingested.
@@ -302,7 +304,9 @@ export default function HomePage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="text-sm text-slate-300">
-                  {indexStatus === 'running'
+                  {!indexStatus
+                    ? 'Connected. Import will start in the background.'
+                    : indexStatus === 'running'
                     ? 'Indexing activities…'
                     : indexStatus === 'success'
                       ? 'Indexed. Fetching details next…'
@@ -318,6 +322,11 @@ export default function HomePage() {
                       : ''}
                   </div>
                 ) : null}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button asChild variant="secondary" size="sm">
+                    <Link href="/settings">Settings</Link>
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
