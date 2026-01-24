@@ -9,6 +9,7 @@ This folder is intended to be **readable diligence** for:
 - **Product + positioning**: `docs/EXECUTIVE_REPORT.md`
 - **Phased delivery ledger / roadmap**: `docs/PHASED_WORK_PLAN.md`
 - **Architecture overview (systems + trust contracts)**: `docs/ARCHITECTURE_OVERVIEW.md`
+- **Local dev + tests**: `docs/LOCAL_DEV_AND_TESTS.md`
 
 ## 2) Choose a “Read First” path
 - **Employment (engineering)**: `docs/READ_FIRST_EMPLOYMENT.md`
