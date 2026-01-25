@@ -5,7 +5,9 @@ from datetime import date, datetime, timezone
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,7 @@ from models import CoachActionProposal, PlannedWorkout, TrainingPlan, WorkoutTem
 
 
 router = APIRouter(prefix="/v2/coach/actions", tags=["Coach Actions"])
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -180,6 +183,60 @@ def _snapshot(w: PlannedWorkout) -> WorkoutSnapshot:
         target_duration_minutes=getattr(w, "target_duration_minutes", None),
         skipped=bool(getattr(w, "skipped", False)),
     )
+
+
+def _client_ip(request: Request | None) -> str | None:
+    if not request:
+        return None
+    # Common reverse proxy headers (best-effort).
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip() or None
+    return getattr(request.client, "host", None)
+
+
+def _user_agent(request: Request | None) -> str | None:
+    if not request:
+        return None
+    ua = request.headers.get("user-agent")
+    return ua if ua else None
+
+
+def _emit_coach_action_event(
+    *,
+    event: str,
+    athlete_id: UUID,
+    proposal_id: UUID | None = None,
+    status: str | None = None,
+    reason: str | None = None,
+    extra: dict | None = None,
+) -> None:
+    """
+    Beta monitoring hook:
+    - logs a structured event (parsable by log aggregation)
+    - best-effort sends a Sentry breadcrumb/message if configured
+    """
+    payload = {
+        "event": event,
+        "athlete_id": str(athlete_id),
+        "proposal_id": str(proposal_id) if proposal_id else None,
+        "status": status,
+        "reason": reason,
+    }
+    if extra:
+        payload.update(extra)
+    try:
+        logger.info("coach_action_event", extra=payload)
+    except Exception:
+        # Never fail requests due to telemetry.
+        pass
+
+    try:
+        import sentry_sdk  # type: ignore
+
+        sentry_sdk.add_breadcrumb(category="coach_action", message=event, level="info", data=payload)
+    except Exception:
+        pass
 
 
 def _require_plan_owner(db: Session, *, athlete_id: UUID, plan_id: UUID) -> TrainingPlan:
@@ -365,6 +422,36 @@ def _apply_swap_days(db: Session, *, athlete_id: UUID, plan_id: UUID, payload: S
 
     a1 = _snapshot(w1)
     a2 = _snapshot(w2)
+
+    # Audit (plan_modification_log) — append-only.
+    try:
+        from services.plan_audit import log_modification
+
+        log_modification(
+            db=db,
+            athlete_id=athlete_id,
+            plan_id=plan_id,
+            action="swap_workouts",
+            workout_id=w1.id,
+            before_state=b1.model_dump(mode="json"),
+            after_state=a1.model_dump(mode="json"),
+            reason=payload.reason,
+            source="coach",
+        )
+        log_modification(
+            db=db,
+            athlete_id=athlete_id,
+            plan_id=plan_id,
+            action="swap_workouts",
+            workout_id=w2.id,
+            before_state=b2.model_dump(mode="json"),
+            after_state=a2.model_dump(mode="json"),
+            reason=payload.reason,
+            source="coach",
+        )
+    except Exception:
+        pass
+
     return [
         _ApplyChange(plan_id=plan_id, workout=w1, before=b1, after=a1),
         _ApplyChange(plan_id=plan_id, workout=w2, before=b2, after=a2),
@@ -380,6 +467,24 @@ def _apply_skip_restore(db: Session, *, athlete_id: UUID, plan_id: UUID, payload
         w.completed = False
     db.flush()
     a = _snapshot(w)
+
+    try:
+        from services.plan_audit import log_modification
+
+        log_modification(
+            db=db,
+            athlete_id=athlete_id,
+            plan_id=plan_id,
+            action="delete_workout" if payload.skipped else "edit_workout",
+            workout_id=w.id,
+            before_state=b.model_dump(mode="json"),
+            after_state=a.model_dump(mode="json"),
+            reason=payload.reason,
+            source="coach",
+        )
+    except Exception:
+        pass
+
     return [_ApplyChange(plan_id=plan_id, workout=w, before=b, after=a)]
 
 
@@ -404,6 +509,24 @@ def _apply_replace_with_template(
     w.description = desc
     db.flush()
     a = _snapshot(w)
+
+    try:
+        from services.plan_audit import log_modification
+
+        log_modification(
+            db=db,
+            athlete_id=athlete_id,
+            plan_id=plan_id,
+            action="edit_workout",
+            workout_id=w.id,
+            before_state=b.model_dump(mode="json"),
+            after_state=a.model_dump(mode="json"),
+            reason=payload.reason,
+            source="coach",
+        )
+    except Exception:
+        pass
+
     return [_ApplyChange(plan_id=plan_id, workout=w, before=b, after=a)]
 
 
@@ -485,6 +608,25 @@ def _apply_adjust_load(
                 changes.append(_ApplyChange(plan_id=plan_id, workout=w, before=b, after=a))
     else:
         raise HTTPException(status_code=400, detail="Invalid adjustment")
+
+    # Audit changes (best-effort)
+    try:
+        from services.plan_audit import log_modification
+
+        for c in changes:
+            log_modification(
+                db=db,
+                athlete_id=athlete_id,
+                plan_id=plan_id,
+                action="adjust_load",
+                workout_id=c.workout.id,
+                before_state=c.before.model_dump(mode="json"),
+                after_state=c.after.model_dump(mode="json"),
+                reason=payload.reason,
+                source="coach",
+            )
+    except Exception:
+        pass
 
     return changes
 
@@ -582,6 +724,12 @@ async def propose_action(
     risk_notes = _risk_notes_for(actions)
 
     if existing:
+        _emit_coach_action_event(
+            event="coach.action.proposed.idempotent_hit",
+            athlete_id=athlete.id,
+            proposal_id=existing.id,
+            status=existing.status,
+        )
         return ProposeResponse(
             proposal_id=existing.id,
             status=existing.status,  # type: ignore[arg-type]
@@ -604,6 +752,14 @@ async def propose_action(
     db.add(proposal)
     db.flush()
 
+    _emit_coach_action_event(
+        event="coach.action.proposed",
+        athlete_id=athlete.id,
+        proposal_id=proposal.id,
+        status=proposal.status,
+        extra={"actions_count": len(actions), "target_plan_id": str(target_plan_id)},
+    )
+
     return ProposeResponse(
         proposal_id=proposal.id,
         status="proposed",
@@ -619,6 +775,7 @@ async def propose_action(
 async def confirm_action(
     proposal_id: UUID,
     req: ConfirmRequest,
+    request: Request,
     athlete=Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
@@ -630,6 +787,12 @@ async def confirm_action(
 
     if proposal.status == "applied":
         receipt = proposal.apply_receipt_json or {}
+        _emit_coach_action_event(
+            event="coach.action.confirm.idempotent_hit",
+            athlete_id=athlete.id,
+            proposal_id=proposal.id,
+            status=proposal.status,
+        )
         return ConfirmResponse(
             proposal_id=proposal.id,
             status="applied",
@@ -659,7 +822,41 @@ async def confirm_action(
         proposal.applied_at = _now()
         receipt = ApplyReceipt(actions_applied=len(env.actions), changes=changes)
         proposal.apply_receipt_json = receipt.model_dump(mode="json")
+        # Persist audit metadata onto each plan_modification_log entry best-effort (request context)
+        try:
+            from sqlalchemy import text
+
+            # Backfill ip/user_agent onto rows created in this transaction (source='coach', created very recently).
+            # Note: we do not depend on this for correctness; it's purely for operator visibility.
+            ip = _client_ip(request)
+            ua = _user_agent(request)
+            if (ip or ua) and proposal.target_plan_id is not None:
+                db.execute(
+                    text(
+                        """
+                        UPDATE plan_modification_log
+                        SET ip_address = COALESCE(ip_address, :ip),
+                            user_agent = COALESCE(user_agent, :ua)
+                        WHERE athlete_id = :athlete_id
+                          AND plan_id = :plan_id
+                          AND source = 'coach'
+                          AND created_at > (now() - interval '5 minutes')
+                        """
+                    ),
+                    {"ip": ip, "ua": ua, "athlete_id": str(athlete.id), "plan_id": str(proposal.target_plan_id)},
+                )
+        except Exception:
+            pass
+
         db.flush()
+
+        _emit_coach_action_event(
+            event="coach.action.applied",
+            athlete_id=athlete.id,
+            proposal_id=proposal.id,
+            status=proposal.status,
+            extra={"actions_count": len(env.actions), "changes_count": len(changes)},
+        )
         return ConfirmResponse(
             proposal_id=proposal.id,
             status="applied",
@@ -676,6 +873,13 @@ async def confirm_action(
             db.commit()
         except Exception:
             db.rollback()
+        _emit_coach_action_event(
+            event="coach.action.apply_failed",
+            athlete_id=athlete.id,
+            proposal_id=proposal.id,
+            status="failed",
+            reason=str(e.detail),
+        )
         raise
     except Exception as e:
         try:
@@ -684,6 +888,13 @@ async def confirm_action(
             db.commit()
         except Exception:
             db.rollback()
+        _emit_coach_action_event(
+            event="coach.action.apply_failed",
+            athlete_id=athlete.id,
+            proposal_id=proposal.id,
+            status="failed",
+            reason=f"{type(e).__name__}",
+        )
         raise HTTPException(status_code=500, detail="Apply failed")
 
 
@@ -707,6 +918,14 @@ async def reject_action(
     proposal.confirmed_at = _now()
     proposal.error = req.reason
     db.flush()
+
+    _emit_coach_action_event(
+        event="coach.action.rejected",
+        athlete_id=athlete.id,
+        proposal_id=proposal.id,
+        status=proposal.status,
+        reason=req.reason,
+    )
 
     return RejectResponse(proposal_id=proposal.id, status="rejected", rejected_at=proposal.confirmed_at)
 

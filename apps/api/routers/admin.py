@@ -29,6 +29,7 @@ from models import (
     AthleteIngestionState,
     TrainingPlan,
     PlannedWorkout,
+    CoachActionProposal,
     Subscription,
 )
 from schemas import AthleteResponse
@@ -164,6 +165,61 @@ def get_ops_queue_snapshot(
             "scheduled_count": 0,
             "workers_seen": [],
         }
+
+
+@router.get("/ops/coach-actions")
+def get_ops_coach_actions_snapshot(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+    hours: int = Query(24, ge=1, le=168, description="Lookback window (hours)"),
+    top_errors: int = Query(5, ge=1, le=25, description="Top failed error reasons to return"),
+):
+    """
+    Ops Pulse: Coach Action Automation lifecycle snapshot.
+
+    Provides lightweight counts for propose/confirm/apply/failed states, and most common
+    failure reasons in the lookback window.
+    """
+    since = _utcnow() - timedelta(hours=int(hours))
+
+    total = db.query(func.count(CoachActionProposal.id)).scalar() or 0
+    recent_total = (
+        db.query(func.count(CoachActionProposal.id))
+        .filter(CoachActionProposal.created_at >= since)
+        .scalar()
+        or 0
+    )
+
+    by_status_rows = (
+        db.query(CoachActionProposal.status, func.count(CoachActionProposal.id))
+        .filter(CoachActionProposal.created_at >= since)
+        .group_by(CoachActionProposal.status)
+        .all()
+    )
+    by_status = {str(s): int(c) for (s, c) in (by_status_rows or [])}
+
+    failed_by_reason_rows = (
+        db.query(CoachActionProposal.error, func.count(CoachActionProposal.id))
+        .filter(
+            CoachActionProposal.created_at >= since,
+            CoachActionProposal.status == "failed",
+            CoachActionProposal.error.isnot(None),
+        )
+        .group_by(CoachActionProposal.error)
+        .order_by(desc(func.count(CoachActionProposal.id)))
+        .limit(int(top_errors))
+        .all()
+    )
+    failed_by_reason = [{"reason": str(r or ""), "count": int(c)} for (r, c) in (failed_by_reason_rows or [])]
+
+    return {
+        "window_hours": int(hours),
+        "since": since.isoformat(),
+        "total": int(total),
+        "recent_total": int(recent_total),
+        "recent_by_status": by_status,
+        "recent_failed_top_reasons": failed_by_reason,
+    }
 
 
 @router.get("/ops/ingestion/pause")
