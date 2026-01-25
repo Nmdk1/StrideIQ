@@ -79,7 +79,8 @@ jobs:
             tests/test_admin_actions_onboarding_ingestion_block.py \
             tests/test_phase7_garmin_file_import_e2e.py \
             tests/test_phase8_security_golden_paths.py \
-            tests/test_phase8_impersonation_high_risk_blocks.py
+            tests/test_phase8_impersonation_high_risk_blocks.py \
+            tests/test_phase8_token_jwt_invariants.py
 
   backend-test:
     name: Backend Tests
