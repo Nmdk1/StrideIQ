@@ -105,3 +105,18 @@ def test_context_injection_builder_is_pure_and_explicit() -> None:
     finally:
         db.close()
 
+
+def test_return_scope_clarification_guardrail() -> None:
+    db = SessionLocal()
+    try:
+        coach = AICoach(db)
+        # Ambiguous: return context + comparison token, but no return window anchor.
+        assert coach._needs_return_scope_clarification("longest since coming back and i feel slow") is True
+
+        # Not ambiguous once an anchor is present.
+        assert coach._needs_return_scope_clarification("longest since coming back 6 weeks ago") is False
+        assert coach._needs_return_scope_clarification("longest since coming back on 2025-12-01") is False
+        assert coach._needs_return_scope_clarification("longest since coming back in dec") is False
+    finally:
+        db.close()
+

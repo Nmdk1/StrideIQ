@@ -557,6 +557,10 @@ Policy:
                 except Exception:
                     content_text = ""
 
+                # Production-beta: hide internal context injections from UI/history.
+                if (content_text or "").startswith("INTERNAL COACH CONTEXT"):
+                    continue
+
                 created_at = None
                 try:
                     # created_at is unix seconds
@@ -937,6 +941,20 @@ Policy:
 
         lower = (message or "").lower()
 
+        # Production-beta: ambiguity hard stop for return-from-injury/break comparisons.
+        # Runs BEFORE any deterministic shortcuts so it cannot be bypassed.
+        if self._needs_return_scope_clarification(lower):
+            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            return {
+                "response": (
+                    "## Answer\n"
+                    "I need more context on **“coming back”** to give an accurate answer — can you tell me **when you returned from injury or your last break**?\n\n"
+                    "Even a rough anchor is fine (e.g., “6 weeks ago” or “early December”). Then I’ll confirm what was **longest since then** with receipts and we can interpret the “slow” feeling in-context.\n"
+                ),
+                "thread_id": thread_id,
+                "error": False,
+            }
+
         # Deterministic prescriptions (exact sessions) for "today / this week".
         # IMPORTANT: fatigue can trigger a conversation, but never auto-imposes taper.
         if self._is_prescription_request(message):
@@ -1023,12 +1041,28 @@ Policy:
             # Common follow-ups after a "today" recommendation: user disputes the plan distance.
             ("plan" in lower and ("too short" in lower or "stupid" in lower or "way too short" in lower))
         ):
-            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
-            return {
-                "response": self._today_run_guidance(athlete_id),
-                "thread_id": thread_id,
-                "error": False,
-            }
+            # Production-beta reasoning hardening:
+            # If the athlete mentions a return-from-injury/break context AND any comparison language
+            # (e.g. "longest since coming back", "I feel slow"), do NOT route to the deterministic
+            # "today guidance" shortcut. That shortcut is good for pure prescription, but it can
+            # bypass ambiguity guardrails and create trust-breaking scope errors.
+            if self._has_return_context(lower) and (
+                "longest" in lower
+                or "furthest" in lower
+                or "slow" in lower
+                or "fast" in lower
+                or "best" in lower
+                or "worst" in lower
+            ):
+                # Fall through to the normal assistant flow (with context injection + ambiguity guardrails).
+                pass
+            else:
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                return {
+                    "response": self._today_run_guidance(athlete_id),
+                    "thread_id": thread_id,
+                    "error": False,
+                }
 
         # Deterministic "most impactful run" to prevent vague/hallucinated definitions.
         # Guardrail: only run deterministically when the athlete is asking (avoid narrative misfires).
@@ -2241,6 +2275,44 @@ Policy:
                 lines.append(f"  - “{s}”")
 
         return "\n".join(lines).strip()
+
+    def _needs_return_scope_clarification(self, lower_message: str) -> bool:
+        """
+        True when:
+        - The athlete uses return-context language ("since coming back", "after injury", etc.)
+        - AND also uses comparison/superlative language ("longest", "slow", etc.)
+        - BUT does not provide any concrete return window (date, \"6 weeks\", month name).
+
+        This is a production-beta trust guardrail: ask a clarifying question instead of assuming.
+        """
+        lower = (lower_message or "").lower()
+        if not lower:
+            return False
+        if not self._has_return_context(lower):
+            return False
+
+        # Comparison/superlative tokens (include common sentiment like "slow").
+        if not (
+            "longest" in lower
+            or "furthest" in lower
+            or "fastest" in lower
+            or "slowest" in lower
+            or "best" in lower
+            or "worst" in lower
+            or "most" in lower
+            or "least" in lower
+            or "hardest" in lower
+            or "toughest" in lower
+            or "easiest" in lower
+            or "slow" in lower
+            or "fast" in lower
+        ):
+            return False
+
+        has_iso_date = bool(re.search(r"\b20\d{2}-\d{2}-\d{2}\b", lower))
+        has_relative = bool(re.search(r"\b(\d{1,3})\s*(day|days|d|week|weeks|wk|wks|month|months|mo)\b", lower))
+        has_month_name = bool(re.search(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b", lower))
+        return not (has_iso_date or has_relative or has_month_name)
 
     def _user_explicitly_requested_ids(self, user_message: str) -> bool:
         ml = (user_message or "").lower()
