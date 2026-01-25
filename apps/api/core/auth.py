@@ -164,6 +164,39 @@ def require_permission(permission_key: str):
     return permission_checker
 
 
+def deny_impersonation_mutation(reason: str):
+    """
+    Dependency factory: block mutations when the request is authenticated with an
+    impersonation token (owner-only feature; Phase 4), even if the impersonated
+    user has elevated privileges.
+
+    Use this on high-risk admin endpoints to prevent privilege actions from being
+    executed under an impersonated session.
+
+    Policy (Phase 8 Sprint 2):
+    - Impersonation may be used for read-only support triage.
+    - Impersonation MUST NOT be used for privileged mutations (system controls,
+      permission changes, billing/entitlements, blocking, etc.).
+
+    Returns 403 with a stable code prefix:
+      impersonation_not_allowed:<reason>
+    """
+
+    def _checker(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> None:
+        # If credentials are missing/invalid, let the primary auth dependency
+        # handle the correct 401 behavior.
+        if not credentials:
+            return
+        payload = decode_access_token(credentials.credentials) or {}
+        if payload.get("is_impersonation") is True:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"impersonation_not_allowed:{reason}",
+            )
+
+    return _checker
+
+
 def require_athlete_or_admin(
     current_user: Athlete = Depends(get_current_active_user)
 ) -> Athlete:

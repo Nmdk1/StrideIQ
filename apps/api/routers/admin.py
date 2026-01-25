@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, date
 from datetime import timezone
 
 from core.database import get_db
-from core.auth import require_admin, require_owner, require_permission
+from core.auth import require_admin, require_owner, require_permission, deny_impersonation_mutation
 from models import (
     Athlete,
     Activity,
@@ -180,6 +180,7 @@ def get_ingestion_pause_status(
 def set_ingestion_pause_status(
     request: PauseIngestionRequest,
     http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("system.ingestion.pause")),
     current_user: Athlete = Depends(require_permission("system.ingestion.pause")),
     db: Session = Depends(get_db),
 ):
@@ -208,6 +209,7 @@ def set_admin_permissions(
     user_id: UUID,
     request: AdminPermissionsUpdateRequest,
     http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("admin.permissions.set")),
     current_user: Athlete = Depends(require_owner),
     db: Session = Depends(get_db),
 ):
@@ -825,6 +827,7 @@ def grant_trial(
     user_id: UUID,
     request: TrialGrantRequest,
     http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("billing.trial.grant")),
     current_user: Athlete = Depends(require_permission("billing.trial.grant")),
     db: Session = Depends(get_db),
 ):
@@ -870,6 +873,7 @@ def revoke_trial(
     user_id: UUID,
     request: TrialRevokeRequest,
     http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("billing.trial.revoke")),
     current_user: Athlete = Depends(require_permission("billing.trial.revoke")),
     db: Session = Depends(get_db),
 ):
@@ -914,6 +918,7 @@ def comp_access(
     user_id: UUID,
     request: CompAccessRequest,
     http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("billing.comp")),
     current_user: Athlete = Depends(require_permission("billing.comp")),
     db: Session = Depends(get_db),
 ):
@@ -961,6 +966,7 @@ def reset_onboarding(
     user_id: UUID,
     request: ResetOnboardingRequest,
     http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("onboarding.reset")),
     current_user: Athlete = Depends(require_permission("onboarding.reset")),
     db: Session = Depends(get_db),
 ):
@@ -1002,6 +1008,7 @@ def retry_ingestion(
     user_id: UUID,
     request: RetryIngestionRequest,
     http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("ingestion.retry")),
     current_user: Athlete = Depends(require_permission("ingestion.retry")),
     db: Session = Depends(get_db),
 ):
@@ -1060,6 +1067,7 @@ def regenerate_starter_plan(
     user_id: UUID,
     request: RegenerateStarterPlanRequest,
     http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("plan.starter.regenerate")),
     current_user: Athlete = Depends(require_permission("plan.starter.regenerate")),
     db: Session = Depends(get_db),
 ):
@@ -1147,6 +1155,7 @@ def set_blocked(
     user_id: UUID,
     request: BlockUserRequest,
     http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("athlete.block")),
     current_user: Athlete = Depends(require_permission("athlete.block")),
     db: Session = Depends(get_db),
 ):
@@ -1183,6 +1192,7 @@ def start_impersonation(
     user_id: UUID,
     http_request: Request,
     request: Optional[ImpersonateUserRequest] = Body(default=None),
+    _: None = Depends(deny_impersonation_mutation("auth.impersonate.start")),
     current_user: Athlete = Depends(require_owner),
     db: Session = Depends(get_db),
 ):
