@@ -80,7 +80,8 @@ jobs:
             tests/test_phase7_garmin_file_import_e2e.py \
             tests/test_phase8_security_golden_paths.py \
             tests/test_phase8_impersonation_high_risk_blocks.py \
-            tests/test_phase8_token_jwt_invariants.py
+            tests/test_phase8_token_jwt_invariants.py \
+            tests/test_phase9_backend_smoke_golden_paths.py
 
   backend-test:
     name: Backend Tests
@@ -209,7 +210,11 @@ jobs:
             home-latency-bridge.test.tsx \
             home-latency-bridge-queued.test.tsx \
             home-ingestion-paused-banner.test.tsx \
-            coach-scroll-layout.test.tsx
+            coach-scroll-layout.test.tsx \
+            landing-cta-register.test.tsx \
+            onboarding-connect-import-status.test.tsx \
+            settings-trial-membership.test.tsx \
+            plans-model-driven.test.tsx
 
   frontend-build:
     name: Frontend Build

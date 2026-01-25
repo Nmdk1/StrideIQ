@@ -26,6 +26,7 @@ jest.mock('@/lib/hooks/queries/admin', () => ({
   useRevokeTrial: () => ({ mutate: jest.fn(), isPending: false }),
   useResetOnboarding: () => ({ mutate: jest.fn(), isPending: false }),
   useRetryIngestion: () => ({ mutate: jest.fn(), isPending: false }),
+  useRegenerateStarterPlan: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
   useSetBlocked: () => ({ mutate: jest.fn(), isPending: false }),
   useAdminFeatureFlags: () => ({ data: { flags: [] }, isLoading: false }),
   useSet3dQualitySelectionMode: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),

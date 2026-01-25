@@ -279,10 +279,51 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 **Goal:** Prevent regressions on critical flows.
 
 ### Scope
-- “Public conversion” golden path (landing → signup → Strava → questionnaire → dashboard).
-- “Subscriber value” golden path (PBs/insights/coach citations).
-- “Plan generation” golden path.
+- “Public conversion” golden path (landing → signup → onboarding connect status → dashboard).
+- “Subscriber value” golden path (membership/trial UI + paid surfaces remain coherent).
+- “Revenue + ingestion seams” golden path (Stripe webhook signature validation, entitlement transitions, ingestion pause guardrails).
 - CI gate: run the highest-value checks on every merge.
+
+### CI golden paths (explicit contract)
+
+**Backend smoke (`backend-smoke`)**
+- Runs these fast integration tests (append-only list in `.github/workflows/ci.yml`):
+  - `tests/test_phase3_onboarding_golden_path_simulated.py`
+  - `tests/test_phase5_rate_limit_deferral.py`
+  - `tests/test_admin_actions_onboarding_ingestion_block.py`
+  - `tests/test_phase7_garmin_file_import_e2e.py`
+  - `tests/test_phase8_security_golden_paths.py`
+  - `tests/test_phase8_impersonation_high_risk_blocks.py`
+  - `tests/test_phase8_token_jwt_invariants.py`
+  - `tests/test_phase9_backend_smoke_golden_paths.py`
+
+**Frontend smoke (`frontend-test`)**
+- Runs a small Jest “smoke” list (explicit filenames in `.github/workflows/ci.yml`), including:
+  - `admin-access-guard.test.tsx`
+  - `admin-ops-visibility.test.tsx`
+  - `home-latency-bridge.test.tsx`
+  - `home-latency-bridge-queued.test.tsx`
+  - `home-ingestion-paused-banner.test.tsx`
+  - `coach-scroll-layout.test.tsx`
+  - `landing-cta-register.test.tsx`
+  - `onboarding-connect-import-status.test.tsx`
+  - `settings-trial-membership.test.tsx`
+  - `plans-model-driven.test.tsx`
+
+### Local run instructions
+
+**Backend smoke (Docker)**
+- `docker compose exec -T api pytest -q <list from .github/workflows/ci.yml>`
+
+**Frontend smoke (Docker)**
+- `docker compose run --rm --build web_test npm test --silent -- <same file list from .github/workflows/ci.yml>`
+
+### Release gating (branch protection)
+
+When Phase 9 is enforced, branch protection should require these checks:
+- `Backend Smoke (Golden Paths)`
+- `Frontend Tests (Jest)`
+- `Security Scan`
 
 ---
 
