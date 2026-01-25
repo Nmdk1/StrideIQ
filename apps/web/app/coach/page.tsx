@@ -23,6 +23,8 @@ interface Message {
   role: 'user' | 'assistant';
   content?: string;
   proposal?: ProposalCardProposal;
+  timedOut?: boolean;
+  retryMessage?: string;
   timestamp: Date;
 }
 
@@ -216,23 +218,62 @@ export default function CoachPage() {
     };
     setMessages(prev => [...prev, userMessage]);
     
-    // Get AI response
+    // Get AI response (streamed)
     setIsLoading(true);
     try {
-      const response = await aiCoachService.chat({ message: text });
-      
-      if (response.error) {
-        setError(response.response);
-      } else {
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
+      const assistantId = (Date.now() + 1).toString();
+      setMessages(prev => [
+        ...prev,
+        {
+          id: assistantId,
           role: 'assistant',
-          content: response.response,
-          proposal: (response as any).proposal,
+          content: '',
           timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-      }
+        },
+      ]);
+
+      const controller = new AbortController();
+
+      await aiCoachService.chatStream(
+        { message: text },
+        {
+          signal: controller.signal,
+          onDelta: (delta) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: `${m.content || ''}${delta}` }
+                  : m
+              )
+            );
+            // Keep the tail visible during streaming unless the user scrolled up.
+            requestAnimationFrame(() => {
+              if (stickToBottom) {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+              }
+            });
+          },
+          onDone: (meta) => {
+            if (meta?.timed_out) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        timedOut: true,
+                        retryMessage: text,
+                        content:
+                          (m.content || '').includes("Thinking took too long")
+                            ? m.content
+                            : `${m.content || ''}\n\n---\nThinking took too long — here's a partial response. Retry?`,
+                      }
+                    : m
+                )
+              );
+            }
+          },
+        }
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get response from coach');
     } finally {
@@ -361,6 +402,23 @@ export default function CoachPage() {
                                           </div>
                                         </details>
                                       )}
+                                      {message.timedOut && message.retryMessage && (
+                                        <div className="flex items-center gap-2">
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            disabled={isLoading}
+                                            onClick={() => handleSend(message.retryMessage)}
+                                            className="border-slate-700 hover:border-orange-500/50 hover:bg-slate-800 text-slate-300"
+                                          >
+                                            Retry
+                                          </Button>
+                                          <span className="text-xs text-slate-400">
+                                            If this keeps timing out, ask a narrower question.
+                                          </span>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })()
@@ -456,6 +514,23 @@ export default function CoachPage() {
                                             <ReactMarkdown>{receipts}</ReactMarkdown>
                                           </div>
                                         </details>
+                                      )}
+                                      {message.timedOut && message.retryMessage && (
+                                        <div className="flex items-center gap-2">
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            disabled={isLoading}
+                                            onClick={() => handleSend(message.retryMessage)}
+                                            className="border-slate-700 hover:border-orange-500/50 hover:bg-slate-800 text-slate-300"
+                                          >
+                                            Retry
+                                          </Button>
+                                          <span className="text-xs text-slate-400">
+                                            If this keeps timing out, ask a narrower question.
+                                          </span>
+                                        </div>
                                       )}
                                     </div>
                                   );

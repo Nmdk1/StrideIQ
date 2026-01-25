@@ -13,6 +13,7 @@ Features:
 import os
 import json
 import re
+import asyncio
 from datetime import date, datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple
 from uuid import UUID
@@ -948,11 +949,20 @@ Policy:
             return {
                 "response": (
                     "## Answer\n"
-                    "I need more context on **“coming back”** to give an accurate answer — can you tell me **when you returned from injury or your last break**?\n\n"
-                    "Even a rough anchor is fine (e.g., “6 weeks ago” or “early December”). Then I’ll confirm what was **longest since then** with receipts and we can interpret the “slow” feeling in-context.\n"
+                    "I can help, but I need one quick anchor so I don’t mis-scope **“since coming back”**.\n\n"
+                    "**When did you return from injury/break?** Even a rough estimate is fine (e.g., “6 weeks ago” or “early December”).\n\n"
+                    "While you confirm that, here are **safe adjustments** that don’t depend on the exact date:\n"
+                    "- Keep the next 48–72 hours truly easy (talk-test), especially after your current longest-since-return run.\n"
+                    "- If you feel “slow,” treat it as a **signal**, not a verdict: check sleep, fueling, and if legs are heavy/sore, reduce volume before touching pace.\n"
+                    "- For any “progressive” finishes: cap them at **easy→steady** (not race effort) until we confirm how deep into the comeback you are.\n"
+                    "- If you have a long run planned this week: prioritize **time on feet** and finish feeling like you could do 10–15 more minutes.\n\n"
+                    "Reply with your return anchor and I’ll:\n"
+                    "1) confirm whether today was your longest **since that date** (with evidence), and\n"
+                    "2) recommend specific mileage/effort tweaks for your next 7 days.\n"
                 ),
                 "thread_id": thread_id,
                 "error": False,
+                "timed_out": False,
             }
 
         # Deterministic prescriptions (exact sessions) for "today / this week".
@@ -1211,7 +1221,8 @@ Policy:
             
             # Wait for completion (with timeout)
             import time
-            max_wait = 60  # seconds
+            max_wait = int(os.getenv("COACH_MAX_WAIT_S") or "120")
+            max_wait = max(30, min(max_wait, 240))
             start = time.time()
             
             while True:
@@ -1334,9 +1345,34 @@ Policy:
                     }
                 
                 if time.time() - start > max_wait:
+                    # Best-effort partial: if the assistant has already posted something, return it.
+                    partial = ""
+                    try:
+                        msgs = self.client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=1)
+                        if msgs.data:
+                            c = msgs.data[0].content[0]
+                            if hasattr(c, "text"):
+                                partial = (c.text.value or "").strip()
+                            else:
+                                partial = str(c).strip()
+                    except Exception:
+                        partial = ""
+                    if partial:
+                        partial = (
+                            partial.strip()
+                            + "\n\n---\n"
+                            + "_Thinking took too long — here’s what I have so far. You can retry, or ask again with a smaller scope._"
+                        )
+                    else:
+                        partial = (
+                            "Thinking took too long — here’s what I have so far: (no partial output yet).\n\n"
+                            "Retry, or ask again with a smaller scope."
+                        )
                     return {
-                        "response": "The AI coach took too long to respond. Please try again.",
-                        "error": True
+                        "response": partial,
+                        "thread_id": thread_id,
+                        "error": False,
+                        "timed_out": True,
                     }
                 
                 time.sleep(1)
@@ -1383,7 +1419,8 @@ Policy:
                 return {
                     "response": response_text,
                     "thread_id": thread_id,
-                    "error": False
+                    "error": False,
+                    "timed_out": False,
                 }
             
             return {
@@ -2113,7 +2150,7 @@ Policy:
         ml = (lower_message or "").lower()
         return any(p in ml for p in self._RETURN_CONTEXT_PHRASES)
 
-    def _thread_mentions_return_context(self, athlete_id: UUID, limit: int = 30) -> bool:
+    def _thread_mentions_return_context(self, athlete_id: UUID, limit: int = 10) -> bool:
         """
         Conversation context awareness (production beta):
         If the athlete has been talking about injury/return/break recently, we must not
@@ -2196,10 +2233,10 @@ Policy:
         if not text:
             return None
 
-        # Pull last N user messages (best-effort). We'll feed them into a pure builder so we can unit-test it.
+        # Pull last N user messages (best-effort). Keep this small to reduce latency/token pressure.
         prior_user_messages: List[str] = []
         try:
-            hist = self.get_thread_history(athlete_id, limit=25) or {}
+            hist = self.get_thread_history(athlete_id, limit=10) or {}
             msgs = hist.get("messages") or []
             for m in msgs:
                 if (m.get("role") or "").lower() != "user":

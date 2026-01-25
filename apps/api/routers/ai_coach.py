@@ -5,9 +5,12 @@ Provides chat interface to the AI running coach.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, AsyncIterator
+import asyncio
+import json
 
 from core.database import get_db
 from core.auth import get_current_athlete
@@ -28,6 +31,7 @@ class ChatResponse(BaseModel):
     response: str
     thread_id: Optional[str] = None
     error: bool = False
+    timed_out: bool = False
 
 
 class ContextResponse(BaseModel):
@@ -72,7 +76,68 @@ async def chat_with_coach(
     return ChatResponse(
         response=result.get("response", ""),
         thread_id=result.get("thread_id"),
-        error=result.get("error", False)
+        error=result.get("error", False),
+        timed_out=bool(result.get("timed_out", False)),
+    )
+
+
+@router.post("/chat/stream")
+async def chat_with_coach_stream(
+    request: ChatRequest,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    """
+    Stream coach responses (SSE over fetch).
+
+    Why:
+    - Avoid client-side 30s aborts.
+    - Provide progress heartbeats while the model/tools run.
+    - Deliver the final answer in chunks so UI can render progressively.
+    """
+
+    coach = AICoach(db)
+
+    async def _gen() -> AsyncIterator[bytes]:
+        # Start the work in the background so we can emit heartbeats meanwhile.
+        task = asyncio.create_task(
+            coach.chat(athlete_id=athlete.id, message=request.message, include_context=request.include_context)
+        )
+
+        # Initial event.
+        yield b"event: meta\ndata: " + json.dumps({"type": "meta"}).encode("utf-8") + b"\n\n"
+
+        # Heartbeat loop until completion or timeout.
+        while True:
+            done, _pending = await asyncio.wait({task}, timeout=2.0)
+            if done:
+                break
+            yield b"event: heartbeat\ndata: " + json.dumps({"type": "heartbeat"}).encode("utf-8") + b"\n\n"
+
+        result = await task
+        text = (result.get("response") or "").strip()
+        timed_out = bool(result.get("timed_out", False))
+
+        # Stream the final text in chunks (best-effort "token-like" UX).
+        chunk_size = 220
+        for i in range(0, len(text), chunk_size):
+            delta = text[i : i + chunk_size]
+            yield b"event: delta\ndata: " + json.dumps({"type": "delta", "delta": delta}).encode("utf-8") + b"\n\n"
+            await asyncio.sleep(0)  # let the event loop flush
+
+        yield b"event: done\ndata: " + json.dumps(
+            {"type": "done", "timed_out": timed_out, "thread_id": result.get("thread_id")}
+        ).encode("utf-8") + b"\n\n"
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Nginx / some proxies buffer by default; disable buffering when present.
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
