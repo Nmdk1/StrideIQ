@@ -118,6 +118,11 @@ Every 3D selection must emit a single structured event containing:
   - `type_selected`
   - `type_previous` (immediate predecessor type, if known)
   - `type_candidates_counts` (counts by type after hard constraints)
+- **Variance windowing (required):**
+  - `dont_repeat_window_size`
+  - `dont_repeat_window_ids` (bounded; max = window_size)
+  - `dont_repeat_excluded_count` (how many candidates were excluded by the window)
+  - `dont_repeat_window_relaxed` (true only if excluding would have eliminated all candidates)
 - `selection_mode` (explore/exploit/fallback), `explore_probability`
 - `selected_template_id`, `final_score`, `selection_reason`
 - in shadow mode: legacy slot info (`legacy_workout_type`, `legacy_title`)

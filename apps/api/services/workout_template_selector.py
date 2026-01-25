@@ -136,7 +136,9 @@ def select_quality_template(
     # Prefer excluding any template used recently (bounded window), but relax if this empties the pool.
     candidates_no_recent = [t for t in candidates if t.id not in repeat_window_set] if repeat_window_set else candidates
     relaxed_dont_repeat = False
+    dont_repeat_excluded = 0
     if candidates_no_recent:
+        dont_repeat_excluded = max(0, len(candidates) - len(candidates_no_recent))
         candidates = candidates_no_recent
     else:
         relaxed_dont_repeat = True
@@ -197,6 +199,7 @@ def select_quality_template(
                 "dont_repeat_window_size": RECENT_TEMPLATE_DONT_REPEAT_WINDOW,
                 "dont_repeat_window_ids": repeat_window_ids,
                 "dont_repeat_window_relaxed": relaxed_dont_repeat,
+                "dont_repeat_excluded_count": dont_repeat_excluded,
             },
         }
 
@@ -238,6 +241,7 @@ def select_quality_template(
             "dont_repeat_window_size": RECENT_TEMPLATE_DONT_REPEAT_WINDOW,
             "dont_repeat_window_ids": repeat_window_ids,
             "dont_repeat_window_relaxed": relaxed_dont_repeat,
+            "dont_repeat_excluded_count": dont_repeat_excluded,
         },
     }
 

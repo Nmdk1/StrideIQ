@@ -350,4 +350,38 @@ class TestWorkoutTemplateRegistrySelectorInvariants:
         assert res["selected"]["template_id"] == "build_threshold_b"
         audit = res.get("audit") or {}
         assert audit.get("dont_repeat_window_relaxed") is False
+        assert int(audit.get("dont_repeat_excluded_count") or 0) >= 1
+
+    def test_dont_repeat_window_relaxes_when_all_candidates_are_recent(self, db_session):
+        """
+        Invariant: if dont-repeat would exclude all candidates, we relax deterministically
+        (but still keep selection deterministic and safe).
+        """
+        from services.workout_template_selector import select_quality_template
+
+        _clear_registry(db_session)
+
+        # Only one valid template exists; it's also in the recent window.
+        db_session.add(
+            _mk_template(
+                template_id="build_only_threshold",
+                phases=["build"],
+                intensity_tier="THRESHOLD",
+                steps=[{"key": "s1", "structure": "2x10", "description_template": "2x10"}],
+            )
+        )
+        db_session.commit()
+
+        res = select_quality_template(
+            db=db_session,
+            athlete_id=uuid4(),
+            phase="build",
+            week_in_phase=5,
+            total_phase_weeks=8,
+            recent_template_ids=["build_only_threshold", "build_only_threshold", "build_only_threshold"],
+            constraints={"time_available_min": 60, "facilities": []},
+        )
+        assert res["selected"]["template_id"] == "build_only_threshold"
+        audit = res.get("audit") or {}
+        assert audit.get("dont_repeat_window_relaxed") is True
 
