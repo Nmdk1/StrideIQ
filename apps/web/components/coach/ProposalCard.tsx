@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -59,6 +59,13 @@ function fmtDate(d: string | null | undefined): string {
   }
 }
 
+function fmtWorkoutType(t: string | null | undefined): string {
+  const raw = (t || '').trim();
+  if (!raw) return '—';
+  const spaced = raw.replace(/[_-]+/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 function fmtDistanceKm(km?: number | null): string | null {
   if (km == null) return null;
   const v = Number(km);
@@ -84,17 +91,28 @@ export function ProposalCard({ proposal, onAskFollowup }: Props) {
   const [error, setError] = useState<unknown>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [receiptSummary, setReceiptSummary] = useState<string | null>(null);
+  const confirmIdempotencyKeyRef = useRef<string>(makeIdempotencyKey('confirm'));
+  const toastTimerRef = useRef<number | null>(null);
 
   const headerPlanName = proposal.plan_name?.trim() || 'your plan';
   const reason = proposal.reason?.trim() || '—';
 
   const totalChanges = useMemo(() => proposal.diff_preview?.length || 0, [proposal.diff_preview]);
 
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const onConfirm = async () => {
     setError(null);
     setIsSubmitting(true);
     try {
-      const res = await coachActionsService.confirm(proposal.proposal_id, makeIdempotencyKey('confirm'));
+      const res = await coachActionsService.confirm(proposal.proposal_id, confirmIdempotencyKeyRef.current);
       setStatus(res.status);
       if (res.status === 'applied') {
         const appliedAt = res.applied_at ? fmtDate(res.applied_at) : 'now';
@@ -104,7 +122,8 @@ export function ProposalCard({ proposal, onAskFollowup }: Props) {
         setToast('Apply receipt');
         setReceiptSummary(msg);
         // Auto-hide the toast label; keep the receipt summary visible.
-        window.setTimeout(() => setToast(null), 2500);
+        if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = window.setTimeout(() => setToast(null), 2500);
       }
     } catch (e) {
       setError(e);
@@ -118,7 +137,7 @@ export function ProposalCard({ proposal, onAskFollowup }: Props) {
     setError(null);
     setIsSubmitting(true);
     try {
-      await coachActionsService.reject(proposal.proposal_id, 'User rejected');
+      await coachActionsService.reject(proposal.proposal_id, 'Athlete rejected in Coach chat');
       setStatus('rejected');
     } catch (e) {
       setError(e);
@@ -145,7 +164,11 @@ export function ProposalCard({ proposal, onAskFollowup }: Props) {
           </div>
 
           {toast && (
-            <div role="status" className="text-xs font-semibold px-3 py-1.5 rounded-full border border-orange-500/30 bg-orange-500/10 text-orange-200">
+            <div
+              role="status"
+              aria-live="polite"
+              className="text-xs font-semibold px-3 py-1.5 rounded-full border border-orange-500/30 bg-orange-500/10 text-orange-200"
+            >
               {toast}
             </div>
           )}
@@ -164,6 +187,10 @@ export function ProposalCard({ proposal, onAskFollowup }: Props) {
               const beforeDuration = fmtDurationMin(d.before.target_duration_minutes);
               const afterDistance = fmtDistanceKm(d.after.target_distance_km);
               const afterDuration = fmtDurationMin(d.after.target_duration_minutes);
+              const beforeType = fmtWorkoutType(d.before.workout_type);
+              const afterType = fmtWorkoutType(d.after.workout_type);
+              const beforeSkipped = d.before.skipped === true;
+              const afterSkipped = d.after.skipped === true;
               return (
                 <div key={`${d.workout_id}`} className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
                   <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-start">
@@ -171,9 +198,10 @@ export function ProposalCard({ proposal, onAskFollowup }: Props) {
                       <div className="text-xs text-slate-400">Before</div>
                       <div className="text-sm text-slate-100 font-semibold">{d.before.title || 'Workout'}</div>
                       <div className="text-xs text-slate-400 mt-1">
-                        {fmtDate(d.before.scheduled_date)} • {d.before.workout_type || '—'}
+                        {fmtDate(d.before.scheduled_date)} • {beforeType}
                         {beforeDistance ? ` • ${beforeDistance}` : ''}
                         {beforeDuration ? ` • ${beforeDuration}` : ''}
+                        {beforeSkipped ? ' • Skipped' : ''}
                       </div>
                     </div>
                     <div className="text-xs text-slate-500 font-semibold self-center">→</div>
@@ -181,9 +209,10 @@ export function ProposalCard({ proposal, onAskFollowup }: Props) {
                       <div className="text-xs text-slate-400">After</div>
                       <div className="text-sm text-slate-100 font-semibold">{d.after.title || 'Workout'}</div>
                       <div className="text-xs text-slate-400 mt-1">
-                        {fmtDate(d.after.scheduled_date)} • {d.after.workout_type || '—'}
+                        {fmtDate(d.after.scheduled_date)} • {afterType}
                         {afterDistance ? ` • ${afterDistance}` : ''}
                         {afterDuration ? ` • ${afterDuration}` : ''}
+                        {afterSkipped ? ' • Skipped' : ''}
                       </div>
                     </div>
                   </div>
@@ -211,8 +240,8 @@ export function ProposalCard({ proposal, onAskFollowup }: Props) {
         )}
 
         {!!error && (
-          <div>
-            <ErrorMessage error={error} title="Proposal failed" />
+          <div role="alert">
+            <ErrorMessage error={error} title="Apply failed" />
           </div>
         )}
 

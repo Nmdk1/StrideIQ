@@ -17,7 +17,8 @@ export function ErrorMessage({ error, title = 'Error', className = '' }: ErrorMe
   let message = 'An unexpected error occurred';
   let status: number | undefined;
 
-  if (error instanceof ApiClientError) {
+  // In tests, `@/lib/api/client` can be module-mocked; guard `instanceof` to avoid runtime crashes.
+  if (typeof ApiClientError === 'function' && error instanceof ApiClientError) {
     message = error.message;
     status = error.status;
   } else if (error instanceof Error) {

@@ -9,6 +9,14 @@ jest.mock('@/lib/api/client', () => ({
   apiClient: {
     post: (...args: any[]) => postMock(...args),
   },
+  ApiClientError: class ApiClientError extends Error {
+    status: number;
+    constructor(message: string = 'ApiClientError', status: number = 500) {
+      super(message);
+      this.status = status;
+      this.name = 'ApiClientError';
+    }
+  },
 }));
 
 describe('ProposalCard', () => {
@@ -112,6 +120,37 @@ describe('ProposalCard', () => {
 
     // Status label is split across nodes ("Status:" + <span>rejected</span>)
     expect(await screen.findByText('rejected')).toBeInTheDocument();
+  });
+
+  it('shows deterministic error state and allows retry apply', async () => {
+    let attempt = 0;
+    postMock.mockImplementation((path: string) => {
+      if (path === '/v2/coach/actions/prop_1/confirm') {
+        attempt += 1;
+        if (attempt === 1) {
+          return Promise.reject(new Error('Apply failed'));
+        }
+        return Promise.resolve({
+          proposal_id: 'prop_1',
+          status: 'applied',
+          confirmed_at: '2026-01-25T00:00:05Z',
+          applied_at: '2026-01-25T00:00:06Z',
+          receipt: { actions_applied: 1, changes: baseProposal.diff_preview },
+          error: null,
+        });
+      }
+      return Promise.reject(new Error(`unexpected POST ${path}`));
+    });
+
+    render(<ProposalCard proposal={baseProposal} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm & Apply' }));
+    expect(await screen.findByRole('heading', { name: 'Apply failed' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry apply' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry apply' }));
+    expect(await screen.findByText('Apply receipt')).toBeInTheDocument();
+    expect(await screen.findByText(/Applied 1 action/i)).toBeInTheDocument();
   });
 });
 
