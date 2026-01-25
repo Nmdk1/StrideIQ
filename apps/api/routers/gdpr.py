@@ -6,204 +6,202 @@ Tone: Neutral, empowering, no guilt-inducing language.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
-from typing import Dict, List
-from datetime import datetime
-import json
+from sqlalchemy import and_, func
+from typing import Any, Dict, Optional
+from datetime import datetime, timezone
 
 from core.database import get_db
 from core.auth import get_current_user
 from core.cache import invalidate_athlete_cache
 from models import (
-    Athlete, Activity, ActivitySplit, NutritionEntry, BodyComposition,
-    WorkPattern, DailyCheckin, ActivityFeedback, TrainingAvailability,
-    InsightFeedback
+    Athlete,
+    Activity,
+    ActivitySplit,
+    NutritionEntry,
+    BodyComposition,
+    WorkPattern,
+    DailyCheckin,
+    ActivityFeedback,
+    TrainingAvailability,
+    InsightFeedback,
+    TrainingPlan,
+    AthleteDataImportJob,
 )
 
 router = APIRouter(prefix="/v1/gdpr", tags=["gdpr"])
+
+DEFAULT_EXPORT_LIMIT = 25
+MAX_EXPORT_LIMIT = 100
+
+
+def _iso(dt: Optional[datetime]) -> Optional[str]:
+    if not dt:
+        return None
+    try:
+        return dt.isoformat()
+    except Exception:
+        return None
+
+
+def _safe_stats_summary(stats: Any) -> Dict[str, Any]:
+    """
+    Return a bounded, safe summary of import job stats.
+
+    Explicitly exclude any keys that could contain raw file content or large blobs.
+    """
+    if not isinstance(stats, dict):
+        return {}
+
+    allow_int_keys = [
+        "activities_parsed",
+        "activities_inserted",
+        "activities_updated",
+        "activities_skipped_duplicate",
+        "errors_count",
+        "files_parsed",
+        "pages_fetched",
+    ]
+    allow_list_keys = ["error_codes", "parser_types_used"]
+
+    out: Dict[str, Any] = {}
+    for k in allow_int_keys:
+        v = stats.get(k)
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, (int, float)):
+            out[k] = int(v)
+
+    for k in allow_list_keys:
+        v = stats.get(k)
+        if isinstance(v, list):
+            safe_items: list[str] = []
+            for item in v[:20]:
+                if isinstance(item, str):
+                    s = item.strip()
+                    if s:
+                        safe_items.append(s[:100])
+            out[k] = safe_items
+
+    # Nested extraction stats (bounded).
+    extraction = stats.get("extraction")
+    if isinstance(extraction, dict):
+        ex_out: Dict[str, Any] = {}
+        for k in ("extracted_files", "extracted_bytes"):
+            v = extraction.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                ex_out[k] = int(v)
+        if ex_out:
+            out["extraction"] = ex_out
+
+    return out
 
 
 @router.get("/export")
 def export_user_data(
     current_user: Athlete = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    limit: int = DEFAULT_EXPORT_LIMIT,
 ) -> Dict:
     """
-    Export all user data in JSON format.
+    GDPR export skeleton (Phase 8 / Sprint 2).
     
-    Returns comprehensive data export including:
-    - Profile information
-    - Activities and splits
-    - Nutrition entries
-    - Body composition
-    - Work patterns
-    - Daily check-ins
-    - Activity feedback
-    - Training availability
-    - Insight feedback
-    
-    Tone: Neutral, empowering. No guilt-inducing language.
+    Goal: provide a safe, bounded export suitable for compliance workflows
+    without performing a full data dump yet.
+
+    This endpoint intentionally returns:
+    - profile subset (no tokens/secrets)
+    - high-level counts
+    - recent plans + recent import jobs (bounded)
     """
     athlete_id = current_user.id
-    
-    # Collect all data
-    export_data = {
-        "export_date": datetime.utcnow().isoformat(),
-        "athlete_id": str(athlete_id),
+
+    safe_limit = int(limit or DEFAULT_EXPORT_LIMIT)
+    safe_limit = max(1, min(safe_limit, MAX_EXPORT_LIMIT))
+
+    # Counts (high-level only)
+    activities_total = int(
+        db.query(func.count(Activity.id)).filter(Activity.athlete_id == athlete_id).scalar() or 0
+    )
+    plans_total = int(
+        db.query(func.count(TrainingPlan.id)).filter(TrainingPlan.athlete_id == athlete_id).scalar() or 0
+    )
+    imports_jobs_total = int(
+        db.query(func.count(AthleteDataImportJob.id)).filter(AthleteDataImportJob.athlete_id == athlete_id).scalar() or 0
+    )
+
+    plans_recent_rows = (
+        db.query(TrainingPlan)
+        .filter(TrainingPlan.athlete_id == athlete_id)
+        .order_by(TrainingPlan.created_at.desc())
+        .limit(safe_limit)
+        .all()
+    )
+    plans_recent = [
+        {
+            "id": str(p.id),
+            "name": p.name,
+            "status": p.status,
+            "plan_type": p.plan_type,
+            "generation_method": getattr(p, "generation_method", None),
+            "created_at": _iso(getattr(p, "created_at", None)),
+            "plan_start_date": p.plan_start_date.isoformat() if getattr(p, "plan_start_date", None) else None,
+            "plan_end_date": p.plan_end_date.isoformat() if getattr(p, "plan_end_date", None) else None,
+            "goal_race_name": getattr(p, "goal_race_name", None),
+            "goal_race_date": p.goal_race_date.isoformat() if getattr(p, "goal_race_date", None) else None,
+        }
+        for p in plans_recent_rows
+    ]
+
+    jobs_recent_rows = (
+        db.query(AthleteDataImportJob)
+        .filter(AthleteDataImportJob.athlete_id == athlete_id)
+        .order_by(AthleteDataImportJob.created_at.desc())
+        .limit(safe_limit)
+        .all()
+    )
+    import_jobs_recent = [
+        {
+            "id": str(j.id),
+            "provider": j.provider,
+            "status": j.status,
+            "created_at": _iso(getattr(j, "created_at", None)),
+            "started_at": _iso(getattr(j, "started_at", None)),
+            "finished_at": _iso(getattr(j, "finished_at", None)),
+            "original_filename": getattr(j, "original_filename", None),
+            "stats_summary": _safe_stats_summary(getattr(j, "stats", None)),
+        }
+        for j in jobs_recent_rows
+    ]
+
+    now = datetime.now(timezone.utc)
+
+    return {
+        "metadata": {
+            "generated_at": now.isoformat(),
+            "athlete_id": str(athlete_id),
+            "version": "v1_skeleton",
+            "bounds": {
+                "recent_limit": safe_limit,
+                "max_limit": MAX_EXPORT_LIMIT,
+                "notes": "High-level only; not a full data dump yet.",
+            },
+        },
         "profile": {
             "email": current_user.email,
             "display_name": current_user.display_name,
-            "birthdate": current_user.birthdate.isoformat() if current_user.birthdate else None,
-            "sex": current_user.sex,
-            "height_cm": current_user.height_cm,
-            "subscription_tier": current_user.subscription_tier,
-            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+            "created_at": _iso(getattr(current_user, "created_at", None)),
+            "preferred_units": getattr(current_user, "preferred_units", None),
+            "birthdate": current_user.birthdate.isoformat() if getattr(current_user, "birthdate", None) else None,
+            "sex": getattr(current_user, "sex", None),
         },
-        "activities": [],
-        "nutrition_entries": [],
-        "body_composition": [],
-        "work_patterns": [],
-        "daily_checkins": [],
-        "activity_feedback": [],
-        "training_availability": [],
-        "insight_feedback": [],
+        "counts": {
+            "activities_total": activities_total,
+            "plans_total": plans_total,
+            "imports_jobs_total": imports_jobs_total,
+        },
+        "plans_recent": plans_recent,
+        "import_jobs_recent": import_jobs_recent,
     }
-    
-    # Activities
-    activities = db.query(Activity).filter(Activity.athlete_id == athlete_id).all()
-    for activity in activities:
-        splits = db.query(ActivitySplit).filter(
-            ActivitySplit.activity_id == activity.id
-        ).order_by(ActivitySplit.split_number).all()
-        
-        export_data["activities"].append({
-            "id": str(activity.id),
-            "start_time": activity.start_time.isoformat() if activity.start_time else None,
-            "sport": activity.sport,
-            "distance_m": float(activity.distance_m) if activity.distance_m else None,
-            "duration_s": activity.duration_s,
-            "avg_hr": activity.avg_hr,
-            "max_hr": activity.max_hr,
-            "average_speed": float(activity.average_speed) if activity.average_speed else None,
-            "performance_percentage": float(activity.performance_percentage) if activity.performance_percentage else None,
-            "splits": [
-                {
-                    "split_number": split.split_number,
-                    "distance": float(split.distance) if split.distance else None,
-                    "elapsed_time": split.elapsed_time,
-                    "average_heartrate": split.average_heartrate,
-                    "gap_seconds_per_mile": float(split.gap_seconds_per_mile) if split.gap_seconds_per_mile else None,
-                }
-                for split in splits
-            ]
-        })
-    
-    # Nutrition entries
-    nutrition_entries = db.query(NutritionEntry).filter(
-        NutritionEntry.athlete_id == athlete_id
-    ).all()
-    for entry in nutrition_entries:
-        export_data["nutrition_entries"].append({
-            "id": str(entry.id),
-            "date": entry.date.isoformat() if entry.date else None,
-            "entry_type": entry.entry_type,
-            "calories": float(entry.calories) if entry.calories else None,
-            "protein_g": float(entry.protein_g) if entry.protein_g else None,
-            "carbs_g": float(entry.carbs_g) if entry.carbs_g else None,
-            "fat_g": float(entry.fat_g) if entry.fat_g else None,
-            "fiber_g": float(entry.fiber_g) if entry.fiber_g else None,
-            "timing": entry.timing,
-            "notes": entry.notes,
-        })
-    
-    # Body composition
-    body_comp = db.query(BodyComposition).filter(
-        BodyComposition.athlete_id == athlete_id
-    ).all()
-    for entry in body_comp:
-        export_data["body_composition"].append({
-            "id": str(entry.id),
-            "date": entry.date.isoformat() if entry.date else None,
-            "weight_kg": float(entry.weight_kg) if entry.weight_kg else None,
-            "body_fat_pct": float(entry.body_fat_pct) if entry.body_fat_pct else None,
-            "muscle_mass_kg": float(entry.muscle_mass_kg) if entry.muscle_mass_kg else None,
-            "bmi": float(entry.bmi) if entry.bmi else None,
-            "notes": entry.notes,
-        })
-    
-    # Work patterns
-    work_patterns = db.query(WorkPattern).filter(
-        WorkPattern.athlete_id == athlete_id
-    ).all()
-    for pattern in work_patterns:
-        export_data["work_patterns"].append({
-            "id": str(pattern.id),
-            "date": pattern.date.isoformat() if pattern.date else None,
-            "work_type": pattern.work_type,
-            "hours_worked": float(pattern.hours_worked) if pattern.hours_worked else None,
-            "stress_level": pattern.stress_level,
-            "notes": pattern.notes,
-        })
-    
-    # Daily check-ins
-    checkins = db.query(DailyCheckin).filter(
-        DailyCheckin.athlete_id == athlete_id
-    ).all()
-    for checkin in checkins:
-        export_data["daily_checkins"].append({
-            "id": str(checkin.id),
-            "date": checkin.date.isoformat() if checkin.date else None,
-            "sleep_h": float(checkin.sleep_h) if checkin.sleep_h else None,
-            "stress_1_5": checkin.stress_1_5,
-            "soreness_1_5": checkin.soreness_1_5,
-            "rpe_1_10": checkin.rpe_1_10,
-            "notes": checkin.notes,
-        })
-    
-    # Activity feedback
-    feedback = db.query(ActivityFeedback).filter(
-        ActivityFeedback.athlete_id == athlete_id
-    ).all()
-    for fb in feedback:
-        export_data["activity_feedback"].append({
-            "id": str(fb.id),
-            "activity_id": str(fb.activity_id),
-            "perceived_effort": fb.perceived_effort,
-            "leg_feel": fb.leg_feel,
-            "mood": fb.mood,
-            "energy_level": fb.energy_level,
-            "notes": fb.notes,
-            "submitted_at": fb.submitted_at.isoformat() if fb.submitted_at else None,
-        })
-    
-    # Training availability
-    availability = db.query(TrainingAvailability).filter(
-        TrainingAvailability.athlete_id == athlete_id
-    ).all()
-    for avail in availability:
-        export_data["training_availability"].append({
-            "id": str(avail.id),
-            "day_of_week": avail.day_of_week,
-            "time_block": avail.time_block,
-            "available": avail.available,
-            "preferred": avail.preferred,
-        })
-    
-    # Insight feedback
-    insight_feedback = db.query(InsightFeedback).filter(
-        InsightFeedback.athlete_id == athlete_id
-    ).all()
-    for fb in insight_feedback:
-        export_data["insight_feedback"].append({
-            "id": str(fb.id),
-            "insight_type": fb.insight_type,
-            "insight_text": fb.insight_text,
-            "helpful": fb.helpful,
-            "feedback_text": fb.feedback_text,
-            "created_at": fb.created_at.isoformat() if fb.created_at else None,
-        })
-    
-    return export_data
 
 
 @router.delete("/delete-account")
