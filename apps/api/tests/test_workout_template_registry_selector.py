@@ -311,3 +311,43 @@ class TestWorkoutTemplateRegistrySelectorInvariants:
         )
         assert res["selected"]["intensity_tier"].upper() == "VO2MAX"
 
+    def test_dont_repeat_window_excludes_recent_templates_when_possible(self, db_session):
+        """
+        Invariant: templates used within the recent dont-repeat window are excluded if possible.
+        """
+        from services.workout_template_selector import select_quality_template
+
+        _clear_registry(db_session)
+
+        # Two threshold templates so we can avoid repeating a specific recent template without forcing a type switch.
+        db_session.add(
+            _mk_template(
+                template_id="build_threshold_a",
+                phases=["build"],
+                intensity_tier="THRESHOLD",
+                steps=[{"key": "s1", "structure": "2x10", "description_template": "2x10"}],
+            )
+        )
+        db_session.add(
+            _mk_template(
+                template_id="build_threshold_b",
+                phases=["build"],
+                intensity_tier="THRESHOLD",
+                steps=[{"key": "s1", "structure": "3x8", "description_template": "3x8"}],
+            )
+        )
+        db_session.commit()
+
+        res = select_quality_template(
+            db=db_session,
+            athlete_id=uuid4(),
+            phase="build",
+            week_in_phase=4,
+            total_phase_weeks=8,
+            recent_template_ids=["build_threshold_a"],
+            constraints={"time_available_min": 60, "facilities": []},
+        )
+        assert res["selected"]["template_id"] == "build_threshold_b"
+        audit = res.get("audit") or {}
+        assert audit.get("dont_repeat_window_relaxed") is False
+

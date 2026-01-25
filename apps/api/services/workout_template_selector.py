@@ -18,6 +18,10 @@ PHASE_INTENSITY_TIER_ALLOWLIST: dict[str, list[str]] = {
     "taper": ["ANAEROBIC", "VO2MAX", "THRESHOLD", "AEROBIC"],
 }
 
+# Variance guard: avoid repeating a recently-used template if possible.
+# If this excludes everything, we deterministically relax the window (but still avoid immediate repeats).
+RECENT_TEMPLATE_DONT_REPEAT_WINDOW = 3
+
 
 def _pick_progression_step(
     *,
@@ -87,6 +91,8 @@ def select_quality_template(
     templates = db.query(WorkoutTemplate).order_by(WorkoutTemplate.id.asc()).all()
     candidates: List[WorkoutTemplate] = []
     considered = 0
+    repeat_window_ids = [str(x) for x in (recent_template_ids or [])[-RECENT_TEMPLATE_DONT_REPEAT_WINDOW:]]
+    repeat_window_set = set(repeat_window_ids)
 
     # Phase filter (HARD)
     for t in templates:
@@ -125,6 +131,15 @@ def select_quality_template(
                 continue
 
         candidates.append(t)
+
+    # --- dont_repeat window (variance) ---
+    # Prefer excluding any template used recently (bounded window), but relax if this empties the pool.
+    candidates_no_recent = [t for t in candidates if t.id not in repeat_window_set] if repeat_window_set else candidates
+    relaxed_dont_repeat = False
+    if candidates_no_recent:
+        candidates = candidates_no_recent
+    else:
+        relaxed_dont_repeat = True
 
     # --- Type selection (engine chooses type from a phase-specific allowlist) ---
     allowlist = PHASE_INTENSITY_TIER_ALLOWLIST.get(phase_norm) or ["THRESHOLD", "VO2MAX", "ANAEROBIC", "AEROBIC", "RECOVERY"]
@@ -179,6 +194,9 @@ def select_quality_template(
                 "type_selected": str(getattr(chosen, "intensity_tier", None) or "").upper() or None,
                 "type_previous": prev_tier,
                 "type_candidates_counts": {},
+                "dont_repeat_window_size": RECENT_TEMPLATE_DONT_REPEAT_WINDOW,
+                "dont_repeat_window_ids": repeat_window_ids,
+                "dont_repeat_window_relaxed": relaxed_dont_repeat,
             },
         }
 
@@ -217,6 +235,9 @@ def select_quality_template(
             "type_selected": chosen_tier,
             "type_previous": prev_tier,
             "type_candidates_counts": {k: len(v) for k, v in candidates_by_tier.items()},
+            "dont_repeat_window_size": RECENT_TEMPLATE_DONT_REPEAT_WINDOW,
+            "dont_repeat_window_ids": repeat_window_ids,
+            "dont_repeat_window_relaxed": relaxed_dont_repeat,
         },
     }
 
