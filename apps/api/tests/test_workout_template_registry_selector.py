@@ -231,3 +231,83 @@ class TestWorkoutTemplateRegistrySelectorInvariants:
         assert r1["selected"]["template_id"] == r2["selected"]["template_id"]
         assert r1["selected"]["progression_step"]["key"] == r2["selected"]["progression_step"]["key"]
 
+    def test_type_is_selected_from_phase_allowlist_and_logged(self, db_session):
+        """
+        Invariant: the selector chooses a "type" (intensity_tier) from a phase-specific allowlist,
+        and emits the allowlist + chosen type in audit payload.
+        """
+        from services.workout_template_selector import select_quality_template, PHASE_INTENSITY_TIER_ALLOWLIST
+
+        _clear_registry(db_session)
+
+        # Two build templates with different tiers.
+        db_session.add(
+            _mk_template(
+                template_id="build_threshold_a",
+                phases=["build"],
+                intensity_tier="THRESHOLD",
+                steps=[{"key": "s1", "structure": "2x10", "description_template": "2x10"}],
+            )
+        )
+        db_session.add(
+            _mk_template(
+                template_id="build_vo2_a",
+                phases=["build"],
+                intensity_tier="VO2MAX",
+                steps=[{"key": "s1", "structure": "6x400", "description_template": "6x400"}],
+            )
+        )
+        db_session.commit()
+
+        res = select_quality_template(
+            db=db_session,
+            athlete_id=uuid4(),
+            phase="build",
+            week_in_phase=2,
+            total_phase_weeks=8,
+            recent_template_ids=[],
+            constraints={"time_available_min": 60, "facilities": []},
+        )
+        audit = res.get("audit") or {}
+        assert audit.get("type_allowlist") == PHASE_INTENSITY_TIER_ALLOWLIST["build"]
+        assert audit.get("type_selected") in set(PHASE_INTENSITY_TIER_ALLOWLIST["build"])
+        assert res["selected"]["intensity_tier"].upper() == audit.get("type_selected")
+
+    def test_type_selection_avoids_immediate_previous_type_when_possible(self, db_session):
+        """
+        Invariant: if multiple types are available, avoid repeating the immediate prior type.
+        """
+        from services.workout_template_selector import select_quality_template
+
+        _clear_registry(db_session)
+
+        db_session.add(
+            _mk_template(
+                template_id="build_threshold_a",
+                phases=["build"],
+                intensity_tier="THRESHOLD",
+                steps=[{"key": "s1", "structure": "2x10", "description_template": "2x10"}],
+            )
+        )
+        db_session.add(
+            _mk_template(
+                template_id="build_vo2_a",
+                phases=["build"],
+                intensity_tier="VO2MAX",
+                steps=[{"key": "s1", "structure": "6x400", "description_template": "6x400"}],
+            )
+        )
+        db_session.commit()
+
+        # Previous template is THRESHOLD; expect VO2MAX to be selected if available.
+        res = select_quality_template(
+            db=db_session,
+            athlete_id=uuid4(),
+            phase="build",
+            week_in_phase=3,
+            total_phase_weeks=8,
+            recent_template_ids=["build_threshold_a"],
+            constraints={"time_available_min": 60, "facilities": []},
+        )
+        assert res["selected"]["intensity_tier"].upper() == "VO2MAX"
+

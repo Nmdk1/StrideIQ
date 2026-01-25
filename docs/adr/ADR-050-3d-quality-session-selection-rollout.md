@@ -45,6 +45,8 @@ Each selected quality session is produced by evaluating workout templates across
 3. **Variance**: template `stimulus_type` + `dont_follow` + recent-repeat penalties.
    - Prevents monotony and avoids consecutive identical stressors.
 
+**Important refinement (approved):** the engine must choose the **workout “Type”** itself (e.g. threshold vs intervals vs hills / sharpening) from a **phase-specific allowlist**, rather than having the phase hard-fix the type. This preserves structure (phase guardrails) while enabling N=1 adaptability (type choice responds to constraints + variance + athlete context).
+
 Hard constraints apply:
 - `requires` is a **hard exclude** (cannot schedule what the athlete cannot execute).
 
@@ -111,6 +113,11 @@ Every 3D selection must emit a single structured event containing:
 - `data_tier`, `tau1_used`
 - `recent_quality_ids` window used for variance
 - candidate/filter counts (phase/progression/variance/constraints)
+- **Type selection (required):**
+  - `type_allowlist` (phase-specific allowlist of types considered valid)
+  - `type_selected`
+  - `type_previous` (immediate predecessor type, if known)
+  - `type_candidates_counts` (counts by type after hard constraints)
 - `selection_mode` (explore/exploit/fallback), `explore_probability`
 - `selected_template_id`, `final_score`, `selection_reason`
 - in shadow mode: legacy slot info (`legacy_workout_type`, `legacy_title`)
