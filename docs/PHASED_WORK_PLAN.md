@@ -45,7 +45,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 | 7 | Data Provider Expansion (Garmin/Coros) | Complete | File import v1 delivered (Garmin DI_CONNECT): `AthleteDataImportJob`, shared uploads mount, upload API + Celery worker, zip-slip protection, idempotent re-imports, cross-provider dedup + calendar display safety, and Settings UI job history (feature-flagged). Legacy Garmin password-connect is admin-only and gated off by default. |
 | 8 | Security, Privacy, Compliance Hardening | Complete | |
 | 9 | Automated Release Safety (Golden Paths + CI) | **Complete** | Sprints 1–2 accepted: expanded backend + web golden paths and CI gating; documented required checks + branch protection checklist for release safety MVP. |
-| 10 | Coach Action Automation (Propose → Confirm → Apply) | Not started | **HIGH PRIORITY immediately after Phase 9 completes.** Enables deterministic, auditable plan changes from Coach with explicit athlete confirmation (no silent/autonomous execution). |
+| 10 | Coach Action Automation (Propose → Confirm → Apply) | **In progress** | **HIGH PRIORITY immediately after Phase 9 completes.** Enables deterministic, auditable plan changes from Coach with explicit athlete confirmation (no silent/autonomous execution). |
 
 ---
 
@@ -75,6 +75,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 - **2026-01-25 (Phase 8 - complete)**: Full hardening delivered across 3 sprints: security golden paths + CI gating, impersonation/tokens invariants, GDPR export skeleton, audit log reliability + retention script, secrets rotation policy + CI template presence check. All items tested, CI-gated, documented (docs/SECURITY_SECRETS.md). Commits: see prior Sprint entries. Phase 8 closed; ready for Phase 9 release safety.
 - **2026-01-25 (Phase 9 / Sprint 1 - accepted)**: Expanded release-safety golden paths and CI gating: (backend) new smoke tests for Stripe webhook signature verification, entitlement transitions (comp pro/free), and ingestion pause/retry seam; (web) new Jest tests for landing pricing CTA → register and onboarding “import in progress” status; updated `backend-smoke` + `frontend-test` job lists; documented Phase 9 golden paths + local run commands. Commit: 557f93b.
 - **2026-01-25 (Phase 9 / Sprint 2 - accepted, Phase 9 complete)**: Expanded release-safety MVP coverage: (backend) plan generation golden paths for standard plan preview/create response shape + negative controls (auth required; model-driven tier gating enforced); (web) new Jest golden paths for plan-create gating (free vs paid) and subscriber value deep dive (Insights evidence cards, PBs table, Coach receipts); updated CI `frontend-test` smoke list and Phase 9 docs (explicit paths + branch protection checklist). Commit: 65a150f.
+- **2026-01-25 (Phase 10 / Sprint 1 - accepted)**: Established Coach Action Automation foundation: added `coach_action_proposals` table/migration/model; implemented `/v2/coach/actions/*` propose/confirm/reject endpoints with strict action catalog validation, idempotency, and transactional apply; added backend integration tests (happy path, auth required, reject blocks confirm, cross-user forbid, template replace). Commit: 279d20d.
 
 ---
 
