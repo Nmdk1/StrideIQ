@@ -4,7 +4,7 @@ Garmin Connect Integration Router
 Handles Garmin Connect OAuth and sync endpoints.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -12,27 +12,39 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from core.database import get_db
+from core.auth import require_admin
 from models import Athlete
 from services.token_encryption import encrypt_token
 from tasks.garmin_tasks import sync_garmin_activities_task, sync_garmin_recovery_metrics_task
-from core.config import settings
+from services.plan_framework.feature_flags import FeatureFlagService
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/garmin", tags=["garmin"])
 
+# Phase 7: Credential-based Garmin Connect is deprecated. Keep it owner/admin-only,
+# and behind an explicit flag so it can be disabled in production by default.
+LEGACY_GARMIN_PASSWORD_FLAG = "integrations.garmin_password_connect_legacy"
+
+
+def _ensure_legacy_enabled(db: Session, athlete_id: UUID) -> None:
+    svc = FeatureFlagService(db)
+    if not svc.is_enabled(LEGACY_GARMIN_PASSWORD_FLAG, athlete_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
 
 class GarminConnectRequest(BaseModel):
     """Request model for Garmin connection."""
     username: str
     password: str
-    athlete_id: Optional[UUID] = None
+    athlete_id: UUID
 
 
 @router.post("/connect")
 def connect_garmin(
     request: GarminConnectRequest,
+    current_user: Athlete = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
@@ -47,6 +59,7 @@ def connect_garmin(
     Returns:
         Connection status
     """
+    _ensure_legacy_enabled(db, current_user.id)
     try:
         from services.garmin_service import GarminService
         
@@ -66,16 +79,9 @@ def connect_garmin(
         except Exception as e:
             raise HTTPException(status_code=401, detail=f"Garmin authentication failed: {str(e)}")
         
-        # Get or create athlete
-        if request.athlete_id:
-            athlete = db.query(Athlete).filter(Athlete.id == request.athlete_id).first()
-            if not athlete:
-                raise HTTPException(status_code=404, detail="Athlete not found")
-        else:
-            # Create new athlete if not specified
-            athlete = Athlete()
-            db.add(athlete)
-            db.flush()
+        athlete = db.query(Athlete).filter(Athlete.id == request.athlete_id).first()
+        if not athlete:
+            raise HTTPException(status_code=404, detail="Athlete not found")
         
         # Store Garmin credentials (encrypted)
         athlete.garmin_username = request.username
@@ -85,12 +91,11 @@ def connect_garmin(
         
         db.commit()
         
-        # Trigger initial sync
+        initial_sync_triggered = False
         try:
-            # Sync activities
             sync_garmin_activities_task.delay(str(athlete.id))
-            # Sync recovery metrics (last 30 days)
             sync_garmin_recovery_metrics_task.delay(str(athlete.id), days_back=30)
+            initial_sync_triggered = True
         except Exception as e:
             logger.warning(f"Could not trigger initial sync: {e}")
         
@@ -110,6 +115,7 @@ def connect_garmin(
 @router.post("/disconnect")
 def disconnect_garmin(
     athlete_id: UUID = Body(..., embed=True),
+    current_user: Athlete = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
@@ -117,6 +123,7 @@ def disconnect_garmin(
     
     Removes credentials and disables sync.
     """
+    _ensure_legacy_enabled(db, current_user.id)
     athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
     if not athlete:
         raise HTTPException(status_code=404, detail="Athlete not found")
@@ -137,6 +144,7 @@ def disconnect_garmin(
 @router.post("/sync")
 def trigger_garmin_sync(
     athlete_id: UUID = Body(..., embed=True),
+    current_user: Athlete = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
@@ -148,6 +156,7 @@ def trigger_garmin_sync(
     Returns:
         Task ID for tracking sync status
     """
+    _ensure_legacy_enabled(db, current_user.id)
     athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
     if not athlete:
         raise HTTPException(status_code=404, detail="Athlete not found")
@@ -170,6 +179,7 @@ def trigger_garmin_sync(
 @router.get("/status/{athlete_id}")
 def get_garmin_status(
     athlete_id: UUID,
+    current_user: Athlete = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
@@ -178,6 +188,7 @@ def get_garmin_status(
     Returns:
         Connection status and last sync time
     """
+    _ensure_legacy_enabled(db, current_user.id)
     athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
     if not athlete:
         raise HTTPException(status_code=404, detail="Athlete not found")

@@ -340,4 +340,27 @@ class TrainingAvailabilityGridResponse(BaseModel):
     summary: dict  # Slot counts and statistics
 
 
+class AthleteDataImportJobResponse(BaseModel):
+    """Phase 7: response schema for a provider import job."""
+
+    id: UUID
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    athlete_id: UUID
+    provider: str
+    status: str
+    original_filename: Optional[str] = None
+    stored_path: Optional[str] = None
+    file_size_bytes: Optional[int] = None
+    file_sha256: Optional[str] = None
+    stats: Dict = {}
+    error: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AthleteDataImportJobListResponse(BaseModel):
+    jobs: List[AthleteDataImportJobResponse]
+
 

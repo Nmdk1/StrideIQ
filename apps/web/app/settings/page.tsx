@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { StravaConnection } from '@/components/integrations/StravaConnection';
+import { GarminFileImport } from '@/components/integrations/GarminFileImport';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -18,7 +19,7 @@ import { API_CONFIG } from '@/lib/api/config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Settings, Link2, Watch, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight } from 'lucide-react';
+import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight } from 'lucide-react';
 import { authService } from '@/lib/api/services/auth';
 
 export default function SettingsPage() {
@@ -188,24 +189,8 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <StravaConnection />
-                
-                {/* Future integrations placeholder */}
-                <Card className="bg-slate-700/50 border-slate-600">
-                  <CardContent className="py-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-slate-600/50 rounded-lg">
-                          <Watch className="w-5 h-5 text-slate-400" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-300">Garmin Connect</p>
-                          <p className="text-sm text-slate-500">Direct sync from your Garmin device</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="text-slate-400 border-slate-500">Coming Soon</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
+
+                <GarminFileImport />
               </CardContent>
             </Card>
 

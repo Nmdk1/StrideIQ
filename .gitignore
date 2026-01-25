@@ -95,6 +95,9 @@ apps/api/extracted_texts/
 garmin_export/
 *.fit
 
+# Provider file import uploads (Phase 7)
+.uploads/
+
 
 
 

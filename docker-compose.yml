@@ -54,6 +54,7 @@ services:
     volumes:
       - ./apps/api:/app
       - ./books:/books  # Mount books directory for extraction
+      - ./.uploads:/uploads
     command: sh -c "python run_migrations.py && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 
   worker:
@@ -78,6 +79,7 @@ services:
     volumes:
       - ./apps/worker:/app
       - ./apps/api:/api  # Mount API code so worker can import tasks
+      - ./.uploads:/uploads
 
   web:
     build:

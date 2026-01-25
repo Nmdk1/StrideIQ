@@ -247,6 +247,79 @@ def meters_to_miles(meters: int) -> float:
     return round(meters / 1609.344, 1)
 
 
+def _provider_rank(provider: Optional[str]) -> int:
+    """
+    Higher is better (preferred for display when collapsing duplicates).
+
+    We treat Strava as the canonical activity source when present, because it is the
+    primary ingestion provider and often has richer metadata downstream.
+    """
+    p = (provider or "").lower()
+    if p == "strava":
+        return 3
+    if p == "garmin":
+        return 2
+    if p:
+        return 1
+    return 0
+
+
+def _activities_are_probable_duplicates(a: Activity, b: Activity) -> bool:
+    """
+    Heuristic: same workout recorded by multiple providers.
+
+    Constraints are intentionally conservative to avoid collapsing true doubles.
+    """
+    try:
+        dt_s = abs((a.start_time - b.start_time).total_seconds())
+    except Exception:
+        return False
+    if dt_s > 10 * 60:  # 10 minutes
+        return False
+
+    da = a.distance_m or 0
+    db = b.distance_m or 0
+    if da > 0 and db > 0:
+        # Allow either 2% relative tolerance or 150m absolute tolerance (GPS/provider drift).
+        if abs(da - db) > max(150, int(0.02 * max(da, db))):
+            return False
+
+    ta = a.duration_s or 0
+    tb = b.duration_s or 0
+    if ta > 0 and tb > 0:
+        # 10% or 5min tolerance.
+        if abs(ta - tb) > max(300, int(0.10 * max(ta, tb))):
+            return False
+
+    return True
+
+
+def dedupe_activities_for_calendar_display(activities: List[Activity]) -> List[Activity]:
+    """
+    Collapse probable cross-provider duplicates so the calendar doesn't show double entries.
+    """
+    if not activities:
+        return []
+    acts = sorted(activities, key=lambda x: x.start_time)
+    kept: List[Activity] = []
+    for a in acts:
+        matched_idx: Optional[int] = None
+        # Only check a few recent kept entries; duplicates will be close in time.
+        for i in range(max(0, len(kept) - 5), len(kept)):
+            if _activities_are_probable_duplicates(a, kept[i]):
+                matched_idx = i
+                break
+        if matched_idx is None:
+            kept.append(a)
+            continue
+
+        incumbent = kept[matched_idx]
+        # Keep the preferred provider version.
+        if _provider_rank(getattr(a, "provider", None)) > _provider_rank(getattr(incumbent, "provider", None)):
+            kept[matched_idx] = a
+    return kept
+
+
 def get_primary_activity(activities: List[Activity]) -> Optional[Activity]:
     """
     Select the primary (most significant) activity from a list.
@@ -573,7 +646,7 @@ def get_calendar(
     current = start_date
     while current <= end_date:
         planned = planned_workouts.get(current)
-        day_activities = activities_by_date.get(current, [])
+        day_activities = dedupe_activities_for_calendar_display(activities_by_date.get(current, []))
         day_notes = notes_by_date.get(current, [])
         day_insights = insights_by_date.get(current, [])
         
@@ -697,6 +770,7 @@ def get_calendar_day(
         Activity.athlete_id == current_user.id,
         func.date(Activity.start_time) == calendar_date
     ).order_by(Activity.start_time).all()
+    activities = dedupe_activities_for_calendar_display(activities)
     
     # Get notes
     notes = db.query(CalendarNote).filter(

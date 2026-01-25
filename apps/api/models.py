@@ -288,6 +288,43 @@ class AthleteIngestionState(Base):
     )
 
 
+class AthleteDataImportJob(Base):
+    """
+    Phase 7: Athlete-initiated data import job (Garmin/Coros file upload).
+
+    This is the operational truth for import runs:
+    - created/started/finished timestamps
+    - deterministic status
+    - bounded stats + error message
+
+    Files are stored out-of-band (shared uploads directory / object storage),
+    referenced by stored_path and verified by sha256.
+    """
+
+    __tablename__ = "athlete_data_import_job"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+
+    # 'garmin' | 'coros'
+    provider = Column(Text, nullable=False, index=True)
+    # 'queued' | 'running' | 'success' | 'error'
+    status = Column(Text, nullable=False, index=True)
+
+    original_filename = Column(Text, nullable=True)
+    stored_path = Column(Text, nullable=True)
+    file_size_bytes = Column(BigInteger, nullable=True)
+    file_sha256 = Column(Text, nullable=True, index=True)
+
+    # Bounded counters + metadata (no raw file content).
+    stats = Column(JSONB, nullable=False, default=dict)
+    error = Column(Text, nullable=True)
+
+
 class Activity(Base):
     __tablename__ = "activity"
 

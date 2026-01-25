@@ -24,6 +24,15 @@ From `apps/web`:
 - `npm ci`
 - `npm test`
 
+## Provider file imports (Phase 7) local dev (optional)
+Phase 7 introduces a shared uploads mount for file imports:
+- Host dir: `./.uploads/` (gitignored)
+- Container path (API + worker): `/uploads`
+
+To enable Garmin file import in local dev:
+- `docker compose exec -T postgres psql -U postgres -d running_app -c "update feature_flag set enabled=true where key='integrations.garmin_file_import_v1';"`
+- In the web app: Settings → Integrations → Garmin (file import) → Upload ZIP
+
 ## Stripe (Phase 6) local dev (optional)
 Stripe is integrated via hosted Checkout + Portal, so local dev generally only needs the API env vars and the app will redirect you to Stripe-hosted pages.
 

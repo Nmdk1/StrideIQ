@@ -42,7 +42,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 | 4 | Admin “Heartbeat” | Complete | Secure `/admin` + `/v1/admin/*` (role + permission seam), “God Mode” athlete detail, auditable operator actions (comp/reset/retry/block), and impersonation hardened (owner-only + time-boxed + banner + audit). |
 | 5 | Operational Visibility + Reliability | Complete | Viral-Safe Shield delivered: Ops Pulse (queue/stuck/errors/deferred), Rate Limit Armor (429 deferral + retry), and Emergency Brake (global ingestion pause + UI banner). |
 | 6 | Subscription/Tier/Payment Productionization | Complete | Stripe MVP delivered: hosted Checkout + Portal + webhook-driven subscription mirror + idempotency. Added 7-day trial (self-serve + admin grant/revoke) and converged entitlements to Free vs Pro. Deprecated legacy one-time plan checkout paths. |
-| 7 | Data Provider Expansion (Garmin/Coros) | Not started | |
+| 7 | Data Provider Expansion (Garmin/Coros) | Complete | File import v1 delivered (Garmin DI_CONNECT): `AthleteDataImportJob`, shared uploads mount, upload API + Celery worker, zip-slip protection, idempotent re-imports, cross-provider dedup + calendar display safety, and Settings UI job history (feature-flagged). Legacy Garmin password-connect is admin-only and gated off by default. |
 | 8 | Security, Privacy, Compliance Hardening | Not started | |
 | 9 | Automated Release Safety (Golden Paths + CI) | In progress | Seeded CI “smoke” runs for the highest-value Phase 3 + Phase 5 golden paths (backend + web). |
 | 10 | Coach Action Automation (Propose → Confirm → Apply) | Not started | **HIGH PRIORITY immediately after Phase 9 completes.** Enables deterministic, auditable plan changes from Coach with explicit athlete confirmation (no silent/autonomous execution). |
@@ -66,6 +66,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 - **2026-01-24 (Phase 5 - closure hardening)**: Locked down system-level controls so `system.*` actions (including global ingestion pause) require **explicit permissions** for admins (no implicit bootstrap access). Added an owner-only endpoint to set `admin_permissions` (audited + tested), and added CI smoke suites to continuously exercise the Phase 3 + Phase 5 golden paths (backend + web) to prevent regressions.
 - **2026-01-24 (Phase 6 / Stripe MVP - foundation)**: Added `subscriptions` + `stripe_events` tables, implemented signature-verified Stripe webhooks with idempotency, and wired hosted Checkout/Portal endpoints to enable `pro` monthly upgrades with minimal billing surface area (ADR-055).
 - **2026-01-24 (Phase 6 - complete)**: Completed Phase 6 monetization + entitlement productionization: fixed Stripe subscription cancellation mirroring under newer API versions, added a self-serve **7-day trial** (plus admin grant/revoke) and exposed trial/subscription mirror in Admin for support. Converged UI/ops semantics to **Free vs Pro** and deprecated legacy one-time plan checkout routes.
+- **2026-01-25 (Phase 7 - complete)**: Provider expansion via **file import v1** shipped (ADR-057). Delivered `AthleteDataImportJob` + migrations, shared `/uploads` mount for API+worker, feature flags, Garmin DI_CONNECT importer (zip-safe extraction + unit conversion + idempotent re-imports), and Settings UI (upload + recent job statuses). Hardened duplicate handling: importer prefers `startTimeGmt` for UTC alignment, uses DB-level conflict-safe inserts, and calendar collapses probable cross-provider duplicates for display safety. Legacy Garmin password-connect is admin-only and gated off by default.
 
 ---
 
@@ -232,6 +233,26 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 ### Scope
 - Canonical provider abstraction (activities, laps/splits, best-efforts equivalents).
 - Ingestion pipeline parity (idempotent, resumable, observable).
+
+### Implementation (v1: file import)
+- **Backend**
+  - `AthleteDataImportJob` table as the operational truth for import runs (queued/running/success/error + bounded stats).
+  - Shared uploads directory between API + worker (mounted to `/uploads`).
+  - Upload endpoint(s) that create jobs and enqueue Celery processing.
+  - Safe zip extraction (zip-slip prevention + extraction byte cap).
+  - Garmin DI_CONNECT parsing (start with `*_summarizedActivities.json`) + unit conversion + canonical `Activity` inserts with provider/external id idempotency.
+  - Best-effort cross-provider dedup by time+distance to avoid duplicates when Strava already imported the same run.
+- **Web**
+  - Settings surface for Garmin file import (feature-flagged), showing upload + last N jobs.
+- **Security**
+  - Legacy Garmin username/password connect endpoints are admin-only and gated behind an explicit “legacy” flag (default off).
+
+### Definition of Done
+- Garmin import works end-to-end (upload zip → job queued → worker import → Activities appear).
+- Import is safe-by-default (zip-slip blocked, size-bounded, no raw file content logged).
+- Import is idempotent (provider+external id unique constraint enforced; reruns don’t duplicate).
+- Ops visibility exists (job status + stats; ingestion state updated for provider).
+- Settings UI shows upload + recent job history for the athlete.
 
 ---
 

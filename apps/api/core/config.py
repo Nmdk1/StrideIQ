@@ -115,6 +115,12 @@ class Settings(BaseSettings):
     # e.g., "http://localhost:3000" or "https://strideiq.run"
     WEB_APP_BASE_URL: str = Field(default="http://localhost:3000")
 
+    # Phase 7: Provider file imports (Garmin/Coros)
+    # In docker-compose we mount a shared host directory to /uploads for api + worker.
+    UPLOADS_DIR: str = Field(default="/uploads")
+    # Hard cap to protect API/worker from oversized exports (zip bombs / huge exports).
+    IMPORT_MAX_FILE_BYTES: int = Field(default=75 * 1024 * 1024)  # 75MB
+
     # OAuth state TTL for provider callbacks (seconds).
     OAUTH_STATE_TTL_S: int = Field(default=600)
 
