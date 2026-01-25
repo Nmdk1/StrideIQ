@@ -78,7 +78,8 @@ jobs:
             tests/test_phase5_rate_limit_deferral.py \
             tests/test_admin_actions_onboarding_ingestion_block.py \
             tests/test_phase7_garmin_file_import_e2e.py \
-            tests/test_phase8_security_golden_paths.py
+            tests/test_phase8_security_golden_paths.py \
+            tests/test_phase8_impersonation_high_risk_blocks.py
 
   backend-test:
     name: Backend Tests
