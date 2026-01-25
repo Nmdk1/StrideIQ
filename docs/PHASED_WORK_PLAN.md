@@ -45,7 +45,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 | 7 | Data Provider Expansion (Garmin/Coros) | Complete | File import v1 delivered (Garmin DI_CONNECT): `AthleteDataImportJob`, shared uploads mount, upload API + Celery worker, zip-slip protection, idempotent re-imports, cross-provider dedup + calendar display safety, and Settings UI job history (feature-flagged). Legacy Garmin password-connect is admin-only and gated off by default. |
 | 8 | Security, Privacy, Compliance Hardening | Complete | |
 | 9 | Automated Release Safety (Golden Paths + CI) | **Complete** | Sprints 1–2 accepted: expanded backend + web golden paths and CI gating; documented required checks + branch protection checklist for release safety MVP. |
-| 10 | Coach Action Automation (Propose → Confirm → Apply) | **Complete** | **HIGH PRIORITY immediately after Phase 9 completes.** Enables deterministic, auditable plan changes from Coach with explicit athlete confirmation (no silent/autonomous execution). |
+| 10 | Coach Action Automation (Propose → Confirm → Apply) | **Complete** | **HIGH PRIORITY immediately after Phase 9 completes.** Deterministic, auditable plan changes from Coach with explicit athlete confirmation (no silent/autonomous execution), plus athlete-facing ProposalCard UX + hardening + tests. |
 
 ---
 
@@ -79,6 +79,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 - **2026-01-25 (Phase 10 / Sprint 2 - accepted)**: Added the Coach chat **UX proposal card** for deterministic plan changes: new `ProposalCard` renders header/reason/diff/risk notes and provides Confirm/Reject/Ask follow-up actions; wired into Coach chat message rendering when a proposal payload is present; added web client service for confirm/reject and Jest tests for render + confirm/reject flows. Commit: 2336629.
 - **2026-01-25 (Phase 10 - complete)**: Full Coach Action Automation delivered across 2 sprints: (1) backend schema/endpoints/tests (propose/confirm/reject, validation, idempotency, transactional apply); (2) frontend ProposalCard + chat integration (diff/reason/risks/buttons, confirm → receipt, reject/error handling). All CI-gated, documented. Commits: see prior Sprint entries. Phase 10 closed.
 - **2026-01-25 (Beta prep - complete)**: Production-beta operational readiness: re-verified invite-only gating boundaries (register + OAuth + onboarding), added Phase 10 Coach Action monitoring (Ops Pulse counts + top failure reasons), added structured telemetry (logs + Sentry breadcrumbs) for propose/confirm/apply/reject/failed, ensured coach applies emit `plan_modification_log` audit entries (`source="coach"`), and added an end-to-end local dogfood script plus a beta rollout checklist doc. Commit: 04679ce.
+- **2026-01-25 (Phase 10 - complete)**: Phase 10 MVP is beta-ready: (1) backend proposal lifecycle + deterministic apply (`/v2/coach/actions` propose/confirm/reject, validation, idempotency, transactional safety) and integration tests; (2) athlete-facing ProposalCard UX (diff/reason/risks, confirm → receipt, reject/error handling) wired into Coach chat; (3) production-rigor hardening (a11y, idempotent confirm UX, retry-on-failure, expanded Jest coverage) plus beta ops visibility (Ops Pulse + telemetry + audit) and dogfood script. Commits: 279d20d, 2336629, cb38191, 04679ce.
 
 ---
 
