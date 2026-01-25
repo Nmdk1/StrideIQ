@@ -281,8 +281,9 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 
 ### Scope
 - “Public conversion” golden path (landing → signup → onboarding connect status → dashboard).
-- “Subscriber value” golden path (membership/trial UI + paid surfaces remain coherent).
+- “Subscriber value” golden path (membership/trial UI + paid surfaces remain coherent: Insights evidence cards, PBs table, Coach evidence/receipts).
 - “Revenue + ingestion seams” golden path (Stripe webhook signature validation, entitlement transitions, ingestion pause guardrails).
+- “Plan generation” golden path (standard plan preview/create shape remains stable; model-driven generation remains tier-gated).
 - CI gate: run the highest-value checks on every merge.
 
 ### CI golden paths (explicit contract)
@@ -310,6 +311,8 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
   - `onboarding-connect-import-status.test.tsx`
   - `settings-trial-membership.test.tsx`
   - `plans-model-driven.test.tsx`
+  - `plan-create-gating.test.tsx`
+  - `subscriber-value-deep-dive.test.tsx`
 
 ### Local run instructions
 
@@ -321,10 +324,26 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 
 ### Release gating (branch protection)
 
-When Phase 9 is enforced, branch protection should require these checks:
+When Phase 9 is enforced, branch protection should require these checks (names must match CI job names exactly):
 - `Backend Smoke (Golden Paths)`
 - `Frontend Tests (Jest)`
 - `Security Scan`
+
+**Ops checklist (GitHub UI)**
+- Navigate to: repository **Settings** → **Branches** → **Branch protection rules** → **Add rule**
+- **Branch name pattern**: `main` (and `develop` if you gate that branch too)
+- Enable:
+  - **Require a pull request before merging**
+  - **Require status checks to pass before merging**
+    - Check **Require branches to be up to date before merging**
+    - Add required checks:
+      - `Backend Smoke (Golden Paths)`
+      - `Frontend Tests (Jest)`
+      - `Security Scan`
+- Recommended (optional, but good defaults for safety):
+  - **Require approvals** (at least 1)
+  - **Dismiss stale approvals when new commits are pushed**
+  - **Require conversation resolution before merging**
 
 ---
 

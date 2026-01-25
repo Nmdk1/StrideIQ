@@ -3,7 +3,7 @@ from __future__ import annotations
 import hmac
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -12,7 +12,7 @@ from sqlalchemy import or_
 from core.database import SessionLocal
 from core.security import create_access_token
 from main import app
-from models import AdminAuditEvent, Athlete, StripeEvent
+from models import AdminAuditEvent, Athlete, PlannedWorkout, StripeEvent, TrainingPlan
 
 
 client = TestClient(app)
@@ -24,10 +24,11 @@ def _headers(user: Athlete) -> dict:
 
 
 def _create_user(db, *, role: str, **kwargs) -> Athlete:
+    subscription_tier = kwargs.pop("subscription_tier", None)
     athlete = Athlete(
         email=f"phase9_{role}_{uuid4()}@example.com",
         display_name=f"Phase9 {role}",
-        subscription_tier="elite" if role in ("admin", "owner") else "free",
+        subscription_tier=subscription_tier or ("elite" if role in ("admin", "owner") else "free"),
         role=role,
         **kwargs,
     )
@@ -40,6 +41,9 @@ def _create_user(db, *, role: str, **kwargs) -> Athlete:
 def _cleanup(db, athlete_ids: list) -> None:
     try:
         if athlete_ids:
+            # Delete plan rows first to avoid FK violations when removing athletes.
+            db.query(PlannedWorkout).filter(PlannedWorkout.athlete_id.in_(athlete_ids)).delete(synchronize_session=False)
+            db.query(TrainingPlan).filter(TrainingPlan.athlete_id.in_(athlete_ids)).delete(synchronize_session=False)
             db.query(AdminAuditEvent).filter(
                 or_(
                     AdminAuditEvent.actor_athlete_id.in_(athlete_ids),
@@ -228,4 +232,145 @@ def test_ingestion_pause_blocks_admin_retry():
             _cleanup(db, ids)
         finally:
             db.close()
+
+
+def test_v2_standard_plan_preview_shape_is_stable():
+    """
+    Phase 9 backend smoke: plan generation preview returns a stable, bounded shape.
+    Public endpoint (no auth): POST /v2/plans/standard/preview
+    """
+    resp = client.post(
+        "/v2/plans/standard/preview",
+        json={
+            "distance": "10k",
+            "duration_weeks": 8,
+            "days_per_week": 5,
+            "volume_tier": "mid",
+            "start_date": None,
+            "race_name": None,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    # Top-level contract
+    for key in (
+        "plan_tier",
+        "distance",
+        "duration_weeks",
+        "volume_tier",
+        "days_per_week",
+        "workouts",
+        "weekly_volumes",
+        "peak_volume",
+        "total_miles",
+        "total_quality_sessions",
+    ):
+        assert key in data, f"missing key: {key}"
+
+    assert data["distance"] == "10k"
+    assert int(data["duration_weeks"]) == 8
+    assert isinstance(data["workouts"], list) and len(data["workouts"]) > 0
+    assert isinstance(data["weekly_volumes"], list) and len(data["weekly_volumes"]) == 8
+
+    # Spot-check one workout record has stable fields.
+    w0 = data["workouts"][0]
+    for key in ("week", "day", "workout_type", "title", "description"):
+        assert key in w0
+
+
+def test_v2_standard_plan_create_requires_auth():
+    """
+    Negative control: authenticated athlete is required to create/save a plan.
+    """
+    resp = client.post(
+        "/v2/plans/standard",
+        json={
+            "distance": "10k",
+            "duration_weeks": 8,
+            "days_per_week": 5,
+            "volume_tier": "mid",
+            "start_date": None,
+            "race_name": "Phase 9 Standard Plan",
+        },
+    )
+    assert resp.status_code == 401, resp.text
+
+
+def test_v2_standard_plan_create_succeeds_for_authenticated_athlete():
+    """
+    Positive control: authenticated athlete can create/save a standard plan.
+    """
+    db = SessionLocal()
+    athlete = None
+    try:
+        athlete = _create_user(db, role="athlete")
+        resp = client.post(
+            "/v2/plans/standard",
+            headers=_headers(athlete),
+            json={
+                "distance": "10k",
+                "duration_weeks": 8,
+                "days_per_week": 5,
+                "volume_tier": "mid",
+                "start_date": None,
+                "race_name": "Phase 9 Standard Plan",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body.get("success") is True
+        assert "plan_id" in body and body["plan_id"]
+    finally:
+        try:
+            if athlete is not None:
+                _cleanup(db, [athlete.id])
+        finally:
+            db.close()
+
+
+def test_v2_model_driven_plan_requires_elite_tier(monkeypatch):
+    """
+    Phase 9 backend smoke: tier gating for model-driven plan generation.
+
+    We force the feature flag ON to ensure we’re testing the *tier gate* (not flag gate),
+    and then assert non-elite athletes are denied with stable 403 semantics.
+    """
+    import routers.plan_generation as pg
+
+    # Force feature flag enabled so we hit the tier check.
+    monkeypatch.setattr(pg.FeatureFlagService, "is_enabled", lambda self, key, athlete: True)
+
+    db = SessionLocal()
+    athlete = None
+    try:
+        athlete = _create_user(db, role="athlete", subscription_tier="free")
+
+        race_date = (date.today() + timedelta(days=70)).isoformat()
+        resp = client.post(
+            "/v2/plans/model-driven",
+            headers=_headers(athlete),
+            json={"race_date": race_date, "race_distance": "marathon", "goal_time_seconds": None, "force_recalibrate": False},
+        )
+        assert resp.status_code == 403, resp.text
+        detail = resp.json().get("detail")
+        assert isinstance(detail, dict)
+        assert "Elite" in (detail.get("reason") or "")
+        assert detail.get("upgrade_path")
+    finally:
+        try:
+            if athlete is not None:
+                _cleanup(db, [athlete.id])
+        finally:
+            db.close()
+
+
+def test_v2_model_driven_plan_requires_auth(monkeypatch):
+    """
+    Negative control: model-driven generation requires authentication (401).
+    """
+    # Use an always-valid request body; we should fail before validation matters.
+    race_date = (date.today() + timedelta(days=70)).isoformat()
+    resp = client.post("/v2/plans/model-driven", json={"race_date": race_date, "race_distance": "marathon"})
+    assert resp.status_code == 401, resp.text
 
