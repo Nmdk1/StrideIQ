@@ -12,6 +12,9 @@ export interface ChatRequest {
 export interface ChatResponse {
   response: string;
   thread_id?: string;
+  // Optional Phase 10 payload: when the coach proposes deterministic actions.
+  // This is populated by the coach orchestrator layer (not by the plain text response).
+  proposal?: unknown;
   error: boolean;
 }
 
@@ -26,6 +29,7 @@ export interface ContextResponse {
 export interface ThreadMessage {
   role: 'user' | 'assistant' | string;
   content: string;
+  proposal?: unknown;
   created_at?: string | null;
 }
 

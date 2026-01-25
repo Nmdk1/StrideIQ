@@ -16,11 +16,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MessageSquare, Send, Sparkles, Activity, BedDouble, Target, TrendingUp, RotateCcw, ShieldCheck, Trophy, BrainCircuit } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { ProposalCard, type ProposalCardProposal } from '@/components/coach/ProposalCard';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
-  content: string;
+  content?: string;
+  proposal?: ProposalCardProposal;
   timestamp: Date;
 }
 
@@ -123,6 +125,7 @@ export default function CoachPage() {
   const [stickToBottom, setStickToBottom] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const isEmptyConversation = messages.length <= 1;
   
   // Only auto-scroll if the user is already near the bottom.
@@ -149,11 +152,12 @@ export default function CoachPage() {
       .then((res) => {
         if (cancelled) return;
         const hist = (res?.messages || [])
-          .filter((m) => (m.content || '').trim())
+          .filter((m) => (m.content || '').trim() || (m as any).proposal)
           .map((m, idx) => ({
             id: `hist_${idx}`,
             role: (m.role === 'user' ? 'user' : 'assistant') as Message['role'],
             content: m.content,
+            proposal: (m as any).proposal,
             timestamp: m.created_at ? new Date(m.created_at) : new Date(),
           }));
         setMessages(hist);
@@ -224,6 +228,7 @@ export default function CoachPage() {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: response.response,
+          proposal: (response as any).proposal,
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, assistantMessage]);
@@ -329,7 +334,18 @@ export default function CoachPage() {
                             <CardContent className="py-4 px-5">
                               {message.role === 'assistant' ? (
                                 (() => {
-                                  const { main, receipts } = splitReceipts(message.content);
+                                  if (message.proposal) {
+                                    return (
+                                      <ProposalCard
+                                        proposal={message.proposal}
+                                        onAskFollowup={(suggestedText) => {
+                                          setInput(suggestedText);
+                                          requestAnimationFrame(() => inputRef.current?.focus());
+                                        }}
+                                      />
+                                    );
+                                  }
+                                  const { main, receipts } = splitReceipts(message.content || '');
                                   return (
                                     <div className="space-y-3">
                                       <div className="prose prose-invert prose-sm max-w-none">
@@ -414,7 +430,18 @@ export default function CoachPage() {
                             <CardContent className="py-3 px-4">
                               {message.role === 'assistant' ? (
                                 (() => {
-                                  const { main, receipts } = splitReceipts(message.content);
+                                  if (message.proposal) {
+                                    return (
+                                      <ProposalCard
+                                        proposal={message.proposal}
+                                        onAskFollowup={(suggestedText) => {
+                                          setInput(suggestedText);
+                                          requestAnimationFrame(() => inputRef.current?.focus());
+                                        }}
+                                      />
+                                    );
+                                  }
+                                  const { main, receipts } = splitReceipts(message.content || '');
                                   return (
                                     <div className="space-y-3">
                                       <div className="prose prose-invert prose-sm max-w-none">
@@ -495,6 +522,7 @@ export default function CoachPage() {
                   <div className="flex">
                     <div className="relative flex-1">
                       <textarea
+                        ref={inputRef}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
