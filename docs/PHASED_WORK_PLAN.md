@@ -45,7 +45,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 | 7 | Data Provider Expansion (Garmin/Coros) | Complete | File import v1 delivered (Garmin DI_CONNECT): `AthleteDataImportJob`, shared uploads mount, upload API + Celery worker, zip-slip protection, idempotent re-imports, cross-provider dedup + calendar display safety, and Settings UI job history (feature-flagged). Legacy Garmin password-connect is admin-only and gated off by default. |
 | 8 | Security, Privacy, Compliance Hardening | Complete | |
 | 9 | Automated Release Safety (Golden Paths + CI) | **Complete** | Sprints 1–2 accepted: expanded backend + web golden paths and CI gating; documented required checks + branch protection checklist for release safety MVP. |
-| 10 | Coach Action Automation (Propose → Confirm → Apply) | **In progress** | **HIGH PRIORITY immediately after Phase 9 completes.** Enables deterministic, auditable plan changes from Coach with explicit athlete confirmation (no silent/autonomous execution). |
+| 10 | Coach Action Automation (Propose → Confirm → Apply) | **Complete** | **HIGH PRIORITY immediately after Phase 9 completes.** Enables deterministic, auditable plan changes from Coach with explicit athlete confirmation (no silent/autonomous execution). |
 
 ---
 
@@ -77,6 +77,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 - **2026-01-25 (Phase 9 / Sprint 2 - accepted, Phase 9 complete)**: Expanded release-safety MVP coverage: (backend) plan generation golden paths for standard plan preview/create response shape + negative controls (auth required; model-driven tier gating enforced); (web) new Jest golden paths for plan-create gating (free vs paid) and subscriber value deep dive (Insights evidence cards, PBs table, Coach receipts); updated CI `frontend-test` smoke list and Phase 9 docs (explicit paths + branch protection checklist). Commit: 65a150f.
 - **2026-01-25 (Phase 10 / Sprint 1 - accepted)**: Established Coach Action Automation foundation: added `coach_action_proposals` table/migration/model; implemented `/v2/coach/actions/*` propose/confirm/reject endpoints with strict action catalog validation, idempotency, and transactional apply; added backend integration tests (happy path, auth required, reject blocks confirm, cross-user forbid, template replace). Commit: 279d20d.
 - **2026-01-25 (Phase 10 / Sprint 2 - accepted)**: Added the Coach chat **UX proposal card** for deterministic plan changes: new `ProposalCard` renders header/reason/diff/risk notes and provides Confirm/Reject/Ask follow-up actions; wired into Coach chat message rendering when a proposal payload is present; added web client service for confirm/reject and Jest tests for render + confirm/reject flows. Commit: 2336629.
+- **2026-01-25 (Phase 10 - complete)**: Full Coach Action Automation delivered across 2 sprints: (1) backend schema/endpoints/tests (propose/confirm/reject, validation, idempotency, transactional apply); (2) frontend ProposalCard + chat integration (diff/reason/risks/buttons, confirm → receipt, reject/error handling). All CI-gated, documented. Commits: see prior Sprint entries. Phase 10 closed.
 
 ---
 
