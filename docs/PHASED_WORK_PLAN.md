@@ -43,7 +43,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 | 5 | Operational Visibility + Reliability | Complete | Viral-Safe Shield delivered: Ops Pulse (queue/stuck/errors/deferred), Rate Limit Armor (429 deferral + retry), and Emergency Brake (global ingestion pause + UI banner). |
 | 6 | Subscription/Tier/Payment Productionization | Complete | Stripe MVP delivered: hosted Checkout + Portal + webhook-driven subscription mirror + idempotency. Added 7-day trial (self-serve + admin grant/revoke) and converged entitlements to Free vs Pro. Deprecated legacy one-time plan checkout paths. |
 | 7 | Data Provider Expansion (Garmin/Coros) | Complete | File import v1 delivered (Garmin DI_CONNECT): `AthleteDataImportJob`, shared uploads mount, upload API + Celery worker, zip-slip protection, idempotent re-imports, cross-provider dedup + calendar display safety, and Settings UI job history (feature-flagged). Legacy Garmin password-connect is admin-only and gated off by default. |
-| 8 | Security, Privacy, Compliance Hardening | Not started | |
+| 8 | Security, Privacy, Compliance Hardening | In progress | |
 | 9 | Automated Release Safety (Golden Paths + CI) | In progress | Seeded CI “smoke” runs for the highest-value Phase 3 + Phase 5 golden paths (backend + web). |
 | 10 | Coach Action Automation (Propose → Confirm → Apply) | Not started | **HIGH PRIORITY immediately after Phase 9 completes.** Enables deterministic, auditable plan changes from Coach with explicit athlete confirmation (no silent/autonomous execution). |
 
@@ -67,6 +67,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 - **2026-01-24 (Phase 6 / Stripe MVP - foundation)**: Added `subscriptions` + `stripe_events` tables, implemented signature-verified Stripe webhooks with idempotency, and wired hosted Checkout/Portal endpoints to enable `pro` monthly upgrades with minimal billing surface area (ADR-055).
 - **2026-01-24 (Phase 6 - complete)**: Completed Phase 6 monetization + entitlement productionization: fixed Stripe subscription cancellation mirroring under newer API versions, added a self-serve **7-day trial** (plus admin grant/revoke) and exposed trial/subscription mirror in Admin for support. Converged UI/ops semantics to **Free vs Pro** and deprecated legacy one-time plan checkout routes.
 - **2026-01-25 (Phase 7 - complete)**: Provider expansion via **file import v1** shipped (ADR-057). Delivered `AthleteDataImportJob` + migrations, shared `/uploads` mount for API+worker, feature flags, Garmin DI_CONNECT importer (zip-safe extraction + unit conversion + idempotent re-imports), and Settings UI (upload + recent job statuses). Hardened duplicate handling: importer prefers `startTimeGmt` for UTC alignment, uses DB-level conflict-safe inserts, and calendar collapses probable cross-provider duplicates for display safety. Legacy Garmin password-connect is admin-only and gated off by default.
+- **2026-01-25 (Phase 8 / Sprint 1 - accepted)**: Delivered 3 security golden-path integration tests (auth/RBAC, IDOR on imports, sensitive logging boundary). Tests hermetic with tmp_path; added to backend-smoke CI with Phase 7 E2E. Commit: 2ae7bec. Local smoke green.
 
 ---
 
