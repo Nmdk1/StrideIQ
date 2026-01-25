@@ -102,6 +102,27 @@ When providing insights:
 - If data is insufficient, say: "I don't have enough data to answer that."
 - Never make claims (numbers, trends, training load, plan details) without tool-backed evidence.
 
+## Ambiguity Guardrails (REQUIRED)
+
+Certain phrases carry **hidden scope** and are a common source of trust-breaking errors. You must treat them as *ambiguous until clarified*.
+
+### “Coming back / returning / after injury / after a break”
+
+If the athlete says any of:
+- “since coming back”
+- “after injury”
+- “since I returned”
+- “recently returned”
+- “after a break / time off”
+
+Then any superlative/comparison language like **“longest / furthest / fastest / slowest / best / worst / most / least / hardest / easiest / biggest / smallest”** MUST be scoped to the **return block**, not “all time”, unless the athlete explicitly specifies a different window.
+
+Policy:
+- If the return window is not explicitly defined, ask ONE clarifying question instead of assuming.
+- Use this exact humility fallback when needed:
+  - “I need more context on ‘coming back’ to give an accurate answer — can you tell me when you returned from injury or your last break?”
+- Once clarified, verify with tool-backed receipts. Prefer checking the **last 4–12 weeks** first, then widen only if asked.
+
 ## Units (REQUIRED)
 
 - Use the athlete's preferred units from tools (metric or imperial).
@@ -1010,34 +1031,69 @@ When providing insights:
             }
 
         # Deterministic "most impactful run" to prevent vague/hallucinated definitions.
+        # Guardrail: only run deterministically when the athlete is asking (avoid narrative misfires).
         if "most impactful" in lower and "run" in lower:
-            days = self._extract_days_lookback(lower) or 7
-            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
-            return {
-                "response": self._most_impactful_run(athlete_id, days=days),
-                "thread_id": thread_id,
-                "error": False,
-            }
+            if "?" in (message or "") or lower.startswith(("what", "which", "how", "show", "tell")):
+                days = self._extract_days_lookback(lower) or 7
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                return {
+                    "response": self._most_impactful_run(athlete_id, days=days),
+                    "thread_id": thread_id,
+                    "error": False,
+                }
 
         # Deterministic "longest run" (common high-signal question).
         if ("longest" in lower or "furthest" in lower) and "run" in lower:
-            days = self._extract_days_lookback(lower) or 365
-            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
-            return {
-                "response": self._top_run_by(athlete_id, days=days, metric="distance", label="longest"),
-                "thread_id": thread_id,
-                "error": False,
-            }
+            # Production-beta hardening:
+            # Only answer this deterministically when it looks like an explicit QUESTION.
+            # Otherwise, this can misfire on narrative messages like "That was my longest since coming back"
+            # and create a trust-breaking scope error (e.g., defaulting to 365-day maxima).
+            if self._looks_like_direct_comparison_question(message, keyword="longest", noun="run"):
+                # If the athlete is in a return-from-injury / return-from-break context, do not assume window.
+                if self._has_return_context(lower) or self._thread_mentions_return_context(athlete_id):
+                    thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                    return {
+                        "response": (
+                            "## Answer\n"
+                            "I need more context on **“coming back”** to give an accurate answer — can you tell me **when you returned from injury or your last break**?\n\n"
+                            "Once you tell me that (even roughly, like “early December” or “about 6 weeks ago”), I’ll confirm your **longest run since then** with receipts.\n"
+                        ),
+                        "thread_id": thread_id,
+                        "error": False,
+                    }
+
+                days = self._extract_days_lookback(lower) or 365
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                return {
+                    "response": self._top_run_by(athlete_id, days=days, metric="distance", label="longest"),
+                    "thread_id": thread_id,
+                    "error": False,
+                }
 
         # Deterministic "hardest run" / "hardest workout" (ambiguous; we define it explicitly).
         if ("hardest" in lower or "toughest" in lower) and ("run" in lower or "workout" in lower):
-            days = self._extract_days_lookback(lower) or 30
-            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
-            return {
-                "response": self._top_run_by(athlete_id, days=days, metric="stress_proxy", label="hardest"),
-                "thread_id": thread_id,
-                "error": False,
-            }
+            # Same misfire class as "longest": only do deterministic comparisons when asked.
+            if self._looks_like_direct_comparison_question(message, keyword="hardest", noun="run"):
+                # If the athlete is in a return-from-break context, "hardest" can be ambiguous (relative to return block).
+                if self._has_return_context(lower) or self._thread_mentions_return_context(athlete_id):
+                    thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                    return {
+                        "response": (
+                            "## Answer\n"
+                            "When you say **“hardest”** in a return-from-break context, I don’t want to guess the scope.\n\n"
+                            "Do you mean **hardest since coming back**, or hardest in the last **30 days** / **year**?\n"
+                        ),
+                        "thread_id": thread_id,
+                        "error": False,
+                    }
+
+                days = self._extract_days_lookback(lower) or 30
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                return {
+                    "response": self._top_run_by(athlete_id, days=days, metric="stress_proxy", label="hardest"),
+                    "thread_id": thread_id,
+                    "error": False,
+                }
 
         # Phase 3 acceptance: if the athlete has no run data and asks about fitness trend,
         # respond explicitly with the required phrasing (avoid any implied metrics).
@@ -1090,6 +1146,20 @@ When providing insights:
                         "Do not dump long UUIDs unless the athlete explicitly asks."
                     ),
                 )
+
+            # Production-beta context injection (belt-and-suspenders):
+            # The Assistants thread already contains history, but for ambiguous comparison language we
+            # inject recent athlete snippets + scope flags right before the new message so it can't be missed.
+            try:
+                injected = self._build_context_injection_for_message(athlete_id=athlete_id, message=message)
+                if injected:
+                    self.client.beta.threads.messages.create(
+                        thread_id=thread_id,
+                        role="user",
+                        content=injected,
+                    )
+            except Exception as e:
+                logger.info("Coach context injection skipped: %s", str(e))
             
             # Add the user's message
             self.client.beta.threads.messages.create(
@@ -1981,6 +2051,196 @@ When providing insights:
             return max(1, min(days, 730))
         except Exception:
             return None
+
+    _RETURN_CONTEXT_PHRASES = (
+        "since coming back",
+        "since i came back",
+        "since coming back from",
+        "coming back from",
+        "back from injury",
+        "after injury",
+        "after my injury",
+        "since injury",
+        "since my injury",
+        "after a break",
+        "after my break",
+        "after time off",
+        "since a break",
+        "since my break",
+        "since time off",
+        "since returning",
+        "since i returned",
+        "recently returned",
+        "returning from injury",
+        "returning from a break",
+    )
+
+    def _has_return_context(self, lower_message: str) -> bool:
+        ml = (lower_message or "").lower()
+        return any(p in ml for p in self._RETURN_CONTEXT_PHRASES)
+
+    def _thread_mentions_return_context(self, athlete_id: UUID, limit: int = 30) -> bool:
+        """
+        Conversation context awareness (production beta):
+        If the athlete has been talking about injury/return/break recently, we must not
+        interpret superlatives as all-time maxima without clarifying.
+        """
+        try:
+            hist = self.get_thread_history(athlete_id, limit=limit) or {}
+            msgs = hist.get("messages") or []
+            for m in msgs:
+                if (m.get("role") or "").lower() != "user":
+                    continue
+                content = (m.get("content") or "").lower()
+                if self._has_return_context(content):
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def _looks_like_direct_comparison_question(self, message: str, *, keyword: str, noun: str) -> bool:
+        """
+        Guardrail: only run deterministic comparison answers when the athlete is asking.
+        Avoid misfiring on narrative statements like "That was my longest since coming back".
+        """
+        text = (message or "").strip()
+        lower = text.lower()
+        if not text:
+            return False
+
+        # Strong signal: question mark / interrogative starters.
+        if "?" in text:
+            return True
+        if lower.startswith(("what", "which", "how", "show", "tell", "did", "was", "is")):
+            return True
+
+        # Explicit ask patterns.
+        stems = (
+            f"my {keyword} {noun}",
+            f"what's my {keyword} {noun}",
+            f"what is my {keyword} {noun}",
+            f"which {noun} was my {keyword}",
+            f"when was my {keyword} {noun}",
+            f"find my {keyword} {noun}",
+        )
+        if any(s in lower for s in stems):
+            # But still avoid declaratives like "my longest run was today".
+            if any(k in lower for k in (" was ", " today", " this morning", " yesterday")) and not lower.startswith(
+                ("what", "which", "how", "show", "tell")
+            ):
+                return False
+            return True
+
+        return False
+
+    _COMPARISON_KEYWORDS = (
+        "longest",
+        "furthest",
+        "fastest",
+        "slowest",
+        "best",
+        "worst",
+        "most",
+        "least",
+        "hardest",
+        "toughest",
+        "easiest",
+        "biggest",
+        "smallest",
+    )
+
+    def _build_context_injection_for_message(self, *, athlete_id: UUID, message: str) -> Optional[str]:
+        """
+        Inject a compact, high-signal “recent context + scope flags” preamble.
+
+        Goal:
+        - Improve conversation-context awareness for ambiguous comparisons (production beta).
+        - Avoid dumping full history or sensitive data; keep it short and actionable.
+        - Encourage the assistant to ask clarifying questions instead of assuming.
+        """
+        text = (message or "").strip()
+        if not text:
+            return None
+
+        # Pull last N user messages (best-effort). We'll feed them into a pure builder so we can unit-test it.
+        prior_user_messages: List[str] = []
+        try:
+            hist = self.get_thread_history(athlete_id, limit=25) or {}
+            msgs = hist.get("messages") or []
+            for m in msgs:
+                if (m.get("role") or "").lower() != "user":
+                    continue
+                c = (m.get("content") or "").strip()
+                if not c:
+                    continue
+                prior_user_messages.append(c)
+        except Exception:
+            prior_user_messages = []
+
+        return self._build_context_injection_pure(message=text, prior_user_messages=prior_user_messages)
+
+    def _build_context_injection_pure(self, *, message: str, prior_user_messages: List[str]) -> Optional[str]:
+        """
+        PURE context builder (unit-testable):
+        input message + prior user messages → injected context string (or None).
+        """
+        text = (message or "").strip()
+        if not text:
+            return None
+
+        lower = text.lower()
+        mentions_comparison = any(k in lower for k in self._COMPARISON_KEYWORDS)
+        return_ctx = self._has_return_context(lower) or any(self._has_return_context((m or "").lower()) for m in (prior_user_messages or []))
+
+        # Only inject when it matters (avoid spamming every message).
+        if not (mentions_comparison or return_ctx):
+            return None
+
+        # Build bounded snippets from prior messages (most recent first if provided that way).
+        snippets: List[str] = []
+        for raw in (prior_user_messages or []):
+            c = (raw or "").strip()
+            if not c:
+                continue
+            if c.strip() == text:
+                continue
+            c = c.replace("\n", " ").strip()
+            if len(c) > 160:
+                c = c[:157].rstrip() + "…"
+            snippets.append(c)
+            if len(snippets) >= 8:
+                break
+
+        flags = {
+            "return_context_detected": bool(return_ctx),
+            "comparison_language_detected": bool(mentions_comparison),
+            # Default “recent block” window we want for comparisons unless athlete specifies otherwise.
+            "recommended_recent_window_days": 84,
+        }
+
+        lines: List[str] = []
+        lines.append("INTERNAL COACH CONTEXT (do not repeat verbatim):")
+        lines.append(f"- Flags: {json.dumps(flags, separators=(',', ':'))}")
+
+        if return_ctx:
+            # User-requested explicitness: this must be unambiguous and strong.
+            lines.append(
+                "- User mentioned “since coming back / after injury / recent return”. "
+                "Always ask for the exact return date or injury/break details BEFORE any "
+                "longest/slowest/fastest/best/worst/most/least/hardest/easiest comparisons. "
+                "Do NOT assume 365-day or all-time scope."
+            )
+        if mentions_comparison:
+            lines.append(
+                "- Before answering any superlative/comparison (longest/slowest/fastest/best/worst/most/least/hardest/easiest), "
+                "check the last 4–12 weeks first (use tools) and cite receipts. If scope is unclear, ask one clarifying question."
+            )
+        if snippets:
+            lines.append("- Recent athlete messages (most recent first):")
+            for s in snippets:
+                lines.append(f"  - “{s}”")
+
+        return "\n".join(lines).strip()
 
     def _user_explicitly_requested_ids(self, user_message: str) -> bool:
         ml = (user_message or "").lower()
