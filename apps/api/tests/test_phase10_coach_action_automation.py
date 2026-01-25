@@ -18,6 +18,20 @@ def _headers(user: Athlete) -> dict:
     return {"Authorization": f"Bearer {token}", "User-Agent": "pytest"}
 
 
+def _impersonation_headers(*, impersonated: Athlete, impersonated_by: Athlete) -> dict:
+    """
+    Create an impersonation token payload consistent with /v1/admin/users/{id}/impersonate.
+    """
+    token = create_access_token(
+        {
+            "sub": str(impersonated.id),
+            "is_impersonation": True,
+            "impersonated_by": str(impersonated_by.id),
+        }
+    )
+    return {"Authorization": f"Bearer {token}", "User-Agent": "pytest"}
+
+
 def _create_user(db, *, role: str = "athlete", subscription_tier: str = "free") -> Athlete:
     athlete = Athlete(
         email=f"phase10_{uuid4()}@example.com",
@@ -362,6 +376,150 @@ def test_coach_actions_replace_with_template_applies_title_change():
 
         db.refresh(workout)
         assert (workout.title or "").startswith(tpl.name)
+    finally:
+        try:
+            if athlete is not None and plan_id is not None:
+                _cleanup(db, athlete_ids=[athlete.id], plan_ids=[UUID(plan_id)])
+        finally:
+            db.close()
+
+
+def test_coach_actions_block_confirm_under_impersonation_without_explicit_permission():
+    """
+    Production beta safety: confirm/apply is blocked under impersonation unless the impersonator
+    has explicit permission `coach.actions.apply_impersonation`.
+    """
+    db = SessionLocal()
+    athlete = None
+    owner = None
+    plan_id = None
+    try:
+        athlete = _create_user(db)
+        owner = _create_user(db, role="owner", subscription_tier="elite")
+        # owner has NO explicit permissions by default in this test (strict).
+        owner.admin_permissions = []
+        db.add(owner)
+        db.commit()
+
+        plan_id = _create_standard_plan(db, athlete)
+        plan_uuid = UUID(plan_id)
+        workout = (
+            db.query(PlannedWorkout)
+            .filter(PlannedWorkout.plan_id == plan_uuid, PlannedWorkout.athlete_id == athlete.id)
+            .first()
+        )
+        assert workout is not None
+
+        propose = client.post(
+            "/v2/coach/actions/propose",
+            headers=_headers(athlete),
+            json={
+                "athlete_id": str(athlete.id),
+                "reason": "Skip this workout.",
+                "idempotency_key": f"p10_{uuid4().hex}",
+                "actions": {
+                    "version": 1,
+                    "actions": [
+                        {"type": "skip_or_restore", "payload": {"plan_id": plan_id, "workout_id": str(workout.id), "skipped": True}}
+                    ],
+                },
+            },
+        )
+        assert propose.status_code == 200, propose.text
+        proposal_id = propose.json()["proposal_id"]
+
+        confirm = client.post(
+            f"/v2/coach/actions/{proposal_id}/confirm",
+            headers=_impersonation_headers(impersonated=athlete, impersonated_by=owner),
+            json={"idempotency_key": f"confirm_{uuid4().hex}"},
+        )
+        assert confirm.status_code == 403, confirm.text
+        detail = confirm.json().get("detail")
+        assert isinstance(detail, str)
+        assert detail.startswith("impersonation_not_allowed:"), detail
+    finally:
+        try:
+            ids = [x.id for x in (athlete, owner) if x is not None]
+            if ids and plan_id:
+                _cleanup(db, athlete_ids=ids, plan_ids=[UUID(plan_id)])
+            elif ids:
+                _cleanup(db, athlete_ids=ids, plan_ids=[])
+        finally:
+            db.close()
+
+
+def test_coach_actions_apply_failure_rolls_back_and_persists_failed_status():
+    """
+    If apply fails, plan/workout mutations must be rolled back, but the proposal should
+    persist as status=failed with an error string.
+    """
+    db = SessionLocal()
+    athlete = None
+    plan_id = None
+    try:
+        athlete = _create_user(db)
+        plan_id = _create_standard_plan(db, athlete)
+        plan_uuid = UUID(plan_id)
+        workouts = (
+            db.query(PlannedWorkout)
+            .filter(PlannedWorkout.plan_id == plan_uuid, PlannedWorkout.athlete_id == athlete.id)
+            .order_by(PlannedWorkout.scheduled_date.asc())
+            .all()
+        )
+        assert len(workouts) >= 2
+        w1, w2 = workouts[0], workouts[1]
+        d1 = w1.scheduled_date
+        d2 = w2.scheduled_date
+
+        # Propose a swap
+        propose = client.post(
+            "/v2/coach/actions/propose",
+            headers=_headers(athlete),
+            json={
+                "athlete_id": str(athlete.id),
+                "reason": "Swap two workouts.",
+                "idempotency_key": f"p10_{uuid4().hex}",
+                "actions": {
+                    "version": 1,
+                    "actions": [
+                        {
+                            "type": "swap_days",
+                            "payload": {"plan_id": plan_id, "workout_id_1": str(w1.id), "workout_id_2": str(w2.id)},
+                        }
+                    ],
+                },
+            },
+        )
+        assert propose.status_code == 200, propose.text
+        proposal_id = propose.json()["proposal_id"]
+
+        # Delete one workout BEFORE confirm to force apply to fail (404 in _require_workout_owner).
+        db.delete(w2)
+        db.commit()
+
+        confirm = client.post(
+            f"/v2/coach/actions/{proposal_id}/confirm",
+            headers=_headers(athlete),
+            json={"idempotency_key": f"confirm_{uuid4().hex}"},
+        )
+        assert confirm.status_code in (404, 500), confirm.text
+
+        # Ensure proposal is marked failed in DB.
+        failed = db.query(CoachActionProposal).filter(CoachActionProposal.id == UUID(proposal_id)).first()
+        assert failed is not None
+        assert failed.status == "failed"
+        assert failed.error is not None
+
+        # Ensure no swap occurred (w1 should still be at original date).
+        db.refresh(w1)
+        assert w1.scheduled_date == d1
+        # w2 is deleted; ensure no other workout moved into d1/d2 unexpectedly.
+        other_on_d1 = db.query(PlannedWorkout).filter(
+            PlannedWorkout.plan_id == plan_uuid,
+            PlannedWorkout.athlete_id == athlete.id,
+            PlannedWorkout.scheduled_date == d1,
+        ).count()
+        assert other_on_d1 >= 1
     finally:
         try:
             if athlete is not None and plan_id is not None:

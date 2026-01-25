@@ -8,11 +8,13 @@ from uuid import UUID
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy.orm import Session
 
-from core.auth import get_current_athlete
+from core.auth import get_current_athlete, security as bearer_security
 from core.database import get_db
+from core.security import decode_access_token
 from models import CoachActionProposal, PlannedWorkout, TrainingPlan, WorkoutTemplate
 
 
@@ -237,6 +239,86 @@ def _emit_coach_action_event(
         sentry_sdk.add_breadcrumb(category="coach_action", message=event, level="info", data=payload)
     except Exception:
         pass
+
+
+_PERM_IMPERSONATION_COACH_APPLY = "coach.actions.apply_impersonation"
+
+
+def _get_impersonation_actor(
+    db: Session, *, credentials: HTTPAuthorizationCredentials | None
+) -> tuple[bool, UUID | None, Any]:
+    """
+    Returns: (is_impersonation, impersonated_by_athlete_id, raw_payload)
+    """
+    if not credentials:
+        return False, None, {}
+    payload = decode_access_token(credentials.credentials) or {}
+    if payload.get("is_impersonation") is True:
+        try:
+            return True, UUID(str(payload.get("impersonated_by"))), payload
+        except Exception:
+            return True, None, payload
+    return False, None, payload
+
+
+def _require_impersonation_apply_permission(
+    db: Session,
+    *,
+    request: Request,
+    impersonated_by_athlete_id: UUID | None,
+    target_athlete_id: UUID,
+    action: str,
+) -> Any:
+    """
+    Phase 10 production-beta safety:
+    - Confirm/apply/reject MUST NOT be executed under impersonation by default.
+    - Only allow when the *impersonator* has an explicit permission flag.
+    - Always emit a high-signal audit event.
+    """
+    from services.admin_audit import record_admin_audit_event
+    from models import Athlete
+
+    if impersonated_by_athlete_id is None:
+        # High-signal audit: malformed impersonation token attempting mutation.
+        try:
+            record_admin_audit_event(
+                db,
+                request=request,
+                actor=Athlete(id=target_athlete_id),  # type: ignore[arg-type]
+                action=f"{action}.blocked_impersonation",
+                target_athlete_id=str(target_athlete_id),
+                reason="missing_impersonated_by",
+                payload={"permission_required": _PERM_IMPERSONATION_COACH_APPLY},
+            )
+        except Exception:
+            pass
+        raise HTTPException(status_code=403, detail=f"impersonation_not_allowed:{action}")
+
+    actor = db.query(Athlete).filter(Athlete.id == impersonated_by_athlete_id).first()
+    if not actor:
+        raise HTTPException(status_code=403, detail=f"impersonation_not_allowed:{action}")
+
+    perms = getattr(actor, "admin_permissions", None) or []
+    allowed = _PERM_IMPERSONATION_COACH_APPLY in perms
+
+    # High-signal audit event, regardless of allow/deny.
+    try:
+        record_admin_audit_event(
+            db,
+            request=request,
+            actor=actor,
+            action=f"{action}.impersonation_allowed" if allowed else f"{action}.blocked_impersonation",
+            target_athlete_id=str(target_athlete_id),
+            reason="impersonation_apply_guard",
+            payload={"permission_required": _PERM_IMPERSONATION_COACH_APPLY},
+        )
+    except Exception:
+        pass
+
+    if not allowed:
+        raise HTTPException(status_code=403, detail=f"impersonation_not_allowed:{action}")
+
+    return actor
 
 
 def _require_plan_owner(db: Session, *, athlete_id: UUID, plan_id: UUID) -> TrainingPlan:
@@ -702,12 +784,26 @@ def _diff_preview(db: Session, *, athlete_id: UUID, actions: list[ActionUnion]) 
 @router.post("/propose", response_model=ProposeResponse)
 async def propose_action(
     req: ProposeRequest,
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_security),
     athlete=Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
     # MVP safety: self-only proposals.
     if req.athlete_id != athlete.id:
         raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Safety: proposals may be viewed under impersonation, but proposing is a mutation.
+    # Block unless explicit permission is present on the impersonator.
+    is_imp, imp_by, _ = _get_impersonation_actor(db, credentials=credentials)
+    if is_imp:
+        _require_impersonation_apply_permission(
+            db,
+            request=request,
+            impersonated_by_athlete_id=imp_by,
+            target_athlete_id=athlete.id,
+            action="coach.action.propose",
+        )
 
     existing = (
         db.query(CoachActionProposal)
@@ -730,6 +826,19 @@ async def propose_action(
             proposal_id=existing.id,
             status=existing.status,
         )
+        try:
+            from services.admin_audit import record_admin_audit_event
+
+            record_admin_audit_event(
+                db,
+                request=request,
+                actor=athlete,
+                action="coach.action.propose.idempotent_hit",
+                target_athlete_id=str(athlete.id),
+                payload={"proposal_id": str(existing.id), "actions_count": len(actions), "target_plan_id": str(target_plan_id)},
+            )
+        except Exception:
+            pass
         return ProposeResponse(
             proposal_id=existing.id,
             status=existing.status,  # type: ignore[arg-type]
@@ -759,6 +868,24 @@ async def propose_action(
         status=proposal.status,
         extra={"actions_count": len(actions), "target_plan_id": str(target_plan_id)},
     )
+    try:
+        from services.admin_audit import record_admin_audit_event
+
+        record_admin_audit_event(
+            db,
+            request=request,
+            actor=athlete,
+            action="coach.action.proposed",
+            target_athlete_id=str(athlete.id),
+            payload={
+                "proposal_id": str(proposal.id),
+                "actions_count": len(actions),
+                "action_types": [a.type for a in actions],
+                "target_plan_id": str(target_plan_id),
+            },
+        )
+    except Exception:
+        pass
 
     return ProposeResponse(
         proposal_id=proposal.id,
@@ -776,14 +903,33 @@ async def confirm_action(
     proposal_id: UUID,
     req: ConfirmRequest,
     request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_security),
     athlete=Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
-    proposal = db.query(CoachActionProposal).filter(CoachActionProposal.id == proposal_id).first()
+    # Lock proposal row to prevent double-apply under concurrent confirms.
+    proposal = (
+        db.query(CoachActionProposal)
+        .filter(CoachActionProposal.id == proposal_id)
+        .with_for_update()
+        .first()
+    )
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
     if proposal.athlete_id != athlete.id:
         raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Impersonation: confirm/apply is a high-risk mutation. Block unless explicitly permitted.
+    is_imp, imp_by, _ = _get_impersonation_actor(db, credentials=credentials)
+    impersonator = None
+    if is_imp:
+        impersonator = _require_impersonation_apply_permission(
+            db,
+            request=request,
+            impersonated_by_athlete_id=imp_by,
+            target_athlete_id=athlete.id,
+            action="coach.action.confirm",
+        )
 
     if proposal.status == "applied":
         receipt = proposal.apply_receipt_json or {}
@@ -817,11 +963,16 @@ async def confirm_action(
 
     try:
         env = ActionsEnvelopeV1.model_validate(proposal.actions_json or {})
-        changes = _apply_actions(db, athlete_id=athlete.id, actions=env.actions)
-        proposal.status = "applied"
-        proposal.applied_at = _now()
-        receipt = ApplyReceipt(actions_applied=len(env.actions), changes=changes)
-        proposal.apply_receipt_json = receipt.model_dump(mode="json")
+
+        # Savepoint: if apply fails, roll back plan/workout mutations while still persisting
+        # proposal.status=failed and error for operator visibility / retry.
+        with db.begin_nested():
+            changes = _apply_actions(db, athlete_id=athlete.id, actions=env.actions)
+            proposal.status = "applied"
+            proposal.applied_at = _now()
+            receipt = ApplyReceipt(actions_applied=len(env.actions), changes=changes)
+            proposal.apply_receipt_json = receipt.model_dump(mode="json")
+
         # Persist audit metadata onto each plan_modification_log entry best-effort (request context)
         try:
             from sqlalchemy import text
@@ -857,6 +1008,28 @@ async def confirm_action(
             status=proposal.status,
             extra={"actions_count": len(env.actions), "changes_count": len(changes)},
         )
+        try:
+            from services.admin_audit import record_admin_audit_event
+
+            actor = impersonator or athlete
+            record_admin_audit_event(
+                db,
+                request=request,
+                actor=actor,
+                action="coach.action.applied",
+                target_athlete_id=str(athlete.id),
+                payload={
+                    "proposal_id": str(proposal.id),
+                    "actions_count": len(env.actions),
+                    "action_types": [a.type for a in env.actions],
+                    "changes_count": len(changes),
+                    "target_plan_id": str(proposal.target_plan_id) if proposal.target_plan_id else None,
+                    "is_impersonation": bool(is_imp),
+                    "impersonated_by": str(imp_by) if imp_by else None,
+                },
+            )
+        except Exception:
+            pass
         return ConfirmResponse(
             proposal_id=proposal.id,
             status="applied",
@@ -866,10 +1039,11 @@ async def confirm_action(
             error=None,
         )
     except HTTPException as e:
-        # Persist the failure state so the proposal can be inspected/retried.
+        # Persist failure state (apply changes were rolled back via savepoint).
+        proposal.status = "failed"
+        proposal.error = str(e.detail)
         try:
-            proposal.status = "failed"
-            proposal.error = str(e.detail)
+            db.flush()
             db.commit()
         except Exception:
             db.rollback()
@@ -880,11 +1054,33 @@ async def confirm_action(
             status="failed",
             reason=str(e.detail),
         )
+        try:
+            from services.admin_audit import record_admin_audit_event
+
+            actor = impersonator or athlete
+            record_admin_audit_event(
+                db,
+                request=request,
+                actor=actor,
+                action="coach.action.apply_failed",
+                target_athlete_id=str(athlete.id),
+                reason=str(e.detail),
+                payload={
+                    "proposal_id": str(proposal.id),
+                    "actions_count": len((proposal.actions_json or {}).get("actions") or []),
+                    "target_plan_id": str(proposal.target_plan_id) if proposal.target_plan_id else None,
+                    "is_impersonation": bool(is_imp),
+                    "impersonated_by": str(imp_by) if imp_by else None,
+                },
+            )
+        except Exception:
+            pass
         raise
     except Exception as e:
+        proposal.status = "failed"
+        proposal.error = f"{type(e).__name__}: {e}"
         try:
-            proposal.status = "failed"
-            proposal.error = f"{type(e).__name__}: {e}"
+            db.flush()
             db.commit()
         except Exception:
             db.rollback()
@@ -895,6 +1091,26 @@ async def confirm_action(
             status="failed",
             reason=f"{type(e).__name__}",
         )
+        try:
+            from services.admin_audit import record_admin_audit_event
+
+            actor = impersonator or athlete
+            record_admin_audit_event(
+                db,
+                request=request,
+                actor=actor,
+                action="coach.action.apply_failed",
+                target_athlete_id=str(athlete.id),
+                reason=f"{type(e).__name__}",
+                payload={
+                    "proposal_id": str(proposal.id),
+                    "target_plan_id": str(proposal.target_plan_id) if proposal.target_plan_id else None,
+                    "is_impersonation": bool(is_imp),
+                    "impersonated_by": str(imp_by) if imp_by else None,
+                },
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail="Apply failed")
 
 
@@ -902,6 +1118,8 @@ async def confirm_action(
 async def reject_action(
     proposal_id: UUID,
     req: RejectRequest,
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_security),
     athlete=Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
@@ -912,6 +1130,17 @@ async def reject_action(
         raise HTTPException(status_code=403, detail="Forbidden")
     if proposal.status != "proposed":
         raise HTTPException(status_code=409, detail=f"Cannot reject proposal in status: {proposal.status}")
+
+    is_imp, imp_by, _ = _get_impersonation_actor(db, credentials=credentials)
+    impersonator = None
+    if is_imp:
+        impersonator = _require_impersonation_apply_permission(
+            db,
+            request=request,
+            impersonated_by_athlete_id=imp_by,
+            target_athlete_id=athlete.id,
+            action="coach.action.reject",
+        )
 
     proposal.status = "rejected"
     # We re-use confirmed_at as the decision timestamp (minimal schema).
@@ -926,6 +1155,25 @@ async def reject_action(
         status=proposal.status,
         reason=req.reason,
     )
+    try:
+        from services.admin_audit import record_admin_audit_event
+
+        actor = impersonator or athlete
+        record_admin_audit_event(
+            db,
+            request=request,
+            actor=actor,
+            action="coach.action.rejected",
+            target_athlete_id=str(athlete.id),
+            reason=req.reason,
+            payload={
+                "proposal_id": str(proposal.id),
+                "is_impersonation": bool(is_imp),
+                "impersonated_by": str(imp_by) if imp_by else None,
+            },
+        )
+    except Exception:
+        pass
 
     return RejectResponse(proposal_id=proposal.id, status="rejected", rejected_at=proposal.confirmed_at)
 
