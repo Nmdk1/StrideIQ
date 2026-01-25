@@ -756,6 +756,58 @@ class WorkoutSelectionAuditEvent(Base):
     )
 
 
+class CoachActionProposal(Base):
+    """
+    Phase 10: Coach Action Automation proposal object.
+
+    Stores a validated proposal (actions_json), its lifecycle status, and an apply receipt.
+    """
+
+    __tablename__ = "coach_action_proposals"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+
+    # Actor envelope (bounded; avoid dumping sensitive user data here)
+    created_by = Column(JSONB, nullable=False, default=dict)
+
+    # proposed | confirmed | rejected | applied | failed
+    status = Column(Text, nullable=False, index=True)
+
+    # Validated allowlist payload: {"version": 1, "actions": [...]}
+    actions_json = Column(JSONB, nullable=False)
+
+    # Plain-language reason shown to athlete
+    reason = Column(Text, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    applied_at = Column(DateTime(timezone=True), nullable=True)
+    error = Column(Text, nullable=True)
+
+    # Idempotency key for propose (nullable; unique per athlete when present)
+    idempotency_key = Column(Text, nullable=True)
+
+    # Optional: bind proposal to a plan id to prevent TOCTOU between propose and confirm.
+    target_plan_id = Column(UUID(as_uuid=True), ForeignKey("training_plan.id"), nullable=True)
+
+    # Stored apply receipt for idempotent confirm responses.
+    apply_receipt_json = Column(JSONB, nullable=True)
+
+    __table_args__ = (
+        Index("ix_coach_action_proposals_created_at", "created_at"),
+        Index("ix_coach_action_proposals_status", "status"),
+        Index(
+            "ux_coach_action_proposals_athlete_id_idempotency_key",
+            "athlete_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=(idempotency_key.isnot(None)),
+        ),
+    )
+
+
 class CoachingKnowledgeEntry(Base):
     """
     Knowledge base entries for coaching principles.
