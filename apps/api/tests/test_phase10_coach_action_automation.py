@@ -470,6 +470,30 @@ def test_coach_actions_apply_failure_rolls_back_and_persists_failed_status():
         w1, w2 = workouts[0], workouts[1]
         d1 = w1.scheduled_date
         d2 = w2.scheduled_date
+        w2_snapshot = {
+            "id": w2.id,
+            "plan_id": w2.plan_id,
+            "athlete_id": w2.athlete_id,
+            "scheduled_date": w2.scheduled_date,
+            "week_number": w2.week_number,
+            "day_of_week": w2.day_of_week,
+            "workout_type": w2.workout_type,
+            "workout_subtype": w2.workout_subtype,
+            "title": w2.title,
+            "description": w2.description,
+            "phase": w2.phase,
+            "phase_week": w2.phase_week,
+            "target_duration_minutes": w2.target_duration_minutes,
+            "target_distance_km": w2.target_distance_km,
+            "target_pace_per_km_seconds": w2.target_pace_per_km_seconds,
+            "target_pace_per_km_seconds_max": w2.target_pace_per_km_seconds_max,
+            "target_hr_min": w2.target_hr_min,
+            "target_hr_max": w2.target_hr_max,
+            "segments": w2.segments,
+            "completed": w2.completed,
+            "skipped": w2.skipped,
+            "skip_reason": w2.skip_reason,
+        }
 
         # Propose a swap
         propose = client.post(
@@ -513,13 +537,55 @@ def test_coach_actions_apply_failure_rolls_back_and_persists_failed_status():
         # Ensure no swap occurred (w1 should still be at original date).
         db.refresh(w1)
         assert w1.scheduled_date == d1
-        # w2 is deleted; ensure no other workout moved into d1/d2 unexpectedly.
+        # w2 is deleted; ensure no other workout moved into d1 unexpectedly.
         other_on_d1 = db.query(PlannedWorkout).filter(
             PlannedWorkout.plan_id == plan_uuid,
             PlannedWorkout.athlete_id == athlete.id,
             PlannedWorkout.scheduled_date == d1,
         ).count()
         assert other_on_d1 >= 1
+
+        # Now fix the underlying cause and retry confirm (must be allowed for failed proposals).
+        repaired = PlannedWorkout(
+            id=w2_snapshot["id"],
+            plan_id=w2_snapshot["plan_id"],
+            athlete_id=w2_snapshot["athlete_id"],
+            scheduled_date=w2_snapshot["scheduled_date"],
+            week_number=w2_snapshot["week_number"],
+            day_of_week=w2_snapshot["day_of_week"],
+            workout_type=w2_snapshot["workout_type"],
+            workout_subtype=w2_snapshot["workout_subtype"],
+            title=w2_snapshot["title"],
+            description=w2_snapshot["description"],
+            phase=w2_snapshot["phase"],
+            phase_week=w2_snapshot["phase_week"],
+            target_duration_minutes=w2_snapshot["target_duration_minutes"],
+            target_distance_km=w2_snapshot["target_distance_km"],
+            target_pace_per_km_seconds=w2_snapshot["target_pace_per_km_seconds"],
+            target_pace_per_km_seconds_max=w2_snapshot["target_pace_per_km_seconds_max"],
+            target_hr_min=w2_snapshot["target_hr_min"],
+            target_hr_max=w2_snapshot["target_hr_max"],
+            segments=w2_snapshot["segments"],
+            completed=bool(w2_snapshot["completed"]),
+            skipped=bool(w2_snapshot["skipped"]),
+            skip_reason=w2_snapshot["skip_reason"],
+        )
+        db.add(repaired)
+        db.commit()
+
+        confirm2 = client.post(
+            f"/v2/coach/actions/{proposal_id}/confirm",
+            headers=_headers(athlete),
+            json={"idempotency_key": f"confirm_{uuid4().hex}"},
+        )
+        assert confirm2.status_code == 200, confirm2.text
+        assert confirm2.json()["status"] == "applied"
+
+        # Verify swap occurred on retry
+        db.refresh(w1)
+        db.refresh(repaired)
+        assert w1.scheduled_date == d2
+        assert repaired.scheduled_date == d1
     finally:
         try:
             if athlete is not None and plan_id is not None:

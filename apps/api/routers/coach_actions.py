@@ -947,9 +947,12 @@ async def confirm_action(
             receipt=ApplyReceipt(**receipt) if receipt else None,
             error=None,
         )
-    if proposal.status in ("rejected", "failed"):
+    if proposal.status == "rejected":
         raise HTTPException(status_code=409, detail=f"Cannot confirm proposal in status: {proposal.status}")
-    if proposal.status != "proposed":
+    # Production-beta: allow retrying a failed apply (rollback-safe via savepoint).
+    if proposal.status == "failed":
+        proposal.error = None
+    if proposal.status not in ("proposed", "failed"):
         raise HTTPException(status_code=409, detail=f"Cannot confirm proposal in status: {proposal.status}")
 
     # Optional TOCTOU guard: require plan still belongs to athlete.
@@ -958,7 +961,8 @@ async def confirm_action(
 
     # Apply transactionally (DB transaction handled by get_db dependency).
     proposal.status = "confirmed"
-    proposal.confirmed_at = _now()
+    if proposal.confirmed_at is None:
+        proposal.confirmed_at = _now()
     db.flush()
 
     try:

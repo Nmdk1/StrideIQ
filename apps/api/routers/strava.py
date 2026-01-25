@@ -6,7 +6,7 @@ Updated to work with authenticated users.
 """
 import traceback
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
@@ -146,6 +146,7 @@ def get_strava_auth_url(
 
 @router.get("/callback")
 def strava_callback(
+    http_request: Request,  # FastAPI injects; keep name distinct from request payloads
     code: str = Query(..., description="Authorization code from Strava"),
     state: str = Query(None, description="Signed state token"),
     db: Session = Depends(get_db),
@@ -208,7 +209,32 @@ def strava_callback(
         if not isinstance(return_to, str) or not return_to.startswith("/") or return_to.startswith("//"):
             return_to = "/onboarding"
         sep = "&" if "?" in return_to else "?"
-        redirect_url = f"{settings.WEB_APP_BASE_URL}{return_to}{sep}strava=connected"
+
+        # Dev/LAN safety: if WEB_APP_BASE_URL is localhost but the request is coming
+        # from a LAN host (e.g. phone hitting http://192.168.x.x:8000), redirecting
+        # to localhost:3000 will break on the device and look like "connection failed".
+        web_base = settings.WEB_APP_BASE_URL
+        try:
+            if http_request is not None:
+                host = http_request.headers.get("x-forwarded-host") or http_request.headers.get("host") or ""
+                proto = http_request.headers.get("x-forwarded-proto") or "http"
+                env_is_local = ("localhost" in web_base) or ("127.0.0.1" in web_base)
+                host_is_local = ("localhost" in host) or ("127.0.0.1" in host)
+                if env_is_local and host and (not host_is_local):
+                    # Map API host -> web host by forcing port 3000.
+                    if ":" in host:
+                        host_only, port = host.rsplit(":", 1)
+                        if port.isdigit() and int(port) == 8000:
+                            host = f"{host_only}:3000"
+                        else:
+                            host = f"{host_only}:3000"
+                    else:
+                        host = f"{host}:3000"
+                    web_base = f"{proto}://{host}"
+        except Exception:
+            web_base = settings.WEB_APP_BASE_URL
+
+        redirect_url = f"{web_base}{return_to}{sep}strava=connected"
         return RedirectResponse(url=redirect_url, status_code=302)
         
     except HTTPException:
