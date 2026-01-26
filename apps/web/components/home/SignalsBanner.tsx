@@ -114,7 +114,7 @@ const COLOR_MAP: Record<string, { bg: string; text: string; border: string; ring
 
 // Fetch signals from API
 async function fetchSignals(): Promise<SignalsResponse> {
-  return apiClient.get<SignalsResponse>('/home/signals');
+  return apiClient.get<SignalsResponse>('/v1/home/signals');
 }
 
 // Confidence badge component
