@@ -26,7 +26,7 @@ from models import Athlete, Activity, PlannedWorkout, TrainingPlan, CalendarInsi
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/home", tags=["home"])
+router = APIRouter(prefix="/v1/home", tags=["home"])
 
 
 # --- Response Models ---

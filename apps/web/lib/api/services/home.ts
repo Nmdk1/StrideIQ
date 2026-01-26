@@ -76,5 +76,5 @@ export interface HomeData {
 // --- API Functions ---
 
 export async function getHomeData(): Promise<HomeData> {
-  return apiClient.get<HomeData>('/home');
+  return apiClient.get<HomeData>('/v1/home');
 }
