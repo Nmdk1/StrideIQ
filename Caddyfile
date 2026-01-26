@@ -1,7 +1,8 @@
 strideiq.run, www.strideiq.run {
   encode gzip
 
-  @api path /v1/* /v2/* /docs* /openapi.json /redoc*
+  # Route API + operational endpoints to FastAPI
+  @api path /v1/* /v2/* /docs* /openapi.json /redoc* /health* /ping /debug
   handle @api {
     reverse_proxy api:8000
   }

@@ -16,12 +16,15 @@ except ImportError:
     GARMIN_AVAILABLE = False
 from core.config import settings
 from core.database import check_db_connection
+from core.database import engine
 from core.logging import setup_logging
 from core.exceptions import APIException
 from core.rate_limit import RateLimitMiddleware
 from core.security_headers import SecurityHeadersMiddleware
 import logging
 import time
+import os
+from sqlalchemy import text
 
 # Setup logging first
 setup_logging()
@@ -72,8 +75,8 @@ app = FastAPI(
     title="Performance Physics Engine API",
     description="Complete health and fitness management system with correlation analysis and run delivery",
     version="3.0.0",
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None,
+    docs_url="/docs" if (settings.DEBUG or settings.EXPOSE_API_DOCS) else None,
+    redoc_url="/redoc" if (settings.DEBUG or settings.EXPOSE_API_DOCS) else None,
 )
 
 # CORS middleware
@@ -279,6 +282,73 @@ async def ping():
     No dependencies checked - just confirms the API is responding.
     """
     return {"pong": True}
+
+
+@app.get("/debug")
+async def debug(request: Request):
+    """
+    Production-safe debug endpoint.
+
+    - Disabled by default (returns 404 unless DEBUG_ENDPOINT_TOKEN is set)
+    - When enabled, requires header: X-Debug-Token == settings.DEBUG_ENDPOINT_TOKEN
+    - Returns DB connectivity + alembic version state to diagnose startup/migration issues.
+    """
+    token = settings.DEBUG_ENDPOINT_TOKEN
+    if not token:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+    req_token = request.headers.get("x-debug-token")
+    if not req_token or req_token != token:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+    # Basic DB checks + migration version
+    db_ok = False
+    alembic_version = None
+    feature_flag_exists = None
+    error = None
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            db_ok = True
+            try:
+                alembic_version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            except Exception:
+                alembic_version = None
+            try:
+                feature_flag_exists = bool(
+                    conn.execute(
+                        text(
+                            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'feature_flag')"
+                        )
+                    ).scalar()
+                )
+            except Exception:
+                feature_flag_exists = None
+    except Exception as e:
+        error = f"{type(e).__name__}: {e}"
+
+    # Expected Alembic head (from repo)
+    expected_head = None
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        here = os.path.dirname(os.path.abspath(__file__))
+        cfg = Config(os.path.join(here, "alembic.ini"))
+        script = ScriptDirectory.from_config(cfg)
+        expected_head = script.get_current_head()
+    except Exception:
+        expected_head = None
+
+    return {
+        "environment": settings.ENVIRONMENT,
+        "db_ok": db_ok,
+        "alembic_version": alembic_version,
+        "expected_head": expected_head,
+        "feature_flag_table_exists": feature_flag_exists,
+        "error": error,
+        "ts": time.time(),
+    }
 
 
 # Include routers

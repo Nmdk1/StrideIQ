@@ -110,6 +110,13 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = Field(default="development")
     DEBUG: bool = Field(default=False)
+
+    # Allow docs in production without DEBUG=True (off by default).
+    EXPOSE_API_DOCS: bool = Field(default=False)
+
+    # Debug endpoint (production-safe: OFF by default)
+    # If set, /debug requires header X-Debug-Token to match this value; otherwise 404.
+    DEBUG_ENDPOINT_TOKEN: Optional[str] = Field(default=None)
     
     # CORS - comma-separated list of allowed origins for production
     # e.g., "https://strideiq.run,https://www.strideiq.run"
