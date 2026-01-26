@@ -1,0 +1,114 @@
+services:
+  caddy:
+    image: caddy:2
+    container_name: strideiq_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: strideiq_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-running_app}
+    volumes:
+      - runningapp_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: strideiq_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./apps/api
+    container_name: strideiq_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${SECRET_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./.uploads:/uploads
+      - ./books:/books
+    expose:
+      - "8000"
+    command: sh -c "python run_migrations.py && uvicorn main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build:
+      context: ./apps/worker
+    container_name: strideiq_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./.uploads:/uploads
+      - ./books:/books
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        - NEXT_PUBLIC_API_URL=https://strideiq.run
+    container_name: strideiq_web
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - api
+    expose:
+      - "3000"
+    command: npm start
+
+volumes:
+  # Named volumes (NOT external) so you never hit "external volume not found"
+  runningapp_postgres_data:
+    name: runningapp_postgres_data
+  redis_data:
+    name: strideiq_redis_data
+  caddy_data:
+    name: strideiq_caddy_data
+  caddy_config:
+    name: strideiq_caddy_config
+

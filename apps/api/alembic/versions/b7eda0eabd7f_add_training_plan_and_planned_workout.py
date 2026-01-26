@@ -31,12 +31,20 @@ def upgrade() -> None:
         return {c["name"]: c for c in cols}
 
     def drop_index_if_exists(index_name: str, table_name: str) -> None:
-        existing = {ix["name"] for ix in inspector.get_indexes(table_name)}
+        try:
+            existing = {ix["name"] for ix in inspector.get_indexes(table_name)}
+        except Exception:
+            # Fresh-install safety: table may not exist yet in this migration ordering.
+            return
         if index_name in existing:
             op.drop_index(index_name, table_name=table_name)
 
     def create_index_if_missing(index_name: str, table_name: str, columns: list[str], unique: bool = False) -> None:
-        existing = {ix["name"] for ix in inspector.get_indexes(table_name)}
+        try:
+            existing = {ix["name"] for ix in inspector.get_indexes(table_name)}
+        except Exception:
+            # Fresh-install safety: table may not exist yet in this migration ordering.
+            return
         if index_name not in existing:
             op.create_index(index_name, table_name, columns, unique=unique)
 

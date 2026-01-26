@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Database bootstrap: run Alembic migrations (production-safe).
+"""Database bootstrap: run Alembic migrations (production).
 
-Historical note:
-- We previously attempted "schema creation from models" + manual alembic_version stamping
-  to avoid replaying older migrations. That approach can silently drift schema from the
-  recorded revision history as new tables are added later (ex: `best_effort` for PBs).
-
-Definition of done for production readiness:
+Production rule (MUST HOLD):
 - Always run `alembic upgrade head` on startup.
-- If migrations fail, fail fast (don't start with an unknown schema).
+- If migrations fail, fail fast and DO NOT attempt any "create schema from models" fallback.
+
+Why:
+- Model-based create_all + stamping can leave the DB in a partially-created state
+  that then breaks future migrations (duplicate indexes, missing tables/columns, etc.).
+- It hides real migration bugs instead of surfacing them.
 """
 
 import os
@@ -56,53 +56,6 @@ def alembic_stamp_head() -> None:
 
     command.stamp(_get_alembic_config(), "head")
 
-
-def create_schema_directly():
-    """Fallback: create schema directly from SQLAlchemy models.
-
-    This is ONLY used when migrations cannot be replayed from an empty database.
-    It must be followed by `alembic stamp head` so future upgrades can apply.
-    """
-    from core.database import Base, engine
-    from models import (
-        Athlete, Activity, ActivitySplit, PersonalBest, BestEffort, DailyCheckin,
-        BodyComposition, NutritionEntry, WorkPattern, IntakeQuestionnaire,
-        CoachingKnowledgeEntry, CoachingRecommendation, RecommendationOutcome,
-        ActivityFeedback, InsightFeedback, TrainingPlan, PlannedWorkout, 
-        TrainingAvailability, AthleteIngestionState, CoachChat, PlanModificationLog
-    )
-    from sqlalchemy import text
-    
-    # SAFETY CHECK: If athlete table has data, don't overwrite schema here.
-    # For non-empty DBs, we MUST use Alembic migrations.
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT COUNT(*) FROM athlete"))
-            count = result.scalar()
-            if count and count > 0:
-                raise RuntimeError(
-                    f"Refusing direct schema creation on non-empty DB (athletes={count}). "
-                    f"Run Alembic migrations instead."
-                )
-    except Exception as e:
-        print(f"Could not check athlete table (may not exist yet): {e}")
-        # Continue with schema creation if table doesn't exist
-    
-    print("Creating schema directly from models...")
-    
-    # Create TimescaleDB extension first
-    with engine.connect() as conn:
-        conn.execute(text('CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE'))
-        conn.commit()
-    
-    # Create all tables
-    Base.metadata.create_all(engine, checkfirst=True)
-
-    # Mark as up to date so future runs can upgrade incrementally.
-    alembic_stamp_head()
-
-    print("Schema created successfully!")
-
 def main():
     print("Waiting for database to be ready...")
     max_retries = 30
@@ -126,15 +79,7 @@ def main():
         return
     except Exception as e:
         print(f"ERROR: Alembic upgrade failed: {e}")
-
-    # Only fallback to create_all for an EMPTY database that cannot replay migrations.
-    # If this fallback also fails, exit non-zero.
-    try:
-        create_schema_directly()
-    except Exception as e:
-        print(f"ERROR: Schema bootstrap failed: {e}")
         sys.exit(1)
-    print("Schema bootstrap completed via create_all fallback.")
 
 if __name__ == '__main__':
     main()
