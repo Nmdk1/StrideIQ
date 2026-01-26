@@ -16,6 +16,27 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Fresh-install safety: ensure feature_flag exists before insert.
+    op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS feature_flag (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            key TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT,
+            enabled BOOLEAN NOT NULL DEFAULT false,
+            requires_subscription BOOLEAN NOT NULL DEFAULT false,
+            requires_tier TEXT,
+            requires_payment NUMERIC(10,2),
+            rollout_percentage INTEGER NOT NULL DEFAULT 100,
+            allowed_athlete_ids JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """
+    )
+
     # Starter plan auto-provisioning for new athletes (Calendar trust fix).
     op.execute(
         """

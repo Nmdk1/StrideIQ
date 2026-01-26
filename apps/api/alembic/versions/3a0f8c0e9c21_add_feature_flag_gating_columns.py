@@ -12,6 +12,7 @@ This migration is intentionally additive and safe for existing data.
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers, used by Alembic.
@@ -22,17 +23,50 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Add gating columns (additive)
-    op.add_column(
-        "feature_flag",
-        sa.Column("requires_subscription", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+    # Fresh-install safety: feature_flag may not exist (older chains relied on create_all fallback).
+    op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS feature_flag (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            key TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT,
+            enabled BOOLEAN NOT NULL DEFAULT false,
+            requires_subscription BOOLEAN NOT NULL DEFAULT false,
+            requires_tier TEXT,
+            requires_payment NUMERIC(10,2),
+            rollout_percentage INTEGER NOT NULL DEFAULT 100,
+            allowed_athlete_ids JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """
     )
-    op.add_column("feature_flag", sa.Column("requires_tier", sa.Text(), nullable=True))
-    op.add_column("feature_flag", sa.Column("requires_payment", sa.Numeric(10, 2), nullable=True))
-    op.add_column("feature_flag", sa.Column("allowed_athlete_ids", JSONB(), nullable=True))
+
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    existing_cols = {c["name"] for c in inspector.get_columns("feature_flag")}
+
+    # Add gating columns (idempotent)
+    if "requires_subscription" not in existing_cols:
+        op.add_column(
+            "feature_flag",
+            sa.Column("requires_subscription", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        )
+    if "requires_tier" not in existing_cols:
+        op.add_column("feature_flag", sa.Column("requires_tier", sa.Text(), nullable=True))
+    if "requires_payment" not in existing_cols:
+        op.add_column("feature_flag", sa.Column("requires_payment", sa.Numeric(10, 2), nullable=True))
+    if "allowed_athlete_ids" not in existing_cols:
+        op.add_column("feature_flag", sa.Column("allowed_athlete_ids", JSONB(), nullable=True))
 
     # Align rollout default with the FeatureFlagService expectation (100% default rollout).
-    op.alter_column("feature_flag", "rollout_percentage", server_default=sa.text("100"))
+    try:
+        op.alter_column("feature_flag", "rollout_percentage", server_default=sa.text("100"))
+    except Exception:
+        # If column doesn't exist yet in this chain, leave as-is.
+        pass
 
 
 def downgrade() -> None:

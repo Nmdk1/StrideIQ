@@ -22,6 +22,28 @@ depends_on = None
 
 
 def upgrade():
+    # Fresh-install safety: `feature_flag` is used across multiple migrations for gating.
+    # Ensure the table exists before we attempt any inserts (production robustness).
+    op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS feature_flag (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            key TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT,
+            enabled BOOLEAN NOT NULL DEFAULT false,
+            requires_subscription BOOLEAN NOT NULL DEFAULT false,
+            requires_tier TEXT,
+            requires_payment NUMERIC(10,2),
+            rollout_percentage INTEGER NOT NULL DEFAULT 100,
+            allowed_athlete_ids JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """
+    )
+
     # Add feature flag for 3D workout selection (initially disabled, 0% rollout)
     op.execute("""
         INSERT INTO feature_flag (id, key, name, description, enabled, rollout_percentage)
