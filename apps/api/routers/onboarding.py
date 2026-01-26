@@ -16,6 +16,7 @@ from core.database import get_db
 from core.auth import get_current_user
 from models import (
     Athlete,
+    Activity,
     IntakeQuestionnaire,
     CoachIntentSnapshot,
     AthleteRaceResultAnchor,
@@ -25,7 +26,63 @@ from models import (
 
 router = APIRouter(prefix="/v1/onboarding", tags=["onboarding"])
 
-_ALLOWED_INTAKE_STAGES = {"initial", "basic_profile", "goals", "connect_strava", "nutrition_setup", "work_setup"}
+# "baseline" is a thin-history fallback intake for production beta.
+_ALLOWED_INTAKE_STAGES = {
+    "initial",
+    "basic_profile",
+    "goals",
+    "baseline",
+    "connect_strava",
+    "nutrition_setup",
+    "work_setup",
+}
+
+
+def _run_history_snapshot(db: Session, athlete_id) -> dict:
+    """
+    Best-effort "thin history" detector used to decide whether we need baseline questions.
+
+    We do NOT try to infer performance here; we only detect whether we have enough recent
+    data to ground coach guidance without guessing.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    cutoff_28d = now - timedelta(days=28)
+    cutoff_14d = now - timedelta(days=14)
+
+    q = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport.ilike("run"),
+            Activity.start_time >= cutoff_28d,
+        )
+        .order_by(Activity.start_time.desc())
+    )
+    runs = q.all()
+    run_count_28d = len(runs)
+    total_distance_m_28d = sum(int(r.distance_m or 0) for r in runs if r.distance_m)
+    last_run_at = runs[0].start_time if runs else None
+
+    # Conservative: treat as thin unless we have a minimal recent baseline.
+    # (Thresholds are not "population paces"; they're just enough-data checks.)
+    reasons: list[str] = []
+    if run_count_28d < 6:
+        reasons.append("low_run_count_28d")
+    if total_distance_m_28d < int(1609.344 * 10):  # < ~10 miles in 28 days
+        reasons.append("low_volume_28d")
+    if (last_run_at is None) or (last_run_at < cutoff_14d):
+        reasons.append("no_recent_run_14d")
+
+    is_thin = bool(reasons)
+    return {
+        "is_thin": is_thin,
+        "reasons": reasons,
+        "run_count_28d": int(run_count_28d),
+        "total_distance_m_28d": int(total_distance_m_28d),
+        "last_run_at": last_run_at.isoformat() if last_run_at else None,
+    }
 
 
 class IntakeUpsertRequest(BaseModel):
@@ -190,10 +247,14 @@ def _maybe_compute_and_persist_training_paces_from_goals(
     if not dist_key or not time_str:
         return None
 
-    from services.training_pace_profile import RaceAnchor, parse_time_to_seconds, compute_training_pace_profile
+    from services.training_pace_profile import (
+        RaceAnchor,
+        parse_race_time_to_seconds,
+        compute_training_pace_profile,
+    )
     from datetime import date as _date
 
-    time_seconds = parse_time_to_seconds(str(time_str))
+    time_seconds = parse_race_time_to_seconds(str(dist_key), str(time_str))
     if not time_seconds:
         return {"status": "invalid_anchor", "error": "invalid_time_format"}
 
@@ -331,10 +392,24 @@ def get_onboarding_status(
     from services.ingestion_state import get_ingestion_state_snapshot
 
     snapshot = get_ingestion_state_snapshot(db, current_user.id, provider="strava")
+    history = _run_history_snapshot(db, current_user.id)
+
+    baseline_row = (
+        db.query(IntakeQuestionnaire)
+        .filter(IntakeQuestionnaire.athlete_id == current_user.id, IntakeQuestionnaire.stage == "baseline")
+        .order_by(IntakeQuestionnaire.created_at.desc())
+        .first()
+    )
+    baseline_completed = bool(baseline_row and baseline_row.completed_at)
     return {
         "strava_connected": bool(current_user.strava_access_token),
         "last_sync": current_user.last_strava_sync.isoformat() if current_user.last_strava_sync else None,
         "ingestion_state": snapshot.to_dict() if snapshot else None,
+        "history": history,
+        "baseline": {
+            "completed": bool(baseline_completed),
+            "needed": bool(history.get("is_thin") and (not baseline_completed)),
+        },
     }
 
 

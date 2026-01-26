@@ -15,6 +15,39 @@ STRAVA_REDIRECT_URI = os.getenv(
 STRAVA_API_BASE = "https://www.strava.com/api/v3"
 
 
+class StravaOAuthCapacityError(RuntimeError):
+    """
+    Raised when the Strava OAuth app has reached its connected-athlete capacity.
+    """
+
+
+def _looks_like_capacity_error(payload: dict | None) -> bool:
+    try:
+        p = payload or {}
+        msg = " ".join(
+            [
+                str(p.get("message") or ""),
+                str(p.get("error") or ""),
+                str(p.get("errors") or ""),
+            ]
+        ).lower()
+        # Strava community reports multiple strings for athlete-capacity limits, including:
+        # - "Limit of connected athletes exceeded"
+        # - "Too many athletes"
+        # - "Too many accounts on that key"
+        if "too many accounts" in msg and ("key" in msg or "client" in msg):
+            return True
+        if "connected" in msg and ("athlete" in msg or "athletes" in msg) and ("limit" in msg or "exceeded" in msg):
+            return True
+        if ("limit" in msg or "exceeded" in msg) and ("athlete" in msg or "athletes" in msg):
+            return True
+        if "too many" in msg and ("athlete" in msg or "athletes" in msg or "account" in msg or "accounts" in msg):
+            return True
+        return False
+    except Exception:
+        return False
+
+
 def _acquire_strava_detail_slot(timeout_s: int, poll_s: float) -> bool:
     """
     Global throttle for Strava activity detail fetches (viral-safe scaling).
@@ -123,7 +156,14 @@ def exchange_code_for_token(code: str) -> Dict:
     }
 
     r = requests.post(url, json=data)
-    r.raise_for_status()
+    if r.status_code >= 400:
+        try:
+            payload = r.json()
+        except Exception:
+            payload = {"message": r.text}
+        if r.status_code == 403 and _looks_like_capacity_error(payload):
+            raise StravaOAuthCapacityError(str(payload.get("message") or "Limit of connected athletes exceeded"))
+        r.raise_for_status()
     return r.json()
 
 

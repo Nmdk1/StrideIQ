@@ -59,6 +59,39 @@ def test_imports_run_like_activities_and_converts_units(db_session, test_athlete
     assert float(act.total_elevation_gain) == 50.0
 
 
+def test_import_normalizes_garmin_elevation_gain_centimeters_to_meters(db_session, test_athlete, tmp_path):
+    """
+    Regression: some Garmin exports report elevationGain in centimeters.
+    Example: 26200 => 262m (not 26,200m).
+    """
+    start_ms = 1700000000000.0
+    _write_summarized_activities_file(
+        tmp_path,
+        "test_summarizedActivities.json",
+        activities=[
+            {
+                "activityId": 124,
+                "activityType": "running",
+                "startTimeLocal": start_ms,
+                "distance": 5000 * 100.0,  # cm
+                "duration": 1800 * 1000.0,  # ms
+                "elevationGain": 26200.0,  # cm
+            },
+        ],
+    )
+
+    stats = import_garmin_di_connect_summaries(db_session, athlete_id=test_athlete.id, extracted_root_dir=tmp_path)
+    assert stats["created"] == 1
+
+    act = (
+        db_session.query(Activity)
+        .filter(Activity.athlete_id == test_athlete.id, Activity.provider == "garmin", Activity.external_activity_id == "124")
+        .first()
+    )
+    assert act is not None
+    assert float(act.total_elevation_gain) == 262.0
+
+
 def test_import_is_idempotent_by_provider_external_id(db_session, test_athlete, tmp_path):
     start_ms = 1700000000000.0
     _write_summarized_activities_file(

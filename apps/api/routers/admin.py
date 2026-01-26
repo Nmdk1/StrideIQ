@@ -222,6 +222,38 @@ def get_ops_coach_actions_snapshot(
     }
 
 
+@router.get("/ops/strava-capacity")
+def get_ops_strava_capacity(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Ops Pulse: Strava OAuth capacity visibility (best-effort).
+
+    Strava enforces an "athlete capacity" per OAuth application (client_id).
+    We cannot query Strava for the cap, but we can:
+    - show how many athletes are currently linked in our DB
+    - surface the configured safety threshold (STRAVA_MAX_CONNECTED_ATHLETES)
+    """
+    try:
+        max_connected = int(getattr(settings, "STRAVA_MAX_CONNECTED_ATHLETES", None) or 0)
+    except Exception:
+        max_connected = 0
+
+    connected_count = (
+        db.query(func.count(Athlete.id))
+        .filter(Athlete.strava_access_token.isnot(None))
+        .scalar()
+        or 0
+    )
+
+    return {
+        "connected_athletes": int(connected_count),
+        "max_connected_athletes_configured": int(max_connected) if max_connected > 0 else None,
+        "capacity_guard_enabled": bool(max_connected > 0),
+    }
+
+
 @router.get("/ops/ingestion/pause")
 def get_ingestion_pause_status(
     current_user: Athlete = Depends(require_admin),

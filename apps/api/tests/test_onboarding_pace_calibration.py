@@ -99,6 +99,73 @@ def test_goals_intake_with_recent_race_computes_and_persists_pace_profile_withou
         db.close()
 
 
+def test_goals_intake_parses_h_mm_for_longer_events_to_avoid_seconds_catastrophe():
+    """
+    Regression: users often type "1:02" to mean 1 hour 2 minutes.
+    For a 10k anchor, interpreting this as 62 seconds creates absurd paces (0:xx/mi).
+    """
+    db = SessionLocal()
+    athlete = None
+    try:
+        athlete = Athlete(
+            email=f"pace_hmm_{uuid4()}@example.com",
+            display_name="Pace H:MM Tester",
+            subscription_tier="free",
+            role="athlete",
+        )
+        db.add(athlete)
+        db.commit()
+        db.refresh(athlete)
+
+        token = create_access_token({"sub": str(athlete.id), "email": athlete.email, "role": athlete.role})
+        headers = {"Authorization": f"Bearer {token}"}
+
+        responses = {
+            "goal_event_type": "10k",
+            "goal_event_date": "2026-03-01",
+            "days_per_week": 6,
+            "weekly_mileage_target": 30,
+            "recent_race_distance": "10k",
+            "recent_race_time": "1:02",
+            "recent_race_date": "2026-01-10",
+        }
+
+        resp = client.post(
+            "/v1/onboarding/intake",
+            json={"stage": "goals", "responses": responses, "completed": True},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body.get("ok") is True
+        assert body.get("status") == "computed"
+
+        anchor = db.query(AthleteRaceResultAnchor).filter(AthleteRaceResultAnchor.athlete_id == athlete.id).first()
+        assert anchor is not None
+        assert anchor.distance_key == "10k"
+        assert anchor.time_seconds == 62 * 60
+    finally:
+        try:
+            if athlete is not None:
+                for row in db.query(IntakeQuestionnaire).filter(IntakeQuestionnaire.athlete_id == athlete.id).all():
+                    db.delete(row)
+                snap = db.query(CoachIntentSnapshot).filter(CoachIntentSnapshot.athlete_id == athlete.id).first()
+                if snap:
+                    db.delete(snap)
+                prof = db.query(AthleteTrainingPaceProfile).filter(AthleteTrainingPaceProfile.athlete_id == athlete.id).first()
+                if prof:
+                    db.delete(prof)
+                anchor = db.query(AthleteRaceResultAnchor).filter(AthleteRaceResultAnchor.athlete_id == athlete.id).first()
+                if anchor:
+                    db.delete(anchor)
+                athlete = db.query(Athlete).filter(Athlete.id == athlete.id).first()
+                if athlete:
+                    db.delete(athlete)
+                db.commit()
+        except Exception:
+            db.rollback()
+        db.close()
+
 def test_goals_intake_without_recent_race_returns_missing_anchor_status():
     db = SessionLocal()
     athlete = None

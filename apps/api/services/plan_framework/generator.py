@@ -791,7 +791,9 @@ class PlanGenerator:
                 phase=phase.phase_type.value,
                 week_in_phase=week_in_phase,
                 distance=distance,
-                mp_week=mp_week
+                mp_week=mp_week,
+                athlete_ctx=athlete_ctx,
+                plan_week=week,
             )
             
             # Add pace description if paces available

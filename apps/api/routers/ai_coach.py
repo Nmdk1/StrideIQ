@@ -32,6 +32,10 @@ class ChatResponse(BaseModel):
     thread_id: Optional[str] = None
     error: bool = False
     timed_out: bool = False
+    history_thin: bool = False
+    used_baseline: bool = False
+    baseline_needed: bool = False
+    rebuild_plan_prompt: bool = False
 
 
 class ContextResponse(BaseModel):
@@ -78,6 +82,10 @@ async def chat_with_coach(
         thread_id=result.get("thread_id"),
         error=result.get("error", False),
         timed_out=bool(result.get("timed_out", False)),
+        history_thin=bool(result.get("history_thin", False)),
+        used_baseline=bool(result.get("used_baseline", False)),
+        baseline_needed=bool(result.get("baseline_needed", False)),
+        rebuild_plan_prompt=bool(result.get("rebuild_plan_prompt", False)),
     )
 
 
@@ -126,7 +134,15 @@ async def chat_with_coach_stream(
             await asyncio.sleep(0)  # let the event loop flush
 
         yield b"event: done\ndata: " + json.dumps(
-            {"type": "done", "timed_out": timed_out, "thread_id": result.get("thread_id")}
+            {
+                "type": "done",
+                "timed_out": timed_out,
+                "thread_id": result.get("thread_id"),
+                "history_thin": bool(result.get("history_thin", False)),
+                "used_baseline": bool(result.get("used_baseline", False)),
+                "baseline_needed": bool(result.get("baseline_needed", False)),
+                "rebuild_plan_prompt": bool(result.get("rebuild_plan_prompt", False)),
+            }
         ).encode("utf-8") + b"\n\n"
 
     return StreamingResponse(

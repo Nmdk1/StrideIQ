@@ -95,7 +95,8 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
                 .filter(AthleteRaceResultAnchor.athlete_id == athlete.id)
                 .first()
             )
-            if anchor_now and anchor_now.distance_key and anchor_now.time_seconds:
+            # Production safety: ignore implausible anchors (e.g. "1:02" parsed as 62 seconds).
+            if anchor_now and anchor_now.distance_key and anchor_now.time_seconds and int(anchor_now.time_seconds) >= 600:
                 if (existing.generation_method or "") in ("starter_v1", "starter_v1_effort"):
                     existing.status = "archived"
                     db.commit()
@@ -145,7 +146,7 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
 
         plan = None
         generation_kind = "starter_v1_effort"
-        if anchor and anchor.distance_key and anchor.time_seconds:
+        if anchor and anchor.distance_key and anchor.time_seconds and int(anchor.time_seconds) >= 600:
             try:
                 plan = gen.generate_semi_custom(
                     distance=goal_distance,

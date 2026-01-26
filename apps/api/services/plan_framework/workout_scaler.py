@@ -77,7 +77,9 @@ class WorkoutScaler:
         phase: str,
         week_in_phase: int = 1,
         distance: str = "marathon",
-        mp_week: int = 1  # For tracking MP long run progression
+        mp_week: int = 1,  # For tracking MP long run progression
+        athlete_ctx: Optional[Dict[str, Any]] = None,
+        plan_week: Optional[int] = None,
     ) -> ScaledWorkout:
         """
         Scale any workout type to athlete capacity.
@@ -120,7 +122,7 @@ class WorkoutScaler:
             return self._scale_medium_long(weekly_volume, tier, week_in_phase)
         
         elif workout_type in ["interval", "intervals", "vo2max"]:
-            return self._scale_intervals(weekly_volume, tier, phase)
+            return self._scale_intervals(weekly_volume, tier, phase, athlete_ctx=athlete_ctx, plan_week=plan_week)
         
         elif workout_type in ["strides"]:
             return self._scale_strides()
@@ -422,7 +424,10 @@ class WorkoutScaler:
         self,
         weekly_volume: float,
         tier: str,
-        phase: str
+        phase: str,
+        *,
+        athlete_ctx: Optional[Dict[str, Any]] = None,
+        plan_week: Optional[int] = None,
     ) -> ScaledWorkout:
         """Scale VO2max intervals."""
         # Max interval volume (8%)
@@ -430,9 +435,12 @@ class WorkoutScaler:
 
         phase_norm = (phase or "").strip().lower()
 
+        athlete_ctx = athlete_ctx or {}
+        experienced_high_volume = bool(athlete_ctx.get("experienced_high_volume"))
+
         # For high-volume contexts early in cycle, short reps are a safer VO2 “touch”
         # while still delivering meaningful ceiling work.
-        if phase_norm in ("base_speed", "base") and weekly_volume >= 60:
+        if phase_norm in ("base_speed", "base") and weekly_volume >= 60 and experienced_high_volume:
             rep_miles = 400 / 1609.344  # 400m in miles
             reps = int(max_i_miles / rep_miles) if rep_miles > 0 else 12
             reps = max(10, min(16, reps))
@@ -455,6 +463,7 @@ class WorkoutScaler:
 
         # Default: 1K reps (classic VO2)
         reps = min(6, max(4, int(max_i_miles / 0.62)))  # 1km = 0.62 mi
+
         return ScaledWorkout(
             workout_type="intervals",
             category=WorkoutCategory.INTERVAL,

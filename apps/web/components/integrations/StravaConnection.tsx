@@ -17,18 +17,32 @@ export function StravaConnection() {
   const triggerSync = useTriggerStravaSync();
   const [syncTaskId, setSyncTaskId] = useState<string | null>(null);
   const { data: syncStatus } = useStravaSyncStatus(syncTaskId, !!syncTaskId);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if we're returning from Strava OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     const connected = urlParams.get('strava');
+    const reason = urlParams.get('reason');
 
     if (connected === 'connected') {
       // Server-side callback redirects here; refresh status and clean the URL.
       setTimeout(() => {
         refetchStatus();
+        setConnectError(null);
         window.history.replaceState({}, document.title, window.location.pathname);
       }, 500);
+    }
+    if (connected === 'error') {
+      // Strava OAuth can fail for external reasons (e.g., app capacity). Surface a clear message.
+      if (reason === 'capacity') {
+        setConnectError(
+          "Strava connect is temporarily unavailable (app capacity reached). Upload Garmin for now, or try again later."
+        );
+      } else {
+        setConnectError('Strava connection failed. Please try again.');
+      }
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, [refetchStatus]);
 
@@ -38,6 +52,7 @@ export function StravaConnection() {
       window.location.href = auth_url;
     } catch (error) {
       console.error('Error getting auth URL:', error);
+      setConnectError(error instanceof Error ? error.message : 'Strava connection failed. Please try again.');
     }
   };
 
@@ -142,6 +157,8 @@ export function StravaConnection() {
       {triggerSync.isError && (
         <ErrorMessage error={triggerSync.error} className="mt-4" />
       )}
+
+      {connectError && <ErrorMessage error={connectError} className="mt-4" />}
     </div>
   );
 }

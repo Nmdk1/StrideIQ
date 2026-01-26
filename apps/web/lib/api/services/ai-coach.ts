@@ -18,6 +18,10 @@ export interface ChatResponse {
   proposal?: unknown;
   error: boolean;
   timed_out?: boolean;
+  history_thin?: boolean;
+  used_baseline?: boolean;
+  baseline_needed?: boolean;
+  rebuild_plan_prompt?: boolean;
 }
 
 export interface SuggestionsResponse {
@@ -63,7 +67,14 @@ export const aiCoachService = {
     request: ChatRequest,
     opts: {
       onDelta: (delta: string) => void;
-      onDone?: (meta: { timed_out?: boolean; thread_id?: string }) => void;
+      onDone?: (meta: {
+        timed_out?: boolean;
+        thread_id?: string;
+        history_thin?: boolean;
+        used_baseline?: boolean;
+        baseline_needed?: boolean;
+        rebuild_plan_prompt?: boolean;
+      }) => void;
       signal?: AbortSignal;
     }
   ): Promise<void> {
@@ -94,7 +105,14 @@ export const aiCoachService = {
       // Extremely old environments; fall back to non-stream call.
       const r = await aiCoachService.chat(request);
       opts.onDelta(r.response || '');
-      opts.onDone?.({ timed_out: r.timed_out, thread_id: r.thread_id });
+      opts.onDone?.({
+        timed_out: r.timed_out,
+        thread_id: r.thread_id,
+        history_thin: r.history_thin,
+        used_baseline: r.used_baseline,
+        baseline_needed: r.baseline_needed,
+        rebuild_plan_prompt: r.rebuild_plan_prompt,
+      });
       return;
     }
 
@@ -124,7 +142,14 @@ export const aiCoachService = {
         opts.onDelta(obj.delta);
       }
       if (obj?.type === 'done') {
-        opts.onDone?.({ timed_out: obj.timed_out, thread_id: obj.thread_id });
+        opts.onDone?.({
+          timed_out: obj.timed_out,
+          thread_id: obj.thread_id,
+          history_thin: obj.history_thin,
+          used_baseline: obj.used_baseline,
+          baseline_needed: obj.baseline_needed,
+          rebuild_plan_prompt: obj.rebuild_plan_prompt,
+        });
       }
     };
 

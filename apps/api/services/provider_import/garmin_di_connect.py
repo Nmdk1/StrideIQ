@@ -8,6 +8,7 @@ Empirically (from user-provided export):
   - distance is in *centimeters*
   - duration / elapsedDuration are in *milliseconds*
   - startTimeLocal is epoch milliseconds (startTimeGMT may be missing)
+  - elevationGain is in *centimeters* for some exports (needs normalization)
 
 We ingest summary-only activities into the canonical Activity table, using:
   provider="garmin", external_activity_id=str(activityId)
@@ -69,6 +70,32 @@ def _seconds_from_millis(value: Any) -> Optional[int]:
     if math.isnan(ms) or ms < 0:
         return None
     return int(round(ms / 1000.0))
+
+
+def _meters_from_garmin_elevation_gain(value: Any) -> Optional[float]:
+    """
+    Normalize Garmin elevation gain to meters.
+
+    Garmin export formats are not fully consistent across accounts/devices.
+    We see elevationGain reported in centimeters for some exports (e.g. 26200 => 262m).
+
+    Heuristic (production-beta safe):
+    - Reject negative/NaN
+    - Treat very large values as centimeters and divide by 100
+    - Otherwise treat as meters
+    """
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except Exception:
+        return None
+    if math.isnan(v) or v < 0:
+        return None
+    # If it's > 5000, it's almost certainly centimeters (50m–500m typical; 5000m gain is extreme).
+    if v > 5000:
+        return float(v / 100.0)
+    return float(v)
 
 
 def _safe_basename(name: str) -> str:
@@ -255,7 +282,7 @@ def import_garmin_di_connect_summaries(
                     "distance_m": distance_m,
                     "avg_hr": int(avg_hr) if isinstance(avg_hr, (int, float)) else None,
                     "max_hr": int(max_hr) if isinstance(max_hr, (int, float)) else None,
-                    "total_elevation_gain": float(elevation_gain) if isinstance(elevation_gain, (int, float)) else None,
+                    "total_elevation_gain": _meters_from_garmin_elevation_gain(elevation_gain),
                     "average_speed": float(average_speed) if isinstance(average_speed, (int, float)) else None,
                     "provider": GARMIN_PROVIDER_KEY,
                     "external_activity_id": external_id_str,

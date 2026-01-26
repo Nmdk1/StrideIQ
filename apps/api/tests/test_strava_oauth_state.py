@@ -6,6 +6,7 @@ from main import app
 from core.database import SessionLocal
 from models import Athlete
 from services.oauth_state import create_oauth_state
+from services.strava_service import StravaOAuthCapacityError
 
 
 client = TestClient(app)
@@ -65,5 +66,37 @@ def test_strava_callback_links_existing_athlete_and_redirects(monkeypatch):
             db.commit()
         except Exception:
             db.rollback()
+        db.close()
+
+
+def test_strava_callback_capacity_error_redirects_back_to_ui(monkeypatch):
+    db = SessionLocal()
+    athlete = Athlete(email=f"oauth_{uuid4()}@example.com", display_name="OAuth User", role="athlete", subscription_tier="free")
+    db.add(athlete)
+    db.commit()
+    db.refresh(athlete)
+    db.close()
+
+    def _fake_exchange(_code: str):
+        raise StravaOAuthCapacityError("Limit of connected athletes exceeded")
+
+    monkeypatch.setattr("routers.strava.exchange_code_for_token", _fake_exchange)
+
+    state = create_oauth_state({"athlete_id": str(athlete.id), "return_to": "/settings"})
+    resp = client.get(f"/v1/strava/callback?code=abc&state={state}", follow_redirects=False)
+    assert resp.status_code == 302
+    loc = resp.headers.get("location", "")
+    assert "strava=error" in loc
+    assert "reason=capacity" in loc
+
+    db = SessionLocal()
+    try:
+        updated = db.get(Athlete, athlete.id)
+        if updated:
+            db.delete(updated)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
         db.close()
 

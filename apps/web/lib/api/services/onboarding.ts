@@ -26,6 +26,17 @@ export interface OnboardingStatusResponse {
   strava_connected: boolean;
   last_sync?: string | null;
   ingestion_state?: OnboardingIngestionState | null;
+  history?: {
+    is_thin: boolean;
+    reasons: string[];
+    run_count_28d: number;
+    total_distance_m_28d: number;
+    last_run_at?: string | null;
+  };
+  baseline?: {
+    completed: boolean;
+    needed: boolean;
+  };
 }
 
 export interface OnboardingBootstrapResponse {
@@ -39,6 +50,7 @@ export type IntakeStage =
   | 'initial'
   | 'basic_profile'
   | 'goals'
+  | 'baseline'
   | 'connect_strava'
   | 'nutrition_setup'
   | 'work_setup';

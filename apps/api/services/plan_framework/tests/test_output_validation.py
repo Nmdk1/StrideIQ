@@ -230,7 +230,6 @@ class TestWorkoutScaling:
                         f"MP segment ({mp_miles}mi) exceeds 18mi cap"
                     )
 
-
 class TestWeeklyStructure:
     """Test that weekly structure makes sense."""
     

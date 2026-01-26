@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
+import requests
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -21,6 +22,7 @@ from services.strava_service import (
     poll_activities,
     get_activity_laps,
     get_activity_details,
+    StravaOAuthCapacityError,
 )
 from services.performance_engine import (
     calculate_age_at_date,
@@ -122,6 +124,7 @@ def get_strava_status(
 def get_strava_auth_url(
     current_user: Athlete = Depends(get_current_user),
     return_to: str = Query("/onboarding", description="UI path to return to after OAuth (must start with /)"),
+    db: Session = Depends(get_db),
 ):
     """
     Get Strava OAuth authorization URL for current user.
@@ -131,6 +134,28 @@ def get_strava_auth_url(
         # Prevent open redirect.
         if not return_to.startswith("/") or return_to.startswith("//"):
             raise HTTPException(status_code=400, detail="Invalid return_to")
+
+        # Production-beta safety: if Strava app athlete capacity is reached, fail fast before redirect.
+        # This is configurable so ops can set a conservative threshold.
+        try:
+            max_connected = int(getattr(settings, "STRAVA_MAX_CONNECTED_ATHLETES", None) or 0)
+        except Exception:
+            max_connected = 0
+        if max_connected > 0:
+            connected_count = (
+                db.query(func.count(Athlete.id))
+                .filter(Athlete.strava_access_token.isnot(None))
+                .scalar()
+                or 0
+            )
+            if int(connected_count) >= int(max_connected):
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Strava connect is temporarily unavailable (app capacity reached). "
+                        "Use Garmin upload for now, or try again later."
+                    ),
+                )
 
         state = create_oauth_state(
             {
@@ -169,7 +194,44 @@ def strava_callback(
         if not athlete:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid OAuth state")
 
-        token_data = exchange_code_for_token(code)
+        try:
+            token_data = exchange_code_for_token(code)
+        except StravaOAuthCapacityError:
+            # Redirect back to UI with a user-safe error. Do not leak provider payloads.
+            return_to = payload.get("return_to") or "/onboarding"
+            if not isinstance(return_to, str) or not return_to.startswith("/") or return_to.startswith("//"):
+                return_to = "/onboarding"
+            sep = "&" if "?" in return_to else "?"
+            # Mirror the LAN-safe redirect logic used by the success path.
+            web_base = settings.WEB_APP_BASE_URL
+            try:
+                host = http_request.headers.get("x-forwarded-host") or http_request.headers.get("host") or ""
+                proto = http_request.headers.get("x-forwarded-proto") or "http"
+                env_is_local = ("localhost" in web_base) or ("127.0.0.1" in web_base)
+                host_is_local = ("localhost" in host) or ("127.0.0.1" in host)
+                if env_is_local and host and (not host_is_local):
+                    if ":" in host:
+                        host_only, port = host.rsplit(":", 1)
+                        if port.isdigit() and int(port) == 8000:
+                            host = f"{host_only}:3000"
+                        else:
+                            host = f"{host_only}:3000"
+                    else:
+                        host = f"{host}:3000"
+                    web_base = f"{proto}://{host}"
+            except Exception:
+                web_base = settings.WEB_APP_BASE_URL
+            redirect_url = f"{web_base}{return_to}{sep}strava=error&reason=capacity"
+            return RedirectResponse(url=redirect_url, status_code=302)
+        except requests.HTTPError:
+            # Strava can return 403 for multiple OAuth-related reasons. Never 500 the user.
+            return_to = payload.get("return_to") or "/onboarding"
+            if not isinstance(return_to, str) or not return_to.startswith("/") or return_to.startswith("//"):
+                return_to = "/onboarding"
+            sep = "&" if "?" in return_to else "?"
+            web_base = settings.WEB_APP_BASE_URL
+            redirect_url = f"{web_base}{return_to}{sep}strava=error&reason=oauth"
+            return RedirectResponse(url=redirect_url, status_code=302)
         
         access_token = token_data["access_token"]
         refresh_token = token_data.get("refresh_token")

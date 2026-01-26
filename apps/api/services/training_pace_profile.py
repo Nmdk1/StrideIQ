@@ -62,6 +62,67 @@ def parse_time_to_seconds(s: str) -> Optional[int]:
     return hh * 3600 + mm * 60 + ss
 
 
+def parse_race_time_to_seconds(distance_key: str | None, s: str) -> Optional[int]:
+    """
+    Parse a race/time-trial time string into seconds with race-safe heuristics.
+
+    Why this exists:
+    - `parse_time_to_seconds()` treats "M:SS" as minutes:seconds, which is correct for many races.
+    - Athletes frequently enter "H:MM" (e.g. "1:02") to mean 1 hour 2 minutes.
+      In a 10k context, interpreting "1:02" as 62 seconds creates catastrophic paces.
+
+    Accepted:
+    - "MM:SS" or "HH:MM:SS" (delegates to `parse_time_to_seconds`)
+    - Digits only: treated as minutes (e.g. "62" => 62 minutes)
+    - "H:MM" (two-part) interpreted as hours:minutes ONLY when the MM:SS parse would be implausibly short.
+
+    Returns None if invalid/implausible.
+    """
+    if not s:
+        return None
+    raw = str(s).strip()
+    if not raw:
+        return None
+
+    # Digits-only convenience: interpret as minutes.
+    if raw.isdigit():
+        try:
+            mins = int(raw)
+        except Exception:
+            return None
+        if mins <= 0:
+            return None
+        total = mins * 60
+        return total if total >= 600 else None
+
+    # Primary: strict parser (MM:SS or HH:MM:SS)
+    primary = parse_time_to_seconds(raw)
+    if primary is None:
+        return None
+
+    # Sanity: never allow anchors shorter than 10 minutes (matches plan generation contract).
+    if primary >= 600:
+        return primary
+
+    # If it parsed to <10 minutes, it was likely intended as H:MM for longer events.
+    # Only apply this heuristic for longer distance keys where H:MM is plausible.
+    dk = (distance_key or "").strip().lower()
+    if dk in ("10k", "half_marathon", "marathon"):
+        parts = raw.split(":")
+        if len(parts) == 2:
+            try:
+                h = int(parts[0])
+                m = int(parts[1])
+            except Exception:
+                return None
+            # Guardrails: interpret as H:MM only for small hour values (avoids "9:30" => 9h30m).
+            if 0 < h <= 3 and 0 <= m < 60:
+                total = h * 3600 + m * 60
+                return total if total >= 600 else None
+
+    return None
+
+
 def _format_time_s(total_seconds: int) -> str:
     if total_seconds < 0:
         total_seconds = 0

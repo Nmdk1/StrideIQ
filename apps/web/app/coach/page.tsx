@@ -10,6 +10,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { aiCoachService } from '@/lib/api/services/ai-coach';
+import { onboardingService } from '@/lib/api/services/onboarding';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -125,6 +126,19 @@ export default function CoachPage() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [stickToBottom, setStickToBottom] = useState(true);
+  const [baselineNeeded, setBaselineNeeded] = useState(false);
+  const [baselineOpen, setBaselineOpen] = useState(false);
+  const [usedBaselineBanner, setUsedBaselineBanner] = useState(false);
+  const [rebuildPlanPrompt, setRebuildPlanPrompt] = useState(false);
+  const [baselineDraft, setBaselineDraft] = useState({
+    runs_per_week_4w: 3,
+    weekly_volume_value: 15,
+    weekly_volume_unit: 'miles' as 'miles' | 'km' | 'minutes',
+    longest_run_last_month: 4,
+    longest_run_unit: 'miles' as 'miles' | 'km',
+    returning_from_break: false,
+    return_date_approx: '',
+  });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -201,10 +215,45 @@ export default function CoachPage() {
       cancelled = true;
     };
   }, []);
+
+  // Thin-history fallback status (best-effort).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const st = await onboardingService.getStatus();
+        if (cancelled) return;
+        setBaselineNeeded(!!st?.baseline?.needed);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const saveBaseline = async () => {
+    setError(null);
+    try {
+      await onboardingService.saveIntake('baseline', baselineDraft as any, true);
+      setBaselineNeeded(false);
+      setUsedBaselineBanner(true);
+      setBaselineOpen(false);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to save baseline answers.');
+    }
+  };
   
   const handleSend = async (messageText?: string) => {
     const text = messageText || input.trim();
     if (!text || isLoading) return;
+
+    // Production-beta fallback: if connected history is thin, capture a minimal baseline once.
+    if (baselineNeeded) {
+      setBaselineOpen(true);
+      return;
+    }
     
     setInput('');
     setError(null);
@@ -270,6 +319,12 @@ export default function CoachPage() {
                     : m
                 )
               );
+            }
+            if (meta?.used_baseline) {
+              setUsedBaselineBanner(true);
+            }
+            if (meta?.rebuild_plan_prompt) {
+              setRebuildPlanPrompt(true);
             }
           },
         }
@@ -358,6 +413,140 @@ export default function CoachPage() {
                   onScroll={handleTranscriptScroll}
                   className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4"
                 >
+                  {usedBaselineBanner && (
+                    <div className="mb-4 rounded-md border border-slate-700/60 bg-slate-950/40 px-4 py-3 text-sm text-slate-200">
+                      Using your answers for now — connect Strava/Garmin for better insights.
+                    </div>
+                  )}
+
+                  {rebuildPlanPrompt && (
+                    <div className="mb-4 rounded-md border border-slate-700/60 bg-slate-950/40 px-4 py-3 text-sm text-slate-200">
+                      New training data detected. Want to rebuild your plan based on your recent history?
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            setRebuildPlanPrompt(false);
+                            setInput(
+                              "I just connected new training data — please rebuild my plan based on my last 8 weeks (keep it conservative if I'm returning)."
+                            );
+                            requestAnimationFrame(() => inputRef.current?.focus());
+                          }}
+                        >
+                          Rebuild plan (ask Coach)
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setRebuildPlanPrompt(false)}>
+                          Not now
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {baselineOpen && (
+                    <Card className="mb-4 bg-slate-900/30 border-slate-700/60">
+                      <CardContent className="py-4 px-5 space-y-3">
+                        <div className="text-sm font-semibold text-slate-200">
+                          Quick baseline (only because your connected history is thin)
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <label className="text-sm text-slate-300">
+                            Runs/week (last 4 weeks)
+                            <select
+                              className="mt-1 w-full rounded bg-slate-950 border border-slate-800 px-2 py-1"
+                              value={baselineDraft.runs_per_week_4w}
+                              onChange={(e) => setBaselineDraft((p) => ({ ...p, runs_per_week_4w: Number(e.target.value) }))}
+                            >
+                              {Array.from({ length: 8 }).map((_, i) => (
+                                <option key={i} value={i}>
+                                  {i}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="text-sm text-slate-300">
+                            Typical weekly miles/minutes (last 4 weeks)
+                            <div className="mt-1 flex gap-2">
+                              <input
+                                type="number"
+                                className="w-full rounded bg-slate-950 border border-slate-800 px-2 py-1"
+                                value={baselineDraft.weekly_volume_value}
+                                onChange={(e) => setBaselineDraft((p) => ({ ...p, weekly_volume_value: Number(e.target.value) }))}
+                              />
+                              <select
+                                className="rounded bg-slate-950 border border-slate-800 px-2 py-1"
+                                value={baselineDraft.weekly_volume_unit}
+                                onChange={(e) => setBaselineDraft((p) => ({ ...p, weekly_volume_unit: e.target.value as any }))}
+                              >
+                                <option value="miles">miles</option>
+                                <option value="km">km</option>
+                                <option value="minutes">minutes</option>
+                              </select>
+                            </div>
+                          </label>
+
+                          <label className="text-sm text-slate-300">
+                            Longest run in last month
+                            <div className="mt-1 flex gap-2">
+                              <input
+                                type="number"
+                                className="w-full rounded bg-slate-950 border border-slate-800 px-2 py-1"
+                                value={baselineDraft.longest_run_last_month}
+                                onChange={(e) => setBaselineDraft((p) => ({ ...p, longest_run_last_month: Number(e.target.value) }))}
+                              />
+                              <select
+                                className="rounded bg-slate-950 border border-slate-800 px-2 py-1"
+                                value={baselineDraft.longest_run_unit}
+                                onChange={(e) => setBaselineDraft((p) => ({ ...p, longest_run_unit: e.target.value as any }))}
+                              >
+                                <option value="miles">miles</option>
+                                <option value="km">km</option>
+                              </select>
+                            </div>
+                          </label>
+
+                          <div className="text-sm text-slate-300">
+                            Returning from a break/injury?
+                            <div className="mt-1 flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={baselineDraft.returning_from_break}
+                                onChange={(e) => setBaselineDraft((p) => ({ ...p, returning_from_break: e.target.checked }))}
+                              />
+                              <span className="text-slate-400">Yes</span>
+                              <input
+                                type="date"
+                                className="ml-auto rounded bg-slate-950 border border-slate-800 px-2 py-1"
+                                value={baselineDraft.return_date_approx}
+                                onChange={(e) => setBaselineDraft((p) => ({ ...p, return_date_approx: e.target.value }))}
+                                disabled={!baselineDraft.returning_from_break}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" size="sm" onClick={saveBaseline} disabled={isLoading}>
+                            Save & continue
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setBaselineOpen(false);
+                              setBaselineNeeded(false);
+                            }}
+                          >
+                            Skip for now
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
                   {isEmptyConversation ? (
                     <div className="h-full min-h-[52vh] flex flex-col items-center justify-center gap-6">
                       {messages.map((message) => (

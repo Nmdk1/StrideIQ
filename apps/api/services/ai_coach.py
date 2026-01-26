@@ -32,8 +32,14 @@ except ImportError:
     logger.warning("OpenAI not installed - AI Coach will be disabled")
 
 from models import (
-    Athlete, Activity, TrainingPlan, PlannedWorkout, 
-    DailyCheckin, PersonalBest
+    Athlete,
+    Activity,
+    TrainingPlan,
+    PlannedWorkout,
+    DailyCheckin,
+    PersonalBest,
+    IntakeQuestionnaire,
+    CoachIntentSnapshot,
 )
 from services import coach_tools
 from services.training_load import TrainingLoadCalculator
@@ -90,6 +96,14 @@ You understand running physiology, periodization, and training principles:
 3. Always acknowledge when you're uncertain
 4. Base recommendations on the athlete's current fitness level, not aspirational goals
 5. Consider the athlete's injury history if mentioned
+
+## Thin / Missing History Fallback (PRODUCTION BETA)
+
+Some early users will not have enough Strava/Garmin history yet. If training data coverage is thin:
+- Prefer the athlete's self-reported baseline answers (runs/week, weekly miles/minutes, longest run, return-from-break date) when present.
+- Be explicit: include a short line like: "Using your answers for now — connect Strava/Garmin for better insights."
+- Conservative mode: cap recommended ramp at ~20% week-over-week, and ask about pain signals before any hard session recommendations.
+- Never pretend you have data you don't have.
 
 ## Evidence & Citations (REQUIRED)
 
@@ -942,6 +956,22 @@ Policy:
 
         lower = (message or "").lower()
 
+        # Thin-history detection + baseline intake (production-beta fallback).
+        history_thin = False
+        history_snapshot: dict = {}
+        baseline: Optional[dict] = None
+        baseline_needed = False
+        used_baseline = False
+        try:
+            history_thin, history_snapshot, baseline, baseline_needed = self._thin_history_and_baseline_flags(athlete_id)
+            used_baseline = bool(history_thin and baseline and (not baseline_needed))
+        except Exception:
+            history_thin = False
+            history_snapshot = {}
+            baseline = None
+            baseline_needed = False
+            used_baseline = False
+
         # Production-beta: ambiguity hard stop for return-from-injury/break comparisons.
         # Runs BEFORE any deterministic shortcuts so it cannot be bypassed.
         if self._needs_return_scope_clarification(lower):
@@ -963,6 +993,10 @@ Policy:
                 "thread_id": thread_id,
                 "error": False,
                 "timed_out": False,
+                "history_thin": bool(history_thin),
+                "used_baseline": bool(used_baseline),
+                "baseline_needed": bool(baseline_needed),
+                "rebuild_plan_prompt": False,
             }
 
         # Deterministic prescriptions (exact sessions) for "today / this week".
@@ -1195,6 +1229,15 @@ Policy:
             # The Assistants thread already contains history, but for ambiguous comparison language we
             # inject recent athlete snippets + scope flags right before the new message so it can't be missed.
             try:
+                if history_thin:
+                    thin_injected = self._build_thin_history_injection(history_snapshot=history_snapshot, baseline=baseline)
+                    if thin_injected:
+                        self.client.beta.threads.messages.create(
+                            thread_id=thread_id,
+                            role="user",
+                            content=thin_injected,
+                        )
+
                 injected = self._build_context_injection_for_message(athlete_id=athlete_id, message=message)
                 if injected:
                     self.client.beta.threads.messages.create(
@@ -1373,6 +1416,10 @@ Policy:
                         "thread_id": thread_id,
                         "error": False,
                         "timed_out": True,
+                        "history_thin": bool(history_thin),
+                        "used_baseline": bool(used_baseline),
+                        "baseline_needed": bool(baseline_needed),
+                        "rebuild_plan_prompt": False,
                     }
                 
                 time.sleep(1)
@@ -1415,12 +1462,39 @@ Policy:
                     )
                 except Exception as e:
                     logger.warning(f"Coach response normalization failed: {e}")
-                
+
+                # "Rebuild plan?" prompt: only when history transitions from thin -> not thin.
+                rebuild_plan_prompt = False
+                try:
+                    snap = self.db.query(CoachIntentSnapshot).filter(CoachIntentSnapshot.athlete_id == athlete_id).first()
+                    if not snap:
+                        snap = CoachIntentSnapshot(athlete_id=athlete_id)
+                        self.db.add(snap)
+                        self.db.flush()
+                    extra = snap.extra or {}
+                    prev_thin = bool(extra.get("history_thin_last_seen", False))
+                    if prev_thin and (not history_thin):
+                        rebuild_plan_prompt = True
+                    extra["history_thin_last_seen"] = bool(history_thin)
+                    extra["history_run_count_28d_last_seen"] = int((history_snapshot or {}).get("run_count_28d") or 0)
+                    extra["history_last_seen_at"] = datetime.utcnow().isoformat()
+                    snap.extra = extra
+                    self.db.commit()
+                except Exception:
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass
+
                 return {
                     "response": response_text,
                     "thread_id": thread_id,
                     "error": False,
                     "timed_out": False,
+                    "history_thin": bool(history_thin),
+                    "used_baseline": bool(used_baseline),
+                    "baseline_needed": bool(baseline_needed),
+                    "rebuild_plan_prompt": bool(rebuild_plan_prompt),
                 }
             
             return {
@@ -2249,6 +2323,82 @@ Policy:
             prior_user_messages = []
 
         return self._build_context_injection_pure(message=text, prior_user_messages=prior_user_messages)
+
+    def _thin_history_and_baseline_flags(self, athlete_id: UUID) -> Tuple[bool, dict, Optional[dict], bool]:
+        """
+        Returns:
+        - history_thin: bool
+        - history_snapshot: dict (safe summary)
+        - baseline: dict|None (self-reported baseline intake)
+        - baseline_needed: bool (thin history AND missing baseline)
+        """
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        cutoff_28d = now - timedelta(days=28)
+        cutoff_14d = now - timedelta(days=14)
+
+        runs = (
+            self.db.query(Activity)
+            .filter(Activity.athlete_id == athlete_id, Activity.sport.ilike("run"), Activity.start_time >= cutoff_28d)
+            .order_by(Activity.start_time.desc())
+            .all()
+        )
+        run_count_28d = len(runs)
+        total_distance_m_28d = sum(int(r.distance_m or 0) for r in runs if r.distance_m)
+        last_run_at = runs[0].start_time if runs else None
+
+        reasons: list[str] = []
+        if run_count_28d < 6:
+            reasons.append("low_run_count_28d")
+        if total_distance_m_28d < int(1609.344 * 10):
+            reasons.append("low_volume_28d")
+        if (last_run_at is None) or (last_run_at < cutoff_14d):
+            reasons.append("no_recent_run_14d")
+
+        history_thin = bool(reasons)
+        history_snapshot = {
+            "run_count_28d": int(run_count_28d),
+            "total_distance_m_28d": int(total_distance_m_28d),
+            "last_run_at": last_run_at.isoformat() if last_run_at else None,
+            "reasons": reasons,
+        }
+
+        baseline_row = (
+            self.db.query(IntakeQuestionnaire)
+            .filter(IntakeQuestionnaire.athlete_id == athlete_id, IntakeQuestionnaire.stage == "baseline")
+            .order_by(IntakeQuestionnaire.created_at.desc())
+            .first()
+        )
+        baseline = baseline_row.responses if (baseline_row and isinstance(baseline_row.responses, dict)) else None
+        baseline_completed = bool(baseline_row and baseline_row.completed_at)
+        baseline_needed = bool(history_thin and (not baseline_completed))
+        return history_thin, history_snapshot, baseline, baseline_needed
+
+    def _build_thin_history_injection(self, *, history_snapshot: dict, baseline: Optional[dict]) -> str:
+        """
+        Build an INTERNAL COACH CONTEXT message for thin-history situations.
+        """
+        lines: List[str] = []
+        lines.append("INTERNAL COACH CONTEXT (do not repeat verbatim):")
+        lines.append(f"- Training data coverage is THIN. Snapshot: {json.dumps(history_snapshot, separators=(',', ':'))}")
+        if baseline:
+            # Keep payload minimal; avoid PII.
+            allow = {
+                "runs_per_week_4w": baseline.get("runs_per_week_4w"),
+                "weekly_volume_value": baseline.get("weekly_volume_value"),
+                "weekly_volume_unit": baseline.get("weekly_volume_unit"),
+                "longest_run_last_month": baseline.get("longest_run_last_month"),
+                "longest_run_unit": baseline.get("longest_run_unit"),
+                "returning_from_break": baseline.get("returning_from_break"),
+                "return_date_approx": baseline.get("return_date_approx"),
+            }
+            lines.append(f"- Athlete self-reported baseline (use until data is connected): {json.dumps(allow, separators=(',', ':'))}")
+            lines.append('- Include a short banner line in your answer: "Using your answers for now — connect Strava/Garmin for better insights."')
+            lines.append("- Conservative mode: ramp recommendations <= ~20% week-over-week; ask about pain signals before hard sessions.")
+        else:
+            lines.append("- Baseline intake is missing. Ask the athlete to provide: runs/week (last 4 weeks), typical weekly miles/minutes, longest run last month, and whether they are returning from a break/injury (rough date).")
+        return "\n".join(lines).strip()
 
     def _build_context_injection_pure(self, *, message: str, prior_user_messages: List[str]) -> Optional[str]:
         """

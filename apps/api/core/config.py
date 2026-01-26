@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     STRAVA_DETAIL_FETCH_ACQUIRE_TIMEOUT_S: int = Field(default=60)
     # Poll interval while waiting for a slot.
     STRAVA_DETAIL_FETCH_ACQUIRE_POLL_S: float = Field(default=1.0)
+    # Strava OAuth athlete capacity guard (production-beta safety)
+    # If set (>0), we will block new OAuth connects once our connected-athlete count reaches this number,
+    # and surface a clear UI-safe message instead of sending the athlete into a failing OAuth flow.
+    STRAVA_MAX_CONNECTED_ATHLETES: Optional[int] = Field(default=None)
     
     # Token Encryption
     TOKEN_ENCRYPTION_KEY: Optional[str] = Field(default=None)
