@@ -23,6 +23,13 @@ def upgrade() -> None:
     bind = op.get_bind()
     inspector = inspect(bind)
 
+    def _column_map(table_name: str) -> dict[str, dict]:
+        try:
+            cols = inspector.get_columns(table_name)
+        except Exception:
+            return {}
+        return {c["name"]: c for c in cols}
+
     def drop_index_if_exists(index_name: str, table_name: str) -> None:
         existing = {ix["name"] for ix in inspector.get_indexes(table_name)}
         if index_name in existing:
@@ -105,26 +112,44 @@ def upgrade() -> None:
     drop_index_if_exists('ix_activity_start_time', 'activity')
     drop_index_if_exists('ix_activity_user_verified_race', 'activity')
     drop_index_if_exists('ix_activity_split_activity_split_number', 'activity_split')
-    op.alter_column('athlete', 'threshold_pace_per_km',
-               existing_type=sa.NUMERIC(),
-               type_=sa.Float(),
-               existing_nullable=True)
-    op.alter_column('athlete', 'vdot',
-               existing_type=sa.NUMERIC(),
-               type_=sa.Float(),
-               existing_nullable=True)
-    op.alter_column('athlete', 'runner_type_confidence',
-               existing_type=sa.NUMERIC(),
-               type_=sa.Float(),
-               existing_nullable=True)
-    op.alter_column('athlete', 'runner_type_last_calculated',
-               existing_type=postgresql.TIMESTAMP(),
-               type_=sa.DateTime(timezone=True),
-               existing_nullable=True)
-    op.alter_column('athlete', 'last_streak_update',
-               existing_type=postgresql.TIMESTAMP(),
-               type_=sa.DateTime(timezone=True),
-               existing_nullable=True)
+
+    # Production-safety hardening:
+    # Older migration history + model evolution can mean these columns are missing
+    # in a brand-new DB (e.g., fresh deploy). In that case, altering them will fail.
+    athlete_cols = _column_map("athlete")
+
+    def ensure_float_column(table_name: str, col_name: str) -> None:
+        col = athlete_cols.get(col_name) if table_name == "athlete" else _column_map(table_name).get(col_name)
+        if not col:
+            op.add_column(table_name, sa.Column(col_name, sa.Float(), nullable=True))
+            return
+        existing_type = col.get("type")
+        # Only alter when it's numeric/decimal (common legacy type); otherwise leave as-is.
+        if isinstance(existing_type, sa.Numeric):
+            op.alter_column(table_name, col_name, existing_type=existing_type, type_=sa.Float(), existing_nullable=True)
+
+    def ensure_timestamptz_column(table_name: str, col_name: str) -> None:
+        col = athlete_cols.get(col_name) if table_name == "athlete" else _column_map(table_name).get(col_name)
+        if not col:
+            op.add_column(table_name, sa.Column(col_name, sa.DateTime(timezone=True), nullable=True))
+            return
+        existing_type = col.get("type")
+        # Normalize timestamp -> timestamptz when possible.
+        if isinstance(existing_type, postgresql.TIMESTAMP) and not getattr(existing_type, "timezone", False):
+            op.alter_column(
+                table_name,
+                col_name,
+                existing_type=existing_type,
+                type_=sa.DateTime(timezone=True),
+                existing_nullable=True,
+            )
+
+    ensure_float_column("athlete", "threshold_pace_per_km")
+    ensure_float_column("athlete", "vdot")
+    ensure_float_column("athlete", "runner_type_confidence")
+    ensure_timestamptz_column("athlete", "runner_type_last_calculated")
+    ensure_timestamptz_column("athlete", "last_streak_update")
+
     create_index_if_missing(op.f('ix_body_composition_athlete_id'), 'body_composition', ['athlete_id'], unique=False)
     op.add_column('daily_checkin', sa.Column('enjoyment_1_5', sa.Integer(), nullable=True))
     op.add_column('daily_checkin', sa.Column('confidence_1_5', sa.Integer(), nullable=True))
