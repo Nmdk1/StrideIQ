@@ -226,7 +226,7 @@ export default function CalendarPage() {
   const { data: signals } = useQuery({
     queryKey: ['calendar-signals', startDate, endDate],
     queryFn: () => apiClient.get<CalendarSignalsResponse>(
-      `/calendar/signals?start_date=${startDate}&end_date=${endDate}`
+      `/v1/calendar/signals?start_date=${startDate}&end_date=${endDate}`
     ),
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
