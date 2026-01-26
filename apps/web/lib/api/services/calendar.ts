@@ -167,7 +167,7 @@ export const calendarService = {
     if (endDate) params.append('end_date', endDate);
     
     const queryString = params.toString();
-    const url = queryString ? `/calendar?${queryString}` : '/calendar';
+    const url = queryString ? `/v1/calendar?${queryString}` : '/v1/calendar';
     
     return apiClient.get(url);
   },
@@ -176,28 +176,28 @@ export const calendarService = {
    * Get full details for a specific day
    */
   async getDay(date: string): Promise<CalendarDay> {
-    return apiClient.get(`/calendar/${date}`);
+    return apiClient.get(`/v1/calendar/${date}`);
   },
 
   /**
    * Get detailed view of a specific training week
    */
   async getWeek(weekNumber: number): Promise<WeekSummary> {
-    return apiClient.get(`/calendar/week/${weekNumber}`);
+    return apiClient.get(`/v1/calendar/week/${weekNumber}`);
   },
 
   /**
    * Add a note to a calendar day
    */
   async addNote(date: string, note: CreateNoteRequest): Promise<CalendarNote> {
-    return apiClient.post(`/calendar/${date}/notes`, note);
+    return apiClient.post(`/v1/calendar/${date}/notes`, note);
   },
 
   /**
    * Delete a note
    */
   async deleteNote(date: string, noteId: string): Promise<void> {
-    return apiClient.delete(`/calendar/${date}/notes/${noteId}`);
+    return apiClient.delete(`/v1/calendar/${date}/notes/${noteId}`);
   },
 
   /**
@@ -208,7 +208,7 @@ export const calendarService = {
     options?: { signal?: AbortSignal; timeoutMs?: number }
   ): Promise<CoachMessageResponse> {
     // Coach can legitimately take longer (tool calls + run)
-    return apiClient.post('/calendar/coach', request, {
+    return apiClient.post('/v1/calendar/coach', request, {
       signal: options?.signal,
       timeoutMs: options?.timeoutMs ?? 120000,
       // Never retry chat POSTs: retries can multiply perceived latency and can duplicate messages.

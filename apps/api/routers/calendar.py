@@ -29,7 +29,7 @@ from models import (
 )
 from services.ai_coach import AICoach
 
-router = APIRouter(prefix="/calendar", tags=["Calendar"])
+router = APIRouter(prefix="/v1/calendar", tags=["Calendar"])
 
 
 # =============================================================================
