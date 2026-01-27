@@ -375,12 +375,23 @@ class RunAnalysisEngine:
         athlete_id: UUID, 
         workout_type: WorkoutType,
         before_date: date,
-        limit: int = 20
+        limit: int = 20,
+        days_window: int = 90
     ) -> List[Activity]:
-        """Find similar workout types from history"""
-        # Get recent activities
+        """
+        Find similar workout types from recent history.
+        
+        Uses a 90-day window by default to ensure comparisons are contextually
+        relevant (e.g., post-injury runs compared to other post-injury runs,
+        not pre-injury peak performance).
+        """
+        # Calculate the earliest date to include
+        earliest_date = before_date - timedelta(days=days_window)
+        
+        # Get recent activities within the time window
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.start_time >= datetime.combine(earliest_date, datetime.min.time()),
             Activity.start_time < datetime.combine(before_date, datetime.min.time())
         ).order_by(Activity.start_time.desc()).limit(100).all()
         
@@ -856,14 +867,14 @@ class RunAnalysisEngine:
         is_red_flag = False
         red_flag_reason = None
         
-        # Outlier detection: Performance way outside normal range
+        # Outlier detection: Performance way outside normal range (within 90-day cohort)
         if context.percentile_vs_similar is not None:
             if context.percentile_vs_similar < 5:  # Bottom 5%
                 is_outlier = True
-                outlier_reason = "Performance significantly below recent similar workouts"
+                outlier_reason = "Effort required more from your body than usual (vs last 90 days)"
             elif context.percentile_vs_similar > 95:  # Top 5%
                 is_outlier = True
-                outlier_reason = "Performance significantly above recent similar workouts"
+                outlier_reason = "Exceptionally efficient run compared to recent efforts"
         
         # Red flag detection
         red_flags = []
@@ -973,7 +984,7 @@ class RunAnalysisEngine:
             f"({int(context.confidence * 100)}% confidence)"
         )
         
-        # Comparison to similar workouts
+        # Comparison to similar workouts (within 90-day window)
         if context.percentile_vs_similar is not None:
             percentile = context.percentile_vs_similar
             if percentile > 75:
@@ -981,8 +992,9 @@ class RunAnalysisEngine:
                     f"Better than {int(percentile)}% of your recent {context.workout_type.value} runs"
                 )
             elif percentile < 25:
+                # Clarify direction: "worse than X%" is clearer than "below X%"
                 insights.append(
-                    f"Below {int(100 - percentile)}% of your recent {context.workout_type.value} runs"
+                    f"Harder effort than {int(100 - percentile)}% of your recent {context.workout_type.value} runs (last 90 days)"
                 )
         
         # Trend information

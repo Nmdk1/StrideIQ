@@ -201,12 +201,20 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Comparison to Similar */}
         <div className="bg-slate-800/50 rounded-lg p-4">
-          <h4 className="text-slate-400 text-sm mb-2">vs. Similar Runs</h4>
+          <h4 className="text-slate-400 text-sm mb-2">vs. Similar Runs (90 days)</h4>
           {analysis.context.percentile_vs_similar !== null ? (
             <>
               <p className="text-2xl font-bold text-white">
-                {Math.round(analysis.context.percentile_vs_similar)}th
-                <span className="text-base font-normal text-slate-400 ml-1">percentile</span>
+                {Math.round(analysis.context.percentile_vs_similar) >= 50 ? (
+                  <>
+                    Better than <span className="text-emerald-400">{Math.round(analysis.context.percentile_vs_similar)}%</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-amber-400">{Math.round(analysis.context.percentile_vs_similar)}th</span>
+                    <span className="text-base font-normal text-slate-400 ml-1">percentile</span>
+                  </>
+                )}
               </p>
               <p className="text-slate-500 text-sm mt-1">
                 Out of {analysis.context.similar_workouts_count} similar {analysis.context.workout_type.replace('_', ' ')} runs
