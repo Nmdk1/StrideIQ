@@ -319,7 +319,10 @@ Context injection is now system-level via `additional_instructions`:
 
 ---
 
-### Phase 3: Tool Data Expansion (2-3 hours)
+### Phase 3: Tool Data Expansion (2-3 hours) ✅ COMPLETE
+
+**Status**: Completed 2026-01-27  
+**Commit**: `9ac11f7` feat(coach): Phase 3 tool data expansion (beta-ready N=1 depth)
 
 **Goal**: Give the AI access to data it needs but currently can't see.
 
@@ -409,6 +412,23 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 90) -> 
         "evidence": [...]
     }
 ```
+
+#### Phase 3 Completion Summary
+
+**Implemented:**
+- **Expanded `get_recent_runs`**: Added `max_hr`, `elevation_gain_m/ft`, `temperature_f`, `humidity_pct`, `weather_condition`
+- **New `get_wellness_trends`**: Sleep/stress/soreness with trends, HRV rMSSD, resting HR, mindset (enjoyment/confidence/motivation)
+- **New `get_athlete_profile`**: Physiological (max_hr, threshold pace/HR, VDOT), HR zones, runner typing (speedster/endurance/balanced), training metrics (durability, recovery half-life, consistency, streaks)
+- **New `get_training_load_history`**: Daily ATL/CTL/TSB snapshots, form state labels, injury risk (acute:chronic ratio), CTL trend direction
+
+**Key Improvement:**
+The AI Coach now has access to critical data that was previously missing:
+1. Environmental context (temperature, humidity, elevation) for run analysis
+2. Wellness/recovery data for readiness assessment
+3. Athlete profile for personalized recommendations
+4. Training load history for periodization context
+
+**Tests Added:** 12 new tests covering all new tools and expanded fields.
 
 ---
 
