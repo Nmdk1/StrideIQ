@@ -342,19 +342,23 @@ class RunAnalysisEngine:
         
         if similar and activity.avg_hr and activity.distance_m:
             # Calculate efficiency score for this run
+            # Use pace/HR (same as run_attribution.py): LOWER = more efficient
+            # Lower pace (faster) at same HR = more efficient
+            # Same pace at lower HR = more efficient
             pace_per_km = activity.duration_s / (activity.distance_m / 1000)
-            context.efficiency_score = activity.avg_hr / pace_per_km if pace_per_km > 0 else None
+            context.efficiency_score = pace_per_km / activity.avg_hr if activity.avg_hr > 0 else None
             
             # Compare to similar workouts
             similar_efficiencies = []
             for s in similar:
                 if s.avg_hr and s.distance_m and s.duration_s:
                     s_pace = s.duration_s / (s.distance_m / 1000)
-                    if s_pace > 0:
-                        similar_efficiencies.append(s.avg_hr / s_pace)
+                    if s.avg_hr > 0:
+                        similar_efficiencies.append(s_pace / s.avg_hr)
             
             if similar_efficiencies and context.efficiency_score:
-                # Lower HR/pace ratio = better efficiency
+                # Lower pace/HR ratio = better efficiency
+                # Count runs with HIGHER (worse) scores to get percentile
                 better_count = sum(1 for e in similar_efficiencies if e > context.efficiency_score)
                 context.percentile_vs_similar = (better_count / len(similar_efficiencies)) * 100
                 
