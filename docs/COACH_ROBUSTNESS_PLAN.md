@@ -214,7 +214,10 @@ The exact message that was failing ("Since I was in 3:08 marathon shape...would 
 
 ---
 
-### Phase 2: Context Architecture Overhaul (2-4 hours)
+### Phase 2: Context Architecture Overhaul (2-4 hours) ✅ COMPLETE
+
+**Status**: Completed 2026-01-27  
+**Commit**: `cf0c995` feat(coach): Phase 2 context architecture overhaul (beta-ready delivery)
 
 **Goal**: Give the AI the right context, in the right way, at the right time.
 
@@ -293,6 +296,26 @@ limit = min(limit or 100, 500)  # Increase default to 100, max to 500
 # In context injection
 prior_user_messages = []  # Last 20 instead of 10
 ```
+
+#### Phase 2 Completion Summary
+
+**Implemented:**
+- `_build_run_instructions()` method: Builds dynamic per-run instructions based on question type
+- Switched from user message injection to `additional_instructions` on the run
+- Thread history limits increased: default 50→100, max 200→500
+- Prior messages: fetch 40, cap at 20 user messages
+- Training state (ATL/CTL/TSB) with form label always included
+- Question-type-specific instructions: CRITICAL JUDGMENT, RETURN-FROM-INJURY, BENCHMARK REFERENCE, PRESCRIPTION REQUEST
+- Expanded `_RETURN_CONTEXT_PHRASES` with 6 additional phrases
+
+**Key Improvement:**
+Context injection is now system-level via `additional_instructions`:
+1. Higher priority than user messages
+2. Doesn't pollute thread history (cleaner conversation)
+3. Always fresh for each run
+4. Includes athlete-specific context dynamically
+
+**Tests Added:** 11 new tests (26 total) covering dynamic instructions, limits, and injection.
 
 ---
 
