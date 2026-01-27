@@ -460,6 +460,53 @@ Policy:
                     },
                 },
             },
+            # Phase 3: New tools for expanded data access
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_wellness_trends",
+                    "description": "Get wellness trends from daily check-ins: sleep, stress, soreness, HRV, resting HR, and mindset metrics over time.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "days": {
+                                "type": "integer",
+                                "description": "How many days of wellness data to analyze (default 28, max 90).",
+                                "minimum": 7,
+                                "maximum": 90,
+                            }
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_athlete_profile",
+                    "description": "Get athlete physiological profile: max HR, threshold paces, VDOT, runner type (speedster/endurance/balanced), HR zones, and training metrics.",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_training_load_history",
+                    "description": "Get daily ATL/CTL/TSB history showing training load progression, form state, and injury risk over time.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "days": {
+                                "type": "integer",
+                                "description": "How many days of load history (default 42, max 90).",
+                                "minimum": 7,
+                                "maximum": 90,
+                            }
+                        },
+                        "required": [],
+                    },
+                },
+            },
         ]
     
     def _get_or_create_assistant(self) -> Optional[str]:
@@ -1384,6 +1431,13 @@ Policy:
                                 output = coach_tools.set_coach_intent_snapshot(self.db, athlete_id, **args)
                             elif tool_name == "get_training_prescription_window":
                                 output = coach_tools.get_training_prescription_window(self.db, athlete_id, **args)
+                            # Phase 3: New tools
+                            elif tool_name == "get_wellness_trends":
+                                output = coach_tools.get_wellness_trends(self.db, athlete_id, **args)
+                            elif tool_name == "get_athlete_profile":
+                                output = coach_tools.get_athlete_profile(self.db, athlete_id)
+                            elif tool_name == "get_training_load_history":
+                                output = coach_tools.get_training_load_history(self.db, athlete_id, **args)
                             else:
                                 output = {
                                     "ok": False,
@@ -2418,6 +2472,13 @@ Policy:
                             output = coach_tools.set_coach_intent_snapshot(self.db, athlete_id, **args)
                         elif tool_name == "get_training_prescription_window":
                             output = coach_tools.get_training_prescription_window(self.db, athlete_id, **args)
+                        # Phase 3: New tools
+                        elif tool_name == "get_wellness_trends":
+                            output = coach_tools.get_wellness_trends(self.db, athlete_id, **args)
+                        elif tool_name == "get_athlete_profile":
+                            output = coach_tools.get_athlete_profile(self.db, athlete_id)
+                        elif tool_name == "get_training_load_history":
+                            output = coach_tools.get_training_load_history(self.db, athlete_id, **args)
                         else:
                             output = {
                                 "ok": False,

@@ -120,6 +120,10 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
         pace_mi = _pace_str_mi(a.duration_s, a.distance_m)
         date_str = a.start_time.date().isoformat()
 
+        # Phase 3: Add elevation, weather, max_hr for richer context
+        elevation_gain_m = float(a.total_elevation_gain) if a.total_elevation_gain is not None else None
+        elevation_gain_ft = round(elevation_gain_m * 3.28084, 0) if elevation_gain_m is not None else None
+        
         run_rows.append(
             {
                 "activity_id": str(a.id),
@@ -130,10 +134,17 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
                 "distance_km": round(distance_km, 2) if distance_km is not None else None,
                 "duration_s": int(a.duration_s) if a.duration_s is not None else None,
                 "avg_hr": int(a.avg_hr) if a.avg_hr is not None else None,
+                "max_hr": int(a.max_hr) if a.max_hr is not None else None,  # Phase 3
                 "pace_per_km": _pace_str(a.duration_s, a.distance_m),
                 "pace_per_mile": pace_mi,
                 "workout_type": a.workout_type,
                 "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
+                # Phase 3: Environmental context
+                "elevation_gain_m": round(elevation_gain_m, 1) if elevation_gain_m is not None else None,
+                "elevation_gain_ft": int(elevation_gain_ft) if elevation_gain_ft is not None else None,
+                "temperature_f": round(float(a.temperature_f), 1) if a.temperature_f is not None else None,
+                "humidity_pct": round(float(a.humidity_pct), 0) if a.humidity_pct is not None else None,
+                "weather_condition": a.weather_condition,
             }
         )
 
@@ -152,8 +163,17 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
                 parts.append(f"@ {pace}")
         if a.avg_hr is not None:
             parts.append(f"(avg HR {int(a.avg_hr)} bpm)")
+        if a.max_hr is not None:
+            parts.append(f"(max HR {int(a.max_hr)} bpm)")
         if a.workout_type:
             parts.append(f"[{a.workout_type}]")
+        # Phase 3: Add elevation and weather to evidence
+        if elevation_gain_ft is not None and elevation_gain_ft > 50:
+            parts.append(f"+{int(elevation_gain_ft)}ft")
+        if a.temperature_f is not None:
+            parts.append(f"{int(a.temperature_f)}°F")
+        if a.weather_condition:
+            parts.append(f"({a.weather_condition})")
         value_str = " ".join(parts) if parts else "run"
 
         evidence.append(
@@ -1664,6 +1684,413 @@ def compare_training_periods(db: Session, athlete_id: UUID, days: int = 28) -> D
         except Exception:
             pass
         return {"ok": False, "tool": "compare_training_periods", "error": str(e)}
+
+
+# =============================================================================
+# PHASE 3: NEW TOOLS - Wellness, Athlete Profile, Training Load History
+# =============================================================================
+
+def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[str, Any]:
+    """
+    Phase 3: Wellness trends from DailyCheckin data.
+    
+    Returns sleep, stress, soreness, HRV, and mindset trends.
+    Critical for understanding recovery context and readiness.
+    """
+    from models import DailyCheckin
+    
+    now = datetime.utcnow()
+    days = max(7, min(int(days), 90))
+    cutoff = now - timedelta(days=days)
+    
+    try:
+        checkins = (
+            db.query(DailyCheckin)
+            .filter(
+                DailyCheckin.athlete_id == athlete_id,
+                DailyCheckin.date >= cutoff.date(),
+            )
+            .order_by(DailyCheckin.date.desc())
+            .all()
+        )
+        
+        if not checkins:
+            return {
+                "ok": True,
+                "tool": "get_wellness_trends",
+                "generated_at": _iso(now),
+                "data": {
+                    "window_days": days,
+                    "checkin_count": 0,
+                    "message": "No wellness check-ins recorded in this period.",
+                },
+                "evidence": [],
+            }
+        
+        # Aggregate metrics
+        sleep_values = [float(c.sleep_h) for c in checkins if c.sleep_h is not None]
+        stress_values = [int(c.stress_1_5) for c in checkins if c.stress_1_5 is not None]
+        soreness_values = [int(c.soreness_1_5) for c in checkins if c.soreness_1_5 is not None]
+        hrv_values = [float(c.hrv_rmssd) for c in checkins if c.hrv_rmssd is not None]
+        resting_hr_values = [int(c.resting_hr) for c in checkins if c.resting_hr is not None]
+        enjoyment_values = [int(c.enjoyment_1_5) for c in checkins if c.enjoyment_1_5 is not None]
+        confidence_values = [int(c.confidence_1_5) for c in checkins if c.confidence_1_5 is not None]
+        motivation_values = [int(c.motivation_1_5) for c in checkins if c.motivation_1_5 is not None]
+        
+        def avg(vals: List) -> Optional[float]:
+            return round(sum(vals) / len(vals), 2) if vals else None
+        
+        def trend(vals: List) -> Optional[str]:
+            """Determine if values are trending up, down, or stable."""
+            if len(vals) < 3:
+                return None
+            recent = vals[:len(vals)//2]
+            older = vals[len(vals)//2:]
+            if not recent or not older:
+                return None
+            recent_avg = sum(recent) / len(recent)
+            older_avg = sum(older) / len(older)
+            delta_pct = ((recent_avg - older_avg) / older_avg * 100) if older_avg else 0
+            if delta_pct > 10:
+                return "improving"
+            elif delta_pct < -10:
+                return "declining"
+            return "stable"
+        
+        # Build recent entries for evidence
+        evidence: List[Dict[str, Any]] = []
+        for c in checkins[:7]:  # Last 7 entries
+            parts = []
+            if c.sleep_h:
+                parts.append(f"sleep:{float(c.sleep_h):.1f}h")
+            if c.stress_1_5:
+                parts.append(f"stress:{c.stress_1_5}/5")
+            if c.soreness_1_5:
+                parts.append(f"soreness:{c.soreness_1_5}/5")
+            if c.hrv_rmssd:
+                parts.append(f"HRV:{float(c.hrv_rmssd):.0f}")
+            if c.resting_hr:
+                parts.append(f"RHR:{c.resting_hr}")
+            
+            evidence.append({
+                "type": "wellness",
+                "date": c.date.isoformat(),
+                "value": " | ".join(parts) if parts else "check-in recorded",
+            })
+        
+        return {
+            "ok": True,
+            "tool": "get_wellness_trends",
+            "generated_at": _iso(now),
+            "data": {
+                "window_days": days,
+                "checkin_count": len(checkins),
+                "sleep": {
+                    "avg_hours": avg(sleep_values),
+                    "min_hours": round(min(sleep_values), 1) if sleep_values else None,
+                    "max_hours": round(max(sleep_values), 1) if sleep_values else None,
+                    "trend": trend(sleep_values),
+                    "data_points": len(sleep_values),
+                },
+                "stress": {
+                    "avg": avg(stress_values),
+                    "trend": trend(stress_values),
+                    "data_points": len(stress_values),
+                    "note": "1=low stress, 5=high stress",
+                },
+                "soreness": {
+                    "avg": avg(soreness_values),
+                    "trend": trend(soreness_values),
+                    "data_points": len(soreness_values),
+                    "note": "1=no soreness, 5=very sore",
+                },
+                "hrv": {
+                    "avg_rmssd": avg(hrv_values),
+                    "trend": trend(hrv_values),
+                    "data_points": len(hrv_values),
+                    "note": "Higher HRV generally indicates better recovery",
+                },
+                "resting_hr": {
+                    "avg_bpm": avg(resting_hr_values),
+                    "trend": trend(resting_hr_values),
+                    "data_points": len(resting_hr_values),
+                    "note": "Lower resting HR often indicates better fitness/recovery",
+                },
+                "mindset": {
+                    "avg_enjoyment": avg(enjoyment_values),
+                    "avg_confidence": avg(confidence_values),
+                    "avg_motivation": avg(motivation_values),
+                    "note": "All scales 1-5, higher is better",
+                },
+            },
+            "evidence": evidence,
+        }
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "tool": "get_wellness_trends", "error": str(e)}
+
+
+def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
+    """
+    Phase 3: Athlete profile with physiological thresholds and runner typing.
+    
+    Returns max_hr, threshold paces, VDOT, runner type, and training metrics.
+    Critical for personalized recommendations and goal setting.
+    """
+    now = datetime.utcnow()
+    
+    try:
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if not athlete:
+            return {"ok": False, "tool": "get_athlete_profile", "error": "Athlete not found"}
+        
+        units = (athlete.preferred_units or "metric")
+        
+        # Calculate age if birthdate available
+        age = None
+        if athlete.birthdate:
+            today = date.today()
+            age = today.year - athlete.birthdate.year - (
+                (today.month, today.day) < (athlete.birthdate.month, athlete.birthdate.day)
+            )
+        
+        # Convert threshold pace for display
+        threshold_pace_display = None
+        if athlete.threshold_pace_per_km:
+            if units == "imperial":
+                # Convert sec/km to min:sec/mile
+                sec_per_mi = athlete.threshold_pace_per_km * 1.60934
+                m = int(sec_per_mi // 60)
+                s = int(round(sec_per_mi % 60))
+                threshold_pace_display = f"{m}:{s:02d}/mi"
+            else:
+                m = int(athlete.threshold_pace_per_km // 60)
+                s = int(round(athlete.threshold_pace_per_km % 60))
+                threshold_pace_display = f"{m}:{s:02d}/km"
+        
+        # Calculate HR zones if max_hr available
+        hr_zones = None
+        if athlete.max_hr:
+            max_hr = athlete.max_hr
+            hr_zones = {
+                "zone_1_recovery": {"min": int(max_hr * 0.50), "max": int(max_hr * 0.60)},
+                "zone_2_easy": {"min": int(max_hr * 0.60), "max": int(max_hr * 0.70)},
+                "zone_3_moderate": {"min": int(max_hr * 0.70), "max": int(max_hr * 0.80)},
+                "zone_4_threshold": {"min": int(max_hr * 0.80), "max": int(max_hr * 0.90)},
+                "zone_5_max": {"min": int(max_hr * 0.90), "max": max_hr},
+            }
+        
+        # Build evidence
+        evidence: List[Dict[str, Any]] = []
+        if athlete.vdot:
+            evidence.append({"type": "metric", "name": "VDOT", "value": f"{athlete.vdot:.1f}"})
+        if athlete.runner_type:
+            evidence.append({"type": "classification", "name": "runner_type", "value": athlete.runner_type})
+        if athlete.max_hr:
+            evidence.append({"type": "metric", "name": "max_hr", "value": f"{athlete.max_hr} bpm"})
+        
+        return {
+            "ok": True,
+            "tool": "get_athlete_profile",
+            "generated_at": _iso(now),
+            "data": {
+                "preferred_units": units,
+                "demographics": {
+                    "age": age,
+                    "sex": athlete.sex,
+                    "height_cm": float(athlete.height_cm) if athlete.height_cm else None,
+                },
+                "physiological": {
+                    "max_hr": athlete.max_hr,
+                    "resting_hr": athlete.resting_hr,
+                    "threshold_hr": athlete.threshold_hr,
+                    "threshold_pace": threshold_pace_display,
+                    "threshold_pace_sec_per_km": float(athlete.threshold_pace_per_km) if athlete.threshold_pace_per_km else None,
+                    "vdot": float(athlete.vdot) if athlete.vdot else None,
+                    "hr_zones": hr_zones,
+                },
+                "runner_typing": {
+                    "type": athlete.runner_type,
+                    "confidence": float(athlete.runner_type_confidence) if athlete.runner_type_confidence else None,
+                    "last_calculated": _iso(athlete.runner_type_last_calculated) if athlete.runner_type_last_calculated else None,
+                    "type_descriptions": {
+                        "speedster": "Strong at shorter distances, may need endurance work for marathons",
+                        "endurance_monster": "Excels at longer distances, may need speed work for 5K/10K",
+                        "balanced": "Versatile across all distances",
+                    },
+                },
+                "training_metrics": {
+                    "durability_index": float(athlete.durability_index) if athlete.durability_index else None,
+                    "recovery_half_life_hours": float(athlete.recovery_half_life_hours) if athlete.recovery_half_life_hours else None,
+                    "consistency_index": float(athlete.consistency_index) if athlete.consistency_index else None,
+                    "current_streak_weeks": athlete.current_streak_weeks,
+                    "longest_streak_weeks": athlete.longest_streak_weeks,
+                },
+            },
+            "evidence": evidence,
+        }
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "tool": "get_athlete_profile", "error": str(e)}
+
+
+def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> Dict[str, Any]:
+    """
+    Phase 3: Training load history showing ATL/CTL/TSB trends over time.
+    
+    Returns daily snapshots of training load metrics to understand load progression.
+    Critical for periodization analysis and injury risk assessment.
+    """
+    now = datetime.utcnow()
+    days = max(7, min(int(days), 90))
+    
+    try:
+        # Get activities for the window + buffer for CTL calculation (42 days for CTL)
+        buffer_days = 42
+        cutoff = now - timedelta(days=days + buffer_days)
+        
+        runs = (
+            db.query(Activity)
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
+                Activity.start_time >= cutoff,
+            )
+            .order_by(Activity.start_time.asc())
+            .all()
+        )
+        
+        if not runs:
+            return {
+                "ok": True,
+                "tool": "get_training_load_history",
+                "generated_at": _iso(now),
+                "data": {
+                    "window_days": days,
+                    "message": "No training data available for load calculation.",
+                },
+                "evidence": [],
+            }
+        
+        # Calculate daily TSS values
+        daily_tss: Dict[date, float] = {}
+        for a in runs:
+            run_date = a.start_time.date()
+            # Simple TSS approximation: (duration_min * intensity_score / 100) or duration-based fallback
+            duration_min = (a.duration_s or 0) / 60
+            intensity = (a.intensity_score or 50) / 100  # Default to moderate if unknown
+            tss = duration_min * intensity
+            daily_tss[run_date] = daily_tss.get(run_date, 0) + tss
+        
+        # Calculate ATL (7-day) and CTL (42-day) for each day in window
+        atl_decay = 1 - (2 / 8)  # 7-day time constant
+        ctl_decay = 1 - (2 / 43)  # 42-day time constant
+        
+        history: List[Dict[str, Any]] = []
+        evidence: List[Dict[str, Any]] = []
+        
+        atl = 0.0
+        ctl = 0.0
+        
+        start_date = (now - timedelta(days=days + buffer_days)).date()
+        end_date = now.date()
+        current_date = start_date
+        
+        while current_date <= end_date:
+            day_tss = daily_tss.get(current_date, 0)
+            
+            # Exponential weighted moving average
+            atl = atl * atl_decay + day_tss * (1 - atl_decay)
+            ctl = ctl * ctl_decay + day_tss * (1 - ctl_decay)
+            tsb = ctl - atl
+            
+            # Only include days within the requested window
+            if current_date >= (now - timedelta(days=days)).date():
+                # Determine form state
+                form_state = "fresh" if tsb > 10 else ("fatigued" if tsb < -10 else "balanced")
+                
+                # Risk assessment
+                if atl > ctl * 1.3:
+                    risk = "high"
+                elif atl > ctl * 1.1:
+                    risk = "moderate"
+                else:
+                    risk = "low"
+                
+                history.append({
+                    "date": current_date.isoformat(),
+                    "atl": round(atl, 1),
+                    "ctl": round(ctl, 1),
+                    "tsb": round(tsb, 1),
+                    "form_state": form_state,
+                    "injury_risk": risk,
+                    "day_tss": round(day_tss, 1),
+                })
+            
+            current_date += timedelta(days=1)
+        
+        # Get current state (latest entry)
+        current = history[-1] if history else None
+        
+        # Calculate trends
+        if len(history) >= 7:
+            recent_ctl = [h["ctl"] for h in history[-7:]]
+            older_ctl = [h["ctl"] for h in history[-14:-7]] if len(history) >= 14 else []
+            ctl_trend = None
+            if older_ctl:
+                recent_avg = sum(recent_ctl) / len(recent_ctl)
+                older_avg = sum(older_ctl) / len(older_ctl)
+                delta_pct = ((recent_avg - older_avg) / older_avg * 100) if older_avg else 0
+                if delta_pct > 5:
+                    ctl_trend = "building"
+                elif delta_pct < -5:
+                    ctl_trend = "tapering"
+                else:
+                    ctl_trend = "maintaining"
+        else:
+            ctl_trend = None
+        
+        # Build evidence from key dates
+        for h in history[-7:]:
+            evidence.append({
+                "type": "load_snapshot",
+                "date": h["date"],
+                "value": f"ATL={h['atl']:.0f} CTL={h['ctl']:.0f} TSB={h['tsb']:+.0f} ({h['form_state']})",
+            })
+        
+        return {
+            "ok": True,
+            "tool": "get_training_load_history",
+            "generated_at": _iso(now),
+            "data": {
+                "window_days": days,
+                "current_state": current,
+                "ctl_trend": ctl_trend,
+                "ctl_trend_note": {
+                    "building": "Fitness is increasing - good for base building",
+                    "tapering": "Fitness is decreasing - expected before races or during recovery",
+                    "maintaining": "Fitness is stable - good for maintenance phases",
+                }.get(ctl_trend, None),
+                "history": history,
+                "guidance": {
+                    "tsb_interpretation": "TSB > 10: Fresh/ready to race. TSB 0-10: Balanced. TSB < 0: Fatigued (training hard).",
+                    "injury_risk_note": "High risk when ATL > 1.3x CTL (acute:chronic ratio too high).",
+                },
+            },
+            "evidence": evidence,
+        }
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "tool": "get_training_load_history", "error": str(e)}
 
 
 def _interpret_nutrition_correlation(key: str, r: float) -> str:
