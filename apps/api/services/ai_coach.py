@@ -999,9 +999,46 @@ Policy:
                 "rebuild_plan_prompt": False,
             }
 
+        # =========================================================================
+        # PHASE 1 ROUTING FIX: Judgment questions and clarification gates FIRST
+        # =========================================================================
+        # These checks MUST run before any deterministic shortcuts to prevent
+        # hijacking of opinion/timeline questions by keyword-based routing.
+        
+        # Gate 1: Judgment/opinion questions → set flag to skip shortcuts
+        # These require nuanced reasoning that hardcoded responses can't provide.
+        _skip_deterministic_shortcuts = self._is_judgment_question(message)
+        
+        # Gate 2: Return context + comparison language → force clarification
+        # This prevents scope errors like "longest run" defaulting to all-time
+        # when the athlete is clearly in a post-injury context.
+        # Only applies if NOT a judgment question (judgment questions go to LLM with full context)
+        if not _skip_deterministic_shortcuts and self._needs_return_clarification(message, athlete_id):
+            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            return {
+                "response": (
+                    "## Clarification Needed\n\n"
+                    "I see you're in a **return-from-injury/break** context and asking about comparisons.\n\n"
+                    "To give you an accurate answer, I need to know: **When did you return from injury or your last break?**\n\n"
+                    "Even roughly is fine (e.g., \"early January\", \"about 6 weeks ago\", \"January 10th\").\n\n"
+                    "Once I know that, I'll scope my answer to your post-return period and give you evidence-backed receipts."
+                ),
+                "thread_id": thread_id,
+                "error": False,
+                "timed_out": False,
+                "history_thin": bool(history_thin),
+                "used_baseline": bool(used_baseline),
+                "baseline_needed": bool(baseline_needed),
+                "rebuild_plan_prompt": False,
+            }
+        
+        # =========================================================================
+        # DETERMINISTIC SHORTCUTS (skipped for judgment questions)
+        # =========================================================================
+
         # Deterministic prescriptions (exact sessions) for "today / this week".
         # IMPORTANT: fatigue can trigger a conversation, but never auto-imposes taper.
-        if self._is_prescription_request(message):
+        if not _skip_deterministic_shortcuts and self._is_prescription_request(message):
             # Load state (N=1 personalized zones) and intent snapshot freshness.
             load = coach_tools.get_training_load(self.db, athlete_id)
             zone = (((load.get("data") or {}).get("tsb_zone") or {}).get("zone") or "").lower()
@@ -1057,7 +1094,7 @@ Policy:
             }
 
         # Deterministic answers for high-risk questions (avoid "reckless" responses).
-        if any(phrase in lower for phrase in ("how far back", "how far can you look", "how far back can you look", "how far back do you go")):
+        if not _skip_deterministic_shortcuts and any(phrase in lower for phrase in ("how far back", "how far can you look", "how far back can you look", "how far back do you go")):
             return {
                 "response": (
                     "I can look back **up to ~2 years** (730 days) for run-history queries, and I can cite specific activities (date + activity id).\n\n"
@@ -1068,7 +1105,7 @@ Policy:
             }
 
         # Deterministic: analyze today's completed run (NOT a prescription).
-        if ("run today" in lower or "today's run" in lower or "my run today" in lower or "today felt" in lower) and any(
+        if not _skip_deterministic_shortcuts and ("run today" in lower or "today's run" in lower or "my run today" in lower or "today felt" in lower) and any(
             k in lower for k in ("what effect", "what did it do", "how did it go", "what impact", "what changed", "did it help")
         ):
             thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
@@ -1078,12 +1115,14 @@ Policy:
                 "error": False,
             }
 
-        if (
-            ("run today" in lower or "today's run" in lower or "today run" in lower)
-            and ("suggest" in lower or "what should" in lower or "any advice" in lower or "tips" in lower)
-        ) or (
-            # Common follow-ups after a "today" recommendation: user disputes the plan distance.
-            ("plan" in lower and ("too short" in lower or "stupid" in lower or "way too short" in lower))
+        if not _skip_deterministic_shortcuts and (
+            (
+                ("run today" in lower or "today's run" in lower or "today run" in lower)
+                and ("suggest" in lower or "what should" in lower or "any advice" in lower or "tips" in lower)
+            ) or (
+                # Common follow-ups after a "today" recommendation: user disputes the plan distance.
+                ("plan" in lower and ("too short" in lower or "stupid" in lower or "way too short" in lower))
+            )
         ):
             # Production-beta reasoning hardening:
             # If the athlete mentions a return-from-injury/break context AND any comparison language
@@ -1110,7 +1149,7 @@ Policy:
 
         # Deterministic "most impactful run" to prevent vague/hallucinated definitions.
         # Guardrail: only run deterministically when the athlete is asking (avoid narrative misfires).
-        if "most impactful" in lower and "run" in lower:
+        if not _skip_deterministic_shortcuts and "most impactful" in lower and "run" in lower:
             if "?" in (message or "") or lower.startswith(("what", "which", "how", "show", "tell")):
                 days = self._extract_days_lookback(lower) or 7
                 thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
@@ -1121,7 +1160,7 @@ Policy:
                 }
 
         # Deterministic "longest run" (common high-signal question).
-        if ("longest" in lower or "furthest" in lower) and "run" in lower:
+        if not _skip_deterministic_shortcuts and ("longest" in lower or "furthest" in lower) and "run" in lower:
             # Production-beta hardening:
             # Only answer this deterministically when it looks like an explicit QUESTION.
             # Otherwise, this can misfire on narrative messages like "That was my longest since coming back"
@@ -1149,7 +1188,7 @@ Policy:
                 }
 
         # Deterministic "hardest run" / "hardest workout" (ambiguous; we define it explicitly).
-        if ("hardest" in lower or "toughest" in lower) and ("run" in lower or "workout" in lower):
+        if not _skip_deterministic_shortcuts and ("hardest" in lower or "toughest" in lower) and ("run" in lower or "workout" in lower):
             # Same misfire class as "longest": only do deterministic comparisons when asked.
             if self._looks_like_direct_comparison_question(message, keyword="hardest", noun="run"):
                 # If the athlete is in a return-from-break context, "hardest" can be ambiguous (relative to return block).
@@ -1176,7 +1215,7 @@ Policy:
         # Phase 3 acceptance: if the athlete has no run data and asks about fitness trend,
         # respond explicitly with the required phrasing (avoid any implied metrics).
         try:
-            if "getting fitter" in (message or "").lower():
+            if not _skip_deterministic_shortcuts and "getting fitter" in (message or "").lower():
                 has_any_run = (
                     self.db.query(Activity.id)
                     .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
@@ -1621,6 +1660,159 @@ Policy:
             return True
 
         return False
+
+    # -------------------------------------------------------------------------
+    # PHASE 1 ROUTING FIX: Judgment question detection (routes to LLM, not shortcuts)
+    # -------------------------------------------------------------------------
+    def _is_judgment_question(self, message: str) -> bool:
+        """
+        Detect opinion/judgment/timeline questions that MUST go to the LLM.
+        
+        These questions require nuanced reasoning, not hardcoded shortcuts:
+        - "Would it be reasonable to think I'll hit 3:08 by March?"
+        - "Do you think I can get back to my old pace?"
+        - "Am I on track for my goal?"
+        - "Is it realistic to run a marathon in 8 weeks?"
+        
+        Returns True if this should bypass all deterministic shortcuts.
+        """
+        ml = (message or "").lower()
+        
+        # Opinion-seeking patterns (require LLM reasoning)
+        opinion_patterns = (
+            "would it be reasonable",
+            "do you think",
+            "what do you think",
+            "is it realistic",
+            "is it reasonable",
+            "am i on track",
+            "will i make it",
+            "will i be ready",
+            "can i make it",
+            "can i achieve",
+            "can i get back to",
+            "can i return to",
+            "should i be worried",
+            "is it possible",
+            "your opinion",
+            "your assessment",
+            "your thoughts",
+            "what's your take",
+            "how likely",
+            "odds of",
+            "chances of",
+            "be there in time",
+            "ready in time",
+            "ready by",
+            "fit enough",
+            "strong enough",
+        )
+        
+        # Past benchmark references (need comparison to current state)
+        benchmark_indicators = (
+            "marathon shape",
+            "half marathon shape",
+            "race shape",
+            "pb shape",
+            "pr shape",
+            "personal best",
+            "personal record",
+            "was in shape",
+            "used to run",
+            "used to be",
+            "before my injury",
+            "before injury",
+            "at my peak",
+            "at my best",
+            "my old pace",
+            "my previous",
+            "i was running",
+            "i ran a",
+            "probably much faster",
+            "probably faster",
+            "shape in december",
+            "shape in january",
+            "shape in february",
+            "shape last year",
+            "shape last month",
+        )
+        
+        # Goal/timeline references
+        goal_timeline_patterns = (
+            "by march",
+            "by april",
+            "by may",
+            "by june",
+            "by july",
+            "by august",
+            "by september",
+            "by october",
+            "by november",
+            "by december",
+            "by the race",
+            "by the marathon",
+            "by race day",
+            "for the marathon",
+            "for the race",
+            "in time for",
+            "before the race",
+            "before the marathon",
+        )
+        
+        # Check for opinion patterns (strong signal)
+        has_opinion = any(p in ml for p in opinion_patterns)
+        if has_opinion:
+            return True
+        
+        # Check for benchmark + timeline combination
+        has_benchmark = any(p in ml for p in benchmark_indicators)
+        has_timeline = any(p in ml for p in goal_timeline_patterns)
+        if has_benchmark and has_timeline:
+            return True
+        
+        # Check for benchmark + return context (comparing past to now)
+        if has_benchmark and self._has_return_context(ml):
+            return True
+        
+        return False
+
+    def _needs_return_clarification(self, message: str, athlete_id: UUID) -> bool:
+        """
+        Production-beta guardrail: if return-context is detected AND comparison language,
+        force clarification before answering.
+        
+        Returns True if we should ask "When did you return?" before proceeding.
+        """
+        ml = (message or "").lower()
+        
+        # Check if return context is present (current message or recent thread)
+        has_return = self._has_return_context(ml) or self._thread_mentions_return_context(athlete_id, limit=15)
+        if not has_return:
+            return False
+        
+        # Check for comparison/superlative language
+        comparison_words = (
+            "longest", "furthest", "fastest", "slowest",
+            "best", "worst", "most", "least",
+            "hardest", "toughest", "easiest",
+            "biggest", "smallest", "highest", "lowest",
+            "slow", "fast", "hard", "easy",  # relative comparisons
+        )
+        has_comparison = any(w in ml for w in comparison_words)
+        if not has_comparison:
+            return False
+        
+        # Check if user already provided a return date/timeframe in this message
+        # If they did, no need to ask again
+        import re
+        has_date = bool(re.search(r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\b", ml, re.I))
+        has_relative = bool(re.search(r"\b\d{1,3}\s*(day|days|week|weeks|month|months)\s*(ago|back)\b", ml, re.I))
+        has_iso_date = bool(re.search(r"\b20\d{2}-\d{2}-\d{2}\b", ml))
+        
+        if has_date or has_relative or has_iso_date:
+            return False
+        
+        return True
 
     def _extract_prescription_window(self, message: str) -> Tuple[Optional[str], int]:
         """
@@ -2197,7 +2389,11 @@ Policy:
         except Exception:
             return None
 
+    # -------------------------------------------------------------------------
+    # PHASE 1 ROUTING FIX: Expanded return-context phrases (ADR-compliant)
+    # -------------------------------------------------------------------------
     _RETURN_CONTEXT_PHRASES = (
+        # Original phrases
         "since coming back",
         "since i came back",
         "since coming back from",
@@ -2218,6 +2414,36 @@ Policy:
         "recently returned",
         "returning from injury",
         "returning from a break",
+        # Phase 1 additions - expanded coverage
+        "post-injury",
+        "post injury",
+        "post-break",
+        "post break",
+        "recovery phase",
+        "in recovery",
+        "since i started running again",
+        "since starting again",
+        "first week back",
+        "first run back",
+        "first time back",
+        "just started back",
+        "just came back",
+        "just got back",
+        "getting back into",
+        "easing back into",
+        "building back",
+        "ramping back up",
+        "after surgery",
+        "after my surgery",
+        "since surgery",
+        "after rehab",
+        "since rehab",
+        "after physical therapy",
+        "since pt",
+        "after being injured",
+        "after being sick",
+        "after illness",
+        "since being sick",
     )
 
     def _has_return_context(self, lower_message: str) -> bool:
