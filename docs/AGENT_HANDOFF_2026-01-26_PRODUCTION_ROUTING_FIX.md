@@ -108,6 +108,33 @@ docker compose -f docker-compose.prod.yml up -d --build api web
 docker compose -f docker-compose.prod.yml logs --tail 50 api
 ```
 
+## Additional Bug Fixes
+
+### Insights Percentile Inversion Bug
+
+**Problem:** Run Analysis showed conflicting information:
+- Top card: "Very Efficient - 20.6% better than 28-day average"
+- Bottom card: "0th percentile vs similar runs" (implying worst)
+
+**Root Cause:** The efficiency formula was inverted between two files:
+- `run_attribution.py`: `eff = pace / HR` (lower = better) ✓
+- `run_analysis_engine.py`: `score = HR / pace` (was treating lower as better, but this is the inverse!)
+
+**Fix:** Changed `run_analysis_engine.py` to use `pace / HR` (matching `run_attribution.py`):
+```python
+# Before (wrong)
+context.efficiency_score = activity.avg_hr / pace_per_km
+
+# After (correct)
+context.efficiency_score = pace_per_km / activity.avg_hr
+```
+
+**Commits:**
+- `248b2e1` - fix(insights): correct percentile cohort + label direction
+- `bdaf166` - fix(insights): align efficiency formula with run_attribution
+
+---
+
 ## Known Issues (Non-blocking)
 
 1. **Missing `athlete_calibrated_model` table** - Causes WARNING in logs but doesn't break functionality. The fitness bank service handles this gracefully.
