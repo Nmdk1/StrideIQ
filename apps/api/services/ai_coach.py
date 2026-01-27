@@ -544,14 +544,16 @@ Policy:
             logger.error(f"Failed to create/persist thread: {e}")
             return None, False
 
-    def get_thread_history(self, athlete_id: UUID, limit: int = 50) -> Dict[str, Any]:
+    def get_thread_history(self, athlete_id: UUID, limit: int = 100) -> Dict[str, Any]:
         """
         Fetch persisted coach thread messages for this athlete.
 
         Returns:
             {"thread_id": str|None, "messages": [{"role","content","created_at"}]}
+        
+        Phase 2: Increased defaults (100→500 max) for better conversation context.
         """
-        limit = max(1, min(int(limit), 200))
+        limit = max(1, min(int(limit), 500))
 
         athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
         thread_id = athlete.coach_thread_id if athlete else None
@@ -1264,28 +1266,34 @@ Policy:
                     ),
                 )
 
-            # Production-beta context injection (belt-and-suspenders):
-            # The Assistants thread already contains history, but for ambiguous comparison language we
-            # inject recent athlete snippets + scope flags right before the new message so it can't be missed.
+            # =========================================================================
+            # PHASE 2 CONTEXT ARCHITECTURE: Use additional_instructions instead of user messages
+            # =========================================================================
+            # Benefits:
+            # - Instructions are system-level (higher priority than user messages)
+            # - Don't pollute thread history (cleaner conversation)
+            # - Always fresh for each run
+            # - Can include athlete-specific context dynamically
+            
+            # Build dynamic run instructions based on question type and athlete state
+            run_instructions: List[str] = []
+            
             try:
+                # Thin history injection (for athletes with sparse data)
                 if history_thin:
                     thin_injected = self._build_thin_history_injection(history_snapshot=history_snapshot, baseline=baseline)
                     if thin_injected:
-                        self.client.beta.threads.messages.create(
-                            thread_id=thread_id,
-                            role="user",
-                            content=thin_injected,
-                        )
-
-                injected = self._build_context_injection_for_message(athlete_id=athlete_id, message=message)
-                if injected:
-                    self.client.beta.threads.messages.create(
-                        thread_id=thread_id,
-                        role="user",
-                        content=injected,
-                    )
+                        run_instructions.append(thin_injected)
+                
+                # Dynamic per-run instructions (judgment, return-context, prescription, etc.)
+                dynamic_instructions = self._build_run_instructions(athlete_id=athlete_id, message=message)
+                if dynamic_instructions:
+                    run_instructions.append(dynamic_instructions)
             except Exception as e:
-                logger.info("Coach context injection skipped: %s", str(e))
+                logger.info("Coach run instructions build skipped: %s", str(e))
+            
+            # Combine all run instructions
+            additional_instructions = "\n\n".join(run_instructions) if run_instructions else None
             
             # Add the user's message
             self.client.beta.threads.messages.create(
@@ -1294,11 +1302,12 @@ Policy:
                 content=message
             )
             
-            # Run the assistant
+            # Run the assistant with additional_instructions (Phase 2)
             run = self.client.beta.threads.runs.create(
                 thread_id=thread_id,
                 assistant_id=self.assistant_id,
                 model=model,  # Override model per query
+                additional_instructions=additional_instructions,
             )
             
             # Wait for completion (with timeout)
@@ -1660,6 +1669,100 @@ Policy:
             return True
 
         return False
+
+    # -------------------------------------------------------------------------
+    # PHASE 2 CONTEXT ARCHITECTURE: Dynamic run instructions (not user messages)
+    # -------------------------------------------------------------------------
+    def _build_run_instructions(self, athlete_id: UUID, message: str) -> str:
+        """
+        Build per-run instructions based on message type and athlete state.
+        
+        Phase 2: These go into `additional_instructions` on the run, NOT as user messages.
+        Benefits:
+        - System-level instructions (higher priority than user messages)
+        - Don't pollute thread history
+        - Always fresh for each run
+        - Can include athlete-specific context
+        
+        Returns a string to be passed to runs.create(additional_instructions=...).
+        """
+        instructions: List[str] = []
+        ml = (message or "").lower()
+        
+        # -------------------------------------------------------------------------
+        # 1. Always include current training state (ATL/CTL/TSB)
+        # -------------------------------------------------------------------------
+        try:
+            load = coach_tools.get_training_load(self.db, athlete_id)
+            if load and not load.get("error"):
+                atl = load.get("atl", 0)
+                ctl = load.get("ctl", 0)
+                tsb = load.get("tsb", 0)
+                form_state = "fresh" if tsb > 10 else ("fatigued" if tsb < -10 else "balanced")
+                instructions.append(
+                    f"CURRENT TRAINING STATE: ATL={atl:.1f}, CTL={ctl:.1f}, TSB={tsb:.1f} ({form_state}). "
+                    f"Use this for load/recovery recommendations."
+                )
+        except Exception as e:
+            logger.debug(f"Could not fetch training load for run instructions: {e}")
+        
+        # -------------------------------------------------------------------------
+        # 2. Question-type-specific instructions
+        # -------------------------------------------------------------------------
+        if self._is_judgment_question(message):
+            instructions.append(
+                "CRITICAL JUDGMENT INSTRUCTION: The athlete is asking for your JUDGMENT or OPINION. "
+                "You MUST answer DIRECTLY first (yes/no/maybe with a confidence level like 'likely', 'unlikely', "
+                "'very possible'), THEN provide supporting evidence and any caveats. "
+                "Do NOT deflect, ask for constraints, or pivot to 'self-guided mode'. "
+                "Give your honest assessment based on their data."
+            )
+        
+        if self._has_return_context(ml):
+            instructions.append(
+                "RETURN-FROM-INJURY CONTEXT: This athlete mentioned returning from injury/break. "
+                "All comparisons should DEFAULT to the post-return period unless they explicitly specify otherwise. "
+                "Do NOT compare against pre-injury peaks without asking first. "
+                "Favor conservative load recommendations (10-15% weekly increases)."
+            )
+        
+        # Check for benchmark references (past PR, race shape, etc.)
+        benchmark_indicators = (
+            "marathon shape", "race shape", "pb shape", "pr shape",
+            "peak form", "was in", "used to run", "i ran a", "my best",
+            "when i was", "at my peak", "my pb", "my pr",
+        )
+        if any(b in ml for b in benchmark_indicators):
+            instructions.append(
+                "BENCHMARK REFERENCE DETECTED: The athlete referenced a past benchmark (PR, race shape, peak form). "
+                "Compare their CURRENT metrics to that benchmark and provide specific numbers and timeline estimates. "
+                "Be honest about realistic recovery timelines based on their recent training load and patterns."
+            )
+        
+        # Prescription mode guidance
+        if self._is_prescription_request(message):
+            instructions.append(
+                "PRESCRIPTION REQUEST: The athlete wants workout guidance. "
+                "Use conservative bounds: do not prescribe more than 20% weekly volume increase, "
+                "check TSB before intensity recommendations, and prioritize injury prevention."
+            )
+        
+        # -------------------------------------------------------------------------
+        # 3. Include prior context summary (flags and recent window)
+        # -------------------------------------------------------------------------
+        # Pull prior context injection content for additional guidance
+        try:
+            context_injection = self._build_context_injection_for_message(athlete_id=athlete_id, message=message)
+            if context_injection:
+                instructions.append(context_injection)
+        except Exception as e:
+            logger.debug(f"Could not build context injection for run instructions: {e}")
+        
+        if not instructions:
+            return ""
+        
+        header = "=== DYNAMIC RUN INSTRUCTIONS (Phase 2) ===\n"
+        return header + "\n\n".join(instructions)
 
     # -------------------------------------------------------------------------
     # PHASE 1 ROUTING FIX: Judgment question detection (routes to LLM, not shortcuts)
@@ -2439,11 +2542,18 @@ Policy:
         "after rehab",
         "since rehab",
         "after physical therapy",
+        "since physical therapy",
+        "physical therapy ended",
         "since pt",
         "after being injured",
         "after being sick",
         "after illness",
         "since being sick",
+        # Phase 2 additions - more patterns
+        "back from a break",
+        "back from break",
+        "i'm back from",
+        "im back from",
     )
 
     def _has_return_context(self, lower_message: str) -> bool:
@@ -2533,10 +2643,10 @@ Policy:
         if not text:
             return None
 
-        # Pull last N user messages (best-effort). Keep this small to reduce latency/token pressure.
+        # Phase 2: Pull more prior user messages (20 instead of 10) for better context.
         prior_user_messages: List[str] = []
         try:
-            hist = self.get_thread_history(athlete_id, limit=10) or {}
+            hist = self.get_thread_history(athlete_id, limit=40) or {}
             msgs = hist.get("messages") or []
             for m in msgs:
                 if (m.get("role") or "").lower() != "user":
@@ -2545,6 +2655,8 @@ Policy:
                 if not c:
                     continue
                 prior_user_messages.append(c)
+                if len(prior_user_messages) >= 20:
+                    break
         except Exception:
             prior_user_messages = []
 
