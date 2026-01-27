@@ -107,7 +107,10 @@ return has_benchmark and has_timeline  # Too strict!
 
 ## The Plan
 
-### Phase 1: Critical Routing Fix (1-2 hours)
+### Phase 1: Critical Routing Fix (1-2 hours) ✅ COMPLETE
+
+**Status**: Completed 2026-01-27  
+**Commit**: `e1adb98` feat(coach): Phase 1 routing fix - judgment questions bypass shortcuts + return-context clarification gate
 
 **Goal**: Stop hardcoded shortcuts from hijacking judgment questions.
 
@@ -193,6 +196,21 @@ elif self._is_explicit_prescription_request(message):
     if req_days >= 7 and (snap_stale or ...):
         return {"response": "To make this self-guided..."}
 ```
+
+#### Phase 1 Completion Summary
+
+**Implemented:**
+- `_is_judgment_question()` method: Detects 25+ opinion patterns, 20+ benchmark indicators, 17+ goal/timeline patterns
+- `_needs_return_clarification()` method: Forces clarification when return-context + comparison language detected
+- `_skip_deterministic_shortcuts` flag: Applied to all 8 deterministic shortcuts in `chat()`
+- Expanded `_RETURN_CONTEXT_PHRASES`: 30+ new phrases (post-injury, recovery phase, first week back, etc.)
+- New test file: `apps/api/tests/test_coach_routing.py` (17 tests, 6 test classes)
+
+**Key Fix:**
+The exact message that was failing ("Since I was in 3:08 marathon shape...would it be reasonable...") now:
+1. Detected as judgment question (bypasses all shortcuts)
+2. Routes directly to LLM with full context
+3. No more "self-guided" deflection
 
 ---
 
