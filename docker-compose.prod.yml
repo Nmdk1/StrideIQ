@@ -83,6 +83,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
+      - ./apps/api:/api:ro
       - ./.uploads:/uploads
       - ./books:/books
 
