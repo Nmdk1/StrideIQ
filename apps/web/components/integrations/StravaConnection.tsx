@@ -16,8 +16,44 @@ export function StravaConnection() {
   const { data: status, isLoading: statusLoading, refetch: refetchStatus } = useStravaStatus();
   const triggerSync = useTriggerStravaSync();
   const [syncTaskId, setSyncTaskId] = useState<string | null>(null);
+  const [syncStartTime, setSyncStartTime] = useState<number | null>(null);
   const { data: syncStatus } = useStravaSyncStatus(syncTaskId, !!syncTaskId);
   const [connectError, setConnectError] = useState<string | null>(null);
+
+  // Clear syncTaskId after success/error/unknown so stale status doesn't persist
+  useEffect(() => {
+    if (syncStatus?.status === 'success' || syncStatus?.status === 'error') {
+      // Show the result for 3 seconds, then clear
+      const timer = setTimeout(() => {
+        setSyncTaskId(null);
+        setSyncStartTime(null);
+        // Refresh the main status to get updated last_sync
+        refetchStatus();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+    
+    // Unknown status means task expired or was never tracked - clear immediately
+    if (syncStatus?.status === 'unknown') {
+      setSyncTaskId(null);
+      setSyncStartTime(null);
+      refetchStatus();
+    }
+  }, [syncStatus?.status, refetchStatus]);
+
+  // Timeout safeguard: if sync is "pending" for over 2 minutes, assume stale
+  // This is a backup in case Redis tracking fails
+  useEffect(() => {
+    if (syncTaskId && syncStartTime && syncStatus?.status === 'pending') {
+      const elapsed = Date.now() - syncStartTime;
+      if (elapsed > 120000) {
+        // Task is likely stale
+        setSyncTaskId(null);
+        setSyncStartTime(null);
+        refetchStatus();
+      }
+    }
+  }, [syncTaskId, syncStartTime, syncStatus?.status, refetchStatus]);
 
   useEffect(() => {
     // Check if we're returning from Strava OAuth callback
@@ -60,6 +96,7 @@ export function StravaConnection() {
     try {
       const result = await triggerSync.mutateAsync();
       setSyncTaskId(result.task_id);
+      setSyncStartTime(Date.now());
     } catch (error) {
       console.error('Error triggering sync:', error);
     }

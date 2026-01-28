@@ -321,7 +321,20 @@ def trigger_strava_sync(
     
     try:
         from tasks.strava_tasks import sync_strava_activities_task
+        from core.cache import get_redis_client
+        import json
+        
         task = sync_strava_activities_task.delay(str(current_user.id))
+        
+        # Track task in Redis so we can distinguish "unknown" from "pending"
+        # TTL of 5 minutes - tasks should complete well before this
+        redis = get_redis_client()
+        if redis:
+            task_meta = json.dumps({
+                "athlete_id": str(current_user.id),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+            redis.setex(f"strava_sync_task:{task.id}", 300, task_meta)
         
         return {
             "status": "queued",
@@ -334,17 +347,41 @@ def trigger_strava_sync(
 
 @router.get("/sync/status/{task_id}")
 def get_sync_status(task_id: str):
-    """Check the status of a Strava sync task."""
+    """
+    Check the status of a Strava sync task.
+    
+    Uses Redis to track known tasks. This solves the Celery quirk where
+    AsyncResult returns PENDING for unknown task IDs (indistinguishable
+    from genuinely queued tasks).
+    """
     from tasks import celery_app
+    from core.cache import get_redis_client
     
     task = celery_app.AsyncResult(task_id)
+    redis = get_redis_client()
+    
+    # Check if we know about this task
+    task_known = False
+    if redis:
+        task_meta = redis.get(f"strava_sync_task:{task_id}")
+        task_known = task_meta is not None
     
     if task.state == "PENDING":
-        return {
-            "task_id": task_id,
-            "status": "pending",
-            "message": "Task is waiting to be processed"
-        }
+        # Celery returns PENDING for unknown tasks too
+        # Only return "pending" if we actually know about this task
+        if task_known:
+            return {
+                "task_id": task_id,
+                "status": "pending",
+                "message": "Task is waiting to be processed"
+            }
+        else:
+            # Unknown task - tell frontend to stop polling
+            return {
+                "task_id": task_id,
+                "status": "unknown",
+                "message": "Task not found or expired"
+            }
     elif task.state == "STARTED":
         return {
             "task_id": task_id,
@@ -352,12 +389,18 @@ def get_sync_status(task_id: str):
             "message": "Task is currently being processed"
         }
     elif task.state == "SUCCESS":
+        # Clean up Redis tracking (task completed)
+        if redis:
+            redis.delete(f"strava_sync_task:{task_id}")
         return {
             "task_id": task_id,
             "status": "success",
             "result": task.result
         }
     else:
+        # Error or other state - clean up Redis
+        if redis:
+            redis.delete(f"strava_sync_task:{task_id}")
         return {
             "task_id": task_id,
             "status": "error",

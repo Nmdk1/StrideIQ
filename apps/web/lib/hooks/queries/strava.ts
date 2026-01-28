@@ -49,10 +49,12 @@ export function useStravaSyncStatus(taskId: string | null, enabled: boolean = tr
     enabled: enabled && !!taskId,
     refetchInterval: (query) => {
       const data = query.state.data;
+      // Only poll while task is actively in progress
+      // Stop for: success, error, unknown (task not found/expired)
       if (data?.status === 'pending' || data?.status === 'started') {
         return 2000; // Poll every 2 seconds while in progress
       }
-      return false; // Stop polling when done
+      return false; // Stop polling when done or unknown
     },
   });
 }

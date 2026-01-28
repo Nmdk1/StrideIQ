@@ -22,7 +22,7 @@ export interface StravaSyncResponse {
 
 export interface StravaSyncStatus {
   task_id: string;
-  status: 'pending' | 'started' | 'success' | 'error';
+  status: 'pending' | 'started' | 'success' | 'error' | 'unknown';
   message?: string;
   result?: any;
   error?: string;
