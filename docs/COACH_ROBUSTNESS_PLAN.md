@@ -511,9 +511,11 @@ class TestMessageRouting:
 
 **Goal**: Make the Coach feel like a real coach, not a deflection machine.
 
-**Status:** ✅ Complete (Commit: `4c6aac6`)
+**Status:** ✅ Complete (Commit: `4c6aac6`, Integration: `a2b302c`)
 
 **Phase 5 completed:** Conversation quality with confidence gating, question tracking (already_answered_in_thread, already_asked_clarification), progressive detail levels (FULL → MODERATE → BRIEF), and 28 new tests (total 89 passing in 1.21s).
+
+**Final Integration (Commit `a2b302c`):** All features integrated into `ai_coach.py`. Judgment routing via MessageRouter.classify(), confidence gating for JUDGMENT questions, progressive detail levels active, question tracking connected. Tests green (89 passing).
 
 #### 5.1 Confidence-Gated Responses
 
