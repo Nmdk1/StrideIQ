@@ -45,6 +45,15 @@ from services import coach_tools
 from services.training_load import TrainingLoadCalculator
 from services.efficiency_analytics import get_efficiency_trends
 
+# Phase 4/5 Modular Coach Components
+from services.coach_modules import (
+    MessageRouter,
+    MessageType,
+    ContextBuilder,
+    ConversationQualityManager,
+    DetailLevel,
+)
+
 
 class AICoach:
     """
@@ -155,6 +164,11 @@ Policy:
         self.db = db
         self.client = None
         self.assistant_id = None
+        
+        # Phase 4/5: Modular components
+        self.router = MessageRouter()
+        self.context_builder = ContextBuilder()
+        self.conversation_manager = ConversationQualityManager()
         
         if OPENAI_AVAILABLE:
             api_key = os.getenv("OPENAI_API_KEY")
@@ -1054,15 +1068,14 @@ Policy:
         # These checks MUST run before any deterministic shortcuts to prevent
         # hijacking of opinion/timeline questions by keyword-based routing.
         
-        # Gate 1: Judgment/opinion questions → set flag to skip shortcuts
-        # These require nuanced reasoning that hardcoded responses can't provide.
-        _skip_deterministic_shortcuts = self._is_judgment_question(message)
+        # Gate 1: Use MessageRouter for classification (Phase 4 modular)
+        msg_type, _skip_deterministic_shortcuts = self.router.classify(message)
         
         # Gate 2: Return context + comparison language → force clarification
         # This prevents scope errors like "longest run" defaulting to all-time
         # when the athlete is clearly in a post-injury context.
         # Only applies if NOT a judgment question (judgment questions go to LLM with full context)
-        if not _skip_deterministic_shortcuts and self._needs_return_clarification(message, athlete_id):
+        if msg_type == MessageType.CLARIFICATION_NEEDED:
             thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
             return {
                 "response": (
@@ -1336,6 +1349,22 @@ Policy:
                 dynamic_instructions = self._build_run_instructions(athlete_id=athlete_id, message=message)
                 if dynamic_instructions:
                     run_instructions.append(dynamic_instructions)
+                
+                # Phase 5: Confidence-gated responses for judgment questions
+                if msg_type == MessageType.JUDGMENT:
+                    confidence_instruction = self.conversation_manager.build_confidence_instruction()
+                    run_instructions.append(confidence_instruction)
+                
+                # Phase 5: Progressive detail levels based on conversation depth
+                try:
+                    history_raw = self.get_thread_history_raw(thread_id, limit=20)
+                    user_message_count = sum(1 for m in history_raw if m.get("role") == "user")
+                    detail_level = self.conversation_manager.get_detail_level(user_message_count + 1)  # +1 for current message
+                    detail_instruction = self.conversation_manager.build_detail_instruction(detail_level)
+                    run_instructions.append(detail_instruction)
+                except Exception as e:
+                    logger.debug(f"Detail level calculation skipped: {e}")
+                
             except Exception as e:
                 logger.info("Coach run instructions build skipped: %s", str(e))
             
