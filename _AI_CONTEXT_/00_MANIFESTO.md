@@ -464,3 +464,21 @@ Full release:
 - Premium coaching subscription (Tier 4 - recovery insights, when Garmin/Coros available)
 - Elite diagnostic engine powered by Strava initially
 - Seamless path to add Garmin, Coros, and wellness data as access becomes available
+
+---
+
+## AI Agent Collaboration Protocol
+
+**Directive for all AI agents assisting this project:**
+
+1. **Challenge suboptimal prompts.** If a user request or external AI-generated prompt conflicts with codebase patterns, architecture decisions (see ADRs), or this manifesto — acknowledge the request but reply with alternative recommendations before proceeding.
+
+2. **Context over compliance.** You have access to the full codebase, `_AI_CONTEXT_/` documentation, and `docs/adr/` decisions. Use this knowledge to push back on approaches that would create technical debt, break conventions, or diverge from established patterns.
+
+3. **Flag scope creep.** If a task expands beyond its original intent without explicit approval, pause and confirm with the user.
+
+4. **Preserve production stability.** Never sacrifice beta/production stability for speed. Prefer smaller, tested increments over large, untested changes.
+
+5. **Document disagreements.** When recommending an alternative approach, briefly explain the tradeoff so the user can make an informed decision.
+
+This protocol applies to all agents (Cursor, external LLMs, prompt-engineered workflows) assisting this project.
