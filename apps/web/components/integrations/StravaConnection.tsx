@@ -11,6 +11,7 @@ import { useStravaStatus, useTriggerStravaSync, useStravaSyncStatus } from '@/li
 import { stravaService } from '@/lib/api/services/strava';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
+import { StravaConnectButton, StravaConnectLink } from './StravaConnectButton';
 
 export function StravaConnection() {
   const { data: status, isLoading: statusLoading, refetch: refetchStatus } = useStravaStatus();
@@ -126,16 +127,21 @@ export function StravaConnection() {
       </div>
 
       {!isConnected ? (
-        <div>
-          <button
+        <div className="flex flex-col items-center">
+          {/* Official Strava "Connect with Strava" button per brand guidelines */}
+          <StravaConnectButton
             onClick={handleConnect}
-            className="w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded text-white font-medium transition-colors"
-          >
-            Connect Strava
-          </button>
-          <p className="text-xs text-slate-500 mt-2 text-center">
+            variant="orange"
+          />
+          
+          {/* Accessibility fallback link */}
+          <p className="text-xs text-slate-500 mt-3 text-center">
             You&apos;ll be redirected to Strava to authorize access
           </p>
+          <StravaConnectLink
+            onClick={handleConnect}
+            className="mt-1"
+          />
         </div>
       ) : (
         <div className="space-y-4">
