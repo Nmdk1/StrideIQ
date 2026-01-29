@@ -1,7 +1,8 @@
 /**
  * Strava Connection Component
  * 
- * Handles Strava OAuth connection and sync status.
+ * Handles Strava OAuth connection, sync status, and token verification.
+ * Detects revoked tokens and provides disconnect functionality.
  */
 
 'use client';
@@ -20,6 +21,11 @@ export function StravaConnection() {
   const [syncStartTime, setSyncStartTime] = useState<number | null>(null);
   const { data: syncStatus } = useStravaSyncStatus(syncTaskId, !!syncTaskId);
   const [connectError, setConnectError] = useState<string | null>(null);
+  
+  // Token verification state
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [tokenValid, setTokenValid] = useState<boolean | null>(null);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   // Clear syncTaskId after success/error/unknown so stale status doesn't persist
   useEffect(() => {
@@ -67,6 +73,7 @@ export function StravaConnection() {
       setTimeout(() => {
         refetchStatus();
         setConnectError(null);
+        setTokenValid(true); // Just connected, token is valid
         window.history.replaceState({}, document.title, window.location.pathname);
       }, 500);
     }
@@ -82,6 +89,49 @@ export function StravaConnection() {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, [refetchStatus]);
+
+  // Verify token on mount when status shows connected
+  useEffect(() => {
+    if (status?.connected && tokenValid === null && !isVerifying) {
+      setIsVerifying(true);
+      stravaService.verifyConnection()
+        .then((result) => {
+          setTokenValid(result.valid);
+          if (!result.valid && result.reason === 'revoked') {
+            setConnectError('Strava access was revoked. Please reconnect.');
+            refetchStatus(); // Refresh to update connected state
+          }
+        })
+        .catch((error) => {
+          console.error('Error verifying Strava connection:', error);
+          // On error, assume valid to avoid false disconnects
+          setTokenValid(true);
+        })
+        .finally(() => {
+          setIsVerifying(false);
+        });
+    }
+  }, [status?.connected, tokenValid, isVerifying, refetchStatus]);
+
+  // Handle disconnect
+  const handleDisconnect = async () => {
+    if (!confirm('Disconnect Strava? Your synced activities will be preserved.')) {
+      return;
+    }
+    
+    setIsDisconnecting(true);
+    try {
+      await stravaService.disconnect();
+      setTokenValid(null);
+      setConnectError(null);
+      refetchStatus();
+    } catch (error) {
+      console.error('Error disconnecting Strava:', error);
+      setConnectError('Failed to disconnect. Please try again.');
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
 
   const handleConnect = async () => {
     try {
@@ -120,9 +170,22 @@ export function StravaConnection() {
           </p>
         </div>
         {isConnected && (
-          <span className="px-3 py-1 bg-green-900/50 border border-green-700/50 rounded text-sm text-green-400">
-            Connected
-          </span>
+          <div className="flex items-center gap-2">
+            {isVerifying ? (
+              <span className="px-3 py-1 bg-slate-700/50 border border-slate-600/50 rounded text-sm text-slate-400 flex items-center gap-2">
+                <LoadingSpinner size="sm" />
+                Verifying...
+              </span>
+            ) : tokenValid === false ? (
+              <span className="px-3 py-1 bg-red-900/50 border border-red-700/50 rounded text-sm text-red-400">
+                Disconnected
+              </span>
+            ) : (
+              <span className="px-3 py-1 bg-green-900/50 border border-green-700/50 rounded text-sm text-green-400">
+                Connected
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -198,6 +261,27 @@ export function StravaConnection() {
               onClick={handleConnect}
               className="mt-2"
             />
+          </div>
+
+          {/* Disconnect button */}
+          <div className="pt-4 border-t border-slate-700/50 mt-4">
+            <button
+              onClick={handleDisconnect}
+              disabled={isDisconnecting}
+              className="w-full px-4 py-2 bg-slate-700/50 hover:bg-red-900/30 hover:border-red-700/50 border border-slate-600/50 rounded text-slate-400 hover:text-red-400 text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {isDisconnecting ? (
+                <>
+                  <LoadingSpinner size="sm" className="inline mr-2" />
+                  Disconnecting...
+                </>
+              ) : (
+                'Disconnect Strava'
+              )}
+            </button>
+            <p className="text-xs text-slate-500 mt-2 text-center">
+              Your synced activities will be preserved
+            </p>
           </div>
         </div>
       )}

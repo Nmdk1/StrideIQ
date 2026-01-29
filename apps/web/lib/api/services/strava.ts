@@ -28,6 +28,18 @@ export interface StravaSyncStatus {
   error?: string;
 }
 
+export interface StravaVerifyResponse {
+  valid: boolean;
+  connected: boolean;
+  strava_athlete_id?: number;
+  reason?: 'revoked' | 'error' | 'timeout';
+}
+
+export interface StravaDisconnectResponse {
+  success: boolean;
+  message: string;
+}
+
 export const stravaService = {
   /**
    * Get Strava connection status
@@ -56,6 +68,20 @@ export const stravaService = {
    */
   async getSyncStatus(taskId: string): Promise<StravaSyncStatus> {
     return apiClient.get<StravaSyncStatus>(`/v1/strava/sync/status/${taskId}`);
+  },
+
+  /**
+   * Verify Strava connection is still valid (token not revoked)
+   */
+  async verifyConnection(): Promise<StravaVerifyResponse> {
+    return apiClient.get<StravaVerifyResponse>('/v1/strava/verify');
+  },
+
+  /**
+   * Disconnect Strava integration (clear tokens)
+   */
+  async disconnect(): Promise<StravaDisconnectResponse> {
+    return apiClient.post<StravaDisconnectResponse>('/v1/strava/disconnect');
   },
 } as const;
 

@@ -126,6 +126,89 @@ def get_strava_status(
     }
 
 
+@router.get("/verify")
+def verify_strava_connection(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Verify Strava token is still valid by making a lightweight API call.
+    
+    Returns:
+        - valid: True if token works, False if revoked/expired
+        - connected: Whether we have a token stored
+        - strava_athlete_id: The Strava athlete ID if valid
+    
+    If token is invalid, clears it from the database.
+    """
+    from services.token_encryption import decrypt_token
+    
+    if not current_user.strava_access_token:
+        return {"valid": False, "connected": False, "strava_athlete_id": None}
+    
+    try:
+        access_token = decrypt_token(current_user.strava_access_token)
+        
+        # Make lightweight call to Strava to verify token
+        response = requests.get(
+            "https://www.strava.com/api/v3/athlete",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        
+        if response.status_code == 200:
+            athlete_data = response.json()
+            return {
+                "valid": True,
+                "connected": True,
+                "strava_athlete_id": athlete_data.get("id"),
+            }
+        elif response.status_code in (401, 403):
+            # Token revoked or invalid - clear it
+            logger.info(f"Strava token revoked for athlete {current_user.id}, clearing tokens")
+            current_user.strava_access_token = None
+            current_user.strava_refresh_token = None
+            current_user.strava_athlete_id = None
+            db.commit()
+            return {"valid": False, "connected": False, "strava_athlete_id": None, "reason": "revoked"}
+        else:
+            # Other error - keep token, report issue
+            logger.warning(f"Strava verify returned {response.status_code} for athlete {current_user.id}")
+            return {"valid": False, "connected": True, "strava_athlete_id": current_user.strava_athlete_id, "reason": "error"}
+            
+    except requests.Timeout:
+        # Network timeout - keep token, assume valid
+        return {"valid": True, "connected": True, "strava_athlete_id": current_user.strava_athlete_id, "reason": "timeout"}
+    except Exception as e:
+        logger.error(f"Error verifying Strava connection: {e}")
+        return {"valid": False, "connected": True, "strava_athlete_id": current_user.strava_athlete_id, "reason": "error"}
+
+
+@router.post("/disconnect")
+def disconnect_strava(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Disconnect Strava integration.
+    
+    Clears stored tokens. Does NOT revoke on Strava side (user should do that manually).
+    Activities already synced are preserved.
+    """
+    if not current_user.strava_access_token:
+        return {"success": True, "message": "Already disconnected"}
+    
+    logger.info(f"Disconnecting Strava for athlete {current_user.id}")
+    
+    current_user.strava_access_token = None
+    current_user.strava_refresh_token = None
+    # Keep strava_athlete_id for reference/audit
+    
+    db.commit()
+    
+    return {"success": True, "message": "Strava disconnected"}
+
+
 @router.get("/auth-url")
 def get_strava_auth_url(
     current_user: Athlete = Depends(get_current_user),
