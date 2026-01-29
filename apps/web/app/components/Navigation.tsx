@@ -111,6 +111,10 @@ export default function Navigation() {
   const isMoreActive =
     pathname === '/settings' || secondaryNavItems.some((item) => item.href === pathname);
 
+  // Landing page should always show public nav (even for logged-in users)
+  const isLandingPage = pathname === '/';
+  const showAuthenticatedNav = isAuthenticated && !isLandingPage;
+
   // Close menus on route change
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -186,10 +190,10 @@ export default function Navigation() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <Link href={isAuthenticated ? "/home" : "/"} className="text-xl font-bold text-white hover:text-orange-500 transition-colors">
+            <Link href={showAuthenticatedNav ? "/home" : "/"} className="text-xl font-bold text-white hover:text-orange-500 transition-colors">
               StrideIQ
             </Link>
-            {isAuthenticated && user && (
+            {showAuthenticatedNav && user && (
               <span className="hidden sm:inline text-sm text-slate-500">
                 {user.display_name}
               </span>
@@ -198,9 +202,9 @@ export default function Navigation() {
           
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-1">
-            {isLoading ? (
+            {isLoading && !isLandingPage ? (
               <div className="text-slate-500 text-sm">Loading...</div>
-            ) : isAuthenticated ? (
+            ) : showAuthenticatedNav ? (
               /* === AUTHENTICATED NAV === */
               <>
                 {/* Primary nav items */}
@@ -362,7 +366,7 @@ export default function Navigation() {
         {mobileMenuOpen && (
           <div className="md:hidden pb-4 safe-area-bottom">
             <div className="flex flex-col gap-1 mt-4 max-h-[calc(100vh-8rem)] overflow-y-auto">
-              {isAuthenticated ? (
+              {showAuthenticatedNav ? (
                 /* === MOBILE AUTHENTICATED NAV === */
                 <>
                   {authNavItems.map((item) => (
