@@ -47,10 +47,11 @@ export default function Footer() {
           </div>
           
           <div>
-            <h3 className="text-xl font-bold mb-4">Contact</h3>
-            <p className="text-slate-400">
-              Questions? Reach out to learn more about our approach.
-            </p>
+            <h3 className="text-xl font-bold mb-4">Support</h3>
+            <ul className="space-y-2 text-slate-400">
+              <li><a href="/support" className="hover:text-orange-500 transition-colors">Help & FAQ</a></li>
+              <li><a href="mailto:support@strideiq.run" className="hover:text-orange-500 transition-colors">support@strideiq.run</a></li>
+            </ul>
           </div>
         </div>
         

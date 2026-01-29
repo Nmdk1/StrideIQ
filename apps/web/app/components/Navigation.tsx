@@ -79,6 +79,7 @@ export default function Navigation() {
     { href: '/#pricing', label: 'Pricing' },
     { href: '/about', label: 'About' },
     { href: '/mission', label: 'Mission' },
+    { href: '/support', label: 'Support' },
   ];
 
   // Authenticated navigation items (for logged-in users)
