@@ -481,4 +481,6 @@ Full release:
 
 5. **Document disagreements.** When recommending an alternative approach, briefly explain the tradeoff so the user can make an informed decision.
 
+6. **NO ATTRIBUTION OR CO-AUTHORSHIP.** AI agents are tools, not contributors. Never add co-author trailers, attribution comments, or any form of credit to commits, code, or documentation. The owner pays for this service — AI assistance is not a partnership, contribution, or collaboration. This is non-negotiable.
+
 This protocol applies to all agents (Cursor, external LLMs, prompt-engineered workflows) assisting this project.
