@@ -188,12 +188,17 @@ export function StravaConnection() {
             )}
           </button>
 
-          <button
-            onClick={handleConnect}
-            className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-white font-medium transition-colors"
-          >
-            Reconnect Strava
-          </button>
+          {/* Official Strava button for reconnection per brand guidelines */}
+          <div className="flex flex-col items-center mt-2">
+            <StravaConnectButton
+              onClick={handleConnect}
+              variant="orange"
+            />
+            <StravaConnectLink
+              onClick={handleConnect}
+              className="mt-2"
+            />
+          </div>
         </div>
       )}
 
