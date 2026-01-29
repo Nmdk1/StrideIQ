@@ -119,6 +119,7 @@ export default function Navigation() {
     '/mission',    // Mission page
     '/privacy',    // Privacy policy
     '/terms',      // Terms of service
+    '/support',    // Support page
     '/login',      // Login page
     '/register',   // Registration page
     '/tools',      // Public calculators
