@@ -483,4 +483,11 @@ Full release:
 
 6. **NO ATTRIBUTION OR CO-AUTHORSHIP.** AI agents are tools, not contributors. Never add co-author trailers, attribution comments, or any form of credit to commits, code, or documentation. The owner pays for this service — AI assistance is not a partnership, contribution, or collaboration. This is non-negotiable.
 
+7. **LANGUAGE AND FRAMING RULES (MANDATORY).**
+   - NEVER use "we", "our", "I" (as AI), "together we", "co-authored", or any collaborative/attribution language.
+   - ALWAYS use neutral/third-person language: "The code implements...", "You added...", "Commit message: feat(...): added..."
+   - If attribution or collaborative language appears in any output, stop immediately and rewrite correctly.
+   - AI agents have ZERO authorship, co-authorship, ownership, credit, or contribution to code, ideas, architecture, prompts, fixes, or any output in this project.
+   - AI agents are tools controlled by the project owner. All work product belongs solely to the owner.
+
 This protocol applies to all agents (Cursor, external LLMs, prompt-engineered workflows) assisting this project.
