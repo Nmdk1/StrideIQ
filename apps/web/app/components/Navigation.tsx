@@ -111,9 +111,25 @@ export default function Navigation() {
   const isMoreActive =
     pathname === '/settings' || secondaryNavItems.some((item) => item.href === pathname);
 
-  // Landing page should always show public nav (even for logged-in users)
-  const isLandingPage = pathname === '/';
-  const showAuthenticatedNav = isAuthenticated && !isLandingPage;
+  // Public routes - always show public nav regardless of auth status
+  // These are marketing/info pages that should look the same for all visitors
+  const PUBLIC_ROUTES = [
+    '/',           // Landing page
+    '/about',      // About page
+    '/mission',    // Mission page
+    '/privacy',    // Privacy policy
+    '/terms',      // Terms of service
+    '/login',      // Login page
+    '/register',   // Registration page
+    '/tools',      // Public calculators
+  ];
+  
+  const isPublicRoute = PUBLIC_ROUTES.some(route => 
+    pathname === route || pathname?.startsWith(`${route}/`)
+  );
+  
+  // Only show authenticated nav on non-public routes when logged in
+  const showAuthenticatedNav = isAuthenticated && !isPublicRoute;
 
   // Close menus on route change
   useEffect(() => {
@@ -202,7 +218,7 @@ export default function Navigation() {
           
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-1">
-            {isLoading && !isLandingPage ? (
+            {isLoading && !isPublicRoute ? (
               <div className="text-slate-500 text-sm">Loading...</div>
             ) : showAuthenticatedNav ? (
               /* === AUTHENTICATED NAV === */
