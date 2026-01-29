@@ -22,6 +22,7 @@ import {
   useGenerateInsights,
 } from '@/lib/hooks/queries/insights';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { InsightActionLink } from '@/components/insights/InsightActionLink';
 import type { Insight, KPI, InsightFeedCard } from '@/lib/api/services/insights';
 import { useAuth } from '@/lib/context/AuthContext';
 
@@ -238,13 +239,12 @@ function FeedSection() {
 
               <div className="flex flex-col gap-2">
                 {(card.actions || []).slice(0, 2).map((a) => (
-                  <a
+                  <InsightActionLink
                     key={a.href}
                     href={a.href}
-                    className="px-3 py-2 bg-slate-900/40 border border-slate-700/50 hover:border-slate-600 rounded-lg text-sm font-medium transition-colors text-center"
-                  >
-                    {a.label}
-                  </a>
+                    label={a.label}
+                    variant="default"
+                  />
                 ))}
               </div>
             </div>

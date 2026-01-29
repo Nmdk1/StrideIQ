@@ -11,11 +11,11 @@
  * The Performance Management Chart (PMC) for runners.
  */
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { API_CONFIG } from '@/lib/api/config';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Tooltip as UiTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   LineChart,
@@ -92,15 +92,8 @@ function formatSignedInt(n: number) {
 }
 
 export default function TrainingLoadPage() {
-  const router = useRouter();
-  const { token, isAuthenticated } = useAuth();
+  const { token } = useAuth();
   const [days, setDays] = useState(60);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login');
-    }
-  }, [isAuthenticated, router]);
 
   const { data, isLoading, error } = useQuery<LoadHistoryResponse>({
     queryKey: ['training-load', days],
@@ -118,23 +111,22 @@ export default function TrainingLoadPage() {
     staleTime: 60000,
   });
 
-  if (!isAuthenticated) return null;
-
   const endpoints = data?.history ? getPeriodEndpoints(data.history) : null;
   const ctlDelta = endpoints ? endpoints.end.ctl - endpoints.start.ctl : null;
   const atlDelta = endpoints ? endpoints.end.atl - endpoints.start.atl : null;
   const tsbDelta = endpoints ? endpoints.end.tsb - endpoints.start.tsb : null;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Training Load</h1>
-          <p className="text-slate-400">
-            Fitness, Fatigue, and Form — the complete picture.
-          </p>
-        </div>
+    <ProtectedRoute>
+      <div className="min-h-screen bg-slate-900 text-slate-100">
+        <div className="max-w-6xl mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-white mb-2">Training Load</h1>
+            <p className="text-slate-400">
+              Fitness, Fatigue, and Form — the complete picture.
+            </p>
+          </div>
 
         {/* Period Selector */}
         <div className="flex flex-wrap gap-2 mb-8">
@@ -390,8 +382,9 @@ export default function TrainingLoadPage() {
             </div>
           </>
         ) : null}
+        </div>
       </div>
-    </div>
+    </ProtectedRoute>
   );
 }
 

@@ -15,6 +15,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useHomeData } from '@/lib/hooks/queries/home';
 import { useInsightFeed } from '@/lib/hooks/queries/insights';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { InsightActionLink } from '@/components/insights/InsightActionLink';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -190,13 +191,12 @@ function TopInsightsPreview({
                 <div className="text-sm font-semibold text-white truncate">{card.title}</div>
                 <div className="text-xs text-slate-400 mt-1 line-clamp-2">{card.summary}</div>
               </div>
-              {card.actions?.[0]?.href ? (
-                <a
+              {card.actions?.[0]?.href && card.actions?.[0]?.label ? (
+                <InsightActionLink
                   href={card.actions[0].href}
-                  className="shrink-0 px-2.5 py-2 bg-slate-800/60 border border-slate-700/60 hover:border-slate-600 rounded-lg text-xs font-medium text-slate-200 transition-colors"
-                >
-                  {card.actions[0].label}
-                </a>
+                  label={card.actions[0].label}
+                  variant="compact"
+                />
               ) : null}
             </div>
           </div>
