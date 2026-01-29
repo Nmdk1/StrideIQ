@@ -128,6 +128,22 @@ def _release_strava_detail_slot() -> None:
         return
 
 
+# Strava OAuth scopes requested by StrideIQ
+# See: https://developers.strava.com/docs/authentication/
+#
+# Core scopes for training analysis:
+#   - read: Read public segments, routes, profile
+#   - read_all: Access private activities and full profile
+#   - activity:read_all: Access all activities (including private)
+#   - profile:read_all: Read detailed athlete profile (zones, FTP, weight)
+#
+# Optional future scopes (not yet requested):
+#   - activity:write: Upload activities (manual entry feature)
+#   - profile:write: Update athlete profile
+#
+STRAVA_SCOPES = "read,read_all,activity:read_all,profile:read_all"
+
+
 def get_auth_url(state: str | None = None) -> str:
     if not STRAVA_CLIENT_ID:
         raise ValueError("STRAVA_CLIENT_ID is not set")
@@ -136,7 +152,7 @@ def get_auth_url(state: str | None = None) -> str:
         "client_id": STRAVA_CLIENT_ID,
         "redirect_uri": STRAVA_REDIRECT_URI,
         "response_type": "code",
-        "scope": "activity:read_all,read_all",
+        "scope": STRAVA_SCOPES,
         "approval_prompt": "force",
     }
     if state:

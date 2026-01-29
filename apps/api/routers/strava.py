@@ -3,7 +3,11 @@ Strava Integration Router
 
 Handles OAuth flow and activity syncing.
 Updated to work with authenticated users.
+
+Scopes requested: read,read_all,activity:read_all,profile:read_all
+See services/strava_service.py for scope documentation.
 """
+import logging
 import traceback
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -11,6 +15,8 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 import requests
+
+logger = logging.getLogger(__name__)
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -237,6 +243,14 @@ def strava_callback(
         refresh_token = token_data.get("refresh_token")
         athlete_info = token_data.get("athlete", {})
         strava_athlete_id = athlete_info.get("id")
+        
+        # Log granted scope for audit (Strava may grant subset of requested scopes)
+        granted_scope = token_data.get("scope", "unknown")
+        logger.info(
+            f"Strava OAuth complete: athlete_id={athlete.id}, "
+            f"strava_athlete_id={strava_athlete_id}, "
+            f"granted_scope={granted_scope}"
+        )
         
         if not strava_athlete_id:
             raise HTTPException(status_code=400, detail="No athlete ID in Strava response")
