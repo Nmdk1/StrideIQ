@@ -3,9 +3,39 @@
 ## Session Summary
 
 **Date:** January 30, 2026  
-**Status:** Code complete, deployment NOT finished  
+**Status:** DEPLOYED AND WORKING  
 **Branch:** `phase8-s2-hardening`  
 **Commit:** `a04babe` - feat: add password reset functionality (admin + self-service)
+
+## Production Fix Applied
+
+**Issue:** CORS was blocking all login/auth requests (OPTIONS returning 400)
+
+**Root cause:** `CORS_ORIGINS` environment variable was not set on the droplet.
+
+**Fix applied on droplet:**
+```bash
+echo 'CORS_ORIGINS=https://strideiq.run,https://www.strideiq.run' >> /opt/strideiq/repo/.env
+docker compose -f docker-compose.prod.yml up -d --force-recreate api
+```
+
+**Larry's password was reset via command line:**
+```bash
+docker exec strideiq_api python -c "
+from core.database import SessionLocal
+from core.security import get_password_hash
+from models import Athlete
+db = SessionLocal()
+athlete = db.query(Athlete).filter(Athlete.email == 'wlsrangertug@gmail.com').first()
+athlete.password_hash = get_password_hash('TempPass123!')
+db.commit()
+db.close()
+"
+```
+
+**Result:** Larry successfully logged in and is using the site.
+
+---
 
 ---
 
@@ -151,10 +181,15 @@ This session had significant friction due to:
 
 ---
 
-## Verification After Deployment
+## Still Needs Testing
 
-1. Go to `/admin` - verify "Reset password" button appears in user detail panel
-2. Go to `/login` - verify "Forgot password?" link appears
-3. Go to `/forgot-password` - verify page loads
-4. Test admin password reset on a test user
-5. Verify Larry can log in after password reset
+The following features were deployed but not fully tested in production:
+
+1. **Admin password reset button** - Does the button appear in `/admin` user detail panel? Does clicking it work?
+2. **Forgot password flow** - Does `/forgot-password` page work? Does the email get sent? Does the reset link work?
+
+## Verified Working
+
+1. ✅ Login works (Larry logged in successfully)
+2. ✅ CORS is fixed
+3. ✅ Password reset via command line works
