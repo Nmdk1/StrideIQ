@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -31,6 +31,7 @@ export default function AdminPage() {
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [adminReason, setAdminReason] = useState<string>('');
   const [desiredTier, setDesiredTier] = useState<string>('pro');
+  const [tempPassword, setTempPassword] = useState<{ email: string; password: string } | null>(null);
   
   // User management
   const { data: users, isLoading: usersLoading } = useAdminUsers({ search, limit: 50 });
@@ -42,6 +43,7 @@ export default function AdminPage() {
   const grantTrial = useGrantTrial();
   const revokeTrial = useRevokeTrial();
   const resetOnboarding = useResetOnboarding();
+  const resetPassword = useResetPassword();
   const retryIngestion = useRetryIngestion();
   const regenerateStarterPlan = useRegenerateStarterPlan();
   const setBlocked = useSetBlocked();
@@ -434,6 +436,22 @@ export default function AdminPage() {
                               {retryIngestion.isPending ? 'Queuing…' : 'Retry ingestion'}
                             </button>
                             <button
+                              onClick={() => {
+                                resetPassword.mutate(
+                                  { userId: selectedUser.id, reason: adminReason || undefined },
+                                  {
+                                    onSuccess: (data) => {
+                                      setTempPassword({ email: data.email, password: data.temporary_password });
+                                    },
+                                  }
+                                );
+                              }}
+                              disabled={resetPassword.isPending}
+                              className="px-3 py-2 bg-amber-700 hover:bg-amber-600 disabled:bg-slate-700 rounded text-xs"
+                            >
+                              {resetPassword.isPending ? 'Resetting…' : 'Reset password'}
+                            </button>
+                            <button
                               onClick={() => setBlocked.mutate({ userId: selectedUser.id, blocked: !selectedUser.is_blocked, reason: adminReason || undefined })}
                               disabled={setBlocked.isPending}
                               className={`px-3 py-2 rounded text-xs ${
@@ -443,6 +461,26 @@ export default function AdminPage() {
                               {setBlocked.isPending ? 'Saving…' : selectedUser.is_blocked ? 'Unblock' : 'Block'}
                             </button>
                           </div>
+
+                          {/* Temporary password display */}
+                          {tempPassword && (
+                            <div className="mt-3 p-3 bg-amber-900/50 border border-amber-700 rounded">
+                              <div className="text-xs font-semibold text-amber-200 mb-2">Temporary Password Generated</div>
+                              <div className="text-xs text-slate-300">
+                                <div>Email: <span className="font-mono text-slate-100">{tempPassword.email}</span></div>
+                                <div className="mt-1">
+                                  Password: <span className="font-mono text-amber-100 bg-slate-800 px-2 py-1 rounded select-all">{tempPassword.password}</span>
+                                </div>
+                              </div>
+                              <div className="mt-2 text-xs text-amber-300">Share this password with the user. They should change it after login.</div>
+                              <button
+                                onClick={() => setTempPassword(null)}
+                                className="mt-2 px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         <details className="bg-slate-900/40 border border-slate-700/50 rounded p-3">

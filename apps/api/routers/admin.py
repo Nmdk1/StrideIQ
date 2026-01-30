@@ -96,6 +96,11 @@ class ResetOnboardingRequest(BaseModel):
     stage: Optional[str] = Field(default="initial", description="Stage to reset to (default: initial)")
 
 
+class ResetPasswordRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, description="Why password was reset (audited)")
+    # Password is auto-generated and returned; admin shares with user
+
+
 class RetryIngestionRequest(BaseModel):
     reason: Optional[str] = Field(default=None, description="Why this retry was performed (audited)")
     pages: int = Field(default=5, ge=1, le=50, description="Strava index backfill pages (bounded)")
@@ -1089,6 +1094,67 @@ def reset_onboarding(
     db.commit()
     db.refresh(target)
     return {"success": True, "user_id": str(target.id), "onboarding_stage": target.onboarding_stage, "onboarding_completed": target.onboarding_completed}
+
+
+@router.post("/users/{user_id}/password/reset")
+def reset_password(
+    user_id: UUID,
+    request: ResetPasswordRequest,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("password.reset")),
+    current_user: Athlete = Depends(require_permission("password.reset")),
+    db: Session = Depends(get_db),
+):
+    """
+    Reset a user's password (admin action).
+
+    Generates a secure temporary password and returns it to the admin.
+    The admin must communicate this password to the user out-of-band.
+    User should change password after first login.
+
+    Security:
+    - Requires explicit permission
+    - Blocked under impersonation
+    - Fully audited (but password NOT logged)
+    """
+    import secrets
+
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Generate a secure temporary password (12 chars, URL-safe)
+    temp_password = secrets.token_urlsafe(9)  # 12 base64 chars
+
+    # Hash and store
+    from core.security import get_password_hash
+
+    target.password_hash = get_password_hash(temp_password)
+    db.add(target)
+
+    from services.admin_audit import record_admin_audit_event
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="password.reset",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"email": target.email},  # DO NOT log the password
+    )
+
+    db.commit()
+
+    logger.info(f"Password reset for athlete {target.id} by admin {current_user.id}")
+
+    return {
+        "success": True,
+        "user_id": str(target.id),
+        "email": target.email,
+        "temporary_password": temp_password,
+        "message": "Share this password with the user. They should change it after first login.",
+    }
 
 
 @router.post("/users/{user_id}/ingestion/retry")

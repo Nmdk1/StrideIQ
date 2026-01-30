@@ -5,7 +5,7 @@ Provides:
 - User registration
 - Login (JWT token generation)
 - Token refresh
-- Password reset (future)
+- Password reset (self-service via email)
 - Account lockout protection
 """
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,13 +15,17 @@ from pydantic import BaseModel, EmailStr, field_serializer, ConfigDict
 from typing import Optional
 from uuid import UUID
 from datetime import timedelta, datetime
+import logging
 
 from core.database import get_db
 from core.security import (
     verify_password,
     get_password_hash,
     create_access_token,
-    ACCESS_TOKEN_EXPIRE_MINUTES
+    decode_access_token,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    SECRET_KEY,
+    ALGORITHM,
 )
 from core.auth import get_current_user
 from core.account_security import (
@@ -32,9 +36,15 @@ from core.account_security import (
 from models import Athlete
 from services.invite_service import is_invited, mark_invite_used, normalize_email
 from services.system_flags import are_invites_required
+from jose import jwt, JWTError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 security = HTTPBearer()
+
+# Password reset token expiry (1 hour)
+PASSWORD_RESET_EXPIRE_MINUTES = 60
 
 
 class UserRegister(BaseModel):
@@ -82,6 +92,17 @@ class TokenResponse(BaseModel):
     athlete: Optional[UserResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request."""
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for reset password request."""
+    token: str
+    new_password: str
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -277,5 +298,154 @@ def refresh_token(
         "access_token": access_token,
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    }
+
+
+@router.post("/forgot-password")
+def forgot_password(
+    request: ForgotPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Request a password reset email.
+    
+    Sends an email with a reset link if the email exists.
+    Always returns success to prevent email enumeration.
+    """
+    from core.config import settings
+    from services.email_service import email_service
+    
+    email = request.email.lower()
+    
+    # Find user (but don't reveal if they exist)
+    user = db.query(Athlete).filter(Athlete.email == email).first()
+    
+    if user:
+        # Generate password reset token (JWT with short expiry)
+        reset_token = jwt.encode(
+            {
+                "sub": str(user.id),
+                "email": user.email,
+                "purpose": "password_reset",
+                "exp": datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES),
+            },
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
+        
+        # Build reset URL
+        frontend_url = getattr(settings, "FRONTEND_URL", "https://strideiq.run")
+        reset_url = f"{frontend_url}/reset-password?token={reset_token}"
+        
+        # Send email
+        html_content = f"""
+        <h2>Password Reset Request</h2>
+        <p>You requested to reset your password for StrideIQ.</p>
+        <p>Click the link below to set a new password:</p>
+        <p><a href="{reset_url}" style="background-color: #f97316; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Reset Password</a></p>
+        <p>This link expires in 1 hour.</p>
+        <p>If you didn't request this, you can safely ignore this email.</p>
+        <p>— StrideIQ</p>
+        """
+        
+        text_content = f"""
+Password Reset Request
+
+You requested to reset your password for StrideIQ.
+
+Click the link below to set a new password:
+{reset_url}
+
+This link expires in 1 hour.
+
+If you didn't request this, you can safely ignore this email.
+
+— StrideIQ
+        """
+        
+        sent = email_service.send_email(
+            to_email=user.email,
+            subject="Reset your StrideIQ password",
+            html_content=html_content,
+            text_content=text_content,
+        )
+        
+        if sent:
+            logger.info(f"Password reset email sent to {email}")
+        else:
+            # Email not configured - log for debugging
+            logger.warning(f"Password reset requested for {email} but email service is disabled")
+            logger.info(f"Reset URL (dev only): {reset_url}")
+    else:
+        # Don't reveal that email doesn't exist
+        logger.info(f"Password reset requested for non-existent email: {email}")
+    
+    # Always return success to prevent email enumeration
+    return {
+        "success": True,
+        "message": "If an account with that email exists, a password reset link has been sent.",
+    }
+
+
+@router.post("/reset-password")
+def reset_password(
+    request: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset password using a valid reset token.
+    
+    Validates the token and updates the password.
+    """
+    # Validate password strength
+    if len(request.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters"
+        )
+    
+    # Decode and validate token
+    try:
+        payload = jwt.decode(request.token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Verify this is a password reset token
+        if payload.get("purpose") != "password_reset":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid reset token"
+            )
+        
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid reset token"
+            )
+        
+    except JWTError as e:
+        logger.warning(f"Invalid password reset token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token. Please request a new password reset."
+        )
+    
+    # Find user
+    user = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset token"
+        )
+    
+    # Update password
+    user.password_hash = get_password_hash(request.new_password)
+    db.add(user)
+    db.commit()
+    
+    logger.info(f"Password reset successful for user {user.id}")
+    
+    return {
+        "success": True,
+        "message": "Password has been reset. You can now log in with your new password.",
     }
 

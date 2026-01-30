@@ -250,6 +250,16 @@ export const adminService = {
     return apiClient.post(`/v1/admin/users/${userId}/onboarding/reset`, params);
   },
 
+  async resetPassword(userId: string, params: { reason?: string | null }): Promise<{
+    success: boolean;
+    user_id: string;
+    email: string;
+    temporary_password: string;
+    message: string;
+  }> {
+    return apiClient.post(`/v1/admin/users/${userId}/password/reset`, params);
+  },
+
   async retryIngestion(userId: string, params: { pages?: number; reason?: string | null }): Promise<any> {
     return apiClient.post(`/v1/admin/users/${userId}/ingestion/retry`, params);
   },

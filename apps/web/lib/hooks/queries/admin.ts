@@ -146,6 +146,17 @@ export function useResetOnboarding() {
   });
 }
 
+export function useResetPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string; reason?: string }) =>
+      adminService.resetPassword(params.userId, { reason: params.reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
+    },
+  });
+}
+
 export function useRetryIngestion() {
   const qc = useQueryClient();
   return useMutation({

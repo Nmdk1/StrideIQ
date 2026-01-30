@@ -57,5 +57,19 @@ export const authService = {
       '/v1/athletes/me/training-pace-profile'
     );
   },
+
+  /**
+   * Request a password reset email
+   */
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+    return apiClient.post('/v1/auth/forgot-password', { email }, { skipAuth: true });
+  },
+
+  /**
+   * Reset password using a token
+   */
+  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    return apiClient.post('/v1/auth/reset-password', { token, new_password: newPassword }, { skipAuth: true });
+  },
 } as const;
 
