@@ -284,9 +284,9 @@ class RunAnalysisEngine:
         Returns (WorkoutType, confidence).
         
         Classification philosophy:
-        - Use athlete-relative thresholds, not arbitrary absolute numbers
-        - When uncertain, return UNKNOWN with low confidence rather than guessing
-        - A "long run" for a 20 mpw runner is different than for a 50 mpw runner
+        - HR data is the PRIMARY signal when available - it tells us effort level
+        - Duration determines if an easy effort is a "long run" vs regular "easy run"
+        - Only fall back to duration-based guessing when HR data is unavailable
         """
         if not activity.distance_m or not activity.duration_s:
             return WorkoutType.UNKNOWN, 0.0
@@ -305,58 +305,62 @@ class RunAnalysisEngine:
         if activity.workout_type and 'race' in activity.workout_type.lower():
             return WorkoutType.RACE, 0.95
         
-        # =====================================================================
-        # LONG RUN DETECTION (athlete-relative)
-        # =====================================================================
-        # Use athlete's 90th percentile duration as long run threshold
+        # Get duration thresholds
         long_run_threshold = thresholds['long_run_duration_min']
-        medium_long_threshold = thresholds['medium_long_duration_min']
-        
-        if duration_minutes >= long_run_threshold:
-            # This is in the top 10% of their runs by duration - likely a long run
-            return WorkoutType.LONG_RUN, 0.80
-        elif duration_minutes >= medium_long_threshold:
-            # In top 25% but not top 10% - medium-long or could be structured workout
-            # Lower confidence because this could be a tempo with warmup/cooldown
-            return WorkoutType.MODERATE, 0.55  # Below display threshold - will show as "Run"
         
         # =====================================================================
-        # HR-BASED CLASSIFICATION (when available)
+        # HR-BASED CLASSIFICATION (PRIMARY - when available)
         # =====================================================================
-        if avg_hr and max_hr and athlete and athlete.max_hr:
+        # HR tells us EFFORT. Duration tells us if it's "long" or not.
+        if avg_hr and athlete and athlete.max_hr:
             hr_percent = (avg_hr / athlete.max_hr) * 100
             
-            if hr_percent < 70:
-                return WorkoutType.EASY, 0.75
-            elif hr_percent < 80:
-                return WorkoutType.MODERATE, 0.65
+            # Easy effort (< 75% max HR)
+            if hr_percent < 75:
+                # Is it long enough to be a "long run"?
+                if duration_minutes >= long_run_threshold:
+                    return WorkoutType.LONG_RUN, 0.85
+                else:
+                    # Regular easy/aerobic run
+                    return WorkoutType.EASY, 0.80
+            
+            # Moderate effort (75-82% max HR) - aerobic but pushing
+            elif hr_percent < 82:
+                if duration_minutes >= long_run_threshold:
+                    # Long run at moderate effort - still a long run
+                    return WorkoutType.LONG_RUN, 0.80
+                else:
+                    return WorkoutType.MODERATE, 0.75
+            
+            # Tempo/threshold effort (82-88% max HR)
             elif hr_percent < 88:
-                return WorkoutType.TEMPO, 0.70
+                return WorkoutType.TEMPO, 0.80
+            
+            # Hard effort (88%+ max HR) - intervals or race
             else:
-                return WorkoutType.INTERVAL, 0.70
+                return WorkoutType.INTERVAL, 0.75
         
         # =====================================================================
-        # FALLBACK: No HR data, not clearly a long run
+        # FALLBACK: No HR data - use duration only (lower confidence)
         # =====================================================================
-        # When we can't determine the type, be honest about uncertainty
-        # Don't guess "Long Run" just because duration > 60 min
+        # Without HR, we're guessing based on duration patterns
+        
+        if duration_minutes >= long_run_threshold:
+            # Top 10% duration without HR data - probably a long run
+            return WorkoutType.LONG_RUN, 0.70
         
         typical_duration = thresholds['typical_duration_min']
         
         if duration_minutes < 30:
-            # Short run - likely recovery or easy shakeout
-            return WorkoutType.EASY, 0.60  # Borderline confidence
-        elif duration_minutes < typical_duration * 0.8:
-            # Below typical - probably easy/recovery
-            return WorkoutType.EASY, 0.55
-        elif duration_minutes <= typical_duration * 1.3:
-            # Near typical duration - this is just a regular training run
-            # Return MODERATE with low confidence - will display as generic "Run"
-            return WorkoutType.MODERATE, 0.50
+            # Short run - likely recovery or shakeout
+            return WorkoutType.EASY, 0.65
+        elif duration_minutes <= typical_duration * 1.2:
+            # Near typical duration - regular training run
+            return WorkoutType.EASY, 0.65
         else:
             # Above typical but below long run threshold
-            # Could be anything - structured workout, moderate run, etc.
-            return WorkoutType.MODERATE, 0.45
+            # Could be moderate effort or structured workout
+            return WorkoutType.MODERATE, 0.60
         
         return WorkoutType.UNKNOWN, 0.0
     
