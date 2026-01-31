@@ -1622,6 +1622,11 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
         # Gate 1: Use MessageRouter for classification (Phase 4 modular)
         msg_type, _skip_deterministic_shortcuts = self.router.classify(message)
         
+        # OVERRIDE: Always skip deterministic shortcuts - let LLM synthesize all responses
+        # for natural, contextualized, human-readable output. The shortcuts returned
+        # raw data dumps that were hard to read and lacked coaching nuance.
+        _skip_deterministic_shortcuts = True
+        
         # Gate 2: Return context + comparison language → force clarification
         # This prevents scope errors like "longest run" defaulting to all-time
         # when the athlete is clearly in a post-injury context.
