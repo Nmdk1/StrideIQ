@@ -1388,7 +1388,7 @@ export default function AdminPage() {
                   <div className="p-6"><LoadingSpinner /></div>
                 ) : invitesError ? (
                   <div className="p-6">
-                    <ErrorMessage message="Failed to load invites" />
+                    <ErrorMessage error={invitesError} title="Failed to load invites" />
                   </div>
                 ) : !invitesData?.invites?.length ? (
                   <div className="p-6 text-center text-slate-400">
