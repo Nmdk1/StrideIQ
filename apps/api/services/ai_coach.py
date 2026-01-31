@@ -1886,7 +1886,8 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
                 conversation_context = []
                 if thread_id:
                     try:
-                        history = self.get_thread_history_raw(thread_id, limit=6)
+                        history_data = self.get_thread_history(athlete_id, limit=6)
+                        history = history_data.get("messages", [])
                         conversation_context = [
                             {"role": m.get("role"), "content": m.get("content")}
                             for m in history if m.get("role") in ("user", "assistant")
@@ -1974,7 +1975,8 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
                 
                 # Phase 5: Progressive detail levels based on conversation depth
                 try:
-                    history_raw = self.get_thread_history_raw(thread_id, limit=20)
+                    history_data = self.get_thread_history(athlete_id, limit=20)
+                    history_raw = history_data.get("messages", [])
                     user_message_count = sum(1 for m in history_raw if m.get("role") == "user")
                     detail_level = self.conversation_manager.get_detail_level(user_message_count + 1)  # +1 for current message
                     detail_instruction = self.conversation_manager.build_detail_instruction(detail_level)
@@ -2402,14 +2404,14 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
         # -------------------------------------------------------------------------
         try:
             load = coach_tools.get_training_load(self.db, athlete_id)
-            if load and not load.get("error"):
+                if load and not load.get("error"):
                 atl = load.get("atl", 0)
                 ctl = load.get("ctl", 0)
                 tsb = load.get("tsb", 0)
                 form_state = "fresh" if tsb > 10 else ("fatigued" if tsb < -10 else "balanced")
                 instructions.append(
-                    f"CURRENT TRAINING STATE: ATL={atl:.1f}, CTL={ctl:.1f}, TSB={tsb:.1f} ({form_state}). "
-                    f"Use this for load/recovery recommendations."
+                    f"CURRENT TRAINING STATE: fatigue level={atl:.1f}, fitness level={ctl:.1f}, form={tsb:.1f} ({form_state}). "
+                    f"Use plain English (fatigue, fitness, form) - NEVER use acronyms like ATL/CTL/TSB in your response."
                 )
         except Exception as e:
             logger.debug(f"Could not fetch training load for run instructions: {e}")
@@ -2787,9 +2789,9 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
         if tsb is not None and atl is not None and ctl is not None:
             lines.append("")
             if zone:
-                lines.append(f"FYI your current load is ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f} ({zone}).")
+                lines.append(f"FYI your current load: fatigue {atl:.0f}, fitness {ctl:.0f}, form {tsb:.0f} ({zone}).")
             else:
-                lines.append(f"FYI your current load is ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f}.")
+                lines.append(f"FYI your current load: fatigue {atl:.0f}, fitness {ctl:.0f}, form {tsb:.0f}.")
 
         # Receipts: cite planned workout + a couple of recent runs
         lines.append("")
@@ -2809,7 +2811,7 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
                 # Keep receipts human-readable; do not dump UUIDs unless explicitly requested.
                 lines.append(f"- {e.get('date')}: {e.get('value')}")
         if tsb is not None and atl is not None and ctl is not None:
-            lines.append(f"- {today}: Training load — ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f}")
+            lines.append(f"- {today}: Training load — fatigue {atl:.0f}, fitness {ctl:.0f}, form {tsb:.0f}")
 
         return "\n".join(lines)
 
@@ -2848,7 +2850,7 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
             atl = ((load.get("data") or {}).get("atl"))
             ctl = ((load.get("data") or {}).get("ctl"))
             if tsb is not None and atl is not None and ctl is not None:
-                lines.append(f"- {today_iso}: Training load — ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f}")
+                lines.append(f"- {today_iso}: Training load — fatigue {atl:.0f}, fitness {ctl:.0f}, form {tsb:.0f}")
             return "\n".join(lines)
 
         # Choose the most recent activity (by start_time)
@@ -2938,9 +2940,9 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
         zone_label = (((load.get("data") or {}).get("tsb_zone") or {}).get("label"))
         if tsb is not None and atl is not None and ctl is not None:
             if zone_label:
-                lines.append(f"- {today_iso}: Training load — ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f} ({zone_label})")
+                lines.append(f"- {today_iso}: Training load — fatigue {atl:.0f}, fitness {ctl:.0f}, form {tsb:.0f} ({zone_label})")
             else:
-                lines.append(f"- {today_iso}: Training load — ATL {atl:.0f}, CTL {ctl:.0f}, TSB {tsb:.0f}")
+                lines.append(f"- {today_iso}: Training load — fatigue {atl:.0f}, fitness {ctl:.0f}, form {tsb:.0f}")
 
         return "\n".join(lines)
 
@@ -3455,9 +3457,9 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
                 load_data = coach_tools.get_training_load(self.db, athlete_id)
                 if load_data.get("ok"):
                     data = load_data.get("data", {})
-                    state_lines.append(f"CTL (fitness): {data.get('ctl', 'N/A')}")
-                    state_lines.append(f"ATL (fatigue): {data.get('atl', 'N/A')}")
-                    state_lines.append(f"TSB (form): {data.get('tsb', 'N/A')}")
+                    state_lines.append(f"Fitness level: {data.get('ctl', 'N/A')}")
+                    state_lines.append(f"Fatigue level: {data.get('atl', 'N/A')}")
+                    state_lines.append(f"Current form: {data.get('tsb', 'N/A')}")
                     state_lines.append(f"Tau2 (recovery): {data.get('tau2_hours', 'N/A')}h")
             except Exception:
                 pass
