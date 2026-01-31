@@ -19,6 +19,7 @@ class StripeConfig:
     secret_key: str
     webhook_secret: Optional[str]
     pro_monthly_price_id: str
+    pro_annual_price_id: Optional[str]
     checkout_success_url: str
     checkout_cancel_url: str
     portal_return_url: str
@@ -42,6 +43,7 @@ def _get_stripe_config() -> StripeConfig:
     webhook_secret = getattr(settings, "STRIPE_WEBHOOK_SECRET", None) or os.getenv("STRIPE_WEBHOOK_TEST_SECRET") or os.getenv("STRIPE_WEBHOOK_LIVE_SECRET")
 
     price_id = getattr(settings, "STRIPE_PRICE_PRO_MONTHLY_ID", None)
+    annual_price_id = getattr(settings, "STRIPE_PRICE_PRO_ANNUAL_ID", None)
 
     # Default redirect/return URLs to WEB_APP_BASE_URL so local dev can proceed
     # without forcing extra env config.
@@ -58,6 +60,7 @@ def _get_stripe_config() -> StripeConfig:
         secret_key=str(secret_key),
         webhook_secret=str(webhook_secret) if webhook_secret else None,
         pro_monthly_price_id=str(price_id),
+        pro_annual_price_id=str(annual_price_id) if annual_price_id else None,
         checkout_success_url=str(success_url),
         checkout_cancel_url=str(cancel_url),
         portal_return_url=str(portal_return_url),
@@ -82,16 +85,29 @@ class StripeService:
         stripe.api_key = cfg.secret_key
         self.cfg = cfg
 
-    def create_checkout_session(self, *, athlete: Athlete) -> str:
+    def create_checkout_session(self, *, athlete: Athlete, billing_period: str = "annual") -> str:
+        """
+        Create a Stripe Checkout session.
+        
+        Args:
+            athlete: The athlete to create checkout for
+            billing_period: "annual" ($149/yr) or "monthly" ($14.99/mo). Default is annual.
+        """
+        # Select price based on billing period (annual is primary offer)
+        if billing_period == "annual" and self.cfg.pro_annual_price_id:
+            price_id = self.cfg.pro_annual_price_id
+        else:
+            price_id = self.cfg.pro_monthly_price_id
+        
         # Prefer explicit customer if we already have it.
         customer_id = getattr(athlete, "stripe_customer_id", None)
         params: dict[str, Any] = {
             "mode": "subscription",
             "success_url": self.cfg.checkout_success_url,
             "cancel_url": self.cfg.checkout_cancel_url,
-            "line_items": [{"price": self.cfg.pro_monthly_price_id, "quantity": 1}],
+            "line_items": [{"price": price_id, "quantity": 1}],
             "client_reference_id": str(athlete.id),
-            "metadata": {"athlete_id": str(athlete.id)},
+            "metadata": {"athlete_id": str(athlete.id), "billing_period": billing_period},
         }
         if customer_id:
             params["customer"] = customer_id

@@ -61,19 +61,32 @@ def start_trial(
     }
 
 
+class CheckoutRequest(BaseModel):
+    billing_period: str = Field(default="annual", description="'annual' ($149/yr) or 'monthly' ($14.99/mo)")
+
+
 @router.post("/checkout")
-def create_checkout(current_user: Athlete = Depends(get_current_active_user)):
+def create_checkout(
+    request: CheckoutRequest = None,
+    current_user: Athlete = Depends(get_current_active_user)
+):
     """
-    Create a Stripe Checkout Session (subscription, monthly Pro).
-    Returns a hosted URL.
+    Create a Stripe Checkout Session.
+    
+    Default is annual ($149/yr) - the primary offer.
+    Pass billing_period="monthly" for $14.99/mo.
     """
+    billing_period = (request.billing_period if request else "annual") or "annual"
+    if billing_period not in ("annual", "monthly"):
+        raise HTTPException(status_code=400, detail="billing_period must be 'annual' or 'monthly'")
+    
     try:
-        url = StripeService().create_checkout_session(athlete=current_user)
+        url = StripeService().create_checkout_session(athlete=current_user, billing_period=billing_period)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to create checkout session")
-    return {"url": url}
+    return {"url": url, "billing_period": billing_period}
 
 
 @router.post("/portal")
