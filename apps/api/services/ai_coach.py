@@ -716,7 +716,19 @@ If you need more data to answer well, call the tools. That's why they're there."
                         })
                 
                 # Continue conversation with tool results
-                messages.append({"role": "assistant", "content": response.content})
+                # Convert response.content to list of dicts for serialization
+                assistant_content = []
+                for block in response.content:
+                    if block.type == "text":
+                        assistant_content.append({"type": "text", "text": block.text})
+                    elif block.type == "tool_use":
+                        assistant_content.append({
+                            "type": "tool_use",
+                            "id": block.id,
+                            "name": block.name,
+                            "input": block.input,
+                        })
+                messages.append({"role": "assistant", "content": assistant_content})
                 messages.append({"role": "user", "content": tool_results})
                 
                 response = self.anthropic_client.messages.create(
