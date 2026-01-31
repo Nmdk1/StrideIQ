@@ -4,11 +4,15 @@ Personal Best (PB) Tracking Service
 Tracks fastest times for athletes across standard distances with GPS tolerance handling.
 Implements distance category matching with tolerances for imperfect race measurements.
 """
+import logging
 from datetime import datetime
 from typing import Optional, Dict, List
 from sqlalchemy.orm import Session
 from models import Activity, PersonalBest, Athlete
 from services.performance_engine import calculate_age_at_date
+from services.vdot_calculator import calculate_vdot_from_race_time
+
+logger = logging.getLogger(__name__)
 
 
 # Distance categories with tolerance ranges (in meters)
@@ -55,6 +59,42 @@ def get_distance_category(distance_meters: float) -> Optional[str]:
             return category
     
     return None
+
+
+def _update_vdot_from_pb(athlete: Athlete, pb: PersonalBest, db: Session) -> None:
+    """
+    Update athlete's VDOT from a new personal best if it's better than current.
+    
+    Uses standard race distances (5K, 10K, half marathon, marathon) for VDOT calculation.
+    Shorter distances (400m, 800m, mile) are less reliable for VDOT estimation.
+    """
+    # Only use standard race distances for VDOT (short distances less reliable)
+    VDOT_ELIGIBLE_DISTANCES = {'5k', '10k', '15k', 'half_marathon', 'marathon', '25k', '30k'}
+    
+    if pb.distance_category not in VDOT_ELIGIBLE_DISTANCES:
+        return
+    
+    if not pb.distance_meters or not pb.time_seconds:
+        return
+    
+    try:
+        new_vdot = calculate_vdot_from_race_time(
+            distance_meters=pb.distance_meters,
+            time_seconds=pb.time_seconds
+        )
+        
+        if not new_vdot or new_vdot < 20:  # Sanity check
+            return
+        
+        new_vdot = round(new_vdot, 1)
+        
+        # Update if no VDOT or new one is higher (better)
+        if not athlete.vdot or new_vdot > athlete.vdot:
+            logger.info(f"Updating VDOT for {athlete.id}: {athlete.vdot} -> {new_vdot} from {pb.distance_category} PB")
+            athlete.vdot = new_vdot
+            db.flush()
+    except Exception as e:
+        logger.warning(f"Failed to calculate VDOT from PB for {athlete.id}: {e}")
 
 
 def update_personal_best(
@@ -109,6 +149,10 @@ def update_personal_best(
                 existing_pb.pace_per_mile = (time_seconds / 60.0) / miles
             
             db.flush()  # Use flush instead of commit to avoid nested transaction issues
+            
+            # Update athlete's VDOT from new PB
+            _update_vdot_from_pb(athlete, existing_pb, db)
+            
             return existing_pb
     else:
         # No existing PB, this is automatically a PB
@@ -131,6 +175,10 @@ def update_personal_best(
         
         db.add(pb)
         db.flush()  # Use flush instead of commit to avoid nested transaction issues
+        
+        # Update athlete's VDOT from new PB
+        _update_vdot_from_pb(athlete, pb, db)
+        
         return pb
     
     return None
@@ -283,5 +331,83 @@ def recalculate_all_pbs(athlete: Athlete, db: Session, preserve_strava_pbs: bool
         'created': created,
         'updated': updated,
         'total': total_pbs
+    }
+
+
+def backfill_vdot_from_pbs(db: Session, athlete_id: Optional[str] = None) -> Dict[str, int]:
+    """
+    Backfill VDOT for athletes from their personal bests.
+    
+    Useful for fixing athletes who have PBs but missing VDOT.
+    
+    Args:
+        db: Database session
+        athlete_id: Optional specific athlete ID (if None, backfills all athletes)
+        
+    Returns:
+        Dictionary with counts: {'updated': int, 'skipped': int, 'errors': int}
+    """
+    from uuid import UUID
+    
+    VDOT_ELIGIBLE_DISTANCES = {'5k', '10k', '15k', 'half_marathon', 'marathon', '25k', '30k'}
+    
+    updated = 0
+    skipped = 0
+    errors = 0
+    
+    # Get athletes to process
+    if athlete_id:
+        athlete_uuid = UUID(athlete_id) if isinstance(athlete_id, str) else athlete_id
+        athletes = db.query(Athlete).filter(Athlete.id == athlete_uuid).all()
+    else:
+        # All athletes without VDOT
+        athletes = db.query(Athlete).filter(Athlete.vdot.is_(None)).all()
+    
+    for athlete in athletes:
+        try:
+            # Get best PB from eligible distances
+            pbs = db.query(PersonalBest).filter(
+                PersonalBest.athlete_id == athlete.id,
+                PersonalBest.distance_category.in_(VDOT_ELIGIBLE_DISTANCES)
+            ).all()
+            
+            if not pbs:
+                skipped += 1
+                continue
+            
+            # Calculate VDOT from each PB and take the best
+            best_vdot = None
+            best_pb = None
+            
+            for pb in pbs:
+                if not pb.distance_meters or not pb.time_seconds:
+                    continue
+                    
+                vdot = calculate_vdot_from_race_time(
+                    distance_meters=pb.distance_meters,
+                    time_seconds=pb.time_seconds
+                )
+                
+                if vdot and vdot > 20 and (best_vdot is None or vdot > best_vdot):
+                    best_vdot = vdot
+                    best_pb = pb
+            
+            if best_vdot:
+                athlete.vdot = round(best_vdot, 1)
+                logger.info(f"Backfilled VDOT for {athlete.id}: {athlete.vdot} from {best_pb.distance_category}")
+                updated += 1
+            else:
+                skipped += 1
+                
+        except Exception as e:
+            logger.error(f"Error backfilling VDOT for {athlete.id}: {e}")
+            errors += 1
+    
+    db.commit()
+    
+    return {
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors
     }
 
