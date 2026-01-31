@@ -654,7 +654,11 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 return "N/A"
             val = paces[pace_key]
             if isinstance(val, dict):
-                return val.get("display_mi" if units == "imperial" else "display_km", "N/A")
+                # Keys are "mi" and "km", not "display_mi"
+                pace = val.get("mi" if units == "imperial" else "km")
+                if pace:
+                    return f"{pace}/mi" if units == "imperial" else f"{pace}/km"
+                return "N/A"
             elif isinstance(val, str):
                 return val
             return "N/A"
