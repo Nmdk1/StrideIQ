@@ -574,6 +574,7 @@ def list_invites(
                 "email": r.email,
                 "is_active": bool(r.is_active),
                 "note": r.note,
+                "grant_tier": r.grant_tier,
                 "invited_at": r.invited_at.isoformat() if r.invited_at else None,
                 "revoked_at": r.revoked_at.isoformat() if r.revoked_at else None,
                 "used_at": r.used_at.isoformat() if r.used_at else None,

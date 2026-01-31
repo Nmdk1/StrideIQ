@@ -205,6 +205,47 @@ export interface FeatureFlag {
 
 export type ThreeDSelectionMode = 'off' | 'shadow' | 'on';
 
+// ============ Invite Types ============
+
+export interface Invite {
+  id: string;
+  email: string;
+  is_active: boolean;
+  note: string | null;
+  grant_tier: 'free' | 'pro' | null;
+  invited_at: string | null;
+  revoked_at: string | null;
+  used_at: string | null;
+  invited_by_athlete_id: string | null;
+  revoked_by_athlete_id: string | null;
+  used_by_athlete_id: string | null;
+}
+
+export interface InviteListResponse {
+  invites: Invite[];
+}
+
+export interface InviteCreateResponse {
+  success: boolean;
+  invite: {
+    id: string;
+    email: string;
+    is_active: boolean;
+    used_at: string | null;
+    grant_tier: 'free' | 'pro' | null;
+  };
+}
+
+export interface InviteRevokeResponse {
+  success: boolean;
+  invite: {
+    id: string;
+    email: string;
+    is_active: boolean;
+    revoked_at: string | null;
+  };
+}
+
 export const adminService = {
   /**
    * List users with filtering
@@ -372,6 +413,33 @@ export const adminService = {
     allowlist_athlete_ids: string[];
   }> {
     return apiClient.post(`/v1/admin/features/3d-quality-selection`, params);
+  },
+
+  // ============ Invite Management ============
+
+  /**
+   * List invite allowlist entries
+   */
+  async listInvites(params?: { active_only?: boolean; limit?: number }): Promise<InviteListResponse> {
+    const qs = new URLSearchParams();
+    if (params?.active_only != null) qs.set('active_only', String(params.active_only));
+    if (params?.limit != null) qs.set('limit', String(params.limit));
+    const tail = qs.toString() ? `?${qs.toString()}` : '';
+    return apiClient.get<InviteListResponse>(`/v1/admin/invites${tail}`);
+  },
+
+  /**
+   * Create a new invite
+   */
+  async createInvite(params: { email: string; note?: string | null; grant_tier?: 'free' | 'pro' | null }): Promise<InviteCreateResponse> {
+    return apiClient.post<InviteCreateResponse>('/v1/admin/invites', params);
+  },
+
+  /**
+   * Revoke an invite
+   */
+  async revokeInvite(params: { email: string; reason?: string | null }): Promise<InviteRevokeResponse> {
+    return apiClient.post<InviteRevokeResponse>('/v1/admin/invites/revoke', params);
   },
 } as const;
 

@@ -3,7 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { adminService, type AdminUserDetail, type FeatureFlag, type ThreeDSelectionMode } from '../../api/services/admin';
+import { adminService, type AdminUserDetail, type FeatureFlag, type ThreeDSelectionMode, type Invite, type InviteListResponse, type InviteCreateResponse, type InviteRevokeResponse } from '../../api/services/admin';
 import type { UserListResponse, SystemHealth, SiteMetrics, ImpersonationResponse, OpsQueueSnapshot, OpsIngestionStuckResponse, OpsIngestionErrorsResponse, OpsIngestionDeferredResponse, OpsIngestionPauseResponse } from '../../api/services/admin';
 
 export const adminKeys = {
@@ -20,6 +20,8 @@ export const adminKeys = {
   opsErrors: (params?: any) => [...adminKeys.ops(), 'errors', params] as const,
   opsDeferred: (params?: any) => [...adminKeys.ops(), 'deferred', params] as const,
   opsPause: () => [...adminKeys.ops(), 'pause'] as const,
+  invites: () => [...adminKeys.all, 'invites'] as const,
+  inviteList: (params?: any) => [...adminKeys.invites(), 'list', params] as const,
 } as const;
 
 /**
@@ -263,6 +265,47 @@ export function useSet3dQualitySelectionMode() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: adminKeys.flags() });
       qc.invalidateQueries({ queryKey: adminKeys.flags('plan.') });
+    },
+  });
+}
+
+// ============ Invite Hooks ============
+
+/**
+ * List invite allowlist entries
+ */
+export function useAdminInvites(params?: { active_only?: boolean; limit?: number }) {
+  return useQuery<InviteListResponse>({
+    queryKey: adminKeys.inviteList(params),
+    queryFn: () => adminService.listInvites(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+/**
+ * Create an invite
+ */
+export function useCreateInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { email: string; note?: string | null; grant_tier?: 'free' | 'pro' | null }) =>
+      adminService.createInvite(params),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.invites() });
+    },
+  });
+}
+
+/**
+ * Revoke an invite
+ */
+export function useRevokeInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { email: string; reason?: string | null }) =>
+      adminService.revokeInvite(params),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.invites() });
     },
   });
 }

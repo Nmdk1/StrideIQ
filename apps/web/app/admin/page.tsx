@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion, useAdminInvites, useCreateInvite, useRevokeInvite } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -27,7 +27,7 @@ export default function AdminPage() {
   const { user, isLoading, isAuthenticated } = useAuth();
   const router = useRouter();
   const [search, setSearch] = useState('');
-  const [selectedTab, setSelectedTab] = useState<'users' | 'ops' | 'health' | 'metrics' | 'flags' | 'query' | 'testing'>('users');
+  const [selectedTab, setSelectedTab] = useState<'users' | 'ops' | 'health' | 'metrics' | 'flags' | 'query' | 'testing' | 'invites'>('users');
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [adminReason, setAdminReason] = useState<string>('');
   const [desiredTier, setDesiredTier] = useState<string>('pro');
@@ -53,6 +53,15 @@ export default function AdminPage() {
   const { data: opsPause, isLoading: opsPauseLoading } = useOpsIngestionPause();
   const setOpsPause = useSetOpsIngestionPause();
   const { data: opsDeferred, isLoading: opsDeferredLoading } = useOpsDeferredIngestion({ limit: 200 });
+
+  // Invites
+  const { data: invitesData, isLoading: invitesLoading } = useAdminInvites({ limit: 200 });
+  const createInvite = useCreateInvite();
+  const revokeInvite = useRevokeInvite();
+  const [newInviteEmail, setNewInviteEmail] = useState('');
+  const [newInviteNote, setNewInviteNote] = useState('');
+  const [newInviteGrantTier, setNewInviteGrantTier] = useState<'free' | 'pro' | ''>('');
+  const [inviteFilter, setInviteFilter] = useState<'all' | 'pending' | 'used'>('all');
 
   // Feature flags
   const { data: flagsData, isLoading: flagsLoading } = useAdminFeatureFlags('plan.');
@@ -224,6 +233,16 @@ export default function AdminPage() {
               }`}
             >
               Testing
+            </button>
+            <button
+              onClick={() => setSelectedTab('invites')}
+              className={`px-4 py-2 font-medium ${
+                selectedTab === 'invites'
+                  ? 'border-b-2 border-green-600 text-green-400'
+                  : 'text-slate-400 hover:text-slate-300'
+              }`}
+            >
+              Invites
             </button>
           </div>
 
@@ -1246,6 +1265,167 @@ export default function AdminPage() {
                 <p>• POST /v1/admin/correlations/test?athlete_id={'{id}'}&days=90</p>
                 <p>• POST /v1/admin/query/execute?template=efficiency_by_workout_type</p>
                 <p>• POST /v1/admin/query/custom?entity=activity&group_by=workout_type</p>
+              </div>
+            </div>
+          )}
+
+          {/* Invites Tab */}
+          {selectedTab === 'invites' && (
+            <div className="space-y-6">
+              {/* Create Invite Form */}
+              <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
+                <h3 className="text-lg font-semibold mb-4">Create Invite</h3>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <input
+                    type="email"
+                    value={newInviteEmail}
+                    onChange={(e) => setNewInviteEmail(e.target.value)}
+                    placeholder="Email address"
+                    className="px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  />
+                  <input
+                    type="text"
+                    value={newInviteNote}
+                    onChange={(e) => setNewInviteNote(e.target.value)}
+                    placeholder="Note (e.g., Beta tester - Brian)"
+                    className="px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  />
+                  <select
+                    value={newInviteGrantTier}
+                    onChange={(e) => setNewInviteGrantTier(e.target.value as 'free' | 'pro' | '')}
+                    className="px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  >
+                    <option value="">Standard (free tier)</option>
+                    <option value="pro">Grant Pro Access</option>
+                  </select>
+                  <button
+                    onClick={async () => {
+                      if (!newInviteEmail) return;
+                      await createInvite.mutateAsync({
+                        email: newInviteEmail,
+                        note: newInviteNote || null,
+                        grant_tier: newInviteGrantTier || null,
+                      });
+                      setNewInviteEmail('');
+                      setNewInviteNote('');
+                      setNewInviteGrantTier('');
+                    }}
+                    disabled={!newInviteEmail || createInvite.isPending}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded text-white font-medium"
+                  >
+                    {createInvite.isPending ? 'Creating...' : 'Create Invite'}
+                  </button>
+                </div>
+                {createInvite.isSuccess && (
+                  <p className="mt-2 text-green-400 text-sm">Invite created successfully!</p>
+                )}
+                {createInvite.isError && (
+                  <p className="mt-2 text-red-400 text-sm">Failed to create invite</p>
+                )}
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setInviteFilter('all')}
+                  className={`px-3 py-1 rounded text-sm font-medium ${
+                    inviteFilter === 'all' ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setInviteFilter('pending')}
+                  className={`px-3 py-1 rounded text-sm font-medium ${
+                    inviteFilter === 'pending' ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  Pending
+                </button>
+                <button
+                  onClick={() => setInviteFilter('used')}
+                  className={`px-3 py-1 rounded text-sm font-medium ${
+                    inviteFilter === 'used' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  Used
+                </button>
+              </div>
+
+              {/* Invites List */}
+              <div className="bg-slate-800 rounded-lg border border-slate-700/50 overflow-hidden">
+                {invitesLoading ? (
+                  <div className="p-6"><LoadingSpinner /></div>
+                ) : (
+                  <table className="w-full">
+                    <thead className="bg-slate-700/50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Email</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Note</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Grant Tier</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Status</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Invited</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                      {invitesData?.invites
+                        .filter((inv) => {
+                          if (inviteFilter === 'pending') return inv.is_active && !inv.used_at;
+                          if (inviteFilter === 'used') return !!inv.used_at;
+                          return true;
+                        })
+                        .map((inv) => (
+                          <tr key={inv.id} className="hover:bg-slate-700/30">
+                            <td className="px-4 py-3 text-sm text-slate-200">{inv.email}</td>
+                            <td className="px-4 py-3 text-sm text-slate-400">{inv.note || '-'}</td>
+                            <td className="px-4 py-3">
+                              {inv.grant_tier === 'pro' ? (
+                                <span className="px-2 py-1 text-xs font-medium bg-purple-600/20 text-purple-400 rounded">
+                                  PRO
+                                </span>
+                              ) : (
+                                <span className="text-sm text-slate-500">-</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              {inv.used_at ? (
+                                <span className="px-2 py-1 text-xs font-medium bg-blue-600/20 text-blue-400 rounded">
+                                  Used
+                                </span>
+                              ) : inv.revoked_at ? (
+                                <span className="px-2 py-1 text-xs font-medium bg-red-600/20 text-red-400 rounded">
+                                  Revoked
+                                </span>
+                              ) : inv.is_active ? (
+                                <span className="px-2 py-1 text-xs font-medium bg-green-600/20 text-green-400 rounded">
+                                  Pending
+                                </span>
+                              ) : (
+                                <span className="px-2 py-1 text-xs font-medium bg-slate-600/20 text-slate-400 rounded">
+                                  Inactive
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-400">
+                              {inv.invited_at ? new Date(inv.invited_at).toLocaleDateString() : '-'}
+                            </td>
+                            <td className="px-4 py-3">
+                              {inv.is_active && !inv.used_at && (
+                                <button
+                                  onClick={() => revokeInvite.mutate({ email: inv.email })}
+                                  disabled={revokeInvite.isPending}
+                                  className="px-2 py-1 text-xs font-medium bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded text-white"
+                                >
+                                  Revoke
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           )}
