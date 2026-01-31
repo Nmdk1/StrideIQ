@@ -32,6 +32,7 @@ export interface AdminUserDetail extends AdminUser {
     stripe_price_id?: string | null;
   } | null;
   is_blocked?: boolean;
+  is_coach_vip?: boolean;
   integrations?: {
     preferred_units?: string | null;
     strava_athlete_id?: number | null;
