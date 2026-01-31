@@ -226,3 +226,96 @@ class TestEndToEndClassification:
         
         assert complexity == "high"
         assert model == "gpt-5.2"
+
+
+class TestEdgeCases:
+    """Edge case and boundary tests for robustness."""
+    
+    def test_case_insensitive_low_patterns(self, coach):
+        """Patterns should match regardless of case."""
+        assert coach.classify_query_complexity("WHAT WAS MY LAST RUN?") == "low"
+        assert coach.classify_query_complexity("What Was My Last Run?") == "low"
+        assert coach.classify_query_complexity("what was my last run?") == "low"
+    
+    def test_case_insensitive_high_patterns(self, coach):
+        """High complexity patterns should match regardless of case."""
+        assert coach.classify_query_complexity("WHY AM I GETTING SLOWER DESPITE RUNNING MORE?") == "high"
+        assert coach.classify_query_complexity("Why Am I Getting Slower Despite Running More?") == "high"
+    
+    def test_boundary_multiple_ands(self, coach):
+        """Exactly 2 'and' should trigger high if causal."""
+        # 2 "and"s = multiple factors
+        assert coach.classify_query_complexity("Why am I tired and slow and sore?") == "high"
+        # Only 1 "and" = not enough factors
+        assert coach.classify_query_complexity("Why am I tired and slow?") == "medium"
+    
+    def test_boundary_multiple_commas(self, coach):
+        """2+ commas with causal should trigger high."""
+        # 2 commas = multiple factors
+        assert coach.classify_query_complexity("Why am I tired, slow, sore?") == "high"
+        # Only 1 comma = not enough
+        assert coach.classify_query_complexity("Why am I tired, slow?") == "medium"
+    
+    def test_special_characters_dont_break(self, coach):
+        """Unicode and special characters should be handled gracefully."""
+        assert coach.classify_query_complexity("What's my TSB? 🏃") == "low"
+        assert coach.classify_query_complexity("What's my—tempo—pace?") == "medium"
+        assert coach.classify_query_complexity("") == "medium"
+    
+    def test_very_long_query(self, coach):
+        """Long queries should not cause performance issues."""
+        long_query = "What was my run " * 100
+        result = coach.classify_query_complexity(long_query)
+        assert result == "low"  # Contains "what was my"
+    
+    def test_whitespace_in_vip_ids(self, mock_db):
+        """Whitespace in VIP IDs should be trimmed."""
+        vip_id = str(uuid4())
+        
+        with patch.dict('os.environ', {
+            'OPENAI_API_KEY': '',
+            'COACH_VIP_ATHLETE_IDS': f'  {vip_id}  ,  ',  # Whitespace and trailing comma
+            'OWNER_ATHLETE_ID': '',
+        }):
+            coach = AICoach(mock_db)
+            assert vip_id in coach.VIP_ATHLETE_IDS
+            assert '' not in coach.VIP_ATHLETE_IDS  # Empty strings filtered
+    
+    def test_vip_id_as_string_vs_uuid(self, coach):
+        """VIP check should work with both UUID objects and strings."""
+        vip_id = uuid4()
+        coach.VIP_ATHLETE_IDS = {str(vip_id)}
+        
+        # Pass UUID object - should still match
+        model = coach.get_model_for_query("high", athlete_id=vip_id)
+        assert model == "gpt-5.2"
+    
+    def test_non_vip_does_not_get_5_2(self, coach):
+        """Non-VIP should never get gpt-5.2 even for high complexity."""
+        vip_id = uuid4()
+        non_vip_id = uuid4()
+        coach.VIP_ATHLETE_IDS = {str(vip_id)}
+        
+        model = coach.get_model_for_query("high", athlete_id=non_vip_id)
+        assert model == "gpt-5.1"
+    
+    def test_none_athlete_id_for_high_complexity(self, coach):
+        """None athlete_id should default to non-VIP (gpt-5.1)."""
+        model = coach.get_model_for_query("high", athlete_id=None)
+        assert model == "gpt-5.1"
+    
+    def test_low_complexity_ignores_vip_status(self, coach):
+        """Low complexity should always use nano, even for VIPs."""
+        vip_id = uuid4()
+        coach.VIP_ATHLETE_IDS = {str(vip_id)}
+        
+        model = coach.get_model_for_query("low", athlete_id=vip_id)
+        assert model == "gpt-5-nano"
+    
+    def test_medium_complexity_ignores_vip_status(self, coach):
+        """Medium complexity should always use mini, even for VIPs."""
+        vip_id = uuid4()
+        coach.VIP_ATHLETE_IDS = {str(vip_id)}
+        
+        model = coach.get_model_for_query("medium", athlete_id=vip_id)
+        assert model == "gpt-5-mini"
