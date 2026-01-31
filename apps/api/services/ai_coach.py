@@ -3490,20 +3490,48 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
             except Exception:
                 pass
             
-            # Get last 3 runs
+            # Get last 5 runs (more context for weekly mileage questions)
             try:
                 recent = coach_tools.get_recent_runs(self.db, athlete_id, days=14)
                 if recent.get("ok"):
-                    runs = recent.get("data", {}).get("runs", [])[:3]
+                    runs = recent.get("data", {}).get("runs", [])[:5]
                     if runs:
                         state_lines.append("Recent runs:")
+                        total_miles = 0
                         for run in runs:
+                            # Use actual field names from get_recent_runs
+                            start_time = run.get('start_time', '')
+                            run_date = start_time[:10] if start_time else 'unknown'
+                            distance_mi = run.get('distance_mi', 0) or 0
+                            total_miles += distance_mi
+                            pace = run.get('pace_per_mile', 'N/A')
+                            name = run.get('name', 'Run')
+                            avg_hr = run.get('avg_hr')
+                            hr_str = f", HR {avg_hr}" if avg_hr else ""
                             state_lines.append(
-                                f"  - {run.get('date')}: {run.get('distance_display')} @ "
-                                f"{run.get('pace_display')} (RPE {run.get('rpe', 'N/A')})"
+                                f"  - {run_date}: {name} - {distance_mi:.1f} mi @ {pace}{hr_str}"
                             )
-            except Exception:
-                pass
+                        state_lines.append(f"Total last {len(runs)} runs: {total_miles:.1f} miles")
+                        
+                        # Calculate weekly mileage from all runs in response
+                        all_runs = recent.get("data", {}).get("runs", [])
+                        from datetime import datetime, timedelta
+                        today = date.today()
+                        week_start = today - timedelta(days=today.weekday())  # Monday
+                        last_week_start = week_start - timedelta(days=7)
+                        
+                        this_week_miles = sum(
+                            r.get('distance_mi', 0) or 0 for r in all_runs
+                            if r.get('start_time', '')[:10] >= week_start.isoformat()
+                        )
+                        last_week_miles = sum(
+                            r.get('distance_mi', 0) or 0 for r in all_runs
+                            if last_week_start.isoformat() <= r.get('start_time', '')[:10] < week_start.isoformat()
+                        )
+                        state_lines.append(f"This week so far: {this_week_miles:.1f} miles")
+                        state_lines.append(f"Last week total: {last_week_miles:.1f} miles")
+            except Exception as e:
+                logger.debug(f"Failed to get recent runs for Opus context: {e}")
             
             # Get latest checkin
             try:
