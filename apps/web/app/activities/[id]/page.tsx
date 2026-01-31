@@ -314,8 +314,8 @@ export default function ActivityDetailPage() {
           />
           <MetricCard
             label="Temperature"
-            value={activity.average_temp_c?.toFixed(0) || '--'}
-            unit="°C"
+            value={activity.temperature_f?.toFixed(0) || '--'}
+            unit="°F"
             secondary
           />
         </div>

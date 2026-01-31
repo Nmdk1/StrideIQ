@@ -575,7 +575,12 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 # Backfill avg_hr from details if missing
                 if existing.avg_hr is None and details.get("average_heartrate"):
                     existing.avg_hr = _coerce_int(details.get("average_heartrate"))
-                    db.flush()
+                
+                # Backfill temperature from details if missing
+                if existing.temperature_f is None and details.get("average_temp") is not None:
+                    existing.temperature_f = round(details.get("average_temp") * 9 / 5 + 32, 1)
+                
+                db.flush()
                 
                 # Recalculate performance metrics
                 try:
@@ -593,6 +598,11 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             
             # Create new activity
             print(f"DEBUG: Creating new activity {strava_activity_id} - {a.get('name')}")
+            # Convert Celsius to Fahrenheit if temperature available
+            temp_f = None
+            if a.get("average_temp") is not None:
+                temp_f = round(a.get("average_temp") * 9 / 5 + 32, 1)
+            
             activity = Activity(
                 athlete_id=athlete.id,
                 name=a.get("name"),  # Store the activity name from Strava
@@ -605,6 +615,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 max_hr=a.get("max_heartrate"),
                 total_elevation_gain=a.get("total_elevation_gain"),
                 average_speed=a.get("average_speed"),
+                temperature_f=temp_f,
                 provider=provider,
                 external_activity_id=external_activity_id,
                 is_race_candidate=bool(a.get("workout_type") == 3),
@@ -706,7 +717,12 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 # Backfill avg_hr from details if missing (list endpoint often omits it)
                 if activity.avg_hr is None and details.get("average_heartrate"):
                     activity.avg_hr = _coerce_int(details.get("average_heartrate"))
-                    db.flush()
+                
+                # Backfill temperature from details if missing
+                if activity.temperature_f is None and details.get("average_temp") is not None:
+                    activity.temperature_f = round(details.get("average_temp") * 9 / 5 + 32, 1)
+                
+                db.flush()
                     
             except Exception as e:
                 print(f"Warning: Could not fetch laps for activity {strava_activity_id}: {e}")
