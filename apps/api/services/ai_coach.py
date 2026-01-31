@@ -207,9 +207,9 @@ When providing insights:
 - Always cite specific evidence from tool results (ISO dates + human-readable run labels + key values).
 - Format citations clearly in plain English, e.g.:
   - "On 2026-01-15, you ran 8.5 km @ 5:30/km (avg HR 152 bpm)."
-  - "On 2026-01-12, EF was 123.4 (pace 8.10 min/mi, avg HR 150)."
+  - "On 2026-01-12, your efficiency was 123.4 (pace 8.10 min/mi, avg HR 150)."
 - Avoid dumping full UUIDs in the main answer. Only include full activity IDs if the athlete explicitly asks.
-- For questions like "Am I getting fitter?", you MUST use `get_efficiency_trend` and cite at least 2 EF points (earliest and latest available).
+- For questions like "Am I getting fitter?", you MUST use `get_efficiency_trend` and cite at least 2 efficiency data points (earliest and latest available).
 - If data is insufficient, say: "I don't have enough data to answer that."
 - Never make claims (numbers, trends, training load, plan details) without tool-backed evidence.
 
@@ -1007,7 +1007,8 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
                             + "\n\n## Tool Use Policy\n"
                             + "- You MUST use the provided tools for athlete data.\n"
                             + "- Do NOT invent metrics. If unavailable, say so.\n"
-                            + "- When you cite numbers (dates, distances, EF, CTL/ATL/TSB), they must come from tool outputs.\n",
+                            + "- When you cite numbers (dates, distances, efficiency, fatigue, fitness, form), they must come from tool outputs.\n"
+                            + "- NEVER use acronyms (ATL, CTL, TSB, EF) - always use plain English.\n",
                             tools=self._assistant_tools(),
                         )
                     except Exception as e:
@@ -1021,7 +1022,8 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
                 + "\n\n## Tool Use Policy\n"
                 + "- You MUST use the provided tools for athlete data.\n"
                 + "- Do NOT invent metrics. If unavailable, say so.\n"
-                + "- When you cite numbers (dates, distances, EF, CTL/ATL/TSB), they must come from tool outputs.\n",
+                + "- When you cite numbers (dates, distances, efficiency, fatigue, fitness, form), they must come from tool outputs.\n"
+                + "- NEVER use acronyms (ATL, CTL, TSB, EF) - always use plain English.\n",
                 model="gpt-4o",  # or "gpt-4-turbo-preview" for cost savings
                 tools=self._assistant_tools(),
             )
@@ -1947,11 +1949,14 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
                     role="user",
                     content=(
                         "You are the athlete's coach.\n\n"
-                        "IMPORTANT: Use tools for ALL athlete-specific facts (dates, distances, EF, CTL/ATL/TSB, plan details). "
-                        "Do not guess or invent metrics. If data is missing, say so.\n\n"
-                        "UNITS: Use the athlete's preferred units from tools. If they request miles, respond in miles + min/mi.\n\n"
-                        "EVIDENCE REQUIRED: When you state a fact with numbers, cite it explicitly (ISO date + human label + key values). "
-                        "Do not dump long UUIDs unless the athlete explicitly asks."
+                        "CRITICAL: Before answering ANY question about mileage, training, or workouts, you MUST call "
+                        "get_recent_runs and get_training_load first to get the athlete's actual data. NEVER say 'I don't have data' "
+                        "without calling these tools first.\n\n"
+                        "Use tools for ALL athlete-specific facts (dates, distances, fatigue, fitness, form, plan details). "
+                        "Do not guess or invent metrics.\n\n"
+                        "UNITS: Use the athlete's preferred units. If they use miles, respond in miles + min/mi.\n\n"
+                        "EVIDENCE REQUIRED: Cite facts with ISO date + human label + key values. "
+                        "NEVER use acronyms (ATL, CTL, TSB, EF, TRIMP) - use plain English instead."
                     ),
                 )
 
@@ -3062,7 +3067,7 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
             content=(
                 "Rewrite your last answer to comply with the Evidence & Citations rules.\n\n"
                 "Rules:\n"
-                "- If you include any numbers (distances, times, paces, HR, EF, ATL/CTL/TSB, percentages), you MUST include receipts.\n"
+                "- If you include any numbers (distances, times, paces, HR, efficiency, fatigue, fitness, form, percentages), you MUST include receipts.\n"
                 "- Add a final section titled '## Evidence' listing supporting evidence lines.\n"
                 "- Evidence lines must include at least one ISO date (YYYY-MM-DD) and a human label (e.g., run name + key values).\n"
                 "- Do NOT dump long UUIDs unless the athlete explicitly asks; keep evidence readable.\n"
