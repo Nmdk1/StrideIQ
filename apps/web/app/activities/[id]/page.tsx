@@ -37,6 +37,7 @@ interface Activity {
   average_cadence: number | null;
   total_elevation_gain_m: number | null;
   average_temp_c: number | null;
+  temperature_f: number | null;
   strava_activity_id: string | null;
   
   // Workout classification
