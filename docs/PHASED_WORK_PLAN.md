@@ -46,6 +46,7 @@ Status values: **Not started** | **In progress** | **Blocked** | **Complete**
 | 8 | Security, Privacy, Compliance Hardening | Complete | |
 | 9 | Automated Release Safety (Golden Paths + CI) | **Complete** | Sprints 1–2 accepted: expanded backend + web golden paths and CI gating; documented required checks + branch protection checklist for release safety MVP. |
 | 10 | Coach Action Automation (Propose → Confirm → Apply) | **Complete** | **HIGH PRIORITY immediately after Phase 9 completes.** Deterministic, auditable plan changes from Coach with explicit athlete confirmation (no silent/autonomous execution), plus athlete-facing ProposalCard UX + hardening + tests. |
+| 11 | Coach LLM Upgrade (Multi-Model Tiering) | **Not started** | Claude Sonnet 4.5 as production default, Opus 4.5 for VIP/Elite tier, Mistral fallback for rate limits. See `docs/LLM_MODEL_RESEARCH.md`. |
 
 ---
 
@@ -422,6 +423,85 @@ Out of scope for MVP (do later, after safety/telemetry exists):
 
 ---
 
+## Phase 11: Coach LLM Upgrade (Multi-Model Tiering)
+
+**Owner intent:** Upgrade Coach to use best-in-class reasoning models with cost-optimized tiering. Provide VIP beta user (exercise physiologist) with premium experience while maintaining sustainable unit economics at scale.
+
+**Goal:** Claude Sonnet 4.5 as production default (93% of Opus quality at 20% cost), Claude Opus 4.5 for VIP/Elite tier, Mistral Large 3 as rate-limit fallback.
+
+**Research:** See `docs/LLM_MODEL_RESEARCH.md` for benchmarks, pricing, and architecture.
+
+### Model Selection (verified January 2026)
+
+| Model | Role | Cost/Athlete/Mo | GPQA Score |
+|-------|------|-----------------|------------|
+| Claude Sonnet 4.5 | Production default | $0.16 | 68.2 |
+| Claude Opus 4.5 | VIP/Elite tier | $0.45 | 73.1 |
+| Mistral Large 3 | Rate limit fallback | $0.04 | 64.8 |
+| GPT-5 Mini | Low-risk scaffolded only | $0.02 | 62.4 |
+
+### Tiering Logic
+
+```
+Query → [Risk Classifier]
+           ├── HIGH (injury/recovery/load) → Sonnet minimum
+           ├── MEDIUM (coaching advice) → Sonnet
+           └── LOW (summaries/lookups) → GPT-5 Mini (scaffolded)
+           
+Athlete Tier Override:
+  ├── VIP/Elite → Always Opus 4.5
+  └── Standard → Risk-based routing
+```
+
+### Scope
+
+**Sprint 1: Anthropic Integration**
+- [ ] Add `anthropic` SDK dependency
+- [ ] Add `ANTHROPIC_API_KEY` to secrets management
+- [ ] Create Claude adapter matching OpenAI assistant pattern
+- [ ] Add feature flag: `coach.use_claude_sonnet`
+- [ ] Migrate standard queries from GPT-4o → Claude Sonnet 4.5
+
+**Sprint 2: Tiering + VIP Support**
+- [ ] Implement `classify_query_risk()` for model routing
+- [ ] Add `VIP_ATHLETES` feature flag for Opus routing
+- [ ] Add athlete tier → model mapping (Free/Pro/Elite)
+- [ ] Test with VIP user's actual training data
+
+**Sprint 3: Rate Limit Resilience**
+- [ ] Add `mistralai` SDK dependency
+- [ ] Implement fallback handler (Anthropic 429 → Mistral)
+- [ ] Add request queuing for sustained load
+- [ ] Cache common responses (definitions, FAQs)
+
+**Sprint 4: Cost Optimization**
+- [ ] Implement prompt caching (90% savings on repeated context)
+- [ ] A/B test: Sonnet vs GPT-5 Mini on low-risk queries
+- [ ] Add per-model cost tracking for analytics
+
+### Definition of Done
+- [ ] VIP user (exercise physiologist) routes to Claude Opus 4.5
+- [ ] Standard users route to Claude Sonnet 4.5
+- [ ] Low-risk queries (summaries) use GPT-5 Mini (scaffolded)
+- [ ] Anthropic rate limits trigger Mistral fallback (no user-visible errors)
+- [ ] LLM costs < 2% of subscription revenue at scale
+
+### Cost Projections
+
+| Scale | Sonnet Default | With Tiering |
+|-------|----------------|--------------|
+| 500 athletes | $80/mo | $60/mo |
+| 5,000 athletes | $800/mo | $600/mo |
+| % of MRR | 1.3% | 1.0% |
+
+### Critical Warnings
+1. **Never unscaffolded GPT-5 Mini** for injury/recovery advice
+2. **Avoid DeepSeek/Grok** — hallucinate on physiology
+3. **Anthropic rate limits** at ~50 RPM — queue + fallback required
+4. **Latency is a feature** — 2s thoughtful > 0.5s generic
+
+---
+
 ## Suggested Execution Order (recommended)
 1. **Phase 1**: Logged-in UX uniformity (so new users land in a polished product)
 2. **Phase 2**: Landing + About (so acquisition messaging matches reality)
@@ -430,4 +510,5 @@ Out of scope for MVP (do later, after safety/telemetry exists):
 5. **Phase 5**: Ops visibility (so spikes become manageable)
 6. **Phase 6+**: Payments and broader productionization
 7. **Phase 9 → Phase 10**: After release safety gates are in place, prioritize Coach Action Automation (propose → confirm → apply)
+8. **Phase 11**: Coach LLM Upgrade (after Garmin/Strava API approvals, or in parallel if capacity allows)
 
