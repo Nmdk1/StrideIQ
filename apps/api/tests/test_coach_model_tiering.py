@@ -14,8 +14,11 @@ from services.ai_coach import AICoach
 
 @pytest.fixture
 def mock_db():
-    """Mock database session."""
-    return MagicMock()
+    """Mock database session that returns None for athlete queries."""
+    db = MagicMock()
+    # Ensure athlete queries return None (no VIP status in DB)
+    db.query.return_value.filter.return_value.first.return_value = None
+    return db
 
 
 @pytest.fixture

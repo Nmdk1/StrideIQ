@@ -195,10 +195,13 @@ Policy:
     
     def _load_vip_athletes(self) -> None:
         """
-        Load VIP athlete IDs from environment or feature flag.
+        Load VIP athlete IDs from environment (fallback/override).
         VIPs get MODEL_HIGH_VIP (gpt-5.2) for high-complexity queries.
+        
+        Note: DB-based VIP status (is_coach_vip) is checked per-query
+        via is_athlete_vip() for real-time admin changes.
         """
-        # Load from env: comma-separated UUIDs
+        # Load from env: comma-separated UUIDs (override/fallback)
         vip_env = os.getenv("COACH_VIP_ATHLETE_IDS", "")
         if vip_env:
             self.VIP_ATHLETE_IDS = set(aid.strip() for aid in vip_env.split(",") if aid.strip())
@@ -209,6 +212,34 @@ Policy:
         owner_id = os.getenv("OWNER_ATHLETE_ID")
         if owner_id:
             self.VIP_ATHLETE_IDS.add(owner_id.strip())
+    
+    def is_athlete_vip(self, athlete_id: Optional[UUID]) -> bool:
+        """
+        Check if athlete has VIP status for premium model access.
+        
+        Checks in order:
+        1. Environment variable override (COACH_VIP_ATHLETE_IDS, OWNER_ATHLETE_ID)
+        2. Database flag (athlete.is_coach_vip)
+        
+        Returns True if athlete should get MODEL_HIGH_VIP for complex queries.
+        """
+        if not athlete_id:
+            return False
+        
+        # Check env var override first
+        if str(athlete_id) in self.VIP_ATHLETE_IDS:
+            return True
+        
+        # Check database flag
+        try:
+            from models import Athlete
+            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            if athlete and getattr(athlete, 'is_coach_vip', False):
+                return True
+        except Exception as e:
+            logger.warning(f"Failed to check VIP status for athlete {athlete_id}: {e}")
+        
+        return False
 
     def _assistant_tools(self) -> List[Dict[str, Any]]:
         """
@@ -1064,9 +1095,9 @@ Policy:
         if complexity == "low":
             return self.MODEL_LOW
         
-        # HIGH complexity → check for VIP
+        # HIGH complexity → check for VIP (env vars + DB flag)
         if complexity == "high":
-            if athlete_id and str(athlete_id) in self.VIP_ATHLETE_IDS:
+            if self.is_athlete_vip(athlete_id):
                 return self.MODEL_HIGH_VIP
             return self.MODEL_HIGH
         

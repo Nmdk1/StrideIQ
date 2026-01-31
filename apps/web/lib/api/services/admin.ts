@@ -309,6 +309,13 @@ export const adminService = {
     return apiClient.post(`/v1/admin/users/${userId}/block`, params);
   },
 
+  async setCoachVip(userId: string, params: { is_vip: boolean; reason?: string | null }): Promise<{
+    success: boolean;
+    user: { id: string; email: string; is_coach_vip: boolean };
+  }> {
+    return apiClient.post(`/v1/admin/users/${userId}/coach-vip`, params);
+  },
+
   async regenerateStarterPlan(userId: string, params: { reason?: string | null }): Promise<{
     success: boolean;
     archived_plan_ids: string[];

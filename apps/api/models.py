@@ -68,6 +68,11 @@ class Athlete(Base):
     # Hard block a user from accessing the product (admin-only action).
     is_blocked = Column(Boolean, default=False, nullable=False)
     
+    # --- COACH VIP (Phase 11) ---
+    # VIP athletes get premium model (gpt-5.2) for complex queries.
+    # Set via admin UI. See ADR-060 for tiering rationale.
+    is_coach_vip = Column(Boolean, default=False, nullable=False)
+    
     strava_athlete_id = Column(Integer, nullable=True)
     strava_access_token = Column(Text, nullable=True)  # Encrypted
     strava_refresh_token = Column(Text, nullable=True)  # Encrypted

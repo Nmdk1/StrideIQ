@@ -193,6 +193,18 @@ export function useSetBlocked() {
   });
 }
 
+export function useSetCoachVip() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string; isVip: boolean; reason?: string }) =>
+      adminService.setCoachVip(params.userId, { is_vip: params.isVip, reason: params.reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
+      qc.invalidateQueries({ queryKey: adminKeys.userList() });
+    },
+  });
+}
+
 export function useOpsQueue() {
   return useQuery<OpsQueueSnapshot>({
     queryKey: adminKeys.opsQueue(),

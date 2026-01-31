@@ -887,6 +887,7 @@ def get_user(
             "stripe_price_id": sub.stripe_price_id,
         },
         "is_blocked": bool(getattr(user, "is_blocked", False)),
+        "is_coach_vip": bool(getattr(user, "is_coach_vip", False)),
         "created_at": user.created_at.isoformat(),
         "onboarding_completed": user.onboarding_completed,
         "onboarding_stage": user.onboarding_stage,
@@ -1081,6 +1082,62 @@ def comp_access(
             "id": str(target.id),
             "email": target.email,
             "subscription_tier": target.subscription_tier,
+        },
+    }
+
+
+class SetCoachVIPRequest(BaseModel):
+    """Request to set/unset Coach VIP status for an athlete."""
+    is_vip: bool
+    reason: Optional[str] = None
+
+
+@router.post("/users/{user_id}/coach-vip")
+def set_coach_vip(
+    user_id: UUID,
+    request: SetCoachVIPRequest,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("coach_vip.set")),
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Set or unset Coach VIP status for an athlete.
+    
+    VIP athletes get the premium model (gpt-5.2) for high-complexity queries.
+    See ADR-060 for tiering rationale.
+    
+    Admin/owner only.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    old_vip = bool(getattr(target, "is_coach_vip", False))
+    target.is_coach_vip = request.is_vip
+    db.add(target)
+
+    from services.admin_audit import record_admin_audit_event
+
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="coach_vip.set",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"before": {"is_coach_vip": old_vip}, "after": {"is_coach_vip": request.is_vip}},
+    )
+
+    db.commit()
+    db.refresh(target)
+
+    return {
+        "success": True,
+        "user": {
+            "id": str(target.id),
+            "email": target.email,
+            "is_coach_vip": target.is_coach_vip,
         },
     }
 

@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion, useAdminInvites, useCreateInvite, useRevokeInvite } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useSetCoachVip, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion, useAdminInvites, useCreateInvite, useRevokeInvite } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -47,6 +47,7 @@ export default function AdminPage() {
   const retryIngestion = useRetryIngestion();
   const regenerateStarterPlan = useRegenerateStarterPlan();
   const setBlocked = useSetBlocked();
+  const setCoachVip = useSetCoachVip();
   const { data: opsQueue, isLoading: opsQueueLoading } = useOpsQueue();
   const { data: opsStuck, isLoading: opsStuckLoading } = useOpsStuckIngestion({ minutes: 30, limit: 100 });
   const { data: opsErrors, isLoading: opsErrorsLoading } = useOpsIngestionErrors({ days: 7, limit: 200 });
@@ -349,6 +350,10 @@ export default function AdminPage() {
                             <span className={selectedUser.is_blocked ? 'text-red-400' : 'text-green-400'}>
                               {selectedUser.is_blocked ? 'yes' : 'no'}
                             </span>
+                            {' '}• Coach VIP:{' '}
+                            <span className={selectedUser.is_coach_vip ? 'text-purple-400' : 'text-slate-400'}>
+                              {selectedUser.is_coach_vip ? 'yes' : 'no'}
+                            </span>
                           </div>
                         </div>
 
@@ -480,6 +485,15 @@ export default function AdminPage() {
                               } disabled:bg-slate-700`}
                             >
                               {setBlocked.isPending ? 'Saving…' : selectedUser.is_blocked ? 'Unblock' : 'Block'}
+                            </button>
+                            <button
+                              onClick={() => setCoachVip.mutate({ userId: selectedUser.id, isVip: !selectedUser.is_coach_vip, reason: adminReason || undefined })}
+                              disabled={setCoachVip.isPending}
+                              className={`px-3 py-2 rounded text-xs ${
+                                selectedUser.is_coach_vip ? 'bg-slate-600 hover:bg-slate-500' : 'bg-purple-700 hover:bg-purple-600'
+                              } disabled:bg-slate-700`}
+                            >
+                              {setCoachVip.isPending ? 'Saving…' : selectedUser.is_coach_vip ? 'Remove VIP' : 'Make VIP'}
                             </button>
                           </div>
 
