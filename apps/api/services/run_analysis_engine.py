@@ -183,8 +183,96 @@ class RunAnalysisEngine:
     - Root cause analysis when trends emerge
     """
     
+    # Minimum confidence to display a specific workout type (below this, show "Run")
+    MIN_DISPLAY_CONFIDENCE = 0.65
+    
     def __init__(self, db: Session):
         self.db = db
+        self._athlete_thresholds_cache: Dict[UUID, Dict] = {}
+    
+    # =========================================================================
+    # ATHLETE-RELATIVE THRESHOLDS
+    # =========================================================================
+    
+    def _get_athlete_run_thresholds(self, athlete_id: UUID) -> Dict:
+        """
+        Calculate athlete-relative thresholds for run classification.
+        
+        Long runs are defined relative to the athlete's training, not absolute numbers.
+        For a 20 mpw runner, 10 miles is long. For a 50 mpw runner, it's mid-week mileage.
+        
+        Uses the athlete's last 90 days of runs to establish:
+        - long_run_duration_min: 90th percentile duration (top 10% = long runs)
+        - medium_long_duration_min: 75th percentile duration  
+        - typical_duration_min: median duration
+        - typical_distance_km: median distance
+        """
+        # Check cache first
+        if athlete_id in self._athlete_thresholds_cache:
+            return self._athlete_thresholds_cache[athlete_id]
+        
+        # Get last 90 days of runs
+        ninety_days_ago = datetime.now(timezone.utc) - timedelta(days=90)
+        recent_runs = self.db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.start_time >= ninety_days_ago,
+            Activity.distance_m.isnot(None),
+            Activity.distance_m > 1000,  # At least 1km
+            Activity.duration_s.isnot(None),
+            Activity.duration_s > 300,   # At least 5 min
+        ).all()
+        
+        if len(recent_runs) < 5:
+            # Not enough data - use conservative defaults that won't over-classify
+            # Default: long run = 120+ min (2 hours), medium-long = 100+ min
+            thresholds = {
+                'long_run_duration_min': 120,
+                'medium_long_duration_min': 100,
+                'typical_duration_min': 45,
+                'typical_distance_km': 8,
+                'data_points': len(recent_runs),
+            }
+            self._athlete_thresholds_cache[athlete_id] = thresholds
+            return thresholds
+        
+        # Calculate percentiles
+        durations = sorted([r.duration_s / 60 for r in recent_runs])
+        distances = sorted([r.distance_m / 1000 for r in recent_runs])
+        
+        n = len(durations)
+        
+        # 90th percentile = long run threshold (top 10% of runs)
+        p90_idx = int(n * 0.90)
+        long_run_duration = durations[min(p90_idx, n - 1)]
+        
+        # 75th percentile = medium-long threshold
+        p75_idx = int(n * 0.75)
+        medium_long_duration = durations[min(p75_idx, n - 1)]
+        
+        # Median = typical run
+        median_idx = n // 2
+        typical_duration = durations[median_idx]
+        typical_distance = distances[median_idx]
+        
+        # Sanity check: long run should be at least 90 minutes for any runner
+        # and medium-long at least 75 minutes
+        long_run_duration = max(long_run_duration, 90)
+        medium_long_duration = max(medium_long_duration, 75)
+        
+        thresholds = {
+            'long_run_duration_min': long_run_duration,
+            'medium_long_duration_min': medium_long_duration,
+            'typical_duration_min': typical_duration,
+            'typical_distance_km': typical_distance,
+            'data_points': n,
+        }
+        
+        self._athlete_thresholds_cache[athlete_id] = thresholds
+        logger.debug(f"Athlete {athlete_id} thresholds: long={long_run_duration:.0f}min, "
+                     f"med-long={medium_long_duration:.0f}min, typical={typical_duration:.0f}min "
+                     f"(from {n} runs)")
+        
+        return thresholds
     
     # =========================================================================
     # WORKOUT CLASSIFICATION
@@ -194,12 +282,18 @@ class RunAnalysisEngine:
         """
         Classify a workout based on pace, HR, duration, and effort distribution.
         Returns (WorkoutType, confidence).
+        
+        Classification philosophy:
+        - Use athlete-relative thresholds, not arbitrary absolute numbers
+        - When uncertain, return UNKNOWN with low confidence rather than guessing
+        - A "long run" for a 20 mpw runner is different than for a 50 mpw runner
         """
         if not activity.distance_m or not activity.duration_s:
             return WorkoutType.UNKNOWN, 0.0
         
-        # Get athlete's baseline paces if available
+        # Get athlete's baseline paces and thresholds
         athlete = self.db.query(Athlete).filter(Athlete.id == activity.athlete_id).first()
+        thresholds = self._get_athlete_run_thresholds(activity.athlete_id)
         
         pace_per_km = activity.duration_s / (activity.distance_m / 1000) if activity.distance_m > 0 else None
         duration_minutes = activity.duration_s / 60
@@ -207,37 +301,62 @@ class RunAnalysisEngine:
         avg_hr = activity.avg_hr
         max_hr = activity.max_hr
         
-        # Race detection
+        # Race detection (explicit flag or keyword in name)
         if activity.workout_type and 'race' in activity.workout_type.lower():
             return WorkoutType.RACE, 0.95
         
-        # Long run detection (distance-based primarily)
-        if distance_km >= 25:
-            # Check if there were quality segments (would need splits analysis)
-            return WorkoutType.LONG_RUN, 0.85
-        elif distance_km >= 18:
-            return WorkoutType.LONG_RUN, 0.75
+        # =====================================================================
+        # LONG RUN DETECTION (athlete-relative)
+        # =====================================================================
+        # Use athlete's 90th percentile duration as long run threshold
+        long_run_threshold = thresholds['long_run_duration_min']
+        medium_long_threshold = thresholds['medium_long_duration_min']
         
-        # HR-based classification if available
+        if duration_minutes >= long_run_threshold:
+            # This is in the top 10% of their runs by duration - likely a long run
+            return WorkoutType.LONG_RUN, 0.80
+        elif duration_minutes >= medium_long_threshold:
+            # In top 25% but not top 10% - medium-long or could be structured workout
+            # Lower confidence because this could be a tempo with warmup/cooldown
+            return WorkoutType.MODERATE, 0.55  # Below display threshold - will show as "Run"
+        
+        # =====================================================================
+        # HR-BASED CLASSIFICATION (when available)
+        # =====================================================================
         if avg_hr and max_hr and athlete and athlete.max_hr:
             hr_percent = (avg_hr / athlete.max_hr) * 100
             
             if hr_percent < 70:
-                return WorkoutType.EASY, 0.8
+                return WorkoutType.EASY, 0.75
             elif hr_percent < 80:
-                return WorkoutType.MODERATE, 0.7
+                return WorkoutType.MODERATE, 0.65
             elif hr_percent < 88:
-                return WorkoutType.TEMPO, 0.75
+                return WorkoutType.TEMPO, 0.70
             else:
-                return WorkoutType.INTERVAL, 0.7
+                return WorkoutType.INTERVAL, 0.70
         
-        # Duration-based fallback
+        # =====================================================================
+        # FALLBACK: No HR data, not clearly a long run
+        # =====================================================================
+        # When we can't determine the type, be honest about uncertainty
+        # Don't guess "Long Run" just because duration > 60 min
+        
+        typical_duration = thresholds['typical_duration_min']
+        
         if duration_minutes < 30:
-            return WorkoutType.EASY, 0.5  # Short, probably recovery or easy
-        elif duration_minutes < 60:
-            return WorkoutType.MODERATE, 0.4  # Medium duration, unclear
+            # Short run - likely recovery or easy shakeout
+            return WorkoutType.EASY, 0.60  # Borderline confidence
+        elif duration_minutes < typical_duration * 0.8:
+            # Below typical - probably easy/recovery
+            return WorkoutType.EASY, 0.55
+        elif duration_minutes <= typical_duration * 1.3:
+            # Near typical duration - this is just a regular training run
+            # Return MODERATE with low confidence - will display as generic "Run"
+            return WorkoutType.MODERATE, 0.50
         else:
-            return WorkoutType.LONG_RUN, 0.5  # Long duration
+            # Above typical but below long run threshold
+            # Could be anything - structured workout, moderate run, etc.
+            return WorkoutType.MODERATE, 0.45
         
         return WorkoutType.UNKNOWN, 0.0
     
@@ -982,24 +1101,27 @@ class RunAnalysisEngine:
         """Generate human-readable insights from the analysis"""
         insights = []
         
-        # Workout type context
-        insights.append(
-            f"This was classified as a {context.workout_type.value} "
-            f"({int(context.confidence * 100)}% confidence)"
-        )
-        
-        # Comparison to similar workouts (within 90-day window)
-        if context.percentile_vs_similar is not None:
-            percentile = context.percentile_vs_similar
-            if percentile > 75:
-                insights.append(
-                    f"Better than {int(percentile)}% of your recent {context.workout_type.value} runs"
-                )
-            elif percentile < 25:
-                # Clarify direction: "worse than X%" is clearer than "below X%"
-                insights.append(
-                    f"Harder effort than {int(100 - percentile)}% of your recent {context.workout_type.value} runs (last 90 days)"
-                )
+        # Workout type context - only show specific type if confidence is high enough
+        if context.confidence >= self.MIN_DISPLAY_CONFIDENCE:
+            insights.append(
+                f"This was classified as a {context.workout_type.value.replace('_', ' ')} "
+                f"({int(context.confidence * 100)}% confidence)"
+            )
+            
+            # Comparison to similar workouts (within 90-day window)
+            # Only show if we're confident about the workout type
+            if context.percentile_vs_similar is not None:
+                percentile = context.percentile_vs_similar
+                if percentile > 75:
+                    insights.append(
+                        f"Better than {int(percentile)}% of your recent {context.workout_type.value.replace('_', ' ')} runs"
+                    )
+                elif percentile < 25:
+                    # Clarify direction: "worse than X%" is clearer than "below X%"
+                    insights.append(
+                        f"Harder effort than {int(100 - percentile)}% of your recent {context.workout_type.value.replace('_', ' ')} runs (last 90 days)"
+                    )
+        # If confidence is low, don't make claims about workout type
         
         # Trend information
         if efficiency_trend.is_significant:

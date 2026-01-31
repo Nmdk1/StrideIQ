@@ -145,13 +145,22 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
         <h3 className="text-xl font-bold text-white mb-4">Run Analysis</h3>
         
         {/* Workout Classification */}
+        {/* Only show specific workout type if confidence >= 65%, otherwise show generic "Run" */}
         <div className="flex items-center gap-3 mb-4">
-          <span className="px-3 py-1 bg-orange-600/20 text-orange-400 rounded-full text-sm font-medium capitalize">
-            {analysis.context.workout_type.replace('_', ' ')}
-          </span>
-          <span className="text-slate-500 text-sm">
-            {Math.round(analysis.context.confidence * 100)}% confidence
-          </span>
+          {analysis.context.confidence >= 0.65 ? (
+            <>
+              <span className="px-3 py-1 bg-orange-600/20 text-orange-400 rounded-full text-sm font-medium capitalize">
+                {analysis.context.workout_type.replace('_', ' ')}
+              </span>
+              <span className="text-slate-500 text-sm">
+                {Math.round(analysis.context.confidence * 100)}% confidence
+              </span>
+            </>
+          ) : (
+            <span className="px-3 py-1 bg-slate-700/50 text-slate-300 rounded-full text-sm font-medium">
+              Run
+            </span>
+          )}
         </div>
 
         {/* Key Insights */}
