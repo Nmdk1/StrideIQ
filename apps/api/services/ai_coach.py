@@ -179,9 +179,11 @@ You understand running physiology, periodization, and training principles:
 
 - Be concise and clear
 - Use the athlete's actual data when making points
+- NEVER use training acronyms (TSB, ATL, CTL, EF, TRIMP, etc.) in responses - translate to plain English like "fatigue level", "fitness", "form", "efficiency"
 - Avoid jargon unless the athlete uses it first
 - Be encouraging but never sugarcoat problems
 - Format responses with clear structure (use markdown)
+- Do NOT repeat yourself or give the same canned response multiple times
 
 ## Important Rules
 
@@ -1676,20 +1678,20 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
 
             # Weekly prescriptions need athlete target mileage/time when available.
             start_iso, req_days = self._extract_prescription_window(message)
-            if req_days >= 7 and (snap_stale or (snap_data.get("weekly_mileage_target") is None and snap_data.get("time_available_min") is None)):
-                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
-                return {
-                    "response": (
-                        "## Answer\n"
-                        "To make this **self-guided** (not imposed), give me one constraint and I’ll generate an exact 7‑day microcycle.\n\n"
-                        "Pick one:\n"
-                        "- Target weekly mileage (e.g. `45 mpw`), or\n"
-                        "- Typical time available per day (e.g. `45 min`).\n\n"
-                        "Also: any pain signals (none / niggle / pain)?\n"
-                    ),
-                    "thread_id": thread_id,
-                    "error": False,
-                }
+# DISABLED:             if req_days >= 7 and (snap_stale or (snap_data.get("weekly_mileage_target") is None and snap_data.get("time_available_min") is None)):
+# DISABLED:                 thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+# DISABLED:                 return {
+# DISABLED:                     "response": (
+# DISABLED:                         "## Answer\n"
+# DISABLED:                         "To make this **self-guided** (not imposed), give me one constraint and I’ll generate an exact 7‑day microcycle.\n\n"
+# DISABLED:                         "Pick one:\n"
+# DISABLED:                         "- Target weekly mileage (e.g. `45 mpw`), or\n"
+# DISABLED:                         "- Typical time available per day (e.g. `45 min`).\n\n"
+# DISABLED:                         "Also: any pain signals (none / niggle / pain)?\n"
+# DISABLED:                     ),
+# DISABLED:                     "thread_id": thread_id,
+# DISABLED:                     "error": False,
+# DISABLED:                 }
 
             tool_out = coach_tools.get_training_prescription_window(
                 self.db,
@@ -2315,13 +2317,21 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
                 except Exception:
                     pass
 
-            # Weekly mileage target (mpw)
-            m2 = re.search(r"\b(\d{2,3})\s*(mpw|miles per week|mi per week)\b", ml)
+            # Weekly mileage target (mpw) - expanded to catch more patterns
+            m2 = re.search(r"\b(\d{2,3})\s*(mpw|miles per week|mi per week|miles?\s+(?:this|per|a)\s+week|this week)\b", ml)
             if m2:
                 try:
                     updates["weekly_mileage_target"] = float(m2.group(1))
                 except Exception:
                     pass
+            # Also catch "running 55 this week" pattern
+            if not m2:
+                m2b = re.search(r"running\s+(\d{2,3})\s+(?:this|per|a)\s+week", ml)
+                if m2b:
+                    try:
+                        updates["weekly_mileage_target"] = float(m2b.group(1))
+                    except Exception:
+                        pass
 
             # Optional event date (YYYY-MM-DD)
             m3 = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", ml)
