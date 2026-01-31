@@ -578,6 +578,15 @@ Policy:
                 },
             },
             {
+                "name": "get_training_paces",
+                "description": "Get VDOT-calculated training paces (easy, threshold, interval, marathon). THIS IS THE AUTHORITATIVE SOURCE for training paces.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+            {
                 "name": "get_recovery_status",
                 "description": "Get recovery metrics including injury risk score.",
                 "input_schema": {
@@ -609,6 +618,8 @@ Policy:
                 result = coach_tools.get_weekly_volume(self.db, athlete_id, weeks=min(weeks, 104))
             elif tool_name == "get_training_load":
                 result = coach_tools.get_training_load(self.db, athlete_id)
+            elif tool_name == "get_training_paces":
+                result = coach_tools.get_training_paces(self.db, athlete_id)
             elif tool_name == "get_recovery_status":
                 result = coach_tools.get_recovery_status(self.db, athlete_id)
             elif tool_name == "get_athlete_profile":
@@ -852,6 +863,14 @@ If you need more data to answer well, call the tools. That's why they're there."
                 "function": {
                     "name": "get_training_load",
                     "description": "Get current ATL/CTL/TSB and personalized TSB zone info.",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_training_paces",
+                    "description": "Get VDOT-calculated training paces (easy, threshold, interval, marathon, repetition). THIS IS THE AUTHORITATIVE SOURCE for training paces - always use this for pace questions.",
                     "parameters": {"type": "object", "properties": {}, "required": []},
                 },
             },
@@ -2201,6 +2220,8 @@ If you need more data to answer well, call the tools. That's why they're there."
                                 output = coach_tools.get_plan_week(self.db, athlete_id)
                             elif tool_name == "get_training_load":
                                 output = coach_tools.get_training_load(self.db, athlete_id)
+                            elif tool_name == "get_training_paces":
+                                output = coach_tools.get_training_paces(self.db, athlete_id)
                             elif tool_name == "get_correlations":
                                 output = coach_tools.get_correlations(self.db, athlete_id, **args)
                             elif tool_name == "get_race_predictions":
@@ -3250,6 +3271,8 @@ If you need more data to answer well, call the tools. That's why they're there."
                             output = coach_tools.get_plan_week(self.db, athlete_id)
                         elif tool_name == "get_training_load":
                             output = coach_tools.get_training_load(self.db, athlete_id)
+                        elif tool_name == "get_training_paces":
+                            output = coach_tools.get_training_paces(self.db, athlete_id)
                         elif tool_name == "get_correlations":
                             output = coach_tools.get_correlations(self.db, athlete_id, **args)
                         elif tool_name == "get_race_predictions":

@@ -618,6 +618,80 @@ def get_training_load(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     }
 
 
+def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
+    """
+    Get VDOT-calculated training paces for the athlete.
+    
+    Returns target paces for easy, threshold, interval, repetition, and marathon training.
+    This is THE authoritative source for training paces - do not derive paces from other data.
+    """
+    now = datetime.utcnow()
+    try:
+        from services.vdot_calculator import get_training_paces as calc_paces
+        
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if not athlete:
+            return {"ok": False, "tool": "get_training_paces", "error": "Athlete not found"}
+        
+        vdot = athlete.vdot
+        if not vdot:
+            return {
+                "ok": False,
+                "tool": "get_training_paces",
+                "error": "No VDOT on file. Athlete needs to complete a time trial or race to calculate training paces.",
+            }
+        
+        units = athlete.preferred_units or "metric"
+        paces = calc_paces(vdot)
+        
+        # Format for display
+        def format_display(pace_key: str) -> str:
+            """Format a pace for human-readable display."""
+            if pace_key not in paces:
+                return "N/A"
+            val = paces[pace_key]
+            if isinstance(val, dict):
+                return val.get("display_mi" if units == "imperial" else "display_km", "N/A")
+            elif isinstance(val, str):
+                return val
+            return "N/A"
+        
+        return {
+            "ok": True,
+            "tool": "get_training_paces",
+            "generated_at": _iso(now),
+            "data": {
+                "vdot": vdot,
+                "preferred_units": units,
+                "paces": {
+                    "easy": format_display("easy"),
+                    "marathon": format_display("marathon"),
+                    "threshold": format_display("threshold"),
+                    "interval": format_display("interval"),
+                    "repetition": format_display("repetition"),
+                },
+                "raw_seconds_per_mile": {
+                    "easy_low": paces.get("easy_pace_low"),
+                    "marathon": paces.get("marathon_pace"),
+                    "threshold": paces.get("threshold_pace"),
+                    "interval": paces.get("interval_pace"),
+                    "repetition": paces.get("repetition_pace"),
+                },
+            },
+            "evidence": [
+                {
+                    "type": "calculation",
+                    "id": f"vdot_paces:{athlete_id}",
+                    "date": date.today().isoformat(),
+                    "value": f"VDOT {vdot:.1f} → Threshold {format_display('threshold')}, Easy {format_display('easy')}",
+                }
+            ],
+        }
+    except Exception as e:
+        logger.error(f"get_training_paces failed for {athlete_id}: {e}")
+        return {"ok": False, "tool": "get_training_paces", "error": str(e)}
+
+
 def get_correlations(db: Session, athlete_id: UUID, days: int = 30) -> Dict[str, Any]:
     """
     Correlation insights (what seems to be working / not working).
