@@ -79,6 +79,25 @@ app = FastAPI(
     redoc_url="/redoc" if (settings.DEBUG or settings.EXPOSE_API_DOCS) else None,
 )
 
+
+@app.on_event("startup")
+async def backfill_missing_vdot():
+    """Backfill VDOT for athletes who have PBs but missing VDOT."""
+    try:
+        from database import SessionLocal
+        from services.personal_best import backfill_vdot_from_pbs
+        
+        db = SessionLocal()
+        try:
+            result = backfill_vdot_from_pbs(db)
+            if result['updated'] > 0:
+                logger.info(f"VDOT backfill complete: {result}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"VDOT backfill failed (non-critical): {e}")
+
+
 # CORS middleware
 # Production: set CORS_ORIGINS env var (comma-separated)
 # Development: DEBUG=True allows all origins
