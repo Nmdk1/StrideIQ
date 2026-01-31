@@ -2404,7 +2404,7 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
         # -------------------------------------------------------------------------
         try:
             load = coach_tools.get_training_load(self.db, athlete_id)
-                if load and not load.get("error"):
+            if load and not load.get("error"):
                 atl = load.get("atl", 0)
                 ctl = load.get("ctl", 0)
                 tsb = load.get("tsb", 0)
