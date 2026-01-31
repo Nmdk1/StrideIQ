@@ -245,7 +245,7 @@ Policy:
     # 95% of queries use GPT-4o-mini (cost-efficient)
     # 5% high-stakes queries use Claude Opus 4.5 (maximum reasoning quality)
     MODEL_DEFAULT = "gpt-4o-mini"           # Standard coaching (95%)
-    MODEL_HIGH_STAKES = "claude-opus-4-5-20250514"  # Injury/recovery/load decisions (5%)
+    MODEL_HIGH_STAKES = "claude-opus-4-5-20251101"  # Injury/recovery/load decisions (5%)
     MODEL_FALLBACK = "gpt-4o"               # When Opus unavailable/budget exhausted
     
     # Legacy aliases for backward compatibility

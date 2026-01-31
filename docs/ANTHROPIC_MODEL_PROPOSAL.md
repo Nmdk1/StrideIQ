@@ -265,7 +265,7 @@ def get_model_for_query(
         # Check Opus budget
         allowed, _ = check_budget(athlete_id, is_opus=True)
         if allowed:
-            return "claude-opus-4-5-20250514"
+            return "claude-opus-4-5-20251101"
         else:
             # Fallback to GPT-4o (not mini) when Opus budget exhausted
             return "gpt-4o"
@@ -295,7 +295,7 @@ class HybridCoach:
         Uses direct API (not Assistants) with minimal context.
         """
         response = self.anthropic.messages.create(
-            model="claude-opus-4-5-20250514",
+            model="claude-opus-4-5-20251101",
             system=system,
             messages=[
                 {"role": "user", "content": f"ATHLETE STATE:\n{athlete_state}"},
@@ -326,7 +326,7 @@ When budgets are near exhaustion, degrade gracefully instead of hard cutoff:
 ```bash
 # Model configuration
 COACH_MODEL_DEFAULT=gpt-4o-mini
-COACH_MODEL_HIGH_STAKES=claude-opus-4-5-20250514
+COACH_MODEL_HIGH_STAKES=claude-opus-4-5-20251101
 COACH_MODEL_FALLBACK=gpt-4o
 
 # Anthropic API
