@@ -77,6 +77,34 @@ export default function AdminPage() {
   const [newRaceMaxUses, setNewRaceMaxUses] = useState<number | ''>('');
   const [raceCodeSuccess, setRaceCodeSuccess] = useState<string | null>(null);
   const [raceCodeError, setRaceCodeError] = useState<string | null>(null);
+  const [downloadingQr, setDownloadingQr] = useState<string | null>(null);
+
+  // Download QR code with auth
+  const downloadQrCode = async (code: string) => {
+    setDownloadingQr(code);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+      const response = await fetch(`${apiUrl}/v1/admin/race-codes/${encodeURIComponent(code)}/qr?size=400`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Failed to download QR code');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${code}_qr.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setRaceCodeError('Failed to download QR code');
+      setTimeout(() => setRaceCodeError(null), 3000);
+    } finally {
+      setDownloadingQr(null);
+    }
+  };
 
   // Feature flags
   const { data: flagsData, isLoading: flagsLoading } = useAdminFeatureFlags('plan.');
@@ -1629,14 +1657,13 @@ export default function AdminPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              <a
-                                href={getRaceCodeQrUrl(rc.code, 400)}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-2 py-1 text-xs font-medium bg-purple-600 hover:bg-purple-700 rounded text-white"
+                              <button
+                                onClick={() => downloadQrCode(rc.code)}
+                                disabled={downloadingQr === rc.code}
+                                className="px-2 py-1 text-xs font-medium bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded text-white"
                               >
-                                Download QR
-                              </a>
+                                {downloadingQr === rc.code ? 'Downloading...' : 'Download QR'}
+                              </button>
                               {rc.is_active && (
                                 <button
                                   onClick={() => deactivateRaceCode.mutate(rc.code)}
