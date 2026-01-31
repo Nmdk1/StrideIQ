@@ -158,10 +158,12 @@ Policy:
 
     # Model tiers (Phase 11: complexity-based routing)
     # See ADR-060 for rationale
-    MODEL_LOW = "gpt-5-nano"          # $0.0001/query - pure lookups
-    MODEL_MEDIUM = "gpt-5-mini"       # $0.0005/query - standard coaching
-    MODEL_HIGH = "gpt-5.1"            # $0.0025/query - complex reasoning
-    MODEL_HIGH_VIP = "gpt-5.2"        # $0.0035/query - flagship for VIPs
+    # NOTE: Using gpt-4o variants confirmed to work with Assistants API
+    # GPT-5 models exist but are NOT supported by Assistants API as of Jan 2026
+    MODEL_LOW = "gpt-4o-mini"         # Fast, cheap - pure lookups
+    MODEL_MEDIUM = "gpt-4o"           # Standard coaching
+    MODEL_HIGH = "gpt-4o"             # Complex reasoning (same as medium for now)
+    MODEL_HIGH_VIP = "gpt-4o"         # VIP tier (same until we migrate off Assistants API)
     
     # Legacy aliases for backward compatibility
     MODEL_SIMPLE = MODEL_LOW

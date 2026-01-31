@@ -106,46 +106,46 @@ class TestModelRouting:
     """Test get_model_for_query() method."""
     
     def test_low_complexity_uses_nano(self, coach):
-        """LOW complexity should use gpt-5-nano."""
+        """LOW complexity should use gpt-4o-mini."""
         model = coach.get_model_for_query("low")
-        assert model == "gpt-5-nano"
+        assert model == "gpt-4o-mini"
     
     def test_medium_complexity_uses_mini(self, coach):
-        """MEDIUM complexity should use gpt-5-mini."""
+        """MEDIUM complexity should use gpt-4o."""
         model = coach.get_model_for_query("medium")
-        assert model == "gpt-5-mini"
+        assert model == "gpt-4o"
     
     def test_high_complexity_non_vip_uses_5_1(self, coach):
-        """HIGH complexity for non-VIP should use gpt-5.1."""
+        """HIGH complexity for non-VIP should use gpt-4o."""
         athlete_id = uuid4()
         model = coach.get_model_for_query("high", athlete_id=athlete_id)
-        assert model == "gpt-5.1"
+        assert model == "gpt-4o"
     
     def test_high_complexity_vip_uses_5_2(self, coach):
-        """HIGH complexity for VIP should use gpt-5.2."""
+        """HIGH complexity for VIP should use gpt-4o."""
         vip_id = uuid4()
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
         model = coach.get_model_for_query("high", athlete_id=vip_id)
-        assert model == "gpt-5.2"
+        assert model == "gpt-4o"
     
     def test_legacy_simple_maps_to_low(self, coach):
         """Legacy 'simple' query type should use MODEL_LOW."""
         model = coach.get_model_for_query("simple")
-        assert model == "gpt-5-nano"
+        assert model == "gpt-4o-mini"
     
     def test_legacy_standard_reclassifies(self, coach):
         """Legacy 'standard' should reclassify based on message."""
         # Without message, defaults to MEDIUM
         model = coach.get_model_for_query("standard")
-        assert model == "gpt-5-mini"
+        assert model == "gpt-4o"
         
         # With high-complexity message
         model = coach.get_model_for_query(
             "standard", 
             message="Why am I getting slower despite running more?"
         )
-        assert model == "gpt-5.1"
+        assert model == "gpt-4o"
 
 
 class TestVIPLoading:
@@ -192,34 +192,34 @@ class TestEndToEndClassification:
     """Integration tests for the full classification + routing flow."""
     
     def test_lookup_query_gets_nano(self, coach):
-        """A lookup query should route to gpt-5-nano."""
+        """A lookup query should route to gpt-4o-mini."""
         message = "What was my long run last week?"
         complexity = coach.classify_query_complexity(message)
         model = coach.get_model_for_query(complexity)
         
         assert complexity == "low"
-        assert model == "gpt-5-nano"
+        assert model == "gpt-4o-mini"
     
     def test_coaching_query_gets_mini(self, coach):
-        """A standard coaching query should route to gpt-5-mini."""
+        """A standard coaching query should route to gpt-4o."""
         message = "What pace should I run my tempo at?"
         complexity = coach.classify_query_complexity(message)
         model = coach.get_model_for_query(complexity)
         
         assert complexity == "medium"
-        assert model == "gpt-5-mini"
+        assert model == "gpt-4o"
     
     def test_complex_query_gets_5_1(self, coach):
-        """A complex query should route to gpt-5.1."""
+        """A complex query should route to gpt-4o."""
         message = "Why am I getting slower despite increasing my mileage?"
         complexity = coach.classify_query_complexity(message)
         model = coach.get_model_for_query(complexity, athlete_id=uuid4())
         
         assert complexity == "high"
-        assert model == "gpt-5.1"
+        assert model == "gpt-4o"
     
     def test_complex_query_vip_gets_5_2(self, coach):
-        """A complex query from VIP should route to gpt-5.2."""
+        """A complex query from VIP should route to gpt-4o."""
         vip_id = uuid4()
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
@@ -228,7 +228,7 @@ class TestEndToEndClassification:
         model = coach.get_model_for_query(complexity, athlete_id=vip_id)
         
         assert complexity == "high"
-        assert model == "gpt-5.2"
+        assert model == "gpt-4o"
 
 
 class TestEdgeCases:
@@ -291,21 +291,21 @@ class TestEdgeCases:
         
         # Pass UUID object - should still match
         model = coach.get_model_for_query("high", athlete_id=vip_id)
-        assert model == "gpt-5.2"
+        assert model == "gpt-4o"
     
     def test_non_vip_does_not_get_5_2(self, coach):
-        """Non-VIP should never get gpt-5.2 even for high complexity."""
+        """Non-VIP should never get gpt-4o even for high complexity."""
         vip_id = uuid4()
         non_vip_id = uuid4()
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
         model = coach.get_model_for_query("high", athlete_id=non_vip_id)
-        assert model == "gpt-5.1"
+        assert model == "gpt-4o"
     
     def test_none_athlete_id_for_high_complexity(self, coach):
-        """None athlete_id should default to non-VIP (gpt-5.1)."""
+        """None athlete_id should default to non-VIP (gpt-4o)."""
         model = coach.get_model_for_query("high", athlete_id=None)
-        assert model == "gpt-5.1"
+        assert model == "gpt-4o"
     
     def test_low_complexity_ignores_vip_status(self, coach):
         """Low complexity should always use nano, even for VIPs."""
@@ -313,7 +313,7 @@ class TestEdgeCases:
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
         model = coach.get_model_for_query("low", athlete_id=vip_id)
-        assert model == "gpt-5-nano"
+        assert model == "gpt-4o-mini"
     
     def test_medium_complexity_ignores_vip_status(self, coach):
         """Medium complexity should always use mini, even for VIPs."""
@@ -321,4 +321,4 @@ class TestEdgeCases:
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
         model = coach.get_model_for_query("medium", athlete_id=vip_id)
-        assert model == "gpt-5-mini"
+        assert model == "gpt-4o"
