@@ -572,6 +572,11 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                     except Exception as e:
                         print(f"Warning: Could not update splits for activity {strava_activity_id}: {e}")
                 
+                # Backfill avg_hr from details if missing
+                if existing.avg_hr is None and details.get("average_heartrate"):
+                    existing.avg_hr = _coerce_int(details.get("average_heartrate"))
+                    db.flush()
+                
                 # Recalculate performance metrics
                 try:
                     _calculate_performance_metrics(existing, athlete, db)
@@ -697,6 +702,12 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                             )
                         )
                     db.flush()
+                
+                # Backfill avg_hr from details if missing (list endpoint often omits it)
+                if activity.avg_hr is None and details.get("average_heartrate"):
+                    activity.avg_hr = _coerce_int(details.get("average_heartrate"))
+                    db.flush()
+                    
             except Exception as e:
                 print(f"Warning: Could not fetch laps for activity {strava_activity_id}: {e}")
             
