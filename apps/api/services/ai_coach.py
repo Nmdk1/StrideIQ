@@ -1693,18 +1693,24 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
 # DISABLED:                     "error": False,
 # DISABLED:                 }
 
-            tool_out = coach_tools.get_training_prescription_window(
-                self.db,
-                athlete_id,
-                start_date=start_iso,
-                days=req_days,
-            )
-            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
-            return {
-                "response": self._format_prescription_window(tool_out),
-                "thread_id": thread_id,
-                "error": False if tool_out.get("ok") else True,
-            }
+            # For weekly requests (7+ days), fall through to LLM for better formatting.
+            # The LLM will use the prescription tool and synthesize a human-readable summary.
+            if req_days >= 7:
+                pass  # Fall through to LLM processing below
+            else:
+                # Single-day deterministic shortcut (e.g., "what should I run today?")
+                tool_out = coach_tools.get_training_prescription_window(
+                    self.db,
+                    athlete_id,
+                    start_date=start_iso,
+                    days=req_days,
+                )
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                return {
+                    "response": self._format_prescription_window(tool_out),
+                    "thread_id": thread_id,
+                    "error": False if tool_out.get("ok") else True,
+                }
 
         # Deterministic answers for high-risk questions (avoid "reckless" responses).
         if not _skip_deterministic_shortcuts and any(phrase in lower for phrase in ("how far back", "how far can you look", "how far back can you look", "how far back do you go")):
