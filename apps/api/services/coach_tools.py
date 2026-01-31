@@ -17,8 +17,11 @@ Each tool returns:
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timedelta, date
+
+logger = logging.getLogger(__name__)
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -627,7 +630,7 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     now = datetime.utcnow()
     try:
-        from services.vdot_calculator import get_training_paces as calc_paces
+        from services.vdot_calculator import calculate_training_paces as calc_paces
         
         athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
