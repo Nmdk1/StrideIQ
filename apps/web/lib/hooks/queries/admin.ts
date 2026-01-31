@@ -3,7 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { adminService, type AdminUserDetail, type FeatureFlag, type ThreeDSelectionMode, type Invite, type InviteListResponse, type InviteCreateResponse, type InviteRevokeResponse } from '../../api/services/admin';
+import { adminService, type AdminUserDetail, type FeatureFlag, type ThreeDSelectionMode, type Invite, type InviteListResponse, type InviteCreateResponse, type InviteRevokeResponse, type RaceCodeListResponse } from '../../api/services/admin';
 import type { UserListResponse, SystemHealth, SiteMetrics, ImpersonationResponse, OpsQueueSnapshot, OpsIngestionStuckResponse, OpsIngestionErrorsResponse, OpsIngestionDeferredResponse, OpsIngestionPauseResponse } from '../../api/services/admin';
 
 export const adminKeys = {
@@ -320,6 +320,59 @@ export function useRevokeInvite() {
       qc.invalidateQueries({ queryKey: adminKeys.invites() });
     },
   });
+}
+
+// ============ Race Code Hooks ============
+
+/**
+ * List race promo codes
+ */
+export function useAdminRaceCodes(params?: { include_inactive?: boolean }) {
+  return useQuery<RaceCodeListResponse>({
+    queryKey: [...adminKeys.all, 'raceCodes', params] as const,
+    queryFn: () => adminService.listRaceCodes(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+/**
+ * Create a race promo code
+ */
+export function useCreateRaceCode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      code: string;
+      race_name: string;
+      race_date?: string | null;
+      trial_days?: number;
+      valid_until?: string | null;
+      max_uses?: number | null;
+    }) => adminService.createRaceCode(params),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...adminKeys.all, 'raceCodes'] });
+    },
+  });
+}
+
+/**
+ * Deactivate a race promo code
+ */
+export function useDeactivateRaceCode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => adminService.deactivateRaceCode(code),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...adminKeys.all, 'raceCodes'] });
+    },
+  });
+}
+
+/**
+ * Get QR code URL for a race promo code
+ */
+export function getRaceCodeQrUrl(code: string, size?: number): string {
+  return adminService.getRaceCodeQrUrl(code, size);
 }
 
 

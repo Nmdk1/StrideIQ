@@ -449,6 +449,77 @@ export const adminService = {
   async revokeInvite(params: { email: string; reason?: string | null }): Promise<InviteRevokeResponse> {
     return apiClient.post<InviteRevokeResponse>('/v1/admin/invites/revoke', params);
   },
+
+  // ============ Race Promo Codes ============
+
+  /**
+   * List race promo codes
+   */
+  async listRaceCodes(params?: { include_inactive?: boolean }): Promise<RaceCodeListResponse> {
+    const qs = params?.include_inactive ? '?include_inactive=true' : '';
+    return apiClient.get<RaceCodeListResponse>(`/v1/admin/race-codes${qs}`);
+  },
+
+  /**
+   * Create a race promo code
+   */
+  async createRaceCode(params: {
+    code: string;
+    race_name: string;
+    race_date?: string | null;
+    trial_days?: number;
+    valid_until?: string | null;
+    max_uses?: number | null;
+  }): Promise<RaceCodeCreateResponse> {
+    return apiClient.post<RaceCodeCreateResponse>('/v1/admin/race-codes', params);
+  },
+
+  /**
+   * Deactivate a race promo code
+   */
+  async deactivateRaceCode(code: string): Promise<{ success: boolean; code: string; is_active: boolean }> {
+    return apiClient.post(`/v1/admin/race-codes/${encodeURIComponent(code)}/deactivate`, {});
+  },
+
+  /**
+   * Get QR code URL for a race promo code
+   */
+  getRaceCodeQrUrl(code: string, size?: number): string {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    const sizeParam = size ? `?size=${size}` : '';
+    // Return the full URL - caller will need to handle auth
+    return `${baseUrl}/v1/admin/race-codes/${encodeURIComponent(code)}/qr${sizeParam}`;
+  },
 } as const;
+
+// Race Code types
+export interface RaceCode {
+  id: string;
+  code: string;
+  race_name: string;
+  race_date: string | null;
+  trial_days: number;
+  valid_from: string;
+  valid_until: string | null;
+  max_uses: number | null;
+  current_uses: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RaceCodeListResponse {
+  codes: RaceCode[];
+  total: number;
+}
+
+export interface RaceCodeCreateResponse {
+  success: boolean;
+  code: string;
+  race_name: string;
+  trial_days: number;
+  valid_until: string | null;
+  max_uses: number | null;
+}
 
 

@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useSetCoachVip, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion, useAdminInvites, useCreateInvite, useRevokeInvite } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useSetCoachVip, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion, useAdminInvites, useCreateInvite, useRevokeInvite, useAdminRaceCodes, useCreateRaceCode, useDeactivateRaceCode, getRaceCodeQrUrl } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -27,7 +27,7 @@ export default function AdminPage() {
   const { user, isLoading, isAuthenticated } = useAuth();
   const router = useRouter();
   const [search, setSearch] = useState('');
-  const [selectedTab, setSelectedTab] = useState<'users' | 'ops' | 'health' | 'metrics' | 'flags' | 'query' | 'testing' | 'invites'>('users');
+  const [selectedTab, setSelectedTab] = useState<'users' | 'ops' | 'health' | 'metrics' | 'flags' | 'query' | 'testing' | 'invites' | 'raceCodes'>('users');
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [adminReason, setAdminReason] = useState<string>('');
   const [desiredTier, setDesiredTier] = useState<string>('pro');
@@ -65,6 +65,18 @@ export default function AdminPage() {
   const [inviteFilter, setInviteFilter] = useState<'all' | 'pending' | 'used'>('all');
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  // Race Codes
+  const { data: raceCodesData, isLoading: raceCodesLoading, error: raceCodesError } = useAdminRaceCodes({ include_inactive: true });
+  const createRaceCode = useCreateRaceCode();
+  const deactivateRaceCode = useDeactivateRaceCode();
+  const [newRaceCode, setNewRaceCode] = useState('');
+  const [newRaceName, setNewRaceName] = useState('');
+  const [newRaceDate, setNewRaceDate] = useState('');
+  const [newRaceTrialDays, setNewRaceTrialDays] = useState(30);
+  const [newRaceMaxUses, setNewRaceMaxUses] = useState<number | ''>('');
+  const [raceCodeSuccess, setRaceCodeSuccess] = useState<string | null>(null);
+  const [raceCodeError, setRaceCodeError] = useState<string | null>(null);
 
   // Feature flags
   const { data: flagsData, isLoading: flagsLoading } = useAdminFeatureFlags('plan.');
@@ -246,6 +258,16 @@ export default function AdminPage() {
               }`}
             >
               Invites
+            </button>
+            <button
+              onClick={() => setSelectedTab('raceCodes')}
+              className={`px-4 py-2 font-medium ${
+                selectedTab === 'raceCodes'
+                  ? 'border-b-2 border-purple-600 text-purple-400'
+                  : 'text-slate-400 hover:text-slate-300'
+              }`}
+            >
+              Race Codes
             </button>
           </div>
 
@@ -1461,6 +1483,173 @@ export default function AdminPage() {
                             </td>
                           </tr>
                         ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Race Codes Tab */}
+          {selectedTab === 'raceCodes' && (
+            <div className="space-y-6">
+              {/* Create Race Code Form */}
+              <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
+                <h3 className="text-lg font-semibold mb-4">Create Race Promo Code</h3>
+                <p className="text-slate-400 text-sm mb-4">
+                  Generate QR codes for packet pickup flyers. Athletes who scan get an extended free trial.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  <input
+                    type="text"
+                    value={newRaceCode}
+                    onChange={(e) => setNewRaceCode(e.target.value.toUpperCase())}
+                    placeholder="Code (e.g., BOSTON2026)"
+                    className="px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white uppercase"
+                  />
+                  <input
+                    type="text"
+                    value={newRaceName}
+                    onChange={(e) => setNewRaceName(e.target.value)}
+                    placeholder="Race Name"
+                    className="px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  />
+                  <input
+                    type="date"
+                    value={newRaceDate}
+                    onChange={(e) => setNewRaceDate(e.target.value)}
+                    className="px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={newRaceTrialDays}
+                      onChange={(e) => setNewRaceTrialDays(parseInt(e.target.value) || 30)}
+                      placeholder="Trial days"
+                      min={1}
+                      max={90}
+                      className="w-20 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                    />
+                    <span className="self-center text-slate-400 text-sm">days</span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!newRaceCode || !newRaceName) {
+                        setRaceCodeError('Code and race name are required');
+                        return;
+                      }
+                      setRaceCodeError(null);
+                      setRaceCodeSuccess(null);
+                      try {
+                        await createRaceCode.mutateAsync({
+                          code: newRaceCode.trim().toUpperCase(),
+                          race_name: newRaceName.trim(),
+                          race_date: newRaceDate || null,
+                          trial_days: newRaceTrialDays,
+                          max_uses: newRaceMaxUses || null,
+                        });
+                        setRaceCodeSuccess(`Created code: ${newRaceCode}`);
+                        setNewRaceCode('');
+                        setNewRaceName('');
+                        setNewRaceDate('');
+                        setNewRaceTrialDays(30);
+                        setNewRaceMaxUses('');
+                        setTimeout(() => setRaceCodeSuccess(null), 5000);
+                      } catch (err: any) {
+                        setRaceCodeError(err?.message || 'Failed to create code');
+                      }
+                    }}
+                    disabled={!newRaceCode || !newRaceName || createRaceCode.isPending}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded text-white font-medium"
+                  >
+                    {createRaceCode.isPending ? 'Creating...' : 'Create Code'}
+                  </button>
+                </div>
+                {raceCodeSuccess && (
+                  <p className="mt-2 text-green-400 text-sm">{raceCodeSuccess}</p>
+                )}
+                {raceCodeError && (
+                  <p className="mt-2 text-red-400 text-sm">{raceCodeError}</p>
+                )}
+              </div>
+
+              {/* Race Codes List */}
+              <div className="bg-slate-800 rounded-lg border border-slate-700/50 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-700/50">
+                  <h3 className="text-lg font-semibold">Race Promo Codes</h3>
+                </div>
+                {raceCodesLoading ? (
+                  <div className="p-6"><LoadingSpinner /></div>
+                ) : raceCodesError ? (
+                  <div className="p-6">
+                    <ErrorMessage error={raceCodesError as Error} title="Failed to load race codes" />
+                  </div>
+                ) : !raceCodesData?.codes?.length ? (
+                  <div className="p-6 text-center text-slate-400">
+                    <p>No race codes yet. Create one above to get started.</p>
+                  </div>
+                ) : (
+                  <table className="w-full">
+                    <thead className="bg-slate-700/50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Code</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Race</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Trial</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Uses</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Status</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                      {raceCodesData.codes.map((rc) => (
+                        <tr key={rc.id} className="hover:bg-slate-700/30">
+                          <td className="px-4 py-3">
+                            <span className="font-mono text-sm text-purple-400">{rc.code}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm text-slate-200">{rc.race_name}</div>
+                            {rc.race_date && (
+                              <div className="text-xs text-slate-400">{new Date(rc.race_date).toLocaleDateString()}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-300">{rc.trial_days} days</td>
+                          <td className="px-4 py-3 text-sm text-slate-300">
+                            {rc.current_uses}{rc.max_uses ? ` / ${rc.max_uses}` : ''}
+                          </td>
+                          <td className="px-4 py-3">
+                            {rc.is_active ? (
+                              <span className="px-2 py-1 text-xs font-medium bg-green-600/20 text-green-400 rounded">
+                                Active
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 text-xs font-medium bg-slate-600/20 text-slate-400 rounded">
+                                Inactive
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <a
+                                href={getRaceCodeQrUrl(rc.code, 400)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2 py-1 text-xs font-medium bg-purple-600 hover:bg-purple-700 rounded text-white"
+                              >
+                                Download QR
+                              </a>
+                              {rc.is_active && (
+                                <button
+                                  onClick={() => deactivateRaceCode.mutate(rc.code)}
+                                  disabled={deactivateRaceCode.isPending}
+                                  className="px-2 py-1 text-xs font-medium bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded text-white"
+                                >
+                                  Deactivate
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 )}
