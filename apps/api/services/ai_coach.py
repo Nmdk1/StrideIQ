@@ -1663,6 +1663,12 @@ If you need more data to answer well, call the tools. That's why they're there."
         if not self.high_stakes_routing_enabled:
             return self.MODEL_DEFAULT, False
         
+        # Free users always get GPT-4o-mini (no Opus for unpaid)
+        if athlete_id:
+            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            if athlete and not getattr(athlete, "has_active_subscription", False):
+                return self.MODEL_DEFAULT, False
+        
         # Determine if query needs Opus (high-stakes OR high-complexity)
         is_high_stakes = is_high_stakes_query(message)
         complexity = self.classify_query_complexity(message)
