@@ -1738,3 +1738,50 @@ class CoachIntentSnapshot(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     __table_args__ = (Index("ix_coach_intent_snapshot_updated_at", "updated_at"),)
+
+
+class CoachUsage(Base):
+    """
+    Track LLM token usage per athlete for cost capping (ADR-061).
+    
+    Enforces hard limits:
+    - Daily request caps
+    - Monthly token budgets
+    - Opus-specific allocation
+    
+    Reset logic:
+    - Daily counters reset at midnight UTC
+    - Monthly counters reset on 1st of month
+    """
+    
+    __tablename__ = "coach_usage"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    
+    # Date for daily tracking (reset daily)
+    date = Column(Date, nullable=False)
+    
+    # Daily counters
+    requests_today = Column(Integer, default=0, nullable=False)
+    opus_requests_today = Column(Integer, default=0, nullable=False)
+    tokens_today = Column(Integer, default=0, nullable=False)
+    opus_tokens_today = Column(Integer, default=0, nullable=False)
+    
+    # Monthly tracking (YYYY-MM format)
+    month = Column(String(7), nullable=False)  # e.g., "2026-01"
+    tokens_this_month = Column(Integer, default=0, nullable=False)
+    opus_tokens_this_month = Column(Integer, default=0, nullable=False)
+    
+    # Cost tracking (in USD cents for precision)
+    cost_today_cents = Column(Integer, default=0, nullable=False)
+    cost_this_month_cents = Column(Integer, default=0, nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "date", name="uq_coach_usage_athlete_date"),
+        Index("ix_coach_usage_athlete_id", "athlete_id"),
+        Index("ix_coach_usage_month", "month"),
+    )

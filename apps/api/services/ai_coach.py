@@ -2,12 +2,15 @@
 AI Coach Service
 
 Uses OpenAI Assistants API for persistent, context-aware coaching.
+High-stakes queries route to Claude Opus 4.5 for maximum reasoning quality.
 
 Features:
 - Persistent threads per athlete (conversation memory)
 - Context injection from athlete's actual data
 - Knowledge of training methodology
 - Tiered context (7-day, 30-day, 120-day)
+- Hybrid model routing (GPT-4o-mini + Claude Opus) per ADR-061
+- Hard cost caps per athlete
 """
 
 import os
@@ -15,6 +18,7 @@ import json
 import re
 import asyncio
 from datetime import date, datetime, timedelta
+from enum import Enum
 from typing import Optional, Dict, List, Any, Tuple
 from uuid import UUID
 from sqlalchemy.orm import Session
@@ -23,6 +27,78 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# ADR-061: HYBRID MODEL ARCHITECTURE WITH COST CAPS
+# =============================================================================
+
+# High-stakes signals that trigger Opus routing
+class HighStakesSignal(Enum):
+    """Signals that trigger Opus routing for maximum reasoning quality."""
+    INJURY = "injury"
+    PAIN = "pain"
+    OVERTRAINING = "overtraining"
+    FATIGUE = "fatigue"
+    SKIP_DECISION = "skip"
+    LOAD_ADJUSTMENT = "load"
+    RETURN_FROM_BREAK = "return"
+    ILLNESS = "illness"
+
+
+# Patterns that trigger high-stakes routing to Opus
+HIGH_STAKES_PATTERNS = [
+    # Injury/pain signals (liability risk)
+    "injury", "injured", "pain", "painful", "hurt", "hurting",
+    "sore", "soreness", "ache", "aching", "sharp", "stabbing",
+    "tender", "swollen", "swelling", "inflammation",
+    "strain", "sprain", "tear", "stress fracture",
+    "knee", "shin", "achilles", "plantar", "it band", "hip",
+    "calf", "hamstring", "quad", "groin", "ankle", "foot",
+    
+    # Recovery concerns
+    "overtrain", "overtraining", "burnout", "exhausted",
+    "can't recover", "not recovering", "always tired",
+    "resting heart rate", "hrv dropping", "hrv crashed",
+    "legs feel dead", "no energy",
+    
+    # Return-from-break (high error risk)
+    "coming back", "returning from", "time off", "break",
+    "haven't run", "first run back", "starting again",
+    "after illness", "after sick", "after covid",
+    "after surgery", "post-op", "back from",
+    
+    # Load decisions (requires careful reasoning)
+    "should i run", "safe to run", "okay to run",
+    "skip", "should i skip", "take a day off",
+    "reduce mileage", "cut back", "too much",
+    "push through", "run through",
+]
+
+# Cost cap constants (ADR-061)
+COACH_MAX_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_REQUESTS_PER_DAY", "50"))
+COACH_MAX_OPUS_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY", "3"))
+COACH_MONTHLY_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_TOKEN_BUDGET", "1000000"))
+COACH_MONTHLY_OPUS_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET", "50000"))
+COACH_MAX_INPUT_TOKENS = int(os.getenv("COACH_MAX_INPUT_TOKENS", "4000"))
+COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "500"))
+
+
+def is_high_stakes_query(message: str) -> bool:
+    """
+    Determine if query requires Opus for maximum reasoning quality.
+    
+    Returns True for:
+    - Injury/pain mentions
+    - Return-from-break queries
+    - Load adjustment decisions
+    - Overtraining concerns
+    
+    See ADR-061 for rationale.
+    """
+    if not message:
+        return False
+    message_lower = message.lower()
+    return any(pattern in message_lower for pattern in HIGH_STAKES_PATTERNS)
+
 # Check if OpenAI is available
 try:
     from openai import OpenAI
@@ -30,6 +106,14 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
     logger.warning("OpenAI not installed - AI Coach will be disabled")
+
+# Check if Anthropic is available (for Opus high-stakes routing)
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    logger.info("Anthropic not installed - high-stakes queries will use GPT-4o fallback")
 
 from models import (
     Athlete,
@@ -40,6 +124,7 @@ from models import (
     PersonalBest,
     IntakeQuestionnaire,
     CoachIntentSnapshot,
+    CoachUsage,
 )
 from services import coach_tools
 from services.training_load import TrainingLoadCalculator
@@ -156,22 +241,25 @@ Policy:
 
 - You can look back up to ~2 years for recent-run tools (up to 730 days). Do not claim you are limited to 30 days."""
 
-    # Model tiers (Phase 11: complexity-based routing)
-    # See ADR-060 for rationale
-    # NOTE: Using gpt-4o variants confirmed to work with Assistants API
-    # GPT-5 models exist but are NOT supported by Assistants API as of Jan 2026
-    MODEL_LOW = "gpt-4o-mini"         # Fast, cheap - pure lookups
-    MODEL_MEDIUM = "gpt-4o"           # Standard coaching
-    MODEL_HIGH = "gpt-4o"             # Complex reasoning (same as medium for now)
-    MODEL_HIGH_VIP = "gpt-4o"         # VIP tier (same until we migrate off Assistants API)
+    # Model tiers (ADR-061: Hybrid architecture with cost caps)
+    # 95% of queries use GPT-4o-mini (cost-efficient)
+    # 5% high-stakes queries use Claude Opus 4.5 (maximum reasoning quality)
+    MODEL_DEFAULT = "gpt-4o-mini"           # Standard coaching (95%)
+    MODEL_HIGH_STAKES = "claude-opus-4-5-20250514"  # Injury/recovery/load decisions (5%)
+    MODEL_FALLBACK = "gpt-4o"               # When Opus unavailable/budget exhausted
     
     # Legacy aliases for backward compatibility
-    MODEL_SIMPLE = MODEL_LOW
-    MODEL_STANDARD = MODEL_MEDIUM
+    MODEL_LOW = MODEL_DEFAULT
+    MODEL_MEDIUM = MODEL_DEFAULT
+    MODEL_HIGH = MODEL_FALLBACK
+    MODEL_HIGH_VIP = MODEL_HIGH_STAKES
+    MODEL_SIMPLE = MODEL_DEFAULT
+    MODEL_STANDARD = MODEL_DEFAULT
 
     def __init__(self, db: Session):
         self.db = db
         self.client = None
+        self.anthropic_client = None
         self.assistant_id = None
         
         # Phase 4/5: Modular components
@@ -179,9 +267,17 @@ Policy:
         self.context_builder = ContextBuilder()
         self.conversation_manager = ConversationQualityManager()
         
-        # Phase 11: Load VIP athletes and model routing config (ADR-060)
+        # ADR-061: Load VIP athletes and model routing config
         self._load_vip_athletes()
         self.model_routing_enabled = os.getenv("COACH_MODEL_ROUTING", "on").lower() == "on"
+        self.high_stakes_routing_enabled = os.getenv("COACH_HIGH_STAKES_ROUTING", "on").lower() == "on"
+        
+        # Initialize Anthropic client for high-stakes queries (ADR-061)
+        if ANTHROPIC_AVAILABLE:
+            anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+            if anthropic_key:
+                self.anthropic_client = Anthropic(api_key=anthropic_key)
+                logger.info("Anthropic client initialized for high-stakes routing")
         
         if OPENAI_AVAILABLE:
             api_key = os.getenv("OPENAI_API_KEY")
@@ -242,6 +338,312 @@ Policy:
             logger.warning(f"Failed to check VIP status for athlete {athlete_id}: {e}")
         
         return False
+
+    # =========================================================================
+    # ADR-061: BUDGET TRACKING AND COST CAPS
+    # =========================================================================
+    
+    def _get_or_create_usage(self, athlete_id: UUID) -> "CoachUsage":
+        """
+        Get or create usage tracking record for athlete.
+        
+        Handles daily and monthly reset logic.
+        """
+        from models import CoachUsage
+        
+        today = date.today()
+        current_month = today.strftime("%Y-%m")
+        
+        # Try to get existing record for today
+        usage = (
+            self.db.query(CoachUsage)
+            .filter(CoachUsage.athlete_id == athlete_id, CoachUsage.date == today)
+            .first()
+        )
+        
+        if usage:
+            # Check if month rolled over (reset monthly counters)
+            if usage.month != current_month:
+                usage.month = current_month
+                usage.tokens_this_month = 0
+                usage.opus_tokens_this_month = 0
+                usage.cost_this_month_cents = 0
+                self.db.commit()
+            return usage
+        
+        # Create new record for today
+        # Carry over monthly totals from previous day if same month
+        prev_usage = (
+            self.db.query(CoachUsage)
+            .filter(CoachUsage.athlete_id == athlete_id, CoachUsage.month == current_month)
+            .order_by(CoachUsage.date.desc())
+            .first()
+        )
+        
+        usage = CoachUsage(
+            athlete_id=athlete_id,
+            date=today,
+            month=current_month,
+            requests_today=0,
+            opus_requests_today=0,
+            tokens_today=0,
+            opus_tokens_today=0,
+            tokens_this_month=prev_usage.tokens_this_month if prev_usage else 0,
+            opus_tokens_this_month=prev_usage.opus_tokens_this_month if prev_usage else 0,
+            cost_today_cents=0,
+            cost_this_month_cents=prev_usage.cost_this_month_cents if prev_usage else 0,
+        )
+        self.db.add(usage)
+        self.db.commit()
+        self.db.refresh(usage)
+        return usage
+    
+    def check_budget(self, athlete_id: UUID, is_opus: bool = False, is_vip: bool = False) -> Tuple[bool, str]:
+        """
+        Check if athlete has budget remaining for a query.
+        
+        Args:
+            athlete_id: The athlete's ID
+            is_opus: Whether this is an Opus (high-stakes) query
+            is_vip: Whether athlete is VIP (gets 10× Opus allocation)
+            
+        Returns:
+            (allowed, reason) - True if request can proceed, else False with reason
+        """
+        try:
+            usage = self._get_or_create_usage(athlete_id)
+            
+            # VIP multiplier for Opus allocation (ADR-061)
+            vip_multiplier = 10 if is_vip else 1
+            
+            # Daily request limit (same for VIP and standard)
+            if usage.requests_today >= COACH_MAX_REQUESTS_PER_DAY:
+                return False, "daily_request_limit"
+            
+            # Opus-specific limits (VIP gets 10× allocation)
+            if is_opus:
+                max_opus_daily = COACH_MAX_OPUS_REQUESTS_PER_DAY * vip_multiplier
+                max_opus_monthly = COACH_MONTHLY_OPUS_TOKEN_BUDGET * vip_multiplier
+                
+                if usage.opus_requests_today >= max_opus_daily:
+                    return False, "daily_opus_limit"
+                if usage.opus_tokens_this_month >= max_opus_monthly:
+                    return False, "monthly_opus_budget"
+            
+            # Monthly token budget (same for VIP and standard)
+            if usage.tokens_this_month >= COACH_MONTHLY_TOKEN_BUDGET:
+                return False, "monthly_token_budget"
+            
+            return True, "ok"
+        except Exception as e:
+            logger.warning(f"Budget check failed for {athlete_id}: {e}")
+            # Fail open - don't block on budget check errors
+            return True, "error_fail_open"
+    
+    def track_usage(
+        self,
+        athlete_id: UUID,
+        input_tokens: int,
+        output_tokens: int,
+        model: str,
+        is_opus: bool = False,
+    ) -> None:
+        """
+        Record token usage for an athlete.
+        
+        Args:
+            athlete_id: The athlete's ID
+            input_tokens: Number of input tokens used
+            output_tokens: Number of output tokens used
+            model: Model name used
+            is_opus: Whether this was an Opus query
+        """
+        try:
+            usage = self._get_or_create_usage(athlete_id)
+            total_tokens = input_tokens + output_tokens
+            
+            # Update daily counters
+            usage.requests_today += 1
+            usage.tokens_today += total_tokens
+            
+            # Update monthly counters
+            usage.tokens_this_month += total_tokens
+            
+            # Calculate cost (in cents) - approximate
+            if is_opus:
+                usage.opus_requests_today += 1
+                usage.opus_tokens_today += total_tokens
+                usage.opus_tokens_this_month += total_tokens
+                # Opus: $5/1M input, $25/1M output
+                cost_cents = int((input_tokens * 0.5 + output_tokens * 2.5) / 100)
+            elif "gpt-4o-mini" in model:
+                # GPT-4o-mini: $0.15/1M input, $0.60/1M output
+                cost_cents = int((input_tokens * 0.015 + output_tokens * 0.06) / 100)
+            else:
+                # GPT-4o: $2.50/1M input, $10/1M output
+                cost_cents = int((input_tokens * 0.25 + output_tokens * 1.0) / 100)
+            
+            usage.cost_today_cents += cost_cents
+            usage.cost_this_month_cents += cost_cents
+            
+            self.db.commit()
+            
+            logger.debug(
+                f"Usage tracked: athlete={athlete_id}, tokens={total_tokens}, "
+                f"model={model}, is_opus={is_opus}, cost_cents={cost_cents}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to track usage for {athlete_id}: {e}")
+            # Don't fail the request on tracking errors
+    
+    def get_budget_status(self, athlete_id: UUID) -> Dict[str, Any]:
+        """
+        Get current budget status for an athlete.
+        
+        Returns dict with usage stats and remaining budgets.
+        VIP athletes see their 10× Opus allocation.
+        """
+        try:
+            usage = self._get_or_create_usage(athlete_id)
+            is_vip = self.is_athlete_vip(athlete_id)
+            vip_multiplier = 10 if is_vip else 1
+            
+            max_opus_daily = COACH_MAX_OPUS_REQUESTS_PER_DAY * vip_multiplier
+            max_opus_monthly = COACH_MONTHLY_OPUS_TOKEN_BUDGET * vip_multiplier
+            
+            return {
+                "date": str(usage.date),
+                "month": usage.month,
+                "is_vip": is_vip,
+                "requests_today": usage.requests_today,
+                "requests_remaining_today": max(0, COACH_MAX_REQUESTS_PER_DAY - usage.requests_today),
+                "opus_requests_today": usage.opus_requests_today,
+                "opus_requests_limit_today": max_opus_daily,
+                "opus_requests_remaining_today": max(0, max_opus_daily - usage.opus_requests_today),
+                "tokens_this_month": usage.tokens_this_month,
+                "tokens_remaining_this_month": max(0, COACH_MONTHLY_TOKEN_BUDGET - usage.tokens_this_month),
+                "opus_tokens_this_month": usage.opus_tokens_this_month,
+                "opus_tokens_limit_this_month": max_opus_monthly,
+                "opus_tokens_remaining_this_month": max(0, max_opus_monthly - usage.opus_tokens_this_month),
+                "cost_this_month_usd": usage.cost_this_month_cents / 100,
+                "budget_healthy": (
+                    usage.tokens_this_month < COACH_MONTHLY_TOKEN_BUDGET * 0.8 and
+                    usage.opus_tokens_this_month < max_opus_monthly * 0.8
+                ),
+            }
+        except Exception as e:
+            logger.warning(f"Failed to get budget status for {athlete_id}: {e}")
+            return {"error": str(e)}
+
+    async def query_opus(
+        self,
+        athlete_id: UUID,
+        message: str,
+        athlete_state: str,
+        conversation_context: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Query Claude Opus for high-stakes decisions (ADR-061).
+        
+        Uses direct Anthropic API (not Assistants) with minimal context.
+        Reserved for injury/recovery/load decisions where maximum reasoning quality matters.
+        
+        Args:
+            athlete_id: The athlete's ID
+            message: The user's current message
+            athlete_state: Compressed athlete state object (injected as context)
+            conversation_context: Optional last few exchanges for continuity
+            
+        Returns:
+            Dict with response text and metadata
+        """
+        if not self.anthropic_client:
+            return {
+                "response": "High-stakes model not available. Please try again.",
+                "error": True,
+                "model": None,
+            }
+        
+        # Build messages - keep it minimal for cost efficiency
+        messages = []
+        
+        # Add conversation context (last 3 exchanges max)
+        if conversation_context:
+            for msg in conversation_context[-6:]:  # Last 3 pairs
+                messages.append({
+                    "role": msg.get("role", "user"),
+                    "content": msg.get("content", ""),
+                })
+        
+        # Add current message with athlete state
+        user_content = f"""ATHLETE STATE:
+{athlete_state}
+
+ATHLETE QUESTION:
+{message}"""
+        
+        messages.append({"role": "user", "content": user_content})
+        
+        # System prompt for high-stakes reasoning
+        system_prompt = """You are StrideIQ, an expert running coach providing advice on a HIGH-STAKES query.
+
+This query involves injury, pain, recovery, or load decisions where accuracy is critical.
+
+IMPORTANT GUIDELINES:
+1. Be CONSERVATIVE with injury/pain advice - when in doubt, recommend rest or medical consultation
+2. Never dismiss pain signals - acknowledge them and provide safe guidance
+3. For return-from-break queries, recommend gradual progression (10-15% weekly volume increase max)
+4. If the athlete mentions sharp, stabbing, or severe pain, strongly recommend professional evaluation
+5. Base all recommendations on the provided athlete state data
+6. Be direct and actionable, but prioritize safety over performance
+
+If you're uncertain or the data is insufficient, say so clearly rather than guessing."""
+        
+        try:
+            response = self.anthropic_client.messages.create(
+                model=self.MODEL_HIGH_STAKES,
+                system=system_prompt,
+                messages=messages,
+                max_tokens=COACH_MAX_OUTPUT_TOKENS,
+            )
+            
+            # Extract response text
+            response_text = response.content[0].text if response.content else ""
+            
+            # Track usage
+            input_tokens = response.usage.input_tokens if hasattr(response, 'usage') else 0
+            output_tokens = response.usage.output_tokens if hasattr(response, 'usage') else 0
+            
+            self.track_usage(
+                athlete_id=athlete_id,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                model=self.MODEL_HIGH_STAKES,
+                is_opus=True,
+            )
+            
+            logger.info(
+                f"Opus query completed: athlete={athlete_id}, "
+                f"input_tokens={input_tokens}, output_tokens={output_tokens}"
+            )
+            
+            return {
+                "response": response_text,
+                "error": False,
+                "model": self.MODEL_HIGH_STAKES,
+                "is_high_stakes": True,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+            
+        except Exception as e:
+            logger.error(f"Opus query failed for {athlete_id}: {e}")
+            return {
+                "response": f"I encountered an error processing your request. Please try again.",
+                "error": True,
+                "model": self.MODEL_HIGH_STAKES,
+                "error_detail": str(e),
+            }
 
     def _assistant_tools(self) -> List[Dict[str, Any]]:
         """
@@ -1075,36 +1477,63 @@ Policy:
         complexity = self.classify_query_complexity(message)
         return "simple" if complexity == "low" else "standard"
 
-    def get_model_for_query(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> str:
+    def get_model_for_query(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> Tuple[str, bool]:
         """
-        Select model based on query complexity and athlete tier (Phase 11 - ADR-060).
+        Select model based on query content and athlete tier (ADR-061: Hybrid architecture).
+        
+        Routing logic - Opus for queries that MATTER:
+        1. High-stakes queries (injury/pain/load) → Opus (liability risk)
+        2. High-complexity queries (causal + ambiguity) → Opus (needs real reasoning)
+        3. Everything else → GPT-4o-mini
+        
+        VIP athletes get 10× Opus allocation but same routing rules.
         
         Args:
             query_type: Legacy 'simple'/'standard' or new 'low'/'medium'/'high'
-            athlete_id: Optional athlete ID for VIP check
-            message: Original message for complexity classification if needed
+            athlete_id: Optional athlete ID for VIP and budget check
+            message: Original message for classification
+            
+        Returns:
+            Tuple of (model_name, is_opus)
         """
-        # Handle legacy query_type values
-        if query_type == "simple":
-            return self.MODEL_LOW
-        elif query_type == "standard":
-            # Re-classify to distinguish medium vs high
-            complexity = self.classify_query_complexity(message) if message else "medium"
-        else:
-            complexity = query_type
+        # Check if high-stakes routing is enabled
+        if not self.high_stakes_routing_enabled:
+            return self.MODEL_DEFAULT, False
         
-        # LOW complexity → cheapest model
-        if complexity == "low":
-            return self.MODEL_LOW
+        # Determine if query needs Opus (high-stakes OR high-complexity)
+        is_high_stakes = is_high_stakes_query(message)
+        complexity = self.classify_query_complexity(message)
+        is_high_complexity = complexity == "high"
         
-        # HIGH complexity → check for VIP (env vars + DB flag)
-        if complexity == "high":
-            if self.is_athlete_vip(athlete_id):
-                return self.MODEL_HIGH_VIP
-            return self.MODEL_HIGH
+        # Route to Opus if either condition is true
+        needs_opus = is_high_stakes or is_high_complexity
         
-        # MEDIUM (default) → standard coaching model
-        return self.MODEL_MEDIUM
+        if needs_opus and athlete_id:
+            # Check Opus budget (VIP gets 10× allocation via check_budget)
+            is_vip = self.is_athlete_vip(athlete_id)
+            allowed, reason = self.check_budget(athlete_id, is_opus=True, is_vip=is_vip)
+            
+            if allowed and self.anthropic_client:
+                logger.info(
+                    f"Routing to Opus: is_high_stakes={is_high_stakes}, "
+                    f"is_high_complexity={is_high_complexity}, is_vip={is_vip}"
+                )
+                return self.MODEL_HIGH_STAKES, True
+            else:
+                # Fallback to GPT-4o (not mini) when Opus unavailable/budget exhausted
+                logger.info(f"Opus fallback to GPT-4o: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
+                return self.MODEL_FALLBACK, False
+        
+        # Default: GPT-4o-mini for cost efficiency
+        return self.MODEL_DEFAULT, False
+    
+    def get_model_for_query_legacy(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> str:
+        """
+        Legacy method for backward compatibility.
+        Returns just the model name (not the tuple).
+        """
+        model, _ = self.get_model_for_query(query_type, athlete_id, message)
+        return model
     
     async def chat(
         self, 
@@ -1417,13 +1846,78 @@ Policy:
             pass
         
         try:
-            # Classify query complexity and get model (Phase 11 - ADR-060)
+            # ADR-061: Hybrid model routing with cost caps
             complexity = self.classify_query_complexity(message)
-            model = self.get_model_for_query(complexity, athlete_id=athlete_id, message=message)
-            is_vip = str(athlete_id) in self.VIP_ATHLETE_IDS
+            model, is_opus = self.get_model_for_query(complexity, athlete_id=athlete_id, message=message)
+            is_vip = self.is_athlete_vip(athlete_id)
+            is_high_stakes = is_high_stakes_query(message)
 
             # Log model selection for cost tracking
-            logger.info(f"Coach query: complexity={complexity}, model={model}, is_vip={is_vip}")
+            is_high_complexity = complexity == "high"
+            logger.info(
+                f"Coach query: complexity={complexity}, model={model}, is_opus={is_opus}, "
+                f"is_vip={is_vip}, is_high_stakes={is_high_stakes}, is_high_complexity={is_high_complexity}"
+            )
+            
+            # Check overall budget before proceeding
+            budget_ok, budget_reason = self.check_budget(athlete_id, is_opus=is_opus, is_vip=is_vip)
+            if not budget_ok:
+                logger.warning(f"Budget exceeded for {athlete_id}: {budget_reason}")
+                return {
+                    "response": (
+                        "You've reached your daily coaching limit. "
+                        "Your limit resets at midnight UTC. "
+                        "For urgent questions, please consult a healthcare professional."
+                    ),
+                    "error": False,
+                    "budget_exceeded": True,
+                    "budget_reason": budget_reason,
+                }
+            
+            # ADR-061: Route high-stakes queries to Opus (direct API, not Assistants)
+            if is_opus and self.anthropic_client:
+                # Build athlete state for Opus context
+                athlete_state = self._build_athlete_state_for_opus(athlete_id)
+                
+                # Get recent conversation context
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                conversation_context = []
+                if thread_id:
+                    try:
+                        history = self.get_thread_history_raw(thread_id, limit=6)
+                        conversation_context = [
+                            {"role": m.get("role"), "content": m.get("content")}
+                            for m in history if m.get("role") in ("user", "assistant")
+                        ]
+                    except Exception:
+                        pass
+                
+                # Query Opus directly
+                opus_result = await self.query_opus(
+                    athlete_id=athlete_id,
+                    message=message,
+                    athlete_state=athlete_state,
+                    conversation_context=conversation_context,
+                )
+                
+                # Add to thread for continuity (store in OpenAI thread too)
+                if thread_id and not opus_result.get("error"):
+                    try:
+                        self.client.beta.threads.messages.create(
+                            thread_id=thread_id,
+                            role="user",
+                            content=message
+                        )
+                        self.client.beta.threads.messages.create(
+                            thread_id=thread_id,
+                            role="assistant",
+                            content=opus_result.get("response", "")
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to sync Opus response to thread: {e}")
+                
+                opus_result["thread_id"] = thread_id
+                return opus_result
 
             thread_id, is_new_thread = self.get_or_create_thread_with_state(athlete_id)
             if not thread_id:
@@ -2923,6 +3417,106 @@ Policy:
         baseline_completed = bool(baseline_row and baseline_row.completed_at)
         baseline_needed = bool(history_thin and (not baseline_completed))
         return history_thin, history_snapshot, baseline, baseline_needed
+
+    def _build_athlete_state_for_opus(self, athlete_id: UUID) -> str:
+        """
+        Build a compressed athlete state object for Opus context (ADR-061).
+        
+        This is the critical context injection for high-stakes queries.
+        Kept minimal (~800 tokens) but includes all safety-relevant data.
+        """
+        from models import Athlete, Activity, DailyCheckin
+        
+        state_lines = []
+        
+        try:
+            # Get athlete profile
+            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            if athlete:
+                state_lines.append(f"Athlete: {athlete.display_name or 'Anonymous'}")
+                if athlete.birthdate:
+                    age = (date.today() - athlete.birthdate).days // 365
+                    state_lines.append(f"Age: {age}")
+                if athlete.sex:
+                    state_lines.append(f"Sex: {athlete.sex}")
+            
+            # Get recent training load
+            try:
+                load_data = coach_tools.get_training_load(self.db, athlete_id)
+                if load_data.get("ok"):
+                    data = load_data.get("data", {})
+                    state_lines.append(f"CTL (fitness): {data.get('ctl', 'N/A')}")
+                    state_lines.append(f"ATL (fatigue): {data.get('atl', 'N/A')}")
+                    state_lines.append(f"TSB (form): {data.get('tsb', 'N/A')}")
+                    state_lines.append(f"Tau2 (recovery): {data.get('tau2_hours', 'N/A')}h")
+            except Exception:
+                pass
+            
+            # Get recovery status
+            try:
+                recovery = coach_tools.get_recovery_status(self.db, athlete_id)
+                if recovery.get("ok"):
+                    data = recovery.get("data", {})
+                    state_lines.append(f"Recovery status: {data.get('status', 'unknown')}")
+                    state_lines.append(f"Injury risk score: {data.get('injury_risk_score', 'N/A')}")
+            except Exception:
+                pass
+            
+            # Get last 3 runs
+            try:
+                recent = coach_tools.get_recent_runs(self.db, athlete_id, days=14)
+                if recent.get("ok"):
+                    runs = recent.get("data", {}).get("runs", [])[:3]
+                    if runs:
+                        state_lines.append("Recent runs:")
+                        for run in runs:
+                            state_lines.append(
+                                f"  - {run.get('date')}: {run.get('distance_display')} @ "
+                                f"{run.get('pace_display')} (RPE {run.get('rpe', 'N/A')})"
+                            )
+            except Exception:
+                pass
+            
+            # Get latest checkin
+            try:
+                checkin = (
+                    self.db.query(DailyCheckin)
+                    .filter(DailyCheckin.athlete_id == athlete_id)
+                    .order_by(DailyCheckin.checkin_date.desc())
+                    .first()
+                )
+                if checkin:
+                    state_lines.append(f"Last checkin ({checkin.checkin_date}):")
+                    if checkin.sleep_hours:
+                        state_lines.append(f"  Sleep: {checkin.sleep_hours}h")
+                    if checkin.energy_level:
+                        state_lines.append(f"  Energy: {checkin.energy_level}/10")
+                    if checkin.soreness_level:
+                        state_lines.append(f"  Soreness: {checkin.soreness_level}/10")
+                    if checkin.notes:
+                        state_lines.append(f"  Notes: {checkin.notes[:100]}")
+            except Exception:
+                pass
+            
+            # Get intent snapshot
+            try:
+                intent = coach_tools.get_coach_intent_snapshot(self.db, athlete_id)
+                if intent.get("ok"):
+                    data = intent.get("data", {})
+                    if data.get("training_intent"):
+                        state_lines.append(f"Training intent: {data['training_intent']}")
+                    if data.get("pain_flag") and data["pain_flag"] != "none":
+                        state_lines.append(f"Pain flag: {data['pain_flag']}")
+                    if data.get("next_event_date"):
+                        state_lines.append(f"Next event: {data['next_event_date']} ({data.get('next_event_type', '')})")
+            except Exception:
+                pass
+                
+        except Exception as e:
+            logger.warning(f"Failed to build athlete state for Opus: {e}")
+            state_lines.append("(Unable to retrieve full athlete state)")
+        
+        return "\n".join(state_lines) if state_lines else "(No athlete data available)"
 
     def _build_thin_history_injection(self, *, history_snapshot: dict, baseline: Optional[dict]) -> str:
         """
