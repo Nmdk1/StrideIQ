@@ -201,6 +201,7 @@ export interface RegisterRequest {
   email: string;
   password: string;
   display_name?: string;
+  race_code?: string;
 }
 
 export interface AuthResponse {

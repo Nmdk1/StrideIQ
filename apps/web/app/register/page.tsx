@@ -7,7 +7,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -15,6 +15,8 @@ import Link from 'next/link';
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const raceCode = searchParams.get('code');
   const { register, isLoading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,6 +46,7 @@ export default function RegisterPage() {
         email,
         password,
         display_name: displayName || undefined,
+        race_code: raceCode || undefined,
       });
       router.push('/onboarding');
     } catch (err: any) {
@@ -67,6 +70,18 @@ export default function RegisterPage() {
         <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-8">
           <h1 className="text-3xl font-bold mb-2">Create Account</h1>
           <p className="text-slate-400 mb-6">Get started.</p>
+
+          {raceCode && (
+            <div className="mb-6 p-4 bg-purple-900/30 border border-purple-600/50 rounded-lg">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🎉</span>
+                <div>
+                  <p className="text-purple-200 font-medium">Race Day Special!</p>
+                  <p className="text-purple-300 text-sm">Your free trial is ready with code <span className="font-mono font-bold">{raceCode}</span></p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {error && <ErrorMessage error={error} className="mb-6" />}
 
