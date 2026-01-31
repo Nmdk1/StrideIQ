@@ -537,6 +537,88 @@ Policy:
             logger.warning(f"Failed to get budget status for {athlete_id}: {e}")
             return {"error": str(e)}
 
+    def _opus_tools(self) -> List[Dict[str, Any]]:
+        """Define tools available to Opus (Anthropic format)."""
+        return [
+            {
+                "name": "get_recent_runs",
+                "description": "Get recent running activities with distances, paces, and heart rate data.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days to look back (default 14, max 365)",
+                        }
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_weekly_volume",
+                "description": "Get weekly mileage totals for trend analysis.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "weeks": {
+                            "type": "integer",
+                            "description": "Number of weeks to look back (default 12, max 104)",
+                        }
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_training_load",
+                "description": "Get current training load metrics (fitness, fatigue, form).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_recovery_status",
+                "description": "Get recovery metrics including injury risk score.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_athlete_profile",
+                "description": "Get athlete profile including age, training history, and preferences.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        ]
+
+    def _execute_opus_tool(self, athlete_id: UUID, tool_name: str, tool_input: Dict[str, Any]) -> str:
+        """Execute a tool call for Opus and return JSON result."""
+        import json
+        try:
+            if tool_name == "get_recent_runs":
+                days = tool_input.get("days", 14)
+                result = coach_tools.get_recent_runs(self.db, athlete_id, days=min(days, 365))
+            elif tool_name == "get_weekly_volume":
+                weeks = tool_input.get("weeks", 12)
+                result = coach_tools.get_weekly_volume(self.db, athlete_id, weeks=min(weeks, 104))
+            elif tool_name == "get_training_load":
+                result = coach_tools.get_training_load(self.db, athlete_id)
+            elif tool_name == "get_recovery_status":
+                result = coach_tools.get_recovery_status(self.db, athlete_id)
+            elif tool_name == "get_athlete_profile":
+                result = coach_tools.get_athlete_profile(self.db, athlete_id)
+            else:
+                result = {"error": f"Unknown tool: {tool_name}"}
+            return json.dumps(result, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
     async def query_opus(
         self,
         athlete_id: UUID,
@@ -547,17 +629,8 @@ Policy:
         """
         Query Claude Opus for high-stakes decisions (ADR-061).
         
-        Uses direct Anthropic API (not Assistants) with minimal context.
+        Uses Anthropic API with TOOL ACCESS - Opus can query any data it needs.
         Reserved for injury/recovery/load decisions where maximum reasoning quality matters.
-        
-        Args:
-            athlete_id: The athlete's ID
-            message: The user's current message
-            athlete_state: Compressed athlete state object (injected as context)
-            conversation_context: Optional last few exchanges for continuity
-            
-        Returns:
-            Dict with response text and metadata
         """
         if not self.anthropic_client:
             return {
@@ -566,67 +639,114 @@ Policy:
                 "model": None,
             }
         
-        # Build messages - keep it minimal for cost efficiency
+        # Build messages
         messages = []
         
         # Add conversation context (last 3 exchanges max)
         if conversation_context:
-            for msg in conversation_context[-6:]:  # Last 3 pairs
+            for msg in conversation_context[-6:]:
                 messages.append({
                     "role": msg.get("role", "user"),
                     "content": msg.get("content", ""),
                 })
         
-        # Add current message with athlete state
-        user_content = f"""ATHLETE STATE:
-{athlete_state}
-
-ATHLETE QUESTION:
-{message}"""
+        # Add current message
+        messages.append({"role": "user", "content": message})
         
-        messages.append({"role": "user", "content": user_content})
-        
-        # System prompt for high-stakes reasoning
-        system_prompt = """You are StrideIQ, an expert running coach providing advice on a HIGH-STAKES query.
+        # System prompt for high-stakes reasoning WITH tool guidance
+        system_prompt = """You are StrideIQ, an expert running coach. This is a HIGH-STAKES query involving training load, injury risk, or recovery decisions.
 
-This query involves injury, pain, recovery, or load decisions where accuracy is critical.
+YOU HAVE TOOLS - USE THEM:
+- ALWAYS call get_weekly_volume first to understand the athlete's training history
+- Call get_recent_runs to see individual workout details
+- Call get_training_load for current fitness/fatigue/form
+- Call get_recovery_status for injury risk assessment
+- Call get_athlete_profile for age, experience, preferences
 
-IMPORTANT GUIDELINES:
-1. Be CONSERVATIVE with injury/pain advice - when in doubt, recommend rest or medical consultation
-2. Never dismiss pain signals - acknowledge them and provide safe guidance
-3. For return-from-break queries, recommend gradual progression (10-15% weekly volume increase max)
-4. If the athlete mentions sharp, stabbing, or severe pain, strongly recommend professional evaluation
-5. Base all recommendations on the provided athlete state data
-6. Be direct and actionable, but prioritize safety over performance
+REASONING APPROACH:
+1. First gather data with tools - look at weeks/months of history, not just recent days
+2. Identify patterns: returning from injury? building mileage? overreaching?
+3. Consider the athlete's context (age, experience, goals)
+4. Make specific, evidence-based recommendations
 
-If you're uncertain or the data is insufficient, say so clearly rather than guessing."""
+COMMUNICATION:
+- Use plain English (never acronyms like TSB, ATL, CTL)
+- Be specific with numbers (recommend "42-45 miles" not "increase gradually")
+- Cite the data you used ("Looking at your last 8 weeks...")
+- Be conservative with injury-related advice
+
+If you need more data to answer well, call the tools. That's why they're there."""
         
         try:
+            total_input_tokens = 0
+            total_output_tokens = 0
+            
+            # Initial call with tools
             response = self.anthropic_client.messages.create(
                 model=self.MODEL_HIGH_STAKES,
                 system=system_prompt,
                 messages=messages,
                 max_tokens=COACH_MAX_OUTPUT_TOKENS,
+                tools=self._opus_tools(),
             )
             
-            # Extract response text
-            response_text = response.content[0].text if response.content else ""
+            total_input_tokens += response.usage.input_tokens if hasattr(response, 'usage') else 0
+            total_output_tokens += response.usage.output_tokens if hasattr(response, 'usage') else 0
             
-            # Track usage
-            input_tokens = response.usage.input_tokens if hasattr(response, 'usage') else 0
-            output_tokens = response.usage.output_tokens if hasattr(response, 'usage') else 0
+            # Handle tool calls in a loop (max 5 iterations to prevent runaway)
+            for _ in range(5):
+                if response.stop_reason != "tool_use":
+                    break
+                
+                # Process tool calls
+                tool_results = []
+                for block in response.content:
+                    if block.type == "tool_use":
+                        tool_name = block.name
+                        tool_input = block.input
+                        tool_id = block.id
+                        
+                        logger.info(f"Opus calling tool: {tool_name} with {tool_input}")
+                        result = self._execute_opus_tool(athlete_id, tool_name, tool_input)
+                        
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": result,
+                        })
+                
+                # Continue conversation with tool results
+                messages.append({"role": "assistant", "content": response.content})
+                messages.append({"role": "user", "content": tool_results})
+                
+                response = self.anthropic_client.messages.create(
+                    model=self.MODEL_HIGH_STAKES,
+                    system=system_prompt,
+                    messages=messages,
+                    max_tokens=COACH_MAX_OUTPUT_TOKENS,
+                    tools=self._opus_tools(),
+                )
+                
+                total_input_tokens += response.usage.input_tokens if hasattr(response, 'usage') else 0
+                total_output_tokens += response.usage.output_tokens if hasattr(response, 'usage') else 0
+            
+            # Extract final response text
+            response_text = ""
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    response_text += block.text
             
             self.track_usage(
                 athlete_id=athlete_id,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
                 model=self.MODEL_HIGH_STAKES,
                 is_opus=True,
             )
             
             logger.info(
                 f"Opus query completed: athlete={athlete_id}, "
-                f"input_tokens={input_tokens}, output_tokens={output_tokens}"
+                f"input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
             )
             
             return {
@@ -634,8 +754,8 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
                 "error": False,
                 "model": self.MODEL_HIGH_STAKES,
                 "is_high_stakes": True,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
             }
             
         except Exception as e:
