@@ -156,9 +156,16 @@ Policy:
 
 - You can look back up to ~2 years for recent-run tools (up to 730 days). Do not claim you are limited to 30 days."""
 
-    # Model tiers (simple 2-tier selection for cost control)
-    MODEL_SIMPLE = "gpt-3.5-turbo"    # ~$0.002/query
-    MODEL_STANDARD = "gpt-4o-mini"    # ~$0.01/query
+    # Model tiers (Phase 11: complexity-based routing)
+    # See ADR-060 for rationale
+    MODEL_LOW = "gpt-5-nano"          # $0.0001/query - pure lookups
+    MODEL_MEDIUM = "gpt-5-mini"       # $0.0005/query - standard coaching
+    MODEL_HIGH = "gpt-5.1"            # $0.0025/query - complex reasoning
+    MODEL_HIGH_VIP = "gpt-5.2"        # $0.0035/query - flagship for VIPs
+    
+    # Legacy aliases for backward compatibility
+    MODEL_SIMPLE = MODEL_LOW
+    MODEL_STANDARD = MODEL_MEDIUM
 
     def __init__(self, db: Session):
         self.db = db
@@ -169,6 +176,10 @@ Policy:
         self.router = MessageRouter()
         self.context_builder = ContextBuilder()
         self.conversation_manager = ConversationQualityManager()
+        
+        # Phase 11: Load VIP athletes and model routing config (ADR-060)
+        self._load_vip_athletes()
+        self.model_routing_enabled = os.getenv("COACH_MODEL_ROUTING", "on").lower() == "on"
         
         if OPENAI_AVAILABLE:
             api_key = os.getenv("OPENAI_API_KEY")
@@ -181,6 +192,23 @@ Policy:
                 )
                 # Get or create assistant
                 self.assistant_id = os.getenv("OPENAI_ASSISTANT_ID") or self._get_or_create_assistant()
+    
+    def _load_vip_athletes(self) -> None:
+        """
+        Load VIP athlete IDs from environment or feature flag.
+        VIPs get MODEL_HIGH_VIP (gpt-5.2) for high-complexity queries.
+        """
+        # Load from env: comma-separated UUIDs
+        vip_env = os.getenv("COACH_VIP_ATHLETE_IDS", "")
+        if vip_env:
+            self.VIP_ATHLETE_IDS = set(aid.strip() for aid in vip_env.split(",") if aid.strip())
+        else:
+            self.VIP_ATHLETE_IDS = set()
+        
+        # Also load owner ID as implicit VIP
+        owner_id = os.getenv("OWNER_ATHLETE_ID")
+        if owner_id:
+            self.VIP_ATHLETE_IDS.add(owner_id.strip())
 
     def _assistant_tools(self) -> List[Dict[str, Any]]:
         """
@@ -956,35 +984,94 @@ Policy:
         else:
             return f"{title} — tell me more?"
 
-    def classify_query(self, message: str) -> str:
+    def classify_query_complexity(self, message: str) -> str:
         """
-        Classify query to select appropriate model.
-
-        Returns: 'simple' or 'standard'
+        Classify query complexity for model routing (Phase 11 - ADR-060).
+        
+        Returns: 'low', 'medium', or 'high'
+        
+        HIGH = Multi-signal synthesis with ambiguity (needs real reasoning)
+        MEDIUM = Standard coaching (rule-based with data)
+        LOW = Pure lookups/definitions (no reasoning needed)
         """
         message_lower = (message or "").lower()
-
-        # Simple: Direct data lookups (single tool call, minimal reasoning)
-        simple_patterns = [
-            "what's my tsb", "what is my tsb",
-            "what's my ctl", "what is my ctl",
-            "what's my atl", "what is my atl",
-            "show my plan", "this week's plan",
-            "my last run", "recent runs",
-            "my race predictions", "predicted times",
-            "recovery status", "am i recovering",
+        
+        # LOW: Pure data retrieval, no reasoning
+        low_patterns = [
+            "what was my", "show me", "list my", "how far did i",
+            "yesterday", "last run", "this week's", "my last",
+            "what is a", "what does", "define", "what is my",
+            "personal best", "pb", "pr", "my pbs",
+            "what's my tsb", "what's my ctl", "what's my atl",
+            "show my plan", "recent runs", "my race predictions",
+            "recovery status",
         ]
-        if any(p in message_lower for p in simple_patterns):
-            return "simple"
+        if any(p in message_lower for p in low_patterns):
+            return "low"
+        
+        # HIGH: Multi-signal synthesis with ambiguity
+        # Must have causal/synthesis intent AND (ambiguity OR multiple factors)
+        causal_patterns = [
+            "why am i", "why is my", "what's causing", "what's driving",
+            "what's holding", "what explains", "biggest factor",
+            "main driver", "what's the one thing",
+        ]
+        has_causal = any(p in message_lower for p in causal_patterns)
+        
+        ambiguity_signals = [
+            "but", "despite", "even though", "however", "yet",
+            "although", "not sure", "confused", "doesn't make sense",
+        ]
+        has_ambiguity = any(s in message_lower for s in ambiguity_signals)
+        
+        # Multiple factors: 2+ "and" or comma-separated concerns
+        has_multiple_factors = (
+            message_lower.count(" and ") >= 2 or
+            message_lower.count(",") >= 2
+        )
+        
+        if has_causal and (has_ambiguity or has_multiple_factors):
+            return "high"
+        
+        # MEDIUM: Everything else (standard coaching)
+        return "medium"
+    
+    # Legacy alias for backward compatibility
+    def classify_query(self, message: str) -> str:
+        """Legacy: map new complexity to old simple/standard."""
+        complexity = self.classify_query_complexity(message)
+        return "simple" if complexity == "low" else "standard"
 
-        # Everything else: Standard
-        return "standard"
-
-    def get_model_for_query(self, query_type: str) -> str:
-        """Map query type to model."""
+    def get_model_for_query(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> str:
+        """
+        Select model based on query complexity and athlete tier (Phase 11 - ADR-060).
+        
+        Args:
+            query_type: Legacy 'simple'/'standard' or new 'low'/'medium'/'high'
+            athlete_id: Optional athlete ID for VIP check
+            message: Original message for complexity classification if needed
+        """
+        # Handle legacy query_type values
         if query_type == "simple":
-            return self.MODEL_SIMPLE
-        return self.MODEL_STANDARD
+            return self.MODEL_LOW
+        elif query_type == "standard":
+            # Re-classify to distinguish medium vs high
+            complexity = self.classify_query_complexity(message) if message else "medium"
+        else:
+            complexity = query_type
+        
+        # LOW complexity → cheapest model
+        if complexity == "low":
+            return self.MODEL_LOW
+        
+        # HIGH complexity → check for VIP
+        if complexity == "high":
+            if athlete_id and str(athlete_id) in self.VIP_ATHLETE_IDS:
+                return self.MODEL_HIGH_VIP
+            return self.MODEL_HIGH
+        
+        # MEDIUM (default) → standard coaching model
+        return self.MODEL_MEDIUM
     
     async def chat(
         self, 
@@ -1297,12 +1384,13 @@ Policy:
             pass
         
         try:
-            # Classify query and get model
-            query_type = self.classify_query(message)
-            model = self.get_model_for_query(query_type)
+            # Classify query complexity and get model (Phase 11 - ADR-060)
+            complexity = self.classify_query_complexity(message)
+            model = self.get_model_for_query(complexity, athlete_id=athlete_id, message=message)
+            is_vip = str(athlete_id) in self.VIP_ATHLETE_IDS
 
             # Log model selection for cost tracking
-            logger.info(f"Coach query: type={query_type}, model={model}")
+            logger.info(f"Coach query: complexity={complexity}, model={model}, is_vip={is_vip}")
 
             thread_id, is_new_thread = self.get_or_create_thread_with_state(athlete_id)
             if not thread_id:
