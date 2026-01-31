@@ -638,7 +638,16 @@ def revoke_invite_endpoint(
     if not inv:
         raise HTTPException(status_code=404, detail="Invite not found")
     db.commit()
-    return {"success": True, "invite": {"id": str(inv.id), "email": inv.email, "is_active": inv.is_active}}
+    db.refresh(inv)
+    return {
+        "success": True, 
+        "invite": {
+            "id": str(inv.id), 
+            "email": inv.email, 
+            "is_active": inv.is_active,
+            "revoked_at": inv.revoked_at.isoformat() if inv.revoked_at else None,
+        }
+    }
 
 
 @router.patch("/feature-flags/{flag_key}")

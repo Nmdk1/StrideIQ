@@ -55,13 +55,15 @@ export default function AdminPage() {
   const { data: opsDeferred, isLoading: opsDeferredLoading } = useOpsDeferredIngestion({ limit: 200 });
 
   // Invites
-  const { data: invitesData, isLoading: invitesLoading } = useAdminInvites({ limit: 200 });
+  const { data: invitesData, isLoading: invitesLoading, error: invitesError } = useAdminInvites({ limit: 200 });
   const createInvite = useCreateInvite();
   const revokeInvite = useRevokeInvite();
   const [newInviteEmail, setNewInviteEmail] = useState('');
   const [newInviteNote, setNewInviteNote] = useState('');
   const [newInviteGrantTier, setNewInviteGrantTier] = useState<'free' | 'pro' | ''>('');
   const [inviteFilter, setInviteFilter] = useState<'all' | 'pending' | 'used'>('all');
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Feature flags
   const { data: flagsData, isLoading: flagsLoading } = useAdminFeatureFlags('plan.');
@@ -1301,14 +1303,28 @@ export default function AdminPage() {
                   <button
                     onClick={async () => {
                       if (!newInviteEmail) return;
-                      await createInvite.mutateAsync({
-                        email: newInviteEmail,
-                        note: newInviteNote || null,
-                        grant_tier: newInviteGrantTier || null,
-                      });
-                      setNewInviteEmail('');
-                      setNewInviteNote('');
-                      setNewInviteGrantTier('');
+                      // Basic email validation
+                      if (!newInviteEmail.includes('@') || !newInviteEmail.includes('.')) {
+                        setInviteError('Please enter a valid email address');
+                        return;
+                      }
+                      setInviteError(null);
+                      setInviteSuccess(null);
+                      try {
+                        await createInvite.mutateAsync({
+                          email: newInviteEmail.trim().toLowerCase(),
+                          note: newInviteNote.trim() || null,
+                          grant_tier: newInviteGrantTier || null,
+                        });
+                        setInviteSuccess(`Invite created for ${newInviteEmail}`);
+                        setNewInviteEmail('');
+                        setNewInviteNote('');
+                        setNewInviteGrantTier('');
+                        // Clear success message after 5 seconds
+                        setTimeout(() => setInviteSuccess(null), 5000);
+                      } catch (err: any) {
+                        setInviteError(err?.message || 'Failed to create invite');
+                      }
                     }}
                     disabled={!newInviteEmail || createInvite.isPending}
                     className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded text-white font-medium"
@@ -1316,11 +1332,11 @@ export default function AdminPage() {
                     {createInvite.isPending ? 'Creating...' : 'Create Invite'}
                   </button>
                 </div>
-                {createInvite.isSuccess && (
-                  <p className="mt-2 text-green-400 text-sm">Invite created successfully!</p>
+                {inviteSuccess && (
+                  <p className="mt-2 text-green-400 text-sm">{inviteSuccess}</p>
                 )}
-                {createInvite.isError && (
-                  <p className="mt-2 text-red-400 text-sm">Failed to create invite</p>
+                {inviteError && (
+                  <p className="mt-2 text-red-400 text-sm">{inviteError}</p>
                 )}
               </div>
 
@@ -1356,6 +1372,14 @@ export default function AdminPage() {
               <div className="bg-slate-800 rounded-lg border border-slate-700/50 overflow-hidden">
                 {invitesLoading ? (
                   <div className="p-6"><LoadingSpinner /></div>
+                ) : invitesError ? (
+                  <div className="p-6">
+                    <ErrorMessage message="Failed to load invites" />
+                  </div>
+                ) : !invitesData?.invites?.length ? (
+                  <div className="p-6 text-center text-slate-400">
+                    <p>No invites yet. Create one above to get started.</p>
+                  </div>
                 ) : (
                   <table className="w-full">
                     <thead className="bg-slate-700/50">
@@ -1369,7 +1393,7 @@ export default function AdminPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/50">
-                      {invitesData?.invites
+                      {invitesData.invites
                         .filter((inv) => {
                           if (inviteFilter === 'pending') return inv.is_active && !inv.used_at;
                           if (inviteFilter === 'used') return !!inv.used_at;
