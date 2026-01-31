@@ -5,7 +5,7 @@ Comprehensive command center for site management, monitoring, testing, and debug
 Owner/admin role only.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, Body, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_, or_
 from typing import List, Optional, Dict, Any, Literal
@@ -37,6 +37,14 @@ from schemas import AthleteResponse
 from pydantic import BaseModel, Field
 from services.plan_framework.feature_flags import FeatureFlagService
 import logging
+import io
+import os
+
+try:
+    import qrcode
+    HAS_QRCODE = True
+except ImportError:
+    HAS_QRCODE = False
 
 logger = logging.getLogger(__name__)
 
@@ -2018,4 +2026,59 @@ def deactivate_race_promo_code(
     db.commit()
     
     return {"success": True, "code": promo.code, "is_active": False}
+
+
+@router.get("/race-codes/{code}/qr")
+def get_race_code_qr(
+    code: str,
+    size: int = Query(default=400, ge=100, le=1000, description="QR code size in pixels"),
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a QR code PNG for a race promo code.
+    
+    The QR code links to the registration page with the code pre-filled.
+    Returns a PNG image that can be printed on flyers or packet inserts.
+    """
+    if not HAS_QRCODE:
+        raise HTTPException(status_code=500, detail="QR code library not installed")
+    
+    promo = db.query(RacePromoCode).filter(RacePromoCode.code == code.upper()).first()
+    if not promo:
+        raise HTTPException(status_code=404, detail="Code not found")
+    
+    # Build the registration URL with the code
+    base_url = os.getenv("FRONTEND_URL", "https://strideiq.run")
+    registration_url = f"{base_url}/register?code={promo.code}"
+    
+    # Generate QR code
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,  # High error correction for print
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(registration_url)
+    qr.make(fit=True)
+    
+    # Create image
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    # Resize to requested size
+    img = img.resize((size, size))
+    
+    # Convert to bytes
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    
+    return Response(
+        content=buffer.getvalue(),
+        media_type="image/png",
+        headers={
+            "Content-Disposition": f'inline; filename="{promo.code}_qr.png"',
+            "Cache-Control": "max-age=86400",  # Cache for 24 hours
+        }
+    )
 
