@@ -3490,13 +3490,27 @@ If you're uncertain or the data is insufficient, say so clearly rather than gues
             except Exception:
                 pass
             
-            # Get recent runs - give Opus raw data, let it reason
+            # Weekly volume history - 26 weeks (6 months) for trend analysis
             try:
-                recent = coach_tools.get_recent_runs(self.db, athlete_id, days=14)
+                weekly = coach_tools.get_weekly_volume(self.db, athlete_id, weeks=26)
+                if weekly.get("ok"):
+                    weeks_data = weekly.get("data", {}).get("weeks", [])
+                    if weeks_data:
+                        state_lines.append(f"Weekly mileage (last {len(weeks_data)} weeks):")
+                        for w in weeks_data:
+                            dist = w.get('total_distance_mi', 0) or w.get('total_distance_km', 0) * 0.621371
+                            runs = w.get('run_count', 0)
+                            state_lines.append(f"  - {w.get('week_start', 'N/A')}: {dist:.1f} mi ({runs} runs)")
+            except Exception as e:
+                logger.debug(f"Failed to get weekly volume for Opus context: {e}")
+            
+            # Recent runs - last 7 days for immediate context
+            try:
+                recent = coach_tools.get_recent_runs(self.db, athlete_id, days=7)
                 if recent.get("ok"):
                     runs = recent.get("data", {}).get("runs", [])
                     if runs:
-                        state_lines.append(f"Recent runs ({len(runs)} activities, last 14 days):")
+                        state_lines.append(f"Last 7 days detail ({len(runs)} runs):")
                         for run in runs:
                             state_lines.append(
                                 f"  - {run.get('start_time', '')[:10]}: {run.get('name', 'Run')} | "
