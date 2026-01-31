@@ -230,16 +230,16 @@ export function StravaConnection() {
                 </span>
               </div>
               {/* Progress bar for active sync */}
-              {syncStatus.status === 'progress' && syncStatus.total > 0 && (
+              {syncStatus.status === 'progress' && (syncStatus.total ?? 0) > 0 && (
                 <div className="mt-2">
                   <div className="w-full bg-slate-700 rounded-full h-2">
                     <div 
                       className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${Math.round((syncStatus.current / syncStatus.total) * 100)}%` }}
+                      style={{ width: `${Math.round(((syncStatus.current ?? 0) / (syncStatus.total ?? 1)) * 100)}%` }}
                     />
                   </div>
                   <div className="text-xs text-slate-400 mt-1 text-right">
-                    {Math.round((syncStatus.current / syncStatus.total) * 100)}%
+                    {Math.round(((syncStatus.current ?? 0) / (syncStatus.total ?? 1)) * 100)}%
                   </div>
                 </div>
               )}
