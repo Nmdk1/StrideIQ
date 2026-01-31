@@ -30,8 +30,10 @@ class Athlete(Base):
     # Trial-based access is additive: if trial_ends_at is in the future, athlete is treated as paid.
     trial_started_at = Column(DateTime(timezone=True), nullable=True)
     trial_ends_at = Column(DateTime(timezone=True), nullable=True)
-    # e.g., "self_serve" | "admin_grant" | "invite"
+    # e.g., "self_serve" | "admin_grant" | "invite" | "race:CODE"
     trial_source = Column(Text, nullable=True)
+    # For race QR attribution (links to RacePromoCode.id)
+    race_promo_code_id = Column(UUID(as_uuid=True), ForeignKey("race_promo_code.id"), nullable=True)
 
     # --- ADMIN RBAC SEAM (Phase 4) ---
     # Keep an explicit "permissions seam" so we can introduce finer-grained roles
@@ -1784,4 +1786,47 @@ class CoachUsage(Base):
         UniqueConstraint("athlete_id", "date", name="uq_coach_usage_athlete_date"),
         Index("ix_coach_usage_athlete_id", "athlete_id"),
         Index("ix_coach_usage_month", "month"),
+    )
+
+
+class RacePromoCode(Base):
+    """
+    Promo codes for race partnerships.
+    
+    Athletes signing up via QR code at packet pickup get extended trials
+    and are attributed to the race for conversion tracking.
+    """
+    __tablename__ = "race_promo_code"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # The code itself (e.g., "MARATHON2026", "BOSTONFEB2026")
+    code = Column(Text, unique=True, nullable=False, index=True)
+    
+    # Race details
+    race_name = Column(Text, nullable=False)  # e.g., "Boston Marathon 2026"
+    race_date = Column(Date, nullable=True)   # Optional: race date for context
+    
+    # Trial configuration
+    trial_days = Column(Integer, default=30, nullable=False)  # 30 days for race signups
+    
+    # Validity period
+    valid_from = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    valid_until = Column(DateTime(timezone=True), nullable=True)  # Null = never expires
+    
+    # Limits
+    max_uses = Column(Integer, nullable=True)  # Null = unlimited
+    current_uses = Column(Integer, default=0, nullable=False)
+    
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Admin tracking
+    created_by = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    __table_args__ = (
+        Index("ix_race_promo_code_code", "code"),
+        Index("ix_race_promo_code_is_active", "is_active"),
     )

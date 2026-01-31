@@ -31,6 +31,7 @@ from models import (
     PlannedWorkout,
     CoachActionProposal,
     Subscription,
+    RacePromoCode,
 )
 from schemas import AthleteResponse
 from pydantic import BaseModel, Field
@@ -1910,4 +1911,111 @@ def cross_athlete_query(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown query type: {query_type}. Use /query/templates to see available options."
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RACE PROMO CODE MANAGEMENT
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CreateRacePromoCodeRequest(BaseModel):
+    """Request to create a race promo code."""
+    code: str = Field(..., description="The promo code (e.g., MARATHON2026)")
+    race_name: str = Field(..., description="Name of the race")
+    race_date: Optional[date] = Field(None, description="Date of the race")
+    trial_days: int = Field(30, ge=1, le=90, description="Trial length in days")
+    valid_until: Optional[datetime] = Field(None, description="Expiration date (null = never)")
+    max_uses: Optional[int] = Field(None, ge=1, description="Max uses (null = unlimited)")
+
+
+@router.post("/race-codes")
+def create_race_promo_code(
+    request: CreateRacePromoCodeRequest,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new race promo code for QR activation at packet pickup.
+    
+    Athletes who register with this code get an extended trial (default 30 days).
+    """
+    code = request.code.strip().upper()
+    
+    # Check if code already exists
+    existing = db.query(RacePromoCode).filter(RacePromoCode.code == code).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Code '{code}' already exists")
+    
+    promo = RacePromoCode(
+        code=code,
+        race_name=request.race_name,
+        race_date=request.race_date,
+        trial_days=request.trial_days,
+        valid_until=request.valid_until,
+        max_uses=request.max_uses,
+        is_active=True,
+        created_by=current_user.id,
+    )
+    
+    db.add(promo)
+    db.commit()
+    db.refresh(promo)
+    
+    return {
+        "success": True,
+        "code": promo.code,
+        "race_name": promo.race_name,
+        "trial_days": promo.trial_days,
+        "valid_until": promo.valid_until.isoformat() if promo.valid_until else None,
+        "max_uses": promo.max_uses,
+    }
+
+
+@router.get("/race-codes")
+def list_race_promo_codes(
+    include_inactive: bool = False,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """List all race promo codes with usage stats."""
+    query = db.query(RacePromoCode)
+    if not include_inactive:
+        query = query.filter(RacePromoCode.is_active == True)
+    
+    codes = query.order_by(RacePromoCode.created_at.desc()).all()
+    
+    return {
+        "codes": [
+            {
+                "id": str(c.id),
+                "code": c.code,
+                "race_name": c.race_name,
+                "race_date": c.race_date.isoformat() if c.race_date else None,
+                "trial_days": c.trial_days,
+                "valid_until": c.valid_until.isoformat() if c.valid_until else None,
+                "max_uses": c.max_uses,
+                "current_uses": c.current_uses,
+                "is_active": c.is_active,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
+            for c in codes
+        ],
+        "total": len(codes),
+    }
+
+
+@router.post("/race-codes/{code}/deactivate")
+def deactivate_race_promo_code(
+    code: str,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Deactivate a race promo code."""
+    promo = db.query(RacePromoCode).filter(RacePromoCode.code == code.upper()).first()
+    if not promo:
+        raise HTTPException(status_code=404, detail="Code not found")
+    
+    promo.is_active = False
+    db.commit()
+    
+    return {"success": True, "code": promo.code, "is_active": False}
 

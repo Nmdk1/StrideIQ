@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, field_serializer, ConfigDict
 from typing import Optional
 from uuid import UUID
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 import logging
 
 from core.database import get_db
@@ -33,7 +33,7 @@ from core.account_security import (
     is_account_locked,
     get_remaining_attempts
 )
-from models import Athlete
+from models import Athlete, RacePromoCode
 from services.invite_service import is_invited, mark_invite_used, normalize_email
 from services.system_flags import are_invites_required
 from jose import jwt, JWTError
@@ -52,6 +52,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str
     display_name: Optional[str] = None
+    race_code: Optional[str] = None  # Race promo code from QR at packet pickup
 
 
 class UserLogin(BaseModel):
@@ -143,14 +144,42 @@ def register(
     if invite and invite.grant_tier:
         subscription_tier = invite.grant_tier
     
+    # Check for race promo code (QR activation from packet pickup)
+    race_promo = None
+    trial_days = None
+    if user_data.race_code:
+        code = user_data.race_code.strip().upper()
+        now = datetime.now(timezone.utc)
+        race_promo = db.query(RacePromoCode).filter(
+            RacePromoCode.code == code,
+            RacePromoCode.is_active == True
+        ).first()
+        
+        if race_promo:
+            # Validate promo code
+            if race_promo.valid_until and race_promo.valid_until < now:
+                race_promo = None  # Expired
+            elif race_promo.max_uses and race_promo.current_uses >= race_promo.max_uses:
+                race_promo = None  # Maxed out
+            else:
+                trial_days = race_promo.trial_days or 30
+    
     # Create new athlete
     athlete = Athlete(
         email=email,
         password_hash=get_password_hash(user_data.password),
         display_name=user_data.display_name or email.split("@")[0],
         role="athlete",  # Default role
-        subscription_tier=subscription_tier
+        subscription_tier=subscription_tier,
+        race_promo_code_id=race_promo.id if race_promo else None
     )
+    
+    # Start extended trial if race promo code was valid
+    if race_promo and trial_days:
+        now = datetime.now(timezone.utc)
+        athlete.trial_started_at = now
+        athlete.trial_ends_at = now + timedelta(days=trial_days)
+        athlete.trial_source = f"race:{race_promo.code}"
     
     db.add(athlete)
     db.commit()
@@ -160,6 +189,15 @@ def register(
     if invite:
         try:
             mark_invite_used(db, invite=invite, used_by_athlete_id=athlete.id)
+            db.commit()
+        except Exception:
+            db.rollback()
+    
+    # Increment race promo code usage counter
+    if race_promo:
+        try:
+            race_promo.current_uses = (race_promo.current_uses or 0) + 1
+            db.add(race_promo)
             db.commit()
         except Exception:
             db.rollback()
