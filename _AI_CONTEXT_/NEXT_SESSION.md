@@ -1,136 +1,131 @@
 # Next Session Instructions
 
-**Last Updated:** 2026-01-14
-**Previous Session:** Diagnostic Report Feature + CS Model Archival
+**Last Updated:** 2026-01-31
+**Previous Session:** Workout Classification & Data Sync Fixes
 
 ---
 
 ## Session Summary
 
-This session completed major features with full rigor:
+This session fixed critical trust-breaking issues with workout classification:
 
-1. **Critical Speed Model Archival** — Removed from UI/code, archived to `archive/cs-model-2026-01` branch
-2. **On-Demand Diagnostic Report** — Full implementation with ADR, tests, frontend page
+1. **Workout Classification Overhaul** — HR as primary signal, athlete-relative thresholds
+2. **Data Sync Fixes** — avg_hr and temperature now properly backfilled from Strava
+3. **Confidence Threshold** — Low-confidence classifications show generic "Run" instead of guessing
 
 ---
 
 ## Current State
 
 ### Branch
-`stable-diagnostic-report-2026-01-14`
+`phase8-s2-hardening`
 
 ### Docker Status
-Running. Containers: `api`, `web`, `worker`, `postgres`, `redis`
+Running. Production deployed. All containers healthy.
 
 ### All Tests Passing
-- `test_athlete_diagnostic.py` — 35 tests
-- All other tests remain passing
+- 1274 passed, 2 skipped
+- Classification tests: 45 passed
 
 ---
 
-## New Feature: Diagnostic Report
+## Fixes Implemented This Session
 
-### Files Created
-- `docs/adr/ADR-019-diagnostic-report.md`
-- `apps/api/services/athlete_diagnostic.py` (580 lines)
-- `apps/api/tests/test_athlete_diagnostic.py` (300+ lines)
-- `apps/web/app/diagnostic/page.tsx` (600+ lines)
+### 1. Athlete-Relative Thresholds
+`apps/api/services/run_analysis_engine.py`:
+- Added `_get_athlete_run_thresholds()` — calculates from athlete's 90-day history
+- Long run = 90th percentile duration (top 10% of runs)
+- No more hardcoded "60 min = long run" nonsense
 
-### Files Modified
-- `apps/api/routers/analytics.py` — added `/v1/analytics/diagnostic-report`
-- `apps/api/scripts/seed_feature_flags.py` — added `analytics.diagnostic_report`
-- `apps/api/core/rate_limit.py` — added rate limit (4/min)
-- `apps/web/app/components/Navigation.tsx` — added nav link
+### 2. HR as Primary Classification Signal
+- Reordered classification: HR checked FIRST when available
+- Duration only used to upgrade easy-effort runs to "Long Run"
+- Fallback to duration-only when no HR data
 
-### Access
-- URL: `/diagnostic`
-- API: `GET /v1/analytics/diagnostic-report`
-- Feature Flag: `analytics.diagnostic_report` (enabled)
+### 3. Confidence Display Threshold
+- `MIN_DISPLAY_CONFIDENCE = 0.65`
+- Below threshold → shows "Run" instead of specific type
+- Frontend updated in `RunContextAnalysis.tsx`
 
----
+### 4. avg_hr Backfill
+`apps/api/tasks/strava_tasks.py`:
+- Strava list endpoint often omits `average_heartrate`
+- Now backfills from detailed activity response
 
-## Critical Speed Model — ARCHIVED
-
-All CS code removed from main branch. Preserved in `archive/cs-model-2026-01`.
-
-### Removed Files
-- `apps/api/services/critical_speed.py`
-- `apps/web/components/tools/CriticalSpeedPredictor.tsx`
-- `apps/api/tests/test_critical_speed.py`
-- `apps/api/tests/test_cs_prediction.py`
-
-### Updated Files
-- `apps/api/routers/analytics.py` — endpoint removed
-- `apps/api/services/home_signals.py` — CS references removed
-- `apps/api/services/run_attribution.py` — CS references removed
-- `apps/api/services/trend_attribution.py` — CS references removed
-- `docs/adr/ADR-011-critical-speed-model.md` — marked ARCHIVED
-- `docs/adr/ADR-017-tools-critical-speed.md` — marked ARCHIVED
-- `DEFERRED_REFACTOR_BACKLOG.md` — CS entry added
+### 5. Temperature Sync
+- Added temperature capture from Strava (`average_temp` → Fahrenheit)
+- Frontend displays in °F
+- Note: This is device sensor temp, not ambient weather
 
 ---
 
-## Pending Discussion (Not Implemented)
-
-User asked about PB page redundancy with Diagnostic PB section. Recommendation given:
-- **Keep both pages** — PB page for management (sync/recalculate), Diagnostic for context
-- Optional: Add "Manage PBs →" link from Diagnostic to PB page
-
-User did NOT request implementation. Next session can implement if requested.
-
----
-
-## Key Documentation
-
-| Doc | Purpose |
-|-----|---------|
-| `DIAGNOSTIC_REPORT_USER1.md` | Example report for Michael's data |
-| `docs/adr/ADR-019-diagnostic-report.md` | Diagnostic feature decisions |
-| `DEFERRED_REFACTOR_BACKLOG.md` | Archived features |
-| `_AI_CONTEXT_/MICHAELS_TRAINING_PROFILE.md` | Athlete context |
+## Commits (This Session)
+- `6924e1c` - fix(classification): use athlete-relative thresholds
+- `5f1064b` - fix(classification): HR data is primary signal
+- `d362bd3` - fix(strava): backfill avg_hr from activity details
+- `441c542` - feat(strava): sync temperature, display as °F
+- `86df231` - fix(types): add temperature_f to Activity interface
 
 ---
 
-## Full Rigor Checklist (For Reference)
+## Known Limitations
 
-When implementing major features:
-1. ADR (Architecture Decision Record)
-2. Audit logging (if user interactions)
-3. Unit tests
-4. Integration tests
-5. Security review (input validation)
-6. Feature flag
-7. Mobile responsiveness
-8. Tone check (sparse/irreverent, manifesto alignment)
-9. Rebuild/verify
-10. Commit only when complete
+### Temperature
+- Shows device sensor reading (Garmin), not ambient weather
+- Strava API doesn't expose weather data
+- Will revisit when Garmin Business Development partnership approved
+
+### Classification
+- Requires athlete's max_hr to be set for HR-based classification
+- Michael's profile has max_hr=180, threshold_hr=165, resting_hr=50
+
+---
+
+## Pending Integrations
+
+### Garmin API
+- Applied to Garmin Business Development Program
+- Awaiting approval
+- May provide better weather data
+
+### COROS API
+- Application prepared: `docs/COROS_API_APPLICATION.md`
+- Form responses: `docs/COROS_APPLICATION_FORM_RESPONSES.md`
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `apps/api/services/run_analysis_engine.py` | Run classification logic |
+| `apps/api/services/workout_classifier.py` | Detailed workout classification |
+| `apps/api/tasks/strava_tasks.py` | Strava sync with backfill logic |
+| `_AI_CONTEXT_/SESSION_SUMMARY_2026_01_31_CLASSIFICATION_FIX.md` | This session's details |
 
 ---
 
 ## Commands to Resume
 
 ```bash
-# Check status
-docker-compose ps
-docker-compose logs api --tail=50
+# Local test
+docker compose -f docker-compose.test.yml run --rm api_test pytest tests/ -v
 
-# Run tests
-docker-compose exec api python -m pytest tests/test_athlete_diagnostic.py -v
-
-# Seed feature flags (if DB reset)
-docker-compose exec api python scripts/seed_feature_flags.py
+# Deploy to production
+ssh root@strideiq.run
+cd /opt/strideiq/repo && git pull origin phase8-s2-hardening && docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 ---
 
 ## User Preferences
 
-- **Full rigor** on all major features
-- **Sparse/irreverent tone** — "Data says X. Your call."
-- **No over-engineering** — only what's requested
-- **Wait for explicit "proceed"** before moving to next item
-- **Tests must pass** before commit
+- **Full rigor** on all features
+- **Test before deploy** — no blind deployments
+- **Ask before making changes** — get approval first
+- **Temperature in °F** for US users
+- **Garmin/COROS integrations** — waiting on business partnerships
 
 ---
 
-*Session ended: 2026-01-14*
+*Session ended: 2026-01-31*
