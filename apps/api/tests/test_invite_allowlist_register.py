@@ -183,3 +183,109 @@ def test_register_without_grant_tier_defaults_to_free():
             db.rollback()
         db.close()
 
+
+def test_register_with_revoked_invite_blocked_when_required():
+    """
+    If invites are required and the invite was revoked, registration should fail.
+    """
+    db = SessionLocal()
+    email = f"revoked_invite_{uuid4()}@example.com".lower()
+    try:
+        # Enable invite requirement
+        ff = db.query(FeatureFlag).filter(FeatureFlag.key == "system.invites_required").first()
+        if not ff:
+            ff = FeatureFlag(
+                key="system.invites_required",
+                name="Require invites for signup",
+                description="Test flag",
+                enabled=True,
+                requires_subscription=False,
+            )
+            db.add(ff)
+        else:
+            ff.enabled = True
+        
+        # Create and revoke invite
+        inv = InviteAllowlist(email=email, is_active=False, grant_tier="pro")  # revoked
+        db.add(inv)
+        db.commit()
+
+        resp = client.post(
+            "/v1/auth/register",
+            json={"email": email, "password": "password123", "display_name": "Revoked User"},
+        )
+        # Should be blocked because invite is not active
+        assert resp.status_code == 403
+        assert resp.json().get("detail") == "Invite required"
+    finally:
+        try:
+            ff = db.query(FeatureFlag).filter(FeatureFlag.key == "system.invites_required").first()
+            if ff:
+                ff.enabled = False
+            athlete = db.query(Athlete).filter(Athlete.email == email).first()
+            if athlete:
+                db.delete(athlete)
+            inv = db.query(InviteAllowlist).filter(InviteAllowlist.email == email).first()
+            if inv:
+                db.delete(inv)
+            db.commit()
+        except Exception:
+            db.rollback()
+        db.close()
+
+
+def test_register_with_already_used_invite_blocked_when_required():
+    """
+    If invites are required and the invite was already used, registration should fail.
+    """
+    from datetime import datetime, timezone
+    db = SessionLocal()
+    email = f"used_invite_{uuid4()}@example.com".lower()
+    try:
+        # Enable invite requirement
+        ff = db.query(FeatureFlag).filter(FeatureFlag.key == "system.invites_required").first()
+        if not ff:
+            ff = FeatureFlag(
+                key="system.invites_required",
+                name="Require invites for signup",
+                description="Test flag",
+                enabled=True,
+                requires_subscription=False,
+            )
+            db.add(ff)
+        else:
+            ff.enabled = True
+        
+        # Create already-used invite
+        inv = InviteAllowlist(
+            email=email, 
+            is_active=False, 
+            grant_tier="pro",
+            used_at=datetime.now(timezone.utc),
+        )
+        db.add(inv)
+        db.commit()
+
+        resp = client.post(
+            "/v1/auth/register",
+            json={"email": email, "password": "password123", "display_name": "Used Invite User"},
+        )
+        # Should be blocked because invite is already used
+        assert resp.status_code == 403
+        assert resp.json().get("detail") == "Invite required"
+    finally:
+        try:
+            ff = db.query(FeatureFlag).filter(FeatureFlag.key == "system.invites_required").first()
+            if ff:
+                ff.enabled = False
+            athlete = db.query(Athlete).filter(Athlete.email == email).first()
+            if athlete:
+                db.delete(athlete)
+            inv = db.query(InviteAllowlist).filter(InviteAllowlist.email == email).first()
+            if inv:
+                db.delete(inv)
+            db.commit()
+        except Exception:
+            db.rollback()
+        db.close()
+
