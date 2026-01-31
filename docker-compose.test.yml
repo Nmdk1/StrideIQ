@@ -1,0 +1,79 @@
+# Test environment - extends base docker-compose.yml
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d postgres redis
+#   docker compose -f docker-compose.test.yml run --rm api_test pytest -v
+#   docker compose -f docker-compose.test.yml down
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: strideiq_test_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: strideiq_test
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts with dev
+    tmpfs:
+      - /var/lib/postgresql/data  # In-memory for speed, no persistence needed
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: strideiq_test_redis
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api_test:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: strideiq_test_api
+    environment:
+      # Test database connection
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: strideiq_test
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/strideiq_test
+      REDIS_URL: redis://redis:6379/0
+      # Test-safe secrets (not real credentials)
+      SECRET_KEY: test-secret-key-not-for-production
+      OPENAI_API_KEY: sk-test-not-real
+      STRAVA_CLIENT_ID: "12345"
+      STRAVA_CLIENT_SECRET: test-secret
+      STRAVA_REDIRECT_URI: http://localhost:3000/auth/strava/callback
+      # Disable external calls in tests
+      TESTING: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/app
+    working_dir: /app
+    # Default command runs all tests
+    command: pytest -v --tb=short
+
+  # Frontend tests (optional)
+  web_test:
+    build:
+      context: ./apps/web
+      target: builder
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    container_name: strideiq_test_web
+    command: npm test -- --runInBand
+    environment:
+      CI: "true"

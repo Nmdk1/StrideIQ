@@ -158,7 +158,7 @@ export function StravaConnection() {
   }
 
   const isConnected = status?.connected || false;
-  const isSyncing = syncStatus?.status === 'pending' || syncStatus?.status === 'started';
+  const isSyncing = syncStatus?.status === 'pending' || syncStatus?.status === 'started' || syncStatus?.status === 'progress';
 
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
@@ -224,10 +224,25 @@ export function StravaConnection() {
                 <span className="text-sm">
                   {syncStatus.status === 'pending' && 'Sync queued...'}
                   {syncStatus.status === 'started' && 'Syncing activities...'}
+                  {syncStatus.status === 'progress' && (syncStatus.message || `Syncing ${syncStatus.current} of ${syncStatus.total}...`)}
                   {syncStatus.status === 'success' && 'Sync completed successfully!'}
                   {syncStatus.status === 'error' && `Sync failed: ${syncStatus.error}`}
                 </span>
               </div>
+              {/* Progress bar for active sync */}
+              {syncStatus.status === 'progress' && syncStatus.total > 0 && (
+                <div className="mt-2">
+                  <div className="w-full bg-slate-700 rounded-full h-2">
+                    <div 
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.round((syncStatus.current / syncStatus.total) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="text-xs text-slate-400 mt-1 text-right">
+                    {Math.round((syncStatus.current / syncStatus.total) * 100)}%
+                  </div>
+                </div>
+              )}
               {syncStatus.result && (
                 <div className="text-xs text-slate-400 mt-2">
                   {JSON.stringify(syncStatus.result, null, 2)}

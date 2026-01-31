@@ -7,6 +7,7 @@ This is a local verification script (not meant for production use).
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 # Ensure /app is on path when executed in-container.
@@ -19,11 +20,15 @@ from services.ai_coach import AICoach
 
 
 def main() -> None:
+    dogfood_email = os.environ.get("DOGFOOD_EMAIL")
+    if not dogfood_email:
+        raise RuntimeError("DOGFOOD_EMAIL environment variable not set")
+    
     db = SessionLocal()
     try:
-        athlete = db.query(Athlete).filter(Athlete.email == "mbshaf@gmail.com").first()
+        athlete = db.query(Athlete).filter(Athlete.email == dogfood_email).first()
         if not athlete:
-            raise RuntimeError("Athlete not found for mbshaf@gmail.com")
+            raise RuntimeError(f"Athlete not found for {dogfood_email}")
 
         coach = AICoach(db)
         message = (

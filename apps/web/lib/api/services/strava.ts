@@ -22,10 +22,12 @@ export interface StravaSyncResponse {
 
 export interface StravaSyncStatus {
   task_id: string;
-  status: 'pending' | 'started' | 'success' | 'error' | 'unknown';
+  status: 'pending' | 'started' | 'progress' | 'success' | 'error' | 'unknown';
   message?: string;
   result?: any;
   error?: string;
+  current?: number;  // Progress: current activity being synced
+  total?: number;    // Progress: total activities to sync
 }
 
 export interface StravaVerifyResponse {

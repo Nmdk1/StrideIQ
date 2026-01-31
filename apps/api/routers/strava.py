@@ -485,6 +485,16 @@ def get_sync_status(task_id: str):
             "status": "started",
             "message": "Task is currently being processed"
         }
+    elif task.state == "PROGRESS":
+        # Task is actively syncing and reporting progress
+        info = task.info or {}
+        return {
+            "task_id": task_id,
+            "status": "progress",
+            "current": info.get('current', 0),
+            "total": info.get('total', 0),
+            "message": info.get('message', 'Syncing activities...')
+        }
     elif task.state == "SUCCESS":
         # Clean up Redis tracking (task completed)
         if redis:

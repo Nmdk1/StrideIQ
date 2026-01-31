@@ -289,6 +289,16 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         
         # Process each activity
         for activity_idx, a in enumerate(strava_activities):
+            # Report progress to Celery so frontend can show progress bar
+            self.update_state(
+                state='PROGRESS',
+                meta={
+                    'current': activity_idx + 1,
+                    'total': total_from_api,
+                    'message': f"Syncing activity {activity_idx + 1} of {total_from_api}..."
+                }
+            )
+            
             # Strava uses a few run-like types; treat them as runs.
             activity_type = (a.get("type") or "").lower()
             if activity_type not in {"run", "virtualrun", "trailrun"}:

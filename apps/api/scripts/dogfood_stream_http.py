@@ -8,6 +8,7 @@ Goal:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import timedelta
 
@@ -71,11 +72,15 @@ def _parse_sse(stream_iter) -> tuple[str, dict]:
 
 
 def main() -> None:
+    dogfood_email = os.environ.get("DOGFOOD_EMAIL")
+    if not dogfood_email:
+        raise RuntimeError("DOGFOOD_EMAIL environment variable not set")
+    
     db = SessionLocal()
     try:
-        athlete = db.query(Athlete).filter(Athlete.email == "mbshaf@gmail.com").first()
+        athlete = db.query(Athlete).filter(Athlete.email == dogfood_email).first()
         if not athlete:
-            raise RuntimeError("Athlete not found for mbshaf@gmail.com")
+            raise RuntimeError(f"Athlete not found for {dogfood_email}")
 
         # Match auth router convention: sub is user id.
         token = create_access_token({"sub": str(athlete.id)}, expires_delta=timedelta(minutes=10))

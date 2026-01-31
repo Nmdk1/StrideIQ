@@ -58,7 +58,7 @@ def test_calendar_auto_provisions_starter_plan_when_onboarding_complete_and_no_a
         headers = {"Authorization": f"Bearer {token}"}
 
         # Calendar call should auto-create plan
-        resp = client.get("/calendar", headers=headers)
+        resp = client.get("/v1/calendar", headers=headers)
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body.get("active_plan") is not None
