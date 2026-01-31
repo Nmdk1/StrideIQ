@@ -42,9 +42,10 @@ export default function Pricing() {
               ELITE
             </div>
             <h3 className="text-xl font-bold mb-2 mt-2">Elite</h3>
-            <div className="text-3xl font-bold mb-4">
-              $18.99<span className="text-base">/month</span>
+            <div className="text-3xl font-bold mb-1">
+              $149<span className="text-base">/year</span>
             </div>
+            <p className="text-sm text-slate-400 mb-3">or $14.99/month</p>
             <p className="text-xs text-orange-300 mb-4">Full product access • Adaptive insights</p>
             <ul className="space-y-2 text-sm text-slate-300 mb-6">
               <li>✓ Everything in Free</li>
@@ -86,7 +87,7 @@ export default function Pricing() {
               <div className="space-y-2">
                 <p>✓ <strong>Always available:</strong> 24/7 analysis</p>
                 <p>✓ <strong>Accessible everywhere:</strong> NYC to rural Montana</p>
-                <p>✓ <strong>Affordable:</strong> $18.99/month vs. $50-$300 for coaches</p>
+                <p>✓ <strong>Affordable:</strong> $14.99/month vs. $50-$300 for coaches</p>
               </div>
             </div>
           </div>
