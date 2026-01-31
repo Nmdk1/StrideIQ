@@ -138,13 +138,18 @@ def register(
             detail="Password must be at least 8 characters"
         )
     
+    # Determine subscription tier: use invite's grant_tier if set, otherwise "free"
+    subscription_tier = "free"
+    if invite and invite.grant_tier:
+        subscription_tier = invite.grant_tier
+    
     # Create new athlete
     athlete = Athlete(
         email=email,
         password_hash=get_password_hash(user_data.password),
         display_name=user_data.display_name or email.split("@")[0],
         role="athlete",  # Default role
-        subscription_tier="free"  # Default tier
+        subscription_tier=subscription_tier
     )
     
     db.add(athlete)

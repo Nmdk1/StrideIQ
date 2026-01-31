@@ -65,7 +65,14 @@ def create_invite(
     email: str,
     invited_by_athlete_id: Optional[UUID],
     note: Optional[str] = None,
+    grant_tier: Optional[str] = None,
 ) -> InviteAllowlist:
+    """
+    Create or reactivate an invite.
+    
+    Args:
+        grant_tier: Optional subscription tier to grant on signup (e.g., "pro" for beta testers)
+    """
     norm = normalize_email(email)
     inv = get_invite(db, norm)
     if inv:
@@ -73,6 +80,7 @@ def create_invite(
         if inv.used_at is None:
             inv.is_active = True
             inv.note = note or inv.note
+            inv.grant_tier = grant_tier if grant_tier is not None else inv.grant_tier
             inv.invited_by_athlete_id = invited_by_athlete_id
             inv.invited_at = datetime.now(timezone.utc)
             inv.revoked_at = None
@@ -83,6 +91,7 @@ def create_invite(
                 actor_athlete_id=invited_by_athlete_id,
                 action="invite.reactivated",
                 target_email=norm,
+                metadata={"grant_tier": grant_tier} if grant_tier else None,
             )
         return inv
 
@@ -90,6 +99,7 @@ def create_invite(
         email=norm,
         is_active=True,
         note=note,
+        grant_tier=grant_tier,
         invited_by_athlete_id=invited_by_athlete_id,
         invited_at=datetime.now(timezone.utc),
     )
@@ -101,6 +111,7 @@ def create_invite(
         actor_athlete_id=invited_by_athlete_id,
         action="invite.created",
         target_email=norm,
+        metadata={"grant_tier": grant_tier} if grant_tier else None,
     )
     return inv
 

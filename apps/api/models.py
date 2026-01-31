@@ -118,6 +118,7 @@ class InviteAllowlist(Base):
     - One row per invited email (stored lowercased).
     - Can be revoked.
     - Marked as used when a matching account is created.
+    - Optional grant_tier: if set, user gets this subscription tier on signup.
     """
 
     __tablename__ = "invite_allowlist"
@@ -127,6 +128,9 @@ class InviteAllowlist(Base):
 
     is_active = Column(Boolean, default=True, nullable=False)
     note = Column(Text, nullable=True)
+    
+    # If set, user gets this subscription tier automatically on signup (e.g., "pro" for beta testers)
+    grant_tier = Column(Text, nullable=True)
 
     invited_by_athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=True)
     invited_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

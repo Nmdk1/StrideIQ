@@ -100,3 +100,86 @@ def test_register_with_invite_marks_used():
             db.rollback()
         db.close()
 
+
+def test_register_with_grant_tier_applies_pro():
+    """
+    When an invite has grant_tier='pro', the registered user should
+    automatically get subscription_tier='pro' instead of 'free'.
+    """
+    db = SessionLocal()
+    email = f"beta_tester_{uuid4()}@example.com".lower()
+    try:
+        # Create invite with grant_tier='pro' (beta tester)
+        inv = InviteAllowlist(email=email, is_active=True, grant_tier="pro", note="Beta tester")
+        db.add(inv)
+        db.commit()
+
+        resp = client.post(
+            "/v1/auth/register",
+            json={"email": email, "password": "password123", "display_name": "Beta Tester"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body.get("access_token")
+        
+        # Verify the athlete was created with pro tier
+        athlete = db.query(Athlete).filter(Athlete.email == email).first()
+        assert athlete is not None
+        assert athlete.subscription_tier == "pro", f"Expected 'pro', got '{athlete.subscription_tier}'"
+        
+        # Verify invite was marked as used
+        db.refresh(inv)
+        assert inv.used_at is not None
+        assert inv.is_active is False
+    finally:
+        # Cleanup
+        try:
+            athlete = db.query(Athlete).filter(Athlete.email == email).first()
+            if athlete:
+                db.delete(athlete)
+            inv = db.query(InviteAllowlist).filter(InviteAllowlist.email == email).first()
+            if inv:
+                db.delete(inv)
+            db.commit()
+        except Exception:
+            db.rollback()
+        db.close()
+
+
+def test_register_without_grant_tier_defaults_to_free():
+    """
+    When an invite has no grant_tier (null), the registered user should
+    get the default subscription_tier='free'.
+    """
+    db = SessionLocal()
+    email = f"regular_invite_{uuid4()}@example.com".lower()
+    try:
+        # Create invite without grant_tier
+        inv = InviteAllowlist(email=email, is_active=True, grant_tier=None)
+        db.add(inv)
+        db.commit()
+
+        resp = client.post(
+            "/v1/auth/register",
+            json={"email": email, "password": "password123", "display_name": "Regular User"},
+        )
+        assert resp.status_code == 201
+        
+        # Verify the athlete was created with free tier
+        athlete = db.query(Athlete).filter(Athlete.email == email).first()
+        assert athlete is not None
+        assert athlete.subscription_tier == "free", f"Expected 'free', got '{athlete.subscription_tier}'"
+    finally:
+        # Cleanup
+        try:
+            athlete = db.query(Athlete).filter(Athlete.email == email).first()
+            if athlete:
+                db.delete(athlete)
+            inv = db.query(InviteAllowlist).filter(InviteAllowlist.email == email).first()
+            if inv:
+                db.delete(inv)
+            db.commit()
+        except Exception:
+            db.rollback()
+        db.close()
+

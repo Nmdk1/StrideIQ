@@ -70,6 +70,10 @@ class ThreeDSelectionModeRequest(BaseModel):
 class InviteCreateRequest(BaseModel):
     email: str
     note: Optional[str] = None
+    grant_tier: Optional[Literal["free", "pro"]] = Field(
+        default=None, 
+        description="Subscription tier to grant on signup (e.g., 'pro' for beta testers)"
+    )
 
 
 class InviteRevokeRequest(BaseModel):
@@ -591,13 +595,30 @@ def create_invite_endpoint(
     """
     Create or re-activate an invite allowlist entry.
     Admin/owner only.
+    
+    Use grant_tier="pro" to give beta testers automatic pro access on signup.
     """
     from services.invite_service import create_invite
 
-    inv = create_invite(db, email=request.email, invited_by_athlete_id=current_user.id, note=request.note)
+    inv = create_invite(
+        db, 
+        email=request.email, 
+        invited_by_athlete_id=current_user.id, 
+        note=request.note,
+        grant_tier=request.grant_tier,
+    )
     db.commit()
     db.refresh(inv)
-    return {"success": True, "invite": {"id": str(inv.id), "email": inv.email, "is_active": inv.is_active, "used_at": inv.used_at}}
+    return {
+        "success": True, 
+        "invite": {
+            "id": str(inv.id), 
+            "email": inv.email, 
+            "is_active": inv.is_active, 
+            "used_at": inv.used_at,
+            "grant_tier": inv.grant_tier,
+        }
+    }
 
 
 @router.post("/invites/revoke")
