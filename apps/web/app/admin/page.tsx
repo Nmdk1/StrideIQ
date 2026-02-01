@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useSetCoachVip, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion, useAdminInvites, useCreateInvite, useRevokeInvite, useAdminRaceCodes, useCreateRaceCode, useDeactivateRaceCode, getRaceCodeQrUrl } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useSetCoachVip, useDeleteUser, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion, useAdminInvites, useCreateInvite, useRevokeInvite, useAdminRaceCodes, useCreateRaceCode, useDeactivateRaceCode, getRaceCodeQrUrl } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -48,6 +48,9 @@ export default function AdminPage() {
   const regenerateStarterPlan = useRegenerateStarterPlan();
   const setBlocked = useSetBlocked();
   const setCoachVip = useSetCoachVip();
+  const deleteUser = useDeleteUser();
+  const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { data: opsQueue, isLoading: opsQueueLoading } = useOpsQueue();
   const { data: opsStuck, isLoading: opsStuckLoading } = useOpsStuckIngestion({ minutes: 30, limit: 100 });
   const { data: opsErrors, isLoading: opsErrorsLoading } = useOpsIngestionErrors({ days: 7, limit: 200 });
@@ -545,7 +548,69 @@ export default function AdminPage() {
                             >
                               {setCoachVip.isPending ? 'Saving…' : selectedUser.is_coach_vip ? 'Remove VIP' : 'Make VIP'}
                             </button>
+                            {isOwner && selectedUser.role !== 'owner' && (
+                              <button
+                                onClick={() => setShowDeleteConfirm(true)}
+                                className="px-3 py-2 bg-red-900 hover:bg-red-800 rounded text-xs border border-red-700"
+                              >
+                                Delete User
+                              </button>
+                            )}
                           </div>
+
+                          {/* Delete confirmation dialog */}
+                          {showDeleteConfirm && isOwner && selectedUser.role !== 'owner' && (
+                            <div className="mt-3 p-3 bg-red-900/50 border border-red-700 rounded">
+                              <div className="text-xs font-semibold text-red-200 mb-2">⚠️ Permanently Delete User</div>
+                              <div className="text-xs text-slate-300 mb-2">
+                                This will permanently delete <span className="font-semibold">{selectedUser.email}</span> and all their data.
+                                This action cannot be undone.
+                              </div>
+                              <div className="mb-2">
+                                <input
+                                  type="text"
+                                  value={deleteConfirmEmail}
+                                  onChange={(e) => setDeleteConfirmEmail(e.target.value)}
+                                  placeholder="Type the user's email to confirm"
+                                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    deleteUser.mutate(
+                                      { userId: selectedUser.id, confirmEmail: deleteConfirmEmail, reason: adminReason || undefined },
+                                      {
+                                        onSuccess: () => {
+                                          setShowDeleteConfirm(false);
+                                          setDeleteConfirmEmail('');
+                                          setSelectedUserId('');
+                                        },
+                                      }
+                                    );
+                                  }}
+                                  disabled={deleteUser.isPending || deleteConfirmEmail.toLowerCase() !== selectedUser.email?.toLowerCase()}
+                                  className="px-3 py-2 bg-red-700 hover:bg-red-600 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs font-semibold"
+                                >
+                                  {deleteUser.isPending ? 'Deleting…' : 'Confirm Delete'}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setShowDeleteConfirm(false);
+                                    setDeleteConfirmEmail('');
+                                  }}
+                                  className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                              {deleteUser.isError && (
+                                <div className="mt-2 text-xs text-red-300">
+                                  Failed to delete user: {(deleteUser.error as Error)?.message || 'Unknown error'}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           {/* Temporary password display */}
                           {tempPassword && (

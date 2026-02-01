@@ -18,6 +18,7 @@ from core.auth import require_admin, require_owner, require_permission, deny_imp
 from models import (
     Athlete,
     Activity,
+    ActivitySplit,
     NutritionEntry,
     WorkPattern,
     BodyComposition,
@@ -25,13 +26,30 @@ from models import (
     InsightFeedback,
     FeatureFlag,
     InviteAllowlist,
+    InviteAuditEvent,
     IntakeQuestionnaire,
     AthleteIngestionState,
+    AthleteDataImportJob,
+    AthleteRaceResultAnchor,
+    AthleteTrainingPaceProfile,
     TrainingPlan,
     PlannedWorkout,
+    PlanModificationLog,
     CoachActionProposal,
+    CoachChat,
+    CoachIntentSnapshot,
+    CoachUsage,
+    CoachingRecommendation,
     Subscription,
     RacePromoCode,
+    BestEffort,
+    PersonalBest,
+    CalendarInsight,
+    CalendarNote,
+    DailyCheckin,
+    TrainingAvailability,
+    AdminAuditEvent,
+    WorkoutSelectionAuditEvent,
 )
 from schemas import AthleteResponse
 from pydantic import BaseModel, Field
@@ -122,6 +140,11 @@ class RetryIngestionRequest(BaseModel):
 class BlockUserRequest(BaseModel):
     blocked: bool = Field(..., description="Whether the user is blocked")
     reason: Optional[str] = Field(default=None, description="Why this block/unblock was performed (audited)")
+
+
+class DeleteUserRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, description="Why this user is being deleted (audited)")
+    confirm_email: str = Field(..., description="Must match the user's email to confirm deletion")
 
 
 class ImpersonateUserRequest(BaseModel):
@@ -1436,6 +1459,161 @@ def set_blocked(
     db.commit()
     db.refresh(target)
     return {"success": True, "user_id": str(target.id), "is_blocked": bool(target.is_blocked)}
+
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: UUID,
+    request: DeleteUserRequest,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("athlete.delete")),
+    current_user: Athlete = Depends(require_owner),
+    db: Session = Depends(get_db),
+):
+    """
+    Permanently delete a user and all their data.
+    
+    Owner only. Requires email confirmation to prevent accidental deletion.
+    This action is irreversible and fully audited.
+    
+    The deletion cascades through all FK relationships in the correct order.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Safety: require email confirmation
+    if request.confirm_email.lower().strip() != target.email.lower().strip():
+        raise HTTPException(
+            status_code=400, 
+            detail="Email confirmation does not match. Provide the user's email to confirm deletion."
+        )
+    
+    # Cannot delete yourself
+    if target.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    
+    # Cannot delete other owners
+    if target.role == "owner":
+        raise HTTPException(status_code=400, detail="Cannot delete owner accounts")
+    
+    # Capture info for audit before deletion
+    deleted_user_info = {
+        "id": str(target.id),
+        "email": target.email,
+        "display_name": target.display_name,
+        "role": target.role,
+        "created_at": target.created_at.isoformat() if target.created_at else None,
+    }
+    
+    # Delete in FK-dependency order (deepest children first)
+    # Level 1: Deepest children (FK to planned_workout and training_plan)
+    db.query(PlanModificationLog).filter(
+        PlanModificationLog.workout_id.in_(
+            db.query(PlannedWorkout.id).filter(PlannedWorkout.athlete_id == user_id)
+        )
+    ).delete(synchronize_session=False)
+    db.query(PlanModificationLog).filter(
+        PlanModificationLog.plan_id.in_(
+            db.query(TrainingPlan.id).filter(TrainingPlan.athlete_id == user_id)
+        )
+    ).delete(synchronize_session=False)
+    db.query(CoachActionProposal).filter(
+        CoachActionProposal.target_plan_id.in_(
+            db.query(TrainingPlan.id).filter(TrainingPlan.athlete_id == user_id)
+        )
+    ).delete(synchronize_session=False)
+    db.query(CoachChat).filter(
+        CoachChat.context_plan_id.in_(
+            db.query(TrainingPlan.id).filter(TrainingPlan.athlete_id == user_id)
+        )
+    ).delete(synchronize_session=False)
+    db.query(WorkoutSelectionAuditEvent).filter(
+        WorkoutSelectionAuditEvent.plan_id.in_(
+            db.query(TrainingPlan.id).filter(TrainingPlan.athlete_id == user_id)
+        )
+    ).delete(synchronize_session=False)
+    
+    # Level 2: planned_workout
+    db.query(PlannedWorkout).filter(PlannedWorkout.athlete_id == user_id).delete(synchronize_session=False)
+    
+    # Level 3: training_plan and activity children
+    db.query(TrainingPlan).filter(TrainingPlan.athlete_id == user_id).delete(synchronize_session=False)
+    
+    # Activity children (before deleting activities)
+    activity_ids = db.query(Activity.id).filter(Activity.athlete_id == user_id).subquery()
+    db.query(ActivitySplit).filter(ActivitySplit.activity_id.in_(activity_ids)).delete(synchronize_session=False)
+    db.query(ActivityFeedback).filter(ActivityFeedback.activity_id.in_(activity_ids)).delete(synchronize_session=False)
+    db.query(BestEffort).filter(BestEffort.activity_id.in_(activity_ids)).delete(synchronize_session=False)
+    db.query(CalendarInsight).filter(CalendarInsight.activity_id.in_(activity_ids)).delete(synchronize_session=False)
+    db.query(CalendarNote).filter(CalendarNote.activity_id.in_(activity_ids)).delete(synchronize_session=False)
+    db.query(NutritionEntry).filter(NutritionEntry.activity_id.in_(activity_ids)).delete(synchronize_session=False)
+    db.query(PersonalBest).filter(PersonalBest.activity_id.in_(activity_ids)).delete(synchronize_session=False)
+    db.query(Activity).filter(Activity.athlete_id == user_id).delete(synchronize_session=False)
+    
+    # Level 4: All other direct FK tables (order matters for nested FKs)
+    db.query(ActivityFeedback).filter(ActivityFeedback.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(AdminAuditEvent).filter(AdminAuditEvent.target_athlete_id == user_id).delete(synchronize_session=False)
+    db.query(AdminAuditEvent).filter(AdminAuditEvent.actor_athlete_id == user_id).delete(synchronize_session=False)
+    db.query(AthleteDataImportJob).filter(AthleteDataImportJob.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(AthleteIngestionState).filter(AthleteIngestionState.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(AthleteTrainingPaceProfile).filter(AthleteTrainingPaceProfile.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(AthleteRaceResultAnchor).filter(AthleteRaceResultAnchor.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(BestEffort).filter(BestEffort.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(BodyComposition).filter(BodyComposition.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(CalendarInsight).filter(CalendarInsight.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(CalendarNote).filter(CalendarNote.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(CoachActionProposal).filter(CoachActionProposal.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(CoachChat).filter(CoachChat.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(CoachIntentSnapshot).filter(CoachIntentSnapshot.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(CoachUsage).filter(CoachUsage.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(CoachingRecommendation).filter(CoachingRecommendation.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(DailyCheckin).filter(DailyCheckin.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(InsightFeedback).filter(InsightFeedback.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(IntakeQuestionnaire).filter(IntakeQuestionnaire.athlete_id == user_id).delete(synchronize_session=False)
+    
+    # Invite handling (invite_audit_event references invite_allowlist)
+    invite_ids = db.query(InviteAllowlist.id).filter(InviteAllowlist.invited_by_athlete_id == user_id).subquery()
+    db.query(InviteAuditEvent).filter(InviteAuditEvent.invite_id.in_(invite_ids)).delete(synchronize_session=False)
+    db.query(InviteAuditEvent).filter(InviteAuditEvent.actor_athlete_id == user_id).delete(synchronize_session=False)
+    db.query(InviteAllowlist).filter(InviteAllowlist.revoked_by_athlete_id == user_id).delete(synchronize_session=False)
+    db.query(InviteAllowlist).filter(InviteAllowlist.used_by_athlete_id == user_id).delete(synchronize_session=False)
+    db.query(InviteAllowlist).filter(InviteAllowlist.invited_by_athlete_id == user_id).delete(synchronize_session=False)
+    
+    db.query(NutritionEntry).filter(NutritionEntry.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(PersonalBest).filter(PersonalBest.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(PlanModificationLog).filter(PlanModificationLog.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(RacePromoCode).filter(RacePromoCode.created_by == user_id).delete(synchronize_session=False)
+    db.query(Subscription).filter(Subscription.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(TrainingAvailability).filter(TrainingAvailability.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(WorkPattern).filter(WorkPattern.athlete_id == user_id).delete(synchronize_session=False)
+    db.query(WorkoutSelectionAuditEvent).filter(WorkoutSelectionAuditEvent.athlete_id == user_id).delete(synchronize_session=False)
+    
+    # Level 5: Delete the athlete
+    db.query(Athlete).filter(Athlete.id == user_id).delete(synchronize_session=False)
+    
+    # Audit the deletion (record under actor, not target since target is now deleted)
+    from services.admin_audit import record_admin_audit_event
+    
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="athlete.delete",
+        target_athlete_id=None,  # User is deleted, can't reference
+        reason=request.reason,
+        payload={"deleted_user": deleted_user_info},
+    )
+    
+    db.commit()
+    
+    logger.warning(f"User {deleted_user_info['email']} (id={deleted_user_info['id']}) permanently deleted by {current_user.email}")
+    
+    return {
+        "success": True,
+        "deleted_user": deleted_user_info,
+        "message": "User and all associated data permanently deleted",
+    }
 
 
 @router.post("/users/{user_id}/impersonate")

@@ -310,6 +310,14 @@ export const adminService = {
     return apiClient.post(`/v1/admin/users/${userId}/block`, params);
   },
 
+  async deleteUser(userId: string, params: { confirm_email: string; reason?: string | null }): Promise<{
+    success: boolean;
+    deleted_user: { id: string; email: string; display_name: string | null; role: string; created_at: string | null };
+    message: string;
+  }> {
+    return apiClient.delete(`/v1/admin/users/${userId}`, { data: params });
+  },
+
   async setCoachVip(userId: string, params: { is_vip: boolean; reason?: string | null }): Promise<{
     success: boolean;
     user: { id: string; email: string; is_coach_vip: boolean };

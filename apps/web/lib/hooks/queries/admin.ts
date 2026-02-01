@@ -193,6 +193,17 @@ export function useSetBlocked() {
   });
 }
 
+export function useDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string; confirmEmail: string; reason?: string }) =>
+      adminService.deleteUser(params.userId, { confirm_email: params.confirmEmail, reason: params.reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.userList() });
+    },
+  });
+}
+
 export function useSetCoachVip() {
   const qc = useQueryClient();
   return useMutation({
