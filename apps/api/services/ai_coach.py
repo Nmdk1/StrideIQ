@@ -197,7 +197,7 @@ You understand running physiology, periodization, and training principles:
 
 When the athlete asks about training paces (threshold pace, easy pace, interval pace, marathon pace, etc.):
 - ALWAYS call get_training_paces FIRST - this is the ONLY authoritative source for training paces
-- These paces are calculated from the athlete's VDOT (based on their race results)
+- These paces are calculated from the athlete's RPI (Running Performance Index, based on their race results)
 - NEVER derive paces from recent runs or efficiency data - that's what they RAN, not what they SHOULD run
 - The training pace calculator is scientifically accurate - trust it over any other data
 
@@ -587,7 +587,7 @@ Policy:
             },
             {
                 "name": "get_training_paces",
-                "description": "Get VDOT-calculated training paces (easy, threshold, interval, marathon). THIS IS THE AUTHORITATIVE SOURCE for training paces.",
+                "description": "Get RPI-based training paces (easy, threshold, interval, marathon). THIS IS THE AUTHORITATIVE SOURCE for training paces.",
                 "input_schema": {
                     "type": "object",
                     "properties": {},
@@ -878,7 +878,7 @@ If you need more data to answer well, call the tools. That's why they're there."
                 "type": "function",
                 "function": {
                     "name": "get_training_paces",
-                    "description": "Get VDOT-calculated training paces (easy, threshold, interval, marathon, repetition). THIS IS THE AUTHORITATIVE SOURCE for training paces - always use this for pace questions.",
+                    "description": "Get RPI-based training paces (easy, threshold, interval, marathon, repetition). THIS IS THE AUTHORITATIVE SOURCE for training paces - always use this for pace questions.",
                     "parameters": {"type": "object", "properties": {}, "required": []},
                 },
             },
@@ -1122,7 +1122,7 @@ If you need more data to answer well, call the tools. That's why they're there."
                 "type": "function",
                 "function": {
                     "name": "get_athlete_profile",
-                    "description": "Get athlete physiological profile: max HR, threshold paces, VDOT, runner type (speedster/endurance/balanced), HR zones, and training metrics.",
+                    "description": "Get athlete physiological profile: max HR, threshold paces, RPI, runner type (speedster/endurance/balanced), HR zones, and training metrics.",
                     "parameters": {"type": "object", "properties": {}, "required": []},
                 },
             },
@@ -1311,7 +1311,7 @@ If you need more data to answer well, call the tools. That's why they're there."
             age = (today - athlete.birthdate).days // 365
             context_parts.append(f"Age: {age}")
         if athlete.vdot:
-            context_parts.append(f"Current VDOT: {athlete.vdot:.1f}")
+            context_parts.append(f"Current RPI: {athlete.vdot:.1f}")
         if athlete.resting_hr:
             context_parts.append(f"Resting HR: {athlete.resting_hr} bpm")
         if athlete.max_hr:
@@ -3167,7 +3167,8 @@ If you need more data to answer well, call the tools. That's why they're there."
             "ctl",
             "ef",
             "efficiency",
-            "vdot",
+            "rpi",
+            "vdot",  # Keep for user input detection even though we output RPI
             "bpm",
             "avg hr",
             "heart rate",

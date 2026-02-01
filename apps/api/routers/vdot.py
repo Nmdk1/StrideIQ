@@ -1,38 +1,38 @@
 """
-VDOT Calculator API Endpoints
+Training Pace Calculator API Endpoints (legacy routes)
 
-Free tool for landing page - comprehensive VDOT calculator with:
-- VDOT calculation from race time or pace
+Free tool for landing page - comprehensive pace calculator with:
+- RPI (Running Performance Index) calculation from race time or pace
 - Training paces (Easy, Marathon, Threshold, Interval, Repetition, Fast Reps)
 - Equivalent race performances for all standard distances
 
-Reference: https://vdoto2.com/calculator/
+Uses the Daniels/Gilbert oxygen cost equations (1979).
 """
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 from services.vdot_calculator import calculate_vdot_comprehensive
 
-router = APIRouter(prefix="/v1/vdot", tags=["VDOT Calculator"])
+router = APIRouter(prefix="/v1/vdot", tags=["Training Pace Calculator"])
 
 
 # Request models for POST endpoints
 class VDOTCalculateRequest(BaseModel):
-    """Request for VDOT calculation from race result."""
+    """Request for RPI/pace calculation from race result."""
     race_time_seconds: int
     distance_meters: float
 
 
 class VDOTTrainingPacesRequest(BaseModel):
-    """Request for training paces from VDOT."""
-    vdot: float
+    """Request for training paces from RPI value."""
+    vdot: float  # Internal field name, represents RPI
 
 
 # POST endpoints (for test compatibility and proper API design)
 @router.post("/calculate")
 def calculate_vdot_post(request: VDOTCalculateRequest):
     """
-    Calculate VDOT from race time and distance.
+    Calculate RPI (Running Performance Index) from race time and distance.
     
     Free tool - no authentication required.
     """
@@ -55,12 +55,12 @@ def calculate_vdot_post(request: VDOTCalculateRequest):
 @router.post("/training-paces")
 def get_training_paces_post(request: VDOTTrainingPacesRequest):
     """
-    Get training paces for a given VDOT.
+    Get training paces for a given RPI.
     
     Free tool - no authentication required.
     """
     if request.vdot <= 0:
-        raise HTTPException(status_code=400, detail="VDOT must be positive")
+        raise HTTPException(status_code=400, detail="RPI value must be positive")
     
     from services.vdot_calculator import calculate_training_paces
     
@@ -79,7 +79,7 @@ def calculate_vdot(
     pace_minutes_per_mile: Optional[float] = Query(None, description="Pace in minutes per mile (for reverse calculation, e.g., 7.5 for 7:30/mi)")
 ):
     """
-    Comprehensive VDOT calculator.
+    Comprehensive RPI (Running Performance Index) calculator.
     
     Free tool - no authentication required.
     
@@ -88,7 +88,7 @@ def calculate_vdot(
     2. Pace only (pace_minutes_per_mile) - reverse calculation
     
     Returns:
-        - VDOT score
+        - RPI score
         - Training paces (Easy, Marathon, Threshold, Interval, Repetition, Fast Reps) in both mi and km
         - Equivalent race performances for all standard distances
     
@@ -143,15 +143,15 @@ def calculate_vdot(
 
 @router.get("/equivalent-races")
 def get_equivalent_races(
-    vdot: float = Query(..., description="VDOT score")
+    vdot: float = Query(..., description="RPI (Running Performance Index) score")
 ):
     """
-    Get equivalent race performances for a given VDOT score.
+    Get equivalent race performances for a given RPI score.
     
     Returns equivalent times for all standard distances.
     """
     if vdot <= 0:
-        raise HTTPException(status_code=400, detail="VDOT must be positive")
+        raise HTTPException(status_code=400, detail="RPI value must be positive")
     
     from services.vdot_calculator import calculate_all_equivalent_races
     

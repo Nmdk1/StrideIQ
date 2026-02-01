@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import VDOTCalculator from './tools/VDOTCalculator';
+import TrainingPaceCalculator from './tools/TrainingPaceCalculator';
 import WMACalculator from './tools/WMACalculator';
 import HeatAdjustedPace from './tools/HeatAdjustedPace';
 
@@ -48,7 +48,7 @@ export default function FreeTools() {
             <p className="text-slate-400 mb-6">
               Input your recent race time and distance. Get your complete training pace table (E/M/T/I/R) in min/mile and min/km.
             </p>
-            <VDOTCalculator />
+            <TrainingPaceCalculator />
           </div>
 
           {/* WMA Age-Grading Calculator - Mission-critical */}

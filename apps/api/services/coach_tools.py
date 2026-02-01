@@ -623,7 +623,7 @@ def get_training_load(db: Session, athlete_id: UUID) -> Dict[str, Any]:
 
 def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
-    Get VDOT-calculated training paces for the athlete.
+    Get RPI-based training paces for the athlete.
     
     Returns target paces for easy, threshold, interval, repetition, and marathon training.
     This is THE authoritative source for training paces - do not derive paces from other data.
@@ -641,7 +641,7 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             return {
                 "ok": False,
                 "tool": "get_training_paces",
-                "error": "No VDOT on file. Athlete needs to complete a time trial or race to calculate training paces.",
+                "error": "No RPI on file. Athlete needs to complete a time trial or race to calculate training paces.",
             }
         
         units = athlete.preferred_units or "metric"
@@ -668,7 +668,8 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             "tool": "get_training_paces",
             "generated_at": _iso(now),
             "data": {
-                "vdot": vdot,
+                "rpi": vdot,  # Running Performance Index
+                "vdot": vdot,  # Keep for backward compatibility
                 "preferred_units": units,
                 "paces": {
                     "easy": format_display("easy"),
@@ -688,9 +689,9 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             "evidence": [
                 {
                     "type": "calculation",
-                    "id": f"vdot_paces:{athlete_id}",
+                    "id": f"rpi_paces:{athlete_id}",
                     "date": date.today().isoformat(),
-                    "value": f"VDOT {vdot:.1f} → Threshold {format_display('threshold')}, Easy {format_display('easy')}",
+                    "value": f"RPI {vdot:.1f} → Threshold {format_display('threshold')}, Easy {format_display('easy')}",
                 }
             ],
         }
@@ -865,10 +866,10 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                                 "confidence_interval_formatted": None,
                                 "confidence": f"{fallback_source}_fallback",
                             },
-                            "projections": {"vdot": round(float(fallback_vdot), 1), "ctl": None, "tsb": None},
+                            "projections": {"rpi": round(float(fallback_vdot), 1), "vdot": round(float(fallback_vdot), 1), "ctl": None, "tsb": None},
                             "factors": [
-                                "Calibrated performance model unavailable; using VDOT-derived equivalent times.",
-                                f"VDOT source: {fallback_source}",
+                                "Calibrated performance model unavailable; using RPI-derived equivalent times.",
+                                f"RPI source: {fallback_source.replace('vdot', 'rpi') if fallback_source else 'unknown'}",
                             ],
                             "notes": ["This estimate is less personalized than the calibrated model pipeline."],
                         }
@@ -1918,7 +1919,7 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     Phase 3: Athlete profile with physiological thresholds and runner typing.
     
-    Returns max_hr, threshold paces, VDOT, runner type, and training metrics.
+    Returns max_hr, threshold paces, RPI, runner type, and training metrics.
     Critical for personalized recommendations and goal setting.
     """
     now = datetime.utcnow()
@@ -1967,7 +1968,7 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
         # Build evidence
         evidence: List[Dict[str, Any]] = []
         if athlete.vdot:
-            evidence.append({"type": "metric", "name": "VDOT", "value": f"{athlete.vdot:.1f}"})
+            evidence.append({"type": "metric", "name": "RPI", "value": f"{athlete.vdot:.1f}"})
         if athlete.runner_type:
             evidence.append({"type": "classification", "name": "runner_type", "value": athlete.runner_type})
         if athlete.max_hr:
@@ -1990,7 +1991,8 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     "threshold_hr": athlete.threshold_hr,
                     "threshold_pace": threshold_pace_display,
                     "threshold_pace_sec_per_km": float(athlete.threshold_pace_per_km) if athlete.threshold_pace_per_km else None,
-                    "vdot": float(athlete.vdot) if athlete.vdot else None,
+                    "rpi": float(athlete.vdot) if athlete.vdot else None,  # Running Performance Index
+                    "vdot": float(athlete.vdot) if athlete.vdot else None,  # Keep for backward compatibility
                     "hr_zones": hr_zones,
                 },
                 "runner_typing": {

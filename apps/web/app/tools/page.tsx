@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import VDOTCalculator from '@/app/components/tools/VDOTCalculator';
+import TrainingPaceCalculator from '@/app/components/tools/TrainingPaceCalculator';
 import WMACalculator from '@/app/components/tools/WMACalculator';
 import HeatAdjustedPace from '@/app/components/tools/HeatAdjustedPace';
 // CriticalSpeedPredictor hidden - redundant with Training Pace Calculator, low perceived value
@@ -57,7 +57,7 @@ export default function ToolsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <VDOTCalculator />
+              <TrainingPaceCalculator />
             </CardContent>
           </Card>
 

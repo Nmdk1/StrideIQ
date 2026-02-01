@@ -21,7 +21,7 @@ type TabType = 'race_paces' | 'training' | 'equivalent';
  * training methodologies. Results align with approaches from coaches like
  * Pfitzinger, Hudson, Fitzgerald, and Magness.
  */
-export default function VDOTCalculator() {
+export default function TrainingPaceCalculator() {
   const [raceTime, setRaceTime] = useState('');
   const [distance, setDistance] = useState('5000');
   const [distanceUnit, setDistanceUnit] = useState<'km' | 'mile'>('km');
