@@ -24,7 +24,6 @@ import { LoadResponseChart } from '@/components/dashboard/LoadResponseChart';
 import { AgeGradedChart } from '@/components/dashboard/AgeGradedChart';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
-import { useUnits } from '@/lib/context/UnitsContext';
 import { correlationsService, type Correlation } from '@/lib/api/services/correlations';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -65,7 +64,6 @@ function InfoTooltip({ content }: { content: string }) {
 }
 
 export default function DashboardPage() {
-  const { formatDistance } = useUnits();
   const [days, setDays] = useState(180); // Default to 180 days to see full training cycles
   const [rollingWindow, setRollingWindow] = useState<'30d' | '60d' | '90d' | '120d' | 'all'>('60d');
   const { data, isLoading, error } = useEfficiencyTrends(days, true, true);
