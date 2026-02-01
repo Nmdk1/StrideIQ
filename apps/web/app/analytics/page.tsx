@@ -208,17 +208,14 @@ export default function DashboardPage() {
                     This Week • {currentWeek.phase} Phase
                   </p>
                   {/* Desktop: 7 columns */}
-                  <div className="hidden md:grid grid-cols-7 gap-1">
-                    {currentWeek.workouts.slice(0, 7).map((workout, i) => {
+                  <div className="hidden md:flex justify-between gap-1">
+                    {currentWeek.workouts.slice(0, 7).map((workout) => {
                       const linkHref = workout.completed && workout.completed_activity_id 
                         ? `/activities/${workout.completed_activity_id}`
                         : `/calendar?date=${workout.scheduled_date}`;
-                      return (
-                        <Link
-                          key={i}
-                          href={linkHref}
-                          className={`text-center py-2 px-1 rounded transition-all hover:scale-105 cursor-pointer ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
-                        >
+                      
+                      const cardContent = (
+                        <>
                           <div className="text-[10px] text-slate-400">
                             {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'short' })}
                           </div>
@@ -228,21 +225,36 @@ export default function DashboardPage() {
                              workout.title.split(' ')[0]}
                           </div>
                           {workout.completed && <span className="text-green-400 text-xs">✓</span>}
+                        </>
+                      );
+                      
+                      const cardClasses = `flex-1 text-center py-2 px-1 rounded transition-all cursor-pointer hover:scale-105 hover:opacity-80 ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`;
+                      
+                      return (
+                        <Link
+                          key={workout.id}
+                          href={linkHref}
+                          className={cardClasses}
+                        >
+                          {cardContent}
                         </Link>
                       );
                     })}
                   </div>
                   {/* Mobile: scrollable horizontal row */}
                   <div className="md:hidden flex gap-1 overflow-x-auto pb-2 -mx-1 px-1">
-                    {currentWeek.workouts.slice(0, 7).map((workout, i) => {
+                    {currentWeek.workouts.slice(0, 7).map((workout) => {
                       const linkHref = workout.completed && workout.completed_activity_id 
                         ? `/activities/${workout.completed_activity_id}`
                         : `/calendar?date=${workout.scheduled_date}`;
+                      
+                      const cardClasses = `flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] transition-all cursor-pointer hover:scale-105 hover:opacity-80 ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`;
+                      
                       return (
                         <Link
-                          key={i}
+                          key={workout.id}
                           href={linkHref}
-                          className={`flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] transition-all hover:scale-105 cursor-pointer ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
+                          className={cardClasses}
                         >
                           <div className="text-[10px] text-slate-400">
                             {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'narrow' })}
