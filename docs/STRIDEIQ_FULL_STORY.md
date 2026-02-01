@@ -94,9 +94,9 @@ We use multiple models strategically:
 - Claude Opus for high-stakes decisions (injury, major changes)
 - All answers cite receipts—the actual data behind the recommendation
 
-### VDOT-Based Training Paces
+### Training Pace Calculator
 
-We don't guess your training paces. We calculate them from your actual race performances using Jack Daniels' VDOT methodology:
+We don't guess your training paces. We calculate them from your actual race performances using the Daniels/Gilbert oxygen cost equations—peer-reviewed exercise physiology in the public domain since 1979:
 - Easy pace
 - Marathon pace  
 - Threshold pace
@@ -197,7 +197,7 @@ This isn't "AI coaching." It's expert-system coaching powered by AI reasoning.
 
 **Core Platform:**
 - Full Strava integration (automatic sync, real-time webhooks)
-- VDOT-based training pace calculator
+- Training pace calculator (Daniels/Gilbert equations)
 - WMA age-grading (official 2023 standards)
 - Personal best tracking across all distances
 - Training load analytics (ATL, CTL, TSB)

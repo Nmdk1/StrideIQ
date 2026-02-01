@@ -14,7 +14,7 @@ Runner scans QR code at packet pickup. They're about to race (or just finished).
 2. Connect Strava (one tap)
 3. Brief intake: What's your goal? (dropdown: "Race faster" / "Stay healthy" / "Just curious")
 4. **Immediate value:** Within 60 seconds of connecting Strava, they see:
-   - Their VDOT calculated from recent race or best effort
+   - Their Running Performance Index (RPI) calculated from recent race or best effort
    - "Based on your [5K time], here's what your training paces should be"
    - Today's training load status (fresh/tired/danger zone)
 
@@ -37,7 +37,7 @@ Runner scans QR code at packet pickup. They're about to race (or just finished).
 
 **Day 3:**
 - They get curious and explore: "What should my easy pace be?"
-- Coach returns authoritative answer from VDOT calculator, not guesses
+- Coach returns authoritative answer from training pace calculator, not guesses
 - They try a recovery run and it *feels right*
 - **Key insight:** The paces aren't arbitrary numbers—they're derived from their actual performance
 
@@ -72,13 +72,13 @@ Runner scans QR code at packet pickup. They're about to race (or just finished).
 ### Coach behavior
 - Day 0-3: Be helpful, not pushy. They're recovering.
 - Recovery questions should feel like talking to an experienced runner, not a doctor or a sales rep
-- Pace questions MUST use the authoritative VDOT calculator (we fixed this today)
+- Pace questions MUST use the authoritative training pace calculator (we fixed this today)
 - Context matters: Don't recommend intervals to someone who raced 48 hours ago
 
 ### Onboarding copy
 - Don't explain features. Show their data.
 - First screen after Strava connect should be a personalized insight, not a tour
-- The VDOT/pace calculation is the "aha moment" - make it visible immediately
+- The RPI/pace calculation is the "aha moment" - make it visible immediately
 
 ### Which LLM to lean on
 - Day 0-3 questions are often simple but high-stakes: "What should my pace be?" "When can I run again?"
