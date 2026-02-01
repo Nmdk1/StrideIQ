@@ -379,16 +379,17 @@ class TestRunInstructionsBuilder:
         assert "20%" in instructions
 
     def test_training_state_always_included(self, coach):
-        """Training state (ATL/CTL/TSB) should always be included."""
+        """Training state should always be included (using plain English, not acronyms)."""
         athlete_id = uuid4()
         message = "How am I doing?"
         
         with patch('services.ai_coach.coach_tools.get_training_load', return_value={"atl": 50.5, "ctl": 60.2, "tsb": 9.7}):
             instructions = coach._build_run_instructions(athlete_id, message)
         
-        assert "ATL=" in instructions
-        assert "CTL=" in instructions
-        assert "TSB=" in instructions
+        # Implementation uses plain English per communication style guidelines
+        assert "fatigue level" in instructions
+        assert "fitness level" in instructions
+        assert "form" in instructions
         assert "CURRENT TRAINING STATE" in instructions
 
     def test_fatigued_state_labeled_correctly(self, coach):

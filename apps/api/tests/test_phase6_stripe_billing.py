@@ -1,3 +1,4 @@
+import os
 from uuid import uuid4
 
 import pytest
@@ -53,6 +54,10 @@ class _DummySubObj:
         self.items = type("items", (), {"data": [item]})
 
 
+@pytest.mark.skipif(
+    not os.environ.get("STRIPE_SECRET_KEY"),
+    reason="Stripe environment not configured"
+)
 def test_checkout_and_portal_endpoints(monkeypatch):
     from services import stripe_service as ss
 
