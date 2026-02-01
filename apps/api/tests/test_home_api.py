@@ -329,3 +329,61 @@ class TestGenerateYesterdayInsight:
         
         assert "mi at" in result
         assert "/mi" in result
+
+
+class TestWeekDayModel:
+    """Tests for WeekDay model fields (clickable cards feature)."""
+    
+    def test_weekday_includes_activity_id_field(self):
+        """WeekDay model has activity_id for linking to completed activities."""
+        from routers.home import WeekDay
+        
+        day = WeekDay(
+            date="2026-01-30",
+            day_abbrev="T",
+            workout_type="easy",
+            distance_mi=5.0,
+            planned_distance_mi=5.0,
+            completed=True,
+            is_today=False,
+            activity_id="abc-123",
+            workout_id="workout-456"
+        )
+        
+        assert day.activity_id == "abc-123"
+        assert day.workout_id == "workout-456"
+        assert day.planned_distance_mi == 5.0
+    
+    def test_weekday_allows_none_ids(self):
+        """WeekDay model allows None for optional ID fields."""
+        from routers.home import WeekDay
+        
+        day = WeekDay(
+            date="2026-01-30",
+            day_abbrev="T",
+            completed=False,
+            is_today=True
+        )
+        
+        assert day.activity_id is None
+        assert day.workout_id is None
+        assert day.planned_distance_mi is None
+    
+    def test_weekday_completed_day_has_both_distances(self):
+        """Completed day can have both actual and planned distances."""
+        from routers.home import WeekDay
+        
+        day = WeekDay(
+            date="2026-01-30",
+            day_abbrev="T",
+            workout_type="easy",
+            distance_mi=5.2,  # Actual ran slightly more
+            planned_distance_mi=5.0,  # Originally planned
+            completed=True,
+            is_today=False,
+            activity_id="abc-123"
+        )
+        
+        assert day.distance_mi == 5.2
+        assert day.planned_distance_mi == 5.0
+        assert day.distance_mi != day.planned_distance_mi  # Shows difference

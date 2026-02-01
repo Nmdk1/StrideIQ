@@ -69,8 +69,11 @@ class WeekDay(BaseModel):
     day_abbrev: str  # M, T, W, etc.
     workout_type: Optional[str] = None
     distance_mi: Optional[float] = None
+    planned_distance_mi: Optional[float] = None  # Show both for comparison
     completed: bool
     is_today: bool
+    activity_id: Optional[str] = None  # For linking to activity
+    workout_id: Optional[str] = None  # For linking to planned workout
 
 
 class WeekProgress(BaseModel):
@@ -548,13 +551,18 @@ async def get_home_data(
         
         workout_type = None
         distance_mi = None
+        planned_distance_mi = None
         completed = False
         is_missed = False
+        activity_id = None
+        workout_id = None
         
         if planned_workout:
             workout_type = planned_workout.workout_type
+            workout_id = str(planned_workout.id)
             planned_distance = planned_workout.target_distance_km * 0.621371 if planned_workout.target_distance_km else 0
             planned_mi += planned_distance
+            planned_distance_mi = round(planned_distance, 1) if planned_distance else None
             
             # Only count future planned miles as "remaining"
             if is_today_or_future and not actual:
@@ -566,6 +574,7 @@ async def get_home_data(
         
         if actual:
             completed = True
+            activity_id = str(actual.id)
             if actual.distance_m:
                 actual_mi = actual.distance_m / 1609.344
                 completed_mi += actual_mi
@@ -584,8 +593,11 @@ async def get_home_data(
             day_abbrev=day_abbrev,
             workout_type=workout_type if not is_missed else None,  # Don't show workout type for missed
             distance_mi=distance_mi,
+            planned_distance_mi=planned_distance_mi,
             completed=completed,
-            is_today=(day_date == today)
+            is_today=(day_date == today),
+            activity_id=activity_id,
+            workout_id=workout_id,
         ))
     
     # Determine status

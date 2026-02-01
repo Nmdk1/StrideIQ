@@ -42,8 +42,11 @@ export interface WeekDay {
   day_abbrev: string;
   workout_type?: string;
   distance_mi?: number;
+  planned_distance_mi?: number;  // Show both for comparison
   completed: boolean;
   is_today: boolean;
+  activity_id?: string;  // For linking to activity
+  workout_id?: string;   // For linking to planned workout
 }
 
 export interface WeekProgress {

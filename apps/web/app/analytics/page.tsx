@@ -209,41 +209,53 @@ export default function DashboardPage() {
                   </p>
                   {/* Desktop: 7 columns */}
                   <div className="hidden md:grid grid-cols-7 gap-1">
-                    {currentWeek.workouts.slice(0, 7).map((workout, i) => (
-                      <div
-                        key={i}
-                        className={`text-center py-2 px-1 rounded ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
-                      >
-                        <div className="text-[10px] text-slate-400">
-                          {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'short' })}
-                        </div>
-                    <div className="text-xs font-medium truncate">
-                          {workout.workout_type === 'rest' ? 'Rest' : 
-                           workout.target_distance_km ? formatDistance(workout.target_distance_km * 1000, 0) : 
-                           workout.title.split(' ')[0]}
-                        </div>
-                        {workout.completed && <span className="text-green-400 text-xs">✓</span>}
-                      </div>
-                    ))}
+                    {currentWeek.workouts.slice(0, 7).map((workout, i) => {
+                      const linkHref = workout.completed && workout.completed_activity_id 
+                        ? `/activities/${workout.completed_activity_id}`
+                        : `/calendar?date=${workout.scheduled_date}`;
+                      return (
+                        <Link
+                          key={i}
+                          href={linkHref}
+                          className={`text-center py-2 px-1 rounded transition-all hover:scale-105 cursor-pointer ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
+                        >
+                          <div className="text-[10px] text-slate-400">
+                            {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'short' })}
+                          </div>
+                          <div className="text-xs font-medium truncate">
+                            {workout.workout_type === 'rest' ? 'Rest' : 
+                             workout.target_distance_km ? formatDistance(workout.target_distance_km * 1000, 0) : 
+                             workout.title.split(' ')[0]}
+                          </div>
+                          {workout.completed && <span className="text-green-400 text-xs">✓</span>}
+                        </Link>
+                      );
+                    })}
                   </div>
                   {/* Mobile: scrollable horizontal row */}
                   <div className="md:hidden flex gap-1 overflow-x-auto pb-2 -mx-1 px-1">
-                    {currentWeek.workouts.slice(0, 7).map((workout, i) => (
-                      <div
-                        key={i}
-                        className={`flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
-                      >
-                        <div className="text-[10px] text-slate-400">
-                          {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'narrow' })}
-                        </div>
-                        <div className="text-xs font-medium">
-                          {workout.workout_type === 'rest' ? 'R' : 
-                           workout.target_distance_km ? formatDistance(workout.target_distance_km * 1000, 0) : 
-                           workout.title.charAt(0)}
-                        </div>
-                        {workout.completed && <span className="text-green-400 text-[10px]">✓</span>}
-                      </div>
-                    ))}
+                    {currentWeek.workouts.slice(0, 7).map((workout, i) => {
+                      const linkHref = workout.completed && workout.completed_activity_id 
+                        ? `/activities/${workout.completed_activity_id}`
+                        : `/calendar?date=${workout.scheduled_date}`;
+                      return (
+                        <Link
+                          key={i}
+                          href={linkHref}
+                          className={`flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] transition-all hover:scale-105 cursor-pointer ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
+                        >
+                          <div className="text-[10px] text-slate-400">
+                            {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'narrow' })}
+                          </div>
+                          <div className="text-xs font-medium">
+                            {workout.workout_type === 'rest' ? 'R' : 
+                             workout.target_distance_km ? formatDistance(workout.target_distance_km * 1000, 0) : 
+                             workout.title.charAt(0)}
+                          </div>
+                          {workout.completed && <span className="text-green-400 text-[10px]">✓</span>}
+                        </Link>
+                      );
+                    })}
                   </div>
                 </div>
               )}

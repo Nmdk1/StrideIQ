@@ -523,15 +523,15 @@ export default function HomePage() {
                   <div className="flex justify-between gap-1 mb-4">
                     {week.days.map((day) => {
                       const dayConfig = getWorkoutConfig(day.workout_type);
-                      return (
-                        <div
-                          key={day.date}
-                          className={`
-                            flex-1 text-center py-2.5 px-0.5 rounded-lg transition-all
-                            ${day.is_today ? 'ring-2 ring-orange-500 bg-orange-500/10' : ''}
-                            ${day.completed ? 'bg-emerald-500/15 border border-emerald-500/25' : 'bg-slate-700/50 border border-transparent'}
-                          `}
-                        >
+                      // Determine link destination
+                      const linkHref = day.activity_id 
+                        ? `/activities/${day.activity_id}`
+                        : day.workout_id 
+                          ? `/calendar?date=${day.date}`
+                          : null;
+                      
+                      const dayContent = (
+                        <>
                           <div className={`text-[10px] uppercase mb-1 ${day.is_today ? 'text-orange-400 font-semibold' : 'text-slate-500'}`}>
                             {day.day_abbrev}
                           </div>
@@ -540,6 +540,9 @@ export default function HomePage() {
                               <span className="flex flex-col items-center gap-0.5">
                                 <CheckCircle2 className="w-3.5 h-3.5" />
                                 <span className="text-[10px]">{day.distance_mi}</span>
+                                {day.planned_distance_mi && day.distance_mi !== day.planned_distance_mi && (
+                                  <span className="text-[9px] text-slate-500 line-through">{day.planned_distance_mi}</span>
+                                )}
                               </span>
                             ) : day.workout_type === 'rest' ? (
                               <span className="text-slate-600">—</span>
@@ -549,6 +552,30 @@ export default function HomePage() {
                               <span className="text-slate-600">—</span>
                             )}
                           </div>
+                        </>
+                      );
+                      
+                      const cardClasses = `
+                        flex-1 text-center py-2.5 px-0.5 rounded-lg transition-all
+                        ${day.is_today ? 'ring-2 ring-orange-500 bg-orange-500/10' : ''}
+                        ${day.completed ? 'bg-emerald-500/15 border border-emerald-500/25' : 'bg-slate-700/50 border border-transparent'}
+                        ${linkHref ? 'cursor-pointer hover:bg-slate-600/50 hover:scale-105' : ''}
+                      `;
+                      
+                      return linkHref ? (
+                        <Link
+                          key={day.date}
+                          href={linkHref}
+                          className={cardClasses}
+                        >
+                          {dayContent}
+                        </Link>
+                      ) : (
+                        <div
+                          key={day.date}
+                          className={cardClasses}
+                        >
+                          {dayContent}
                         </div>
                       );
                     })}
