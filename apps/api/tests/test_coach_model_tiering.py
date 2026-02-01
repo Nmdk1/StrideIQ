@@ -54,18 +54,28 @@ class TestQueryComplexityClassifier:
             assert coach.classify_query_complexity(query) == "low", f"Expected LOW for: {query}"
     
     def test_medium_complexity_standard_coaching(self, coach):
-        """Standard coaching questions should be MEDIUM."""
+        """Standard coaching questions without causal/ambiguity should be MEDIUM."""
         medium_queries = [
             "What pace for my tempo run?",
             "Can I move my long run to Saturday?",
-            "Should I skip today's workout?",
-            "How should I ramp back after 2 weeks off?",
+            # "Should I skip today's workout?" → now HIGH (decision pattern with 90/10)
+            # "How should I ramp back after 2 weeks off?" → now HIGH (causal "how do i")
             "What's the best way to train for a marathon?",
             "How many miles should I run this week?",
             "Is my heart rate too high on easy runs?",
         ]
         for query in medium_queries:
             assert coach.classify_query_complexity(query) == "medium", f"Expected MEDIUM for: {query}"
+    
+    def test_high_complexity_decision_queries(self, coach):
+        """Decision queries requiring judgment should be HIGH (90/10 split)."""
+        high_queries = [
+            "Should I skip today's workout?",
+            "Should I rest tomorrow?",
+            "Is it okay to run on this?",
+        ]
+        for query in high_queries:
+            assert coach.classify_query_complexity(query) == "high", f"Expected HIGH for: {query}"
     
     def test_high_complexity_causal_with_ambiguity(self, coach):
         """Causal questions with ambiguity should be HIGH."""
@@ -87,14 +97,18 @@ class TestQueryComplexityClassifier:
         for query in high_queries:
             assert coach.classify_query_complexity(query) == "high", f"Expected HIGH for: {query}"
     
-    def test_causal_without_ambiguity_is_medium(self, coach):
-        """Causal questions without ambiguity signals should be MEDIUM (Sonnet handles)."""
-        medium_causal = [
-            "Why am I tired?",  # Simple causal, no ambiguity
-            "What's causing my calf pain?",  # Single factor
+    def test_causal_without_ambiguity_is_high(self, coach):
+        """Causal questions should be HIGH even without ambiguity (90/10 split).
+        
+        Updated from old 95/5 logic where causal needed ambiguity for HIGH.
+        With 90/10, ANY causal question triggers Opus for better reasoning.
+        """
+        high_causal = [
+            "Why am I tired?",  # Causal → HIGH
+            "What's causing my calf pain?",  # Causal → HIGH
         ]
-        for query in medium_causal:
-            assert coach.classify_query_complexity(query) == "medium", f"Expected MEDIUM for: {query}"
+        for query in high_causal:
+            assert coach.classify_query_complexity(query) == "high", f"Expected HIGH for: {query}"
     
     def test_empty_and_none_queries(self, coach):
         """Empty or None queries should default to MEDIUM."""
@@ -209,7 +223,7 @@ class TestEndToEndClassification:
     
     def test_coaching_query_gets_mini(self, coach):
         """A standard coaching query should route to gpt-4o-mini (default)."""
-        message = "What pace should I run my tempo at?"
+        message = "What pace for my tempo run?"  # Simple pace lookup, no causal/decision
         complexity = coach.classify_query_complexity(message)
         model, is_opus = coach.get_model_for_query(complexity)
         
@@ -238,6 +252,71 @@ class TestEndToEndClassification:
         assert model == "gpt-4o-mini"  # No Anthropic client = default
 
 
+class TestToolValidation:
+    """Test tool validation for data questions (Sprint 2)."""
+    
+    def test_data_question_without_tools_fails(self, coach):
+        """A data question without tool calls should fail validation."""
+        is_valid, reason = coach._validate_tool_usage(
+            message="How many miles did I run this week?",
+            tools_called=[],
+            tool_calls_count=0,
+        )
+        assert is_valid is False
+        assert reason == "no_tools_called"
+    
+    def test_data_question_with_tools_passes(self, coach):
+        """A data question with data tools should pass validation."""
+        is_valid, reason = coach._validate_tool_usage(
+            message="How many miles did I run this week?",
+            tools_called=["get_recent_runs", "get_training_load"],
+            tool_calls_count=2,
+        )
+        assert is_valid is True
+        assert reason == "ok"
+    
+    def test_definition_question_skips_validation(self, coach):
+        """Definition questions don't need tool validation."""
+        is_valid, reason = coach._validate_tool_usage(
+            message="What is a tempo run?",
+            tools_called=[],
+            tool_calls_count=0,
+        )
+        assert is_valid is True
+        assert reason == "not_data_question"
+    
+    def test_non_data_question_skips_validation(self, coach):
+        """Non-data questions don't need tool validation."""
+        is_valid, reason = coach._validate_tool_usage(
+            message="Hello!",
+            tools_called=[],
+            tool_calls_count=0,
+        )
+        assert is_valid is True
+        assert reason == "not_data_question"
+    
+    def test_data_question_with_wrong_tools_fails(self, coach):
+        """Data question with non-data tools should fail."""
+        is_valid, reason = coach._validate_tool_usage(
+            message="How far did I run yesterday?",
+            tools_called=["get_coach_intent_snapshot"],  # Not a data tool
+            tool_calls_count=1,
+        )
+        assert is_valid is False
+        assert reason == "no_data_tools_called"
+    
+    def test_is_data_question_detects_mileage(self, coach):
+        """Questions about mileage should be detected as data questions."""
+        assert coach._is_data_question("How many miles did I run this week?") is True
+        assert coach._is_data_question("What was my total mileage?") is True
+    
+    def test_is_data_question_excludes_definitions(self, coach):
+        """Definition questions should not be data questions."""
+        assert coach._is_data_question("What is a tempo run?") is False
+        assert coach._is_data_question("Explain what VO2max means") is False
+        assert coach._is_data_question("Define threshold pace") is False
+
+
 class TestEdgeCases:
     """Edge case and boundary tests for robustness."""
     
@@ -253,18 +332,22 @@ class TestEdgeCases:
         assert coach.classify_query_complexity("Why Am I Getting Slower Despite Running More?") == "high"
     
     def test_boundary_multiple_ands(self, coach):
-        """Exactly 2 'and' should trigger high if causal."""
-        # 2 "and"s = multiple factors
+        """Multiple 'and' with causal should trigger HIGH (90/10: causal alone is HIGH)."""
+        # With 90/10, any causal is HIGH - so both of these are HIGH
         assert coach.classify_query_complexity("Why am I tired and slow and sore?") == "high"
-        # Only 1 "and" = not enough factors
-        assert coach.classify_query_complexity("Why am I tired and slow?") == "medium"
+        assert coach.classify_query_complexity("Why am I tired and slow?") == "high"  # Causal → HIGH
+        
+        # Multiple factors WITHOUT causal should also be HIGH (multi-factor alone triggers)
+        assert coach.classify_query_complexity("My legs are tired, my HR is high, and my sleep is bad") == "high"
     
     def test_boundary_multiple_commas(self, coach):
-        """2+ commas with causal should trigger high."""
-        # 2 commas = multiple factors
+        """Multiple commas should trigger HIGH (multi-factor)."""
+        # With 90/10, causal alone is HIGH
         assert coach.classify_query_complexity("Why am I tired, slow, sore?") == "high"
-        # Only 1 comma = not enough
-        assert coach.classify_query_complexity("Why am I tired, slow?") == "medium"
+        assert coach.classify_query_complexity("Why am I tired, slow?") == "high"  # Causal → HIGH
+        
+        # Multi-factor without causal (2+ commas)
+        assert coach.classify_query_complexity("My pace dropped, HR spiked, and legs feel heavy") == "high"
     
     def test_special_characters_dont_break(self, coach):
         """Unicode and special characters should be handled gracefully."""

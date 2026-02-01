@@ -332,16 +332,22 @@ class TestRunInstructionsBuilder:
             return coach
 
     def test_judgment_question_includes_critical_instruction(self, coach):
-        """Judgment questions should include CRITICAL JUDGMENT INSTRUCTION."""
+        """Judgment questions should include CRITICAL JUDGMENT INSTRUCTION for non-mini models."""
         athlete_id = uuid4()
         message = "Would it be reasonable to think I'll hit 3:08 by March?"
         
         with patch('services.ai_coach.coach_tools.get_training_load', return_value={"atl": 50, "ctl": 60, "tsb": 10}):
-            instructions = coach._build_run_instructions(athlete_id, message)
+            # Test with non-mini model to get verbose instructions
+            instructions = coach._build_run_instructions(athlete_id, message, model="gpt-4o")
         
         assert "CRITICAL JUDGMENT INSTRUCTION" in instructions
         assert "answer directly first" in instructions.lower()
         assert "do not deflect" in instructions.lower()
+        
+        # Also verify mini gets simplified version
+        with patch('services.ai_coach.coach_tools.get_training_load', return_value={"atl": 50, "ctl": 60, "tsb": 10}):
+            mini_instructions = coach._build_run_instructions(athlete_id, message, model="gpt-4o-mini")
+        assert "ANSWER DIRECTLY" in mini_instructions
 
     def test_return_context_includes_post_return_guidance(self, coach):
         """Return-from-injury context should include appropriate guidance."""
@@ -349,19 +355,27 @@ class TestRunInstructionsBuilder:
         message = "Since coming back from injury, how am I doing?"
         
         with patch('services.ai_coach.coach_tools.get_training_load', return_value={"atl": 30, "ctl": 35, "tsb": 5}):
-            instructions = coach._build_run_instructions(athlete_id, message)
+            # Test with non-mini model to get verbose instructions
+            instructions = coach._build_run_instructions(athlete_id, message, model="gpt-4o")
         
         assert "RETURN-FROM-INJURY CONTEXT" in instructions
         assert "post-return period" in instructions.lower()
         assert "conservative" in instructions.lower()
+        
+        # Also verify mini gets simplified version
+        with patch('services.ai_coach.coach_tools.get_training_load', return_value={"atl": 30, "ctl": 35, "tsb": 5}):
+            mini_instructions = coach._build_run_instructions(athlete_id, message, model="gpt-4o-mini")
+        assert "RETURN CONTEXT" in mini_instructions
+        assert "conservative" in mini_instructions.lower()
 
     def test_benchmark_reference_includes_comparison_guidance(self, coach):
-        """Benchmark references should include comparison guidance."""
+        """Benchmark references should include comparison guidance for non-mini models."""
         athlete_id = uuid4()
         message = "I was in 3:08 marathon shape in December, can I get back there?"
         
         with patch('services.ai_coach.coach_tools.get_training_load', return_value={"atl": 45, "ctl": 50, "tsb": 5}):
-            instructions = coach._build_run_instructions(athlete_id, message)
+            # Test with non-mini model to get verbose instructions (mini skips benchmark)
+            instructions = coach._build_run_instructions(athlete_id, message, model="gpt-4o")
         
         assert "BENCHMARK REFERENCE DETECTED" in instructions
         assert "current metrics" in instructions.lower()
@@ -372,11 +386,18 @@ class TestRunInstructionsBuilder:
         message = "What should I run this week?"
         
         with patch('services.ai_coach.coach_tools.get_training_load', return_value={"atl": 55, "ctl": 60, "tsb": 5}):
-            instructions = coach._build_run_instructions(athlete_id, message)
+            # Test with non-mini model to get verbose instructions
+            instructions = coach._build_run_instructions(athlete_id, message, model="gpt-4o")
         
         assert "PRESCRIPTION REQUEST" in instructions
         assert "conservative bounds" in instructions.lower()
         assert "20%" in instructions
+        
+        # Also verify mini gets simplified version
+        with patch('services.ai_coach.coach_tools.get_training_load', return_value={"atl": 55, "ctl": 60, "tsb": 5}):
+            mini_instructions = coach._build_run_instructions(athlete_id, message, model="gpt-4o-mini")
+        assert "PRESCRIPTION" in mini_instructions
+        assert "20%" in mini_instructions
 
     def test_training_state_always_included(self, coach):
         """Training state should always be included (using plain English, not acronyms)."""

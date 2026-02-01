@@ -1586,13 +1586,15 @@ If you need more data to answer well, call the tools. That's why they're there."
 
     def classify_query_complexity(self, message: str) -> str:
         """
-        Classify query complexity for model routing (Phase 11 - ADR-060).
+        Classify query complexity for model routing (Phase 11 - ADR-060, updated for 90/10).
         
         Returns: 'low', 'medium', or 'high'
         
-        HIGH = Multi-signal synthesis with ambiguity (needs real reasoning)
+        HIGH = Causal OR ambiguity OR multi-factor (any one triggers Opus)
         MEDIUM = Standard coaching (rule-based with data)
         LOW = Pure lookups/definitions (no reasoning needed)
+        
+        Target: ~10% of queries should be HIGH (90% mini, 10% Opus)
         """
         message_lower = (message or "").lower()
         
@@ -1609,28 +1611,52 @@ If you need more data to answer well, call the tools. That's why they're there."
         if any(p in message_lower for p in low_patterns):
             return "low"
         
-        # HIGH: Multi-signal synthesis with ambiguity
-        # Must have causal/synthesis intent AND (ambiguity OR multiple factors)
-        causal_patterns = [
-            "why am i", "why is my", "what's causing", "what's driving",
-            "what's holding", "what explains", "biggest factor",
-            "main driver", "what's the one thing",
-        ]
-        has_causal = any(p in message_lower for p in causal_patterns)
+        # HIGH: Any ONE of these signals triggers Opus for better reasoning
+        # (Updated from AND to OR logic for 90/10 split)
         
+        # 1. Causal/synthesis questions - require real reasoning
+        causal_patterns = [
+            "why am i", "why is my", "why do i", "why does my",
+            "what's causing", "what's driving", "what caused",
+            "what's holding", "what explains", "biggest factor",
+            "main driver", "what's the one thing", "what's wrong",
+            "what am i doing wrong", "what should i change",
+            "how do i improve", "how can i get faster",
+            "what's limiting", "what's preventing",
+        ]
+        if any(p in message_lower for p in causal_patterns):
+            return "high"
+        
+        # 2. Ambiguity/confusion signals - need nuanced response
         ambiguity_signals = [
             "but", "despite", "even though", "however", "yet",
             "although", "not sure", "confused", "doesn't make sense",
+            "i thought", "shouldn't it", "expected", "supposed to",
+            "weird", "strange", "odd", "counterintuitive",
         ]
-        has_ambiguity = any(s in message_lower for s in ambiguity_signals)
+        if any(s in message_lower for s in ambiguity_signals):
+            return "high"
         
-        # Multiple factors: 2+ "and" or comma-separated concerns
+        # 3. Multiple factors in one query - needs synthesis
         has_multiple_factors = (
             message_lower.count(" and ") >= 2 or
             message_lower.count(",") >= 2
         )
+        if has_multiple_factors:
+            return "high"
         
-        if has_causal and (has_ambiguity or has_multiple_factors):
+        # 4. Complex planning/decision queries - require judgment
+        # Note: "should i" alone is too broad (catches "What pace should I run")
+        # Only trigger on decision-making patterns with explicit uncertainty
+        planning_patterns = [
+            "should i skip", "should i rest", "should i take",
+            "should i reduce", "should i increase", "should i change",
+            "is it okay to run", "is it safe to",
+            "would it be wise", "would it be better",
+            "given that", "considering that", "taking into account",
+            "what if i skip", "what if i run",
+        ]
+        if any(p in message_lower for p in planning_patterns):
             return "high"
         
         # MEDIUM: Everything else (standard coaching)
@@ -2148,25 +2174,34 @@ If you need more data to answer well, call the tools. That's why they're there."
                         run_instructions.append(thin_injected)
                 
                 # Dynamic per-run instructions (judgment, return-context, prescription, etc.)
-                dynamic_instructions = self._build_run_instructions(athlete_id=athlete_id, message=message)
+                # Sprint 4: Pass model to simplify instructions for mini
+                dynamic_instructions = self._build_run_instructions(
+                    athlete_id=athlete_id, 
+                    message=message,
+                    model=model,
+                )
                 if dynamic_instructions:
                     run_instructions.append(dynamic_instructions)
                 
-                # Phase 5: Confidence-gated responses for judgment questions
-                if msg_type == MessageType.JUDGMENT:
-                    confidence_instruction = self.conversation_manager.build_confidence_instruction()
-                    run_instructions.append(confidence_instruction)
+                # Sprint 4: Skip complex instruction layers for mini (keep it simple)
+                is_mini = model == "gpt-4o-mini"
                 
-                # Phase 5: Progressive detail levels based on conversation depth
-                try:
-                    history_data = self.get_thread_history(athlete_id, limit=20)
-                    history_raw = history_data.get("messages", [])
-                    user_message_count = sum(1 for m in history_raw if m.get("role") == "user")
-                    detail_level = self.conversation_manager.get_detail_level(user_message_count + 1)  # +1 for current message
-                    detail_instruction = self.conversation_manager.build_detail_instruction(detail_level)
-                    run_instructions.append(detail_instruction)
-                except Exception as e:
-                    logger.debug(f"Detail level calculation skipped: {e}")
+                if not is_mini:
+                    # Phase 5: Confidence-gated responses for judgment questions
+                    if msg_type == MessageType.JUDGMENT:
+                        confidence_instruction = self.conversation_manager.build_confidence_instruction()
+                        run_instructions.append(confidence_instruction)
+                    
+                    # Phase 5: Progressive detail levels based on conversation depth
+                    try:
+                        history_data = self.get_thread_history(athlete_id, limit=20)
+                        history_raw = history_data.get("messages", [])
+                        user_message_count = sum(1 for m in history_raw if m.get("role") == "user")
+                        detail_level = self.conversation_manager.get_detail_level(user_message_count + 1)  # +1 for current message
+                        detail_instruction = self.conversation_manager.build_detail_instruction(detail_level)
+                        run_instructions.append(detail_instruction)
+                    except Exception as e:
+                        logger.debug(f"Detail level calculation skipped: {e}")
                 
             except Exception as e:
                 logger.info("Coach run instructions build skipped: %s", str(e))
@@ -2195,6 +2230,10 @@ If you need more data to answer well, call the tools. That's why they're there."
             max_wait = max(30, min(max_wait, 240))
             start = time.time()
             
+            # Track tool calls for validation (Sprint 2: tool validation)
+            tool_calls_count = 0
+            tools_called: List[str] = []
+            
             while True:
                 run_status = self.client.beta.threads.runs.retrieve(
                     thread_id=thread_id,
@@ -2218,6 +2257,10 @@ If you need more data to answer well, call the tools. That's why they're there."
                         "AI coach requires_action: %s tool call(s) requested",
                         len(tool_calls),
                     )
+                    
+                    # Track tool calls for validation
+                    tool_calls_count += len(tool_calls)
+                    
                     tool_outputs = []
                     for call in tool_calls:
                         try:
@@ -2226,6 +2269,9 @@ If you need more data to answer well, call the tools. That's why they're there."
                             raw_args = fn.arguments or "{}"
                             args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
                             logger.info("AI coach tool_call requested: %s args=%s", tool_name, raw_args)
+                            
+                            # Track which tools were called for validation
+                            tools_called.append(tool_name)
 
                             if tool_name == "get_recent_runs":
                                 output = coach_tools.get_recent_runs(self.db, athlete_id, **args)
@@ -2373,6 +2419,29 @@ If you need more data to answer well, call the tools. That's why they're there."
                     response_text = response_content.text.value
                 else:
                     response_text = str(response_content)
+                
+                # =========================================================================
+                # SPRINT 2: Tool Usage Validation
+                # If this was a data question but no tools were called, log it as a
+                # validation failure. In future, we can add retry logic here.
+                # =========================================================================
+                tool_valid, tool_reason = self._validate_tool_usage(
+                    message=message,
+                    tools_called=tools_called,
+                    tool_calls_count=tool_calls_count,
+                )
+                if not tool_valid:
+                    logger.warning(
+                        f"Tool validation FAILED for message: reason={tool_reason}, "
+                        f"tool_calls_count={tool_calls_count}, tools_called={tools_called}, "
+                        f"message_preview={message[:100] if message else ''}..."
+                    )
+                    # Log for monitoring - in future sprint, add retry logic here
+                else:
+                    logger.debug(
+                        f"Tool validation passed: tool_calls_count={tool_calls_count}, "
+                        f"tools_called={tools_called[:3] if tools_called else []}"
+                    )
 
                 # Enforce citations contract: if the answer contains numeric claims,
                 # it must include receipts (dates and/or activity ids). If not, force a rewrite.
@@ -2569,7 +2638,7 @@ If you need more data to answer well, call the tools. That's why they're there."
     # -------------------------------------------------------------------------
     # PHASE 2 CONTEXT ARCHITECTURE: Dynamic run instructions (not user messages)
     # -------------------------------------------------------------------------
-    def _build_run_instructions(self, athlete_id: UUID, message: str) -> str:
+    def _build_run_instructions(self, athlete_id: UUID, message: str, model: str = "gpt-4o-mini") -> str:
         """
         Build per-run instructions based on message type and athlete state.
         
@@ -2580,10 +2649,18 @@ If you need more data to answer well, call the tools. That's why they're there."
         - Always fresh for each run
         - Can include athlete-specific context
         
+        Sprint 4: For mini, keep instructions simple. Complex instructions go to Opus only.
+        
+        Args:
+            athlete_id: The athlete's ID
+            message: The user's message
+            model: The model being used (for simplification decisions)
+        
         Returns a string to be passed to runs.create(additional_instructions=...).
         """
         instructions: List[str] = []
         ml = (message or "").lower()
+        is_mini = model == "gpt-4o-mini"
         
         # -------------------------------------------------------------------------
         # 0. ALWAYS require tool calls for data questions (fixes mini skipping tools)
@@ -2596,13 +2673,44 @@ If you need more data to answer well, call the tools. That's why they're there."
             "longest", "fastest", "slowest", "best", "worst",
             "build", "race", "goal", "target",
         ]
-        if any(kw in ml for kw in data_keywords):
+        is_data_question = any(kw in ml for kw in data_keywords)
+        
+        if is_data_question:
             instructions.append(
                 "TOOL CALL REQUIRED: This question is about training data. "
                 "You MUST call get_recent_runs or get_training_load BEFORE answering. "
                 "Do NOT respond without first calling a tool to get actual data. "
                 "If you answer without calling tools, your response will be rejected."
             )
+            
+            # Sprint 3: Prefetch recent runs to reduce reliance on tool calls
+            # This gives mini the data it needs even if it forgets to call tools
+            try:
+                recent = coach_tools.get_recent_runs(self.db, athlete_id, days=7)
+                if recent and not recent.get("error") and recent.get("data"):
+                    runs = recent.get("data", [])
+                    if runs:
+                        # Compact summary for injection
+                        run_summary = []
+                        total_distance = 0
+                        for r in runs[:7]:  # Max 7 runs
+                            dist = r.get("distance_mi") or r.get("distance_km", 0)
+                            pace = r.get("pace_per_mi") or r.get("pace_per_km", "")
+                            name = r.get("name", "Run")
+                            date = r.get("date", "")[:10] if r.get("date") else ""
+                            if dist:
+                                total_distance += float(dist) if isinstance(dist, (int, float, str)) and str(dist).replace('.','').isdigit() else 0
+                                run_summary.append(f"{date}: {name} - {dist}mi @ {pace}")
+                        
+                        if run_summary:
+                            instructions.append(
+                                f"PREFETCHED DATA (last 7 days):\n" +
+                                "\n".join(run_summary[:5]) +
+                                f"\nTotal: ~{total_distance:.1f}mi in {len(runs)} runs\n"
+                                "Use this data directly. You may still call tools for more detail."
+                            )
+            except Exception as e:
+                logger.debug(f"Could not prefetch recent runs: {e}")
         
         # -------------------------------------------------------------------------
         # 1. Always include current training state (ATL/CTL/TSB)
@@ -2623,55 +2731,71 @@ If you need more data to answer well, call the tools. That's why they're there."
         
         # -------------------------------------------------------------------------
         # 2. Question-type-specific instructions
+        # Sprint 4: Simplify for mini - shorter, clearer instructions
         # -------------------------------------------------------------------------
         if self._is_judgment_question(message):
-            instructions.append(
-                "CRITICAL JUDGMENT INSTRUCTION: The athlete is asking for your JUDGMENT or OPINION. "
-                "You MUST answer DIRECTLY first (yes/no/maybe with a confidence level like 'likely', 'unlikely', "
-                "'very possible'), THEN provide supporting evidence and any caveats. "
-                "Do NOT deflect, ask for constraints, or pivot to 'self-guided mode'. "
-                "Give your honest assessment based on their data."
-            )
+            if is_mini:
+                # Simplified for mini
+                instructions.append(
+                    "ANSWER DIRECTLY: Give your yes/no/maybe first, then explain briefly."
+                )
+            else:
+                instructions.append(
+                    "CRITICAL JUDGMENT INSTRUCTION: The athlete is asking for your JUDGMENT or OPINION. "
+                    "You MUST answer DIRECTLY first (yes/no/maybe with a confidence level like 'likely', 'unlikely', "
+                    "'very possible'), THEN provide supporting evidence and any caveats. "
+                    "Do NOT deflect, ask for constraints, or pivot to 'self-guided mode'. "
+                    "Give your honest assessment based on their data."
+                )
         
         if self._has_return_context(ml):
-            instructions.append(
-                "RETURN-FROM-INJURY CONTEXT: This athlete mentioned returning from injury/break. "
-                "All comparisons should DEFAULT to the post-return period unless they explicitly specify otherwise. "
-                "Do NOT compare against pre-injury peaks without asking first. "
-                "Favor conservative load recommendations (10-15% weekly increases)."
-            )
+            if is_mini:
+                instructions.append("RETURN CONTEXT: Compare to post-return period only. Be conservative.")
+            else:
+                instructions.append(
+                    "RETURN-FROM-INJURY CONTEXT: This athlete mentioned returning from injury/break. "
+                    "All comparisons should DEFAULT to the post-return period unless they explicitly specify otherwise. "
+                    "Do NOT compare against pre-injury peaks without asking first. "
+                    "Favor conservative load recommendations (10-15% weekly increases)."
+                )
         
         # Check for benchmark references (past PR, race shape, etc.)
-        benchmark_indicators = (
-            "marathon shape", "race shape", "pb shape", "pr shape",
-            "peak form", "was in", "used to run", "i ran a", "my best",
-            "when i was", "at my peak", "my pb", "my pr",
-        )
-        if any(b in ml for b in benchmark_indicators):
-            instructions.append(
-                "BENCHMARK REFERENCE DETECTED: The athlete referenced a past benchmark (PR, race shape, peak form). "
-                "Compare their CURRENT metrics to that benchmark and provide specific numbers and timeline estimates. "
-                "Be honest about realistic recovery timelines based on their recent training load and patterns."
+        # Skip for mini to reduce instruction overhead
+        if not is_mini:
+            benchmark_indicators = (
+                "marathon shape", "race shape", "pb shape", "pr shape",
+                "peak form", "was in", "used to run", "i ran a", "my best",
+                "when i was", "at my peak", "my pb", "my pr",
             )
+            if any(b in ml for b in benchmark_indicators):
+                instructions.append(
+                    "BENCHMARK REFERENCE DETECTED: The athlete referenced a past benchmark (PR, race shape, peak form). "
+                    "Compare their CURRENT metrics to that benchmark and provide specific numbers and timeline estimates. "
+                    "Be honest about realistic recovery timelines based on their recent training load and patterns."
+                )
         
         # Prescription mode guidance
         if self._is_prescription_request(message):
-            instructions.append(
-                "PRESCRIPTION REQUEST: The athlete wants workout guidance. "
-                "Use conservative bounds: do not prescribe more than 20% weekly volume increase, "
-                "check TSB before intensity recommendations, and prioritize injury prevention."
-            )
+            if is_mini:
+                instructions.append("PRESCRIPTION: Max 20% volume increase. Check form before intensity.")
+            else:
+                instructions.append(
+                    "PRESCRIPTION REQUEST: The athlete wants workout guidance. "
+                    "Use conservative bounds: do not prescribe more than 20% weekly volume increase, "
+                    "check TSB before intensity recommendations, and prioritize injury prevention."
+                )
         
         # -------------------------------------------------------------------------
         # 3. Include prior context summary (flags and recent window)
+        # Sprint 4: Skip context injection for mini (keep it lean)
         # -------------------------------------------------------------------------
-        # Pull prior context injection content for additional guidance
-        try:
-            context_injection = self._build_context_injection_for_message(athlete_id=athlete_id, message=message)
-            if context_injection:
-                instructions.append(context_injection)
-        except Exception as e:
-            logger.debug(f"Could not build context injection for run instructions: {e}")
+        if not is_mini:
+            try:
+                context_injection = self._build_context_injection_for_message(athlete_id=athlete_id, message=message)
+                if context_injection:
+                    instructions.append(context_injection)
+            except Exception as e:
+                logger.debug(f"Could not build context injection for run instructions: {e}")
         
         if not instructions:
             return ""
@@ -2682,6 +2806,64 @@ If you need more data to answer well, call the tools. That's why they're there."
     # -------------------------------------------------------------------------
     # PHASE 1 ROUTING FIX: Judgment question detection (routes to LLM, not shortcuts)
     # -------------------------------------------------------------------------
+    def _is_data_question(self, message: str) -> bool:
+        """
+        Check if a question is about training data and should have called tools.
+        
+        Used for tool validation (Sprint 2): if this returns True but no tools
+        were called, the response is likely hallucinated.
+        
+        Returns True if this question requires data tools to answer correctly.
+        """
+        ml = (message or "").lower()
+        
+        # Data-related keywords that require tool calls
+        data_keywords = [
+            "run", "mile", "km", "pace", "hr", "heart rate", "distance",
+            "week", "today", "yesterday", "long run", "tempo", "easy",
+            "training", "plan", "workout", "mileage", "volume",
+            "tired", "fatigue", "recovery", "load", "fitness",
+            "longest", "fastest", "slowest", "best", "worst",
+            "build", "race", "goal", "target", "compare", "progress",
+            "average", "total", "how many", "how far", "how fast",
+        ]
+        
+        # Exclude pure definition questions (don't need tools)
+        definition_patterns = [
+            "what is a ", "what does ", "define ", "explain ",
+            "what's the difference between",
+        ]
+        if any(p in ml for p in definition_patterns):
+            return False
+        
+        return any(kw in ml for kw in data_keywords)
+    
+    def _validate_tool_usage(
+        self,
+        message: str,
+        tools_called: List[str],
+        tool_calls_count: int,
+    ) -> tuple[bool, str]:
+        """
+        Validate that a data question called appropriate tools.
+        
+        Returns:
+            (is_valid, reason) - True if tool usage was appropriate, False with reason if not.
+        """
+        if not self._is_data_question(message):
+            # Not a data question - no tool validation needed
+            return True, "not_data_question"
+        
+        if tool_calls_count == 0:
+            return False, "no_tools_called"
+        
+        # Check for core data tools
+        data_tools = ["get_recent_runs", "get_training_load", "get_weekly_volume", "get_best_runs"]
+        if not any(t in tools_called for t in data_tools):
+            return False, "no_data_tools_called"
+        
+        return True, "ok"
+
     def _is_judgment_question(self, message: str) -> bool:
         """
         Detect opinion/judgment/timeline questions that MUST go to the LLM.
