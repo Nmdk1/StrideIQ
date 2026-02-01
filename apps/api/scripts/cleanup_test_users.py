@@ -49,6 +49,8 @@ def cleanup_test_users():
             f"DELETE FROM training_availability WHERE athlete_id IN ({ids_str})",
             f"DELETE FROM calendar_note WHERE athlete_id IN ({ids_str})",
             f"DELETE FROM calendar_insight WHERE athlete_id IN ({ids_str})",
+            f"DELETE FROM admin_audit_event WHERE actor_athlete_id IN ({ids_str})",
+            f"DELETE FROM admin_audit_event WHERE target_athlete_id IN ({ids_str})",
             f"DELETE FROM plan_modification_log WHERE plan_id IN (SELECT id FROM training_plan WHERE athlete_id IN ({ids_str}))",
             f"DELETE FROM planned_workout WHERE plan_id IN (SELECT id FROM training_plan WHERE athlete_id IN ({ids_str}))",
             f"DELETE FROM training_plan WHERE athlete_id IN ({ids_str})",
