@@ -201,7 +201,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
               
-              {/* This week's workouts */}
+              {/* This week's workouts - clickable cards */}
               {!weekLoading && currentWeek && (
                 <div>
                   <p className="text-xs text-slate-400 mb-2 uppercase tracking-wide">
@@ -210,14 +210,15 @@ export default function DashboardPage() {
                   {/* Desktop: 7 columns */}
                   <div className="hidden md:flex justify-between gap-1">
                     {currentWeek.workouts.slice(0, 7).map((workout) => {
-                      const linkHref = workout.completed && workout.completed_activity_id 
+                      const targetUrl = workout.completed && workout.completed_activity_id 
                         ? `/activities/${workout.completed_activity_id}`
                         : `/calendar?date=${workout.scheduled_date}`;
                       
                       return (
-                        <a
+                        <button
                           key={workout.id}
-                          href={linkHref}
+                          type="button"
+                          onClick={() => window.location.href = targetUrl}
                           className={`flex-1 text-center py-2 px-1 rounded transition-all cursor-pointer hover:scale-105 hover:opacity-80 ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
                         >
                           <div className="text-[10px] text-slate-400">
@@ -229,21 +230,22 @@ export default function DashboardPage() {
                              workout.title.split(' ')[0]}
                           </div>
                           {workout.completed && <span className="text-green-400 text-xs">✓</span>}
-                        </a>
+                        </button>
                       );
                     })}
                   </div>
                   {/* Mobile: scrollable horizontal row */}
                   <div className="md:hidden flex gap-1 overflow-x-auto pb-2 -mx-1 px-1">
                     {currentWeek.workouts.slice(0, 7).map((workout) => {
-                      const linkHref = workout.completed && workout.completed_activity_id 
+                      const targetUrl = workout.completed && workout.completed_activity_id 
                         ? `/activities/${workout.completed_activity_id}`
                         : `/calendar?date=${workout.scheduled_date}`;
                       
                       return (
-                        <a
+                        <button
                           key={workout.id}
-                          href={linkHref}
+                          type="button"
+                          onClick={() => window.location.href = targetUrl}
                           className={`flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] transition-all cursor-pointer hover:scale-105 hover:opacity-80 ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
                         >
                           <div className="text-[10px] text-slate-400">
@@ -255,7 +257,7 @@ export default function DashboardPage() {
                              workout.title.charAt(0)}
                           </div>
                           {workout.completed && <span className="text-green-400 text-[10px]">✓</span>}
-                        </a>
+                        </button>
                       );
                     })}
                   </div>
