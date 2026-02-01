@@ -2586,6 +2586,25 @@ If you need more data to answer well, call the tools. That's why they're there."
         ml = (message or "").lower()
         
         # -------------------------------------------------------------------------
+        # 0. ALWAYS require tool calls for data questions (fixes mini skipping tools)
+        # -------------------------------------------------------------------------
+        data_keywords = [
+            "run", "mile", "km", "pace", "hr", "heart rate", "distance",
+            "week", "today", "yesterday", "long run", "tempo", "easy",
+            "training", "plan", "workout", "mileage", "volume",
+            "tired", "fatigue", "recovery", "load", "fitness",
+            "longest", "fastest", "slowest", "best", "worst",
+            "build", "race", "goal", "target",
+        ]
+        if any(kw in ml for kw in data_keywords):
+            instructions.append(
+                "TOOL CALL REQUIRED: This question is about training data. "
+                "You MUST call get_recent_runs or get_training_load BEFORE answering. "
+                "Do NOT respond without first calling a tool to get actual data. "
+                "If you answer without calling tools, your response will be rejected."
+            )
+        
+        # -------------------------------------------------------------------------
         # 1. Always include current training state (ATL/CTL/TSB)
         # -------------------------------------------------------------------------
         try:
