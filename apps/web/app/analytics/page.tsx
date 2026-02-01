@@ -214,8 +214,12 @@ export default function DashboardPage() {
                         ? `/activities/${workout.completed_activity_id}`
                         : `/calendar?date=${workout.scheduled_date}`;
                       
-                      const cardContent = (
-                        <>
+                      return (
+                        <a
+                          key={workout.id}
+                          href={linkHref}
+                          className={`flex-1 text-center py-2 px-1 rounded transition-all cursor-pointer hover:scale-105 hover:opacity-80 ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
+                        >
                           <div className="text-[10px] text-slate-400">
                             {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'short' })}
                           </div>
@@ -225,19 +229,7 @@ export default function DashboardPage() {
                              workout.title.split(' ')[0]}
                           </div>
                           {workout.completed && <span className="text-green-400 text-xs">✓</span>}
-                        </>
-                      );
-                      
-                      const cardClasses = `flex-1 text-center py-2 px-1 rounded transition-all cursor-pointer hover:scale-105 hover:opacity-80 ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`;
-                      
-                      return (
-                        <Link
-                          key={workout.id}
-                          href={linkHref}
-                          className={cardClasses}
-                        >
-                          {cardContent}
-                        </Link>
+                        </a>
                       );
                     })}
                   </div>
@@ -248,13 +240,11 @@ export default function DashboardPage() {
                         ? `/activities/${workout.completed_activity_id}`
                         : `/calendar?date=${workout.scheduled_date}`;
                       
-                      const cardClasses = `flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] transition-all cursor-pointer hover:scale-105 hover:opacity-80 ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`;
-                      
                       return (
-                        <Link
+                        <a
                           key={workout.id}
                           href={linkHref}
-                          className={cardClasses}
+                          className={`flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] transition-all cursor-pointer hover:scale-105 hover:opacity-80 ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
                         >
                           <div className="text-[10px] text-slate-400">
                             {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'narrow' })}
@@ -265,7 +255,7 @@ export default function DashboardPage() {
                              workout.title.charAt(0)}
                           </div>
                           {workout.completed && <span className="text-green-400 text-[10px]">✓</span>}
-                        </Link>
+                        </a>
                       );
                     })}
                   </div>
