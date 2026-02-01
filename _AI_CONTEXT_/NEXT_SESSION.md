@@ -17,15 +17,16 @@ All containers healthy. Production running.
 - 1326 passed, 3 skipped
 
 ### Database (Production)
-- 9 real athletes
-- 0 test users (cleanup complete on 2026-02-01)
+- 5 real athletes (4 test users deleted via admin panel)
+- 0 test users
+- Delete user feature deployed and tested
 
 ---
 
 ## Completed This Session
 
-### Test User Cleanup (SUCCESS - PRODUCTION)
-Deleted 393 fake users with `@example.com` emails from **production**.
+### 1. Test User Cleanup (SUCCESS - PRODUCTION)
+Deleted 393 fake users with `@example.com` emails from **production** via SQL.
 
 **Approach that worked:**
 1. Queried actual FK constraints from production (not models.py)
@@ -34,7 +35,25 @@ Deleted 393 fake users with `@example.com` emails from **production**.
 4. Tested on single user first
 5. Bulk deleted remaining 392 users
 
-**Production result:** 0 test users, 9 real athletes remain.
+### 2. Admin Delete User Feature (DEPLOYED)
+Added permanent delete user functionality to the admin panel.
+
+**Backend (`apps/api/routers/admin.py`):**
+- `DELETE /v1/admin/users/{user_id}` endpoint
+- Owner only, requires email confirmation
+- Cascades through all 34 FK relationships in correct order
+- Fully audited
+
+**Frontend (`apps/web/app/admin/page.tsx`):**
+- Delete button in user detail (owner only)
+- Confirmation dialog with email verification
+- Success clears selection and refreshes user list
+
+**Also fixed:** `apiClient.delete` now supports request body (needed for DELETE with JSON payload).
+
+**Commits:**
+- `79cd188` - feat: add delete user from admin panel with FK cascade
+- `5566c3c` - fix: update apiClient.delete to support request body
 
 ---
 
