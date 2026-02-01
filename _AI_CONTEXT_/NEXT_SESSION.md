@@ -1,17 +1,19 @@
 # Next Session Instructions
 
-**Last Updated:** 2026-01-31
-**Previous Session:** Workout Classification & Data Sync Fixes
+**Last Updated:** 2026-01-31 Morning
+**Previous Session:** RPI Terminology Fix + Failed Test User Cleanup
 
 ---
 
-## Session Summary
+## CRITICAL: Read First
 
-This session fixed critical trust-breaking issues with workout classification:
+The previous session degraded. The assistant made multiple failed attempts to delete test users from production without first querying the actual database schema. **All attempts rolled back - no data was damaged**, but the task is incomplete.
 
-1. **Workout Classification Overhaul** — HR as primary signal, athlete-relative thresholds
-2. **Data Sync Fixes** — avg_hr and temperature now properly backfilled from Strava
-3. **Confidence Threshold** — Low-confidence classifications show generic "Run" instead of guessing
+**User expectations going forward:**
+1. Query actual production schema before writing any SQL
+2. Test on a single record before bulk operations
+3. No trial and error on production
+4. Get explicit approval before making changes
 
 ---
 
@@ -21,76 +23,66 @@ This session fixed critical trust-breaking issues with workout classification:
 `phase8-s2-hardening`
 
 ### Docker Status
-Running. Production deployed. All containers healthy.
+All containers healthy. Production running.
 
 ### All Tests Passing
-- 1274 passed, 2 skipped
-- Classification tests: 45 passed
+- 1326 passed, 3 skipped
 
 ---
 
-## Fixes Implemented This Session
+## Completed This Session
 
-### 1. Athlete-Relative Thresholds
-`apps/api/services/run_analysis_engine.py`:
-- Added `_get_athlete_run_thresholds()` — calculates from athlete's 90-day history
-- Long run = 90th percentile duration (top 10% of runs)
-- No more hardcoded "60 min = long run" nonsense
+### 1. RPI Terminology Fix (Phase 11 - COMPLETE)
+Replaced trademarked "VDOT" with "RPI" throughout Coach AI:
+- `ai_coach.py`: 3 system prompt locations with "NEVER say VDOT" instructions
+- `coach_tools.py`: Dual keys (`rpi` + `vdot`) for backward compatibility
+- Frontend component renamed: `VDOTCalculator.tsx` → `TrainingPaceCalculator.tsx`
 
-### 2. HR as Primary Classification Signal
-- Reordered classification: HR checked FIRST when available
-- Duration only used to upgrade easy-effort runs to "Long Run"
-- Fallback to duration-only when no HR data
+**To verify in production:** Clear `coach_thread_id` for your account, then test Coach.
 
-### 3. Confidence Display Threshold
-- `MIN_DISPLAY_CONFIDENCE = 0.65`
-- Below threshold → shows "Run" instead of specific type
-- Frontend updated in `RunContextAnalysis.tsx`
+### 2. Test Fixes
+- Model tiering tests: expect `gpt-4o-mini` default
+- Coach routing tests: expect plain English ("fatigue level")
+- Stripe tests: skip without env vars
 
-### 4. avg_hr Backfill
-`apps/api/tasks/strava_tasks.py`:
-- Strava list endpoint often omits `average_heartrate`
-- Now backfills from detailed activity response
-
-### 5. Temperature Sync
-- Added temperature capture from Strava (`average_temp` → Fahrenheit)
-- Frontend displays in °F
-- Note: This is device sensor temp, not ambient weather
+### 3. Phase 11 Documentation
+Updated `docs/PHASED_WORK_PLAN.md` - Phase 11 marked complete.
 
 ---
 
-## Commits (This Session)
-- `6924e1c` - fix(classification): use athlete-relative thresholds
-- `5f1064b` - fix(classification): HR data is primary signal
-- `d362bd3` - fix(strava): backfill avg_hr from activity details
-- `441c542` - feat(strava): sync temperature, display as °F
-- `86df231` - fix(types): add temperature_f to Activity interface
+## Incomplete Task
+
+### Test User Cleanup
+**Goal:** Delete 393 users with `@example.com` emails
+
+**Status:** FAILED - multiple FK constraint errors
+
+**Why:** Production schema differs from `models.py`. Tables like `purchase` don't exist. Column `invite_audit_event.athlete_id` doesn't exist.
+
+**No damage:** All transactions rolled back.
+
+**To fix properly:**
+1. Query actual FK constraints from production:
+```sql
+SELECT tc.table_name, kcu.column_name 
+FROM information_schema.table_constraints AS tc 
+JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name
+JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name
+WHERE tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = 'athlete';
+```
+2. Build delete script from actual results
+3. Test on ONE user first
+4. Then run bulk delete
 
 ---
 
-## Known Limitations
+## Priority List
 
-### Temperature
-- Shows device sensor reading (Garmin), not ambient weather
-- Strava API doesn't expose weather data
-- Will revisit when Garmin Business Development partnership approved
-
-### Classification
-- Requires athlete's max_hr to be set for HR-based classification
-- Michael's profile has max_hr=180, threshold_hr=165, resting_hr=50
-
----
-
-## Pending Integrations
-
-### Garmin API
-- Applied to Garmin Business Development Program
-- Awaiting approval
-- May provide better weather data
-
-### COROS API
-- Application prepared: `docs/COROS_API_APPLICATION.md`
-- Form responses: `docs/COROS_APPLICATION_FORM_RESPONSES.md`
+1. **Verify RPI fix works** - clear coach_thread_id, test Coach
+2. **Clean up test users** - do it RIGHT this time (query schema first)
+3. **Pending integrations:**
+   - Garmin API (awaiting approval)
+   - COROS API (application prepared)
 
 ---
 
@@ -98,34 +90,27 @@ Running. Production deployed. All containers healthy.
 
 | File | Purpose |
 |------|---------|
-| `apps/api/services/run_analysis_engine.py` | Run classification logic |
-| `apps/api/services/workout_classifier.py` | Detailed workout classification |
-| `apps/api/tasks/strava_tasks.py` | Strava sync with backfill logic |
-| `_AI_CONTEXT_/SESSION_SUMMARY_2026_01_31_CLASSIFICATION_FIX.md` | This session's details |
+| `apps/api/services/ai_coach.py` | Coach system prompts with RPI terminology |
+| `apps/api/services/coach_tools.py` | Tool responses with dual rpi/vdot keys |
+| `apps/api/scripts/cleanup_test_users.py` | BROKEN - do not use without rewrite |
+| `_AI_CONTEXT_/SESSION_SUMMARY_2026_01_31_MORNING.md` | Detailed session summary |
 
 ---
 
-## Commands to Resume
+## Commands
 
 ```bash
-# Local test
-docker compose -f docker-compose.test.yml run --rm api_test pytest tests/ -v
+# Verify RPI fix
+UPDATE athlete SET coach_thread_id = NULL WHERE email = 'your-email';
+# Then test Coach with "what is my threshold pace?"
 
-# Deploy to production
-ssh root@strideiq.run
-cd /opt/strideiq/repo && git pull origin phase8-s2-hardening && docker compose -f docker-compose.prod.yml up -d --build
+# Check test user count
+docker exec strideiq_postgres psql -U postgres -d running_app -c "SELECT COUNT(*) FROM athlete WHERE email LIKE '%@example.com';"
+
+# Query actual FK constraints before any cleanup
+docker exec strideiq_postgres psql -U postgres -d running_app -c "SELECT tc.table_name, kcu.column_name FROM information_schema.table_constraints AS tc JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name WHERE tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = 'athlete';"
 ```
 
 ---
 
-## User Preferences
-
-- **Full rigor** on all features
-- **Test before deploy** — no blind deployments
-- **Ask before making changes** — get approval first
-- **Temperature in °F** for US users
-- **Garmin/COROS integrations** — waiting on business partnerships
-
----
-
-*Session ended: 2026-01-31*
+*Session ended: 2026-01-31 Morning*
