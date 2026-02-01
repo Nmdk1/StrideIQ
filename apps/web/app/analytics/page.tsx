@@ -17,7 +17,8 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useEfficiencyTrends } from '@/lib/hooks/queries/analytics';
-import { useCurrentPlan, useCurrentWeek } from '@/lib/hooks/queries/training-plans';
+import { useCurrentPlan } from '@/lib/hooks/queries/training-plans';
+import { useHomeData } from '@/lib/hooks/queries/home';
 import { EfficiencyChart } from '@/components/dashboard/EfficiencyChart';
 import { LoadResponseChart } from '@/components/dashboard/LoadResponseChart';
 import { AgeGradedChart } from '@/components/dashboard/AgeGradedChart';
@@ -69,7 +70,8 @@ export default function DashboardPage() {
   const [rollingWindow, setRollingWindow] = useState<'30d' | '60d' | '90d' | '120d' | 'all'>('60d');
   const { data, isLoading, error } = useEfficiencyTrends(days, true, true);
   const { data: plan, isLoading: planLoading } = useCurrentPlan();
-  const { data: currentWeek, isLoading: weekLoading } = useCurrentWeek();
+  const { data: homeData, isLoading: homeLoading } = useHomeData();
+  const week = homeData?.week;
 
   if (isLoading) {
     return (
@@ -201,63 +203,64 @@ export default function DashboardPage() {
                   </div>
                 </div>
               
-              {/* This week's workouts - clickable cards */}
-              {!weekLoading && currentWeek && (
+              {/* This week's workouts - same data as Home page */}
+              {!homeLoading && week && week.days && (
                 <div>
                   <p className="text-xs text-slate-400 mb-2 uppercase tracking-wide">
-                    This Week • {currentWeek.phase} Phase
+                    This Week {week.phase ? `• ${week.phase} Phase` : ''}
                   </p>
-                  {/* Desktop: 7 columns */}
-                  <div className="hidden md:flex justify-between gap-1">
-                    {currentWeek.workouts.slice(0, 7).map((workout) => {
-                      const targetUrl = workout.completed && workout.completed_activity_id 
-                        ? `/activities/${workout.completed_activity_id}`
-                        : `/calendar?date=${workout.scheduled_date}`;
+                  <div className="flex justify-between gap-1">
+                    {week.days.map((day) => {
+                      const linkHref = day.activity_id 
+                        ? `/activities/${day.activity_id}`
+                        : day.workout_id 
+                          ? `/calendar?date=${day.date}`
+                          : null;
                       
-                      return (
-                        <button
-                          key={workout.id}
-                          type="button"
-                          onClick={() => window.location.href = targetUrl}
-                          className={`flex-1 text-center py-2 px-1 rounded transition-all cursor-pointer hover:scale-105 hover:opacity-80 ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
-                        >
-                          <div className="text-[10px] text-slate-400">
-                            {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'short' })}
-                          </div>
-                          <div className="text-xs font-medium truncate">
-                            {workout.workout_type === 'rest' ? 'Rest' : 
-                             workout.target_distance_km ? formatDistance(workout.target_distance_km * 1000, 0) : 
-                             workout.title.split(' ')[0]}
-                          </div>
-                          {workout.completed && <span className="text-green-400 text-xs">✓</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {/* Mobile: scrollable horizontal row */}
-                  <div className="md:hidden flex gap-1 overflow-x-auto pb-2 -mx-1 px-1">
-                    {currentWeek.workouts.slice(0, 7).map((workout) => {
-                      const targetUrl = workout.completed && workout.completed_activity_id 
-                        ? `/activities/${workout.completed_activity_id}`
-                        : `/calendar?date=${workout.scheduled_date}`;
+                      const cardClasses = `
+                        flex-1 text-center py-2 px-1 rounded-lg transition-all
+                        ${day.is_today ? 'ring-2 ring-orange-500 bg-orange-500/10' : ''}
+                        ${day.completed ? 'bg-emerald-500/15 border border-emerald-500/25' : workoutTypeColors[day.workout_type] || 'bg-slate-700/50 border border-transparent'}
+                        ${linkHref ? 'cursor-pointer hover:scale-105 hover:opacity-80' : ''}
+                      `;
                       
-                      return (
-                        <button
-                          key={workout.id}
-                          type="button"
-                          onClick={() => window.location.href = targetUrl}
-                          className={`flex-shrink-0 text-center py-2 px-2 rounded min-w-[50px] transition-all cursor-pointer hover:scale-105 hover:opacity-80 ${workoutTypeColors[workout.workout_type] || 'bg-slate-800'}`}
-                        >
-                          <div className="text-[10px] text-slate-400">
-                            {new Date(workout.scheduled_date).toLocaleDateString('en-US', { weekday: 'narrow' })}
+                      const dayContent = (
+                        <>
+                          <div className={`text-[10px] uppercase mb-1 ${day.is_today ? 'text-orange-400 font-semibold' : 'text-slate-400'}`}>
+                            {day.day_abbrev}
                           </div>
                           <div className="text-xs font-medium">
-                            {workout.workout_type === 'rest' ? 'R' : 
-                             workout.target_distance_km ? formatDistance(workout.target_distance_km * 1000, 0) : 
-                             workout.title.charAt(0)}
+                            {day.completed && day.distance_mi ? (
+                              <span className="flex flex-col items-center gap-0.5 text-emerald-400">
+                                <span>✓</span>
+                                <span>{day.distance_mi}</span>
+                              </span>
+                            ) : day.workout_type === 'rest' ? (
+                              <span className="text-slate-500">—</span>
+                            ) : day.distance_mi ? (
+                              <span>{day.distance_mi}</span>
+                            ) : (
+                              <span className="text-slate-500">—</span>
+                            )}
                           </div>
-                          {workout.completed && <span className="text-green-400 text-[10px]">✓</span>}
-                        </button>
+                        </>
+                      );
+                      
+                      return linkHref ? (
+                        <Link
+                          key={day.date}
+                          href={linkHref}
+                          className={cardClasses}
+                        >
+                          {dayContent}
+                        </Link>
+                      ) : (
+                        <div
+                          key={day.date}
+                          className={cardClasses}
+                        >
+                          {dayContent}
+                        </div>
                       );
                     })}
                   </div>
