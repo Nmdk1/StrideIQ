@@ -315,7 +315,7 @@ export const adminService = {
     deleted_user: { id: string; email: string; display_name: string | null; role: string; created_at: string | null };
     message: string;
   }> {
-    return apiClient.delete(`/v1/admin/users/${userId}`, { data: params });
+    return apiClient.delete(`/v1/admin/users/${userId}`, params);
   },
 
   async setCoachVip(userId: string, params: { is_vip: boolean; reason?: string | null }): Promise<{
