@@ -66,7 +66,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/strideiq_test
           REDIS_URL: redis://localhost:6379/0
-          SECRET_KEY: test-secret-key-for-ci
+          SECRET_KEY: test-secret-key-for-ci-at-least-32-chars
           DEBUG: "false"
           RATE_LIMIT_ENABLED: "false"
           # Phase 7/8: provider import tests write to UPLOADS_DIR.
@@ -135,7 +135,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/strideiq_test
           REDIS_URL: redis://localhost:6379/0
-          SECRET_KEY: test-secret-key-for-ci
+          SECRET_KEY: test-secret-key-for-ci-at-least-32-chars
           DEBUG: "false"
           RATE_LIMIT_ENABLED: "false"
         run: |
