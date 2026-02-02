@@ -114,6 +114,7 @@ export default function Navigation() {
 
   // Public routes - always show public nav regardless of auth status
   // These are marketing/info pages that should look the same for all visitors
+  // Note: /tools is NOT in this list - authenticated users should stay in app shell
   const PUBLIC_ROUTES = [
     '/',           // Landing page
     '/about',      // About page
@@ -123,7 +124,6 @@ export default function Navigation() {
     '/support',    // Support page
     '/login',      // Login page
     '/register',   // Registration page
-    '/tools',      // Public calculators
   ];
   
   const isPublicRoute = PUBLIC_ROUTES.some(route => 
