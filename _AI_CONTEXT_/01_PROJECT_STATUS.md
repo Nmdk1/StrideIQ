@@ -1,14 +1,33 @@
 # StrideIQ Project Status
 
-**Last Updated:** January 10, 2026  
-**Version:** 0.9.0  
-**Git Tag:** v0.9.0
+**Last Updated:** February 1, 2026  
+**Version:** 0.9.1  
+**Git Branch:** main
 
 ---
 
 ## Current State: STABLE BETA
 
-All core features implemented and tested. Ready for user testing and feedback iteration.
+All core features implemented and tested. AI Coach upgraded with 90/10 model split for better reasoning.
+
+---
+
+## Recent Updates (February 1, 2026)
+
+### AI Coach Improvements (90/10 Split)
+- **Expanded complexity classifier**: Causal questions, ambiguity, multi-factor queries now route to Opus
+- **Tool validation**: Logs when mini skips tool calls on data questions
+- **Data prefetch**: Injects last 7 days of runs into context for mini
+- **Simplified instructions**: Mini gets shorter, clearer instructions
+- **Cost impact**: $0.96 → $1.60/athlete/month (still 12.9% of revenue)
+
+### Integrations
+- **COROS API Application Submitted**: Awaiting Client ID and API Keys
+  - See `_AI_CONTEXT_/16_COROS_INTEGRATION.md` for details
+
+### Security
+- Session invalidation capability (SECRET_KEY rotation)
+- Password reset via database
 
 ---
 
