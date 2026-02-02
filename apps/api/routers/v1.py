@@ -575,7 +575,12 @@ def queue_strava_activity_index_backfill(
 
 
 @router.post("/activities/{activity_id}/mark-race")
-def mark_activity_as_race(activity_id: UUID, is_race: bool = True, db: Session = Depends(get_db)):
+def mark_activity_as_race(
+    activity_id: UUID,
+    is_race: bool = True,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Manually mark/unmark an activity as a race.
     This allows users to override the automatic race detection.
@@ -583,6 +588,10 @@ def mark_activity_as_race(activity_id: UUID, is_race: bool = True, db: Session =
     activity = db.query(Activity).filter(Activity.id == activity_id).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
+    
+    # SECURITY: Only allow users to modify their own activities
+    if activity.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot modify another user's activity")
     
     activity.user_verified_race = is_race
     activity.is_race_candidate = is_race  # Also update the candidate flag
@@ -602,7 +611,11 @@ def mark_activity_as_race(activity_id: UUID, is_race: bool = True, db: Session =
 
 
 @router.post("/activities/{activity_id}/backfill-splits")
-def backfill_activity_splits(activity_id: UUID, db: Session = Depends(get_db)):
+def backfill_activity_splits(
+    activity_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Backfill splits for an activity that is missing them.
     Fetches lap data from Strava API and creates split records.
@@ -611,12 +624,16 @@ def backfill_activity_splits(activity_id: UUID, db: Session = Depends(get_db)):
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
     
+    # SECURITY: Only allow users to backfill their own activities
+    if activity.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot modify another user's activity")
+    
     if not activity.provider == "strava" or not activity.external_activity_id:
         raise HTTPException(status_code=400, detail="Activity is not from Strava or missing external ID")
     
-    athlete = db.query(Athlete).filter(Athlete.id == activity.athlete_id).first()
-    if not athlete or not athlete.strava_access_token:
-        raise HTTPException(status_code=404, detail="Athlete not found or missing Strava token")
+    # Use the authenticated user's Strava token
+    if not current_user.strava_access_token:
+        raise HTTPException(status_code=400, detail="Missing Strava token")
     
     from services.strava_service import get_activity_laps, get_activity_details
     from routers.strava import _coerce_int
@@ -689,11 +706,11 @@ def backfill_activity_splits(activity_id: UUID, db: Session = Depends(get_db)):
             return out
         
         strava_activity_id = int(activity.external_activity_id)
-        details = get_activity_details(athlete, int(strava_activity_id), allow_rate_limit_sleep=True) or {}
+        details = get_activity_details(current_user, int(strava_activity_id), allow_rate_limit_sleep=True) or {}
         mile_splits = _extract_strava_mile_splits_from_details(details)
 
         # Prefer laps as the segmentation source if present (matches Strava "Laps" tab / user-defined laps).
-        laps = get_activity_laps(athlete, strava_activity_id) or []
+        laps = get_activity_laps(current_user, strava_activity_id) or []
         mile_map = {}
         for ms in mile_splits:
             try:

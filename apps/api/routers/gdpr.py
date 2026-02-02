@@ -25,7 +25,30 @@ from models import (
     TrainingAvailability,
     InsightFeedback,
     TrainingPlan,
+    PlannedWorkout,
+    PlanModificationLog,
     AthleteDataImportJob,
+    AthleteIngestionState,
+    PersonalBest,
+    BestEffort,
+    IntakeQuestionnaire,
+    AthleteRaceResultAnchor,
+    AthleteTrainingPaceProfile,
+    WorkoutSelectionAuditEvent,
+    CoachActionProposal,
+    CoachingRecommendation,
+    RecommendationOutcome,
+    CalendarNote,
+    CoachChat,
+    CalendarInsight,
+    Purchase,
+    AthleteGoal,
+    AthleteCalibratedModel,
+    AthleteWorkoutResponse,
+    AthleteLearning,
+    CoachIntentSnapshot,
+    CoachUsage,
+    Subscription,
 )
 
 router = APIRouter(prefix="/v1/gdpr", tags=["gdpr"])
@@ -228,39 +251,74 @@ def delete_account(
     """
     athlete_id = current_user.id
     
-    # Delete all associated data (cascade deletes handled by foreign keys)
-    # But we'll be explicit for clarity
+    # =========================================================================
+    # GDPR COMPLETE DELETION - Delete ALL athlete data
+    # Order matters: delete child records before parents
+    # =========================================================================
     
-    # Delete insight feedback
+    # --- AI Coach & Learning Data ---
+    db.query(CoachUsage).filter(CoachUsage.athlete_id == athlete_id).delete()
+    db.query(CoachIntentSnapshot).filter(CoachIntentSnapshot.athlete_id == athlete_id).delete()
+    db.query(AthleteLearning).filter(AthleteLearning.athlete_id == athlete_id).delete()
+    db.query(AthleteWorkoutResponse).filter(AthleteWorkoutResponse.athlete_id == athlete_id).delete()
+    db.query(AthleteCalibratedModel).filter(AthleteCalibratedModel.athlete_id == athlete_id).delete()
+    db.query(CoachChat).filter(CoachChat.athlete_id == athlete_id).delete()
+    
+    # --- Coaching Recommendations & Actions ---
+    db.query(RecommendationOutcome).filter(RecommendationOutcome.recommendation_id.in_(
+        db.query(CoachingRecommendation.id).filter(CoachingRecommendation.athlete_id == athlete_id)
+    )).delete(synchronize_session=False)
+    db.query(CoachingRecommendation).filter(CoachingRecommendation.athlete_id == athlete_id).delete()
+    db.query(CoachActionProposal).filter(CoachActionProposal.athlete_id == athlete_id).delete()
+    db.query(WorkoutSelectionAuditEvent).filter(WorkoutSelectionAuditEvent.athlete_id == athlete_id).delete()
+    
+    # --- Training Plans & Workouts ---
+    db.query(PlanModificationLog).filter(PlanModificationLog.athlete_id == athlete_id).delete()
+    db.query(PlannedWorkout).filter(PlannedWorkout.athlete_id == athlete_id).delete()
+    db.query(TrainingPlan).filter(TrainingPlan.athlete_id == athlete_id).delete()
+    
+    # --- Calendar & Insights ---
+    db.query(CalendarInsight).filter(CalendarInsight.athlete_id == athlete_id).delete()
+    db.query(CalendarNote).filter(CalendarNote.athlete_id == athlete_id).delete()
     db.query(InsightFeedback).filter(InsightFeedback.athlete_id == athlete_id).delete()
     
-    # Delete training availability
-    db.query(TrainingAvailability).filter(TrainingAvailability.athlete_id == athlete_id).delete()
+    # --- Goals & Purchases ---
+    db.query(AthleteGoal).filter(AthleteGoal.athlete_id == athlete_id).delete()
+    db.query(Purchase).filter(Purchase.athlete_id == athlete_id).delete()
     
-    # Delete activity feedback
+    # --- Training Profiles & Anchors ---
+    db.query(AthleteRaceResultAnchor).filter(AthleteRaceResultAnchor.athlete_id == athlete_id).delete()
+    db.query(AthleteTrainingPaceProfile).filter(AthleteTrainingPaceProfile.athlete_id == athlete_id).delete()
+    db.query(IntakeQuestionnaire).filter(IntakeQuestionnaire.athlete_id == athlete_id).delete()
+    
+    # --- Performance Data ---
+    db.query(PersonalBest).filter(PersonalBest.athlete_id == athlete_id).delete()
+    db.query(BestEffort).filter(BestEffort.athlete_id == athlete_id).delete()
+    
+    # --- Feedback & Availability ---
+    db.query(TrainingAvailability).filter(TrainingAvailability.athlete_id == athlete_id).delete()
     db.query(ActivityFeedback).filter(ActivityFeedback.athlete_id == athlete_id).delete()
     
-    # Delete daily check-ins
+    # --- Daily Data ---
     db.query(DailyCheckin).filter(DailyCheckin.athlete_id == athlete_id).delete()
-    
-    # Delete work patterns
     db.query(WorkPattern).filter(WorkPattern.athlete_id == athlete_id).delete()
-    
-    # Delete body composition
     db.query(BodyComposition).filter(BodyComposition.athlete_id == athlete_id).delete()
-    
-    # Delete nutrition entries
     db.query(NutritionEntry).filter(NutritionEntry.athlete_id == athlete_id).delete()
     
-    # Delete activity splits (cascade from activities, but explicit for clarity)
+    # --- Import State ---
+    db.query(AthleteDataImportJob).filter(AthleteDataImportJob.athlete_id == athlete_id).delete()
+    db.query(AthleteIngestionState).filter(AthleteIngestionState.athlete_id == athlete_id).delete()
+    
+    # --- Subscription ---
+    db.query(Subscription).filter(Subscription.athlete_id == athlete_id).delete()
+    
+    # --- Activity & Splits ---
     activities = db.query(Activity).filter(Activity.athlete_id == athlete_id).all()
     for activity in activities:
         db.query(ActivitySplit).filter(ActivitySplit.activity_id == activity.id).delete()
-    
-    # Delete activities
     db.query(Activity).filter(Activity.athlete_id == athlete_id).delete()
     
-    # Delete athlete (this will cascade to any remaining relationships)
+    # --- Finally, delete the athlete record ---
     db.delete(current_user)
     
     db.commit()

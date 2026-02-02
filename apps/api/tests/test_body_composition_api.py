@@ -14,9 +14,16 @@ from decimal import Decimal
 from uuid import uuid4
 from main import app
 from core.database import SessionLocal
+from core.security import create_access_token
 from models import Athlete, BodyComposition
 
 client = TestClient(app)
+
+
+def get_auth_headers(athlete):
+    """Generate auth headers for test athlete"""
+    token = create_access_token({"sub": str(athlete.id)})
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
@@ -94,7 +101,8 @@ class TestCreateBodyComposition:
             "notes": "Test entry"
         }
         
-        response = client.post("/v1/body-composition", json=entry_data)
+        headers = get_auth_headers(test_athlete_with_height)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         
         assert response.status_code == 201
         data = response.json()

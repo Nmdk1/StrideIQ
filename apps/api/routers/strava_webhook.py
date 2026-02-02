@@ -5,6 +5,7 @@ Handles Strava webhook events for automatic activity sync.
 """
 
 from typing import Optional
+import json
 from fastapi import APIRouter, Request, HTTPException, status, Header, Query, Depends
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -61,19 +62,24 @@ async def handle_webhook_event(
         body_bytes = await request.body()
         body_str = body_bytes.decode('utf-8')
         
-        # Verify signature if provided
-        if x_strava_signature:
-            # Strava sends signature as "sha256=<hash>"
-            signature = x_strava_signature.replace("sha256=", "")
-            if not verify_webhook_signature(body_str, signature):
-                logger.warning("Invalid webhook signature")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid signature"
-                )
+        # SECURITY: Signature is MANDATORY - reject unsigned requests
+        if not x_strava_signature:
+            logger.warning("Webhook request missing signature header - rejecting")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing signature"
+            )
+        
+        # Strava sends signature as "sha256=<hash>"
+        signature = x_strava_signature.replace("sha256=", "")
+        if not verify_webhook_signature(body_str, signature):
+            logger.warning("Invalid webhook signature - rejecting")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid signature"
+            )
         
         # Parse event data
-        import json
         event_data = json.loads(body_str)
         
         event_type = event_data.get("object_type")
@@ -110,6 +116,9 @@ async def handle_webhook_event(
             logger.info(f"Ignoring aspect type: {aspect_type}")
             return {"status": "ignored", "aspect_type": aspect_type}
             
+    except HTTPException:
+        # Let HTTPException propagate (auth failures, etc.)
+        raise
     except json.JSONDecodeError:
         logger.error("Invalid JSON in webhook payload")
         raise HTTPException(

@@ -203,11 +203,11 @@ class TestKnowledgeVdotAuthRequired:
         response = client.get(f"/v1/knowledge/vdot/pace-tables?athlete_id={uuid4()}")
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
     
-    def test_vdot_formula_without_athlete_id_no_auth_required(self):
-        """GET /v1/knowledge/vdot/formula (no athlete) is public - no auth needed."""
+    def test_vdot_formula_requires_auth(self):
+        """GET /v1/knowledge/vdot/formula requires auth - knowledge base is protected."""
         response = client.get("/v1/knowledge/vdot/formula")
-        # This should work - it's the public VDOT formula
-        assert response.status_code in [200, 422], f"Expected 200 or 422, got {response.status_code}"
+        # SECURITY FIX: Knowledge base now requires authentication
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
 
 
 # ============================================================================

@@ -20,30 +20,24 @@ from uuid import UUID
 import json
 
 from core.database import get_db
+from core.auth import get_current_user
 from models import CoachingKnowledgeEntry, Athlete
 from core.config import settings
 
 router = APIRouter(prefix="/v1/knowledge", tags=["Knowledge Base"])
 
 
-def check_tier_access(athlete_id: Optional[UUID] = None, db: Session = Depends(get_db)) -> str:
+def check_tier_access(athlete: Athlete) -> str:
     """
     Check if user has access to knowledge base (Tier 3+).
     
     Returns tier level or raises HTTPException if access denied.
     """
-    # TODO: Implement proper authentication
-    # For now, allow all authenticated users (will be gated by tier in production)
-    
-    if athlete_id:
-        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if athlete:
-            tier = athlete.subscription_tier
-            if tier in ["guided", "premium", "admin"]:
-                return tier
-    
-    # Default: allow access (will be restricted in production)
-    return "free"
+    tier = athlete.subscription_tier or "free"
+    if tier in ["guided", "premium", "admin"]:
+        return tier
+    # Allow free tier access to knowledge base (read-only educational content)
+    return tier
 
 
 @router.get("/search")
@@ -53,7 +47,7 @@ def search_knowledge(
     principle_type: Optional[str] = Query(None, description="Filter by principle type (e.g., vdot_formula, periodization)"),
     concept: Optional[str] = Query(None, description="Search for a specific concept"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
-    athlete_id: Optional[UUID] = None,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -68,7 +62,7 @@ def search_knowledge(
     Tier: 3+ (Guided Coaching & Premium)
     """
     # Check tier access
-    tier = check_tier_access(athlete_id, db)
+    tier = check_tier_access(current_user)
     
     query = db.query(CoachingKnowledgeEntry)
     
@@ -128,7 +122,7 @@ def get_concept_entries(
     concept: str,
     methodology: Optional[str] = Query(None, description="Filter by methodology"),
     limit: int = Query(50, ge=1, le=100),
-    athlete_id: Optional[UUID] = None,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -138,7 +132,7 @@ def get_concept_entries(
     
     Tier: 3+ (Guided Coaching & Premium)
     """
-    tier = check_tier_access(athlete_id, db)
+    tier = check_tier_access(current_user)
     
     query = db.query(CoachingKnowledgeEntry).filter(
         or_(
@@ -182,7 +176,7 @@ def compare_methodologies(
     concept: str = Query(..., description="Concept to compare (e.g., threshold, long_run)"),
     methodologies: Optional[List[str]] = Query(None, description="Specific methodologies to compare"),
     limit_per_methodology: int = Query(5, ge=1, le=20),
-    athlete_id: Optional[UUID] = None,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -192,7 +186,7 @@ def compare_methodologies(
     
     Tier: 3+ (Guided Coaching & Premium)
     """
-    tier = check_tier_access(athlete_id, db)
+    tier = check_tier_access(current_user)
     
     # Find entries tagged with concept
     query = db.query(CoachingKnowledgeEntry).filter(
@@ -233,7 +227,7 @@ def compare_methodologies(
 
 @router.get("/vdot/formula")
 def get_vdot_formula(
-    athlete_id: Optional[UUID] = None,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -241,7 +235,7 @@ def get_vdot_formula(
     
     Tier: 3+ (Guided Coaching & Premium)
     """
-    tier = check_tier_access(athlete_id, db)
+    tier = check_tier_access(current_user)
     
     entry = db.query(CoachingKnowledgeEntry).filter(
         CoachingKnowledgeEntry.principle_type == "vdot_exact",
@@ -263,7 +257,7 @@ def get_vdot_formula(
 
 @router.get("/vdot/pace-tables")
 def get_vdot_pace_tables(
-    athlete_id: Optional[UUID] = None,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -271,7 +265,7 @@ def get_vdot_pace_tables(
     
     Tier: 3+ (Guided Coaching & Premium)
     """
-    tier = check_tier_access(athlete_id, db)
+    tier = check_tier_access(current_user)
     
     entry = db.query(CoachingKnowledgeEntry).filter(
         CoachingKnowledgeEntry.principle_type == "vdot_exact",
@@ -294,7 +288,7 @@ def get_vdot_pace_tables(
 @router.get("/tags")
 def list_all_tags(
     methodology: Optional[str] = Query(None, description="Filter by methodology"),
-    athlete_id: Optional[UUID] = None,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -302,7 +296,7 @@ def list_all_tags(
     
     Tier: 3+ (Guided Coaching & Premium)
     """
-    tier = check_tier_access(athlete_id, db)
+    tier = check_tier_access(current_user)
     
     query = db.query(CoachingKnowledgeEntry)
     
