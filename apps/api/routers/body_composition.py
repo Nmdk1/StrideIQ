@@ -25,6 +25,7 @@ router = APIRouter(prefix="/v1", tags=["body_composition"])
 @router.post("/body-composition", response_model=BodyCompositionResponse, status_code=201)
 def create_body_composition(
     body_comp: BodyCompositionCreate,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -34,14 +35,12 @@ def create_body_composition(
     BMI is stored internally for correlation analysis but may not be shown on dashboard
     until meaningful correlations are identified.
     """
-    # Verify athlete exists
-    athlete = db.query(Athlete).filter(Athlete.id == body_comp.athlete_id).first()
-    if not athlete:
-        raise HTTPException(status_code=404, detail="Athlete not found")
+    # Use authenticated user's ID (ignore any athlete_id in request body)
+    athlete = current_user
     
     # Check for existing entry on this date
     existing = db.query(BodyComposition).filter(
-        BodyComposition.athlete_id == body_comp.athlete_id,
+        BodyComposition.athlete_id == current_user.id,
         BodyComposition.date == body_comp.date
     ).first()
     
@@ -61,7 +60,7 @@ def create_body_composition(
     
     # Create body composition entry
     db_body_comp = BodyComposition(
-        athlete_id=body_comp.athlete_id,
+        athlete_id=current_user.id,
         date=body_comp.date,
         weight_kg=Decimal(str(body_comp.weight_kg)) if body_comp.weight_kg else None,
         body_fat_pct=Decimal(str(body_comp.body_fat_pct)) if body_comp.body_fat_pct else None,
@@ -76,33 +75,28 @@ def create_body_composition(
     db.refresh(db_body_comp)
     
     # Invalidate cache (body comp affects correlations)
-    invalidate_athlete_cache(str(body_comp.athlete_id))
-    invalidate_correlation_cache(str(body_comp.athlete_id))
+    invalidate_athlete_cache(str(current_user.id))
+    invalidate_correlation_cache(str(current_user.id))
     
     return db_body_comp
 
 
 @router.get("/body-composition", response_model=List[BodyCompositionResponse])
 def get_body_composition(
-    athlete_id: Optional[UUID] = None,
+    current_user: Athlete = Depends(get_current_user),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
-    Get body composition entries.
+    Get body composition entries for the authenticated user.
     
     Can filter by date range.
     BMI is included in response but may not be displayed on dashboard
     until correlations are identified.
-    
-    Note: athlete_id is required. Future: add proper auth.
     """
-    # athlete_id is required for this endpoint
-    if not athlete_id:
-        raise HTTPException(status_code=400, detail="athlete_id is required")
-    
-    query = db.query(BodyComposition).filter(BodyComposition.athlete_id == athlete_id)
+    # Filter by authenticated user's ID only
+    query = db.query(BodyComposition).filter(BodyComposition.athlete_id == current_user.id)
     
     if start_date:
         query = query.filter(BodyComposition.date >= start_date)
@@ -116,12 +110,16 @@ def get_body_composition(
 @router.get("/body-composition/{id}", response_model=BodyCompositionResponse)
 def get_body_composition_by_id(
     id: UUID,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get a specific body composition entry by ID."""
     entry = db.query(BodyComposition).filter(BodyComposition.id == id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Body composition entry not found")
+    # Verify ownership
+    if entry.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return entry
 
 
@@ -129,6 +127,7 @@ def get_body_composition_by_id(
 def update_body_composition(
     id: UUID,
     body_comp: BodyCompositionCreate,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -140,10 +139,12 @@ def update_body_composition(
     if not db_entry:
         raise HTTPException(status_code=404, detail="Body composition entry not found")
     
-    # Get athlete for BMI recalculation
-    athlete = db.query(Athlete).filter(Athlete.id == body_comp.athlete_id).first()
-    if not athlete:
-        raise HTTPException(status_code=404, detail="Athlete not found")
+    # Verify ownership
+    if db_entry.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Use authenticated user for BMI recalculation
+    athlete = current_user
     
     # Update fields
     db_entry.date = body_comp.date
@@ -166,8 +167,8 @@ def update_body_composition(
     db.refresh(db_entry)
     
     # Invalidate cache
-    invalidate_athlete_cache(str(body_comp.athlete_id))
-    invalidate_correlation_cache(str(body_comp.athlete_id))
+    invalidate_athlete_cache(str(current_user.id))
+    invalidate_correlation_cache(str(current_user.id))
     
     return db_entry
 
@@ -175,6 +176,7 @@ def update_body_composition(
 @router.delete("/body-composition/{id}", status_code=204)
 def delete_body_composition(
     id: UUID,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete a body composition entry."""
@@ -182,12 +184,15 @@ def delete_body_composition(
     if not db_entry:
         raise HTTPException(status_code=404, detail="Body composition entry not found")
     
-    athlete_id = str(db_entry.athlete_id)
+    # Verify ownership
+    if db_entry.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     db.delete(db_entry)
     db.commit()
     
     # Invalidate cache
-    invalidate_athlete_cache(athlete_id)
-    invalidate_correlation_cache(athlete_id)
+    invalidate_athlete_cache(str(current_user.id))
+    invalidate_correlation_cache(str(current_user.id))
     return None
 

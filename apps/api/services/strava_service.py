@@ -435,9 +435,12 @@ def get_activity_laps(
             # Handle token refresh (401 Unauthorized)
             if r.status_code == 401 and athlete.strava_refresh_token:
                 print(f"DEBUG: Token expired, refreshing for activity {activity_id}")
-                token = refresh_access_token(athlete.strava_refresh_token)
-                athlete.strava_access_token = token["access_token"]
-                headers["Authorization"] = f"Bearer {athlete.strava_access_token}"
+                from services.token_encryption import decrypt_token, encrypt_token
+                refresh_token = decrypt_token(athlete.strava_refresh_token)
+                token = refresh_access_token(refresh_token)
+                # SECURITY: Encrypt the new access token before storing
+                athlete.strava_access_token = encrypt_token(token["access_token"])
+                headers["Authorization"] = f"Bearer {token['access_token']}"
                 continue
             
             r.raise_for_status()
