@@ -316,11 +316,13 @@ jobs:
 
           # Self-test: ensure our regexes actually catch known dummy strings (no repo files involved).
           # This prevents accidental weakening of patterns over time.
+          # NOTE: The JWT canary is constructed at runtime to avoid GitHub Actions masking it.
+          jwt_canary = "Authorization: " + "Bearer " + "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NSJ9.signature"
           canaries = [
             "sk_test_1234567890abcdefghijklmnopqrstuvwxyz",
             "whsec_1234567890abcdefghijklmnopqrstuvwxyz",
             "ghp_1234567890abcdefghijklmnopqrstuvwxyz1234567890",
-            "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NSJ9.signature",
+            jwt_canary,
           ]
           for c in canaries:
             if not any(rx.search(c) for rx in forbidden_regexes):
