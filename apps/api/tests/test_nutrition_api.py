@@ -2,23 +2,24 @@
 Integration tests for Nutrition API endpoints
 
 Tests CRUD operations, entry type validation, activity linking, and date filtering.
-
-KNOWN ISSUE: Tests are missing auth headers and fail with 401.
-Skipping in CI until fixed.
 """
 import pytest
-
-# Skip all tests in this file until auth headers are added to all tests
-pytestmark = pytest.mark.skip(reason="Tests missing auth headers - see file docstring")
 from fastapi.testclient import TestClient
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 from main import app
 from core.database import SessionLocal
+from core.security import create_access_token
 from models import Athlete, NutritionEntry, Activity
 
 client = TestClient(app)
+
+
+def get_auth_headers(athlete):
+    """Generate auth headers for test athlete"""
+    token = create_access_token({"sub": str(athlete.id)})
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
@@ -95,6 +96,7 @@ class TestCreateNutritionEntry:
     
     def test_create_daily_entry(self, test_athlete):
         """Test creating daily nutrition entry"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
             "date": "2024-01-15",
@@ -106,7 +108,7 @@ class TestCreateNutritionEntry:
             "notes": "Daily nutrition"
         }
         
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         
         assert response.status_code == 201
         data = response.json()
@@ -118,6 +120,7 @@ class TestCreateNutritionEntry:
     
     def test_create_pre_activity_entry(self, test_athlete, test_activity):
         """Test creating pre-activity nutrition entry"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
             "date": "2024-01-15",
@@ -128,7 +131,7 @@ class TestCreateNutritionEntry:
             "notes": "Pre-run fuel"
         }
         
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         
         assert response.status_code == 201
         data = response.json()
@@ -138,6 +141,7 @@ class TestCreateNutritionEntry:
     
     def test_create_during_activity_entry(self, test_athlete, test_activity):
         """Test creating during-activity nutrition entry"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
             "date": "2024-01-15",
@@ -148,7 +152,7 @@ class TestCreateNutritionEntry:
             "notes": "During run gel"
         }
         
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         
         assert response.status_code == 201
         data = response.json()
@@ -157,6 +161,7 @@ class TestCreateNutritionEntry:
     
     def test_create_post_activity_entry(self, test_athlete, test_activity):
         """Test creating post-activity nutrition entry"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
             "date": "2024-01-15",
@@ -168,7 +173,7 @@ class TestCreateNutritionEntry:
             "notes": "Post-run recovery"
         }
         
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         
         assert response.status_code == 201
         data = response.json()
@@ -177,6 +182,7 @@ class TestCreateNutritionEntry:
     
     def test_create_daily_with_activity_id_fails(self, test_athlete, test_activity):
         """Test that daily entry cannot have activity_id"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
             "date": "2024-01-15",
@@ -185,12 +191,13 @@ class TestCreateNutritionEntry:
             "calories": 2000.0
         }
         
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code == 400
         assert "activity_id must be None" in response.json()["detail"]
     
     def test_create_pre_activity_without_activity_id_fails(self, test_athlete):
         """Test that pre_activity entry requires activity_id"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
             "date": "2024-01-15",
@@ -199,12 +206,13 @@ class TestCreateNutritionEntry:
             "calories": 300.0
         }
         
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code == 400
         assert "activity_id is required" in response.json()["detail"]
     
     def test_create_with_invalid_activity_id(self, test_athlete):
         """Test creating entry with non-existent activity ID"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
             "date": "2024-01-15",
@@ -213,11 +221,12 @@ class TestCreateNutritionEntry:
             "calories": 300.0
         }
         
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code == 404
     
     def test_create_with_invalid_entry_type(self, test_athlete):
         """Test creating entry with invalid entry_type"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
             "date": "2024-01-15",
@@ -225,25 +234,26 @@ class TestCreateNutritionEntry:
             "calories": 2000.0
         }
         
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code == 400
     
     def test_create_with_all_fields(self, test_athlete):
         """Test creating entry with all optional fields"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-01-16",
             "entry_type": "daily",
             "calories": 2200.5,
             "protein_g": 165.3,
             "carbs_g": 275.7,
             "fat_g": 72.1,
             "fiber_g": 35.0,
-            "timing": "2024-01-15T12:00:00Z",
+            "timing": "2024-01-16T12:00:00Z",
             "notes": "Complete entry"
         }
         
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         
         assert response.status_code == 201
         data = response.json()
@@ -260,6 +270,7 @@ class TestGetNutritionEntries:
     
     def test_get_all_entries(self, test_athlete):
         """Test getting all entries for an athlete"""
+        headers = get_auth_headers(test_athlete)
         # Create multiple entries
         dates = ["2024-01-15", "2024-01-20", "2024-01-25"]
         for entry_date in dates:
@@ -269,10 +280,10 @@ class TestGetNutritionEntries:
                 "entry_type": "daily",
                 "calories": 2000.0
             }
-            client.post("/v1/nutrition", json=entry_data)
+            client.post("/v1/nutrition", json=entry_data, headers=headers)
         
         # Get all entries
-        response = client.get(f"/v1/nutrition?athlete_id={test_athlete.id}")
+        response = client.get(f"/v1/nutrition?athlete_id={test_athlete.id}", headers=headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -282,7 +293,8 @@ class TestGetNutritionEntries:
     
     def test_get_with_date_filter(self, test_athlete):
         """Test getting entries with date range filter"""
-        dates = ["2024-01-15", "2024-01-20", "2024-01-25", "2024-02-01"]
+        headers = get_auth_headers(test_athlete)
+        dates = ["2024-02-15", "2024-02-20", "2024-02-25", "2024-03-01"]
         for entry_date in dates:
             entry_data = {
                 "athlete_id": str(test_athlete.id),
@@ -290,11 +302,12 @@ class TestGetNutritionEntries:
                 "entry_type": "daily",
                 "calories": 2000.0
             }
-            client.post("/v1/nutrition", json=entry_data)
+            client.post("/v1/nutrition", json=entry_data, headers=headers)
         
         # Filter by date range
         response = client.get(
-            f"/v1/nutrition?athlete_id={test_athlete.id}&start_date=2024-01-20&end_date=2024-01-25"
+            f"/v1/nutrition?athlete_id={test_athlete.id}&start_date=2024-02-20&end_date=2024-02-25",
+            headers=headers
         )
         
         assert response.status_code == 200
@@ -303,22 +316,37 @@ class TestGetNutritionEntries:
     
     def test_get_with_entry_type_filter(self, test_athlete, test_activity):
         """Test getting entries filtered by entry_type"""
+        headers = get_auth_headers(test_athlete)
         # Create entries of different types
-        entry_types = ["daily", "pre_activity", "daily"]
-        for entry_type in entry_types:
-            entry_data = {
-                "athlete_id": str(test_athlete.id),
-                "date": "2024-01-15",
-                "entry_type": entry_type,
-                "calories": 2000.0
-            }
-            if entry_type != "daily":
-                entry_data["activity_id"] = str(test_activity.id)
-            client.post("/v1/nutrition", json=entry_data)
+        daily_entry = {
+            "athlete_id": str(test_athlete.id),
+            "date": "2024-03-15",
+            "entry_type": "daily",
+            "calories": 2000.0
+        }
+        client.post("/v1/nutrition", json=daily_entry, headers=headers)
+        
+        pre_activity_entry = {
+            "athlete_id": str(test_athlete.id),
+            "date": "2024-03-15",
+            "entry_type": "pre_activity",
+            "activity_id": str(test_activity.id),
+            "calories": 300.0
+        }
+        client.post("/v1/nutrition", json=pre_activity_entry, headers=headers)
+        
+        daily_entry2 = {
+            "athlete_id": str(test_athlete.id),
+            "date": "2024-03-16",
+            "entry_type": "daily",
+            "calories": 2100.0
+        }
+        client.post("/v1/nutrition", json=daily_entry2, headers=headers)
         
         # Filter by entry_type
         response = client.get(
-            f"/v1/nutrition?athlete_id={test_athlete.id}&entry_type=daily"
+            f"/v1/nutrition?athlete_id={test_athlete.id}&entry_type=daily",
+            headers=headers
         )
         
         assert response.status_code == 200
@@ -328,19 +356,21 @@ class TestGetNutritionEntries:
     
     def test_get_with_activity_id_filter(self, test_athlete, test_activity):
         """Test getting entries filtered by activity_id"""
-        # Create entries linked to activity
+        headers = get_auth_headers(test_athlete)
+        # Create entry linked to activity
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-04-15",
             "entry_type": "pre_activity",
             "activity_id": str(test_activity.id),
             "calories": 300.0
         }
-        client.post("/v1/nutrition", json=entry_data)
+        client.post("/v1/nutrition", json=entry_data, headers=headers)
         
         # Filter by activity_id
         response = client.get(
-            f"/v1/nutrition?athlete_id={test_athlete.id}&activity_id={test_activity.id}"
+            f"/v1/nutrition?athlete_id={test_athlete.id}&activity_id={test_activity.id}",
+            headers=headers
         )
         
         assert response.status_code == 200
@@ -350,7 +380,8 @@ class TestGetNutritionEntries:
     
     def test_get_empty_list(self, test_athlete):
         """Test getting entries when none exist"""
-        response = client.get(f"/v1/nutrition?athlete_id={test_athlete.id}")
+        headers = get_auth_headers(test_athlete)
+        response = client.get(f"/v1/nutrition?athlete_id={test_athlete.id}", headers=headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -362,18 +393,19 @@ class TestGetNutritionEntryById:
     
     def test_get_by_id(self, test_athlete):
         """Test getting a specific entry by ID"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-05-15",
             "entry_type": "daily",
             "calories": 2000.0,
             "notes": "Test entry"
         }
-        create_response = client.post("/v1/nutrition", json=entry_data)
+        create_response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         entry_id = create_response.json()["id"]
         
         # Get by ID
-        response = client.get(f"/v1/nutrition/{entry_id}")
+        response = client.get(f"/v1/nutrition/{entry_id}", headers=headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -381,10 +413,11 @@ class TestGetNutritionEntryById:
         assert data["calories"] == 2000.0
         assert data["notes"] == "Test entry"
     
-    def test_get_by_id_not_found(self):
+    def test_get_by_id_not_found(self, test_athlete):
         """Test getting non-existent entry"""
+        headers = get_auth_headers(test_athlete)
         fake_id = uuid4()
-        response = client.get(f"/v1/nutrition/{fake_id}")
+        response = client.get(f"/v1/nutrition/{fake_id}", headers=headers)
         
         assert response.status_code == 404
 
@@ -394,26 +427,27 @@ class TestUpdateNutritionEntry:
     
     def test_update_entry(self, test_athlete):
         """Test updating an existing entry"""
+        headers = get_auth_headers(test_athlete)
         # Create entry
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-06-15",
             "entry_type": "daily",
             "calories": 2000.0
         }
-        create_response = client.post("/v1/nutrition", json=entry_data)
+        create_response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         entry_id = create_response.json()["id"]
         
         # Update entry
         update_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-06-15",
             "entry_type": "daily",
             "calories": 2200.0,
             "protein_g": 150.0,
             "notes": "Updated entry"
         }
-        response = client.put(f"/v1/nutrition/{entry_id}", json=update_data)
+        response = client.put(f"/v1/nutrition/{entry_id}", json=update_data, headers=headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -423,15 +457,16 @@ class TestUpdateNutritionEntry:
     
     def test_update_not_found(self, test_athlete):
         """Test updating non-existent entry"""
+        headers = get_auth_headers(test_athlete)
         fake_id = uuid4()
         update_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-06-15",
             "entry_type": "daily",
             "calories": 2000.0
         }
         
-        response = client.put(f"/v1/nutrition/{fake_id}", json=update_data)
+        response = client.put(f"/v1/nutrition/{fake_id}", json=update_data, headers=headers)
         assert response.status_code == 404
 
 
@@ -440,27 +475,29 @@ class TestDeleteNutritionEntry:
     
     def test_delete_entry(self, test_athlete):
         """Test deleting an entry"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-07-15",
             "entry_type": "daily",
             "calories": 2000.0
         }
-        create_response = client.post("/v1/nutrition", json=entry_data)
+        create_response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         entry_id = create_response.json()["id"]
         
         # Delete entry
-        response = client.delete(f"/v1/nutrition/{entry_id}")
+        response = client.delete(f"/v1/nutrition/{entry_id}", headers=headers)
         assert response.status_code == 204
         
         # Verify deleted
-        get_response = client.get(f"/v1/nutrition/{entry_id}")
+        get_response = client.get(f"/v1/nutrition/{entry_id}", headers=headers)
         assert get_response.status_code == 404
     
-    def test_delete_not_found(self):
+    def test_delete_not_found(self, test_athlete):
         """Test deleting non-existent entry"""
+        headers = get_auth_headers(test_athlete)
         fake_id = uuid4()
-        response = client.delete(f"/v1/nutrition/{fake_id}")
+        response = client.delete(f"/v1/nutrition/{fake_id}", headers=headers)
         assert response.status_code == 404
 
 
@@ -469,63 +506,67 @@ class TestNutritionEdgeCases:
     
     def test_create_with_zero_calories(self, test_athlete):
         """Test creating entry with zero calories"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-08-15",
             "entry_type": "daily",
             "calories": 0.0
         }
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code == 201
     
     def test_create_with_negative_macros(self, test_athlete):
         """Test creating entry with negative macros"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-08-16",
             "entry_type": "daily",
             "calories": -100.0
         }
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         # API currently accepts negative values (validation can be added later)
         assert response.status_code in [201, 400, 422]
     
     def test_create_with_very_large_values(self, test_athlete):
         """Test creating entry with very large values"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-08-17",
             "entry_type": "daily",
             "calories": 10000.0,
             "protein_g": 500.0
         }
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert data["calories"] == 10000.0
     
     def test_create_multiple_daily_entries_same_date(self, test_athlete):
         """Test creating multiple daily entries on same date (should be allowed)"""
+        headers = get_auth_headers(test_athlete)
         # Create first entry
         entry1 = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-08-18",
             "entry_type": "daily",
             "calories": 1000.0,
             "notes": "Breakfast"
         }
-        response1 = client.post("/v1/nutrition", json=entry1)
+        response1 = client.post("/v1/nutrition", json=entry1, headers=headers)
         assert response1.status_code == 201
         
         # Create second entry same date (should be allowed - multiple meals per day)
         entry2 = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-08-18",
             "entry_type": "daily",
             "calories": 1000.0,
             "notes": "Dinner"
         }
-        response2 = client.post("/v1/nutrition", json=entry2)
+        response2 = client.post("/v1/nutrition", json=entry2, headers=headers)
         assert response2.status_code == 201
         
         # Both should exist
@@ -533,6 +574,7 @@ class TestNutritionEdgeCases:
     
     def test_create_with_future_date(self, test_athlete):
         """Test creating entry with future date"""
+        headers = get_auth_headers(test_athlete)
         future_date = (date.today() + timedelta(days=30)).isoformat()
         entry_data = {
             "athlete_id": str(test_athlete.id),
@@ -540,34 +582,35 @@ class TestNutritionEdgeCases:
             "entry_type": "daily",
             "calories": 2000.0
         }
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code in [201, 400, 422]
     
     def test_create_with_unicode_notes(self, test_athlete):
         """Test creating entry with Unicode characters"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-08-19",
             "entry_type": "daily",
             "calories": 2000.0,
             "notes": "Test with émojis 🍎 and 中文"
         }
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert data["notes"] == "Test with émojis 🍎 and 中文"
     
     def test_create_with_timing(self, test_athlete):
         """Test creating entry with timing"""
+        headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": "2024-08-20",
             "entry_type": "daily",
             "calories": 2000.0,
-            "timing": "2024-01-15T12:30:00Z"
+            "timing": "2024-08-20T12:30:00Z"
         }
-        response = client.post("/v1/nutrition", json=entry_data)
+        response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert data["timing"] is not None
-

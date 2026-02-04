@@ -6,16 +6,8 @@ Tests CRUD operations, BMI auto-calculation, error handling, and date filtering.
 Note: These tests require a running database. They test the actual API endpoints
 and will create/cleanup test data. For unit tests of BMI calculation logic,
 see test_bmi_calculator.py
-
-KNOWN ISSUE: Many tests in this file are missing auth headers and fail with 401.
-The first test (test_create_with_bmi_calculation) passes because it uses headers,
-but subsequent tests don't. This needs to be fixed by adding auth headers to all tests.
-Skipping in CI until fixed.
 """
 import pytest
-
-# Skip all tests in this file until auth headers are added to all tests
-pytestmark = pytest.mark.skip(reason="Tests missing auth headers - see file docstring for details")
 from fastapi.testclient import TestClient
 from datetime import date, datetime
 from decimal import Decimal
@@ -214,6 +206,7 @@ class TestGetBodyComposition:
     
     def test_get_all_entries(self, test_athlete_with_height):
         """Test getting all entries for an athlete"""
+        headers = get_auth_headers(test_athlete_with_height)
         # Create multiple entries
         dates = ["2024-01-15", "2024-01-20", "2024-01-25"]
         for entry_date in dates:
@@ -222,11 +215,12 @@ class TestGetBodyComposition:
                 "date": entry_date,
                 "weight_kg": 70.0
             }
-            client.post("/v1/body-composition", json=entry_data)
+            client.post("/v1/body-composition", json=entry_data, headers=headers)
         
         # Get all entries
         response = client.get(
-            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}"
+            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}",
+            headers=headers
         )
         
         assert response.status_code == 200
@@ -239,6 +233,7 @@ class TestGetBodyComposition:
     
     def test_get_with_date_filter(self, test_athlete_with_height):
         """Test getting entries with date range filter"""
+        headers = get_auth_headers(test_athlete_with_height)
         # Create entries on different dates
         dates = ["2024-01-15", "2024-01-20", "2024-01-25", "2024-02-01"]
         for entry_date in dates:
@@ -247,11 +242,12 @@ class TestGetBodyComposition:
                 "date": entry_date,
                 "weight_kg": 70.0
             }
-            client.post("/v1/body-composition", json=entry_data)
+            client.post("/v1/body-composition", json=entry_data, headers=headers)
         
         # Filter by date range
         response = client.get(
-            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}&start_date=2024-01-20&end_date=2024-01-25"
+            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}&start_date=2024-01-20&end_date=2024-01-25",
+            headers=headers
         )
         
         assert response.status_code == 200
@@ -261,8 +257,10 @@ class TestGetBodyComposition:
     
     def test_get_empty_list(self, test_athlete_with_height):
         """Test getting entries when none exist"""
+        headers = get_auth_headers(test_athlete_with_height)
         response = client.get(
-            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}"
+            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}",
+            headers=headers
         )
         
         assert response.status_code == 200
@@ -275,6 +273,7 @@ class TestGetBodyCompositionById:
     
     def test_get_by_id(self, test_athlete_with_height):
         """Test getting a specific entry by ID"""
+        headers = get_auth_headers(test_athlete_with_height)
         # Create entry
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
@@ -282,11 +281,11 @@ class TestGetBodyCompositionById:
             "weight_kg": 70.0,
             "notes": "Test entry"
         }
-        create_response = client.post("/v1/body-composition", json=entry_data)
+        create_response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         entry_id = create_response.json()["id"]
         
         # Get by ID
-        response = client.get(f"/v1/body-composition/{entry_id}")
+        response = client.get(f"/v1/body-composition/{entry_id}", headers=headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -294,10 +293,11 @@ class TestGetBodyCompositionById:
         assert data["weight_kg"] == 70.0
         assert data["notes"] == "Test entry"
     
-    def test_get_by_id_not_found(self):
+    def test_get_by_id_not_found(self, test_athlete_with_height):
         """Test getting non-existent entry"""
+        headers = get_auth_headers(test_athlete_with_height)
         fake_id = uuid4()
-        response = client.get(f"/v1/body-composition/{fake_id}")
+        response = client.get(f"/v1/body-composition/{fake_id}", headers=headers)
         
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
@@ -308,13 +308,14 @@ class TestUpdateBodyComposition:
     
     def test_update_entry(self, test_athlete_with_height):
         """Test updating an existing entry"""
+        headers = get_auth_headers(test_athlete_with_height)
         # Create entry
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
             "date": "2024-01-15",
             "weight_kg": 70.0
         }
-        create_response = client.post("/v1/body-composition", json=entry_data)
+        create_response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         entry_id = create_response.json()["id"]
         
         # Update entry
@@ -325,7 +326,7 @@ class TestUpdateBodyComposition:
             "body_fat_pct": 14.0,
             "notes": "Updated entry"
         }
-        response = client.put(f"/v1/body-composition/{entry_id}", json=update_data)
+        response = client.put(f"/v1/body-composition/{entry_id}", json=update_data, headers=headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -338,13 +339,14 @@ class TestUpdateBodyComposition:
     
     def test_update_recalculates_bmi(self, test_athlete_with_height):
         """Test that BMI is recalculated when weight changes"""
+        headers = get_auth_headers(test_athlete_with_height)
         # Create entry
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
             "date": "2024-01-15",
             "weight_kg": 70.0
         }
-        create_response = client.post("/v1/body-composition", json=entry_data)
+        create_response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         entry_id = create_response.json()["id"]
         original_bmi = create_response.json()["bmi"]
         
@@ -354,7 +356,7 @@ class TestUpdateBodyComposition:
             "date": "2024-01-15",
             "weight_kg": 75.0  # Increased weight
         }
-        response = client.put(f"/v1/body-composition/{entry_id}", json=update_data)
+        response = client.put(f"/v1/body-composition/{entry_id}", json=update_data, headers=headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -363,6 +365,7 @@ class TestUpdateBodyComposition:
     
     def test_update_not_found(self, test_athlete_with_height):
         """Test updating non-existent entry"""
+        headers = get_auth_headers(test_athlete_with_height)
         fake_id = uuid4()
         update_data = {
             "athlete_id": str(test_athlete_with_height.id),
@@ -370,7 +373,7 @@ class TestUpdateBodyComposition:
             "weight_kg": 70.0
         }
         
-        response = client.put(f"/v1/body-composition/{fake_id}", json=update_data)
+        response = client.put(f"/v1/body-composition/{fake_id}", json=update_data, headers=headers)
         assert response.status_code == 404
 
 
@@ -379,27 +382,29 @@ class TestDeleteBodyComposition:
     
     def test_delete_entry(self, test_athlete_with_height):
         """Test deleting an entry"""
+        headers = get_auth_headers(test_athlete_with_height)
         # Create entry
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
             "date": "2024-01-15",
             "weight_kg": 70.0
         }
-        create_response = client.post("/v1/body-composition", json=entry_data)
+        create_response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         entry_id = create_response.json()["id"]
         
         # Delete entry
-        response = client.delete(f"/v1/body-composition/{entry_id}")
+        response = client.delete(f"/v1/body-composition/{entry_id}", headers=headers)
         assert response.status_code == 204
         
         # Verify deleted
-        get_response = client.get(f"/v1/body-composition/{entry_id}")
+        get_response = client.get(f"/v1/body-composition/{entry_id}", headers=headers)
         assert get_response.status_code == 404
     
-    def test_delete_not_found(self):
+    def test_delete_not_found(self, test_athlete_with_height):
         """Test deleting non-existent entry"""
+        headers = get_auth_headers(test_athlete_with_height)
         fake_id = uuid4()
-        response = client.delete(f"/v1/body-composition/{fake_id}")
+        response = client.delete(f"/v1/body-composition/{fake_id}", headers=headers)
         assert response.status_code == 404
 
 
@@ -408,35 +413,38 @@ class TestBodyCompositionEdgeCases:
     
     def test_create_with_zero_weight(self, test_athlete_with_height):
         """Test creating entry with zero weight"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
             "date": "2024-01-15",
             "weight_kg": 0.0
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         # Should fail validation or return None BMI
         assert response.status_code in [201, 400, 422]
     
     def test_create_with_negative_weight(self, test_athlete_with_height):
         """Test creating entry with negative weight"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-16",
             "weight_kg": -10.0
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         # Note: API currently accepts negative weights (BMI calculation handles it by returning None)
         # Validation can be added later if needed
         assert response.status_code in [201, 400, 422]
     
     def test_create_with_very_large_weight(self, test_athlete_with_height):
         """Test creating entry with very large weight"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-17",
             "weight_kg": 1000.0  # Unrealistic but should handle gracefully
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert data["weight_kg"] == 1000.0
@@ -444,42 +452,46 @@ class TestBodyCompositionEdgeCases:
     
     def test_create_with_very_small_weight(self, test_athlete_with_height):
         """Test creating entry with very small weight"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-18",
             "weight_kg": 0.1
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert data["weight_kg"] == 0.1
     
     def test_create_with_negative_body_fat(self, test_athlete_with_height):
         """Test creating entry with negative body fat percentage"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-19",
             "weight_kg": 70.0,
             "body_fat_pct": -5.0
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         # Note: API currently accepts negative body fat (validation can be added later if needed)
         assert response.status_code in [201, 400, 422]
     
     def test_create_with_body_fat_over_100(self, test_athlete_with_height):
         """Test creating entry with body fat > 100%"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-20",
             "weight_kg": 70.0,
             "body_fat_pct": 150.0
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         # Note: API currently accepts body fat > 100% (validation can be added later if needed)
         assert response.status_code in [201, 400, 422]
     
     def test_create_with_future_date(self, test_athlete_with_height):
         """Test creating entry with future date"""
+        headers = get_auth_headers(test_athlete_with_height)
         from datetime import date, timedelta
         future_date = (date.today() + timedelta(days=365)).isoformat()
         entry_data = {
@@ -487,93 +499,101 @@ class TestBodyCompositionEdgeCases:
             "date": future_date,
             "weight_kg": 70.0
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         # Should accept future dates (user might pre-log)
         assert response.status_code in [201, 400, 422]
     
     def test_create_with_very_old_date(self, test_athlete_with_height):
         """Test creating entry with very old date"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
             "date": "1900-01-01",
             "weight_kg": 70.0
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         # Should accept old dates (historical data)
         assert response.status_code in [201, 400, 422]
     
     def test_create_with_invalid_date_format(self, test_athlete_with_height):
         """Test creating entry with invalid date format"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
             "date": "2024/01/15",  # Wrong format
             "weight_kg": 70.0
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code in [400, 422]
     
     def test_create_with_leap_year_date(self, test_athlete_with_height):
         """Test creating entry on leap year date"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
             "date": "2024-02-29",  # Leap year
             "weight_kg": 70.0
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code == 201
     
     def test_create_with_invalid_leap_year_date(self, test_athlete_with_height):
         """Test creating entry on invalid leap year date"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
             "date": "2023-02-29",  # Not a leap year
             "weight_kg": 70.0
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code in [400, 422]
     
     def test_create_with_unicode_notes(self, test_athlete_with_height):
         """Test creating entry with Unicode characters in notes"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-21",
             "weight_kg": 70.0,
             "notes": "Test with émojis 🏃‍♂️ and 中文 and русский"
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert data["notes"] == "Test with émojis 🏃‍♂️ and 中文 and русский"
     
     def test_create_with_very_long_notes(self, test_athlete_with_height):
         """Test creating entry with very long notes"""
+        headers = get_auth_headers(test_athlete_with_height)
         long_notes = "A" * 10000  # 10k characters
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-22",
             "weight_kg": 70.0,
             "notes": long_notes
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert len(data["notes"]) == 10000
     
     def test_create_with_empty_string_notes(self, test_athlete_with_height):
         """Test creating entry with empty string notes"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-23",
             "weight_kg": 70.0,
             "notes": ""
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert data["notes"] == ""
     
     def test_create_with_complex_json(self, test_athlete_with_height):
         """Test creating entry with complex JSON measurements"""
+        headers = get_auth_headers(test_athlete_with_height)
         complex_json = {
             "waist": 32,
             "chest": 42,
@@ -583,71 +603,78 @@ class TestBodyCompositionEdgeCases:
         }
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-24",
             "weight_kg": 70.0,
             "measurements_json": complex_json
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert data["measurements_json"] == complex_json
     
     def test_create_with_empty_json(self, test_athlete_with_height):
         """Test creating entry with empty JSON object"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-25",
             "weight_kg": 70.0,
             "measurements_json": {}
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert data["measurements_json"] == {}
     
-    def test_create_with_missing_required_fields(self):
+    def test_create_with_missing_required_fields(self, test_athlete_with_height):
         """Test creating entry without required fields"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "weight_kg": 70.0
             # Missing athlete_id and date
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code == 422
     
     def test_get_with_invalid_date_format(self, test_athlete_with_height):
         """Test getting entries with invalid date format"""
+        headers = get_auth_headers(test_athlete_with_height)
         response = client.get(
-            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}&start_date=2024/01/15"
+            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}&start_date=2024/01/15",
+            headers=headers
         )
         # Should handle gracefully or return error
         assert response.status_code in [200, 400, 422]
     
     def test_get_with_reversed_date_range(self, test_athlete_with_height):
         """Test getting entries with reversed date range (end < start)"""
+        headers = get_auth_headers(test_athlete_with_height)
         response = client.get(
-            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}&start_date=2024-01-25&end_date=2024-01-15"
+            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}&start_date=2024-01-25&end_date=2024-01-15",
+            headers=headers
         )
         # Should handle gracefully (return empty or error)
         assert response.status_code in [200, 400]
     
     def test_update_with_weight_to_none(self, test_athlete_with_height):
         """Test updating entry to remove weight"""
+        headers = get_auth_headers(test_athlete_with_height)
         # Create entry
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-26",
             "weight_kg": 70.0
         }
-        create_response = client.post("/v1/body-composition", json=entry_data)
+        create_response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         entry_id = create_response.json()["id"]
         
         # Update to remove weight
         update_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-26",
             "weight_kg": None
         }
-        response = client.put(f"/v1/body-composition/{entry_id}", json=update_data)
+        response = client.put(f"/v1/body-composition/{entry_id}", json=update_data, headers=headers)
         assert response.status_code == 200
         data = response.json()
         assert data["weight_kg"] is None
@@ -655,7 +682,8 @@ class TestBodyCompositionEdgeCases:
     
     def test_multiple_entries_same_athlete_different_dates(self, test_athlete_with_height):
         """Test creating multiple entries for same athlete on different dates"""
-        dates = ["2024-01-15", "2024-01-16", "2024-01-17"]
+        headers = get_auth_headers(test_athlete_with_height)
+        dates = ["2024-01-27", "2024-01-28", "2024-01-29"]
         created_ids = []
         
         for entry_date in dates:
@@ -664,7 +692,7 @@ class TestBodyCompositionEdgeCases:
                 "date": entry_date,
                 "weight_kg": 70.0
             }
-            response = client.post("/v1/body-composition", json=entry_data)
+            response = client.post("/v1/body-composition", json=entry_data, headers=headers)
             assert response.status_code == 201
             created_ids.append(response.json()["id"])
         
@@ -674,76 +702,81 @@ class TestBodyCompositionEdgeCases:
     
     def test_get_with_only_start_date(self, test_athlete_with_height):
         """Test getting entries with only start_date filter"""
+        headers = get_auth_headers(test_athlete_with_height)
         # Create entries
-        dates = ["2024-01-15", "2024-01-20", "2024-01-25"]
+        dates = ["2024-02-15", "2024-02-20", "2024-02-25"]
         for entry_date in dates:
             entry_data = {
                 "athlete_id": str(test_athlete_with_height.id),
                 "date": entry_date,
                 "weight_kg": 70.0
             }
-            client.post("/v1/body-composition", json=entry_data)
+            client.post("/v1/body-composition", json=entry_data, headers=headers)
         
         # Get with only start_date
         response = client.get(
-            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}&start_date=2024-01-20"
+            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}&start_date=2024-02-20",
+            headers=headers
         )
         assert response.status_code == 200
         data = response.json()
-        assert len(data) >= 2  # Should return entries from 2024-01-20 onwards
+        assert len(data) >= 2  # Should return entries from 2024-02-20 onwards
     
     def test_get_with_only_end_date(self, test_athlete_with_height):
         """Test getting entries with only end_date filter"""
+        headers = get_auth_headers(test_athlete_with_height)
         # Create entries
-        dates = ["2024-01-15", "2024-01-20", "2024-01-25"]
+        dates = ["2024-03-15", "2024-03-20", "2024-03-25"]
         for entry_date in dates:
             entry_data = {
                 "athlete_id": str(test_athlete_with_height.id),
                 "date": entry_date,
                 "weight_kg": 70.0
             }
-            client.post("/v1/body-composition", json=entry_data)
+            client.post("/v1/body-composition", json=entry_data, headers=headers)
         
         # Get with only end_date
         response = client.get(
-            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}&end_date=2024-01-20"
+            f"/v1/body-composition?athlete_id={test_athlete_with_height.id}&end_date=2024-03-20",
+            headers=headers
         )
         assert response.status_code == 200
         data = response.json()
-        assert len(data) >= 2  # Should return entries up to 2024-01-20
+        assert len(data) >= 2  # Should return entries up to 2024-03-20
     
     def test_create_with_whitespace_in_notes(self, test_athlete_with_height):
         """Test creating entry with whitespace-only notes"""
+        headers = get_auth_headers(test_athlete_with_height)
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-30",
             "weight_kg": 70.0,
             "notes": "   \n\t   "  # Only whitespace
         }
-        response = client.post("/v1/body-composition", json=entry_data)
+        response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         assert response.status_code == 201
         data = response.json()
         assert data["notes"] == "   \n\t   "
     
     def test_update_date_change(self, test_athlete_with_height):
         """Test updating entry to change date"""
+        headers = get_auth_headers(test_athlete_with_height)
         # Create entry
         entry_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-15",
+            "date": "2024-01-31",
             "weight_kg": 70.0
         }
-        create_response = client.post("/v1/body-composition", json=entry_data)
+        create_response = client.post("/v1/body-composition", json=entry_data, headers=headers)
         entry_id = create_response.json()["id"]
         
         # Update date
         update_data = {
             "athlete_id": str(test_athlete_with_height.id),
-            "date": "2024-01-20",  # Changed date
+            "date": "2024-02-01",  # Changed date
             "weight_kg": 70.0
         }
-        response = client.put(f"/v1/body-composition/{entry_id}", json=update_data)
+        response = client.put(f"/v1/body-composition/{entry_id}", json=update_data, headers=headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["date"] == "2024-01-20"
-
+        assert data["date"] == "2024-02-01"
