@@ -165,3 +165,29 @@ class EmailService:
 email_service = EmailService()
 
 
+def send_email(
+    to_email: str,
+    subject: str,
+    html_content: str,
+    text_content: Optional[str] = None
+) -> bool:
+    """
+    Module-level convenience function for sending emails.
+    Delegates to the singleton EmailService instance.
+    
+    Args:
+        to_email: Recipient email address
+        subject: Email subject line
+        html_content: HTML body of the email
+        text_content: Optional plain text version
+        
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    return email_service.send_email(
+        to_email=to_email,
+        subject=subject,
+        html_content=html_content,
+        text_content=text_content
+    )
+
