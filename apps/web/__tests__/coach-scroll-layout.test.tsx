@@ -35,6 +35,8 @@ describe('Coach scroll layout regression', () => {
     (globalThis as any).requestAnimationFrame =
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).requestAnimationFrame || ((cb: any) => setTimeout(cb, 0));
+    // Mock scrollIntoView (not implemented in JSDOM)
+    Element.prototype.scrollIntoView = jest.fn();
   });
 
   test('transcript is the scroll container; shell is overflow-hidden', () => {

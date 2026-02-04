@@ -3,6 +3,12 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+// Mock scrollIntoView for JSDOM (not implemented)
+beforeAll(() => {
+  Element.prototype.scrollIntoView = jest.fn();
+  window.requestAnimationFrame = (cb) => { cb(0); return 0; };
+});
+
 // `react-markdown` is ESM-only; Jest in this repo runs in CJS mode.
 // For UI smoke, a simple passthrough renderer is sufficient.
 jest.mock('react-markdown', () => ({

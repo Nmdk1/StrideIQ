@@ -17,6 +17,8 @@ jest.mock('@/lib/hooks/queries/admin', () => ({
   useRetryIngestion: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
   useRegenerateStarterPlan: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
   useSetBlocked: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
+  useSetCoachVip: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
+  useDeleteUser: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
   useAdminFeatureFlags: () => ({ data: { flags: [] }, isLoading: false }),
   useSet3dQualitySelectionMode: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
   useOpsQueue: () => ({ data: { available: false, active_count: 0, reserved_count: 0, scheduled_count: 0, workers_seen: [] }, isLoading: false }),
@@ -25,6 +27,13 @@ jest.mock('@/lib/hooks/queries/admin', () => ({
   useOpsStuckIngestion: () => ({ data: { cutoff: new Date().toISOString(), count: 0, items: [] }, isLoading: false }),
   useOpsIngestionErrors: () => ({ data: { cutoff: new Date().toISOString(), count: 0, items: [] }, isLoading: false }),
   useOpsDeferredIngestion: () => ({ data: { now: new Date().toISOString(), count: 0, items: [] }, isLoading: false }),
+  useAdminInvites: () => ({ data: { invites: [] }, isLoading: false }),
+  useCreateInvite: () => ({ mutate: jest.fn(), isPending: false }),
+  useRevokeInvite: () => ({ mutate: jest.fn(), isPending: false }),
+  useAdminRaceCodes: () => ({ data: { codes: [] }, isLoading: false }),
+  useCreateRaceCode: () => ({ mutate: jest.fn(), isPending: false }),
+  useDeactivateRaceCode: () => ({ mutate: jest.fn(), isPending: false }),
+  getRaceCodeQrUrl: () => '',
 }));
 
 jest.mock('@/lib/hooks/queries/query-engine', () => ({
