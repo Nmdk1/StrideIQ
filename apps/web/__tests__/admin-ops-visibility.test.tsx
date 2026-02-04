@@ -25,6 +25,7 @@ jest.mock('@/lib/hooks/queries/admin', () => ({
   useGrantTrial: () => ({ mutate: jest.fn(), isPending: false }),
   useRevokeTrial: () => ({ mutate: jest.fn(), isPending: false }),
   useResetOnboarding: () => ({ mutate: jest.fn(), isPending: false }),
+  useResetPassword: () => ({ mutate: jest.fn(), isPending: false }),
   useRetryIngestion: () => ({ mutate: jest.fn(), isPending: false }),
   useRegenerateStarterPlan: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
   useSetBlocked: () => ({ mutate: jest.fn(), isPending: false }),

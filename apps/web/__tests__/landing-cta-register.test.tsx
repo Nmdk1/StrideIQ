@@ -13,8 +13,8 @@ describe('Landing conversion CTA', () => {
     const startElite = screen.getByRole('link', { name: 'Start Elite' });
     expect(startElite).toHaveAttribute('href', '/register');
 
-    // Paid surface is visible on the landing page.
-    expect(screen.getByText('$18.99')).toBeInTheDocument();
+    // Paid surface is visible on the landing page (monthly price).
+    expect(screen.getByText('$14.99/month')).toBeInTheDocument();
   });
 });
 

@@ -18,6 +18,11 @@ jest.mock('@/components/auth/ProtectedRoute', () => ({
   ProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  usePathname: () => '/insights',
+}));
+
 // AuthContext is used by Insights (AthleteIntelligenceSection)
 const useAuthMock = jest.fn();
 jest.mock('@/lib/context/AuthContext', () => ({

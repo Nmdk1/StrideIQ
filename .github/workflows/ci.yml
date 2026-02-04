@@ -300,8 +300,8 @@ jobs:
             re.compile(r"process\\.env\\.E2E_EMAIL\\s*\\|\\|\\s*['\\\"]"),
 
             # JWT / bearer tokens (very high-signal; avoids generic “Bearer .*” false positives)
-            re.compile(r"Authorization\\s*:\\s*Bearer\\s+eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"),
-            re.compile(r"\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b"),
+            re.compile(r"Authorization\s*:\s*Bearer\s+eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
+            re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
           ]
 
           # Self-test: ensure our regexes actually catch known dummy strings (no repo files involved).
