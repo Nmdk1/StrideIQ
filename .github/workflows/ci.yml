@@ -77,6 +77,10 @@ jobs:
           # Phase 7/8: provider import tests write to UPLOADS_DIR.
           # Use a writable temp directory in GitHub Actions.
           UPLOADS_DIR: /tmp/uploads
+          # Strava OAuth credentials (dummy values for CI tests)
+          STRAVA_CLIENT_ID: "12345"
+          STRAVA_CLIENT_SECRET: "test-strava-secret-for-ci"
+          STRAVA_REDIRECT_URI: "http://localhost:3000/connect/strava/callback"
         run: |
           pytest -q \
             tests/test_phase3_onboarding_golden_path_simulated.py \
@@ -148,6 +152,12 @@ jobs:
           SECRET_KEY: test-secret-key-for-ci-at-least-32-chars
           DEBUG: "false"
           RATE_LIMIT_ENABLED: "false"
+          # Phase 7/8: provider import tests write to UPLOADS_DIR.
+          UPLOADS_DIR: /tmp/uploads
+          # Strava OAuth credentials (dummy values for CI tests)
+          STRAVA_CLIENT_ID: "12345"
+          STRAVA_CLIENT_SECRET: "test-strava-secret-for-ci"
+          STRAVA_REDIRECT_URI: "http://localhost:3000/connect/strava/callback"
         run: |
           pytest -v --cov=. --cov-report=xml --cov-report=term-missing
       

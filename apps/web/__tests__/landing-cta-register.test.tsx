@@ -14,8 +14,9 @@ describe('Landing conversion CTA', () => {
     expect(startElite).toHaveAttribute('href', '/register');
 
     // Paid surface is visible on the landing page (monthly price).
-    // Text appears as "or $14.99/month" in the Pricing component.
-    expect(screen.getByText(/\$14\.99\/month/)).toBeInTheDocument();
+    // Text appears in multiple places - check at least one exists.
+    const priceElements = screen.getAllByText(/\$14\.99\/month/);
+    expect(priceElements.length).toBeGreaterThan(0);
   });
 });
 
