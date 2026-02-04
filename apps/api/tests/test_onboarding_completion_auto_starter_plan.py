@@ -18,7 +18,7 @@ def test_marking_onboarding_complete_auto_creates_starter_plan():
     with an empty calendar (no plan/workouts).
     """
     email = f"auto_plan_{uuid4()}@example.com"
-    password = "password123"
+    password = "SecureP@ss123"
 
     # Register
     reg = client.post("/v1/auth/register", json={"email": email, "password": password, "display_name": "Auto Plan"})
