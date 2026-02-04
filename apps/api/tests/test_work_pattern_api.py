@@ -112,17 +112,28 @@ class TestCreateWorkPattern:
         assert response2.status_code == 400
         assert "already exists" in response2.json()["detail"].lower()
     
-    def test_create_invalid_athlete_id(self, test_athlete):
-        """Test creating entry with non-existent athlete ID"""
+    def test_create_ignores_request_athlete_id(self, test_athlete):
+        """Test that API uses authenticated user's ID, not request body athlete_id.
+        
+        This is correct security behavior - the API should always use the
+        authenticated user's ID from the JWT token, ignoring the athlete_id
+        in the request body.
+        """
         headers = get_auth_headers(test_athlete)
+        random_athlete_id = str(uuid4())  # Different from authenticated user
         entry_data = {
-            "athlete_id": str(uuid4()),
+            "athlete_id": random_athlete_id,
             "date": "2024-01-15",
             "work_type": "desk"
         }
         
         response = client.post("/v1/work-patterns", json=entry_data, headers=headers)
-        assert response.status_code == 404
+        # Should succeed because API uses authenticated user's ID
+        assert response.status_code == 201
+        data = response.json()
+        # Entry should be created for the authenticated user, NOT the random ID
+        assert data["athlete_id"] == str(test_athlete.id)
+        assert data["athlete_id"] != random_athlete_id
     
     def test_create_with_invalid_stress_level_low(self, test_athlete):
         """Test creating entry with stress_level < 1"""

@@ -163,18 +163,28 @@ class TestCreateBodyComposition:
         assert response2.status_code == 400
         assert "already exists" in response2.json()["detail"].lower()
     
-    def test_create_invalid_athlete_id(self, test_athlete_with_height):
-        """Test creating entry with non-existent athlete ID"""
+    def test_create_ignores_request_athlete_id(self, test_athlete_with_height):
+        """Test that API uses authenticated user's ID, not request body athlete_id.
+        
+        This is correct security behavior - the API should always use the
+        authenticated user's ID from the JWT token, ignoring the athlete_id
+        in the request body.
+        """
+        random_athlete_id = str(uuid4())  # Different from authenticated user
         entry_data = {
-            "athlete_id": str(uuid4()),
+            "athlete_id": random_athlete_id,
             "date": "2024-01-15",
             "weight_kg": 70.0
         }
         
         headers = get_auth_headers(test_athlete_with_height)
         response = client.post("/v1/body-composition", json=entry_data, headers=headers)
-        assert response.status_code == 404
-        assert "not found" in response.json()["detail"].lower()
+        # Should succeed because API uses authenticated user's ID
+        assert response.status_code == 201
+        data = response.json()
+        # Entry should be created for the authenticated user, NOT the random ID
+        assert data["athlete_id"] == str(test_athlete_with_height.id)
+        assert data["athlete_id"] != random_athlete_id
     
     def test_create_with_all_fields(self, test_athlete_with_height):
         """Test creating entry with all optional fields"""
