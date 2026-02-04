@@ -64,7 +64,12 @@ jobs:
       - name: Run smoke tests
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/strideiq_test
+          # Individual Postgres settings (code builds URL from these, not DATABASE_URL)
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: strideiq_test
           REDIS_URL: redis://localhost:6379/0
           SECRET_KEY: test-secret-key-for-ci-at-least-32-chars
           DEBUG: "false"
@@ -133,7 +138,12 @@ jobs:
       - name: Run tests with coverage
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/strideiq_test
+          # Individual Postgres settings (code builds URL from these, not DATABASE_URL)
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: strideiq_test
           REDIS_URL: redis://localhost:6379/0
           SECRET_KEY: test-secret-key-for-ci-at-least-32-chars
           DEBUG: "false"
