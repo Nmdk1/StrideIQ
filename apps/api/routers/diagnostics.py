@@ -74,6 +74,8 @@ class RecommendedAction(BaseModel):
 
 
 class DiagnosticsSummaryResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    
     generated_at: str
     overall_status: Literal["ready", "degraded", "blocked"]
     provider_health: List[ProviderHealth]

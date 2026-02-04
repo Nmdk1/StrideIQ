@@ -115,6 +115,14 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     logger.info("Anthropic not installed - high-stakes queries will use GPT-4o fallback")
 
+# Check if Google Generative AI is available (for Gemini 2.5 Flash bulk queries)
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    logger.info("Google Generative AI not installed - bulk queries will use GPT-4o-mini fallback")
+
 from models import (
     Athlete,
     Activity,
@@ -253,11 +261,11 @@ Policy:
 - You can look back up to ~2 years for recent-run tools (up to 730 days). Do not claim you are limited to 30 days."""
 
     # Model tiers (ADR-061: Hybrid architecture with cost caps)
-    # 95% of queries use GPT-4o-mini (cost-efficient)
+    # 95% of queries use Gemini 2.5 Flash (cost-efficient, 1M context)
     # 5% high-stakes queries use Claude Opus 4.5 (maximum reasoning quality)
-    MODEL_DEFAULT = "gpt-4o-mini"           # Standard coaching (95%)
+    MODEL_DEFAULT = "gemini-2.5-flash"      # Standard coaching (95%) - replaced GPT-4o-mini Feb 2026
     MODEL_HIGH_STAKES = "claude-opus-4-5-20251101"  # Injury/recovery/load decisions (5%)
-    MODEL_FALLBACK = "gpt-4o"               # When Opus unavailable/budget exhausted
+    MODEL_FALLBACK = "gpt-4o-mini"          # When Gemini unavailable
     
     # Legacy aliases for backward compatibility
     MODEL_LOW = MODEL_DEFAULT
@@ -271,6 +279,7 @@ Policy:
         self.db = db
         self.client = None
         self.anthropic_client = None
+        self.gemini_model = None
         self.assistant_id = None
         
         # Phase 4/5: Modular components
@@ -289,6 +298,14 @@ Policy:
             if anthropic_key:
                 self.anthropic_client = Anthropic(api_key=anthropic_key)
                 logger.info("Anthropic client initialized for high-stakes routing")
+        
+        # Initialize Gemini client for bulk queries (Feb 2026 migration from GPT-4o-mini)
+        if GEMINI_AVAILABLE:
+            google_key = os.getenv("GOOGLE_AI_API_KEY")
+            if google_key:
+                genai.configure(api_key=google_key)
+                self.gemini_model = genai.GenerativeModel("gemini-2.5-flash")
+                logger.info("Gemini 2.5 Flash initialized for bulk coaching queries")
         
         if OPENAI_AVAILABLE:
             api_key = os.getenv("OPENAI_API_KEY")
@@ -487,6 +504,9 @@ Policy:
                 usage.opus_tokens_this_month += total_tokens
                 # Opus: $5/1M input, $25/1M output
                 cost_cents = int((input_tokens * 0.5 + output_tokens * 2.5) / 100)
+            elif "gemini" in model.lower():
+                # Gemini 2.5 Flash: $0.30/1M input, $2.50/1M output (Feb 2026)
+                cost_cents = int((input_tokens * 0.03 + output_tokens * 0.25) / 100)
             elif "gpt-4o-mini" in model:
                 # GPT-4o-mini: $0.15/1M input, $0.60/1M output
                 cost_cents = int((input_tokens * 0.015 + output_tokens * 0.06) / 100)
@@ -797,6 +817,214 @@ If you need more data to answer well, call the tools. That's why they're there."
                 "response": f"I encountered an error processing your request. Please try again.",
                 "error": True,
                 "model": self.MODEL_HIGH_STAKES,
+                "error_detail": str(e),
+            }
+
+    async def query_gemini(
+        self,
+        athlete_id: UUID,
+        message: str,
+        athlete_state: str,
+        conversation_context: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Query Gemini 2.5 Flash for bulk coaching queries (Feb 2026 migration).
+        
+        Replaces GPT-4o-mini for 95% of queries. Benefits:
+        - 1M context window (no more aggressive pruning)
+        - Competitive pricing ($0.30/1M input, $2.50/1M output)
+        - Fast inference (254 tokens/sec)
+        
+        Uses Gemini API with function calling for tool access.
+        """
+        if not self.gemini_model:
+            # Fallback to OpenAI Assistants if Gemini unavailable
+            logger.info("Gemini not available, falling back to OpenAI Assistants")
+            return {
+                "fallback_to_assistants": True,
+            }
+        
+        # Build Gemini tools (function declarations)
+        gemini_tools = [
+            genai.protos.Tool(
+                function_declarations=[
+                    genai.protos.FunctionDeclaration(
+                        name="get_recent_runs",
+                        description="Fetch the athlete's recent runs including dates, distances, paces, and workout types.",
+                        parameters=genai.protos.Schema(
+                            type=genai.protos.Type.OBJECT,
+                            properties={
+                                "days": genai.protos.Schema(
+                                    type=genai.protos.Type.INTEGER,
+                                    description="How many days back to look (default 14, max 730)"
+                                )
+                            }
+                        )
+                    ),
+                    genai.protos.FunctionDeclaration(
+                        name="get_weekly_volume",
+                        description="Get weekly mileage totals for the athlete over recent weeks.",
+                        parameters=genai.protos.Schema(
+                            type=genai.protos.Type.OBJECT,
+                            properties={
+                                "weeks": genai.protos.Schema(
+                                    type=genai.protos.Type.INTEGER,
+                                    description="Number of weeks to retrieve (default 12, max 104)"
+                                )
+                            }
+                        )
+                    ),
+                    genai.protos.FunctionDeclaration(
+                        name="get_training_load",
+                        description="Get the athlete's current training load metrics: fitness, fatigue, and form.",
+                        parameters=genai.protos.Schema(type=genai.protos.Type.OBJECT, properties={})
+                    ),
+                    genai.protos.FunctionDeclaration(
+                        name="get_training_paces",
+                        description="Get the athlete's recommended training paces for different workout types.",
+                        parameters=genai.protos.Schema(type=genai.protos.Type.OBJECT, properties={})
+                    ),
+                    genai.protos.FunctionDeclaration(
+                        name="get_recovery_status",
+                        description="Get the athlete's current recovery status and injury risk indicators.",
+                        parameters=genai.protos.Schema(type=genai.protos.Type.OBJECT, properties={})
+                    ),
+                    genai.protos.FunctionDeclaration(
+                        name="get_athlete_profile",
+                        description="Get the athlete's profile including age, experience, goals, and preferences.",
+                        parameters=genai.protos.Schema(type=genai.protos.Type.OBJECT, properties={})
+                    ),
+                ]
+            )
+        ]
+        
+        # System prompt for Gemini
+        system_instruction = """You are StrideIQ, an expert running coach. You help athletes train smarter.
+
+YOU HAVE TOOLS - USE THEM:
+- Call get_recent_runs to see the athlete's workout history
+- Call get_weekly_volume for mileage trends over weeks
+- Call get_training_load for current fitness/fatigue/form
+- Call get_training_paces for recommended workout paces
+- Call get_recovery_status for injury risk assessment
+- Call get_athlete_profile for athlete context
+
+COMMUNICATION:
+- Use plain English (never acronyms like TSB, ATL, CTL, TRIMP)
+- NEVER say "VDOT" - always say "RPI" (Running Performance Index) instead
+- Be specific with numbers when possible
+- Cite the data you used ("Looking at your last 2 weeks...")
+- Keep responses concise but helpful"""
+
+        # Build conversation history for Gemini
+        gemini_history = []
+        if conversation_context:
+            for msg in conversation_context[-6:]:
+                role = "user" if msg.get("role") == "user" else "model"
+                gemini_history.append({
+                    "role": role,
+                    "parts": [msg.get("content", "")]
+                })
+        
+        try:
+            # Start chat with history
+            chat = self.gemini_model.start_chat(history=gemini_history)
+            
+            # Configure generation
+            generation_config = genai.GenerationConfig(
+                max_output_tokens=COACH_MAX_OUTPUT_TOKENS,
+                temperature=0.7,
+            )
+            
+            total_input_tokens = 0
+            total_output_tokens = 0
+            
+            # Send message with tools
+            response = chat.send_message(
+                message,
+                generation_config=generation_config,
+                tools=gemini_tools,
+            )
+            
+            # Track usage
+            if hasattr(response, 'usage_metadata'):
+                total_input_tokens += getattr(response.usage_metadata, 'prompt_token_count', 0)
+                total_output_tokens += getattr(response.usage_metadata, 'candidates_token_count', 0)
+            
+            # Handle function calls in a loop (max 5 iterations)
+            for _ in range(5):
+                # Check if there are function calls to process
+                function_calls = []
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'function_call') and part.function_call:
+                        function_calls.append(part.function_call)
+                
+                if not function_calls:
+                    break
+                
+                # Execute function calls and build responses
+                function_responses = []
+                for fc in function_calls:
+                    tool_name = fc.name
+                    tool_args = dict(fc.args) if fc.args else {}
+                    
+                    logger.info(f"Gemini calling tool: {tool_name} with {tool_args}")
+                    result = self._execute_opus_tool(athlete_id, tool_name, tool_args)
+                    
+                    function_responses.append(
+                        genai.protos.Part(
+                            function_response=genai.protos.FunctionResponse(
+                                name=tool_name,
+                                response={"result": result}
+                            )
+                        )
+                    )
+                
+                # Send function results back
+                response = chat.send_message(
+                    genai.protos.Content(parts=function_responses),
+                    generation_config=generation_config,
+                    tools=gemini_tools,
+                )
+                
+                if hasattr(response, 'usage_metadata'):
+                    total_input_tokens += getattr(response.usage_metadata, 'prompt_token_count', 0)
+                    total_output_tokens += getattr(response.usage_metadata, 'candidates_token_count', 0)
+            
+            # Extract final response text
+            response_text = ""
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'text') and part.text:
+                    response_text += part.text
+            
+            # Track usage with Gemini pricing
+            self.track_usage(
+                athlete_id=athlete_id,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                model=self.MODEL_DEFAULT,
+                is_opus=False,
+            )
+            
+            logger.info(
+                f"Gemini query completed: athlete={athlete_id}, "
+                f"input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
+            )
+            
+            return {
+                "response": response_text,
+                "error": False,
+                "model": self.MODEL_DEFAULT,
+                "is_high_stakes": False,
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
+            }
+            
+        except Exception as e:
+            logger.error(f"Gemini query failed for {athlete_id}: {e}")
+            # Return fallback signal so chat() can use OpenAI Assistants
+            return {
+                "fallback_to_assistants": True,
                 "error_detail": str(e),
             }
 
@@ -2127,6 +2355,57 @@ If you need more data to answer well, call the tools. That's why they're there."
                 
                 opus_result["thread_id"] = thread_id
                 return opus_result
+
+            # Route default queries to Gemini 2.5 Flash (Feb 2026 migration)
+            if model == self.MODEL_DEFAULT and self.gemini_model:
+                # Build athlete state for Gemini context
+                athlete_state = self._build_athlete_state_for_opus(athlete_id)
+                
+                # Get recent conversation context
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                conversation_context = []
+                if thread_id:
+                    try:
+                        history_data = self.get_thread_history(athlete_id, limit=6)
+                        history = history_data.get("messages", [])
+                        conversation_context = [
+                            {"role": m.get("role"), "content": m.get("content")}
+                            for m in history if m.get("role") in ("user", "assistant")
+                        ]
+                    except Exception:
+                        pass
+                
+                # Query Gemini
+                gemini_result = await self.query_gemini(
+                    athlete_id=athlete_id,
+                    message=message,
+                    athlete_state=athlete_state,
+                    conversation_context=conversation_context,
+                )
+                
+                # Check if Gemini succeeded or wants fallback to Assistants
+                if not gemini_result.get("fallback_to_assistants"):
+                    # Sync to OpenAI thread for conversation continuity
+                    if thread_id and not gemini_result.get("error"):
+                        try:
+                            self.client.beta.threads.messages.create(
+                                thread_id=thread_id,
+                                role="user",
+                                content=message
+                            )
+                            self.client.beta.threads.messages.create(
+                                thread_id=thread_id,
+                                role="assistant",
+                                content=gemini_result.get("response", "")
+                            )
+                        except Exception as e:
+                            logger.debug(f"Failed to sync Gemini response to thread: {e}")
+                    
+                    gemini_result["thread_id"] = thread_id
+                    return gemini_result
+                else:
+                    # Gemini failed, fall through to OpenAI Assistants
+                    logger.info(f"Gemini fallback triggered: {gemini_result.get('error_detail', 'unknown')}")
 
             thread_id, is_new_thread = self.get_or_create_thread_with_state(athlete_id)
             if not thread_id:
