@@ -96,8 +96,9 @@ class TestPasswordValidation:
     
     def test_edge_case_exactly_72_chars(self):
         """Should accept password with exactly 72 characters"""
-        # 72 chars: 68 A's + "a" + "1" + "@" + "b" = 72
-        pass72 = "A" * 68 + "a1@b"
+        # 72 chars with no more than 2 repeated chars in a row
+        # Pattern: AbCdEfGh... repeating to avoid consecutive repeats
+        pass72 = "AbCdEfGh12@#" * 6  # 12 * 6 = 72 chars
         valid, errors = validate_password(pass72)
         assert valid is True
     

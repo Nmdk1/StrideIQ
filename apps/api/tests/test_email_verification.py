@@ -140,7 +140,7 @@ class TestInitiateEmailChange:
         """Create a mock database session"""
         return MagicMock()
     
-    @patch('services.email_verification.send_email')
+    @patch('services.email_service.send_email')
     def test_sends_verification_email(self, mock_send_email, mock_db, mock_athlete):
         """Should send verification email to new address"""
         mock_send_email.return_value = None  # No exception = success
@@ -154,7 +154,7 @@ class TestInitiateEmailChange:
         call_args = mock_send_email.call_args
         assert call_args[1]["to_email"] == "new@example.com"
     
-    @patch('services.email_verification.send_email')
+    @patch('services.email_service.send_email')
     def test_email_contains_verification_link(self, mock_send_email, mock_db, mock_athlete):
         """Verification email should contain a link with token"""
         mock_send_email.return_value = None
