@@ -119,54 +119,54 @@ class TestQueryComplexityClassifier:
 class TestModelRouting:
     """Test get_model_for_query() method - returns (model_name, is_opus) tuple."""
     
-    def test_low_complexity_uses_nano(self, coach):
-        """LOW complexity should use gpt-4o-mini."""
+    def test_low_complexity_uses_default(self, coach):
+        """LOW complexity should use MODEL_DEFAULT."""
         model, is_opus = coach.get_model_for_query("low")
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
         assert is_opus is False
     
-    def test_medium_complexity_uses_mini(self, coach):
-        """MEDIUM complexity should use gpt-4o-mini (default for non-high-stakes)."""
+    def test_medium_complexity_uses_default(self, coach):
+        """MEDIUM complexity should use MODEL_DEFAULT (for non-high-stakes)."""
         model, is_opus = coach.get_model_for_query("medium")
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
         assert is_opus is False
     
-    def test_high_complexity_non_vip_uses_mini(self, coach):
-        """HIGH complexity for non-VIP uses gpt-4o-mini (no Opus without subscription)."""
+    def test_high_complexity_non_vip_uses_default(self, coach):
+        """HIGH complexity for non-VIP uses MODEL_DEFAULT (no Opus without subscription)."""
         athlete_id = uuid4()
         model, is_opus = coach.get_model_for_query("high", athlete_id=athlete_id)
         # Without subscription/Anthropic client, falls back to default
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
         assert is_opus is False
     
-    def test_high_complexity_vip_uses_mini(self, coach):
-        """HIGH complexity for VIP uses gpt-4o-mini without Anthropic client."""
+    def test_high_complexity_vip_uses_default(self, coach):
+        """HIGH complexity for VIP uses MODEL_DEFAULT without Anthropic client."""
         vip_id = uuid4()
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
         model, is_opus = coach.get_model_for_query("high", athlete_id=vip_id)
         # Without Anthropic client configured, falls back to default
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
         assert is_opus is False
     
     def test_legacy_simple_maps_to_low(self, coach):
-        """Legacy 'simple' query type should use MODEL_LOW."""
+        """Legacy 'simple' query type should use MODEL_DEFAULT."""
         model, is_opus = coach.get_model_for_query("simple")
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
         assert is_opus is False
     
     def test_legacy_standard_reclassifies(self, coach):
-        """Legacy 'standard' should use gpt-4o-mini (non-high-stakes default)."""
-        # Without message, defaults to gpt-4o-mini
+        """Legacy 'standard' should use MODEL_DEFAULT (non-high-stakes default)."""
+        # Without message, defaults to MODEL_DEFAULT
         model, is_opus = coach.get_model_for_query("standard")
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
         
-        # With high-complexity message but no Anthropic client, still gpt-4o-mini
+        # With high-complexity message but no Anthropic client, still MODEL_DEFAULT
         model, is_opus = coach.get_model_for_query(
             "standard", 
             message="Why am I getting slower despite running more?"
         )
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
 
 
 class TestVIPLoading:
@@ -212,35 +212,35 @@ class TestVIPLoading:
 class TestEndToEndClassification:
     """Integration tests for the full classification + routing flow."""
     
-    def test_lookup_query_gets_nano(self, coach):
-        """A lookup query should route to gpt-4o-mini."""
+    def test_lookup_query_gets_default(self, coach):
+        """A lookup query should route to MODEL_DEFAULT."""
         message = "What was my long run last week?"
         complexity = coach.classify_query_complexity(message)
         model, is_opus = coach.get_model_for_query(complexity)
         
         assert complexity == "low"
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
     
-    def test_coaching_query_gets_mini(self, coach):
-        """A standard coaching query should route to gpt-4o-mini (default)."""
+    def test_coaching_query_gets_default(self, coach):
+        """A standard coaching query should route to MODEL_DEFAULT."""
         message = "What pace for my tempo run?"  # Simple pace lookup, no causal/decision
         complexity = coach.classify_query_complexity(message)
         model, is_opus = coach.get_model_for_query(complexity)
         
         assert complexity == "medium"
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
     
-    def test_complex_query_gets_mini_without_anthropic(self, coach):
-        """A complex query without Anthropic client routes to gpt-4o-mini."""
+    def test_complex_query_gets_default_without_anthropic(self, coach):
+        """A complex query without Anthropic client routes to MODEL_DEFAULT."""
         message = "Why am I getting slower despite increasing my mileage?"
         complexity = coach.classify_query_complexity(message)
         model, is_opus = coach.get_model_for_query(complexity, athlete_id=uuid4())
         
         assert complexity == "high"
-        assert model == "gpt-4o-mini"  # No Anthropic client = default
+        assert model == coach.MODEL_DEFAULT  # No Anthropic client = default
     
-    def test_complex_query_vip_gets_mini_without_anthropic(self, coach):
-        """A complex query from VIP without Anthropic routes to gpt-4o-mini."""
+    def test_complex_query_vip_gets_default_without_anthropic(self, coach):
+        """A complex query from VIP without Anthropic routes to MODEL_DEFAULT."""
         vip_id = uuid4()
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
@@ -249,7 +249,7 @@ class TestEndToEndClassification:
         model, is_opus = coach.get_model_for_query(complexity, athlete_id=vip_id)
         
         assert complexity == "high"
-        assert model == "gpt-4o-mini"  # No Anthropic client = default
+        assert model == coach.MODEL_DEFAULT  # No Anthropic client = default
 
 
 class TestToolValidation:
@@ -379,9 +379,9 @@ class TestEdgeCases:
         vip_id = uuid4()
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
-        # Pass UUID object - should still match, but returns mini without Anthropic
+        # Pass UUID object - should still match, but returns default without Anthropic
         model, is_opus = coach.get_model_for_query("high", athlete_id=vip_id)
-        assert model == "gpt-4o-mini"  # No Anthropic client = default
+        assert model == coach.MODEL_DEFAULT  # No Anthropic client = default
     
     def test_non_vip_does_not_get_opus(self, coach):
         """Non-VIP should never get Opus, falls back to default."""
@@ -390,25 +390,25 @@ class TestEdgeCases:
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
         model, is_opus = coach.get_model_for_query("high", athlete_id=non_vip_id)
-        assert model == "gpt-4o-mini"  # No Anthropic client = default
+        assert model == coach.MODEL_DEFAULT  # No Anthropic client = default
     
     def test_none_athlete_id_for_high_complexity(self, coach):
-        """None athlete_id should default to gpt-4o-mini."""
+        """None athlete_id should default to MODEL_DEFAULT."""
         model, is_opus = coach.get_model_for_query("high", athlete_id=None)
-        assert model == "gpt-4o-mini"  # No athlete_id triggers no-subscription path
+        assert model == coach.MODEL_DEFAULT  # No athlete_id triggers no-subscription path
     
     def test_low_complexity_ignores_vip_status(self, coach):
-        """Low complexity should always use gpt-4o-mini, even for VIPs."""
+        """Low complexity should always use MODEL_DEFAULT, even for VIPs."""
         vip_id = uuid4()
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
         model, is_opus = coach.get_model_for_query("low", athlete_id=vip_id)
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
     
     def test_medium_complexity_ignores_vip_status(self, coach):
-        """Medium complexity should always use gpt-4o-mini, even for VIPs."""
+        """Medium complexity should always use MODEL_DEFAULT, even for VIPs."""
         vip_id = uuid4()
         coach.VIP_ATHLETE_IDS = {str(vip_id)}
         
         model, is_opus = coach.get_model_for_query("medium", athlete_id=vip_id)
-        assert model == "gpt-4o-mini"
+        assert model == coach.MODEL_DEFAULT
