@@ -1,6 +1,25 @@
 strideiq.run, www.strideiq.run {
   encode gzip
 
+  # Security Headers (M9 - External Security Report)
+  # Applied to all routes for clickjacking protection, XSS mitigation, etc.
+  header {
+    # Prevent clickjacking
+    X-Frame-Options "DENY"
+    # Prevent MIME type sniffing
+    X-Content-Type-Options "nosniff"
+    # XSS protection (legacy but still useful)
+    X-XSS-Protection "1; mode=block"
+    # Control referrer information
+    Referrer-Policy "strict-origin-when-cross-origin"
+    # Restrict browser features
+    Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+    # HSTS - enforce HTTPS (1 year, include subdomains)
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    # Content Security Policy
+    Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://api.strideiq.run https://api.stripe.com wss:; frame-src https://js.stripe.com https://hooks.stripe.com; frame-ancestors 'none';"
+  }
+
   # Route API + operational endpoints to FastAPI
   @api path /v1/* /v2/* /docs* /openapi.json /redoc* /health* /ping /debug
   handle @api {

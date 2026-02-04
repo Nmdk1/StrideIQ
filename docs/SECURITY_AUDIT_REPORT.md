@@ -1,17 +1,34 @@
 # StrideIQ Security Audit Report
 
 **Date:** February 1, 2026  
+**Updated:** February 4, 2026  
 **Scope:** Full-stack security review (API, authentication, authorization, integrations)
 
 ---
 
 ## Executive Summary
 
-This comprehensive security audit identified **6 Critical**, **5 High**, **8 Medium**, and **6 Low** severity issues. The most severe issues involve **missing authentication on multiple endpoints** that would allow any unauthenticated user to access, modify, or delete any user's data.
+This comprehensive security audit identified **6 Critical**, **6 High**, **9 Medium**, and **6 Low** severity issues. The most severe issues involve **missing authentication on multiple endpoints** that would allow any unauthenticated user to access, modify, or delete any user's data.
 
 ### Risk Score: HIGH
 
 The application has good security infrastructure (JWT auth, token encryption, rate limiting, security headers) but several routers were implemented without authentication, creating critical IDOR vulnerabilities.
+
+---
+
+## External Security Researcher Report (Feb 4, 2026)
+
+A security researcher (Khurram Shoaib) submitted a responsible disclosure with 5 findings. Analysis below:
+
+| Finding | Researcher Assessment | Our Analysis | Status |
+|---------|----------------------|--------------|--------|
+| Email Change Without Verification | Valid | **NEW HIGH - H6** | Needs Fix |
+| Missing DMARC Record | Valid | Infrastructure issue (DNS) | Needs Fix |
+| Clickjacking | Valid for Frontend | API protected, Frontend NOT | Needs Fix |
+| Missing Security Headers | Valid for Frontend | API has headers, Frontend missing | Needs Fix |
+| Weak Password Policy | Valid | Already documented as M2 | Acknowledged |
+
+**Response sent to researcher: Acknowledge findings, implement fixes, offer recognition.**
 
 ---
 
@@ -198,6 +215,50 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30 * 24 * 60  # 30 days
 
 ---
 
+### H6. Email Change Without Verification (NEW - External Report)
+
+**Severity:** HIGH  
+**File:** `apps/api/routers/v1.py:169-180`  
+**Reporter:** Khurram Shoaib (Feb 4, 2026)
+
+**Issue:** Users can change their email address immediately without verification:
+
+```python
+if athlete_update.email is not None:
+    # Only checks if email is taken, NOT if user owns the new email
+    existing = db.query(Athlete).filter(
+        Athlete.email == athlete_update.email,
+        Athlete.id != current_user.id
+    ).first()
+    if existing:
+        raise HTTPException(...)
+    current_user.email = athlete_update.email  # IMMEDIATE CHANGE!
+```
+
+**Impact:**
+- Attacker with temporary access can permanently hijack account
+- Changes password recovery email to attacker-controlled address
+- Legitimate user loses account access
+
+**Fix Required:**
+1. Create `pending_email` column in Athlete model
+2. Generate verification token and send to new email
+3. Only update `email` after verification link clicked
+4. Keep original email active until verified
+
+```python
+# Proposed fix:
+if athlete_update.email is not None and athlete_update.email != current_user.email:
+    token = secrets.token_urlsafe(32)
+    current_user.pending_email = athlete_update.email
+    current_user.email_verification_token = hash_token(token)
+    current_user.email_verification_expires = datetime.utcnow() + timedelta(hours=24)
+    send_verification_email(athlete_update.email, token)
+    # DO NOT update current_user.email here
+```
+
+---
+
 ## Medium Severity Findings
 
 ### M1. SQL LIKE Pattern Injection
@@ -280,6 +341,102 @@ def escape_like(s: str) -> str:
 ### M8. Rate Limiting Not Applied to Auth Endpoints
 
 **Issue:** Registration and password reset endpoints may lack rate limiting.
+
+---
+
+### M9. Frontend Missing Security Headers (NEW - External Report)
+
+**Severity:** MEDIUM  
+**File:** `apps/web/next.config.js`, `Caddyfile`  
+**Reporter:** Khurram Shoaib (Feb 4, 2026)
+
+**Issue:** While the API has comprehensive security headers (`security_headers.py`), the frontend (Next.js) does not:
+
+```javascript
+// Current next.config.js - NO SECURITY HEADERS
+const nextConfig = {
+  reactStrictMode: true,
+  assetPrefix: '',
+  basePath: '',
+}
+```
+
+The Caddyfile also doesn't add headers for the frontend routes.
+
+**Impact:**
+- Clickjacking attacks possible on frontend pages
+- Missing XSS protections in browser
+- No HSTS enforcement for frontend
+
+**Fix Required - Option A (next.config.js):**
+```javascript
+const nextConfig = {
+  reactStrictMode: true,
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-XSS-Protection', value: '1; mode=block' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { 
+            key: 'Content-Security-Policy', 
+            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.strideiq.run;"
+          },
+        ],
+      },
+    ];
+  },
+};
+```
+
+**Fix Required - Option B (Caddyfile - preferred for consistency):**
+```
+strideiq.run, www.strideiq.run {
+  encode gzip
+  
+  header {
+    X-Frame-Options "DENY"
+    X-Content-Type-Options "nosniff"
+    X-XSS-Protection "1; mode=block"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  }
+  
+  # ... rest of config
+}
+```
+
+---
+
+### M10. No DMARC Record for Domain (NEW - External Report)
+
+**Severity:** MEDIUM  
+**Type:** Infrastructure/DNS Configuration  
+**Reporter:** Khurram Shoaib (Feb 4, 2026)
+
+**Issue:** The domain `strideiq.run` does not have a DMARC record configured, allowing email spoofing attacks.
+
+**Impact:**
+- Attackers can send phishing emails appearing from `@strideiq.run`
+- User credentials could be stolen via fake emails
+- Brand reputation damage
+
+**Fix Required (DNS TXT Record):**
+```
+_dmarc.strideiq.run.  TXT  "v=DMARC1; p=reject; rua=mailto:dmarc-reports@strideiq.run; ruf=mailto:dmarc-forensics@strideiq.run; fo=1"
+```
+
+Also ensure SPF and DKIM are properly configured:
+```
+strideiq.run.  TXT  "v=spf1 include:_spf.google.com include:amazonses.com -all"
+```
+
+**Note:** This is a DNS/infrastructure fix, not a code change.
 
 ---
 

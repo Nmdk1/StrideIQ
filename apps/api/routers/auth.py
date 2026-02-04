@@ -132,11 +132,13 @@ def register(
             detail="Email already registered"
         )
     
-    # Validate password strength (basic check)
-    if len(user_data.password) < 8:
+    # Validate password strength (comprehensive policy)
+    from core.password_policy import validate_password
+    is_valid, password_errors = validate_password(user_data.password)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters"
+            detail=password_errors[0] if len(password_errors) == 1 else password_errors
         )
     
     # Determine subscription tier: use invite's grant_tier if set, otherwise "free"
@@ -440,11 +442,13 @@ def reset_password(
     
     Validates the token and updates the password.
     """
-    # Validate password strength
-    if len(request.new_password) < 8:
+    # Validate password strength (comprehensive policy)
+    from core.password_policy import validate_password
+    is_valid, password_errors = validate_password(request.new_password)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters"
+            detail=password_errors[0] if len(password_errors) == 1 else password_errors
         )
     
     # Decode and validate token
@@ -490,5 +494,39 @@ def reset_password(
     return {
         "success": True,
         "message": "Password has been reset. You can now log in with your new password.",
+    }
+
+
+# --- EMAIL CHANGE VERIFICATION ---
+
+class EmailChangeVerifyRequest(BaseModel):
+    """Request to verify email change"""
+    token: str
+
+
+@router.post("/verify-email-change")
+def verify_email_change(
+    request: EmailChangeVerifyRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Verify and complete an email change request.
+    
+    The token is sent to the user's new email address when they request
+    an email change. This endpoint validates the token and updates the email.
+    """
+    from services.email_verification import complete_email_change
+    
+    success, message = complete_email_change(db, request.token)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message
+        )
+    
+    return {
+        "success": True,
+        "message": message
     }
 

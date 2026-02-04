@@ -167,17 +167,38 @@ def update_current_athlete(
     if athlete_update.height_cm is not None:
         current_user.height_cm = athlete_update.height_cm
     if athlete_update.email is not None:
-        # Check if email is already taken by another user
-        existing = db.query(Athlete).filter(
-            Athlete.email == athlete_update.email,
-            Athlete.id != current_user.id
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already in use"
+        # Security: Email changes require verification (see H6 in Security Audit)
+        # Don't change email directly - initiate verification flow instead
+        new_email = athlete_update.email.lower().strip()
+        
+        # Skip if email is the same
+        if new_email != current_user.email:
+            # Check if email is already taken by another user
+            existing = db.query(Athlete).filter(
+                Athlete.email == new_email,
+                Athlete.id != current_user.id
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already in use"
+                )
+            
+            # Generate verification token and send email
+            from services.email_verification import initiate_email_change
+            verification_sent = initiate_email_change(
+                db=db,
+                athlete=current_user,
+                new_email=new_email
             )
-        current_user.email = athlete_update.email
+            
+            if verification_sent:
+                # Return a message that verification is required
+                # The email will NOT be changed until verified
+                raise HTTPException(
+                    status_code=status.HTTP_202_ACCEPTED,
+                    detail=f"Verification email sent to {new_email}. Please click the link to confirm your email change."
+                )
     if athlete_update.onboarding_stage is not None:
         current_user.onboarding_stage = athlete_update.onboarding_stage
     if athlete_update.onboarding_completed is not None:
