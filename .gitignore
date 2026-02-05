@@ -110,3 +110,14 @@ Docker Desktop*
 Cursor.lnk
 *.msi
 *.dmg
+
+# Personal documents (resumes, cover letters)
+Michael_Shaffer_*.pdf
+Michael_Shaffer_*.html
+Michael_Shaffer_*.md
+
+# Temporary log files from debugging
+*-logs.txt
+*-logs-*.txt
+job-logs.txt
+backend-test-logs.txt

@@ -1,7 +1,7 @@
 # StrideIQ Security Audit Report
 
 **Date:** February 1, 2026  
-**Updated:** February 4, 2026  
+**Updated:** February 5, 2026  
 **Scope:** Full-stack security review (API, authentication, authorization, integrations)
 
 ---
@@ -22,13 +22,26 @@ A security researcher (Khurram Shoaib) submitted a responsible disclosure with 5
 
 | Finding | Researcher Assessment | Our Analysis | Status |
 |---------|----------------------|--------------|--------|
-| Email Change Without Verification | Valid | **NEW HIGH - H6** | Needs Fix |
-| Missing DMARC Record | Valid | Infrastructure issue (DNS) | Needs Fix |
-| Clickjacking | Valid for Frontend | API protected, Frontend NOT | Needs Fix |
-| Missing Security Headers | Valid for Frontend | API has headers, Frontend missing | Needs Fix |
-| Weak Password Policy | Valid | Already documented as M2 | Acknowledged |
+| Email Change Without Verification | Valid | **HIGH - H6** | **FIXED** (Feb 5) |
+| Missing DMARC Record | Valid | Infrastructure issue (DNS) | Documented |
+| Clickjacking | Valid for Frontend | API protected, Frontend NOT | **FIXED** (Feb 5) |
+| Missing Security Headers | Valid for Frontend | API has headers, Frontend missing | **FIXED** (Feb 5) |
+| Weak Password Policy | Valid | Already documented as M2 | **FIXED** (Feb 5) |
 
 **Response sent to researcher: Acknowledge findings, implement fixes, offer recognition.**
+
+### Infrastructure Security Fix (Feb 5, 2026)
+
+**Issue:** DigitalOcean notified that Redis port 6379 was publicly exposed.
+
+**Root Cause:** Server was running `docker-compose.yml` (dev) instead of `docker-compose.prod.yml` (prod). The dev compose exposed Redis via docker-proxy on 0.0.0.0:6379.
+
+**Fixes Applied:**
+1. Switched to `docker-compose.prod.yml` which does not expose Redis/Postgres ports
+2. Configured UFW firewall to deny ports 6379 (Redis) and 5432 (Postgres)
+3. Created DigitalOcean Cloud Firewall allowing only ports 22, 80, 443
+
+**Verification:** `ss -tlnp | grep 6379` returns empty (Redis no longer publicly accessible)
 
 ---
 
