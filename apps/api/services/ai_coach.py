@@ -916,6 +916,8 @@ Policy:
         # System prompt for high-stakes reasoning WITH tool guidance
         system_prompt = """You are StrideIQ, an expert running coach. This is a HIGH-STAKES query involving training load, injury risk, or recovery decisions.
 
+CRITICAL: NEVER HALLUCINATE DATA. Every number, distance, pace, and date you cite MUST come from tool results. NEVER fabricate or estimate training data. If you haven't called a tool yet, call one NOW. Violating this rule destroys athlete trust.
+
 YOU HAVE 22 TOOLS — USE THEM PROACTIVELY:
 - ALWAYS call get_weekly_volume first to understand the athlete's training history
 - Call get_recent_runs to see individual workout details (up to 730 days back)
@@ -1328,6 +1330,15 @@ If you need more data to answer well, call the tools. That's why they're there."
 4. **Honest**: If the data is insufficient or inconclusive, say so. Don't guess.
 5. **Action-Oriented**: Every response should include something actionable.
 
+## CRITICAL: NEVER HALLUCINATE DATA
+
+You MUST call tools BEFORE citing ANY numbers, dates, distances, paces, or statistics.
+- NEVER fabricate, estimate, or guess training data. Every number you cite MUST come from a tool result.
+- If you haven't called a tool yet, call one NOW before responding with data.
+- If a tool returns no data or an error, say "I don't have enough data" — do NOT make up values.
+- NEVER claim the athlete ran distances, paces, or volumes that did not come directly from tool output.
+- Violating this rule destroys athlete trust and is the worst possible failure mode.
+
 ## YOU HAVE 22 TOOLS — USE THEM PROACTIVELY
 
 BEFORE answering any question, call the relevant tools to gather data. NEVER say "I don't have access" — you DO have access. Use the tools.
@@ -1358,6 +1369,7 @@ BEFORE answering any question, call the relevant tools to gather data. NEVER say
 ## Evidence & Citations (REQUIRED)
 
 When providing insights:
+- ONLY cite numbers that appear in tool results. Double-check every number before including it.
 - Always cite specific evidence from tool results (ISO dates + human-readable run labels + key values).
 - Format citations clearly: "On 2026-01-15, you ran 8.5 km @ 5:30/km (avg HR 152 bpm)."
 - Never make claims without tool-backed evidence.
@@ -1403,11 +1415,14 @@ When providing insights:
             total_output_tokens = 0
             
             # Configure generation
+            # Temperature 0.2: Gemini docs recommend low temperature for
+            # "more deterministic and reliable function calls". 0.7 caused
+            # hallucination of training data (fabricated distances/volumes).
             config = genai_types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 tools=[gemini_tools],
                 max_output_tokens=COACH_MAX_OUTPUT_TOKENS,
-                temperature=0.7,
+                temperature=0.2,
             )
             
             # Send message with tools
