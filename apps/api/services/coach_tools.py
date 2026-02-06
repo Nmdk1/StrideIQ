@@ -1436,21 +1436,29 @@ def get_weekly_volume(db: Session, athlete_id: UUID, weeks: int = 12) -> Dict[st
             b["total_distance_m"] += float(a.distance_m or 0)
             b["total_duration_s"] += float(a.duration_s or 0)
 
+        current_week_key = end_week_start.isoformat()
         week_rows: List[Dict[str, Any]] = []
         for key in sorted(buckets.keys()):
             b = buckets[key]
             dist_m = float(b["total_distance_m"])
             dur_s = float(b["total_duration_s"])
-            week_rows.append(
-                {
-                    "week_start": b["week_start"],
-                    "week_end": b["week_end"],
-                    "run_count": int(b["run_count"]),
-                    "total_distance_km": round(dist_m / 1000.0, 2),
-                    "total_distance_mi": round(dist_m / _M_PER_MI, 2),
-                    "total_duration_hr": round(dur_s / 3600.0, 2),
-                }
-            )
+            row: Dict[str, Any] = {
+                "week_start": b["week_start"],
+                "week_end": b["week_end"],
+                "run_count": int(b["run_count"]),
+                "total_distance_km": round(dist_m / 1000.0, 2),
+                "total_distance_mi": round(dist_m / _M_PER_MI, 2),
+                "total_duration_hr": round(dur_s / 3600.0, 2),
+            }
+            # Mark the current (in-progress) week so the coach doesn't
+            # confuse partial data with a completed week.
+            if key == current_week_key:
+                days_elapsed = (today - end_week_start).days + 1  # 1-7
+                row["is_current_week"] = True
+                row["days_elapsed"] = days_elapsed
+                row["days_remaining"] = 7 - days_elapsed
+                row["note"] = f"IN PROGRESS — only {days_elapsed} of 7 days completed"
+            week_rows.append(row)
 
         # Evidence: cite the top 3 weeks by distance in preferred units
         def _week_magnitude(wr: Dict[str, Any]) -> float:
@@ -1461,12 +1469,13 @@ def get_weekly_volume(db: Session, athlete_id: UUID, weeks: int = 12) -> Dict[st
         for w in top_weeks:
             dist = w["total_distance_mi"] if units == "imperial" else w["total_distance_km"]
             unit = "mi" if units == "imperial" else "km"
+            partial_note = " (IN PROGRESS — week not complete)" if w.get("is_current_week") else ""
             evidence.append(
                 {
                     "type": "derived",
                     "id": f"weekly_volume:{str(athlete_id)}:{w['week_start']}",
                     "date": w["week_start"],
-                    "value": f"Week of {w['week_start']}: {dist:.1f} {unit} across {w['run_count']} runs",
+                    "value": f"Week of {w['week_start']}: {dist:.1f} {unit} across {w['run_count']} runs{partial_note}",
                 }
             )
 

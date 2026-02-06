@@ -905,9 +905,9 @@ Policy:
         # Build messages
         messages = []
         
-        # Add conversation context (last 3 exchanges max)
+        # Add conversation context (last 5 exchanges)
         if conversation_context:
-            for msg in conversation_context[-6:]:
+            for msg in conversation_context[-10:]:
                 messages.append({
                     "role": msg.get("role", "user"),
                     "content": msg.get("content", ""),
@@ -1397,22 +1397,31 @@ When providing insights:
 5. Consider the athlete's injury history if mentioned
 6. When the athlete is venting or sharing emotions about training, empathize FIRST, then offer data-backed perspective
 
+## CRITICAL: Re-call Tools on Follow-up Messages
+
+Your tool results from previous messages are NOT carried forward — you only see your previous text responses, not the raw tool data. Therefore:
+- On EVERY follow-up message, call the relevant tools again if you need current data
+- Do NOT rely on numbers from your previous text responses — they may be stale or you may misremember them
+- When in doubt, call the tool. It's fast and free.
+
 ## Week Boundary Awareness
 
-Weekly volume data uses ISO weeks (Monday-Sunday). When the athlete says "this week" or "last week", be aware:
-- "This week" may only have partial data if today is mid-week
-- Always state how many runs are included when citing a partial week
+Weekly volume data uses ISO weeks (Monday-Sunday). The current week will be marked `is_current_week: true` with `days_elapsed` and `days_remaining`.
+- When `is_current_week` is true, the mileage is INCOMPLETE — do not treat it as a finished week
+- "Last week" = the most recent COMPLETED week (not the current partial week)
+- When the athlete says "I plan to run X miles this week", compare to the PREVIOUS completed week, not the partial current week
 - If the athlete corrects your numbers, trust THEM — they know their own training
 
 ## Communication Discipline
 
 - If you make an error, correct it briefly and move on. Do NOT over-apologize with phrases like "my deepest apologies" or "I sincerely apologize" — it wastes the athlete's time and destroys confidence. Just say "You're right" and give the correct answer.
-- Keep responses focused and concise. Answer the question directly, then provide supporting evidence."""
+- Keep responses focused and concise. Answer the question directly, then provide supporting evidence.
+- Do NOT pad responses with unnecessary caveats or disclaimers."""
 
-        # Build conversation contents
+        # Build conversation contents (last 5 exchanges = 10 messages)
         contents = []
         if conversation_context:
-            for msg in conversation_context[-6:]:
+            for msg in conversation_context[-10:]:
                 role = "user" if msg.get("role") == "user" else "model"
                 contents.append(genai_types.Content(
                     role=role,
@@ -2831,7 +2840,7 @@ Weekly volume data uses ISO weeks (Monday-Sunday). When the athlete says "this w
                 conversation_context = []
                 if thread_id:
                     try:
-                        history_data = self.get_thread_history(athlete_id, limit=6)
+                        history_data = self.get_thread_history(athlete_id, limit=10)
                         history = history_data.get("messages", [])
                         conversation_context = [
                             {"role": m.get("role"), "content": m.get("content")}
@@ -2877,7 +2886,7 @@ Weekly volume data uses ISO weeks (Monday-Sunday). When the athlete says "this w
                 conversation_context = []
                 if thread_id:
                     try:
-                        history_data = self.get_thread_history(athlete_id, limit=6)
+                        history_data = self.get_thread_history(athlete_id, limit=10)
                         history = history_data.get("messages", [])
                         conversation_context = [
                             {"role": m.get("role"), "content": m.get("content")}
