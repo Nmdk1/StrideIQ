@@ -139,6 +139,7 @@ from models import (
     IntakeQuestionnaire,
     CoachIntentSnapshot,
     CoachUsage,
+    CoachChat,
 )
 from services import coach_tools
 from services.training_load import TrainingLoadCalculator
@@ -1955,87 +1956,120 @@ Weekly volume data uses ISO weeks (Monday-Sunday). The current week will be mark
 
     def get_or_create_thread_with_state(self, athlete_id: UUID) -> Tuple[Optional[str], bool]:
         """
-        Get or create a conversation thread for an athlete.
+        Get or create a conversation session for an athlete using PostgreSQL (CoachChat).
 
         Returns:
-            (thread_id, created_new)
+            (chat_id_str, created_new)
         """
-        if not self.client:
-            return None, False
-
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            return None, False
-
-        if athlete.coach_thread_id:
-            return athlete.coach_thread_id, False
-
         try:
-            thread = self.client.beta.threads.create()
-            athlete.coach_thread_id = thread.id
-            self.db.add(athlete)
+            # Find the most recent active open chat session
+            chat = (
+                self.db.query(CoachChat)
+                .filter(
+                    CoachChat.athlete_id == athlete_id,
+                    CoachChat.context_type == "open",
+                    CoachChat.is_active == True,
+                )
+                .order_by(CoachChat.updated_at.desc())
+                .first()
+            )
+            if chat:
+                return str(chat.id), False
+
+            # Create a new chat session
+            chat = CoachChat(
+                athlete_id=athlete_id,
+                context_type="open",
+                messages=[],
+                is_active=True,
+            )
+            self.db.add(chat)
             self.db.commit()
-            return thread.id, True
+            return str(chat.id), True
         except Exception as e:
             self.db.rollback()
-            logger.error(f"Failed to create/persist thread: {e}")
+            logger.error(f"Failed to get/create coach chat session: {e}")
             return None, False
 
     def get_thread_history(self, athlete_id: UUID, limit: int = 100) -> Dict[str, Any]:
         """
-        Fetch persisted coach thread messages for this athlete.
+        Fetch persisted coach conversation messages from PostgreSQL (CoachChat).
 
         Returns:
             {"thread_id": str|None, "messages": [{"role","content","created_at"}]}
-        
-        Phase 2: Increased defaults (100→500 max) for better conversation context.
         """
         limit = max(1, min(int(limit), 500))
 
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        thread_id = athlete.coach_thread_id if athlete else None
-        if not self.client or not thread_id:
-            return {"thread_id": thread_id, "messages": []}
-
         try:
-            msgs = self.client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=limit)
-            out: List[Dict[str, Any]] = []
-            for m in msgs.data or []:
-                # Assistants API message content can be multiple parts; we take the first text part.
-                content_text = ""
-                try:
-                    if m.content and hasattr(m.content[0], "text"):
-                        content_text = m.content[0].text.value
-                    else:
-                        content_text = str(m.content[0]) if m.content else ""
-                except Exception:
-                    content_text = ""
-
-                # Production-beta: hide internal context injections from UI/history.
-                if (content_text or "").startswith("INTERNAL COACH CONTEXT"):
-                    continue
-
-                created_at = None
-                try:
-                    # created_at is unix seconds
-                    if getattr(m, "created_at", None):
-                        created_at = datetime.utcfromtimestamp(int(m.created_at)).replace(microsecond=0).isoformat()
-                except Exception:
-                    created_at = None
-
-                out.append(
-                    {
-                        "role": getattr(m, "role", None) or "assistant",
-                        "content": content_text,
-                        "created_at": created_at,
-                    }
+            chat = (
+                self.db.query(CoachChat)
+                .filter(
+                    CoachChat.athlete_id == athlete_id,
+                    CoachChat.context_type == "open",
+                    CoachChat.is_active == True,
                 )
+                .order_by(CoachChat.updated_at.desc())
+                .first()
+            )
+            if not chat or not chat.messages:
+                return {"thread_id": str(chat.id) if chat else None, "messages": []}
 
-            out.reverse()  # chronological
-            return {"thread_id": thread_id, "messages": out}
+            # Messages are stored chronologically in the JSONB array.
+            # Return the last `limit` messages.
+            all_msgs = chat.messages or []
+            recent = all_msgs[-limit:] if len(all_msgs) > limit else all_msgs
+
+            out: List[Dict[str, Any]] = []
+            for m in recent:
+                content = m.get("content", "")
+                # Production-beta: hide internal context injections from UI/history.
+                if (content or "").startswith("INTERNAL COACH CONTEXT"):
+                    continue
+                out.append({
+                    "role": m.get("role", "assistant"),
+                    "content": content,
+                    "created_at": m.get("timestamp") or m.get("created_at"),
+                })
+
+            return {"thread_id": str(chat.id), "messages": out}
         except Exception as e:
-            logger.warning(f"Failed to read coach thread history: {e}")
-            return {"thread_id": thread_id, "messages": []}
+            logger.warning(f"Failed to read coach chat history: {e}")
+            return {"thread_id": None, "messages": []}
+
+    def _save_chat_messages(self, athlete_id: UUID, user_message: str, assistant_response: str) -> None:
+        """Save user message and assistant response to PostgreSQL CoachChat."""
+        try:
+            chat = (
+                self.db.query(CoachChat)
+                .filter(
+                    CoachChat.athlete_id == athlete_id,
+                    CoachChat.context_type == "open",
+                    CoachChat.is_active == True,
+                )
+                .order_by(CoachChat.updated_at.desc())
+                .first()
+            )
+            if not chat:
+                chat = CoachChat(
+                    athlete_id=athlete_id,
+                    context_type="open",
+                    messages=[],
+                    is_active=True,
+                )
+                self.db.add(chat)
+
+            now_iso = datetime.utcnow().replace(microsecond=0).isoformat()
+            msgs = list(chat.messages or [])
+            msgs.append({"role": "user", "content": user_message, "timestamp": now_iso})
+            msgs.append({"role": "assistant", "content": assistant_response, "timestamp": now_iso})
+            chat.messages = msgs
+            # Force SQLAlchemy to detect the JSONB change
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(chat, "messages")
+            self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            logger.warning(f"Failed to save coach chat messages: {e}")
     
     def build_context(self, athlete_id: UUID, window_days: int = 30) -> str:
         """
@@ -2857,21 +2891,9 @@ Weekly volume data uses ISO weeks (Monday-Sunday). The current week will be mark
                     conversation_context=conversation_context,
                 )
                 
-                # Add to thread for continuity (store in OpenAI thread too)
-                if thread_id and not opus_result.get("error"):
-                    try:
-                        self.client.beta.threads.messages.create(
-                            thread_id=thread_id,
-                            role="user",
-                            content=message
-                        )
-                        self.client.beta.threads.messages.create(
-                            thread_id=thread_id,
-                            role="assistant",
-                            content=opus_result.get("response", "")
-                        )
-                    except Exception as e:
-                        logger.debug(f"Failed to sync Opus response to thread: {e}")
+                # Save to PostgreSQL (CoachChat) for conversation continuity
+                if not opus_result.get("error"):
+                    self._save_chat_messages(athlete_id, message, opus_result.get("response", ""))
                 
                 opus_result["thread_id"] = thread_id
                 return opus_result
@@ -2905,21 +2927,9 @@ Weekly volume data uses ISO weeks (Monday-Sunday). The current week will be mark
                 
                 # Check if Gemini succeeded or wants fallback to Assistants
                 if not gemini_result.get("fallback_to_assistants"):
-                    # Sync to OpenAI thread for conversation continuity
-                    if thread_id and not gemini_result.get("error"):
-                        try:
-                            self.client.beta.threads.messages.create(
-                                thread_id=thread_id,
-                                role="user",
-                                content=message
-                            )
-                            self.client.beta.threads.messages.create(
-                                thread_id=thread_id,
-                                role="assistant",
-                                content=gemini_result.get("response", "")
-                            )
-                        except Exception as e:
-                            logger.debug(f"Failed to sync Gemini response to thread: {e}")
+                    # Save to PostgreSQL (CoachChat) for conversation continuity
+                    if not gemini_result.get("error"):
+                        self._save_chat_messages(athlete_id, message, gemini_result.get("response", ""))
                     
                     gemini_result["thread_id"] = thread_id
                     return gemini_result

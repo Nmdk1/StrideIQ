@@ -14,7 +14,7 @@ import json
 
 from core.database import get_db
 from core.auth import get_current_athlete
-from models import Athlete
+from models import Athlete, CoachChat
 from services.ai_coach import AICoach
 
 router = APIRouter(prefix="/v1/coach", tags=["AI Coach"])
@@ -163,12 +163,17 @@ async def new_conversation(
     db: Session = Depends(get_db),
 ):
     """
-    Clear the stored coach thread for the athlete.
+    Start a new coach conversation.
 
-    Next chat message will create a new conversation thread.
+    Marks existing open chat sessions as inactive.
+    Next chat message will create a new conversation.
     """
-    athlete.coach_thread_id = None
-    db.add(athlete)
+    # Mark all active open sessions as inactive
+    db.query(CoachChat).filter(
+        CoachChat.athlete_id == athlete.id,
+        CoachChat.context_type == "open",
+        CoachChat.is_active == True,
+    ).update({"is_active": False})
     db.commit()
     return NewConversationResponse(ok=True)
 
