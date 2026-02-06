@@ -329,8 +329,11 @@ class MessageRouter:
         
         True when:
         - The athlete uses return-context language
-        - AND also uses comparison/superlative language
+        - AND uses true superlative/comparison language (longest, fastest, best, etc.)
         - BUT does not provide any concrete return window
+        
+        Does NOT fire on narrative/venting ("returning from injury sucks, I feel slow").
+        Plain adjectives "slow"/"fast" are NOT triggers — only true superlatives.
         """
         lower = (lower_message or "").lower()
         if not lower:
@@ -338,14 +341,8 @@ class MessageRouter:
         if not self.has_return_context(lower):
             return False
 
-        # Check for comparison tokens
-        comparison_tokens = (
-            "longest", "furthest", "fastest", "slowest",
-            "best", "worst", "most", "least",
-            "hardest", "toughest", "easiest",
-            "slow", "fast",
-        )
-        if not any(t in lower for t in comparison_tokens):
+        # Only true superlatives — NOT adjectives like "slow" / "fast"
+        if not self._has_comparison_language(lower):
             return False
 
         has_iso_date = bool(re.search(r"\b20\d{2}-\d{2}-\d{2}\b", lower))

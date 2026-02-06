@@ -573,19 +573,47 @@ Policy:
             return {"error": str(e)}
 
     def _opus_tools(self) -> List[Dict[str, Any]]:
-        """Define tools available to Opus (Anthropic format)."""
+        """Define tools available to Opus (Anthropic format) — FULL tool suite."""
         return [
             {
                 "name": "get_recent_runs",
-                "description": "Get recent running activities with distances, paces, and heart rate data.",
+                "description": "Get recent running activities with distances, paces, heart rates, and workout types.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days to look back (default 14, max 365)",
-                        }
+                        "days": {"type": "integer", "description": "Number of days to look back (default 14, max 730)"}
                     },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_calendar_day_context",
+                "description": "Get plan + actual context for a specific calendar day (planned workout + completed activities with IDs).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "day": {"type": "string", "description": "Calendar date in YYYY-MM-DD format."}
+                    },
+                    "required": ["day"],
+                },
+            },
+            {
+                "name": "get_efficiency_trend",
+                "description": "Get efficiency trend data over time (pace-at-HR time series + summary). Use for 'am I getting fitter?' questions.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "How many days of history to analyze (default 30, max 365)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_plan_week",
+                "description": "Get the current week's planned workouts for the athlete's active training plan.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
                     "required": [],
                 },
             },
@@ -595,10 +623,7 @@ Policy:
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "weeks": {
-                            "type": "integer",
-                            "description": "Number of weeks to look back (default 12, max 104)",
-                        }
+                        "weeks": {"type": "integer", "description": "Number of weeks to look back (default 12, max 104)"}
                     },
                     "required": [],
                 },
@@ -622,8 +647,19 @@ Policy:
                 },
             },
             {
-                "name": "get_recovery_status",
-                "description": "Get recovery metrics including injury risk score.",
+                "name": "get_correlations",
+                "description": "Get correlations between wellness inputs and efficiency outputs.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "How many days of history to analyze (default 30, max 365)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_race_predictions",
+                "description": "Get race time predictions for 5K, 10K, Half Marathon, and Marathon.",
                 "input_schema": {
                     "type": "object",
                     "properties": {},
@@ -631,23 +667,174 @@ Policy:
                 },
             },
             {
-                "name": "get_athlete_profile",
-                "description": "Get athlete profile including age, training history, and preferences.",
+                "name": "get_recovery_status",
+                "description": "Get recovery metrics: half-life, durability index, false fitness and masked fatigue signals.",
                 "input_schema": {
                     "type": "object",
                     "properties": {},
                     "required": [],
                 },
             },
+            {
+                "name": "get_active_insights",
+                "description": "Get prioritized actionable insights for the athlete.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "Max insights to return (default 5, max 10)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_pb_patterns",
+                "description": "Get training patterns that preceded personal bests, including optimal form range.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_efficiency_by_zone",
+                "description": "Get efficiency trend for specific effort zones (easy, threshold, race).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "effort_zone": {"type": "string", "description": "Effort zone to analyze: easy, threshold, or race (default threshold)"},
+                        "days": {"type": "integer", "description": "Days of history (default 90, max 365)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_nutrition_correlations",
+                "description": "Get correlations between pre/post-activity nutrition and performance/recovery.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "Days of history (default 90, max 365)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_best_runs",
+                "description": "Get best runs by an explicit metric (efficiency, pace, distance, intensity_score), optionally filtered to an effort zone.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "History window (default 365, max 730)"},
+                        "metric": {"type": "string", "description": "Ranking metric: efficiency, pace, distance, or intensity_score"},
+                        "limit": {"type": "integer", "description": "Max results (default 5, max 10)"},
+                        "effort_zone": {"type": "string", "description": "Optional effort zone filter: easy, threshold, or race"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "compare_training_periods",
+                "description": "Compare last N days vs the previous N days (volume/run count deltas).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "Days per period (default 28, max 180)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_coach_intent_snapshot",
+                "description": "Get the athlete's current self-guided intent snapshot (goals/constraints) with staleness indicator.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "ttl_days": {"type": "integer", "description": "How long the snapshot is considered fresh (default 7)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "set_coach_intent_snapshot",
+                "description": "Update the athlete's self-guided intent snapshot (athlete-led) to avoid repetitive questioning.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "training_intent": {"type": "string", "description": "Athlete intent: through_fatigue | build_fitness | freshen_for_event"},
+                        "next_event_date": {"type": "string", "description": "Optional YYYY-MM-DD for race/benchmark"},
+                        "next_event_type": {"type": "string", "description": "Optional: race | benchmark | other"},
+                        "pain_flag": {"type": "string", "description": "none | niggle | pain"},
+                        "time_available_min": {"type": "integer", "description": "Typical time available (minutes)"},
+                        "weekly_mileage_target": {"type": "number", "description": "Athlete-stated target miles/week"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_training_prescription_window",
+                "description": "Deterministically prescribe training for 1-7 days (exact distances/paces/structure).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string", "description": "Start date YYYY-MM-DD (default today)"},
+                        "days": {"type": "integer", "description": "How many days (1-7)"},
+                        "time_available_min": {"type": "integer", "description": "Optional time cap for workouts (minutes)"},
+                        "weekly_mileage_target": {"type": "number", "description": "Optional athlete target miles/week"},
+                        "pain_flag": {"type": "string", "description": "none | niggle | pain"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_wellness_trends",
+                "description": "Get wellness trends from daily check-ins: sleep, stress, soreness, HRV, resting HR, and mindset metrics over time.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "How many days of wellness data to analyze (default 28, max 90)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_athlete_profile",
+                "description": "Get athlete physiological profile: max HR, threshold paces, RPI, runner type, HR zones, and training metrics.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_training_load_history",
+                "description": "Get daily fitness/fatigue/form history showing training load progression and injury risk over time.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "How many days of load history (default 42, max 90)"}
+                    },
+                    "required": [],
+                },
+            },
         ]
 
     def _execute_opus_tool(self, athlete_id: UUID, tool_name: str, tool_input: Dict[str, Any]) -> str:
-        """Execute a tool call for Opus and return JSON result."""
+        """Execute a tool call for Opus/Gemini and return JSON result.
+        
+        Handles the FULL tool suite (same as OpenAI Assistants).
+        Used by both query_opus() and query_gemini() code paths.
+        """
         import json
         try:
             if tool_name == "get_recent_runs":
                 days = tool_input.get("days", 14)
-                result = coach_tools.get_recent_runs(self.db, athlete_id, days=min(days, 365))
+                result = coach_tools.get_recent_runs(self.db, athlete_id, days=min(days, 730))
+            elif tool_name == "get_calendar_day_context":
+                result = coach_tools.get_calendar_day_context(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_efficiency_trend":
+                result = coach_tools.get_efficiency_trend(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_plan_week":
+                result = coach_tools.get_plan_week(self.db, athlete_id)
             elif tool_name == "get_weekly_volume":
                 weeks = tool_input.get("weeks", 12)
                 result = coach_tools.get_weekly_volume(self.db, athlete_id, weeks=min(weeks, 104))
@@ -655,14 +842,41 @@ Policy:
                 result = coach_tools.get_training_load(self.db, athlete_id)
             elif tool_name == "get_training_paces":
                 result = coach_tools.get_training_paces(self.db, athlete_id)
+            elif tool_name == "get_correlations":
+                result = coach_tools.get_correlations(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_race_predictions":
+                result = coach_tools.get_race_predictions(self.db, athlete_id)
             elif tool_name == "get_recovery_status":
                 result = coach_tools.get_recovery_status(self.db, athlete_id)
+            elif tool_name == "get_active_insights":
+                result = coach_tools.get_active_insights(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_pb_patterns":
+                result = coach_tools.get_pb_patterns(self.db, athlete_id)
+            elif tool_name == "get_efficiency_by_zone":
+                result = coach_tools.get_efficiency_by_zone(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_nutrition_correlations":
+                result = coach_tools.get_nutrition_correlations(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_best_runs":
+                result = coach_tools.get_best_runs(self.db, athlete_id, **tool_input)
+            elif tool_name == "compare_training_periods":
+                result = coach_tools.compare_training_periods(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_coach_intent_snapshot":
+                result = coach_tools.get_coach_intent_snapshot(self.db, athlete_id, **tool_input)
+            elif tool_name == "set_coach_intent_snapshot":
+                result = coach_tools.set_coach_intent_snapshot(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_training_prescription_window":
+                result = coach_tools.get_training_prescription_window(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_wellness_trends":
+                result = coach_tools.get_wellness_trends(self.db, athlete_id, **tool_input)
             elif tool_name == "get_athlete_profile":
                 result = coach_tools.get_athlete_profile(self.db, athlete_id)
+            elif tool_name == "get_training_load_history":
+                result = coach_tools.get_training_load_history(self.db, athlete_id, **tool_input)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return json.dumps(result, default=str)
         except Exception as e:
+            logger.warning(f"Tool execution error for {tool_name}: {e}")
             return json.dumps({"error": str(e)})
 
     async def query_opus(
@@ -702,25 +916,34 @@ Policy:
         # System prompt for high-stakes reasoning WITH tool guidance
         system_prompt = """You are StrideIQ, an expert running coach. This is a HIGH-STAKES query involving training load, injury risk, or recovery decisions.
 
-YOU HAVE TOOLS - USE THEM:
+YOU HAVE 22 TOOLS — USE THEM PROACTIVELY:
 - ALWAYS call get_weekly_volume first to understand the athlete's training history
-- Call get_recent_runs to see individual workout details
+- Call get_recent_runs to see individual workout details (up to 730 days back)
 - Call get_training_load for current fitness/fatigue/form
+- Call get_training_load_history for load progression over time
 - Call get_recovery_status for injury risk assessment
 - Call get_athlete_profile for age, experience, preferences
+- Call get_efficiency_trend to track fitness changes over time
+- Call get_best_runs for peak performance data
+- Call compare_training_periods to compare recent vs previous training
+- Call get_calendar_day_context for specific day plan + actual
+- Call get_wellness_trends for sleep, stress, soreness patterns
+- NEVER say "I don't have access" — call the tools instead
 
 REASONING APPROACH:
 1. First gather data with tools - look at weeks/months of history, not just recent days
 2. Identify patterns: returning from injury? building mileage? overreaching?
 3. Consider the athlete's context (age, experience, goals)
 4. Make specific, evidence-based recommendations
+5. When the athlete is venting or emotional, empathize FIRST, then offer data perspective
 
 COMMUNICATION:
 - Use plain English (never acronyms like TSB, ATL, CTL)
 - NEVER say "VDOT" - always say "RPI" (Running Performance Index) instead
 - Be specific with numbers (recommend "42-45 miles" not "increase gradually")
-- Cite the data you used ("Looking at your last 8 weeks...")
+- Cite the data you used with dates and values ("On 2026-01-15, you ran 8.5 mi @ 9:04/mi...")
 - Be conservative with injury-related advice
+- Do NOT repeat yourself or give the same response multiple times
 
 If you need more data to answer well, call the tools. That's why they're there."""
         
@@ -850,11 +1073,11 @@ If you need more data to answer well, call the tools. That's why they're there."
                 "fallback_to_assistants": True,
             }
         
-        # Build Gemini tools (function declarations)
+        # Build Gemini tools (function declarations) — FULL tool suite
         function_declarations = [
             {
                 "name": "get_recent_runs",
-                "description": "Fetch the athlete's recent runs including dates, distances, paces, and workout types.",
+                "description": "Fetch the athlete's recent runs including dates, distances, paces, heart rates, and workout types.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -864,6 +1087,38 @@ If you need more data to answer well, call the tools. That's why they're there."
                         }
                     }
                 }
+            },
+            {
+                "name": "get_calendar_day_context",
+                "description": "Get plan + actual context for a specific calendar day (planned workout + completed activities with IDs).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "day": {
+                            "type": "string",
+                            "description": "Calendar date in YYYY-MM-DD format."
+                        }
+                    },
+                    "required": ["day"]
+                }
+            },
+            {
+                "name": "get_efficiency_trend",
+                "description": "Get efficiency trend data over time (pace-at-HR time series + summary). Use for 'am I getting fitter?' questions.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days of history to analyze (default 30, max 365)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_plan_week",
+                "description": "Get the current week's planned workouts for the athlete's active training plan.",
+                "parameters": {"type": "object", "properties": {}}
             },
             {
                 "name": "get_weekly_volume",
@@ -885,40 +1140,247 @@ If you need more data to answer well, call the tools. That's why they're there."
             },
             {
                 "name": "get_training_paces",
-                "description": "Get the athlete's recommended training paces for different workout types.",
+                "description": "Get RPI-based training paces (easy, threshold, interval, marathon). THIS IS THE AUTHORITATIVE SOURCE for training paces.",
+                "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "get_correlations",
+                "description": "Get correlations between wellness inputs and efficiency outputs.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days of history to analyze (default 30, max 365)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_race_predictions",
+                "description": "Get race time predictions for 5K, 10K, Half Marathon, and Marathon.",
                 "parameters": {"type": "object", "properties": {}}
             },
             {
                 "name": "get_recovery_status",
-                "description": "Get the athlete's current recovery status and injury risk indicators.",
+                "description": "Get recovery metrics: half-life, durability index, false fitness and masked fatigue signals.",
                 "parameters": {"type": "object", "properties": {}}
             },
             {
-                "name": "get_athlete_profile",
-                "description": "Get the athlete's profile including age, experience, goals, and preferences.",
+                "name": "get_active_insights",
+                "description": "Get prioritized actionable insights for the athlete.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max insights to return (default 5, max 10)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_pb_patterns",
+                "description": "Get training patterns that preceded personal bests, including optimal form range.",
                 "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "get_efficiency_by_zone",
+                "description": "Get efficiency trend for specific effort zones (easy, threshold, race).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "effort_zone": {
+                            "type": "string",
+                            "description": "Effort zone to analyze: easy, threshold, or race (default threshold)"
+                        },
+                        "days": {
+                            "type": "integer",
+                            "description": "Days of history (default 90, max 365)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_nutrition_correlations",
+                "description": "Get correlations between pre/post-activity nutrition and performance/recovery.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "Days of history (default 90, max 365)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_best_runs",
+                "description": "Get best runs by an explicit metric (efficiency, pace, distance, intensity_score), optionally filtered to an effort zone.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "History window (default 365, max 730)"},
+                        "metric": {
+                            "type": "string",
+                            "description": "Ranking metric: efficiency, pace, distance, or intensity_score"
+                        },
+                        "limit": {"type": "integer", "description": "Max results (default 5, max 10)"},
+                        "effort_zone": {
+                            "type": "string",
+                            "description": "Optional effort zone filter: easy, threshold, or race"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "compare_training_periods",
+                "description": "Compare last N days vs the previous N days (volume/run count deltas).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "Days per period (default 28, max 180)"}
+                    }
+                }
+            },
+            {
+                "name": "get_coach_intent_snapshot",
+                "description": "Get the athlete's current self-guided intent snapshot (goals/constraints) with staleness indicator.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "ttl_days": {"type": "integer", "description": "How long the snapshot is considered fresh (default 7)"}
+                    }
+                }
+            },
+            {
+                "name": "set_coach_intent_snapshot",
+                "description": "Update the athlete's self-guided intent snapshot (athlete-led) to avoid repetitive questioning.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "training_intent": {"type": "string", "description": "Athlete intent: through_fatigue | build_fitness | freshen_for_event"},
+                        "next_event_date": {"type": "string", "description": "Optional YYYY-MM-DD for race/benchmark"},
+                        "next_event_type": {"type": "string", "description": "Optional: race | benchmark | other"},
+                        "pain_flag": {"type": "string", "description": "none | niggle | pain"},
+                        "time_available_min": {"type": "integer", "description": "Typical time available (minutes)"},
+                        "weekly_mileage_target": {"type": "number", "description": "Athlete-stated target miles/week"}
+                    }
+                }
+            },
+            {
+                "name": "get_training_prescription_window",
+                "description": "Deterministically prescribe training for 1-7 days (exact distances/paces/structure).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string", "description": "Start date YYYY-MM-DD (default today)"},
+                        "days": {"type": "integer", "description": "How many days (1-7)"},
+                        "time_available_min": {"type": "integer", "description": "Optional time cap for workouts (minutes)"},
+                        "weekly_mileage_target": {"type": "number", "description": "Optional athlete target miles/week"},
+                        "pain_flag": {"type": "string", "description": "none | niggle | pain"}
+                    }
+                }
+            },
+            {
+                "name": "get_wellness_trends",
+                "description": "Get wellness trends from daily check-ins: sleep, stress, soreness, HRV, resting HR, and mindset metrics over time.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days of wellness data to analyze (default 28, max 90)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_athlete_profile",
+                "description": "Get athlete physiological profile: max HR, threshold paces, RPI, runner type, HR zones, and training metrics.",
+                "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "get_training_load_history",
+                "description": "Get daily fitness/fatigue/form history showing training load progression and injury risk over time.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days of load history (default 42, max 90)"
+                        }
+                    }
+                }
             },
         ]
         
         gemini_tools = genai_types.Tool(function_declarations=function_declarations)
         
-        # System prompt for Gemini
-        system_instruction = """You are StrideIQ, an expert running coach. You help athletes train smarter.
+        # System prompt for Gemini — includes full coaching instructions
+        system_instruction = """You are StrideIQ, an AI running coach. You provide personalized, data-driven guidance to runners.
 
-YOU HAVE TOOLS - USE THEM:
-- Call get_recent_runs to see the athlete's workout history
-- Call get_weekly_volume for mileage trends over weeks
-- Call get_training_load for current fitness/fatigue/form
-- Call get_training_paces for recommended workout paces
-- Call get_recovery_status for injury risk assessment
-- Call get_athlete_profile for athlete context
+## Core Principles
 
-COMMUNICATION:
-- Use plain English (never acronyms like TSB, ATL, CTL, TRIMP)
-- NEVER say "VDOT" - always say "RPI" (Running Performance Index) instead
-- Be specific with numbers when possible
-- Cite the data you used ("Looking at your last 2 weeks...")
-- Keep responses concise but helpful"""
+1. **Data-Driven**: Always ground advice in the athlete's actual training data. Never make assumptions.
+2. **Efficiency-Focused**: The key metric is running efficiency (pace at a given heart rate). Faster pace at same HR = improvement.
+3. **Individualized**: Patterns from THIS athlete's data matter more than generic advice.
+4. **Honest**: If the data is insufficient or inconclusive, say so. Don't guess.
+5. **Action-Oriented**: Every response should include something actionable.
+
+## YOU HAVE 22 TOOLS — USE THEM PROACTIVELY
+
+BEFORE answering any question, call the relevant tools to gather data. NEVER say "I don't have access" — you DO have access. Use the tools.
+
+- get_recent_runs: Workout history (up to 730 days back)
+- get_calendar_day_context: Plan + actual for a specific day (YYYY-MM-DD)
+- get_efficiency_trend: Am I getting fitter? (pace-at-HR over time)
+- get_plan_week: This week's planned workouts
+- get_weekly_volume: Weekly mileage trends (up to 104 weeks)
+- get_training_load: Current fitness/fatigue/form
+- get_training_paces: RPI-based recommended paces (AUTHORITATIVE SOURCE for paces)
+- get_correlations: Wellness ↔ efficiency correlations
+- get_race_predictions: 5K/10K/HM/Marathon predictions
+- get_recovery_status: Recovery metrics + injury risk
+- get_active_insights: Prioritized actionable insights
+- get_pb_patterns: Training patterns before personal bests
+- get_efficiency_by_zone: Efficiency by effort zone (easy/threshold/race)
+- get_nutrition_correlations: Nutrition ↔ performance links
+- get_best_runs: Best runs by metric (efficiency/pace/distance/intensity)
+- compare_training_periods: Last N days vs previous N days
+- get_coach_intent_snapshot: Athlete goals/constraints
+- set_coach_intent_snapshot: Update athlete intent
+- get_training_prescription_window: Prescribe 1-7 days of training
+- get_wellness_trends: Sleep, stress, soreness, HRV trends
+- get_athlete_profile: Physiological profile (max HR, RPI, zones)
+- get_training_load_history: Daily fitness/fatigue/form history
+
+## Evidence & Citations (REQUIRED)
+
+When providing insights:
+- Always cite specific evidence from tool results (ISO dates + human-readable run labels + key values).
+- Format citations clearly: "On 2026-01-15, you ran 8.5 km @ 5:30/km (avg HR 152 bpm)."
+- Never make claims without tool-backed evidence.
+- For "Am I getting fitter?" questions, use get_efficiency_trend and cite at least 2 data points.
+
+## Communication Style
+
+- Be concise and clear — use markdown structure
+- NEVER use training acronyms (TSB, ATL, CTL, TRIMP) — use plain English (fatigue, fitness, form)
+- NEVER say "VDOT" — always say "RPI" (Running Performance Index)
+- Do NOT repeat yourself or give the same canned response multiple times
+- Be encouraging but never sugarcoat problems
+- Use the athlete's preferred units (metric or imperial)
+- You can look back up to ~2 years (730 days). Do not claim you are limited to 30 days.
+
+## Important Rules
+
+1. Never recommend medical advice — refer to healthcare professionals
+2. Never recommend extreme diets or protocols
+3. Always acknowledge when you're uncertain
+4. Base recommendations on the athlete's current fitness level, not aspirational goals
+5. Consider the athlete's injury history if mentioned
+6. When the athlete is venting or sharing emotions about training, empathize FIRST, then offer data-backed perspective"""
 
         # Build conversation contents
         contents = []
@@ -4325,10 +4787,15 @@ COMMUNICATION:
         """
         True when:
         - The athlete uses return-context language ("since coming back", "after injury", etc.)
-        - AND also uses comparison/superlative language ("longest", "slow", etc.)
-        - BUT does not provide any concrete return window (date, \"6 weeks\", month name).
+        - AND uses true superlative/comparison language ("longest", "fastest", "best", etc.)
+        - BUT does not provide any concrete return window (date, "6 weeks", month name).
 
-        This is a production-beta trust guardrail: ask a clarifying question instead of assuming.
+        This is a production-beta trust guardrail: ask a clarifying question instead
+        of assuming an all-time scope.
+
+        IMPORTANT: Does NOT fire on narrative/venting statements like "returning from
+        injury sucks" or "I'm running slow". The plain adjectives "slow" and "fast"
+        are NOT treated as comparison triggers — only true superlatives are.
         """
         lower = (lower_message or "").lower()
         if not lower:
@@ -4336,22 +4803,16 @@ COMMUNICATION:
         if not self._has_return_context(lower):
             return False
 
-        # Comparison/superlative tokens (include common sentiment like "slow").
-        if not (
-            "longest" in lower
-            or "furthest" in lower
-            or "fastest" in lower
-            or "slowest" in lower
-            or "best" in lower
-            or "worst" in lower
-            or "most" in lower
-            or "least" in lower
-            or "hardest" in lower
-            or "toughest" in lower
-            or "easiest" in lower
-            or "slow" in lower
-            or "fast" in lower
-        ):
+        # Only fire on TRUE superlative/comparison terms that imply a ranking/scope.
+        # "slow" and "fast" are plain adjectives describing current state — NOT triggers.
+        # "I'm running slow" is venting, not a comparison question.
+        _SUPERLATIVE_TERMS = (
+            "longest", "furthest", "fastest", "slowest",
+            "best", "worst", "most", "least",
+            "hardest", "toughest", "easiest",
+            "biggest", "smallest",
+        )
+        if not any(term in lower for term in _SUPERLATIVE_TERMS):
             return False
 
         has_iso_date = bool(re.search(r"\b20\d{2}-\d{2}-\d{2}\b", lower))
