@@ -79,7 +79,10 @@ COACH_MAX_OPUS_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY
 COACH_MONTHLY_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_TOKEN_BUDGET", "1000000"))
 COACH_MONTHLY_OPUS_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET", "50000"))
 COACH_MAX_INPUT_TOKENS = int(os.getenv("COACH_MAX_INPUT_TOKENS", "4000"))
-COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "500"))
+# 500 tokens was causing every response to get cut off mid-sentence.
+# 1500 tokens (~600 words) allows a complete, well-structured coaching response
+# with evidence citations without truncation.
+COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "1500"))
 
 
 def is_high_stakes_query(message: str) -> bool:
@@ -1392,7 +1395,19 @@ When providing insights:
 3. Always acknowledge when you're uncertain
 4. Base recommendations on the athlete's current fitness level, not aspirational goals
 5. Consider the athlete's injury history if mentioned
-6. When the athlete is venting or sharing emotions about training, empathize FIRST, then offer data-backed perspective"""
+6. When the athlete is venting or sharing emotions about training, empathize FIRST, then offer data-backed perspective
+
+## Week Boundary Awareness
+
+Weekly volume data uses ISO weeks (Monday-Sunday). When the athlete says "this week" or "last week", be aware:
+- "This week" may only have partial data if today is mid-week
+- Always state how many runs are included when citing a partial week
+- If the athlete corrects your numbers, trust THEM — they know their own training
+
+## Communication Discipline
+
+- If you make an error, correct it briefly and move on. Do NOT over-apologize with phrases like "my deepest apologies" or "I sincerely apologize" — it wastes the athlete's time and destroys confidence. Just say "You're right" and give the correct answer.
+- Keep responses focused and concise. Answer the question directly, then provide supporting evidence."""
 
         # Build conversation contents
         contents = []
