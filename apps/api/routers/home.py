@@ -455,36 +455,35 @@ def generate_yesterday_insight(activity: Activity) -> str:
 
 def generate_coach_home_briefing(
     athlete_id: str,
-    checkin_data: Optional[dict],
-    workout_data: dict,
-    week_data: dict,
-    race_data: Optional[dict],
-    coach_noticed_text: Optional[str],
-    tsb_context: Optional[str],
+    db: Session,
+    today_completed: Optional[dict] = None,
+    planned_workout: Optional[dict] = None,
+    checkin_data: Optional[dict] = None,
+    race_data: Optional[dict] = None,
 ) -> Optional[dict]:
     """
-    Generate real coaching narratives for every home page card using Gemini.
-    
-    One LLM call, structured output. Cached in Redis keyed by data hash.
-    Returns dict with keys: coach_noticed, checkin_reaction, today_context,
-    week_assessment, race_assessment.
+    Generate coaching narratives for every home page card using Gemini.
+
+    Uses the full ADR-16 athlete brief as context — the same rich
+    pre-computed brief the coach chat uses. No ad-hoc data scraping.
+
+    Cached in Redis keyed by athlete + data hash.
     """
     import hashlib
     import json as _json
-    
+
     # Build data fingerprint for cache key
     cache_input = _json.dumps({
+        "completed": today_completed,
+        "planned": planned_workout,
         "checkin": checkin_data,
-        "workout": workout_data,
-        "week": week_data,
         "race": race_data,
-        "noticed": coach_noticed_text,
-        "tsb": tsb_context,
     }, sort_keys=True, default=str)
     data_hash = hashlib.md5(cache_input.encode()).hexdigest()[:12]
     cache_key = f"coach_home_briefing:{athlete_id}:{data_hash}"
-    
+
     # Check Redis cache
+    r = None
     try:
         import redis
         import os
@@ -495,95 +494,88 @@ def generate_coach_home_briefing(
             return _json.loads(cached)
     except Exception:
         r = None
-    
-    # Build the prompt — data context only, no JSON instructions needed
-    # (structured output via response_schema guarantees valid JSON)
-    sections = []
-    sections.append("You are an elite running coach speaking directly to your athlete about TODAY.")
-    sections.append("Be specific, direct, insightful. Reference their actual data. 1-2 sentences per field max.")
-    sections.append("Sound like a real coach who knows this athlete, not a dashboard or chatbot.")
-    sections.append("CRITICAL: Do NOT say the athlete already completed today's workout. The workout below is PLANNED, not done yet.")
-    sections.append("CRITICAL: Only reference data explicitly provided. Do NOT invent or assume activities, distances, or results.")
-    sections.append("")
-    
-    if coach_noticed_text:
-        sections.append(f"Key Insight (from recent training history, NOT today): {coach_noticed_text}")
-    
-    if checkin_data:
-        sections.append(f"Today's Check-in: Feeling {checkin_data.get('motivation_label', 'unknown')}, Sleep {checkin_data.get('sleep_label', 'unknown')}, Soreness {checkin_data.get('soreness_label', 'unknown')}")
-    
-    completed = workout_data.get("completed")
-    if completed:
-        # Athlete HAS completed a run today
-        c = completed
-        sections.append(f"COMPLETED Run Today: {c.get('name')}, {c.get('distance_mi')}mi, pace {c.get('pace')}, avg HR {c.get('avg_hr', 'N/A')}, duration {c.get('duration_min')}min")
-        if workout_data.get("has_workout"):
-            plan_mi = workout_data.get("distance_mi")
-            plan_type = workout_data.get("title") or workout_data.get("workout_type")
+
+    # ADR-16: Get the full athlete brief — same context the coach chat uses
+    try:
+        from services.coach_tools import build_athlete_brief
+        from uuid import UUID
+        athlete_brief = build_athlete_brief(db, UUID(athlete_id))
+    except Exception as e:
+        logger.warning(f"Failed to build athlete brief for home briefing: {e}")
+        athlete_brief = "(Brief unavailable)"
+
+    # Build the prompt
+    parts = [
+        "You are an elite running coach speaking directly to your athlete about TODAY.",
+        "You have their full training profile below. Use it. Be specific, direct, insightful.",
+        "Reference their actual numbers. Sound like a real coach, not a dashboard.",
+        "CRITICAL: Only reference data explicitly provided. Do NOT invent or assume anything.",
+        "1-2 sentences per field max.",
+        "",
+        "=== ATHLETE BRIEF ===",
+        athlete_brief,
+        "",
+        "=== TODAY ===",
+    ]
+
+    if today_completed:
+        c = today_completed
+        parts.append(f"COMPLETED today: {c.get('name')}, {c.get('distance_mi')}mi, pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}, {c.get('duration_min')}min")
+        if planned_workout and planned_workout.get("has_workout"):
+            plan_mi = planned_workout.get("distance_mi")
+            plan_type = planned_workout.get("title") or planned_workout.get("workout_type")
             if plan_mi and c.get("distance_mi") and abs(c["distance_mi"] - plan_mi) > 1.0:
-                sections.append(f"Plan called for {plan_mi}mi {plan_type} but athlete ran {c['distance_mi']}mi instead. Acknowledge the deviation.")
-            else:
-                sections.append(f"This matched the plan: {plan_mi}mi {plan_type}.")
-    elif workout_data.get("has_workout"):
-        w = workout_data
-        sections.append(f"PLANNED Workout for Today (NOT yet completed): {w.get('title') or w.get('workout_type', 'run')}, {w.get('distance_mi', '?')}mi, pace {w.get('pace_guidance', 'by feel')}")
-        if w.get("why_context"):
-            sections.append(f"Plan context: {w['why_context']}")
-        if w.get("phase"):
-            sections.append(f"Phase: {w['phase']}, Week {w.get('week_number', '?')}")
+                parts.append(f"Note: plan had {plan_mi}mi {plan_type}, athlete ran {c['distance_mi']}mi instead.")
+    elif planned_workout and planned_workout.get("has_workout"):
+        w = planned_workout
+        parts.append(f"PLANNED (not yet completed): {w.get('title') or w.get('workout_type')}, {w.get('distance_mi', '?')}mi")
+        parts.append("The athlete may or may not follow this plan. Coach based on their actual patterns, not the plan.")
     else:
-        sections.append("Today: No workout scheduled and nothing completed yet (rest day or no plan).")
-    
-    week = week_data
-    sections.append(f"This Week: {week.get('completed_mi', 0)}mi of {week.get('planned_mi', 0)}mi planned, {week.get('activities_count', 0)} activities, status {week.get('status', 'unknown')}")
-    if tsb_context:
-        sections.append(f"Training state: {tsb_context}")
-    
-    if race_data:
-        sections.append(f"Race: {race_data.get('race_name', 'Race')} in {race_data.get('days_remaining')} days, goal {race_data.get('goal_time', 'not set')} ({race_data.get('goal_pace', '?')}/mi), prediction {race_data.get('predicted_time', 'insufficient data')}")
-    
-    prompt = "\n".join(sections)
-    
+        parts.append("No planned workout and nothing completed yet today.")
+
+    if checkin_data:
+        parts.append(f"Check-in: Feeling {checkin_data.get('motivation_label', '?')}, Sleep {checkin_data.get('sleep_label', '?')}, Soreness {checkin_data.get('soreness_label', '?')}")
+
+    prompt = "\n".join(parts)
+
     try:
         from google import genai
         import os
-        
+
         api_key = os.getenv("GOOGLE_AI_API_KEY")
         if not api_key:
             logger.warning("GOOGLE_AI_API_KEY not set -- skipping coach home briefing")
             return None
-        
-        # Build response schema -- only include fields we have data for
+
+        # Build schema — always include all fields, Gemini will populate what's relevant
         schema_properties = {
             "coach_noticed": {
                 "type": "STRING",
-                "description": "Enriched coaching take on the key insight. 1-2 sentences.",
+                "description": "The single most important coaching observation from their data. 1-2 sentences.",
             },
             "today_context": {
                 "type": "STRING",
-                "description": "If workout completed: react to the actual performance and how it fits the plan. If not yet completed: why this planned workout matters, what to focus on. 1-2 sentences.",
+                "description": "If run completed: react to actual performance. If not yet: what today should look like based on their actual training patterns, load state, and goals. 1-2 sentences.",
             },
             "week_assessment": {
                 "type": "STRING",
-                "description": "Assessment of the week so far, trajectory, what to prioritize. 1 sentence.",
+                "description": "Assessment of this week's trajectory based on actual training, not plan adherence. 1 sentence.",
+            },
+            "checkin_reaction": {
+                "type": "STRING",
+                "description": "React to their subjective state in context of their training load and upcoming demands. 1-2 sentences.",
+            },
+            "race_assessment": {
+                "type": "STRING",
+                "description": "Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.",
             },
         }
         required_fields = ["coach_noticed", "today_context", "week_assessment"]
-        
         if checkin_data:
-            schema_properties["checkin_reaction"] = {
-                "type": "STRING",
-                "description": "React to their check-in state in context of today's training. 1-2 sentences.",
-            }
             required_fields.append("checkin_reaction")
-        
         if race_data:
-            schema_properties["race_assessment"] = {
-                "type": "STRING",
-                "description": "Honest readiness assessment for the upcoming race. 1-2 sentences.",
-            }
             required_fields.append("race_assessment")
-        
+
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model="gemini-2.5-flash",
@@ -599,19 +591,19 @@ def generate_coach_home_briefing(
                 },
             ),
         )
-        
+
         result = _json.loads(response.text)
-        
+
         # Cache for 30 minutes
         if r:
             try:
                 r.setex(cache_key, 1800, _json.dumps(result))
             except Exception:
                 pass
-        
+
         logger.info(f"Coach home briefing generated successfully for {athlete_id}")
         return result
-        
+
     except Exception as e:
         logger.warning(f"Coach home briefing failed: {type(e).__name__}: {e}")
         return None
@@ -1137,7 +1129,7 @@ async def get_home_data(
     )
 
     # --- Phase 2 (ADR-17): LLM Coach Briefing ---
-    # One Gemini call with all context → coaching voice for every card.
+    # ADR-16: Uses build_athlete_brief() for full context — same brief the coach chat uses.
     # Cached in Redis for 30 min; regenerates when data changes.
     coach_briefing = None
     if has_any_activities:
@@ -1166,44 +1158,25 @@ async def get_home_data(
                     "duration_min": round(today_actual.duration_s / 60, 0) if today_actual.duration_s else None,
                 }
 
-            # Build workout data dict for the briefing prompt
-            workout_data = {
-                "has_workout": today_workout.has_workout,
-                "workout_type": today_workout.workout_type,
-                "title": today_workout.title,
-                "distance_mi": today_workout.distance_mi,
-                "pace_guidance": today_workout.pace_guidance,
-                "why_context": today_workout.why_context,
-                "phase": today_workout.phase,
-                "week_number": today_workout.week_number,
-                "completed": today_completed,  # None if not run yet, dict if done
-            }
-            
-            # Build week data dict
-            week_data_dict = {
-                "completed_mi": week_progress.completed_mi,
-                "planned_mi": week_progress.planned_mi,
-                "progress_pct": week_progress.progress_pct,
-                "status": week_progress.status,
-                "trajectory_sentence": week_progress.trajectory_sentence,
-                "activities_count": sum(1 for d in week_progress.days if d.completed),
-                "week_number": week_progress.week_number,
-                "total_weeks": week_progress.total_weeks,
-                "phase": week_progress.phase,
-            }
-            
+            # Build planned workout dict (light — just today's plan context)
+            planned_workout_dict = None
+            if today_workout and today_workout.has_workout:
+                planned_workout_dict = {
+                    "has_workout": True,
+                    "workout_type": today_workout.workout_type,
+                    "title": today_workout.title,
+                    "distance_mi": today_workout.distance_mi,
+                }
+
             # Build race data dict
             race_data_dict = None
             if race_countdown:
                 race_data_dict = {
                     "race_name": race_countdown.race_name,
-                    "race_date": race_countdown.race_date,
                     "days_remaining": race_countdown.days_remaining,
                     "goal_time": race_countdown.goal_time,
-                    "goal_pace": race_countdown.goal_pace,
-                    "predicted_time": race_countdown.predicted_time,
                 }
-            
+
             # Build check-in data dict
             checkin_data_dict = None
             if today_checkin:
@@ -1212,18 +1185,15 @@ async def get_home_data(
                     "sleep_label": today_checkin.sleep_label,
                     "soreness_label": today_checkin.soreness_label,
                 }
-            
-            # Coach noticed text
-            noticed_text = coach_noticed.text if coach_noticed else hero_narrative
-            
+
+            # ADR-16: Full athlete brief is built inside generate_coach_home_briefing
             coach_briefing = generate_coach_home_briefing(
                 athlete_id=str(current_user.id),
+                db=db,
+                today_completed=today_completed,
+                planned_workout=planned_workout_dict,
                 checkin_data=checkin_data_dict,
-                workout_data=workout_data,
-                week_data=week_data_dict,
                 race_data=race_data_dict,
-                coach_noticed_text=noticed_text,
-                tsb_context=week_progress.tsb_context,
             )
         except Exception as e:
             logger.warning(f"Coach briefing failed: {type(e).__name__}: {e}")

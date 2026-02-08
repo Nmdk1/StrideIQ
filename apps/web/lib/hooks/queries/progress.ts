@@ -1,7 +1,7 @@
 /**
  * React Query hooks for the unified Progress page (ADR-17 Phase 3)
  *
- * Aggregates: progress summary, correlations, efficiency trends,
+ * Aggregates: progress summary (ALL tools), correlations, efficiency trends,
  * training load history, personal bests.
  */
 
@@ -35,6 +35,61 @@ export interface ProgressHeadline {
   subtext?: string;
 }
 
+export interface RecoveryData {
+  durability_index: number | null;
+  recovery_half_life_hours: number | null;
+  injury_risk_score: number | null;
+  false_fitness: boolean;
+  masked_fatigue: boolean;
+  status: string | null;
+}
+
+export interface RacePrediction {
+  distance: string;
+  predicted_time: string | null;
+  confidence: string | null;
+}
+
+export interface TrainingPaces {
+  rpi: number | null;
+  easy: string | null;
+  marathon: string | null;
+  threshold: string | null;
+  interval: string | null;
+  repetition: string | null;
+}
+
+export interface RunnerProfile {
+  runner_type: string | null;
+  max_hr: number | null;
+  rpi: number | null;
+  training_paces: TrainingPaces | null;
+  age: number | null;
+  sex: string | null;
+}
+
+export interface WellnessTrends {
+  avg_sleep: number | null;
+  avg_motivation: number | null;
+  avg_soreness: number | null;
+  avg_stress: number | null;
+  checkin_count: number;
+  trend_direction: string | null;
+}
+
+export interface VolumeWeek {
+  week_start: string;
+  miles: number;
+  runs: number;
+}
+
+export interface VolumeTrajectory {
+  recent_weeks: VolumeWeek[] | null;
+  current_week_mi: number | null;
+  peak_week_mi: number | null;
+  trend_pct: number | null;
+}
+
 export interface ProgressSummary {
   headline: ProgressHeadline | null;
   period_comparison: PeriodComparison | null;
@@ -45,6 +100,21 @@ export interface ProgressSummary {
   tsb_zone: string | null;
   efficiency_trend: string | null;
   efficiency_current: number | null;
+  efficiency_average: number | null;
+  efficiency_best: number | null;
+  // Full system data
+  recovery: RecoveryData | null;
+  race_predictions: RacePrediction[] | null;
+  runner_profile: RunnerProfile | null;
+  wellness: WellnessTrends | null;
+  volume_trajectory: VolumeTrajectory | null;
+  consistency_index: number | null;
+  pb_count_last_90d: number;
+  pb_patterns: Record<string, unknown> | null;
+  goal_race_name: string | null;
+  goal_race_date: string | null;
+  goal_race_days_remaining: number | null;
+  goal_time: string | null;
 }
 
 export interface TrainingLoadDay {
@@ -72,7 +142,7 @@ export function useProgressSummary(days: number = 28) {
   return useQuery<ProgressSummary>({
     queryKey: ['progress', 'summary', days],
     queryFn: () => apiClient.get<ProgressSummary>(`/v1/progress/summary?days=${days}`),
-    staleTime: 5 * 60 * 1000, // 5 min
+    staleTime: 5 * 60 * 1000,
     retry: 1,
   });
 }
@@ -108,11 +178,10 @@ export function usePersonalBests() {
   return useQuery({
     queryKey: ['personal-bests'],
     queryFn: async () => {
-      // Get athlete ID first
       const me = await apiClient.get<{ id: string }>('/v1/auth/me');
       return apiClient.get<PersonalBest[]>(`/v1/athletes/${me.id}/personal-bests`);
     },
-    staleTime: 30 * 60 * 1000, // 30 min
+    staleTime: 30 * 60 * 1000,
     retry: 1,
   });
 }
