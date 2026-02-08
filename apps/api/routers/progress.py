@@ -424,6 +424,68 @@ async def get_progress_summary(
     return result
 
 
+class TrainingPatternItem(BaseModel):
+    text: str
+    source: str = "n1"
+
+
+class TrainingPatternsResponse(BaseModel):
+    what_works: List[TrainingPatternItem] = []
+    what_doesnt: List[TrainingPatternItem] = []
+    injury_patterns: List[TrainingPatternItem] = []
+    checkin_count: int = 0
+    checkins_needed: int = 10
+
+
+@router.get("/training-patterns", response_model=TrainingPatternsResponse)
+def get_training_patterns(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Training pattern intelligence from activity data (no tier gate).
+
+    Layer 1 of the dual-layer What's Working system:
+    - Training patterns from InsightAggregator (available immediately, needs activities only)
+    - Separate from correlation engine (which needs check-in data and produces Layer 2)
+    """
+    from services.insight_aggregator import InsightAggregator
+    from models import DailyCheckin
+
+    result = TrainingPatternsResponse()
+
+    # Get check-in count for progress indicator
+    try:
+        result.checkin_count = (
+            db.query(DailyCheckin)
+            .filter(DailyCheckin.athlete_id == current_user.id)
+            .count()
+        )
+    except Exception:
+        pass
+
+    # Get training patterns from InsightAggregator
+    try:
+        aggregator = InsightAggregator(db, current_user)
+        intelligence = aggregator.get_athlete_intelligence()
+
+        def _to_item(x) -> TrainingPatternItem:
+            if isinstance(x, dict):
+                return TrainingPatternItem(
+                    text=str(x.get("text") or ""),
+                    source=str(x.get("source") or "n1"),
+                )
+            return TrainingPatternItem(text=str(x), source="n1")
+
+        result.what_works = [_to_item(w) for w in (intelligence.what_works or [])]
+        result.what_doesnt = [_to_item(w) for w in (intelligence.what_doesnt or [])]
+        result.injury_patterns = [_to_item(w) for w in (intelligence.injury_patterns or [])]
+    except Exception as e:
+        logger.warning(f"Training patterns failed: {e}")
+
+    return result
+
+
 def _generate_headline(
     athlete_id: str,
     db: Session,

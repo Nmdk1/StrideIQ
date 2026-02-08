@@ -177,6 +177,29 @@ export function useTrainingLoadHistory(days: number = 90) {
   });
 }
 
+// Training patterns from InsightAggregator (Layer 1 of dual-layer What's Working)
+export interface TrainingPatternItem {
+  text: string;
+  source: string;
+}
+
+export interface TrainingPatternsResponse {
+  what_works: TrainingPatternItem[];
+  what_doesnt: TrainingPatternItem[];
+  injury_patterns: TrainingPatternItem[];
+  checkin_count: number;
+  checkins_needed: number;
+}
+
+export function useTrainingPatterns() {
+  return useQuery<TrainingPatternsResponse>({
+    queryKey: ['progress', 'training-patterns'],
+    queryFn: () => apiClient.get<TrainingPatternsResponse>('/v1/progress/training-patterns'),
+    staleTime: 10 * 60 * 1000, // 10 min — patterns change slowly
+    retry: 1,
+  });
+}
+
 export function usePersonalBests() {
   return useQuery({
     queryKey: ['personal-bests'],

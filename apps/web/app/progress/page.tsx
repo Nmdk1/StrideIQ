@@ -28,6 +28,7 @@ import {
   useProgressSummary,
   useWhatWorks,
   useWhatDoesntWork,
+  useTrainingPatterns,
   useEfficiencyTrends,
   useTrainingLoadHistory,
   usePersonalBests,
@@ -186,6 +187,7 @@ export default function ProgressPage() {
   const summary = useProgressSummary(days);
   const whatWorks = useWhatWorks(90);
   const whatDoesntWork = useWhatDoesntWork(90);
+  const trainingPatterns = useTrainingPatterns();
   const efficiency = useEfficiencyTrends(90, false, false, false);
   const loadHistory = useTrainingLoadHistory(90);
   const personalBests = usePersonalBests();
@@ -450,25 +452,60 @@ export default function ProgressPage() {
             askCoachQuery="What patterns in my training are helping me improve?"
             defaultOpen={true}
           >
-            {whatWorks.isLoading ? (
+            {/* Layer 1: Training Patterns (from activity data — always available) */}
+            {trainingPatterns.isLoading ? (
               <div className="flex justify-center py-4"><LoadingSpinner size="sm" /></div>
-            ) : whatWorks.data?.what_works && whatWorks.data.what_works.length > 0 ? (
-              <div className="space-y-0">
-                {whatWorks.data.what_works.slice(0, 5).map((c: { input_name: string; correlation_coefficient: number; sample_size: number }, i: number) => (
-                  <CorrelationItem
-                    key={i}
-                    name={c.input_name}
-                    r={c.correlation_coefficient}
-                    n={c.sample_size}
-                    direction="positive"
-                  />
+            ) : trainingPatterns.data?.what_works && trainingPatterns.data.what_works.length > 0 ? (
+              <ul className="space-y-2 mb-4">
+                {trainingPatterns.data.what_works.map((item, i) => (
+                  <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                    <span>{item.text}</span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             ) : (
-              <p className="text-sm text-slate-500 py-2">
-                No positive patterns detected yet. Daily check-ins (sleep, soreness, motivation) are needed to discover what drives your best performances.
-              </p>
+              <p className="text-sm text-slate-500 py-2">Keep running — patterns emerge with more data.</p>
             )}
+
+            {/* Layer 2: Personal Correlations (from check-in data — grows over time) */}
+            {whatWorks.data?.what_works && whatWorks.data.what_works.length > 0 ? (
+              <div className="border-t border-slate-700/50 pt-3 mt-1">
+                <p className="text-xs text-emerald-400/70 font-semibold uppercase tracking-wide mb-2">Your personal correlations</p>
+                <div className="space-y-0">
+                  {whatWorks.data.what_works.slice(0, 5).map((c: { input_name: string; correlation_coefficient: number; sample_size: number }, i: number) => (
+                    <CorrelationItem
+                      key={i}
+                      name={c.input_name}
+                      r={c.correlation_coefficient}
+                      n={c.sample_size}
+                      direction="positive"
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : trainingPatterns.data ? (
+              <div className="border-t border-slate-700/50 pt-3 mt-1">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-orange-400" />
+                  <p className="text-xs font-semibold text-slate-400">N=1 Correlation Model</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-orange-500 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, (trainingPatterns.data.checkin_count / trainingPatterns.data.checkins_needed) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-slate-500 whitespace-nowrap">
+                    {trainingPatterns.data.checkin_count}/{trainingPatterns.data.checkins_needed} check-ins
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Daily check-ins unlock personal correlations — what sleep, soreness, and motivation patterns drive <em>your</em> best performances.
+                </p>
+              </div>
+            ) : null}
           </Section>
 
           <Section
@@ -477,26 +514,59 @@ export default function ProgressPage() {
             askCoachQuery="What patterns in my training are hurting my performance?"
             defaultOpen={true}
           >
-            {whatDoesntWork.isLoading ? (
+            {/* Layer 1: Training Patterns */}
+            {trainingPatterns.isLoading ? (
               <div className="flex justify-center py-4"><LoadingSpinner size="sm" /></div>
-            ) : whatDoesntWork.data?.what_doesnt_work && whatDoesntWork.data.what_doesnt_work.length > 0 ? (
-              <div className="space-y-0">
-                {whatDoesntWork.data.what_doesnt_work.slice(0, 5).map((c: { input_name: string; correlation_coefficient: number; sample_size: number }, i: number) => (
-                  <CorrelationItem
-                    key={i}
-                    name={c.input_name}
-                    r={c.correlation_coefficient}
-                    n={c.sample_size}
-                    direction="negative"
-                  />
+            ) : trainingPatterns.data?.what_doesnt && trainingPatterns.data.what_doesnt.length > 0 ? (
+              <ul className="space-y-2 mb-4">
+                {trainingPatterns.data.what_doesnt.map((item, i) => (
+                  <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
+                    <span>{item.text}</span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             ) : (
-              <p className="text-sm text-slate-500 py-2">
-                No negative patterns detected yet.
-              </p>
+              <p className="text-sm text-slate-500 py-2">No negative patterns detected.</p>
+            )}
+
+            {/* Layer 2: Personal Correlations */}
+            {whatDoesntWork.data?.what_doesnt_work && whatDoesntWork.data.what_doesnt_work.length > 0 && (
+              <div className="border-t border-slate-700/50 pt-3 mt-1">
+                <p className="text-xs text-red-400/70 font-semibold uppercase tracking-wide mb-2">Your personal correlations</p>
+                <div className="space-y-0">
+                  {whatDoesntWork.data.what_doesnt_work.slice(0, 5).map((c: { input_name: string; correlation_coefficient: number; sample_size: number }, i: number) => (
+                    <CorrelationItem
+                      key={i}
+                      name={c.input_name}
+                      r={c.correlation_coefficient}
+                      n={c.sample_size}
+                      direction="negative"
+                    />
+                  ))}
+                </div>
+              </div>
             )}
           </Section>
+
+          {/* ═══ Injury Patterns (from training data) ═══ */}
+          {trainingPatterns.data?.injury_patterns && trainingPatterns.data.injury_patterns.length > 0 && (
+            <Section
+              title="Injury Risk Patterns"
+              icon={<AlertTriangle className="w-4 h-4 text-amber-400" />}
+              askCoachQuery="What injury risk patterns do you see in my training?"
+              defaultOpen={true}
+            >
+              <ul className="space-y-2">
+                {trainingPatterns.data.injury_patterns.map((item, i) => (
+                  <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+                    <span>{item.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
 
 
           {/* ═══ SECTION 7: Fitness & Load ═══ */}
