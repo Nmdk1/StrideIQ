@@ -712,14 +712,14 @@ export default function ProgressPage() {
                   <div key={i} className="flex items-center justify-between py-2.5 border-b border-slate-700/50 last:border-0">
                     <div className="flex items-center gap-2">
                       <Trophy className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" />
-                      <span className="text-sm text-slate-200 font-medium">{pb.distance_name}</span>
+                      <span className="text-sm text-slate-200 font-medium">{pb.distance_category}</span>
                     </div>
                     <div className="flex items-center gap-3 text-xs">
-                      <span className="text-white font-semibold">{formatTime(pb.elapsed_time_s)}</span>
-                      {pb.pace_per_mile_s && (
-                        <span className="text-slate-400">{formatPace(pb.pace_per_mile_s)}</span>
+                      <span className="text-white font-semibold">{formatTime(pb.time_seconds)}</span>
+                      {pb.pace_per_mile && (
+                        <span className="text-slate-400">{formatPace(pb.pace_per_mile)}</span>
                       )}
-                      <span className="text-slate-500">{pb.date}</span>
+                      <span className="text-slate-500">{pb.achieved_at?.slice(0, 10)}</span>
                       {pb.activity_id && (
                         <Link
                           href={`/activities/${pb.activity_id}`}

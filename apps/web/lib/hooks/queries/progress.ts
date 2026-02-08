@@ -127,13 +127,16 @@ export interface TrainingLoadDay {
 }
 
 export interface PersonalBest {
-  distance_name: string;
-  distance_m: number;
-  elapsed_time_s: number;
-  pace_per_mile_s?: number;
-  date: string;
-  activity_id?: string;
-  source?: string;
+  id: string;
+  athlete_id: string;
+  distance_category: string;
+  distance_meters: number;
+  time_seconds: number;
+  pace_per_mile: number | null;
+  activity_id: string;
+  achieved_at: string;
+  is_race: boolean;
+  age_at_achievement: number | null;
 }
 
 // --- Hooks ---
