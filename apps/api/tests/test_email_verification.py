@@ -197,16 +197,18 @@ class TestCompleteEmailChange:
         db.query(Athlete).filter(Athlete.id == athlete.id).delete()
         db.commit()
     
-    def test_valid_token_changes_email(self, db, test_athlete):
+    @patch('services.email_service.send_email')
+    def test_valid_token_changes_email(self, mock_send_email, db, test_athlete):
         """Valid token should update the email"""
+        mock_send_email.return_value = None
         new_email = "changed_email@example.com"
         token = generate_email_change_token(str(test_athlete.id), new_email)
-        
+
         success, message = complete_email_change(db, token)
-        
+
         assert success is True
         assert new_email in message
-        
+
         # Verify email was actually changed
         db.refresh(test_athlete)
         assert test_athlete.email == new_email
@@ -218,10 +220,12 @@ class TestCompleteEmailChange:
         assert success is False
         assert "invalid" in message.lower() or "expired" in message.lower()
     
-    def test_email_already_taken_rejected(self, db, test_athlete):
+    @patch('services.email_service.send_email')
+    def test_email_already_taken_rejected(self, mock_send_email, db, test_athlete):
         """Should reject if new email is already taken"""
+        mock_send_email.return_value = None
         from models import Athlete
-        
+
         # Create another user with the target email
         other_user = Athlete(
             email="taken@example.com",
@@ -230,12 +234,12 @@ class TestCompleteEmailChange:
         )
         db.add(other_user)
         db.commit()
-        
+
         try:
             # Try to change to the taken email
             token = generate_email_change_token(str(test_athlete.id), "taken@example.com")
             success, message = complete_email_change(db, token)
-            
+
             assert success is False
             assert "available" in message.lower() or "taken" in message.lower() or "already" in message.lower()
         finally:
@@ -283,23 +287,25 @@ class TestEmailChangeEndpoint:
         db.query(Athlete).filter(Athlete.id == athlete.id).delete()
         db.commit()
     
-    def test_verify_email_change_endpoint(self, db, test_athlete):
+    @patch('services.email_service.send_email')
+    def test_verify_email_change_endpoint(self, mock_send_email, db, test_athlete):
         """POST /v1/auth/verify-email-change should complete email change"""
+        mock_send_email.return_value = None
         from fastapi.testclient import TestClient
         from main import app
-        
+
         client = TestClient(app)
         new_email = "verified_new@example.com"
         token = generate_email_change_token(str(test_athlete.id), new_email)
-        
+
         response = client.post("/v1/auth/verify-email-change", json={
             "token": token
         })
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        
+
         # Verify email was changed
         db.refresh(test_athlete)
         assert test_athlete.email == new_email
