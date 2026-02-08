@@ -496,53 +496,37 @@ def generate_coach_home_briefing(
     except Exception:
         r = None
     
-    # Build the prompt with all context
+    # Build the prompt — data context only, no JSON instructions needed
+    # (structured output via response_schema guarantees valid JSON)
     sections = []
     sections.append("You are an elite running coach speaking directly to your athlete about TODAY.")
-    sections.append("Be specific, direct, insightful. Reference their actual data. 1-2 sentences per section max.")
-    sections.append("Sound like a real coach who knows this athlete — not a dashboard, not a chatbot.")
+    sections.append("Be specific, direct, insightful. Reference their actual data. 1-2 sentences per field max.")
+    sections.append("Sound like a real coach who knows this athlete, not a dashboard or chatbot.")
     sections.append("")
     
     if coach_noticed_text:
-        sections.append(f"## Key Insight Data\n{coach_noticed_text}")
+        sections.append(f"Key Insight: {coach_noticed_text}")
     
     if checkin_data:
-        sections.append(f"## Today's Check-in\nFeeling: {checkin_data.get('motivation_label', 'unknown')}, Sleep: {checkin_data.get('sleep_label', 'unknown')}, Soreness: {checkin_data.get('soreness_label', 'unknown')}")
+        sections.append(f"Today's Check-in: Feeling {checkin_data.get('motivation_label', 'unknown')}, Sleep {checkin_data.get('sleep_label', 'unknown')}, Soreness {checkin_data.get('soreness_label', 'unknown')}")
     
     if workout_data.get("has_workout"):
         w = workout_data
-        workout_desc = f"{w.get('distance_mi', '?')}mi {w.get('workout_type', 'run')}"
-        if w.get("title"):
-            workout_desc = w["title"]
-        sections.append(f"## Today's Workout\nType: {w.get('workout_type')}, Distance: {w.get('distance_mi')}mi, Pace guidance: {w.get('pace_guidance', 'none')}")
+        sections.append(f"Today's Workout: {w.get('title') or w.get('workout_type', 'run')}, {w.get('distance_mi', '?')}mi, pace {w.get('pace_guidance', 'by feel')}")
         if w.get("why_context"):
-            sections.append(f"Context: {w['why_context']}")
+            sections.append(f"Plan context: {w['why_context']}")
         if w.get("phase"):
             sections.append(f"Phase: {w['phase']}, Week {w.get('week_number', '?')}")
     else:
-        sections.append("## Today's Workout\nNo workout scheduled (rest day or no plan).")
+        sections.append("Today: No workout scheduled (rest day or no plan).")
     
     week = week_data
-    sections.append(f"## This Week\nCompleted: {week.get('completed_mi', 0)}mi of {week.get('planned_mi', 0)}mi planned. Status: {week.get('status', 'unknown')}. Activities: {week.get('activities_count', 0)}.")
+    sections.append(f"This Week: {week.get('completed_mi', 0)}mi of {week.get('planned_mi', 0)}mi planned, {week.get('activities_count', 0)} activities, status {week.get('status', 'unknown')}")
     if tsb_context:
         sections.append(f"Training state: {tsb_context}")
-    if week.get("trajectory_sentence"):
-        sections.append(f"Trajectory: {week['trajectory_sentence']}")
     
     if race_data:
-        sections.append(f"## Race\n{race_data.get('race_name', 'Race')} in {race_data.get('days_remaining')} days. Goal: {race_data.get('goal_time', 'not set')} ({race_data.get('goal_pace', '?')}/mi). Prediction: {race_data.get('predicted_time', 'insufficient data')}.")
-    
-    sections.append("")
-    sections.append("Respond in this exact JSON format (no markdown, just raw JSON):")
-    sections.append('{')
-    sections.append('  "coach_noticed": "Your enriched coaching take on the key insight — make it sound like a coach, not a stat line. 1-2 sentences.",')
-    if checkin_data:
-        sections.append('  "checkin_reaction": "React to their state in context of today\'s workout and where they are in training. 1-2 sentences.",')
-    sections.append('  "today_context": "Why this workout matters today, what to focus on, what to watch for. 1-2 sentences.",')
-    sections.append('  "week_assessment": "Assessment of the week so far — trajectory, what to prioritize. 1 sentence.",')
-    if race_data:
-        sections.append('  "race_assessment": "Honest readiness assessment. Where they stand. 1-2 sentences."')
-    sections.append('}')
+        sections.append(f"Race: {race_data.get('race_name', 'Race')} in {race_data.get('days_remaining')} days, goal {race_data.get('goal_time', 'not set')} ({race_data.get('goal_pace', '?')}/mi), prediction {race_data.get('predicted_time', 'insufficient data')}")
     
     prompt = "\n".join(sections)
     
@@ -552,8 +536,39 @@ def generate_coach_home_briefing(
         
         api_key = os.getenv("GOOGLE_AI_API_KEY")
         if not api_key:
-            logger.warning("GOOGLE_AI_API_KEY not set — skipping coach home briefing")
+            logger.warning("GOOGLE_AI_API_KEY not set -- skipping coach home briefing")
             return None
+        
+        # Build response schema -- only include fields we have data for
+        schema_properties = {
+            "coach_noticed": {
+                "type": "STRING",
+                "description": "Enriched coaching take on the key insight. 1-2 sentences.",
+            },
+            "today_context": {
+                "type": "STRING",
+                "description": "Why this workout matters today, what to focus on. 1-2 sentences.",
+            },
+            "week_assessment": {
+                "type": "STRING",
+                "description": "Assessment of the week so far, trajectory, what to prioritize. 1 sentence.",
+            },
+        }
+        required_fields = ["coach_noticed", "today_context", "week_assessment"]
+        
+        if checkin_data:
+            schema_properties["checkin_reaction"] = {
+                "type": "STRING",
+                "description": "React to their check-in state in context of today's training. 1-2 sentences.",
+            }
+            required_fields.append("checkin_reaction")
+        
+        if race_data:
+            schema_properties["race_assessment"] = {
+                "type": "STRING",
+                "description": "Honest readiness assessment for the upcoming race. 1-2 sentences.",
+            }
+            required_fields.append("race_assessment")
         
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
@@ -562,27 +577,16 @@ def generate_coach_home_briefing(
             config=genai.types.GenerateContentConfig(
                 max_output_tokens=2000,
                 temperature=0.3,
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "OBJECT",
+                    "properties": schema_properties,
+                    "required": required_fields,
+                },
             ),
         )
         
-        raw = response.text.strip()
-        
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-        if raw.endswith("```"):
-            raw = raw[:-3].strip()
-        if raw.startswith("json"):
-            raw = raw[4:].strip()
-        
-        try:
-            result = _json.loads(raw)
-        except _json.JSONDecodeError as je:
-            logger.warning(
-                f"Coach briefing JSON parse failed: {je}. "
-                f"Raw response ({len(raw)} chars): {raw[:500]}"
-            )
-            return None
+        result = _json.loads(response.text)
         
         # Cache for 30 minutes
         if r:
@@ -591,10 +595,11 @@ def generate_coach_home_briefing(
             except Exception:
                 pass
         
+        logger.info(f"Coach home briefing generated successfully for {athlete_id}")
         return result
         
     except Exception as e:
-        logger.warning(f"Coach home briefing generation failed: {type(e).__name__}: {e}")
+        logger.warning(f"Coach home briefing failed: {type(e).__name__}: {e}")
         return None
 
 
