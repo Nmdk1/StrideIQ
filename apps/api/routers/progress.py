@@ -158,6 +158,12 @@ async def get_progress_summary(
     except Exception as e:
         logger.warning(f"Progress load failed: {e}")
 
+    # Clean session after training load (athlete_calibrated_model may poison it)
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
     # --- Efficiency Trend ---
     try:
         from services.efficiency_analyzer import EfficiencyAnalyzer
