@@ -49,21 +49,24 @@ export function SplitsTable({ splits }: { splits: Split[] }) {
 
   if (!splits?.length) return null;
 
+  let cumulativeTime = 0;
   const rows = splits
     .map((s) => {
-      const time = s.moving_time ?? s.elapsed_time ?? null;
-      const paceSecKm = paceSecondsPerKm(time, s.distance);
+      const splitTime = s.moving_time ?? s.elapsed_time ?? null;
+      if (splitTime) cumulativeTime += splitTime;
+      const paceSecKm = paceSecondsPerKm(splitTime, s.distance);
       const gapSecKm = gapSecondsPerKmFromPerMile(s.gap_seconds_per_mile);
       const cadenceSpm = normalizeCadenceToSpm(s.average_cadence);
       return {
         ...s,
-        time,
+        splitTime,
+        cumulativeTime: splitTime ? cumulativeTime : null,
         paceSecKm,
         gapSecKm,
         cadenceSpm,
       };
     })
-    .filter((r) => r.time !== null && r.distance !== null);
+    .filter((r) => r.splitTime !== null && r.distance !== null);
 
   const bestPace = rows
     .map((r) => r.paceSecKm)
@@ -92,7 +95,7 @@ export function SplitsTable({ splits }: { splits: Split[] }) {
                 <tr key={r.split_number} className="text-slate-200">
                   <td className="px-3 py-2 whitespace-nowrap">{r.split_number}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatDistance(r.distance, 2)}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{formatDuration(r.time)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{formatDuration(r.cumulativeTime)}</td>
                   <td className={`px-3 py-2 whitespace-nowrap ${isBest ? 'font-semibold text-white' : ''}`}>
                     {formatPace(r.paceSecKm)}
                   </td>
