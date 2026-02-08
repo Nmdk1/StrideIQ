@@ -233,7 +233,11 @@ class TestVerifyStoresExpiresAt:
             db.refresh(athlete)
             assert athlete.strava_token_expires_at is not None
             expected = datetime.fromtimestamp(future_ts, tz=timezone.utc)
-            diff = abs((athlete.strava_token_expires_at - expected).total_seconds())
+            # Ensure both sides are tz-aware for comparison (some DBs strip tz)
+            actual = athlete.strava_token_expires_at
+            if actual.tzinfo is None:
+                actual = actual.replace(tzinfo=timezone.utc)
+            diff = abs((actual - expected).total_seconds())
             assert diff < 2
         finally:
             _cleanup(db, athlete)
