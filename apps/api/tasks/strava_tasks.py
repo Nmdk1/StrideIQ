@@ -109,11 +109,11 @@ def _calculate_performance_metrics(activity, athlete, db):
         calculate_age_graded_performance,
         detect_race_candidate,
     )
-    
+
     # Calculate age-graded performance
     if activity.pace_per_mile and activity.distance_m:
         age = calculate_age_at_date(athlete.birthdate, activity.start_time)
-        
+
         # International/WMA standard
         performance_pct_intl = calculate_age_graded_performance(
             actual_pace_per_mile=activity.pace_per_mile,
@@ -124,7 +124,7 @@ def _calculate_performance_metrics(activity, athlete, db):
         )
         if performance_pct_intl:
             activity.performance_percentage = performance_pct_intl
-        
+
         # National standard
         performance_pct_nat = calculate_age_graded_performance(
             actual_pace_per_mile=activity.pace_per_mile,
@@ -135,13 +135,13 @@ def _calculate_performance_metrics(activity, athlete, db):
         )
         if performance_pct_nat:
             activity.performance_percentage_national = performance_pct_nat
-    
+
     # Race detection
     if activity.user_verified_race is not True:
         splits = db.query(ActivitySplit).filter(
             ActivitySplit.activity_id == activity.id
         ).order_by(ActivitySplit.split_number).all()
-        
+
         splits_data = []
         for split in splits:
             splits_data.append({
@@ -152,7 +152,7 @@ def _calculate_performance_metrics(activity, athlete, db):
                 'max_heartrate': split.max_heartrate,
                 'avg_hr': split.average_heartrate,
             })
-        
+
         is_race, confidence = detect_race_candidate(
             activity_pace=activity.pace_per_mile,
             max_hr=activity.max_hr,
@@ -161,7 +161,7 @@ def _calculate_performance_metrics(activity, athlete, db):
             distance_meters=float(activity.distance_m) if activity.distance_m else 0,
             duration_seconds=activity.duration_s
         )
-        
+
         if confidence > 0:
             activity.is_race_candidate = is_race
             activity.race_confidence = confidence
@@ -174,7 +174,7 @@ import traceback
 def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
     """
     Background task to sync Strava activities for an athlete.
-    
+
     This task:
     1. Fetches activities from Strava API
     2. Creates/updates activities in database
@@ -182,10 +182,10 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
     4. Calculates performance metrics
     5. Updates personal bests
     6. Syncs Strava best efforts
-    
+
     Args:
         athlete_id: UUID string of the athlete to sync
-        
+
     Returns:
         Dictionary with sync results:
         {
@@ -199,7 +199,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
     """
     db: Session = get_db_sync()
     print(f"DEBUG: Starting sync for athlete_id={athlete_id}")
-    
+
     from services.strava_service import StravaRateLimitError
     from services.ingestion_state import mark_ingestion_deferred
     from datetime import timedelta
@@ -217,7 +217,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 "status": "error",
                 "error": f"Athlete {athlete_id} not found"
             }
-        
+
         print(f"DEBUG: Found athlete email={athlete.email}, strava_id={athlete.strava_athlete_id}")
         if not athlete.strava_access_token:
             print(f"DEBUG: No strava access token!")
@@ -225,19 +225,19 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 "status": "error",
                 "error": f"Athlete {athlete_id} has no Strava access token"
             }
-        
+
         # CRITICAL: Use raw SQL to get last_strava_sync to bypass identity map cache
         result = db.execute(
             text("""
-                SELECT last_strava_sync 
-                FROM athlete 
+                SELECT last_strava_sync
+                FROM athlete
                 WHERE id = :athlete_id
             """),
             {"athlete_id": athlete_id}
         ).first()
-        
+
         last_sync_raw = result[0] if result else None
-        
+
         # Determine after_timestamp
         #
         # IMPORTANT:
@@ -255,7 +255,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             else:
                 after_timestamp = int(last_sync_raw)
             after_timestamp = max(0, int(after_timestamp) - int(SYNC_OVERLAP_SECONDS))
-        
+
         # Poll activities from Strava (viral-safe: do not sleep on 429; defer + retry).
         print(f"DEBUG: Polling activities with after_timestamp={after_timestamp}")
         try:
@@ -276,17 +276,17 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             db.commit()
             raise self.retry(countdown=countdown)
         print(f"DEBUG: Got {len(strava_activities)} activities from Strava")
-        
+
         synced_new = 0
         updated_existing = 0
         splits_backfilled = 0
         skipped_non_runs = 0
         total_from_api = len(strava_activities)
-        
+
         print(f"DEBUG: Starting to process {total_from_api} activities...")
-        
+
         LAP_FETCH_DELAY = 2.0  # 2 second delay between lap fetches
-        
+
         # Process each activity
         for activity_idx, a in enumerate(strava_activities):
             # Report progress to Celery so frontend can show progress bar
@@ -298,26 +298,26 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                     'message': f"Syncing activity {activity_idx + 1} of {total_from_api}..."
                 }
             )
-            
+
             # Strava uses a few run-like types; treat them as runs.
             activity_type = (a.get("type") or "").lower()
             if activity_type not in {"run", "virtualrun", "trailrun"}:
                 skipped_non_runs += 1
                 continue
-            
+
             strava_activity_id = a.get("id")
             if not strava_activity_id:
                 continue
-            
+
             start_time_str = a.get("start_date")
             if not start_time_str:
                 continue
-            
+
             start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
-            
+
             provider = "strava"
             external_activity_id = str(strava_activity_id)
-            
+
             # Check if activity exists
             existing = (
                 db.query(Activity)
@@ -327,56 +327,56 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 )
                 .first()
             )
-            
+
             # Update existing activity
             if existing:
                 changed = False
-                
+
                 # Ensure ingestion-contract fields exist
                 if not existing.provider:
                     existing.provider = provider
                     changed = True
-                
+
                 if not existing.external_activity_id:
                     existing.external_activity_id = external_activity_id
                     changed = True
-                
+
                 if existing.is_race_candidate is None:
                     existing.is_race_candidate = False
                     changed = True
-                
+
                 if existing.user_verified_race is None:
                     existing.user_verified_race = False
                     changed = True
-                
+
                 # Fill optional metrics if missing
                 if existing.max_hr is None and a.get("max_heartrate") is not None:
                     existing.max_hr = a.get("max_heartrate")
                     changed = True
-                
+
                 if existing.total_elevation_gain is None and a.get("total_elevation_gain") is not None:
                     existing.total_elevation_gain = a.get("total_elevation_gain")
                     changed = True
-                
+
                 if existing.average_speed is None and a.get("average_speed") is not None:
                     existing.average_speed = a.get("average_speed")
                     changed = True
-                
+
                 # Backfill activity name if missing
                 if existing.name is None and a.get("name") is not None:
                     existing.name = a.get("name")
                     changed = True
-                
+
                 if changed:
                     updated_existing += 1
-                
+
                 # Check if splits need backfilling
                 split_count = (
                     db.query(func.count(ActivitySplit.id))
                     .filter(ActivitySplit.activity_id == existing.id)
                     .scalar()
                 )
-                
+
                 if split_count == 0:
                     # Backfill splits
                     try:
@@ -571,38 +571,38 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                                 s.gap_seconds_per_mile = gap_val
                     except Exception as e:
                         print(f"Warning: Could not update splits for activity {strava_activity_id}: {e}")
-                
+
                 # Backfill avg_hr from details if missing
                 if existing.avg_hr is None and details.get("average_heartrate"):
                     existing.avg_hr = _coerce_int(details.get("average_heartrate"))
-                
+
                 # Backfill temperature from details if missing
                 if existing.temperature_f is None and details.get("average_temp") is not None:
                     existing.temperature_f = round(details.get("average_temp") * 9 / 5 + 32, 1)
-                
+
                 db.flush()
-                
+
                 # Recalculate performance metrics
                 try:
                     _calculate_performance_metrics(existing, athlete, db)
                 except Exception as e:
                     print(f"Warning: Could not recalculate performance metrics: {e}")
-                
+
                 # Update personal best
                 try:
                     pb = update_personal_best(existing, athlete, db)
                 except Exception as e:
                     print(f"Warning: Could not update personal best: {e}")
-                
+
                 continue
-            
+
             # Create new activity
             print(f"DEBUG: Creating new activity {strava_activity_id} - {a.get('name')}")
             # Convert Celsius to Fahrenheit if temperature available
             temp_f = None
             if a.get("average_temp") is not None:
                 temp_f = round(a.get("average_temp") * 9 / 5 + 32, 1)
-            
+
             activity = Activity(
                 athlete_id=athlete.id,
                 name=a.get("name"),  # Store the activity name from Strava
@@ -622,7 +622,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 race_confidence=None,
                 user_verified_race=False,
             )
-            
+
             try:
                 db.add(activity)
                 db.flush()
@@ -631,7 +631,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 print(f"ERROR: Failed to create activity {strava_activity_id}: {e}")
                 db.rollback()
                 continue
-            
+
             # Fetch splits
             try:
                 if activity_idx > 0:
@@ -713,26 +713,26 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                             )
                         )
                     db.flush()
-                
+
                 # Backfill avg_hr from details if missing (list endpoint often omits it)
                 if activity.avg_hr is None and details.get("average_heartrate"):
                     activity.avg_hr = _coerce_int(details.get("average_heartrate"))
-                
+
                 # Backfill temperature from details if missing
                 if activity.temperature_f is None and details.get("average_temp") is not None:
                     activity.temperature_f = round(details.get("average_temp") * 9 / 5 + 32, 1)
-                
+
                 db.flush()
-                    
+
             except Exception as e:
                 print(f"Warning: Could not fetch laps for activity {strava_activity_id}: {e}")
-            
+
             # Calculate performance metrics
             try:
                 _calculate_performance_metrics(activity, athlete, db)
             except Exception as e:
                 print(f"Warning: Could not calculate performance metrics: {e}")
-            
+
             # Update personal best
             try:
                 pb = update_personal_best(activity, athlete, db)
@@ -742,7 +742,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                     db.rollback()
                 except Exception:
                     pass
-            
+
             # Classify workout type (long_run, easy_run, tempo_run, race, etc.)
             # This drives the efficiency attribution's same-type comparison.
             try:
@@ -756,19 +756,19 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 db.flush()
             except Exception as e:
                 print(f"Warning: Could not classify workout: {e}")
-            
+
             synced_new += 1
-        
+
         # Update last sync timestamp
         athlete.last_strava_sync = datetime.now(timezone.utc)
         db.commit()
-        
+
         # Calculate derived signals
         try:
             metrics = calculate_athlete_derived_signals(athlete, db, force_recalculate=False)
         except Exception as e:
             print(f"WARNING: Could not calculate derived signals: {e}")
-        
+
         # Sync Strava best efforts
         strava_pb_result = {}
         try:
@@ -781,7 +781,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 db.rollback()
             except Exception:
                 pass
-        
+
         # Generate insights based on new activity
         insights_generated = 0
         try:
@@ -797,7 +797,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             print(f"DEBUG: Generated {insights_generated} insights")
         except Exception as e:
             print(f"Warning: Could not generate insights: {e}")
-        
+
         return {
             "status": "success",
             "message": "Sync completed.",
@@ -807,7 +807,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             "strava_pbs": strava_pb_result,
             "insights_generated": insights_generated,
         }
-        
+
     except Retry:
         # Phase 5 armor: allow Celery retries to propagate (not an error).
         raise

@@ -126,7 +126,7 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
         # Phase 3: Add elevation, weather, max_hr for richer context
         elevation_gain_m = float(a.total_elevation_gain) if a.total_elevation_gain is not None else None
         elevation_gain_ft = round(elevation_gain_m * 3.28084, 0) if elevation_gain_m is not None else None
-        
+
         run_rows.append(
             {
                 "activity_id": str(a.id),
@@ -754,18 +754,18 @@ def get_training_load(db: Session, athlete_id: UUID) -> Dict[str, Any]:
 def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     Get RPI-based training paces for the athlete.
-    
+
     Returns target paces for easy, threshold, interval, repetition, and marathon training.
     This is THE authoritative source for training paces - do not derive paces from other data.
     """
     now = datetime.utcnow()
     try:
         from services.vdot_calculator import calculate_training_paces as calc_paces
-        
+
         athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
             return {"ok": False, "tool": "get_training_paces", "error": "Athlete not found"}
-        
+
         vdot = athlete.vdot
         if not vdot:
             return {
@@ -773,10 +773,10 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 "tool": "get_training_paces",
                 "error": "No RPI on file. Athlete needs to complete a time trial or race to calculate training paces.",
             }
-        
+
         units = athlete.preferred_units or "metric"
         paces = calc_paces(vdot)
-        
+
         # Format for display
         def format_display(pace_key: str) -> str:
             """Format a pace for human-readable display."""
@@ -792,7 +792,7 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             elif isinstance(val, str):
                 return val
             return "N/A"
-        
+
         # --- Narrative ---
         narrative = (
             f"Training paces based on RPI {vdot:.1f}: "
@@ -1254,23 +1254,23 @@ def get_active_insights(db: Session, athlete_id: UUID, limit: int = 5) -> Dict[s
 def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     Training patterns that preceded personal bests.
-    
+
     Returns BOTH summary stats AND per-PB detail so coach can cite specifics.
     """
     from services.training_load import TrainingLoadCalculator
     from models import PersonalBest
-    
+
     now = datetime.utcnow()
     try:
         start = now - timedelta(days=365)
-        
+
         # Get all PBs
         pbs = db.query(PersonalBest).filter(
             PersonalBest.athlete_id == athlete_id,
             PersonalBest.achieved_at >= start,
             PersonalBest.achieved_at <= now
         ).all()
-        
+
         if not pbs:
             return {
                 "ok": True,
@@ -1279,14 +1279,14 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 "data": {"pb_count": 0, "pbs": []},
                 "evidence": [],
             }
-        
+
         # Get training load history for TSB lookup
         calc = TrainingLoadCalculator(db)
         try:
             history = calc.get_load_history(athlete_id, days=365)
         except Exception:
             history = []
-        
+
         # Build date lookup
         load_by_date = {}
         items = history if isinstance(history, list) else history.get("daily_loads", [])
@@ -1298,16 +1298,16 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 from datetime import datetime as dt
                 d = dt.fromisoformat(d).date()
             load_by_date[d] = item
-        
+
         # Build per-PB detail
         pb_details = []
         tsb_values = []
-        
+
         for pb in sorted(pbs, key=lambda x: x.achieved_at or now):
             pb_date = pb.achieved_at.date() if pb.achieved_at else None
             if not pb_date:
                 continue
-                
+
             # Get TSB day before
             check_date = pb_date - timedelta(days=1)
             tsb = None
@@ -1321,11 +1321,11 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     tsb_values.append(tsb)
                 if ctl is not None:
                     ctl = round(ctl, 1)
-            
+
             dist_km = round((pb.distance_meters or 0) / 1000, 2)
             time_min = round((pb.time_seconds or 0) / 60, 1)
             pace = round(time_min / dist_km, 2) if dist_km > 0 else None
-            
+
             pb_details.append({
                 "personal_best_id": str(pb.id),
                 "activity_id": str(pb.activity_id) if getattr(pb, "activity_id", None) else None,
@@ -1338,7 +1338,7 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 "tsb_day_before": tsb,
                 "ctl_day_before": ctl,
             })
-        
+
         # Compute summary stats
         summary = {
             "pb_count": len(pb_details),
@@ -1346,7 +1346,7 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             "tsb_max": max(tsb_values) if tsb_values else None,
             "tsb_mean": round(sum(tsb_values) / len(tsb_values), 1) if tsb_values else None,
         }
-        
+
         # Build evidence with actual citations
         evidence = []
         for pb in pb_details:
@@ -2097,16 +2097,16 @@ def compare_training_periods(db: Session, athlete_id: UUID, days: int = 28) -> D
 def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[str, Any]:
     """
     Phase 3: Wellness trends from DailyCheckin data.
-    
+
     Returns sleep, stress, soreness, HRV, and mindset trends.
     Critical for understanding recovery context and readiness.
     """
     from models import DailyCheckin
-    
+
     now = datetime.utcnow()
     days = max(7, min(int(days), 90))
     cutoff = now - timedelta(days=days)
-    
+
     try:
         checkins = (
             db.query(DailyCheckin)
@@ -2117,7 +2117,7 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
             .order_by(DailyCheckin.date.desc())
             .all()
         )
-        
+
         if not checkins:
             return {
                 "ok": True,
@@ -2130,7 +2130,7 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
                 },
                 "evidence": [],
             }
-        
+
         # Aggregate metrics
         sleep_values = [float(c.sleep_h) for c in checkins if c.sleep_h is not None]
         stress_values = [int(c.stress_1_5) for c in checkins if c.stress_1_5 is not None]
@@ -2140,10 +2140,10 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
         enjoyment_values = [int(c.enjoyment_1_5) for c in checkins if c.enjoyment_1_5 is not None]
         confidence_values = [int(c.confidence_1_5) for c in checkins if c.confidence_1_5 is not None]
         motivation_values = [int(c.motivation_1_5) for c in checkins if c.motivation_1_5 is not None]
-        
+
         def avg(vals: List) -> Optional[float]:
             return round(sum(vals) / len(vals), 2) if vals else None
-        
+
         def trend(vals: List) -> Optional[str]:
             """Determine if values are trending up, down, or stable."""
             if len(vals) < 3:
@@ -2160,7 +2160,7 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
             elif delta_pct < -10:
                 return "declining"
             return "stable"
-        
+
         # Build recent entries for evidence
         evidence: List[Dict[str, Any]] = []
         for c in checkins[:7]:  # Last 7 entries
@@ -2175,13 +2175,13 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
                 parts.append(f"HRV:{float(c.hrv_rmssd):.0f}")
             if c.resting_hr:
                 parts.append(f"RHR:{c.resting_hr}")
-            
+
             evidence.append({
                 "type": "wellness",
                 "date": c.date.isoformat(),
                 "value": " | ".join(parts) if parts else "check-in recorded",
             })
-        
+
         # --- Narrative ---
         wt_parts: List[str] = [f"Wellness over {days} days ({len(checkins)} check-ins):"]
         if sleep_values:
@@ -2255,19 +2255,19 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
 def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     Phase 3: Athlete profile with physiological thresholds and runner typing.
-    
+
     Returns max_hr, threshold paces, RPI, runner type, and training metrics.
     Critical for personalized recommendations and goal setting.
     """
     now = datetime.utcnow()
-    
+
     try:
         athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
             return {"ok": False, "tool": "get_athlete_profile", "error": "Athlete not found"}
-        
+
         units = (athlete.preferred_units or "metric")
-        
+
         # Calculate age if birthdate available
         age = None
         if athlete.birthdate:
@@ -2275,7 +2275,7 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             age = today.year - athlete.birthdate.year - (
                 (today.month, today.day) < (athlete.birthdate.month, athlete.birthdate.day)
             )
-        
+
         # Convert threshold pace for display
         threshold_pace_display = None
         if athlete.threshold_pace_per_km:
@@ -2289,7 +2289,7 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 m = int(athlete.threshold_pace_per_km // 60)
                 s = int(round(athlete.threshold_pace_per_km % 60))
                 threshold_pace_display = f"{m}:{s:02d}/km"
-        
+
         # Calculate HR zones if max_hr available
         hr_zones = None
         if athlete.max_hr:
@@ -2301,7 +2301,7 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 "zone_4_threshold": {"min": int(max_hr * 0.80), "max": int(max_hr * 0.90)},
                 "zone_5_max": {"min": int(max_hr * 0.90), "max": max_hr},
             }
-        
+
         # Build evidence
         evidence: List[Dict[str, Any]] = []
         if athlete.vdot:
@@ -2310,7 +2310,7 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             evidence.append({"type": "classification", "name": "runner_type", "value": athlete.runner_type})
         if athlete.max_hr:
             evidence.append({"type": "metric", "name": "max_hr", "value": f"{athlete.max_hr} bpm"})
-        
+
         # --- Narrative ---
         n_parts: List[str] = []
         if age is not None:
@@ -2388,18 +2388,18 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
 def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> Dict[str, Any]:
     """
     Phase 3: Training load history showing ATL/CTL/TSB trends over time.
-    
+
     Returns daily snapshots of training load metrics to understand load progression.
     Critical for periodization analysis and injury risk assessment.
     """
     now = datetime.utcnow()
     days = max(7, min(int(days), 90))
-    
+
     try:
         # Get activities for the window + buffer for CTL calculation (42 days for CTL)
         buffer_days = 42
         cutoff = now - timedelta(days=days + buffer_days)
-        
+
         runs = (
             db.query(Activity)
             .filter(
@@ -2410,7 +2410,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
             .order_by(Activity.start_time.asc())
             .all()
         )
-        
+
         if not runs:
             return {
                 "ok": True,
@@ -2422,7 +2422,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
                 },
                 "evidence": [],
             }
-        
+
         # Calculate daily TSS values
         daily_tss: Dict[date, float] = {}
         for a in runs:
@@ -2432,34 +2432,34 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
             intensity = (a.intensity_score or 50) / 100  # Default to moderate if unknown
             tss = duration_min * intensity
             daily_tss[run_date] = daily_tss.get(run_date, 0) + tss
-        
+
         # Calculate ATL (7-day) and CTL (42-day) for each day in window
         atl_decay = 1 - (2 / 8)  # 7-day time constant
         ctl_decay = 1 - (2 / 43)  # 42-day time constant
-        
+
         history: List[Dict[str, Any]] = []
         evidence: List[Dict[str, Any]] = []
-        
+
         atl = 0.0
         ctl = 0.0
-        
+
         start_date = (now - timedelta(days=days + buffer_days)).date()
         end_date = now.date()
         current_date = start_date
-        
+
         while current_date <= end_date:
             day_tss = daily_tss.get(current_date, 0)
-            
+
             # Exponential weighted moving average
             atl = atl * atl_decay + day_tss * (1 - atl_decay)
             ctl = ctl * ctl_decay + day_tss * (1 - ctl_decay)
             tsb = ctl - atl
-            
+
             # Only include days within the requested window
             if current_date >= (now - timedelta(days=days)).date():
                 # Determine form state
                 form_state = "fresh" if tsb > 10 else ("fatigued" if tsb < -10 else "balanced")
-                
+
                 # Risk assessment
                 if atl > ctl * 1.3:
                     risk = "high"
@@ -2467,7 +2467,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
                     risk = "moderate"
                 else:
                     risk = "low"
-                
+
                 history.append({
                     "date": current_date.isoformat(),
                     "atl": round(atl, 1),
@@ -2477,12 +2477,12 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
                     "injury_risk": risk,
                     "day_tss": round(day_tss, 1),
                 })
-            
+
             current_date += timedelta(days=1)
-        
+
         # Get current state (latest entry)
         current = history[-1] if history else None
-        
+
         # Calculate trends
         if len(history) >= 7:
             recent_ctl = [h["ctl"] for h in history[-7:]]
@@ -2500,7 +2500,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
                     ctl_trend = "maintaining"
         else:
             ctl_trend = None
-        
+
         # Build evidence from key dates
         for h in history[-7:]:
             evidence.append({
@@ -2508,7 +2508,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
                 "date": h["date"],
                 "value": f"ATL={h['atl']:.0f} CTL={h['ctl']:.0f} TSB={h['tsb']:+.0f} ({h['form_state']})",
             })
-        
+
         # --- Narrative ---
         tlh_parts: List[str] = [f"Training load history over {days} days."]
         if current:

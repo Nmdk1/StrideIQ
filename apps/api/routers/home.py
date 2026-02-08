@@ -42,7 +42,7 @@ class TodayWorkout(BaseModel):
     why_source: Optional[str] = None  # "correlation" | "load" | "plan"
     week_number: Optional[int] = None
     phase: Optional[str] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -59,7 +59,7 @@ class YesterdayInsight(BaseModel):
     last_activity_name: Optional[str] = None
     last_activity_id: Optional[str] = None
     days_since_last: Optional[int] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -89,7 +89,7 @@ class WeekProgress(BaseModel):
     trajectory_sentence: Optional[str] = None  # One sparse sentence about trajectory
     tsb_context: Optional[str] = None  # "Fresh" | "Building" | "Fatigued"
     load_trend: Optional[str] = None  # "up" | "stable" | "down"
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -153,7 +153,7 @@ class HomeResponse(BaseModel):
     today_checkin: Optional[TodayCheckin] = None  # Summary of today's check-in (if completed)
     strava_status: Optional[StravaStatusDetail] = None
     coach_briefing: Optional[dict] = None  # LLM-generated coaching narratives for all cards
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -194,41 +194,41 @@ def get_correlation_context(
 ) -> Optional[tuple[str, str]]:
     """
     Get correlation-based context for today's workout.
-    
+
     Checks athlete's stored correlations and returns relevant context
     if a correlation applies to today's workout type.
-    
+
     Only returns context when it's ACTIONABLE and clear.
     Plain language — no percentages or stats jargon.
-    
+
     Returns:
         (context_string, source) or (None, None) if no relevant correlation
-    
+
     Tone: Sparse, plain language. Self-explanatory.
     """
     try:
         from services.correlation_engine import analyze_correlations
-        
+
         # Get recent correlations (cached in production)
         result = analyze_correlations(athlete_id, days=60, db=db)
-        
+
         if 'error' in result or not result.get('correlations'):
             return None, None
-        
+
         correlations = result.get('correlations', [])
-        
+
         # Find the strongest significant correlation with strong effect
         for corr in correlations:
             if not corr.get('is_significant'):
                 continue
-            
+
             input_name = corr.get('input_name', '')
             r = corr.get('correlation_coefficient', 0)
-            
+
             # Only show if effect is strong (|r| > 0.5)
             if abs(r) < 0.5:
                 continue
-            
+
             # Generate plain-language context
             if 'sleep' in input_name and r > 0:
                 return "Your runs tend to be better after good sleep.", "correlation"
@@ -240,9 +240,9 @@ def get_correlation_context(
                 return "Higher protein days tend to precede your better runs.", "correlation"
             elif 'resting_hr' in input_name and r < 0:
                 return "Lower resting HR days correlate with your better performances.", "correlation"
-        
+
         return None, None
-        
+
     except Exception as e:
         logger.warning(f"Correlation context lookup failed: {type(e).__name__}: {e}")
         return None, None
@@ -251,49 +251,49 @@ def get_correlation_context(
 def get_tsb_context(athlete_id: str, db: Session) -> Optional[tuple[str, str, str]]:
     """
     Get Training Stress Balance context for the athlete.
-    
+
     Only returns context when it's ACTIONABLE and meaningful.
     Uses plain language — no jargon like "TSB" or "CTL".
-    
+
     Returns:
         (tsb_label, load_trend, context_sentence) or (None, None, None)
     """
     try:
         from services.training_load import TrainingLoadCalculator, TSBZone
         from uuid import UUID
-        
+
         calculator = TrainingLoadCalculator(db)
         athlete_uuid = UUID(athlete_id)
         load = calculator.calculate_training_load(athlete_uuid)
-        
+
         if load is None:
             return None, None, None
-        
+
         tsb = load.current_tsb
         ctl = load.current_ctl
-        
+
         # Only provide context if we have meaningful fitness data
         if ctl < 20:
             return None, None, None
-        
+
         # Use personalized TSB zones for this athlete (N=1)
         zone_info = calculator.get_tsb_zone(tsb, athlete_id=athlete_uuid)
-        
+
         # ONLY show context when it's actionable
         # "Building" or "normal" states don't need to be called out
-        
+
         if zone_info.zone == TSBZone.RACE_READY and tsb > 15:
             # This is actionable - athlete should know they're fresh
             return None, None, "Fresh and fit. Good window for a hard effort or race."
-        
+
         elif zone_info.zone == TSBZone.OVERTRAINING_RISK and tsb < -25:
             # This is actionable - athlete should consider recovery
             return None, None, "High fatigue accumulated. Recovery day would help."
-        
+
         # For normal training states, don't add noise
         # Let the trajectory sentence speak for itself
         return None, None, None
-        
+
     except Exception as e:
         logger.warning(f"TSB context lookup failed: {type(e).__name__}: {e}")
         return None, None, None
@@ -310,35 +310,35 @@ def generate_why_context(
 ) -> tuple[str, str]:
     """
     Generate sparse, non-prescriptive context for today's workout.
-    
+
     Priority order:
     1. Correlation-based context (if available and relevant)
     2. Training load context (TSB zone)
     3. Plan position (week/phase)
-    
+
     Returns:
         (context_string, source) where source is "correlation" | "load" | "plan"
-    
+
     Tone: Direct, data-driven, no motivation.
     """
     workout_type = workout.workout_type or 'workout'
     phase_display = format_phase(phase)
-    
+
     # 1. Try correlation-based context first
     if db and athlete_id:
         corr_context, corr_source = get_correlation_context(str(athlete_id), workout_type, db)
         if corr_context:
             return corr_context, corr_source
-    
+
     # 2. Try TSB-based context
     if db and athlete_id:
         tsb_label, load_trend, tsb_context = get_tsb_context(str(athlete_id), db)
         if tsb_context:
             return tsb_context, "load"
-    
+
     # 3. Fallback to plan-based context
     contexts = []
-    
+
     if week_number and plan.total_weeks:
         if week_number <= 2:
             contexts.append(f"Week {week_number}. Building foundation.")
@@ -346,10 +346,10 @@ def generate_why_context(
             contexts.append(f"Week {week_number} of {plan.total_weeks}. Final push.")
         else:
             contexts.append(f"Week {week_number} of {plan.total_weeks}.")
-    
+
     if phase_display:
         contexts.append(f"{phase_display} phase.")
-    
+
     # Add workout-specific context
     if 'threshold' in workout_type:
         contexts.append("Builds lactate clearance.")
@@ -361,7 +361,7 @@ def generate_why_context(
         contexts.append("Active recovery day.")
     elif 'strides' in workout_type:
         contexts.append("Neuromuscular activation. Short and quick.")
-    
+
     return " ".join(contexts) if contexts else None, "plan"
 
 
@@ -380,12 +380,12 @@ def generate_trajectory_sentence(
     Tone: Data speaks. No praise, no prescription.
 
     Includes TSB context when available.
-    
+
     remaining_mi: Only counts today + future planned miles (excludes missed past days)
     """
     # Use remaining_mi (today + future) not (planned - completed) to avoid confusion
     remaining = remaining_mi if remaining_mi > 0 else max(0, planned_mi - completed_mi)
-    
+
     if status == "no_plan":
         # Still provide insight for users without a plan
         if completed_mi > 0:
@@ -397,7 +397,7 @@ def generate_trajectory_sentence(
                     return f"{base} {tsb_context}"
                 return base
         return None
-    
+
     if status == "ahead":
         base = f"Ahead of schedule. {completed_mi:.0f} mi done of {planned_mi:.0f} mi planned."
     elif status == "on_track":
@@ -406,11 +406,11 @@ def generate_trajectory_sentence(
         base = f"Behind schedule. {remaining:.0f} mi to go."
     else:
         return None
-    
+
     # Append TSB context if available (but keep it short)
     if tsb_context and len(base) < 60:
         return f"{base}"
-    
+
     return base
 
 
@@ -420,28 +420,28 @@ def generate_yesterday_insight(activity: Activity) -> str:
     Tone: Data speaks. No praise, no prescription.
     """
     insights = []
-    
+
     # Efficiency comparison (if available)
     if hasattr(activity, 'efficiency_score') and activity.efficiency_score:
         if activity.efficiency_score > 0:
             insights.append(f"Efficiency {activity.efficiency_score:+.1f}% vs baseline.")
         elif activity.efficiency_score < 0:
             insights.append(f"Efficiency {activity.efficiency_score:.1f}% vs baseline.")
-    
+
     # Heart rate context
     if activity.avg_hr:
         if activity.avg_hr < 140:
             insights.append(f"HR stayed low ({activity.avg_hr} avg).")
         elif activity.avg_hr > 165:
             insights.append(f"HR ran high ({activity.avg_hr} avg).")
-    
+
     # Pace consistency (if splits available)
     if hasattr(activity, 'pace_variability') and activity.pace_variability:
         if activity.pace_variability < 5:
             insights.append("Consistent pacing.")
         elif activity.pace_variability > 15:
             insights.append("Variable pacing.")
-    
+
     # Default to distance/pace if no other insight
     if not insights:
         if activity.distance_m and activity.duration_s:
@@ -449,7 +449,7 @@ def generate_yesterday_insight(activity: Activity) -> str:
             pace_str = format_pace(pace_per_mile)
             distance_mi = activity.distance_m / 1609.344
             insights.append(f"{distance_mi:.1f} mi at {pace_str}.")
-    
+
     return " ".join(insights[:2]) if insights else None
 
 
@@ -770,38 +770,38 @@ async def get_home_data(
     """
     today = date.today()
     yesterday = today - timedelta(days=1)
-    
+
     # --- Today's Workout ---
     today_workout = TodayWorkout(has_workout=False)
-    
+
     # Find active plan
     active_plan = db.query(TrainingPlan).filter(
         TrainingPlan.athlete_id == current_user.id,
         TrainingPlan.status == "active"
     ).first()
-    
+
     if active_plan:
         # Find today's planned workout
         planned = db.query(PlannedWorkout).filter(
             PlannedWorkout.plan_id == active_plan.id,
             PlannedWorkout.scheduled_date == today
         ).first()
-        
+
         if planned:
             distance_mi = None
             if planned.target_distance_km:
                 distance_mi = planned.target_distance_km * 0.621371
-            
+
             # Enhanced why_context with correlation/load priority
             why_context, why_source = generate_why_context(
-                planned, 
+                planned,
                 active_plan,
                 planned.week_number,
                 planned.phase,
                 db=db,
                 athlete_id=str(current_user.id)
             )
-            
+
             today_workout = TodayWorkout(
                 has_workout=True,
                 workout_type=planned.workout_type,
@@ -813,40 +813,40 @@ async def get_home_data(
                 week_number=planned.week_number,
                 phase=format_phase(planned.phase)
             )
-    
+
     # --- Yesterday's Insight ---
     yesterday_insight = YesterdayInsight(has_activity=False)
-    
+
     yesterday_activity = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
         Activity.start_time >= yesterday,
         Activity.start_time < today
     ).order_by(Activity.start_time.desc()).first()
-    
+
     if yesterday_activity:
         distance_mi = None
         pace_str = None
-        
+
         if yesterday_activity.distance_m:
             distance_mi = yesterday_activity.distance_m / 1609.344
-        
+
         if yesterday_activity.distance_m and yesterday_activity.duration_s:
             pace_per_mile = yesterday_activity.duration_s / (yesterday_activity.distance_m / 1609.344)
             pace_str = format_pace(pace_per_mile)
-        
+
         # Try to get insight from InsightAggregator (CalendarInsight) first
         stored_insight = db.query(CalendarInsight).filter(
             CalendarInsight.athlete_id == current_user.id,
             CalendarInsight.insight_date == yesterday,
             CalendarInsight.is_dismissed == False
         ).order_by(desc(CalendarInsight.priority)).first()
-        
+
         if stored_insight:
             insight = stored_insight.content or stored_insight.title
         else:
             # Fallback to inline generation
             insight = generate_yesterday_insight(yesterday_activity)
-        
+
         yesterday_insight = YesterdayInsight(
             has_activity=True,
             activity_name=yesterday_activity.name or "Run",
@@ -860,7 +860,7 @@ async def get_home_data(
         last_activity = db.query(Activity).filter(
             Activity.athlete_id == current_user.id
         ).order_by(Activity.start_time.desc()).first()
-        
+
         if last_activity:
             days_ago = (today - last_activity.start_time.date()).days
             yesterday_insight = YesterdayInsight(
@@ -870,25 +870,25 @@ async def get_home_data(
                 last_activity_id=str(last_activity.id),
                 days_since_last=days_ago
             )
-    
+
     # --- Week Progress ---
     # Get Monday of current week
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
-    
+
     week_days = []
     completed_mi = 0.0
     planned_mi = 0.0
     remaining_mi = 0.0  # Only count today + future planned miles
     current_week_number = None
     current_phase = None
-    
+
     for i in range(7):
         day_date = monday + timedelta(days=i)
         day_abbrev = ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i]
         is_past = day_date < today
         is_today_or_future = day_date >= today
-        
+
         # Get planned workout for this day
         planned_workout = None
         if active_plan:
@@ -896,14 +896,14 @@ async def get_home_data(
                 PlannedWorkout.plan_id == active_plan.id,
                 PlannedWorkout.scheduled_date == day_date
             ).first()
-        
+
         # Get actual activity for this day
         actual = db.query(Activity).filter(
             Activity.athlete_id == current_user.id,
             Activity.start_time >= day_date,
             Activity.start_time < day_date + timedelta(days=1)
         ).first()
-        
+
         workout_type = None
         distance_mi = None
         planned_distance_mi = None
@@ -911,22 +911,22 @@ async def get_home_data(
         is_missed = False
         activity_id = None
         workout_id = None
-        
+
         if planned_workout:
             workout_type = planned_workout.workout_type
             workout_id = str(planned_workout.id)
             planned_distance = planned_workout.target_distance_km * 0.621371 if planned_workout.target_distance_km else 0
             planned_mi += planned_distance
             planned_distance_mi = round(planned_distance, 1) if planned_distance else None
-            
+
             # Only count future planned miles as "remaining"
             if is_today_or_future and not actual:
                 remaining_mi += planned_distance
-                
+
             if day_date == today:
                 current_week_number = planned_workout.week_number
                 current_phase = planned_workout.phase
-        
+
         if actual:
             completed = True
             activity_id = str(actual.id)
@@ -942,7 +942,7 @@ async def get_home_data(
             else:
                 # Future day - show planned distance
                 distance_mi = round(planned_workout.target_distance_km * 0.621371, 0)
-        
+
         week_days.append(WeekDay(
             date=day_date.isoformat(),
             day_abbrev=day_abbrev,
@@ -954,7 +954,7 @@ async def get_home_data(
             activity_id=activity_id,
             workout_id=workout_id,
         ))
-    
+
     # Determine status
     if not active_plan:
         status = "no_plan"
@@ -963,20 +963,20 @@ async def get_home_data(
     else:
         progress_ratio = completed_mi / planned_mi if planned_mi > 0 else 0
         expected_ratio = (today.weekday() + 1) / 7  # How far into the week
-        
+
         if progress_ratio >= expected_ratio * 1.1:
             status = "ahead"
         elif progress_ratio >= expected_ratio * 0.8:
             status = "on_track"
         else:
             status = "behind"
-    
+
     # Count activities this week for trajectory
     activities_this_week = sum(1 for day in week_days if day.completed)
-    
+
     # Get TSB context for trajectory
     tsb_label, load_trend, tsb_short_context = get_tsb_context(str(current_user.id), db)
-    
+
     trajectory_sentence = generate_trajectory_sentence(
         status=status,
         completed_mi=round(completed_mi, 1),
@@ -985,7 +985,7 @@ async def get_home_data(
         activities_this_week=activities_this_week,
         tsb_context=tsb_short_context
     )
-    
+
     week_progress = WeekProgress(
         week_number=current_week_number,
         total_weeks=active_plan.total_weeks if active_plan else None,
@@ -999,16 +999,16 @@ async def get_home_data(
         tsb_context=tsb_label,
         load_trend=load_trend
     )
-    
+
     # Check Strava connection and activity count
     strava_connected = bool(current_user.strava_access_token)
-    
+
     # Get total activity count
     total_activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id
     ).count()
     has_any_activities = total_activities > 0
-    
+
     # Last sync time
     last_sync = None
     if current_user.last_strava_sync:
@@ -1033,7 +1033,7 @@ async def get_home_data(
         ingestion_paused = bool(is_ingestion_paused(db))
     except Exception:
         ingestion_paused = False
-    
+
     # Generate hero narrative (ADR-033)
     hero_narrative = None
     if is_feature_enabled("narrative.translation_enabled", str(current_user.id), db) and has_any_activities:
@@ -1042,18 +1042,18 @@ async def get_home_data(
             from services.narrative_memory import NarrativeMemory
             from services.fitness_bank import FitnessBankCalculator
             from services.training_load import TrainingLoadCalculator
-            
+
             # Get fitness bank and load data
             bank_calc = FitnessBankCalculator(db)
             bank = bank_calc.calculate(current_user.id)
-            
+
             load_calc = TrainingLoadCalculator(db)
             load = load_calc.calculate_training_load(current_user.id)
-            
+
             if bank and load:
                 translator = NarrativeTranslator(db, current_user.id)
                 memory = NarrativeMemory(db, current_user.id, use_redis=False)
-                
+
                 # Build upcoming workout context if available
                 upcoming = None
                 if today_workout.has_workout:
@@ -1061,7 +1061,7 @@ async def get_home_data(
                         "workout_type": today_workout.workout_type,
                         "name": today_workout.title
                     }
-                
+
                 # Get hero narrative
                 narrative_obj = translator.get_hero_narrative(
                     bank,
@@ -1070,7 +1070,7 @@ async def get_home_data(
                     atl=load.current_atl,
                     upcoming_workout=upcoming
                 )
-                
+
                 if narrative_obj and not memory.recently_shown(narrative_obj.hash, days=1):
                     hero_narrative = narrative_obj.text
                     memory.record_shown(narrative_obj.hash, narrative_obj.signal_type, "home_hero")
@@ -1083,7 +1083,7 @@ async def get_home_data(
                 log_narrative_error(current_user.id, "home_hero", str(e))
             except Exception:
                 pass  # Don't fail the request due to audit logging
-    
+
     # --- Phase 2 (ADR-17): Coach Noticed ---
     coach_noticed = None
     if has_any_activities:
@@ -1246,7 +1246,7 @@ class HomeSignalsResponse(BaseModel):
     signals: List[SignalItem]
     suppressed_count: int
     last_updated: str
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -1257,17 +1257,17 @@ async def get_home_signals(
 ):
     """
     Get aggregated signals from all analytics methods.
-    
+
     Only returns high-confidence signals worth surfacing on the home page.
     Signals are prioritized and filtered by confidence level.
-    
+
     Requires feature flag: signals.home_banner
     """
     from services.home_signals import aggregate_signals, signals_to_dict
-    
+
     # Check feature flag
     flag_enabled = is_feature_enabled("signals.home_banner", str(current_user.id), db)
-    
+
     if not flag_enabled:
         # Return empty response if feature disabled
         return HomeSignalsResponse(
@@ -1275,13 +1275,13 @@ async def get_home_signals(
             suppressed_count=0,
             last_updated=date.today().isoformat()
         )
-    
+
     # Aggregate signals from all analytics methods
     response = aggregate_signals(str(current_user.id), db)
-    
+
     # Convert to response model
     result = signals_to_dict(response)
-    
+
     return HomeSignalsResponse(
         signals=[SignalItem(**s) for s in result["signals"]],
         suppressed_count=result["suppressed_count"],

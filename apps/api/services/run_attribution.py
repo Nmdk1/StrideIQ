@@ -83,7 +83,7 @@ def get_pace_decay_attribution(
 ) -> Optional[RunAttribution]:
     """
     Get pace decay attribution for this run.
-    
+
     Priority for races and long runs.
     """
     try:
@@ -93,15 +93,15 @@ def get_pace_decay_attribution(
             compare_to_historical,
             get_athlete_decay_profile
         )
-        
+
         # Get splits for this activity
         splits = db.query(ActivitySplit).filter(
             ActivitySplit.activity_id == activity.id
         ).order_by(ActivitySplit.split_number).all()
-        
+
         if len(splits) < 3:
             return None
-        
+
         # Calculate decay for this run
         split_data = []
         for s in splits:
@@ -112,19 +112,19 @@ def get_pace_decay_attribution(
                     "elapsed_time_s": s.elapsed_time_s,
                     "pace_per_km": pace
                 })
-        
+
         if len(split_data) < 3:
             return None
-        
+
         # Calculate decay
         first_half = split_data[:len(split_data)//2]
         second_half = split_data[len(split_data)//2:]
-        
+
         avg_first = sum(s["pace_per_km"] for s in first_half) / len(first_half)
         avg_second = sum(s["pace_per_km"] for s in second_half) / len(second_half)
-        
+
         decay_pct = ((avg_second - avg_first) / avg_first) * 100 if avg_first > 0 else 0
-        
+
         # Classify pattern
         if decay_pct < -2:
             pattern = "negative"
@@ -150,7 +150,7 @@ def get_pace_decay_attribution(
             insight = f"Pace faded {decay_pct:.1f}% — suggests went out too fast or fueling issue."
             color = "orange"
             confidence = AttributionConfidence.HIGH
-        
+
         # Compare to historical if available
         try:
             profile = get_athlete_decay_profile(str(activity.athlete_id), db)
@@ -162,7 +162,7 @@ def get_pace_decay_attribution(
                     insight += f" Worse than your avg ({avg_historical:.1f}%)."
         except Exception:
             pass
-        
+
         return RunAttribution(
             source=AttributionSource.PACE_DECAY.value,
             priority=PRIORITY_PACE_DECAY,
@@ -177,7 +177,7 @@ def get_pace_decay_attribution(
                 "splits_analyzed": len(split_data)
             }
         )
-        
+
     except Exception as e:
         logger.warning(f"Error in pace decay attribution: {e}")
         return None
@@ -203,7 +203,7 @@ def get_tsb_attribution(
 
         tsb = load.current_tsb
         zone_info = calculator.get_tsb_zone(tsb, athlete_id=athlete_uuid)
-        
+
         if zone_info.zone == TSBZone.RACE_READY:
             title = "Peak Form"
             insight = f"TSB +{int(tsb)} — optimal freshness zone. Good timing for hard effort."
@@ -229,7 +229,7 @@ def get_tsb_attribution(
             insight = f"TSB {int(tsb)} — high fatigue. May explain sub-par performance."
             color = "orange"
             confidence = AttributionConfidence.HIGH
-        
+
         return RunAttribution(
             source=AttributionSource.TSB.value,
             priority=PRIORITY_TSB,
@@ -245,7 +245,7 @@ def get_tsb_attribution(
                 "zone": zone_info.zone.value
             }
         )
-        
+
     except Exception as e:
         logger.warning(f"Error in TSB attribution: {e}")
         return None
@@ -261,22 +261,22 @@ def get_pre_state_attribution(
     """
     try:
         from services.pre_race_fingerprinting import generate_readiness_profile
-        
+
         # Get check-in from activity day
         checkin = db.query(DailyCheckin).filter(
             DailyCheckin.athlete_id == athlete_id,
             DailyCheckin.date == activity_date
         ).first()
-        
+
         if not checkin:
             return None
-        
+
         # Get readiness profile
         profile = generate_readiness_profile(athlete_id, db)
-        
+
         if not profile or profile.confidence_level == "insufficient":
             return None
-        
+
         # Count matching factors
         matching = []
         if checkin.sleep_h is not None and float(checkin.sleep_h) >= 7:
@@ -285,11 +285,11 @@ def get_pre_state_attribution(
             matching.append("hrv")
         if checkin.stress_1_5 is not None and checkin.stress_1_5 <= 3:
             matching.append("low_stress")
-        
+
         match_count = len(matching)
         total_factors = 3
         match_pct = (match_count / total_factors) * 100
-        
+
         if match_pct >= 80:
             title = "Optimal State"
             insight = f"Pre-run state matches your PR fingerprint ({int(match_pct)}% match)."
@@ -305,7 +305,7 @@ def get_pre_state_attribution(
             insight = f"Pre-run state differs from your success patterns ({int(match_pct)}% match)."
             color = "yellow"
             confidence = AttributionConfidence.MODERATE
-        
+
         return RunAttribution(
             source=AttributionSource.PRE_STATE.value,
             priority=PRIORITY_PRE_STATE,
@@ -321,7 +321,7 @@ def get_pre_state_attribution(
                 "hrv_rmssd": float(checkin.hrv_rmssd) if checkin.hrv_rmssd is not None else None
             }
         )
-        
+
     except Exception as e:
         logger.warning(f"Error in pre-state attribution: {e}")
         return None
@@ -330,27 +330,27 @@ def get_pre_state_attribution(
 def _compute_gap_efficiency(activity: Activity, db: Session) -> tuple:
     """
     Compute Efficiency Factor (EF) using GAP from splits.
-    
+
     EF = speed / HR (higher = better).
-    
+
     Speed is in meters per second, derived from GAP (Grade Adjusted Pace)
     when available, or raw pace as fallback. GAP normalizes for elevation
     so hilly runs aren't penalized for slower raw pace.
-    
+
     A 20-miler at 122 bpm with 2300ft climbing and GAP of 8:10/mi is
     extremely efficient — high speed-per-heartbeat.
-    
+
     Returns (ef_value, used_gap: bool). Higher EF = more efficient.
     """
     avg_hr = float(activity.avg_hr)
-    
+
     # Try to get GAP from splits
     splits = db.query(ActivitySplit).filter(
         ActivitySplit.activity_id == activity.id,
         ActivitySplit.gap_seconds_per_mile.isnot(None),
         ActivitySplit.distance.isnot(None),
     ).all()
-    
+
     if splits and len(splits) >= 2:
         # Distance-weighted average GAP
         total_dist = 0.0
@@ -361,13 +361,13 @@ def _compute_gap_efficiency(activity: Activity, db: Session) -> tuple:
             if dist > 0 and gap > 0:
                 weighted_gap += gap * dist
                 total_dist += dist
-        
+
         if total_dist > 0:
             avg_gap_spm = weighted_gap / total_dist  # seconds per mile
             # Convert GAP to speed: meters per second
             speed_mps = 1609.34 / avg_gap_spm
             return speed_mps / avg_hr, True
-    
+
     # Fallback: raw speed / HR
     speed_mps = activity.distance_m / activity.duration_s
     return speed_mps / avg_hr, False
@@ -379,17 +379,17 @@ def get_efficiency_attribution(
 ) -> Optional[RunAttribution]:
     """
     Get efficiency attribution — was this run more/less efficient than trend?
-    
+
     Compares against SIMILAR runs (same distance range & workout type) rather
     than all runs. An 18-mile long run should not be compared to a 5K tempo;
     efficiency naturally varies by distance due to cardiac drift, glycogen
     depletion, and cumulative fatigue.
-    
+
     Tiered fallback:
       1. Same workout type + similar distance (±30%) — best apples-to-apples
       2. Similar distance only (±30%) — still meaningful
       3. All recent runs — last resort, lower confidence
-    
+
     Uses GAP (Grade Adjusted Pace) when available so hilly runs aren't
     penalized for slower raw pace. A 20-miler at 122 bpm with 2300ft
     of climbing is exceptional efficiency, not "below average."
@@ -398,26 +398,26 @@ def get_efficiency_attribution(
     try:
         if not activity.avg_hr or not activity.distance_m or not activity.duration_s:
             return None
-        
+
         if activity.avg_hr < 100 or activity.distance_m < 1000:
             return None
-        
+
         # Calculate this run's efficiency using GAP when available.
         # GAP (Grade Adjusted Pace) normalizes for elevation — a hilly run
         # gets credited for the extra work the athlete did at low HR.
         # GAP lives on splits, so we compute a distance-weighted average.
         efficiency, used_gap = _compute_gap_efficiency(activity, db)
-        
+
         # Distance band: ±30% of this run's distance
         dist_lo = activity.distance_m * 0.70
         dist_hi = activity.distance_m * 1.30
-        
+
         # Look back 90 days for similar runs (28 days is often too few for
         # long runs — most athletes only do 1-2 long runs per month)
         end_date = activity.start_time.date()
         start_date_similar = end_date - timedelta(days=90)
         start_date_all = end_date - timedelta(days=28)
-        
+
         # Base filter: same athlete, not this run, valid HR/distance
         base_filter = [
             Activity.athlete_id == activity.athlete_id,
@@ -427,7 +427,7 @@ def get_efficiency_attribution(
             Activity.distance_m > 1000,
             Activity.duration_s > 0,
         ]
-        
+
         # ---- Tier 1: Same workout type + similar distance (90 days) ----
         # Minimum of 2 (not 3) — long runs are infrequent (1-2/month).
         # This is the best comparison: same workout type = same physiological
@@ -435,7 +435,7 @@ def get_efficiency_attribution(
         similar_activities = []
         comparison_label = "similar runs"
         tier_confidence_boost = 0  # Tiers 1/2 get normal confidence
-        
+
         if activity.workout_type:
             similar_activities = db.query(Activity).filter(
                 *base_filter,
@@ -448,7 +448,7 @@ def get_efficiency_attribution(
             if len(similar_activities) >= 2:
                 wt_label = activity.workout_type.lower().replace('_', ' ')
                 comparison_label = f"your recent {wt_label}s"
-        
+
         # ---- Tier 2: Same workout type, any distance (90 days) ----
         # Still better than mixing types — a long run at ANY distance is
         # more comparable than mixing tempos, races, and easy runs.
@@ -462,7 +462,7 @@ def get_efficiency_attribution(
             if len(similar_activities) >= 2:
                 wt_label = activity.workout_type.lower().replace('_', ' ')
                 comparison_label = f"your recent {wt_label}s"
-        
+
         # ---- Tier 3: Similar distance only (90 days) ----
         if len(similar_activities) < 2:
             similar_activities = db.query(Activity).filter(
@@ -476,7 +476,7 @@ def get_efficiency_attribution(
                 dist_km = activity.distance_m / 1000
                 comparison_label = f"runs of similar distance (~{dist_km:.0f}km)"
                 tier_confidence_boost = -1  # Less reliable without type matching
-        
+
         # ---- Tier 4: All recent runs (28 days, lowest confidence) ----
         if len(similar_activities) < 3:
             similar_activities = db.query(Activity).filter(
@@ -488,17 +488,17 @@ def get_efficiency_attribution(
                 return None  # Not enough data for any comparison
             comparison_label = "recent runs"
             tier_confidence_boost = -1  # Apples-to-oranges
-        
+
         recent_efficiencies = []
         for act in similar_activities:
             eff, _ = _compute_gap_efficiency(act, db)
             recent_efficiencies.append(eff)
-        
+
         avg_efficiency = sum(recent_efficiencies) / len(recent_efficiencies)
-        
+
         # EF = speed / HR. Higher = better (more distance per heartbeat).
         diff_pct = ((efficiency - avg_efficiency) / avg_efficiency) * 100
-        
+
         if diff_pct > 5:
             title = "Very Efficient"
             insight = f"Efficiency {diff_pct:.1f}% better than {comparison_label}."
@@ -524,14 +524,14 @@ def get_efficiency_attribution(
             insight = f"Efficiency {abs(diff_pct):.1f}% worse than {comparison_label}. Check for fatigue or illness."
             color = "orange"
             confidence = AttributionConfidence.HIGH
-        
+
         # Downgrade confidence if we fell back to all-runs comparison
         if tier_confidence_boost == -1:
             if confidence == AttributionConfidence.HIGH:
                 confidence = AttributionConfidence.MODERATE
             elif confidence == AttributionConfidence.MODERATE:
                 confidence = AttributionConfidence.LOW
-        
+
         return RunAttribution(
             source=AttributionSource.EFFICIENCY.value,
             priority=PRIORITY_EFFICIENCY,
@@ -549,7 +549,7 @@ def get_efficiency_attribution(
                 "method": "gap" if used_gap else "raw_pace",
             }
         )
-        
+
     except Exception as e:
         logger.warning(f"Error in efficiency attribution: {e}")
         return None
@@ -564,10 +564,10 @@ def generate_summary(attributions: List[RunAttribution]) -> Optional[str]:
     """
     if not attributions:
         return None
-    
+
     # Find primary attribution
     primary = attributions[0]
-    
+
     summaries = {
         "pace_decay": {
             "negative": "Strong negative split execution.",
@@ -583,7 +583,7 @@ def generate_summary(attributions: List[RunAttribution]) -> Optional[str]:
             "overtraining_risk": "High fatigue may have impacted performance."
         }
     }
-    
+
     # Try to build summary from primary
     if primary.source == "pace_decay":
         pattern = primary.data.get("pattern", "even")
@@ -591,7 +591,7 @@ def generate_summary(attributions: List[RunAttribution]) -> Optional[str]:
     elif primary.source == "tsb":
         zone = primary.data.get("zone", "neutral")
         return summaries["tsb"].get(zone, "Form analyzed.")
-    
+
     return f"{primary.title}: {primary.insight.split('.')[0]}."
 
 
@@ -602,12 +602,12 @@ def get_run_attribution(
 ) -> Optional[RunAttributionResult]:
     """
     Main function: Get complete attribution analysis for a run.
-    
+
     Args:
         activity_id: Activity UUID string
         athlete_id: Athlete UUID string
         db: Database session
-    
+
     Returns:
         RunAttributionResult or None
     """
@@ -616,46 +616,46 @@ def get_run_attribution(
         Activity.id == activity_id,
         Activity.athlete_id == athlete_id
     ).first()
-    
+
     if not activity:
         return None
-    
+
     activity_date = activity.start_time.date()
-    
+
     # Collect attributions from all sources
     attributions: List[RunAttribution] = []
-    
+
     # 1. Pace Decay (priority for races/long runs)
     pace_attr = get_pace_decay_attribution(activity, db)
     if pace_attr:
         attributions.append(pace_attr)
-    
+
     # 2. TSB Status
     tsb_attr = get_tsb_attribution(str(athlete_id), activity_date, db)
     if tsb_attr:
         attributions.append(tsb_attr)
-    
+
     # 3. Pre-Run State
     pre_attr = get_pre_state_attribution(str(athlete_id), activity_date, db)
     if pre_attr:
         attributions.append(pre_attr)
-    
+
     # 4. Efficiency vs Trend
     eff_attr = get_efficiency_attribution(activity, db)
     if eff_attr:
         attributions.append(eff_attr)
-    
+
     # CS attribution removed - archived to branch archive/cs-model-2026-01
-    
+
     # Sort by priority
     attributions.sort(key=lambda a: (a.priority, a.confidence != AttributionConfidence.HIGH.value))
-    
+
     # Limit to max
     attributions = attributions[:MAX_ATTRIBUTIONS]
-    
+
     # Generate summary
     summary = generate_summary(attributions)
-    
+
     return RunAttributionResult(
         activity_id=str(activity.id),
         activity_name=activity.name or "Run",
