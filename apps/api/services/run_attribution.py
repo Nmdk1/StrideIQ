@@ -329,14 +329,18 @@ def get_pre_state_attribution(
 
 def _compute_gap_efficiency(activity: Activity, db: Session) -> tuple:
     """
-    Compute efficiency factor using GAP (Grade Adjusted Pace) from splits.
+    Compute Efficiency Factor (EF) using GAP from splits.
     
-    Returns (efficiency_value, used_gap: bool).
-    Lower efficiency = better (less time per HR beat, normalized for grade).
+    EF = speed / HR (higher = better).
     
-    GAP lives on ActivitySplit.gap_seconds_per_mile. We compute a
-    distance-weighted average GAP across all splits, then divide by avg HR.
-    Falls back to raw pace/HR if no GAP data exists on splits.
+    Speed is in meters per second, derived from GAP (Grade Adjusted Pace)
+    when available, or raw pace as fallback. GAP normalizes for elevation
+    so hilly runs aren't penalized for slower raw pace.
+    
+    A 20-miler at 122 bpm with 2300ft climbing and GAP of 8:10/mi is
+    extremely efficient — high speed-per-heartbeat.
+    
+    Returns (ef_value, used_gap: bool). Higher EF = more efficient.
     """
     avg_hr = float(activity.avg_hr)
     
@@ -360,12 +364,13 @@ def _compute_gap_efficiency(activity: Activity, db: Session) -> tuple:
         
         if total_dist > 0:
             avg_gap_spm = weighted_gap / total_dist  # seconds per mile
-            pace_per_km = avg_gap_spm / 1.60934
-            return pace_per_km / avg_hr, True
+            # Convert GAP to speed: meters per second
+            speed_mps = 1609.34 / avg_gap_spm
+            return speed_mps / avg_hr, True
     
-    # Fallback: raw pace
-    pace_per_km = activity.duration_s / (activity.distance_m / 1000)
-    return pace_per_km / avg_hr, False
+    # Fallback: raw speed / HR
+    speed_mps = activity.distance_m / activity.duration_s
+    return speed_mps / avg_hr, False
 
 
 def get_efficiency_attribution(
@@ -491,33 +496,32 @@ def get_efficiency_attribution(
         
         avg_efficiency = sum(recent_efficiencies) / len(recent_efficiencies)
         
-        # Compare (lower efficiency value = better for pace/HR ratio context)
+        # EF = speed / HR. Higher = better (more distance per heartbeat).
         diff_pct = ((efficiency - avg_efficiency) / avg_efficiency) * 100
         
-        # For efficiency, LOWER is better (less time per HR beat)
-        if diff_pct < -5:
+        if diff_pct > 5:
             title = "Very Efficient"
-            insight = f"Efficiency {abs(diff_pct):.1f}% better than your {comparison_label}."
+            insight = f"Efficiency {diff_pct:.1f}% better than {comparison_label}."
             color = "emerald"
             confidence = AttributionConfidence.HIGH
-        elif diff_pct < -2:
+        elif diff_pct > 2:
             title = "Efficient"
-            insight = f"Efficiency {abs(diff_pct):.1f}% better than {comparison_label}. Good form."
+            insight = f"Efficiency {diff_pct:.1f}% better than {comparison_label}. Good form."
             color = "green"
             confidence = AttributionConfidence.MODERATE
-        elif diff_pct <= 2:
+        elif diff_pct >= -2:
             title = "Typical Efficiency"
             insight = f"Efficiency in line with your {comparison_label}."
             color = "slate"
             confidence = AttributionConfidence.LOW
-        elif diff_pct <= 5:
+        elif diff_pct >= -5:
             title = "Below Average"
-            insight = f"Efficiency {diff_pct:.1f}% worse than {comparison_label}. May indicate fatigue."
+            insight = f"Efficiency {abs(diff_pct):.1f}% worse than {comparison_label}. May indicate fatigue."
             color = "yellow"
             confidence = AttributionConfidence.MODERATE
         else:
             title = "Low Efficiency"
-            insight = f"Efficiency {diff_pct:.1f}% worse than {comparison_label}. Check for fatigue or illness."
+            insight = f"Efficiency {abs(diff_pct):.1f}% worse than {comparison_label}. Check for fatigue or illness."
             color = "orange"
             confidence = AttributionConfidence.HIGH
         
