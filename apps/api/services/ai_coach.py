@@ -2242,8 +2242,8 @@ ATHLETE BRIEF:
                 pace_str = f"{int(pace_min)}:{int((pace_min % 1) * 60):02d}/mi" if dist_mi > 0 else "?"
                 add(
                     f"Today's {dist_mi:.1f}mi run",
-                    f"You ran {pace_str} — want a full breakdown?",
-                    f"Review my run from today ({dist_mi:.1f} mi, {pace_str}). Cite the date + run label + distance + pace + avg HR (from get_recent_runs).",
+                    f"{pace_str} over {dist_mi:.1f}mi — what did it do for your build?",
+                    f"What effect did today's run have on my fitness and fatigue? Was the effort appropriate for where I am in my training? What should I do tomorrow based on how today loaded me?",
                 )
         except Exception:
             pass
@@ -2262,20 +2262,20 @@ ATHLETE BRIEF:
                         add(
                             f"TSB is +{tsb:.0f} — you're fresh",
                             f"CTL {ctl:.0f}, ATL {atl:.0f}. Ready for a hard session?",
-                            "Am I fresh enough for a hard workout? Cite my current ATL/CTL/TSB and explain what that implies for today.",
+                            "I'm feeling fresh. What's the best way to capitalize on this freshness — should I push a quality session, or is there a strategic reason to stay easy? What does my recent training suggest I'm ready for?",
                         )
                     elif tsb < -30:
                         add(
                             f"TSB is {tsb:.0f} — deep fatigue",
                             f"ATL {atl:.0f} vs CTL {ctl:.0f}. Should we ease up?",
-                            "Am I overreaching? Cite my current ATL/CTL/TSB and give a recovery plan for the next 48 hours.",
+                            "I'm carrying a lot of fatigue. Is this productive overreach that's building fitness, or am I digging a hole? What's the risk if I keep pushing, and what would a smart next 48-72 hours look like?",
                         )
                     else:
                         label = f" ({zone})" if zone else ""
                         add(
                             f"TSB is {tsb:.0f}{label}",
                             f"CTL {ctl:.0f}, ATL {atl:.0f}. Where am I in the build?",
-                            "Summarize my current training load status. Cite current ATL/CTL/TSB and the TSB zone label.",
+                            "Where am I in my training build right now? Am I absorbing the load well or showing signs of stagnation? What should the next week look like to keep progressing without overreaching?",
                         )
         except Exception:
             pass
@@ -2290,7 +2290,7 @@ ATHLETE BRIEF:
                     add(
                         f"{days_out} days to {race_name}",
                         "Are you on track? What should the next few weeks look like?",
-                        f"Am I on track for my goal race ({race_name}, {days_out} days away)? Use get_plan_week and get_training_load and cite specific workouts + current load.",
+                        f"With {days_out} days until {race_name}, am I on track? Based on my current fitness, fatigue, and recent training quality — what's the honest assessment of where I'll be on race day, and what should I prioritize in the remaining weeks?",
                     )
         except Exception:
             pass
@@ -2326,13 +2326,13 @@ ATHLETE BRIEF:
                         add(
                             f"{cat} PR — {time_str}" if time_str else f"{cat} PR on {date_str}",
                             f"Set on {date_str}{tsb_str}. What pattern led to your {pb_count} PRs?",
-                            f"Analyze what led to my {pb_count} PRs. Cite each PR date + distance + TSB day-before (from get_pb_patterns).",
+                            f"I've set {pb_count} PRs. Is there a pattern — a fatigue level, a type of training block, a volume sweet spot — that consistently produces my best performances? What can I learn from this to chase the next one?",
                         )
                     elif time_str:
                         add(
                             f"{cat} PR — {time_str}",
                             f"Set on {date_str}{tsb_str}. What can you tell me about it?",
-                            f"Analyze my {cat} PR ({time_str} on {date_str}). What training led to it?",
+                            f"I PR'd my {cat} with {time_str}. What in my recent training set that up? Was it the volume, the workouts, the taper, the freshness? And what does it tell me about where my fitness actually is right now?",
                         )
         except Exception:
             pass
@@ -2347,13 +2347,13 @@ ATHLETE BRIEF:
                         continue
                     title_lower = title.lower()
                     if "improving" in title_lower:
-                        add(title, "What's driving this improvement?", f"{title} — what's driving this? Cite evidence.")
+                        add(title, "What's driving this improvement?", f"My data shows: {title}. What in my training is driving this, and how do I keep it going without overdoing it?")
                     elif "declining" in title_lower or "drop" in title_lower:
-                        add(title, "Should we investigate this trend?", f"{title} — should we investigate? Cite evidence.")
+                        add(title, "Should we investigate this trend?", f"My data shows: {title}. Should I be concerned? Is this a normal training phase or a sign I need to change something? What would you recommend?")
                     elif "risk" in title_lower or "warning" in title_lower:
-                        add(title, "What should I do about this?", f"{title} — what should I do? Cite evidence.")
+                        add(title, "What should I do about this?", f"My data flagged: {title}. How serious is this, what's causing it, and what concrete steps should I take in the next few days?")
                     else:
-                        add(title, "Tell me more about this.", f"{title} — tell me more? Cite evidence.")
+                        add(title, "Tell me more about this.", f"My data shows: {title}. What does this mean for my training, and is there anything I should do differently?")
         except Exception:
             pass
 
@@ -2369,13 +2369,13 @@ ATHLETE BRIEF:
                         add(
                             f"Threshold efficiency improving {abs(trend):.0f}%",
                             f"Current: {current:.1f}. What's changing in your runs?" if current else "What's changing in your runs?",
-                            "Is my threshold efficiency improving? Use get_efficiency_by_zone and cite the current value + trend%.",
+                            "My threshold efficiency is improving. What's driving this — is it the volume, the workout structure, better recovery, or just accumulated fitness? How do I keep this trajectory going?",
                         )
                     elif trend > 10:
                         add(
                             f"Threshold efficiency down {trend:.0f}%",
                             f"Current: {current:.1f}. Worth investigating." if current else "Worth investigating.",
-                            "My threshold efficiency looks worse. Use get_efficiency_by_zone and get_efficiency_trend to identify specific examples.",
+                            "My threshold efficiency is declining. Is this accumulated fatigue that will resolve with rest, or a sign that something in my training needs to change? What specific runs show the drop-off?",
                         )
         except Exception:
             pass
@@ -2385,7 +2385,7 @@ ATHLETE BRIEF:
             add(
                 "How's my training going?",
                 "A full read on your recent runs, load, and trajectory.",
-                "How is my training going overall? Cite at least 2 recent runs (date + run label + distance + pace) and my current ATL/CTL/TSB.",
+                "Give me an honest assessment of my training. Am I building fitness, stagnating, or running myself into the ground? What's going well, what concerns you, and what would you change in the next 7 days?",
             )
 
         return suggestions[:5]
