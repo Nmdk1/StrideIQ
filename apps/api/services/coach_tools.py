@@ -703,12 +703,13 @@ def get_training_load(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     if summary.current_ctl and summary.current_atl:
         ratio = summary.current_atl / summary.current_ctl if summary.current_ctl > 0 else 0
         if ratio > 1.3:
-            ratio_note = " Acute:Chronic ratio is HIGH — injury risk elevated."
+            ratio_note = " Acute:Chronic ratio is high — coach should recommend recovery."
         elif ratio > 1.1:
-            ratio_note = " Acute:Chronic ratio is moderately high — monitor closely."
+            ratio_note = " Acute:Chronic ratio is moderately elevated."
 
     narrative = (
-        f"Fitness (CTL): {ctl_v}, Fatigue (ATL): {atl_v}, Form (TSB): {tsb_v}. "
+        f"(INTERNAL — translate for athlete, never quote raw numbers.) "
+        f"CTL: {ctl_v}, ATL: {atl_v}, TSB: {tsb_v}. "
         f"Zone: {zone_info.label} — {zone_info.description} "
         f"Phase: {summary.training_phase or 'N/A'}.{ratio_note}"
     )
@@ -3303,9 +3304,10 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
             phase = d.get("training_phase", "")
             rec = d.get("recommendation", "")
             lines = [
-                f"Fitness (chronic load): {ctl}",
-                f"Fatigue (acute load): {atl}",
-                f"Form (balance): {tsb} — {zone_label}",
+                "(INTERNAL — use to reason about their state but NEVER quote these numbers to the athlete. Translate into plain coaching language.)",
+                f"Chronic load (CTL): {ctl}",
+                f"Acute load (ATL): {atl}",
+                f"Balance (TSB): {tsb} — {zone_label}",
             ]
             if phase:
                 lines.append(f"Phase: {phase}")
@@ -3321,8 +3323,9 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
         if recovery.get("ok"):
             d = recovery["data"]
             lines = [
+                "(INTERNAL — reason from these but translate into coaching language for the athlete.)",
                 f"Recovery status: {d.get('status', 'unknown')}",
-                f"Injury risk: {d.get('injury_risk_score', 'N/A')}",
+                f"Injury risk score: {d.get('injury_risk_score', 'N/A')}",
             ]
             if d.get("durability_index") is not None:
                 lines.append(f"Durability index: {d['durability_index']}")

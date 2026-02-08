@@ -512,6 +512,13 @@ def generate_coach_home_briefing(
         "CRITICAL: Only reference data explicitly provided. Do NOT invent or assume anything.",
         "1-2 sentences per field max.",
         "",
+        "COACHING TONE RULES (non-negotiable):",
+        "- ALWAYS lead with what went well before raising concerns. Celebrate effort and progress first.",
+        "- Frame load/fatigue concerns as FORWARD-LOOKING actions ('easy day tomorrow to absorb this') NOT as warnings or diagnoses.",
+        "- NEVER contradict how the athlete says they feel. If they feel fine but load is high, say 'Glad you feel good — let's keep it that way with an easy day tomorrow.' Do NOT say 'but actually you are fatigued.'",
+        "- NEVER quote raw metrics like TSB numbers, form scores, or load ratios to the athlete. Translate into plain coaching language.",
+        "- You are a motivator and strategist, not a liability disclaimer. Athletes who feel good after a hard effort should leave feeling BETTER, not anxious.",
+        "",
         "=== ATHLETE BRIEF ===",
         athlete_brief,
         "",
@@ -551,11 +558,11 @@ def generate_coach_home_briefing(
         schema_properties = {
             "coach_noticed": {
                 "type": "STRING",
-                "description": "The single most important coaching observation from their data. 1-2 sentences.",
+                "description": "The single most important coaching observation from their data. Lead with progress or positive trends. If there is a concern, frame it as an actionable recommendation, not a warning. 1-2 sentences.",
             },
             "today_context": {
                 "type": "STRING",
-                "description": "If run completed: react to actual performance. If not yet: what today should look like based on their actual training patterns, load state, and goals. 1-2 sentences.",
+                "description": "If run completed: celebrate the effort first, then frame next steps. If not yet: what today should look like based on their actual training patterns, load state, and goals. 1-2 sentences.",
             },
             "week_assessment": {
                 "type": "STRING",
@@ -563,7 +570,7 @@ def generate_coach_home_briefing(
             },
             "checkin_reaction": {
                 "type": "STRING",
-                "description": "React to their subjective state in context of their training load and upcoming demands. 1-2 sentences.",
+                "description": "Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.",
             },
             "race_assessment": {
                 "type": "STRING",
