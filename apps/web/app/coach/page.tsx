@@ -47,7 +47,7 @@ function splitReceipts(content: string): { main: string; receipts: string | null
 }
 
 function getSuggestionIcon(title: string) {
-  const t = title.toLowerCase();
+  const t = (title || '').toLowerCase();
   if (t.includes('pr') || t.includes('pb')) return Trophy;
   if (t.includes('tsb') || t.includes('load') || t.includes('fatigue') || t.includes('fresh')) return Zap;
   if (t.includes('efficiency')) return TrendingUp;
@@ -225,7 +225,16 @@ function CoachPageInner() {
     let cancelled = false;
     aiCoachService.getSuggestions()
       .then((res) => {
-        if (!cancelled) setSuggestions(res.suggestions || []);
+        if (!cancelled) {
+          // Normalize: backend may return strings (legacy) or {title,description,prompt} objects
+          const raw = res.suggestions || [];
+          const normalized = raw.map((s: unknown) =>
+            typeof s === 'string'
+              ? { title: s, description: '', prompt: s }
+              : s as Suggestion
+          );
+          setSuggestions(normalized);
+        }
       })
       .catch(() => {
         if (!cancelled) setSuggestions([]);
