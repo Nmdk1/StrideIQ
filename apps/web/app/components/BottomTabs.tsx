@@ -12,10 +12,10 @@ import {
 } from "lucide-react";
 
 const TABS = [
-  { href: "/home", label: "Home", icon: Home },
-  { href: "/coach", label: "Coach", icon: MessageSquare },
-  { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/progress", label: "Progress", icon: TrendingUp },
+  { href: "/home", label: "Home", icon: Home, accent: false },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays, accent: false },
+  { href: "/coach", label: "Coach", icon: MessageSquare, accent: true },
+  { href: "/progress", label: "Progress", icon: TrendingUp, accent: false },
 ] as const;
 
 const MORE_ITEMS = [
@@ -128,13 +128,21 @@ export default function BottomTabs() {
                 key={tab.href}
                 href={tab.href}
                 className={`flex flex-col items-center justify-center gap-0.5 w-full h-full transition-colors ${
-                  isActive
+                  tab.accent && !isActive
+                    ? "text-orange-400 active:text-orange-300"
+                    : isActive
                     ? "text-orange-500"
                     : "text-slate-500 active:text-slate-300"
                 }`}
               >
-                <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
-                <span className="text-[10px] font-medium">{tab.label}</span>
+                {tab.accent ? (
+                  <div className={`p-1.5 rounded-full ${isActive ? 'bg-orange-600' : 'bg-orange-600/20'}`}>
+                    <Icon className="w-5 h-5 text-white" strokeWidth={2.5} />
+                  </div>
+                ) : (
+                  <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                )}
+                <span className={`text-[10px] font-medium ${tab.accent && !isActive ? 'text-orange-400' : ''}`}>{tab.label}</span>
               </Link>
             );
           })}

@@ -2195,89 +2195,34 @@ ATHLETE BRIEF:
         days_in = (today - plan.plan_start_date).days
         return (days_in // 7) + 1
 
-    def get_dynamic_suggestions(self, athlete_id: UUID) -> List[str]:
+    def get_dynamic_suggestions(self, athlete_id: UUID) -> List[Dict[str, str]]:
         """
-        Return 3-5 data-driven suggested questions.
+        Return 3-5 data-driven suggested questions as structured objects.
+        
+        Each suggestion has:
+        - title: Short, specific, data-driven headline
+        - description: One sentence of context with actual numbers
+        - prompt: Internal payload sent to the LLM (invisible to user)
         
         Sources:
         - coach_tools.get_active_insights (prioritized insights)
         - coach_tools.get_pb_patterns (recent PBs)
         - coach_tools.get_training_load (TSB state)
         - coach_tools.get_efficiency_by_zone (efficiency trends)
+        - Recent activities
+        - Goal race countdown
         """
-        suggestions: List[str] = []
+        suggestions: List[Dict[str, str]] = []
+        seen_titles: set = set()
 
-        def add(q: str) -> None:
-            if q and q not in suggestions and len(suggestions) < 5:
-                suggestions.append(q)
+        def add(title: str, description: str, prompt: str) -> None:
+            if title and title not in seen_titles and len(suggestions) < 5:
+                seen_titles.add(title)
+                suggestions.append({"title": title, "description": description, "prompt": prompt})
 
         today = date.today()
 
-        # --- 1. Insights from coach_tools.get_active_insights ---
-        try:
-            result = coach_tools.get_active_insights(self.db, athlete_id, limit=3)
-            if result.get("ok"):
-                for ins in result.get("data", {}).get("insights", []):
-                    q = self._insight_to_question(ins)
-                    if q:
-                        add(q)
-        except Exception:
-            pass
-
-        # --- 2. PB-driven suggestions ---
-        try:
-            result = coach_tools.get_pb_patterns(self.db, athlete_id)
-            if result.get("ok"):
-                data = result.get("data") or {}
-                pb_count = data.get("pb_count", 0)
-                tsb_min = data.get("tsb_min")
-                tsb_max = data.get("tsb_max")
-                pbs = data.get("pbs", [])
-                
-                if pb_count >= 2 and tsb_min is not None and tsb_max is not None:
-                    add(
-                        f"Analyze what led to my {pb_count} PRs. Cite each PR date + distance + TSB day-before (from get_pb_patterns)."
-                    )
-                
-                # Add specific extreme TSB suggestion if there's an outlier
-                if pbs:
-                    extreme = min(pbs, key=lambda p: p.get("tsb_day_before") or 0)
-                    if extreme.get("tsb_day_before") is not None and extreme.get("tsb_day_before") < -30:
-                        add(
-                            f"Explain my {extreme['category']} PR on {extreme['date']} when TSB was {extreme['tsb_day_before']:.0f}. Cite the PR details and compare to my typical PR TSB range."
-                        )
-        except Exception:
-            pass
-
-        # --- 3. TSB-driven suggestions ---
-        try:
-            result = coach_tools.get_training_load(self.db, athlete_id)
-            if result.get("ok"):
-                tsb = result.get("data", {}).get("tsb")
-                if tsb is not None:
-                    if tsb > 20:
-                        add(f"Am I fresh enough for a hard workout? Cite my current ATL/CTL/TSB and explain what that implies for today.")
-                    elif tsb < -30:
-                        add(f"Am I overreaching? Cite my current ATL/CTL/TSB and give a recovery plan for the next 48 hours.")
-                    else:
-                        add(f"Summarize my current training load status. Cite current ATL/CTL/TSB and the TSB zone label.")
-        except Exception:
-            pass
-
-        # --- 4. Efficiency-driven suggestions ---
-        try:
-            result = coach_tools.get_efficiency_by_zone(self.db, athlete_id, "threshold", 90)
-            if result.get("ok"):
-                trend = result.get("data", {}).get("recent_trend_pct")
-                if trend is not None:
-                    if trend < -10:
-                        add("Is my threshold efficiency improving? Use get_efficiency_by_zone and cite the current value + trend%, and also cite 2 specific recent runs from get_efficiency_trend.")
-                    elif trend > 10:
-                        add("My threshold efficiency looks worse. Use get_efficiency_by_zone and get_efficiency_trend to identify 2 concrete examples (date + activity id) showing the change.")
-        except Exception:
-            pass
-
-        # --- 5. Recent activity suggestions ---
+        # --- 1. Recent activity (highest priority — just ran) ---
         try:
             start_of_today = datetime.combine(today, datetime.min.time())
             completed_today = (
@@ -2287,38 +2232,163 @@ ATHLETE BRIEF:
                     Activity.sport == "run",
                     Activity.start_time >= start_of_today,
                 )
+                .order_by(Activity.start_time.desc())
                 .first()
             )
             if completed_today:
-                distance_km = (completed_today.distance_m or 0) / 1000
-                add(f"Review my run from today ({distance_km:.1f} km). Cite the date + run label + distance + pace + avg HR (from get_recent_runs).")
+                dist_mi = (completed_today.distance_m or 0) / 1609.34
+                dur_min = (completed_today.duration_s or 0) / 60
+                pace_min = dur_min / dist_mi if dist_mi > 0 else 0
+                pace_str = f"{int(pace_min)}:{int((pace_min % 1) * 60):02d}/mi" if dist_mi > 0 else "?"
+                add(
+                    f"Today's {dist_mi:.1f}mi run",
+                    f"You ran {pace_str} — want a full breakdown?",
+                    f"Review my run from today ({dist_mi:.1f} mi, {pace_str}). Cite the date + run label + distance + pace + avg HR (from get_recent_runs).",
+                )
         except Exception:
             pass
 
-        # --- Fallback defaults ---
-        if len(suggestions) < 3:
-            add("How is my training going overall? Cite at least 2 recent runs (date + run label + distance + pace) and my current ATL/CTL/TSB.")
-            add("Am I on track for my goal race? Use get_plan_week and get_training_load and cite specific workouts + current load.")
+        # --- 2. TSB-driven (current state) ---
+        try:
+            result = coach_tools.get_training_load(self.db, athlete_id)
+            if result.get("ok"):
+                data = result.get("data", {})
+                tsb = data.get("tsb")
+                atl = data.get("atl")
+                ctl = data.get("ctl")
+                zone = data.get("tsb_zone_label", "")
+                if tsb is not None and atl is not None and ctl is not None:
+                    if tsb > 20:
+                        add(
+                            f"TSB is +{tsb:.0f} — you're fresh",
+                            f"CTL {ctl:.0f}, ATL {atl:.0f}. Ready for a hard session?",
+                            "Am I fresh enough for a hard workout? Cite my current ATL/CTL/TSB and explain what that implies for today.",
+                        )
+                    elif tsb < -30:
+                        add(
+                            f"TSB is {tsb:.0f} — deep fatigue",
+                            f"ATL {atl:.0f} vs CTL {ctl:.0f}. Should we ease up?",
+                            "Am I overreaching? Cite my current ATL/CTL/TSB and give a recovery plan for the next 48 hours.",
+                        )
+                    else:
+                        label = f" ({zone})" if zone else ""
+                        add(
+                            f"TSB is {tsb:.0f}{label}",
+                            f"CTL {ctl:.0f}, ATL {atl:.0f}. Where am I in the build?",
+                            "Summarize my current training load status. Cite current ATL/CTL/TSB and the TSB zone label.",
+                        )
+        except Exception:
+            pass
+
+        # --- 3. Goal race countdown ---
+        try:
+            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            if athlete and athlete.goal_race_date:
+                days_out = (athlete.goal_race_date - today).days
+                race_name = athlete.goal_race_name or "goal race"
+                if 0 < days_out <= 120:
+                    add(
+                        f"{days_out} days to {race_name}",
+                        "Are you on track? What should the next few weeks look like?",
+                        f"Am I on track for my goal race ({race_name}, {days_out} days away)? Use get_plan_week and get_training_load and cite specific workouts + current load.",
+                    )
+        except Exception:
+            pass
+
+        # --- 4. PB-driven ---
+        try:
+            result = coach_tools.get_pb_patterns(self.db, athlete_id)
+            if result.get("ok"):
+                data = result.get("data") or {}
+                pbs = data.get("pbs", [])
+                pb_count = data.get("pb_count", 0)
+                
+                if pbs:
+                    # Most recent PB
+                    most_recent = max(pbs, key=lambda p: p.get("date", ""))
+                    cat = most_recent.get("category", "?")
+                    pb_date = most_recent.get("date", "")
+                    tsb_before = most_recent.get("tsb_day_before")
+                    
+                    # Format time
+                    time_s = most_recent.get("time_seconds", 0)
+                    if time_s:
+                        mins = int(time_s) // 60
+                        secs = int(time_s) % 60
+                        time_str = f"{mins}:{secs:02d}"
+                    else:
+                        time_str = ""
+                    
+                    tsb_str = f" at TSB {tsb_before:.0f}" if tsb_before is not None else ""
+                    date_str = pb_date[:10] if pb_date else ""
+                    
+                    if pb_count >= 2:
+                        add(
+                            f"{cat} PR — {time_str}" if time_str else f"{cat} PR on {date_str}",
+                            f"Set on {date_str}{tsb_str}. What pattern led to your {pb_count} PRs?",
+                            f"Analyze what led to my {pb_count} PRs. Cite each PR date + distance + TSB day-before (from get_pb_patterns).",
+                        )
+                    elif time_str:
+                        add(
+                            f"{cat} PR — {time_str}",
+                            f"Set on {date_str}{tsb_str}. What can you tell me about it?",
+                            f"Analyze my {cat} PR ({time_str} on {date_str}). What training led to it?",
+                        )
+        except Exception:
+            pass
+
+        # --- 5. Insights ---
+        try:
+            result = coach_tools.get_active_insights(self.db, athlete_id, limit=3)
+            if result.get("ok"):
+                for ins in result.get("data", {}).get("insights", []):
+                    title = ins.get("title") or ""
+                    if not title:
+                        continue
+                    title_lower = title.lower()
+                    if "improving" in title_lower:
+                        add(title, "What's driving this improvement?", f"{title} — what's driving this? Cite evidence.")
+                    elif "declining" in title_lower or "drop" in title_lower:
+                        add(title, "Should we investigate this trend?", f"{title} — should we investigate? Cite evidence.")
+                    elif "risk" in title_lower or "warning" in title_lower:
+                        add(title, "What should I do about this?", f"{title} — what should I do? Cite evidence.")
+                    else:
+                        add(title, "Tell me more about this.", f"{title} — tell me more? Cite evidence.")
+        except Exception:
+            pass
+
+        # --- 6. Efficiency trend ---
+        try:
+            result = coach_tools.get_efficiency_by_zone(self.db, athlete_id, "threshold", 90)
+            if result.get("ok"):
+                data = result.get("data", {})
+                trend = data.get("recent_trend_pct")
+                current = data.get("current_efficiency")
+                if trend is not None:
+                    if trend < -10:
+                        add(
+                            f"Threshold efficiency improving {abs(trend):.0f}%",
+                            f"Current: {current:.1f}. What's changing in your runs?" if current else "What's changing in your runs?",
+                            "Is my threshold efficiency improving? Use get_efficiency_by_zone and cite the current value + trend%.",
+                        )
+                    elif trend > 10:
+                        add(
+                            f"Threshold efficiency down {trend:.0f}%",
+                            f"Current: {current:.1f}. Worth investigating." if current else "Worth investigating.",
+                            "My threshold efficiency looks worse. Use get_efficiency_by_zone and get_efficiency_trend to identify specific examples.",
+                        )
+        except Exception:
+            pass
+
+        # --- Fallback ---
+        if len(suggestions) < 2:
+            add(
+                "How's my training going?",
+                "A full read on your recent runs, load, and trajectory.",
+                "How is my training going overall? Cite at least 2 recent runs (date + run label + distance + pace) and my current ATL/CTL/TSB.",
+            )
 
         return suggestions[:5]
-
-    def _insight_to_question(self, insight: Dict[str, Any]) -> Optional[str]:
-        """Convert an insight dict to a question format."""
-        title = insight.get("title") or ""
-        if not title:
-            return None
-
-        title_lower = title.lower()
-        if "improving" in title_lower:
-            return f"{title} — what's driving this?"
-        elif "declining" in title_lower or "drop" in title_lower:
-            return f"{title} — should we investigate?"
-        elif "pattern" in title_lower:
-            return f"{title} — is this intentional?"
-        elif "risk" in title_lower or "warning" in title_lower:
-            return f"{title} — what should I do?"
-        else:
-            return f"{title} — tell me more?"
 
     def classify_query_complexity(self, message: str) -> str:
         """
@@ -2485,10 +2555,10 @@ ATHLETE BRIEF:
         Returns:
             Dict with response text and metadata
         """
-        # If OpenAI not available, return a helpful message
-        if not self.client or not self.assistant_id:
+        # If no LLM client is available, return a helpful message
+        if not self.gemini_client and not self.client:
             return {
-                "response": "AI Coach is not configured. Please set OPENAI_API_KEY in your environment.",
+                "response": "AI Coach is not configured. Please set GOOGLE_AI_API_KEY in your environment.",
                 "error": True
             }
 
@@ -2886,8 +2956,23 @@ ATHLETE BRIEF:
                     gemini_result["thread_id"] = thread_id
                     return gemini_result
                 else:
-                    # Gemini failed, fall through to OpenAI Assistants
+                    # Gemini failed — if OpenAI not available, return the Gemini error
+                    if not self.client or not self.assistant_id:
+                        logger.warning(f"Gemini failed and OpenAI unavailable: {gemini_result.get('error_detail', 'unknown')}")
+                        return {
+                            "response": "Coach is temporarily unavailable. Please try again in a moment.",
+                            "error": True,
+                            "thread_id": None,
+                        }
                     logger.info(f"Gemini fallback triggered: {gemini_result.get('error_detail', 'unknown')}")
+
+            # OpenAI Assistants path (legacy fallback when Gemini is not available/fails)
+            if not self.client or not self.assistant_id:
+                return {
+                    "response": "Coach is temporarily unavailable. Please try again in a moment.",
+                    "error": True,
+                    "thread_id": None,
+                }
 
             thread_id, is_new_thread = self.get_or_create_thread_with_state(athlete_id)
             if not thread_id:

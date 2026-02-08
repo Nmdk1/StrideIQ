@@ -201,7 +201,9 @@ async def get_suggested_questions(
     db: Session = Depends(get_db),
 ):
     """
-    Get suggested questions based on current athlete state.
+    Get structured suggested questions based on current athlete state.
+    
+    Returns list of {title, description, prompt} objects with real data.
     """
     coach = AICoach(db)
     suggestions = coach.get_dynamic_suggestions(athlete.id)

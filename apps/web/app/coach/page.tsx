@@ -7,15 +7,17 @@
  * Provides a chat interface to the AI running coach.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { aiCoachService } from '@/lib/api/services/ai-coach';
+import { aiCoachService, type Suggestion } from '@/lib/api/services/ai-coach';
 import { onboardingService } from '@/lib/api/services/onboarding';
+import { useProgressSummary } from '@/lib/hooks/queries/progress';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MessageSquare, Send, Sparkles, Activity, BedDouble, Target, TrendingUp, RotateCcw, ShieldCheck, Trophy, BrainCircuit } from 'lucide-react';
+import { MessageSquare, Send, Sparkles, Activity, TrendingUp, RotateCcw, Trophy, BrainCircuit, Target, Zap, Heart } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { ProposalCard, type ProposalCardProposal } from '@/components/coach/ProposalCard';
 
@@ -44,92 +46,68 @@ function splitReceipts(content: string): { main: string; receipts: string | null
   return { main, receipts: receipts || null };
 }
 
-type SuggestionCard = {
-  title: string;
-  description: string;
-  prompt: string;
-  Icon: React.ComponentType<{ className?: string }>;
-};
-
-function getSuggestionIcon(text: string) {
-  const t = text.toLowerCase();
-  if (t.includes('long run')) return Target;
-  if (t.includes('overtraining') || t.includes('overtrain')) return Sparkles;
-  if (t.includes('getting fitter') || t.includes('fitter') || t.includes('fitness')) return TrendingUp;
-  if (t.includes("today")) return Activity;
-  if (t.includes("focus on this week") || t.includes("this week")) return BedDouble;
-  return Sparkles;
+function getSuggestionIcon(title: string) {
+  const t = title.toLowerCase();
+  if (t.includes('pr') || t.includes('pb')) return Trophy;
+  if (t.includes('tsb') || t.includes('load') || t.includes('fatigue') || t.includes('fresh')) return Zap;
+  if (t.includes('efficiency')) return TrendingUp;
+  if (t.includes('run') || t.includes('mi ')) return Activity;
+  if (t.includes('days to') || t.includes('race') || t.includes('goal')) return Target;
+  if (t.includes('improving') || t.includes('declining') || t.includes('trend')) return TrendingUp;
+  if (t.includes('recovery') || t.includes('durability')) return Heart;
+  return BrainCircuit;
 }
 
-function buildSuggestionCard(prompt: string): SuggestionCard {
-  const t = prompt.toLowerCase();
-
-  // Treat the raw prompt as an internal payload; surface a human-readable card.
-  if (t.includes("pr") || t.includes("personal best") || t.includes("get_pb_patterns")) {
-    return {
-      title: 'PR Analysis',
-      description: 'What preceded your PRs — with evidence (dates, run labels, key values).',
-      prompt,
-      Icon: Trophy,
-    };
-  }
-
-  if (t.includes("atl") || t.includes("ctl") || t.includes("tsb") || t.includes("training load")) {
-    return {
-      title: 'Training Load',
-      description: 'Where you are today (ATL/CTL/TSB) and what it implies — evidence-backed.',
-      prompt,
-      Icon: ShieldCheck,
-    };
-  }
-
-  if (t.includes("efficiency") || t.includes("get_efficiency")) {
-    return {
-      title: 'Efficiency Deep Dive',
-      description: 'Compare concrete runs and show what changed — evidence-backed.',
-      prompt,
-      Icon: TrendingUp,
-    };
-  }
-
-  if (t.includes("30-day") || t.includes("30 day") || t.includes("month") || t.includes("volume")) {
-    return {
-      title: 'Volume & Consistency',
-      description: 'Your recent volume rhythm and how it’s trending — evidence-backed.',
-      prompt,
-      Icon: Activity,
-    };
-  }
-
-  if (t.includes("this week") || t.includes("week")) {
-    return {
-      title: 'This Week',
-      description: 'What you’ve done + what’s next, grounded in your plan and runs.',
-      prompt,
-      Icon: BedDouble,
-    };
-  }
-
-  return {
-    title: 'Ask the Coach',
-    description: 'A focused question that triggers a data-backed answer with evidence.',
-    prompt,
-    Icon: BrainCircuit,
-  };
+// Suggestion rendering helper — renders a single structured suggestion card
+function SuggestionButton({ suggestion, onClick, disabled }: { suggestion: Suggestion; onClick: () => void; disabled: boolean }) {
+  const Icon = getSuggestionIcon(suggestion.title);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="text-left rounded-lg border border-slate-700/60 bg-slate-900/30 hover:bg-slate-900/40 hover:border-orange-500/40 transition-colors p-4 disabled:opacity-60 disabled:cursor-not-allowed"
+    >
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-700/60">
+          <Icon className="w-4 h-4 text-orange-400" />
+        </div>
+        <div className="min-w-0">
+          <div className="font-semibold text-slate-100">{suggestion.title}</div>
+          <div className="text-sm text-slate-400 mt-1 leading-snug">
+            {suggestion.description}
+          </div>
+        </div>
+      </div>
+    </button>
+  );
 }
+
 
 export default function CoachPage() {
+  return (
+    <Suspense fallback={null}>
+      <CoachPageInner />
+    </Suspense>
+  );
+}
+
+function CoachPageInner() {
+  const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [stickToBottom, setStickToBottom] = useState(true);
   const [baselineNeeded, setBaselineNeeded] = useState(false);
   const [baselineOpen, setBaselineOpen] = useState(false);
   const [usedBaselineBanner, setUsedBaselineBanner] = useState(false);
   const [rebuildPlanPrompt, setRebuildPlanPrompt] = useState(false);
+  
+  // Progress summary for empty state brief + context panel
+  const { data: progressData } = useProgressSummary(28);
   const [baselineDraft, setBaselineDraft] = useState({
     runs_per_week_4w: 3,
     weekly_volume_value: 15,
@@ -189,17 +167,58 @@ export default function CoachPage() {
     };
   }, []);
 
+  // Build coach brief from progress data for empty state
+  const coachBrief = React.useMemo(() => {
+    if (!progressData) return null;
+    const lines: string[] = [];
+    if (progressData.ctl !== null || progressData.tsb !== null) {
+      const parts: string[] = [];
+      if (progressData.ctl !== null) parts.push('CTL ' + progressData.ctl.toFixed(0));
+      if (progressData.atl !== null) parts.push('ATL ' + progressData.atl.toFixed(0));
+      if (progressData.tsb !== null) {
+        const zone = progressData.tsb_zone ? ' (' + progressData.tsb_zone + ')' : '';
+        parts.push('TSB ' + progressData.tsb.toFixed(0) + zone);
+      }
+      if (parts.length) lines.push('**Fitness:** ' + parts.join(' / '));
+    }
+    if (progressData.volume_trajectory) {
+      const vol = progressData.volume_trajectory;
+      if (vol.current_week_mi != null) {
+        const target = vol.peak_week_mi ? ' (peak ' + vol.peak_week_mi.toFixed(0) + 'mi)' : '';
+        lines.push('**This week:** ' + vol.current_week_mi.toFixed(1) + 'mi' + target);
+      }
+    }
+    if (progressData.recovery) {
+      const rec = progressData.recovery;
+      if (rec.durability_index != null) {
+        const halfLifeDays = rec.recovery_half_life_hours != null ? (rec.recovery_half_life_hours / 24).toFixed(1) : '?';
+        lines.push('**Durability:** ' + rec.durability_index.toFixed(1) + ' / Half-life ' + halfLifeDays + ' days');
+      }
+    }
+    if (progressData.goal_race_name && progressData.goal_race_days_remaining != null) {
+      lines.push('**Race:** ' + progressData.goal_race_name + ' in ' + progressData.goal_race_days_remaining + ' days');
+    }
+    if (progressData.race_predictions && progressData.race_predictions.length > 0) {
+      const pred = progressData.race_predictions[0];
+      if (pred.predicted_time) lines.push('**Projection:** ' + pred.distance + ' - ' + pred.predicted_time);
+    }
+    return lines.length > 0 ? lines.join('\n\n') : null;
+  }, [progressData]);
+
   // Add initial greeting (only after we attempted to load history)
   useEffect(() => {
     if (historyLoaded && messages.length === 0) {
+      const brief = coachBrief
+        ? 'Here\'s what I see in your data today:\n\n' + coachBrief + '\n\nWhat do you want to work on?'
+        : 'I\'m your StrideIQ Coach. Everything I say is backed by your training data.\n\nWhat do you want to understand or decide today?';
       setMessages([{
         id: 'greeting',
         role: 'assistant',
-        content: `Hi — I’m your StrideIQ Coach.\n\nI don’t guess. If I use numbers, I’ll cite evidence from your training data (dates + run names + key values).\n\nWhat do you want to understand or decide today?`,
+        content: brief, // data-driven brief replaces generic greeting -- was: `Hi — I’m your StrideIQ Coach.\n\nI don’t guess. If I use numbers, I’ll cite evidence from your training data (dates + run names + key values).\n\nWhat do you want to understand or decide today?`,
         timestamp: new Date(),
       }]);
     }
-  }, [historyLoaded, messages.length]);
+  }, [historyLoaded, messages.length, coachBrief]);
 
   // Fetch dynamic suggestions on load
   useEffect(() => {
@@ -215,6 +234,17 @@ export default function CoachPage() {
       cancelled = true;
     };
   }, []);
+
+  // Deep link: read ?q= parameter and pre-fill input
+  useEffect(() => {
+    const q = searchParams?.get('q');
+    if (q && !input) {
+      setInput(q);
+      // Focus the input so user can just hit send
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Thin-history fallback status (best-effort).
   useEffect(() => {
@@ -627,35 +657,18 @@ export default function CoachPage() {
                         <div className="w-full md:hidden" data-testid="coach-suggestions-mobile">
                           <div className="flex items-center gap-2 text-xs text-slate-400 mb-3">
                             <Sparkles className="w-3.5 h-3.5 text-orange-500" />
-                            <span>Try one of these</span>
+                            <span>I want to talk about...</span>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {(suggestions || []).slice(0, 5).map((prompt, i) => {
-                              const card = buildSuggestionCard(prompt);
-                              const Icon = card.Icon;
-                              return (
-                                <button
-                                  key={i}
-                                  type="button"
-                                  onClick={() => handleSend(card.prompt)}
-                                  disabled={isLoading}
-                                  className="text-left rounded-lg border border-slate-700/60 bg-slate-900/30 hover:bg-slate-900/40 hover:border-orange-500/40 transition-colors p-4 disabled:opacity-60 disabled:cursor-not-allowed"
-                                >
-                                  <div className="flex items-start gap-3">
-                                    <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-700/60">
-                                      <Icon className="w-4 h-4 text-orange-400" />
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="font-semibold text-slate-100">{card.title}</div>
-                                      <div className="text-sm text-slate-400 mt-1 leading-snug">
-                                        {card.description}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </button>
-                              );
-                            })}
+                            {(suggestions || []).slice(0, 5).map((s, i) => (
+                              <SuggestionButton
+                                key={i}
+                                suggestion={s}
+                                onClick={() => handleSend(s.prompt)}
+                                disabled={isLoading}
+                              />
+                            ))}
                           </div>
                         </div>
                       )}
@@ -812,44 +825,81 @@ export default function CoachPage() {
               </CardContent>
             </Card>
 
-            {/* Capabilities / suggestions panel */}
+            {/* Context + suggestions panel (desktop sidebar) */}
             <Card
               className="hidden md:flex flex-col bg-slate-800/50 border-slate-700/50 h-full min-h-0 w-80"
               data-testid="coach-suggestions-sidebar"
             >
-              <CardContent className="p-4 flex-1 min-h-0 overflow-y-auto">
-                <div className="flex items-center gap-2 text-sm text-slate-300 mb-3">
-                  <Sparkles className="w-4 h-4 text-orange-500" />
-                  <span className="font-semibold">Try one of these</span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3">
-                  {(suggestions || []).slice(0, 5).map((prompt, i) => {
-                    const card = buildSuggestionCard(prompt);
-                    const Icon = card.Icon;
-                    return (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => handleSend(card.prompt)}
-                        disabled={isLoading}
-                        className="text-left rounded-lg border border-slate-700/60 bg-slate-900/30 hover:bg-slate-900/40 hover:border-orange-500/40 transition-colors p-4 disabled:opacity-60 disabled:cursor-not-allowed"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-700/60">
-                            <Icon className="w-4 h-4 text-orange-400" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-semibold text-slate-100">{card.title}</div>
-                            <div className="text-sm text-slate-400 mt-1 leading-snug">
-                              {card.description}
-                            </div>
-                          </div>
+              <CardContent className="p-4 flex-1 min-h-0 overflow-y-auto space-y-5">
+                {/* Context panel: live metrics */}
+                {progressData && (progressData.ctl !== null || progressData.tsb !== null) && (
+                  <div>
+                    <div className="flex items-center gap-2 text-sm text-slate-300 mb-3">
+                      <Activity className="w-4 h-4 text-orange-500" />
+                      <span className="font-semibold">Your data</span>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      {progressData.ctl !== null && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Fitness (CTL)</span>
+                          <span className="text-slate-100 font-medium">
+                            {progressData.ctl.toFixed(0)}
+                            {progressData.ctl_trend && (
+                              <span className={progressData.ctl_trend === 'up' ? 'text-green-400 ml-1' : progressData.ctl_trend === 'down' ? 'text-red-400 ml-1' : 'text-slate-400 ml-1'}>
+                                {progressData.ctl_trend === 'up' ? '\u2191' : progressData.ctl_trend === 'down' ? '\u2193' : '\u2192'}
+                              </span>
+                            )}
+                          </span>
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                      )}
+                      {progressData.tsb !== null && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Form (TSB)</span>
+                          <span className="text-slate-100 font-medium">{progressData.tsb.toFixed(0)}</span>
+                        </div>
+                      )}
+                      {progressData.recovery?.durability_index != null && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Durability</span>
+                          <span className="text-slate-100 font-medium">{progressData.recovery.durability_index.toFixed(1)}</span>
+                        </div>
+                      )}
+                      {progressData.goal_race_days_remaining != null && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Race</span>
+                          <span className="text-slate-100 font-medium">{progressData.goal_race_days_remaining} days</span>
+                        </div>
+                      )}
+                      {progressData.volume_trajectory?.current_week_mi != null && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">This week</span>
+                          <span className="text-slate-100 font-medium">{progressData.volume_trajectory.current_week_mi.toFixed(1)}mi</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="border-b border-slate-700/50 mt-4" />
+                  </div>
+                )}
+
+                {/* Suggestions */}
+                {suggestions.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 text-sm text-slate-300 mb-3">
+                      <Sparkles className="w-4 h-4 text-orange-500" />
+                      <span className="font-semibold">I want to talk about...</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3">
+                      {(suggestions || []).slice(0, 5).map((s, i) => (
+                        <SuggestionButton
+                          key={i}
+                          suggestion={s}
+                          onClick={() => handleSend(s.prompt)}
+                          disabled={isLoading}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

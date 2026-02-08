@@ -24,8 +24,14 @@ export interface ChatResponse {
   rebuild_plan_prompt?: boolean;
 }
 
+export interface Suggestion {
+  title: string;
+  description: string;
+  prompt: string;
+}
+
 export interface SuggestionsResponse {
-  suggestions: string[];
+  suggestions: Suggestion[];
 }
 
 export interface ContextResponse {
