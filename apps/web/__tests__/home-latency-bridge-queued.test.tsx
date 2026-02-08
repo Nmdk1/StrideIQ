@@ -19,8 +19,13 @@ jest.mock('@/lib/hooks/queries/home', () => ({
       total_activities: 0,
       last_sync: null,
       ingestion_state: null,
+      coach_noticed: null,
+      race_countdown: null,
+      checkin_needed: false,
+      strava_status: null,
     },
   }),
+  useQuickCheckin: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 
 jest.mock('@/lib/hooks/queries/insights', () => ({
@@ -29,15 +34,12 @@ jest.mock('@/lib/hooks/queries/insights', () => ({
 
 import HomePage from '@/app/home/page';
 
-describe('Home latency bridge (queued UI, no dead air)', () => {
-  test('shows Import queued card when connected but ingestion_state not yet available', () => {
+describe('Home page (queued state)', () => {
+  test('renders home page without crashing when ingestion not started', () => {
     render(<HomePage />);
-
-    expect(screen.getByText('Import queued')).toBeInTheDocument();
-    expect(screen.getByText(/Import will start in the background/i)).toBeInTheDocument();
-
-    // Welcome CTA should not show when already connected.
+    // ADR-17 Phase 2: ingestion cards removed; page renders cleanly
+    expect(screen.getByText('No workout scheduled')).toBeInTheDocument();
+    // Welcome card removed in Phase 2
     expect(screen.queryByText('Welcome to StrideIQ')).not.toBeInTheDocument();
   });
 });
-

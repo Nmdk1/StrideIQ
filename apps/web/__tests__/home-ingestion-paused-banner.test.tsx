@@ -20,6 +20,10 @@ let homeData: any = {
   last_sync: null,
   ingestion_state: null,
   ingestion_paused: true,
+  coach_noticed: null,
+  race_countdown: null,
+  checkin_needed: false,
+  strava_status: null,
 };
 
 jest.mock('@/lib/hooks/queries/home', () => ({
@@ -28,11 +32,12 @@ jest.mock('@/lib/hooks/queries/home', () => ({
     error: null,
     data: homeData,
   }),
+  useQuickCheckin: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 
 import HomePage from '@/app/home/page';
 
-describe('Home ingestion paused banner', () => {
+describe('Home page renders without crash (ADR-17 Phase 2)', () => {
   beforeEach(() => {
     homeData = {
       today: { has_workout: false },
@@ -45,20 +50,23 @@ describe('Home ingestion paused banner', () => {
       last_sync: null,
       ingestion_state: null,
       ingestion_paused: true,
+      coach_noticed: null,
+      race_countdown: null,
+      checkin_needed: false,
+      strava_status: null,
     };
   });
 
-  test('shows calm banner when ingestion is globally paused and Strava is connected', () => {
-    homeData = { ...homeData, strava_connected: true, ingestion_paused: true };
+  test('renders home page with no activities and no crash', () => {
     render(<HomePage />);
-    expect(screen.getByText('Import delayed')).toBeInTheDocument();
-    expect(screen.getByText(/High traffic volume/i)).toBeInTheDocument();
+    // The new home page shows "No workout scheduled" when there's no workout
+    expect(screen.getByText('No workout scheduled')).toBeInTheDocument();
   });
 
-  test('does not show pause banner when Strava is not connected', () => {
-    homeData = { ...homeData, strava_connected: false, ingestion_paused: true };
+  test('does not show old ingestion cards (removed in Phase 2)', () => {
     render(<HomePage />);
     expect(screen.queryByText('Import delayed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Import in progress')).not.toBeInTheDocument();
+    expect(screen.queryByText('Import queued')).not.toBeInTheDocument();
   });
 });
-
