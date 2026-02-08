@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import Navigation from './components/Navigation'
+import ClientShell from './components/ClientShell'
 import { QueryProvider } from '@/lib/providers/QueryProvider'
 import { AuthProvider } from '@/lib/context/AuthContext'
 import { UnitsProvider } from '@/lib/context/UnitsContext'
@@ -82,7 +83,9 @@ export default function RootLayout({
                   <TooltipProvider>
                     <Navigation />
                     <ImpersonationBanner />
-                    <main>{children}</main>
+                    <ClientShell>
+                      <main className="pb-[76px] md:pb-0">{children}</main>
+                    </ClientShell>
                   </TooltipProvider>
                 </CompareProvider>
               </UnitsProvider>

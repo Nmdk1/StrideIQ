@@ -5,6 +5,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { stravaService } from '../../api/services/strava';
 import type { StravaSyncResponse } from '../../api/services/strava';
+import { toast } from 'sonner';
 
 export const stravaKeys = {
   all: ['strava'] as const,
@@ -35,6 +36,14 @@ export function useTriggerStravaSync() {
       // Invalidate activities to refresh after sync
       queryClient.invalidateQueries({ queryKey: ['activities'] });
       queryClient.invalidateQueries({ queryKey: stravaKeys.status() });
+      toast.success('Sync started', {
+        description: 'Importing your latest Strava activities...',
+      });
+    },
+    onError: () => {
+      toast.error('Sync failed', {
+        description: 'Could not start Strava sync. Please try again.',
+      });
     },
   });
 }
