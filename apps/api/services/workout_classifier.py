@@ -1015,11 +1015,21 @@ class WorkoutClassifierService:
         is_long = duration_min > 90 or distance_km > 20
         is_medium_long = duration_min > 60 or distance_km > 14
         
-        # Classification by intensity zones
+        # Distance/duration override: a run over 90min or 20km is a long run
+        # regardless of intensity. Nobody does a 20-mile recovery run.
         if intensity_score < 30:
-            workout_type = WorkoutType.RECOVERY_RUN
-            zone = WorkoutZone.RECOVERY
-            reasoning = "Very low intensity recovery run"
+            if is_long:
+                workout_type = WorkoutType.LONG_RUN
+                zone = WorkoutZone.ENDURANCE
+                reasoning = f"Long run at very easy effort ({distance_km:.1f}km)"
+            elif is_medium_long:
+                workout_type = WorkoutType.MEDIUM_LONG_RUN
+                zone = WorkoutZone.ENDURANCE
+                reasoning = f"Medium-long run at easy effort ({distance_km:.1f}km)"
+            else:
+                workout_type = WorkoutType.RECOVERY_RUN
+                zone = WorkoutZone.RECOVERY
+                reasoning = "Very low intensity recovery run"
         elif intensity_score < 45:
             if is_long:
                 workout_type = WorkoutType.LONG_RUN
