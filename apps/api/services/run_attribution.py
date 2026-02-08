@@ -327,6 +327,47 @@ def get_pre_state_attribution(
         return None
 
 
+def _compute_gap_efficiency(activity: Activity, db: Session) -> tuple:
+    """
+    Compute efficiency factor using GAP (Grade Adjusted Pace) from splits.
+    
+    Returns (efficiency_value, used_gap: bool).
+    Lower efficiency = better (less time per HR beat, normalized for grade).
+    
+    GAP lives on ActivitySplit.gap_seconds_per_mile. We compute a
+    distance-weighted average GAP across all splits, then divide by avg HR.
+    Falls back to raw pace/HR if no GAP data exists on splits.
+    """
+    avg_hr = float(activity.avg_hr)
+    
+    # Try to get GAP from splits
+    splits = db.query(ActivitySplit).filter(
+        ActivitySplit.activity_id == activity.id,
+        ActivitySplit.gap_seconds_per_mile.isnot(None),
+        ActivitySplit.distance.isnot(None),
+    ).all()
+    
+    if splits and len(splits) >= 2:
+        # Distance-weighted average GAP
+        total_dist = 0.0
+        weighted_gap = 0.0
+        for s in splits:
+            dist = float(s.distance) if s.distance else 0
+            gap = float(s.gap_seconds_per_mile) if s.gap_seconds_per_mile else 0
+            if dist > 0 and gap > 0:
+                weighted_gap += gap * dist
+                total_dist += dist
+        
+        if total_dist > 0:
+            avg_gap_spm = weighted_gap / total_dist  # seconds per mile
+            pace_per_km = avg_gap_spm / 1.60934
+            return pace_per_km / avg_hr, True
+    
+    # Fallback: raw pace
+    pace_per_km = activity.duration_s / (activity.distance_m / 1000)
+    return pace_per_km / avg_hr, False
+
+
 def get_efficiency_attribution(
     activity: Activity,
     db: Session
@@ -343,6 +384,11 @@ def get_efficiency_attribution(
       1. Same workout type + similar distance (±30%) — best apples-to-apples
       2. Similar distance only (±30%) — still meaningful
       3. All recent runs — last resort, lower confidence
+    
+    Uses GAP (Grade Adjusted Pace) when available so hilly runs aren't
+    penalized for slower raw pace. A 20-miler at 122 bpm with 2300ft
+    of climbing is exceptional efficiency, not "below average."
+    GAP is computed from splits (where it lives in the data model).
     """
     try:
         if not activity.avg_hr or not activity.distance_m or not activity.duration_s:
@@ -351,9 +397,11 @@ def get_efficiency_attribution(
         if activity.avg_hr < 100 or activity.distance_m < 1000:
             return None
         
-        # Calculate this run's efficiency
-        pace_per_km = activity.duration_s / (activity.distance_m / 1000)
-        efficiency = pace_per_km / activity.avg_hr
+        # Calculate this run's efficiency using GAP when available.
+        # GAP (Grade Adjusted Pace) normalizes for elevation — a hilly run
+        # gets credited for the extra work the athlete did at low HR.
+        # GAP lives on splits, so we compute a distance-weighted average.
+        efficiency, used_gap = _compute_gap_efficiency(activity, db)
         
         # Distance band: ±30% of this run's distance
         dist_lo = activity.distance_m * 0.70
@@ -376,6 +424,9 @@ def get_efficiency_attribution(
         ]
         
         # ---- Tier 1: Same workout type + similar distance (90 days) ----
+        # Minimum of 2 (not 3) — long runs are infrequent (1-2/month).
+        # This is the best comparison: same workout type = same physiological
+        # demand. A long run should only be compared to other long runs.
         similar_activities = []
         comparison_label = "similar runs"
         tier_confidence_boost = 0  # Tiers 1/2 get normal confidence
@@ -389,11 +440,26 @@ def get_efficiency_attribution(
                 Activity.distance_m >= dist_lo,
                 Activity.distance_m <= dist_hi,
             ).all()
-            if len(similar_activities) >= 3:
-                comparison_label = f"similar {activity.workout_type.lower().replace('_', ' ')}s"
+            if len(similar_activities) >= 2:
+                wt_label = activity.workout_type.lower().replace('_', ' ')
+                comparison_label = f"your recent {wt_label}s"
         
-        # ---- Tier 2: Similar distance only (90 days) ----
-        if len(similar_activities) < 3:
+        # ---- Tier 2: Same workout type, any distance (90 days) ----
+        # Still better than mixing types — a long run at ANY distance is
+        # more comparable than mixing tempos, races, and easy runs.
+        if len(similar_activities) < 2 and activity.workout_type:
+            similar_activities = db.query(Activity).filter(
+                *base_filter,
+                Activity.start_time >= start_date_similar,
+                Activity.start_time < end_date,
+                Activity.workout_type == activity.workout_type,
+            ).all()
+            if len(similar_activities) >= 2:
+                wt_label = activity.workout_type.lower().replace('_', ' ')
+                comparison_label = f"your recent {wt_label}s"
+        
+        # ---- Tier 3: Similar distance only (90 days) ----
+        if len(similar_activities) < 2:
             similar_activities = db.query(Activity).filter(
                 *base_filter,
                 Activity.start_time >= start_date_similar,
@@ -404,8 +470,9 @@ def get_efficiency_attribution(
             if len(similar_activities) >= 3:
                 dist_km = activity.distance_m / 1000
                 comparison_label = f"runs of similar distance (~{dist_km:.0f}km)"
+                tier_confidence_boost = -1  # Less reliable without type matching
         
-        # ---- Tier 3: All recent runs (28 days, lower confidence) ----
+        # ---- Tier 4: All recent runs (28 days, lowest confidence) ----
         if len(similar_activities) < 3:
             similar_activities = db.query(Activity).filter(
                 *base_filter,
@@ -415,12 +482,11 @@ def get_efficiency_attribution(
             if len(similar_activities) < 5:
                 return None  # Not enough data for any comparison
             comparison_label = "recent runs"
-            tier_confidence_boost = -1  # Lower confidence for apples-to-oranges
+            tier_confidence_boost = -1  # Apples-to-oranges
         
         recent_efficiencies = []
         for act in similar_activities:
-            pace = act.duration_s / (act.distance_m / 1000)
-            eff = pace / act.avg_hr
+            eff, _ = _compute_gap_efficiency(act, db)
             recent_efficiencies.append(eff)
         
         avg_efficiency = sum(recent_efficiencies) / len(recent_efficiencies)
@@ -476,6 +542,7 @@ def get_efficiency_attribution(
                 "diff_percent": round(diff_pct, 1),
                 "sample_size": len(similar_activities),
                 "comparison": comparison_label,
+                "method": "gap" if used_gap else "raw_pace",
             }
         )
         
