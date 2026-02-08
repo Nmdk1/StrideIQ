@@ -101,7 +101,7 @@ class TestCostCapConstants:
         assert COACH_MONTHLY_TOKEN_BUDGET == 1_000_000
         assert COACH_MONTHLY_OPUS_TOKEN_BUDGET == 50_000
         assert COACH_MAX_INPUT_TOKENS == 4000
-        assert COACH_MAX_OUTPUT_TOKENS == 1500
+        assert COACH_MAX_OUTPUT_TOKENS == 3000
 
 
 class TestHighStakesSignalEnum:

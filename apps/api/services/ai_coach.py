@@ -80,9 +80,10 @@ COACH_MONTHLY_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_TOKEN_BUDGET", "100000
 COACH_MONTHLY_OPUS_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET", "50000"))
 COACH_MAX_INPUT_TOKENS = int(os.getenv("COACH_MAX_INPUT_TOKENS", "4000"))
 # 500 tokens was causing every response to get cut off mid-sentence.
-# 1500 tokens (~600 words) allows a complete, well-structured coaching response
-# with evidence citations without truncation.
-COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "1500"))
+# 3000 tokens (~1200 words) allows complete, well-structured coaching responses
+# with numbered points, evidence citations, and actionable recommendations
+# without truncation. Previous 1500 limit was causing mid-sentence cutoffs.
+COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "3000"))
 
 
 def is_high_stakes_query(message: str) -> bool:
