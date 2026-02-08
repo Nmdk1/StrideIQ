@@ -560,12 +560,13 @@ def generate_coach_home_briefing(
             model="gemini-2.5-flash",
             contents=prompt,
             config=genai.types.GenerateContentConfig(
-                max_output_tokens=500,
+                max_output_tokens=2000,
                 temperature=0.3,
             ),
         )
         
         raw = response.text.strip()
+        
         # Strip markdown code fences if present
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
@@ -574,7 +575,14 @@ def generate_coach_home_briefing(
         if raw.startswith("json"):
             raw = raw[4:].strip()
         
-        result = _json.loads(raw)
+        try:
+            result = _json.loads(raw)
+        except _json.JSONDecodeError as je:
+            logger.warning(
+                f"Coach briefing JSON parse failed: {je}. "
+                f"Raw response ({len(raw)} chars): {raw[:500]}"
+            )
+            return None
         
         # Cache for 30 minutes
         if r:
