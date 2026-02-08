@@ -144,9 +144,12 @@ def extract_best_efforts_from_activity(
 
 def regenerate_personal_bests(athlete: Athlete, db: Session) -> Dict[str, int]:
     """
-    Regenerate PersonalBest records from BestEffort table.
+    Regenerate PersonalBest records by MERGING BestEffort data with existing PBs.
     
-    This is an aggregation: for each distance category, find the fastest effort.
+    For each distance category, keeps whichever is faster: the existing PB
+    (e.g. from Garmin import) or the fastest BestEffort (from Strava segments).
+    This prevents Strava sync from wiping PBs sourced from non-Strava providers.
+    
     Instant operation - no external API calls.
     
     Args:
@@ -154,17 +157,11 @@ def regenerate_personal_bests(athlete: Athlete, db: Session) -> Dict[str, int]:
         db: Database session
         
     Returns:
-        Dict with counts: {'cleared': int, 'created': int, 'categories': list}
+        Dict with counts: {'updated': int, 'created': int, 'kept': int, 'categories': list}
     """
     from sqlalchemy import and_
     
-    # Clear existing PBs
-    cleared = db.query(PersonalBest).filter(
-        PersonalBest.athlete_id == athlete.id
-    ).delete()
-    
-    # Find fastest effort per distance category
-    # Subquery to get min elapsed_time per category
+    # Find fastest BestEffort per distance category
     subq = db.query(
         BestEffort.distance_category,
         func.min(BestEffort.elapsed_time).label('min_time')
@@ -174,7 +171,6 @@ def regenerate_personal_bests(athlete: Athlete, db: Session) -> Dict[str, int]:
         BestEffort.distance_category
     ).subquery()
     
-    # Join to get the actual effort records
     fastest_efforts = db.query(BestEffort).join(
         subq,
         and_(
@@ -184,8 +180,17 @@ def regenerate_personal_bests(athlete: Athlete, db: Session) -> Dict[str, int]:
         )
     ).all()
     
-    # Create PersonalBest records
+    # Load existing PBs into a lookup
+    existing_pbs = {
+        pb.distance_category: pb
+        for pb in db.query(PersonalBest).filter(
+            PersonalBest.athlete_id == athlete.id
+        ).all()
+    }
+    
+    updated = 0
     created = 0
+    kept = 0
     categories = []
     
     # Track which categories we've already processed (in case of ties)
@@ -196,33 +201,58 @@ def regenerate_personal_bests(athlete: Athlete, db: Session) -> Dict[str, int]:
             continue
         processed_categories.add(effort.distance_category)
         
-        # Get the activity for additional metadata
-        activity = db.query(Activity).filter(Activity.id == effort.activity_id).first()
+        existing_pb = existing_pbs.get(effort.distance_category)
         
-        # Calculate pace
+        # Calculate pace for this effort
         miles = effort.distance_meters / 1609.34
         pace_per_mile = (effort.elapsed_time / 60.0) / miles if miles > 0 else None
         
-        pb = PersonalBest(
-            athlete_id=athlete.id,
-            distance_category=effort.distance_category,
-            distance_meters=effort.distance_meters,
-            time_seconds=effort.elapsed_time,
-            pace_per_mile=pace_per_mile,
-            activity_id=effort.activity_id,
-            achieved_at=effort.achieved_at,
-            is_race=activity.is_race_candidate if activity else False,
-            age_at_achievement=calculate_age_at_date(athlete.birthdate, effort.achieved_at) if athlete.birthdate else None,
-        )
-        db.add(pb)
-        created += 1
-        categories.append(effort.distance_category)
+        if existing_pb:
+            # Only replace if BestEffort is actually faster
+            if effort.elapsed_time < existing_pb.time_seconds:
+                activity = db.query(Activity).filter(Activity.id == effort.activity_id).first()
+                existing_pb.distance_meters = effort.distance_meters
+                existing_pb.time_seconds = effort.elapsed_time
+                existing_pb.pace_per_mile = pace_per_mile
+                existing_pb.activity_id = effort.activity_id
+                existing_pb.achieved_at = effort.achieved_at
+                existing_pb.is_race = activity.is_race_candidate if activity else False
+                existing_pb.age_at_achievement = (
+                    calculate_age_at_date(athlete.birthdate, effort.achieved_at)
+                    if athlete.birthdate else None
+                )
+                updated += 1
+                categories.append(effort.distance_category)
+            else:
+                # Existing PB is faster (e.g. from Garmin import) — keep it
+                kept += 1
+        else:
+            # No existing PB for this category — create from BestEffort
+            activity = db.query(Activity).filter(Activity.id == effort.activity_id).first()
+            pb = PersonalBest(
+                athlete_id=athlete.id,
+                distance_category=effort.distance_category,
+                distance_meters=effort.distance_meters,
+                time_seconds=effort.elapsed_time,
+                pace_per_mile=pace_per_mile,
+                activity_id=effort.activity_id,
+                achieved_at=effort.achieved_at,
+                is_race=activity.is_race_candidate if activity else False,
+                age_at_achievement=(
+                    calculate_age_at_date(athlete.birthdate, effort.achieved_at)
+                    if athlete.birthdate else None
+                ),
+            )
+            db.add(pb)
+            created += 1
+            categories.append(effort.distance_category)
     
     db.commit()
     
     return {
-        'cleared': cleared,
+        'updated': updated,
         'created': created,
+        'kept': kept,
         'categories': categories,
     }
 

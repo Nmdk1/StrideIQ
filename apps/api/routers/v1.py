@@ -391,13 +391,15 @@ def get_personal_bests_endpoint(id: UUID, db: Session = Depends(get_db)):
 @router.post("/athletes/{id}/recalculate-pbs")
 def recalculate_pbs_endpoint(id: UUID, db: Session = Depends(get_db)):
     """
-    Regenerate personal bests from stored BestEffort records.
+    Recalculate personal bests from ALL sources (activities + BestEffort).
     
-    This is an instant aggregation - no external API calls.
-    Best efforts are populated during Strava sync.
+    Two-step process:
+    1. Scan all activities for whole-distance PBs (covers Garmin, manual imports, etc.)
+    2. Merge with Strava BestEffort data (sub-activity segments like fastest mile within a 10K)
     
-    Use /athletes/{id}/sync-best-efforts to fetch new best efforts from Strava.
+    The fastest time per distance wins, regardless of source.
     """
+    from services.personal_best import recalculate_all_pbs
     from services.best_effort_service import regenerate_personal_bests
     from models import BestEffort
 
@@ -405,19 +407,26 @@ def recalculate_pbs_endpoint(id: UUID, db: Session = Depends(get_db)):
     if not athlete:
         raise HTTPException(status_code=404, detail="Athlete not found")
 
-    # Count stored best efforts
+    # Step 1: Rebuild PBs from ALL activities (Garmin, Strava, manual, etc.)
+    activity_result = recalculate_all_pbs(athlete, db, preserve_strava_pbs=False)
+
+    # Step 2: Merge in Strava BestEffort data (keeps whichever is faster)
     effort_count = db.query(BestEffort).filter(BestEffort.athlete_id == athlete.id).count()
-    
-    # Regenerate PBs from BestEffort table (instant aggregation)
-    result = regenerate_personal_bests(athlete, db)
+    merge_result = regenerate_personal_bests(athlete, db)
 
     return {
         "status": "success",
         "athlete_id": str(athlete.id),
+        "activity_pbs": activity_result.get('created', 0) + activity_result.get('updated', 0),
         "efforts_in_db": effort_count,
-        "pbs_created": result.get('created', 0),
-        "categories": result.get('categories', []),
-        "message": f"Regenerated {result.get('created', 0)} PBs from {effort_count} stored efforts"
+        "merged_from_efforts": merge_result.get('created', 0) + merge_result.get('updated', 0),
+        "kept_existing": merge_result.get('kept', 0),
+        "categories": merge_result.get('categories', []),
+        "message": (
+            f"Rebuilt {activity_result.get('total', 0)} PBs from activities, "
+            f"merged {merge_result.get('created', 0) + merge_result.get('updated', 0)} from {effort_count} Strava efforts, "
+            f"kept {merge_result.get('kept', 0)} existing (faster)"
+        ),
     }
 
 

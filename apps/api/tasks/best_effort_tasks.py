@@ -108,8 +108,9 @@ def regenerate_personal_bests_task(self: Task, athlete_id: str) -> Dict:
         return {
             "status": "success",
             "athlete_id": athlete_id,
-            "cleared": result.get('cleared', 0),
+            "updated": result.get('updated', 0),
             "created": result.get('created', 0),
+            "kept": result.get('kept', 0),
             "categories": result.get('categories', []),
         }
         
