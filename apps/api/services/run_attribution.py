@@ -333,6 +333,16 @@ def get_efficiency_attribution(
 ) -> Optional[RunAttribution]:
     """
     Get efficiency attribution — was this run more/less efficient than trend?
+    
+    Compares against SIMILAR runs (same distance range & workout type) rather
+    than all runs. An 18-mile long run should not be compared to a 5K tempo;
+    efficiency naturally varies by distance due to cardiac drift, glycogen
+    depletion, and cumulative fatigue.
+    
+    Tiered fallback:
+      1. Same workout type + similar distance (±30%) — best apples-to-apples
+      2. Similar distance only (±30%) — still meaningful
+      3. All recent runs — last resort, lower confidence
     """
     try:
         if not activity.avg_hr or not activity.distance_m or not activity.duration_s:
@@ -345,26 +355,70 @@ def get_efficiency_attribution(
         pace_per_km = activity.duration_s / (activity.distance_m / 1000)
         efficiency = pace_per_km / activity.avg_hr
         
-        # Get recent efficiency trend
-        end_date = activity.start_time.date()
-        start_date = end_date - timedelta(days=28)
+        # Distance band: ±30% of this run's distance
+        dist_lo = activity.distance_m * 0.70
+        dist_hi = activity.distance_m * 1.30
         
-        recent_activities = db.query(Activity).filter(
+        # Look back 90 days for similar runs (28 days is often too few for
+        # long runs — most athletes only do 1-2 long runs per month)
+        end_date = activity.start_time.date()
+        start_date_similar = end_date - timedelta(days=90)
+        start_date_all = end_date - timedelta(days=28)
+        
+        # Base filter: same athlete, not this run, valid HR/distance
+        base_filter = [
             Activity.athlete_id == activity.athlete_id,
             Activity.id != activity.id,
-            Activity.start_time >= start_date,
-            Activity.start_time < end_date,
             Activity.avg_hr.isnot(None),
             Activity.avg_hr > 100,
             Activity.distance_m > 1000,
-            Activity.duration_s > 0
-        ).all()
+            Activity.duration_s > 0,
+        ]
         
-        if len(recent_activities) < 5:
-            return None
+        # ---- Tier 1: Same workout type + similar distance (90 days) ----
+        similar_activities = []
+        comparison_label = "similar runs"
+        tier_confidence_boost = 0  # Tiers 1/2 get normal confidence
+        
+        if activity.workout_type:
+            similar_activities = db.query(Activity).filter(
+                *base_filter,
+                Activity.start_time >= start_date_similar,
+                Activity.start_time < end_date,
+                Activity.workout_type == activity.workout_type,
+                Activity.distance_m >= dist_lo,
+                Activity.distance_m <= dist_hi,
+            ).all()
+            if len(similar_activities) >= 3:
+                comparison_label = f"similar {activity.workout_type.lower().replace('_', ' ')}s"
+        
+        # ---- Tier 2: Similar distance only (90 days) ----
+        if len(similar_activities) < 3:
+            similar_activities = db.query(Activity).filter(
+                *base_filter,
+                Activity.start_time >= start_date_similar,
+                Activity.start_time < end_date,
+                Activity.distance_m >= dist_lo,
+                Activity.distance_m <= dist_hi,
+            ).all()
+            if len(similar_activities) >= 3:
+                dist_km = activity.distance_m / 1000
+                comparison_label = f"runs of similar distance (~{dist_km:.0f}km)"
+        
+        # ---- Tier 3: All recent runs (28 days, lower confidence) ----
+        if len(similar_activities) < 3:
+            similar_activities = db.query(Activity).filter(
+                *base_filter,
+                Activity.start_time >= start_date_all,
+                Activity.start_time < end_date,
+            ).all()
+            if len(similar_activities) < 5:
+                return None  # Not enough data for any comparison
+            comparison_label = "recent runs"
+            tier_confidence_boost = -1  # Lower confidence for apples-to-oranges
         
         recent_efficiencies = []
-        for act in recent_activities:
+        for act in similar_activities:
             pace = act.duration_s / (act.distance_m / 1000)
             eff = pace / act.avg_hr
             recent_efficiencies.append(eff)
@@ -377,29 +431,36 @@ def get_efficiency_attribution(
         # For efficiency, LOWER is better (less time per HR beat)
         if diff_pct < -5:
             title = "Very Efficient"
-            insight = f"Efficiency {abs(diff_pct):.1f}% better than your 28-day average."
+            insight = f"Efficiency {abs(diff_pct):.1f}% better than your {comparison_label}."
             color = "emerald"
             confidence = AttributionConfidence.HIGH
         elif diff_pct < -2:
             title = "Efficient"
-            insight = f"Efficiency {abs(diff_pct):.1f}% better than average. Good form."
+            insight = f"Efficiency {abs(diff_pct):.1f}% better than {comparison_label}. Good form."
             color = "green"
             confidence = AttributionConfidence.MODERATE
         elif diff_pct <= 2:
             title = "Typical Efficiency"
-            insight = "Efficiency in line with your recent average."
+            insight = f"Efficiency in line with your {comparison_label}."
             color = "slate"
             confidence = AttributionConfidence.LOW
         elif diff_pct <= 5:
             title = "Below Average"
-            insight = f"Efficiency {diff_pct:.1f}% worse than average. May indicate fatigue."
+            insight = f"Efficiency {diff_pct:.1f}% worse than {comparison_label}. May indicate fatigue."
             color = "yellow"
             confidence = AttributionConfidence.MODERATE
         else:
             title = "Low Efficiency"
-            insight = f"Efficiency {diff_pct:.1f}% worse than average. Check for fatigue or illness."
+            insight = f"Efficiency {diff_pct:.1f}% worse than {comparison_label}. Check for fatigue or illness."
             color = "orange"
             confidence = AttributionConfidence.HIGH
+        
+        # Downgrade confidence if we fell back to all-runs comparison
+        if tier_confidence_boost == -1:
+            if confidence == AttributionConfidence.HIGH:
+                confidence = AttributionConfidence.MODERATE
+            elif confidence == AttributionConfidence.MODERATE:
+                confidence = AttributionConfidence.LOW
         
         return RunAttribution(
             source=AttributionSource.EFFICIENCY.value,
@@ -413,7 +474,8 @@ def get_efficiency_attribution(
                 "efficiency": round(efficiency, 4),
                 "avg_efficiency": round(avg_efficiency, 4),
                 "diff_percent": round(diff_pct, 1),
-                "sample_size": len(recent_activities)
+                "sample_size": len(similar_activities),
+                "comparison": comparison_label,
             }
         )
         
