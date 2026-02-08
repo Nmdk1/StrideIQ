@@ -743,6 +743,20 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 except Exception:
                     pass
             
+            # Classify workout type (long_run, easy_run, tempo_run, race, etc.)
+            # This drives the efficiency attribution's same-type comparison.
+            try:
+                from services.workout_classifier import WorkoutClassifierService
+                classifier = WorkoutClassifierService(db)
+                classification = classifier.classify_activity(activity)
+                activity.workout_type = classification.workout_type.value
+                activity.workout_zone = classification.workout_zone.value
+                activity.workout_confidence = classification.confidence
+                activity.intensity_score = classification.intensity_score
+                db.flush()
+            except Exception as e:
+                print(f"Warning: Could not classify workout: {e}")
+            
             synced_new += 1
         
         # Update last sync timestamp
