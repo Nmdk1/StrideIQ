@@ -63,6 +63,29 @@ export interface WeekProgress {
   load_trend?: 'up' | 'stable' | 'down';  // ADR-020: Load direction
 }
 
+// --- ADR-17 Phase 2 Types ---
+
+export interface CoachNoticed {
+  text: string;
+  source: 'correlation' | 'signal' | 'insight_feed' | 'narrative';
+  ask_coach_query: string;
+}
+
+export interface RaceCountdown {
+  race_name?: string;
+  race_date: string;
+  days_remaining: number;
+  goal_time?: string;
+  goal_pace?: string;
+  predicted_time?: string;
+}
+
+export interface StravaStatusDetail {
+  connected: boolean;
+  last_sync?: string;
+  needs_reconnect: boolean;
+}
+
 export interface HomeData {
   today: TodayWorkout;
   yesterday: YesterdayInsight;
@@ -74,6 +97,11 @@ export interface HomeData {
   last_sync?: string;
   ingestion_state?: Record<string, any> | null;
   ingestion_paused?: boolean;
+  // ADR-17 Phase 2
+  coach_noticed?: CoachNoticed | null;
+  race_countdown?: RaceCountdown | null;
+  checkin_needed: boolean;
+  strava_status?: StravaStatusDetail | null;
 }
 
 // --- API Functions ---

@@ -22,7 +22,7 @@ import logging
 from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
-from models import Athlete, Activity, PlannedWorkout, TrainingPlan, CalendarInsight
+from models import Athlete, Activity, PlannedWorkout, TrainingPlan, CalendarInsight, DailyCheckin
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,36 @@ class WeekProgress(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CoachNoticed(BaseModel):
+    """Top insight surfaced by the coach — one sentence."""
+    text: str
+    source: str  # "correlation" | "signal" | "insight_feed" | "narrative"
+    ask_coach_query: str  # pre-filled query for /coach?q=...
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RaceCountdown(BaseModel):
+    """Race countdown derived from the active training plan."""
+    race_name: Optional[str] = None
+    race_date: str  # ISO date
+    days_remaining: int
+    goal_time: Optional[str] = None  # formatted e.g. "3:10:00"
+    goal_pace: Optional[str] = None  # derived e.g. "7:15/mi"
+    predicted_time: Optional[str] = None  # from race predictor
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StravaStatusDetail(BaseModel):
+    """Strava connection health detail."""
+    connected: bool
+    last_sync: Optional[str] = None
+    needs_reconnect: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class HomeResponse(BaseModel):
     """Complete home page data."""
     today: TodayWorkout
@@ -105,6 +135,11 @@ class HomeResponse(BaseModel):
     last_sync: Optional[str] = None  # When Strava was last synced
     ingestion_state: Optional[dict] = None  # Phase 3: ingestion progress snapshot (durable)
     ingestion_paused: bool = False  # Phase 5: global ingestion pause banner
+    # --- Phase 2 (ADR-17) ---
+    coach_noticed: Optional[CoachNoticed] = None
+    race_countdown: Optional[RaceCountdown] = None
+    checkin_needed: bool = True
+    strava_status: Optional[StravaStatusDetail] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -403,6 +438,150 @@ def generate_yesterday_insight(activity: Activity) -> str:
             insights.append(f"{distance_mi:.1f} mi at {pace_str}.")
     
     return " ".join(insights[:2]) if insights else None
+
+
+def compute_coach_noticed(
+    athlete_id: str,
+    db: Session,
+    hero_narrative: Optional[str] = None,
+) -> Optional[CoachNoticed]:
+    """
+    ADR-17 Phase 2: Build the single most important coaching insight.
+
+    Priority waterfall:
+    1. Strong correlation (|r| >= 0.5, n >= 15)
+    2. Top signal from home_signals
+    3. Top insight feed card summary
+    4. Hero narrative fallback
+    """
+    # 1. Strong correlation
+    try:
+        from services.correlation_engine import analyze_correlations
+        result = analyze_correlations(athlete_id, days=60, db=db)
+        for corr in result.get("correlations", []):
+            if not corr.get("is_significant"):
+                continue
+            r = corr.get("correlation_coefficient", 0)
+            n = corr.get("sample_size", 0)
+            if abs(r) >= 0.5 and n >= 15:
+                input_name = corr.get("input_name", "factor")
+                direction = "positively" if r > 0 else "negatively"
+                text = (
+                    f"{input_name.replace('_', ' ').title()} {direction} correlates "
+                    f"with your efficiency (r={r:.2f}, {n} observations)."
+                )
+                return CoachNoticed(
+                    text=text,
+                    source="correlation",
+                    ask_coach_query=f"Tell me more about how {input_name.replace('_', ' ')} affects my running",
+                )
+    except Exception as e:
+        logger.debug(f"Coach noticed correlation lookup failed: {e}")
+
+    # 2. Top signal from home_signals
+    try:
+        from services.home_signals import aggregate_signals
+        sig_resp = aggregate_signals(athlete_id, db)
+        if sig_resp.signals:
+            top = sig_resp.signals[0]
+            text = f"{top.title}. {top.subtitle}" if top.subtitle else top.title
+            return CoachNoticed(
+                text=text,
+                source="signal",
+                ask_coach_query=f"Coach, explain this: {top.title}",
+            )
+    except Exception as e:
+        logger.debug(f"Coach noticed signals lookup failed: {e}")
+
+    # 3. Top insight feed card
+    try:
+        from services.insight_feed import build_insight_feed_cards
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if athlete:
+            feed = build_insight_feed_cards(db, athlete, max_cards=1)
+            cards = feed.get("cards", [])
+            if cards:
+                card = cards[0]
+                text = card.get("summary") or card.get("title", "")
+                return CoachNoticed(
+                    text=text,
+                    source="insight_feed",
+                    ask_coach_query=f"Tell me about: {card.get('title', 'my latest insight')}",
+                )
+    except Exception as e:
+        logger.debug(f"Coach noticed feed lookup failed: {e}")
+
+    # 4. Hero narrative fallback
+    if hero_narrative:
+        return CoachNoticed(
+            text=hero_narrative,
+            source="narrative",
+            ask_coach_query="What should I focus on today?",
+        )
+
+    return None
+
+
+def compute_race_countdown(
+    plan: Optional[TrainingPlan],
+    athlete_id: str,
+    db: Session,
+) -> Optional[RaceCountdown]:
+    """
+    ADR-17 Phase 2: Race countdown from active training plan.
+    Uses getattr/try-except for all plan fields — resilient to model changes.
+    """
+    if plan is None:
+        return None
+
+    race_date = getattr(plan, "goal_race_date", None)
+    if not race_date:
+        return None
+
+    days_remaining = (race_date - date.today()).days
+    if days_remaining < 0:
+        return None  # Race already happened
+
+    race_name = getattr(plan, "goal_race_name", None)
+
+    # Format goal_time
+    goal_time_str = None
+    goal_time_s = getattr(plan, "goal_time_seconds", None)
+    if goal_time_s:
+        hours = int(goal_time_s // 3600)
+        mins = int((goal_time_s % 3600) // 60)
+        secs = int(goal_time_s % 60)
+        goal_time_str = f"{hours}:{mins:02d}:{secs:02d}"
+
+    # Derive goal pace from goal_time and distance
+    goal_pace_str = None
+    distance_m = getattr(plan, "goal_race_distance_m", None)
+    if goal_time_s and distance_m and distance_m > 0:
+        pace_s_per_mile = goal_time_s / (distance_m / 1609.344)
+        p_mins = int(pace_s_per_mile // 60)
+        p_secs = int(pace_s_per_mile % 60)
+        goal_pace_str = f"{p_mins}:{p_secs:02d}/mi"
+
+    # Predicted time from race predictor
+    predicted_str = None
+    try:
+        from services.race_predictor import predict_race_time
+        from uuid import UUID
+        if distance_m and distance_m > 0:
+            prediction = predict_race_time(UUID(athlete_id), race_date, distance_m, db)
+            if prediction:
+                predicted_str = getattr(prediction, "predicted_time_formatted", None)
+    except Exception as e:
+        logger.debug(f"Race prediction failed: {e}")
+
+    return RaceCountdown(
+        race_name=race_name,
+        race_date=race_date.isoformat(),
+        days_remaining=days_remaining,
+        goal_time=goal_time_str,
+        goal_pace=goal_pace_str,
+        predicted_time=predicted_str,
+    )
 
 
 @router.get("", response_model=HomeResponse)
@@ -729,6 +908,36 @@ async def get_home_data(
             except Exception:
                 pass  # Don't fail the request due to audit logging
     
+    # --- Phase 2 (ADR-17): Coach Noticed ---
+    coach_noticed = None
+    if has_any_activities:
+        coach_noticed = compute_coach_noticed(
+            str(current_user.id), db, hero_narrative=hero_narrative
+        )
+
+    # --- Phase 2 (ADR-17): Race Countdown ---
+    race_countdown = compute_race_countdown(
+        active_plan, str(current_user.id), db
+    )
+
+    # --- Phase 2 (ADR-17): Check-in Needed ---
+    checkin_needed = True
+    try:
+        existing_checkin = db.query(DailyCheckin).filter(
+            DailyCheckin.athlete_id == current_user.id,
+            DailyCheckin.date == today,
+        ).first()
+        checkin_needed = existing_checkin is None
+    except Exception:
+        checkin_needed = True
+
+    # --- Phase 2 (ADR-17): Strava Status Detail ---
+    strava_status_detail = StravaStatusDetail(
+        connected=strava_connected,
+        last_sync=last_sync,
+        needs_reconnect=not strava_connected and bool(current_user.strava_athlete_id),
+    )
+
     return HomeResponse(
         today=today_workout,
         yesterday=yesterday_insight,
@@ -740,6 +949,10 @@ async def get_home_data(
         last_sync=last_sync,
         ingestion_state=ingestion_state,
         ingestion_paused=ingestion_paused,
+        coach_noticed=coach_noticed,
+        race_countdown=race_countdown,
+        checkin_needed=checkin_needed,
+        strava_status=strava_status_detail,
     )
 
 

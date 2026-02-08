@@ -20,6 +20,10 @@ from routers.home import (
     format_pace,
     get_correlation_context,
     get_tsb_context,
+    compute_coach_noticed,
+    compute_race_countdown,
+    CoachNoticed,
+    RaceCountdown,
 )
 
 
@@ -387,3 +391,146 @@ class TestWeekDayModel:
         assert day.distance_mi == 5.2
         assert day.planned_distance_mi == 5.0
         assert day.distance_mi != day.planned_distance_mi  # Shows difference
+
+
+# ── ADR-17 Phase 2: Coach Noticed ───────────────────────────────────
+
+
+class TestComputeCoachNoticed:
+    """Tests for ADR-17 Phase 2 coach_noticed waterfall."""
+
+    @patch("services.correlation_engine.analyze_correlations")
+    def test_coach_noticed_picks_strong_correlation(self, mock_corr):
+        """Priority 1: strong correlation (|r| >= 0.5, n >= 15)."""
+        mock_corr.return_value = {
+            "correlations": [
+                {
+                    "is_significant": True,
+                    "correlation_coefficient": 0.65,
+                    "sample_size": 20,
+                    "input_name": "sleep_hours",
+                }
+            ]
+        }
+        db = MagicMock()
+        result = compute_coach_noticed("athlete-1", db)
+        assert result is not None
+        assert result.source == "correlation"
+        assert "Sleep Hours" in result.text
+        assert result.ask_coach_query
+
+    @patch("services.home_signals.aggregate_signals", side_effect=Exception("disabled"))
+    @patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("disabled"))
+    @patch("services.correlation_engine.analyze_correlations")
+    def test_coach_noticed_skips_weak_correlation(self, mock_corr, _mock_feed, _mock_sig):
+        """Weak correlations (|r| < 0.5) don't qualify for Priority 1."""
+        mock_corr.return_value = {
+            "correlations": [
+                {
+                    "is_significant": True,
+                    "correlation_coefficient": 0.3,
+                    "sample_size": 25,
+                    "input_name": "sleep_hours",
+                }
+            ]
+        }
+        db = MagicMock()
+        result = compute_coach_noticed("athlete-1", db, hero_narrative=None)
+        assert result is None
+
+    @patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("nope"))
+    @patch("services.home_signals.aggregate_signals", side_effect=Exception("nope"))
+    @patch("services.correlation_engine.analyze_correlations", side_effect=Exception("nope"))
+    def test_coach_noticed_fallback_to_narrative(self, _c, _s, _f):
+        """Priority 4: hero_narrative fallback when nothing else available."""
+        db = MagicMock()
+        result = compute_coach_noticed(
+            "athlete-1", db, hero_narrative="Your fitness is building steadily."
+        )
+        assert result is not None
+        assert result.source == "narrative"
+        assert result.text == "Your fitness is building steadily."
+
+    @patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("nope"))
+    @patch("services.home_signals.aggregate_signals", side_effect=Exception("nope"))
+    @patch("services.correlation_engine.analyze_correlations", side_effect=Exception("nope"))
+    def test_coach_noticed_returns_none_when_nothing(self, _c, _s, _f):
+        """No data at all → None."""
+        db = MagicMock()
+        result = compute_coach_noticed("athlete-1", db, hero_narrative=None)
+        assert result is None
+
+    @patch("services.home_signals.aggregate_signals")
+    @patch("services.correlation_engine.analyze_correlations")
+    def test_coach_noticed_picks_signal_when_no_correlation(self, mock_corr, mock_signals):
+        """Priority 2: top signal when no strong correlation exists."""
+        mock_corr.return_value = {"correlations": []}
+        mock_signal = MagicMock()
+        mock_signal.title = "Efficiency trending up"
+        mock_signal.subtitle = "3 week improvement"
+        mock_signals.return_value = MagicMock(signals=[mock_signal])
+        db = MagicMock()
+        result = compute_coach_noticed("athlete-1", db)
+        assert result is not None
+        assert result.source == "signal"
+        assert "Efficiency trending up" in result.text
+
+
+# ── ADR-17 Phase 2: Race Countdown ──────────────────────────────────
+
+
+class TestComputeRaceCountdown:
+    """Tests for ADR-17 Phase 2 race_countdown computation."""
+
+    def test_race_countdown_with_plan(self):
+        """Returns countdown with all fields when plan has race data."""
+        plan = MagicMock()
+        plan.goal_race_name = "Boston Marathon"
+        plan.goal_race_date = date.today() + timedelta(days=30)
+        plan.goal_time_seconds = 11400  # 3:10:00
+        plan.goal_race_distance_m = 42195.0
+        db = MagicMock()
+        with patch("services.race_predictor.predict_race_time", return_value=None):
+            result = compute_race_countdown(plan, "athlete-1", db)
+        assert result is not None
+        assert result.days_remaining == 30
+        assert result.race_name == "Boston Marathon"
+        assert result.goal_time == "3:10:00"
+        assert result.goal_pace is not None  # derived from goal_time / distance
+
+    def test_race_countdown_no_plan(self):
+        """Returns None when no active plan."""
+        result = compute_race_countdown(None, "athlete-1", MagicMock())
+        assert result is None
+
+    def test_race_countdown_past_race(self):
+        """Returns None when race date has passed."""
+        plan = MagicMock()
+        plan.goal_race_date = date.today() - timedelta(days=5)
+        plan.goal_race_name = "Old Race"
+        db = MagicMock()
+        result = compute_race_countdown(plan, "athlete-1", db)
+        assert result is None
+
+    def test_race_countdown_no_race_date(self):
+        """Returns None when plan has no race date."""
+        plan = MagicMock()
+        plan.goal_race_date = None
+        db = MagicMock()
+        result = compute_race_countdown(plan, "athlete-1", db)
+        assert result is None
+
+    def test_race_countdown_no_goal_time(self):
+        """Countdown still works without goal_time — pace and time are None."""
+        plan = MagicMock()
+        plan.goal_race_name = "Local 10K"
+        plan.goal_race_date = date.today() + timedelta(days=14)
+        plan.goal_time_seconds = None
+        plan.goal_race_distance_m = None
+        db = MagicMock()
+        with patch("services.race_predictor.predict_race_time", return_value=None):
+            result = compute_race_countdown(plan, "athlete-1", db)
+        assert result is not None
+        assert result.goal_time is None
+        assert result.goal_pace is None
+        assert result.days_remaining == 14
