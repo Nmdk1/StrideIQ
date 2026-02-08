@@ -27,6 +27,7 @@ jest.mock('@/components/auth/ProtectedRoute', () => ({
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
   usePathname: () => '/insights',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 // AuthContext is used by Insights (AthleteIntelligenceSection)
@@ -189,7 +190,12 @@ describe('Subscriber value deep-dive (Insights + PBs + Coach evidence)', () => {
     });
     coachGetSuggestionsMock.mockResolvedValue({ suggestions: [] });
 
-    render(<CoachPage />);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <CoachPage />
+      </QueryClientProvider>
+    );
 
     expect(await screen.findByText('Coach')).toBeInTheDocument();
 
