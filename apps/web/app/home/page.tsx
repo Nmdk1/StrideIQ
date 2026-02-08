@@ -135,7 +135,6 @@ function QuickCheckin() {
   const [feel, setFeel] = useState<number | null>(null);
   const [sleep, setSleep] = useState<number | null>(null);
   const [soreness, setSoreness] = useState<number | null>(null);
-  const [submitted, setSubmitted] = useState(false);
   const checkin = useQuickCheckin();
 
   const handleSubmit = () => {
@@ -143,20 +142,8 @@ function QuickCheckin() {
     const today = new Date().toISOString().split('T')[0];
     checkin.mutate(
       { date: today, motivation_1_5: feel, sleep_h: sleep, soreness_1_5: soreness },
-      { onSuccess: () => setSubmitted(true) },
     );
   };
-
-  if (submitted) {
-    return (
-      <Card className="bg-slate-800/50 border-slate-700/50">
-        <CardContent className="py-4 px-5 flex items-center gap-3">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-          <p className="text-sm text-slate-300">Checked in for today. Your coach will use this.</p>
-        </CardContent>
-      </Card>
-    );
-  }
 
   const allSelected = feel !== null && sleep !== null && soreness !== null;
 
@@ -250,6 +237,43 @@ function QuickCheckin() {
 }
 
 
+// ── Check-in Summary (shown after check-in) ────────────────────────
+
+function CheckinSummary({ motivation, sleep, soreness }: {
+  motivation?: string | null; sleep?: string | null; soreness?: string | null;
+}) {
+  const items = [
+    { label: 'Feeling', value: motivation, emoji: motivation === 'Great' ? '💪' : motivation === 'Fine' ? '👍' : motivation === 'Tired' ? '😴' : '😓' },
+    { label: 'Sleep', value: sleep, emoji: sleep === 'Great' ? '🌙' : sleep === 'OK' ? '😐' : '😵' },
+    { label: 'Soreness', value: soreness, emoji: soreness === 'None' ? '✅' : soreness === 'Mild' ? '🤏' : '🔥' },
+  ].filter((i) => i.value);
+
+  if (items.length === 0) return null;
+
+  return (
+    <Card className="bg-slate-800/50 border-slate-700/50">
+      <CardContent className="py-3 px-5">
+        <div className="flex items-center gap-2 mb-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Today&apos;s check-in
+          </p>
+        </div>
+        <div className="flex gap-4">
+          {items.map((item) => (
+            <div key={item.label} className="flex items-center gap-1.5 text-sm">
+              <span>{item.emoji}</span>
+              <span className="text-slate-400 text-xs">{item.label}:</span>
+              <span className="text-slate-200 text-xs font-medium">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+
 // ── Race Countdown Card ─────────────────────────────────────────────
 
 function RaceCountdownCard({
@@ -331,6 +355,7 @@ export default function HomePage() {
     coach_noticed,
     race_countdown,
     checkin_needed,
+    today_checkin,
   } = data;
 
   const hasAnyData = has_any_activities || week.completed_mi > 0;
@@ -366,8 +391,16 @@ export default function HomePage() {
             />
           )}
 
-          {/* Quick Check-in (only when needed) */}
-          {checkin_needed && hasAnyData && <QuickCheckin />}
+          {/* Quick Check-in (only when needed) / Check-in Summary (after) */}
+          {checkin_needed && hasAnyData ? (
+            <QuickCheckin />
+          ) : today_checkin ? (
+            <CheckinSummary
+              motivation={today_checkin.motivation_label}
+              sleep={today_checkin.sleep_label}
+              soreness={today_checkin.soreness_label}
+            />
+          ) : null}
 
           {/* ═══ TIER 2: Below the fold ═══ */}
 

@@ -101,6 +101,11 @@ export interface HomeData {
   coach_noticed?: CoachNoticed | null;
   race_countdown?: RaceCountdown | null;
   checkin_needed: boolean;
+  today_checkin?: {
+    motivation_label?: string | null;
+    sleep_label?: string | null;
+    soreness_label?: string | null;
+  } | null;
   strava_status?: StravaStatusDetail | null;
 }
 

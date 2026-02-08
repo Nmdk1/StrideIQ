@@ -123,6 +123,15 @@ class StravaStatusDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TodayCheckin(BaseModel):
+    """Today's check-in summary (shown after athlete checks in)."""
+    motivation_label: Optional[str] = None
+    sleep_label: Optional[str] = None
+    soreness_label: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class HomeResponse(BaseModel):
     """Complete home page data."""
     today: TodayWorkout
@@ -139,6 +148,7 @@ class HomeResponse(BaseModel):
     coach_noticed: Optional[CoachNoticed] = None
     race_countdown: Optional[RaceCountdown] = None
     checkin_needed: bool = True
+    today_checkin: Optional[TodayCheckin] = None  # Summary of today's check-in (if completed)
     strava_status: Optional[StravaStatusDetail] = None
     
     model_config = ConfigDict(from_attributes=True)
@@ -920,14 +930,31 @@ async def get_home_data(
         active_plan, str(current_user.id), db
     )
 
-    # --- Phase 2 (ADR-17): Check-in Needed ---
+    # --- Phase 2 (ADR-17): Check-in Needed + Today's Check-in Summary ---
     checkin_needed = True
+    today_checkin = None
     try:
         existing_checkin = db.query(DailyCheckin).filter(
             DailyCheckin.athlete_id == current_user.id,
             DailyCheckin.date == today,
         ).first()
         checkin_needed = existing_checkin is None
+        if existing_checkin is not None:
+            # Build human-readable labels from stored values
+            motivation_map = {5: 'Great', 4: 'Fine', 2: 'Tired', 1: 'Rough'}
+            sleep_map = {8: 'Great', 7: 'OK', 5: 'Poor'}
+            soreness_map = {1: 'None', 2: 'Mild', 4: 'Yes'}
+            today_checkin = TodayCheckin(
+                motivation_label=motivation_map.get(
+                    int(existing_checkin.motivation_1_5) if existing_checkin.motivation_1_5 is not None else -1
+                ),
+                sleep_label=sleep_map.get(
+                    int(existing_checkin.sleep_h) if existing_checkin.sleep_h is not None else -1
+                ),
+                soreness_label=soreness_map.get(
+                    int(existing_checkin.soreness_1_5) if existing_checkin.soreness_1_5 is not None else -1
+                ),
+            )
     except Exception:
         checkin_needed = True
 
@@ -952,6 +979,7 @@ async def get_home_data(
         coach_noticed=coach_noticed,
         race_countdown=race_countdown,
         checkin_needed=checkin_needed,
+        today_checkin=today_checkin,
         strava_status=strava_status_detail,
     )
 
