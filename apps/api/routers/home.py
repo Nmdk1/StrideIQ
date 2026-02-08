@@ -931,9 +931,12 @@ async def get_home_data(
     )
 
     # --- Phase 2 (ADR-17): Check-in Needed + Today's Check-in Summary ---
+    # Rollback any prior failed transaction state (e.g. missing tables like
+    # athlete_calibrated_model) so this query runs on a clean session.
     checkin_needed = True
     today_checkin = None
     try:
+        db.rollback()
         existing_checkin = db.query(DailyCheckin).filter(
             DailyCheckin.athlete_id == current_user.id,
             DailyCheckin.date == today,
@@ -955,7 +958,8 @@ async def get_home_data(
                     int(existing_checkin.soreness_1_5) if existing_checkin.soreness_1_5 is not None else -1
                 ),
             )
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Check-in query failed: {e}")
         checkin_needed = True
 
     # --- Phase 2 (ADR-17): Strava Status Detail ---
