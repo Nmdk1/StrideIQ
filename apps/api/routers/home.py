@@ -502,17 +502,19 @@ def generate_coach_home_briefing(
     sections.append("You are an elite running coach speaking directly to your athlete about TODAY.")
     sections.append("Be specific, direct, insightful. Reference their actual data. 1-2 sentences per field max.")
     sections.append("Sound like a real coach who knows this athlete, not a dashboard or chatbot.")
+    sections.append("CRITICAL: Do NOT say the athlete already completed today's workout. The workout below is PLANNED, not done yet.")
+    sections.append("CRITICAL: Only reference data explicitly provided. Do NOT invent or assume activities, distances, or results.")
     sections.append("")
     
     if coach_noticed_text:
-        sections.append(f"Key Insight: {coach_noticed_text}")
+        sections.append(f"Key Insight (from recent training history, NOT today): {coach_noticed_text}")
     
     if checkin_data:
         sections.append(f"Today's Check-in: Feeling {checkin_data.get('motivation_label', 'unknown')}, Sleep {checkin_data.get('sleep_label', 'unknown')}, Soreness {checkin_data.get('soreness_label', 'unknown')}")
     
     if workout_data.get("has_workout"):
         w = workout_data
-        sections.append(f"Today's Workout: {w.get('title') or w.get('workout_type', 'run')}, {w.get('distance_mi', '?')}mi, pace {w.get('pace_guidance', 'by feel')}")
+        sections.append(f"PLANNED Workout for Today (NOT yet completed): {w.get('title') or w.get('workout_type', 'run')}, {w.get('distance_mi', '?')}mi, pace {w.get('pace_guidance', 'by feel')}")
         if w.get("why_context"):
             sections.append(f"Plan context: {w['why_context']}")
         if w.get("phase"):

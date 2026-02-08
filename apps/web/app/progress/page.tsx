@@ -227,31 +227,27 @@ export default function ProgressPage() {
           )}
 
           {/* Quick metrics row */}
-          {s && (s.ctl !== null || pc) && (
-            <div className="grid grid-cols-3 gap-2">
-              {s.ctl !== null && (
-                <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-slate-500 mb-1">Fitness</p>
-                  <p className="text-lg font-bold text-white">{s.ctl}</p>
-                  {s.ctl_trend && (
-                    <p className="text-xs text-slate-400 mt-0.5">{s.ctl_trend}</p>
-                  )}
-                </div>
-              )}
-              {s.tsb !== null && (
-                <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-slate-500 mb-1">Form</p>
-                  <p className={`text-lg font-bold ${(s.tsb ?? 0) > 0 ? 'text-emerald-400' : (s.tsb ?? 0) < -15 ? 'text-red-400' : 'text-white'}`}>
-                    {(s.tsb ?? 0) > 0 ? '+' : ''}{s.tsb}
-                  </p>
-                  {s.tsb_zone && (
-                    <p className="text-xs text-slate-400 mt-0.5 capitalize">{s.tsb_zone.replace(/_/g, ' ')}</p>
-                  )}
-                </div>
-              )}
+          {s && s.ctl !== null && (
+            <div className={`grid gap-2 ${pc ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-center">
+                <p className="text-xs text-slate-500 mb-1">Fitness</p>
+                <p className="text-lg font-bold text-white">{s.ctl}</p>
+                {s.ctl_trend && (
+                  <p className="text-xs text-slate-400 mt-0.5">{s.ctl_trend}</p>
+                )}
+              </div>
+              <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-center">
+                <p className="text-xs text-slate-500 mb-1">Form</p>
+                <p className={`text-lg font-bold ${(s.tsb ?? 0) > 0 ? 'text-emerald-400' : (s.tsb ?? 0) < -15 ? 'text-red-400' : 'text-white'}`}>
+                  {(s.tsb ?? 0) > 0 ? '+' : ''}{s.tsb}
+                </p>
+                {s.tsb_zone && (
+                  <p className="text-xs text-slate-400 mt-0.5 capitalize">{s.tsb_zone.replace(/_/g, ' ')}</p>
+                )}
+              </div>
               {pc && (
                 <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-slate-500 mb-1">Volume</p>
+                  <p className="text-xs text-slate-500 mb-1">Volume ({days}d)</p>
                   <p className="text-lg font-bold text-white">{pc.current.total_distance_mi}mi</p>
                   <DeltaBadge value={pc.volume_change_pct} />
                 </div>
@@ -283,7 +279,7 @@ export default function ProgressPage() {
               </div>
             ) : (
               <p className="text-sm text-slate-500 py-2">
-                Not enough data yet — keep logging check-ins and running.
+                No positive patterns detected yet. Daily check-ins (sleep, soreness, motivation) are needed to discover what drives your best performances.
               </p>
             )}
           </Section>
@@ -292,6 +288,7 @@ export default function ProgressPage() {
             title="What's Not Working"
             icon={<TrendingDown className="w-4 h-4 text-red-400" />}
             askCoachQuery="What patterns in my training are hurting my performance?"
+            defaultOpen={true}
           >
             {whatDoesntWork.isLoading ? (
               <div className="flex justify-center py-4"><LoadingSpinner size="sm" /></div>
@@ -320,6 +317,7 @@ export default function ProgressPage() {
             title="Fitness & Load"
             icon={<BarChart3 className="w-4 h-4 text-blue-400" />}
             askCoachQuery="Explain my current fitness and fatigue levels"
+            defaultOpen={true}
           >
             {loadHistory.isLoading ? (
               <div className="flex justify-center py-4"><LoadingSpinner size="sm" /></div>
@@ -375,6 +373,7 @@ export default function ProgressPage() {
             title="Efficiency Trend"
             icon={<Activity className="w-4 h-4 text-emerald-400" />}
             askCoachQuery="What does my efficiency trend mean and how can I improve it?"
+            defaultOpen={true}
           >
             {efficiency.isLoading ? (
               <div className="flex justify-center py-4"><LoadingSpinner size="sm" /></div>
@@ -437,6 +436,7 @@ export default function ProgressPage() {
             title="Personal Bests"
             icon={<Trophy className="w-4 h-4 text-yellow-400" />}
             askCoachQuery="Analyze my personal bests and what conditions led to them"
+            defaultOpen={true}
           >
             {personalBests.isLoading ? (
               <div className="flex justify-center py-4"><LoadingSpinner size="sm" /></div>
@@ -480,6 +480,7 @@ export default function ProgressPage() {
             title={`Last ${days} Days vs Prior ${days} Days`}
             icon={<Target className="w-4 h-4 text-purple-400" />}
             askCoachQuery={`Compare my last ${days} days of training to the ${days} days before that`}
+            defaultOpen={true}
           >
             {!pc ? (
               <p className="text-sm text-slate-500 py-2">Not enough data for comparison.</p>
