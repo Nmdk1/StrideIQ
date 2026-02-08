@@ -512,7 +512,19 @@ def generate_coach_home_briefing(
     if checkin_data:
         sections.append(f"Today's Check-in: Feeling {checkin_data.get('motivation_label', 'unknown')}, Sleep {checkin_data.get('sleep_label', 'unknown')}, Soreness {checkin_data.get('soreness_label', 'unknown')}")
     
-    if workout_data.get("has_workout"):
+    completed = workout_data.get("completed")
+    if completed:
+        # Athlete HAS completed a run today
+        c = completed
+        sections.append(f"COMPLETED Run Today: {c.get('name')}, {c.get('distance_mi')}mi, pace {c.get('pace')}, avg HR {c.get('avg_hr', 'N/A')}, duration {c.get('duration_min')}min")
+        if workout_data.get("has_workout"):
+            plan_mi = workout_data.get("distance_mi")
+            plan_type = workout_data.get("title") or workout_data.get("workout_type")
+            if plan_mi and c.get("distance_mi") and abs(c["distance_mi"] - plan_mi) > 1.0:
+                sections.append(f"Plan called for {plan_mi}mi {plan_type} but athlete ran {c['distance_mi']}mi instead. Acknowledge the deviation.")
+            else:
+                sections.append(f"This matched the plan: {plan_mi}mi {plan_type}.")
+    elif workout_data.get("has_workout"):
         w = workout_data
         sections.append(f"PLANNED Workout for Today (NOT yet completed): {w.get('title') or w.get('workout_type', 'run')}, {w.get('distance_mi', '?')}mi, pace {w.get('pace_guidance', 'by feel')}")
         if w.get("why_context"):
@@ -520,7 +532,7 @@ def generate_coach_home_briefing(
         if w.get("phase"):
             sections.append(f"Phase: {w['phase']}, Week {w.get('week_number', '?')}")
     else:
-        sections.append("Today: No workout scheduled (rest day or no plan).")
+        sections.append("Today: No workout scheduled and nothing completed yet (rest day or no plan).")
     
     week = week_data
     sections.append(f"This Week: {week.get('completed_mi', 0)}mi of {week.get('planned_mi', 0)}mi planned, {week.get('activities_count', 0)} activities, status {week.get('status', 'unknown')}")
@@ -549,7 +561,7 @@ def generate_coach_home_briefing(
             },
             "today_context": {
                 "type": "STRING",
-                "description": "Why this workout matters today, what to focus on. 1-2 sentences.",
+                "description": "If workout completed: react to the actual performance and how it fits the plan. If not yet completed: why this planned workout matters, what to focus on. 1-2 sentences.",
             },
             "week_assessment": {
                 "type": "STRING",
@@ -1130,6 +1142,30 @@ async def get_home_data(
     coach_briefing = None
     if has_any_activities:
         try:
+            # Check if athlete has a completed activity TODAY
+            today_actual = db.query(Activity).filter(
+                Activity.athlete_id == current_user.id,
+                Activity.start_time >= today,
+                Activity.start_time < today + timedelta(days=1),
+            ).order_by(Activity.start_time.desc()).first()
+
+            today_completed = None
+            if today_actual:
+                actual_mi = round(today_actual.distance_m / 1609.344, 1) if today_actual.distance_m else None
+                actual_pace = None
+                if today_actual.distance_m and today_actual.duration_s:
+                    pace_s = today_actual.duration_s / (today_actual.distance_m / 1609.344)
+                    mins = int(pace_s // 60)
+                    secs = int(pace_s % 60)
+                    actual_pace = f"{mins}:{secs:02d}/mi"
+                today_completed = {
+                    "name": today_actual.name or "Run",
+                    "distance_mi": actual_mi,
+                    "pace": actual_pace,
+                    "avg_hr": int(today_actual.avg_hr) if today_actual.avg_hr else None,
+                    "duration_min": round(today_actual.duration_s / 60, 0) if today_actual.duration_s else None,
+                }
+
             # Build workout data dict for the briefing prompt
             workout_data = {
                 "has_workout": today_workout.has_workout,
@@ -1140,6 +1176,7 @@ async def get_home_data(
                 "why_context": today_workout.why_context,
                 "phase": today_workout.phase,
                 "week_number": today_workout.week_number,
+                "completed": today_completed,  # None if not run yet, dict if done
             }
             
             # Build week data dict
