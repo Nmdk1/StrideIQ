@@ -82,31 +82,24 @@ export default function Navigation() {
     { href: '/support', label: 'Support' },
   ];
 
-  // Authenticated navigation items (for logged-in users)
-  // Primary: Home, Calendar, Analytics, Coach
-  // Secondary: everything else
+  // Authenticated navigation — matches bottom tab structure (ADR-17 V2)
+  // Primary: Home, Coach, Calendar, Progress (mirrors bottom tabs)
   const primaryNavItems = [
     { href: '/home', label: 'Home', icon: '🏠' },
-    { href: '/calendar', label: 'Calendar', icon: '📅' },
-    { href: '/analytics', label: 'Analytics', icon: '📊' },
-    { href: '/insights', label: 'Insights', icon: '🧠' },
     { href: '/coach', label: 'Coach', icon: '🤖' },
+    { href: '/calendar', label: 'Calendar', icon: '📅' },
+    { href: '/progress', label: 'Progress', icon: '📊' },
   ];
   
+  // Secondary: everything accessible via "More" (mirrors bottom tab More sheet)
   const secondaryNavItems = [
     { href: '/activities', label: 'Activities', icon: '🏃' },
+    { href: '/analytics', label: 'Analytics', icon: '📈' },
+    { href: '/insights', label: 'Insights', icon: '🧠' },
     { href: '/training-load', label: 'Load', icon: '📈' },
-    { href: '/checkin', label: 'Check-in', icon: '✅' },
     { href: '/nutrition', label: 'Nutrition', icon: '🥗' },
-    { href: '/compare', label: 'Compare', icon: '👻' },
-    { href: '/personal-bests', label: 'PBs', icon: '🏆' },
+    { href: '/checkin', label: 'Check-in', icon: '✅' },
     { href: '/tools', label: 'Tools', icon: '🧮' },
-  ];
-  
-  // Legacy - keeping for mobile menu only
-  const authNavItems = [
-    ...primaryNavItems,
-    ...secondaryNavItems,
   ];
 
   const isMoreActive =
@@ -386,92 +379,49 @@ export default function Navigation() {
         {mobileMenuOpen && !showAuthenticatedNav && (
           <div className="md:hidden pb-4 safe-area-bottom">
             <div className="flex flex-col gap-1 mt-4 max-h-[calc(100vh-8rem)] overflow-y-auto">
-              {showAuthenticatedNav ? (
-                /* === MOBILE AUTHENTICATED NAV === */
-                <>
-                  {authNavItems.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={`px-4 py-3 rounded-lg text-base font-medium transition-colors ${
-                          pathname === item.href
-                            ? 'bg-slate-800 text-white'
-                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                        }`}
-                      >
-                        <span className="mr-2">{item.icon}</span>
-                        {item.label}
-                      </Link>
-                  ))}
+              {/* Mobile public nav only — auth routes use bottom tabs */}
+              {publicNavItems.map((item) => (
+                item.href.includes('#') ? (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    onClick={(e) => {
+                      handleHashClick(e, item.href);
+                      setMobileMenuOpen(false);
+                    }}
+                    className="px-4 py-3 rounded-lg text-base font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                  >
+                    {item.label}
+                  </a>
+                ) : (
                   <Link
-                    href="/settings"
+                    key={item.href}
+                    href={item.href}
                     onClick={() => setMobileMenuOpen(false)}
                     className={`px-4 py-3 rounded-lg text-base font-medium transition-colors ${
-                      pathname === '/settings'
+                      pathname === item.href
                         ? 'bg-slate-800 text-white'
                         : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
                   >
-                    ⚙️ Settings
+                    {item.label}
                   </Link>
-                  <button
-                    onClick={() => {
-                      logout();
-                      setMobileMenuOpen(false);
-                    }}
-                    className="px-4 py-3 rounded-lg text-base font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-colors text-left"
-                  >
-                    🚪 Logout
-                  </button>
-                </>
-              ) : (
-                /* === MOBILE PUBLIC NAV === */
-                <>
-                  {publicNavItems.map((item) => (
-                    item.href.includes('#') ? (
-                      <a
-                        key={item.href}
-                        href={item.href}
-                        onClick={(e) => {
-                          handleHashClick(e, item.href);
-                          setMobileMenuOpen(false);
-                        }}
-                        className="px-4 py-3 rounded-lg text-base font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-                      >
-                        {item.label}
-                      </a>
-                    ) : (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={`px-4 py-3 rounded-lg text-base font-medium transition-colors ${
-                          pathname === item.href
-                            ? 'bg-slate-800 text-white'
-                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                        }`}
-                      >
-                        {item.label}
-                      </Link>
-                    )
-                  ))}
-                  <Link
-                    href="/login"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="px-4 py-3 rounded-lg text-base font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-                  >
-                    Login
-                  </Link>
-                  <Link
-                    href="/register"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="px-4 py-3 rounded-lg text-base font-semibold bg-orange-600 hover:bg-orange-700 text-white transition-colors text-center"
-                  >
-                    Get Started
-                  </Link>
-                </>
-              )}
+                )
+              ))}
+              <Link
+                href="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-4 py-3 rounded-lg text-base font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+              >
+                Login
+              </Link>
+              <Link
+                href="/register"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-4 py-3 rounded-lg text-base font-semibold bg-orange-600 hover:bg-orange-700 text-white transition-colors text-center"
+              >
+                Get Started
+              </Link>
             </div>
           </div>
         )}

@@ -331,7 +331,7 @@ def get_pr_match_badge(
     Check if pre-run state matches PR fingerprint.
     """
     try:
-        from services.pre_race_fingerprinting import generate_readiness_profile, ConfidenceLevel
+        from services.pre_race_fingerprinting import generate_readiness_profile
         
         # Check for check-in on this day
         checkin = db.query(DailyCheckin).filter(
@@ -344,28 +344,41 @@ def get_pr_match_badge(
         
         profile = generate_readiness_profile(athlete_id, db)
         
-        if not profile or profile.confidence == ConfidenceLevel.INSUFFICIENT:
+        if not profile or profile.confidence_level == "insufficient":
             return None
         
-        # Check match percentage
-        if profile.readiness_score >= 80:
+        # Count how many optimal-range features this day matches
+        match_count = 0
+        total_features = len(profile.optimal_ranges)
+        if total_features == 0:
+            return None
+        
+        # Check sleep against optimal range
+        if "Sleep Hours" in profile.optimal_ranges and checkin.sleep_h is not None:
+            lo, hi = profile.optimal_ranges["Sleep Hours"]
+            if lo <= float(checkin.sleep_h) <= hi:
+                match_count += 1
+        
+        match_pct = (match_count / max(total_features, 1)) * 100
+        
+        if match_pct >= 80:
             return DayBadge(
                 type=SignalType.PR_MATCH.value,
                 badge="PR ✓",
                 color="purple",
                 icon="target",
                 confidence=SignalConfidence.HIGH.value,
-                tooltip=f"State matches PR fingerprint ({int(profile.readiness_score)}%)",
+                tooltip=f"State matches PR fingerprint ({int(match_pct)}%)",
                 priority=1
             )
-        elif profile.readiness_score >= 65:
+        elif match_pct >= 50:
             return DayBadge(
                 type=SignalType.PR_MATCH.value,
                 badge="Ready",
                 color="blue",
                 icon="target",
                 confidence=SignalConfidence.MODERATE.value,
-                tooltip=f"Good readiness score ({int(profile.readiness_score)}%)",
+                tooltip=f"Good readiness match ({int(match_pct)}%)",
                 priority=3
             )
         

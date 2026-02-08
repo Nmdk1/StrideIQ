@@ -68,37 +68,20 @@ def _safe_std(xs: List[float], mean: float) -> Optional[float]:
 
 
 def _extract_checkin_factor(checkin: DailyCheckin, key: str) -> Optional[float]:
-    # Match existing schema drift handling used by trend_attribution.py
+    """Extract a wellness factor from a DailyCheckin by logical key name."""
     if key == "sleep_duration":
-        v = getattr(checkin, "sleep_h", None)
-        if v is None:
-            v = getattr(checkin, "sleep_hours", None)
-        return float(v) if v is not None else None
+        return float(checkin.sleep_h) if checkin.sleep_h is not None else None
     if key == "hrv":
-        v = getattr(checkin, "hrv_rmssd", None)
-        if v is None:
-            v = getattr(checkin, "hrv_sdnn", None)
-        if v is None:
-            v = getattr(checkin, "hrv", None)
+        v = checkin.hrv_rmssd if checkin.hrv_rmssd is not None else checkin.hrv_sdnn
         return float(v) if v is not None else None
     if key == "resting_hr":
-        v = getattr(checkin, "resting_hr", None)
-        return float(v) if v is not None else None
+        return float(checkin.resting_hr) if checkin.resting_hr is not None else None
     if key == "stress":
-        v = getattr(checkin, "stress_1_5", None)
-        if v is None:
-            v = getattr(checkin, "stress_level", None)
-        return float(v) if v is not None else None
+        return float(checkin.stress_1_5) if checkin.stress_1_5 is not None else None
     if key == "soreness":
-        v = getattr(checkin, "soreness_1_5", None)
-        if v is None:
-            v = getattr(checkin, "soreness", None)
-        return float(v) if v is not None else None
+        return float(checkin.soreness_1_5) if checkin.soreness_1_5 is not None else None
     if key == "fatigue":
-        v = getattr(checkin, "rpe_1_10", None)
-        if v is None:
-            v = getattr(checkin, "fatigue", None)
-        return float(v) if v is not None else None
+        return float(checkin.rpe_1_10) if checkin.rpe_1_10 is not None else None
     return None
 
 

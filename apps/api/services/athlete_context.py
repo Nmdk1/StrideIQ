@@ -407,8 +407,8 @@ class AthleteContextBuilder:
         ).all()
         
         checkin_density = len(checkins) / 30
-        has_sleep = any(c.sleep_hours for c in checkins)
-        has_hrv = any(c.hrv for c in checkins)
+        has_sleep = any(c.sleep_h is not None for c in checkins)
+        has_hrv = any(c.hrv_rmssd is not None for c in checkins)
         
         # Body comp
         body_comp_count = self.db.query(BodyComposition).filter(

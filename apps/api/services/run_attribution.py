@@ -260,7 +260,7 @@ def get_pre_state_attribution(
     Get pre-run state attribution — did pre-run state match success patterns?
     """
     try:
-        from services.pre_race_fingerprinting import generate_readiness_profile, ConfidenceLevel
+        from services.pre_race_fingerprinting import generate_readiness_profile
         
         # Get check-in from activity day
         checkin = db.query(DailyCheckin).filter(
@@ -274,16 +274,16 @@ def get_pre_state_attribution(
         # Get readiness profile
         profile = generate_readiness_profile(athlete_id, db)
         
-        if not profile or profile.confidence == ConfidenceLevel.INSUFFICIENT:
+        if not profile or profile.confidence_level == "insufficient":
             return None
         
         # Count matching factors
         matching = []
-        if checkin.sleep_hours and checkin.sleep_hours >= 7:
+        if checkin.sleep_h is not None and float(checkin.sleep_h) >= 7:
             matching.append("sleep")
-        if checkin.hrv:
+        if checkin.hrv_rmssd is not None:
             matching.append("hrv")
-        if checkin.stress_level and checkin.stress_level <= 3:
+        if checkin.stress_1_5 is not None and checkin.stress_1_5 <= 3:
             matching.append("low_stress")
         
         match_count = len(matching)
@@ -317,8 +317,8 @@ def get_pre_state_attribution(
             data={
                 "match_percent": match_pct,
                 "matching_factors": matching,
-                "sleep_hours": checkin.sleep_hours,
-                "hrv": checkin.hrv
+                "sleep_h": float(checkin.sleep_h) if checkin.sleep_h is not None else None,
+                "hrv_rmssd": float(checkin.hrv_rmssd) if checkin.hrv_rmssd is not None else None
             }
         )
         

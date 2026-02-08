@@ -371,9 +371,9 @@ class PatternRecognitionEngine:
             DailyCheckin.date < activity_date.date(),
         ).all()
         
-        sleep_values = [c.sleep_hours for c in checkins if c.sleep_hours]
-        hrv_values = [c.hrv for c in checkins if c.hrv]
-        readiness_values = [c.readiness_score for c in checkins if c.readiness_score]
+        sleep_values = [float(c.sleep_h) for c in checkins if c.sleep_h is not None]
+        hrv_values = [float(c.hrv_rmssd) for c in checkins if c.hrv_rmssd is not None]
+        stress_values = [c.stress_1_5 for c in checkins if c.stress_1_5 is not None]
         
         # Get body composition
         body_comp = self.db.query(BodyComposition).filter(
@@ -407,8 +407,8 @@ class PatternRecognitionEngine:
             sleep_data_points=len(sleep_values),
             avg_hrv=statistics.mean(hrv_values) if hrv_values else None,
             hrv_data_points=len(hrv_values),
-            avg_readiness=statistics.mean(readiness_values) if readiness_values else None,
-            readiness_data_points=len(readiness_values),
+            avg_readiness=statistics.mean(stress_values) if stress_values else None,
+            readiness_data_points=len(stress_values),
             weight_at_time=body_comp.weight_kg if body_comp else None,
             weight_trend=weight_trend,
         )
