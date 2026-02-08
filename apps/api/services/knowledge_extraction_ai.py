@@ -7,7 +7,11 @@ import os
 import json
 import logging
 from typing import Dict, List, Optional
-from openai import OpenAI
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
 from anthropic import Anthropic
 
 logger = logging.getLogger(__name__)
