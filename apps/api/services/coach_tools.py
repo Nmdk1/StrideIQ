@@ -3517,17 +3517,21 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
         checkin = (
             db.query(DailyCheckin)
             .filter(DailyCheckin.athlete_id == athlete_id)
-            .order_by(DailyCheckin.checkin_date.desc())
+            .order_by(DailyCheckin.date.desc())
             .first()
         )
         if checkin:
-            lines = [f"Date: {checkin.checkin_date}"]
-            if checkin.sleep_hours:
-                lines.append(f"Sleep: {checkin.sleep_hours}h")
-            if checkin.energy_level:
-                lines.append(f"Energy: {checkin.energy_level}/10")
-            if checkin.soreness_level:
-                lines.append(f"Soreness: {checkin.soreness_level}/10")
+            lines = [f"Date: {checkin.date}"]
+            if checkin.sleep_h is not None:
+                lines.append(f"Sleep: {checkin.sleep_h}h")
+            if checkin.motivation_1_5 is not None:
+                motivation_map = {5: 'Great', 4: 'Fine', 2: 'Tired', 1: 'Rough'}
+                lines.append(f"Feeling: {motivation_map.get(checkin.motivation_1_5, checkin.motivation_1_5)}")
+            if checkin.soreness_1_5 is not None:
+                soreness_map = {1: 'None', 2: 'Mild', 4: 'Yes'}
+                lines.append(f"Soreness: {soreness_map.get(checkin.soreness_1_5, checkin.soreness_1_5)}/5")
+            if checkin.stress_1_5 is not None:
+                lines.append(f"Stress: {checkin.stress_1_5}/5")
             if checkin.notes:
                 lines.append(f"Notes: {checkin.notes[:150]}")
             sections.append("## Latest Check-in\n" + "\n".join(lines))

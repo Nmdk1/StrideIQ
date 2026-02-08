@@ -2149,11 +2149,14 @@ ATHLETE BRIEF:
             context_parts.append("\n## Recent Wellness")
             for c in recent_checkins:
                 parts = []
-                if c.sleep_h:
+                if c.motivation_1_5 is not None:
+                    motivation_map = {5: 'Great', 4: 'Fine', 2: 'Tired', 1: 'Rough'}
+                    parts.append(f"Feeling: {motivation_map.get(c.motivation_1_5, c.motivation_1_5)}")
+                if c.sleep_h is not None:
                     parts.append(f"Sleep: {c.sleep_h}h")
-                if c.stress_1_5:
+                if c.stress_1_5 is not None:
                     parts.append(f"Stress: {c.stress_1_5}/5")
-                if c.soreness_1_5:
+                if c.soreness_1_5 is not None:
                     parts.append(f"Soreness: {c.soreness_1_5}/5")
                 if parts:
                     context_parts.append(f"  {c.date.strftime('%m/%d')}: {' | '.join(parts)}")
@@ -4656,17 +4659,20 @@ ATHLETE BRIEF:
                 checkin = (
                     self.db.query(DailyCheckin)
                     .filter(DailyCheckin.athlete_id == athlete_id)
-                    .order_by(DailyCheckin.checkin_date.desc())
+                    .order_by(DailyCheckin.date.desc())
                     .first()
                 )
                 if checkin:
-                    state_lines.append(f"Last checkin ({checkin.checkin_date}):")
-                    if checkin.sleep_hours:
-                        state_lines.append(f"  Sleep: {checkin.sleep_hours}h")
-                    if checkin.energy_level:
-                        state_lines.append(f"  Energy: {checkin.energy_level}/10")
-                    if checkin.soreness_level:
-                        state_lines.append(f"  Soreness: {checkin.soreness_level}/10")
+                    state_lines.append(f"Last checkin ({checkin.date}):")
+                    if checkin.sleep_h is not None:
+                        state_lines.append(f"  Sleep: {checkin.sleep_h}h")
+                    if checkin.motivation_1_5 is not None:
+                        motivation_map = {5: 'Great', 4: 'Fine', 2: 'Tired', 1: 'Rough'}
+                        state_lines.append(f"  Feeling: {motivation_map.get(checkin.motivation_1_5, checkin.motivation_1_5)}")
+                    if checkin.soreness_1_5 is not None:
+                        state_lines.append(f"  Soreness: {checkin.soreness_1_5}/5")
+                    if checkin.stress_1_5 is not None:
+                        state_lines.append(f"  Stress: {checkin.stress_1_5}/5")
                     if checkin.notes:
                         state_lines.append(f"  Notes: {checkin.notes[:100]}")
             except Exception:
