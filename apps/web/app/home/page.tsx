@@ -83,7 +83,9 @@ function getStatusBadge(status: string) {
 
 // ── Coach Noticed Card ──────────────────────────────────────────────
 
-function CoachNoticedCard({ text, askQuery }: { text: string; askQuery: string }) {
+function CoachNoticedCard({ text, coachText, askQuery }: { text: string; coachText?: string; askQuery: string }) {
+  // Use LLM coaching narrative if available, otherwise fall back to raw text
+  const displayText = coachText || text;
   return (
     <Card className="bg-gradient-to-br from-orange-500/10 via-slate-800/60 to-slate-800/60 border-orange-500/25">
       <CardContent className="pt-5 pb-4 px-5">
@@ -95,7 +97,7 @@ function CoachNoticedCard({ text, askQuery }: { text: string; askQuery: string }
             <p className="text-xs font-semibold uppercase tracking-wide text-orange-400/80 mb-1.5">
               Coach noticed
             </p>
-            <p className="text-sm text-slate-200 leading-relaxed">{text}</p>
+            <p className="text-sm text-slate-200 leading-relaxed">{displayText}</p>
             <Link
               href={`/coach?q=${encodeURIComponent(askQuery)}`}
               className="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors"
@@ -239,8 +241,8 @@ function QuickCheckin() {
 
 // ── Check-in Summary (shown after check-in) ────────────────────────
 
-function CheckinSummary({ motivation, sleep, soreness }: {
-  motivation?: string | null; sleep?: string | null; soreness?: string | null;
+function CheckinSummary({ motivation, sleep, soreness, coachReaction }: {
+  motivation?: string | null; sleep?: string | null; soreness?: string | null; coachReaction?: string;
 }) {
   const items = [
     { label: 'Feeling', value: motivation, emoji: motivation === 'Great' ? '💪' : motivation === 'Fine' ? '👍' : motivation === 'Tired' ? '😴' : '😓' },
@@ -259,7 +261,7 @@ function CheckinSummary({ motivation, sleep, soreness }: {
             Today&apos;s check-in
           </p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-4 mb-2">
           {items.map((item) => (
             <div key={item.label} className="flex items-center gap-1.5 text-sm">
               <span>{item.emoji}</span>
@@ -268,6 +270,14 @@ function CheckinSummary({ motivation, sleep, soreness }: {
             </div>
           ))}
         </div>
+        {coachReaction && (
+          <div className="bg-slate-700/40 rounded-lg p-3 border border-slate-600/40 mt-1">
+            <div className="flex gap-2">
+              <Sparkles className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-slate-300 leading-relaxed">{coachReaction}</p>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -277,10 +287,10 @@ function CheckinSummary({ motivation, sleep, soreness }: {
 // ── Race Countdown Card ─────────────────────────────────────────────
 
 function RaceCountdownCard({
-  raceName, raceDate, daysRemaining, goalTime, goalPace, predictedTime,
+  raceName, raceDate, daysRemaining, goalTime, goalPace, predictedTime, coachAssessment,
 }: {
   raceName?: string; raceDate: string; daysRemaining: number;
-  goalTime?: string; goalPace?: string; predictedTime?: string;
+  goalTime?: string; goalPace?: string; predictedTime?: string; coachAssessment?: string;
 }) {
   return (
     <Card className="bg-slate-800/50 border-slate-700/50">
@@ -303,6 +313,14 @@ function RaceCountdownCard({
           {goalPace && <span>Pace: <span className="text-white font-medium">{goalPace}</span></span>}
           {predictedTime && <span>Predicted: <span className="text-white font-medium">{predictedTime}</span></span>}
         </div>
+        {coachAssessment && (
+          <div className="bg-slate-700/40 rounded-lg p-3 border border-slate-600/40 mt-1">
+            <div className="flex gap-2">
+              <Sparkles className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-slate-300 leading-relaxed">{coachAssessment}</p>
+            </div>
+          </div>
+        )}
         <Link
           href={`/coach?q=${encodeURIComponent(`Am I on track for my ${raceName || 'race'} in ${daysRemaining} days?`)}`}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors pt-1"
@@ -356,6 +374,7 @@ export default function HomePage() {
     race_countdown,
     checkin_needed,
     today_checkin,
+    coach_briefing,
   } = data;
 
   const hasAnyData = has_any_activities || week.completed_mi > 0;
@@ -387,6 +406,7 @@ export default function HomePage() {
           {coach_noticed && (
             <CoachNoticedCard
               text={coach_noticed.text}
+              coachText={coach_briefing?.coach_noticed}
               askQuery={coach_noticed.ask_coach_query}
             />
           )}
@@ -399,6 +419,7 @@ export default function HomePage() {
               motivation={today_checkin.motivation_label}
               sleep={today_checkin.sleep_label}
               soreness={today_checkin.soreness_label}
+              coachReaction={coach_briefing?.checkin_reaction}
             />
           ) : null}
 
@@ -436,11 +457,11 @@ export default function HomePage() {
                     </p>
                   </div>
                 </div>
-                {today.why_context && (
+                {(coach_briefing?.today_context || today.why_context) && (
                   <div className="bg-slate-700/40 rounded-lg p-3 border border-slate-600/40">
                     <div className="flex gap-2">
                       <Sparkles className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
-                      <p className="text-sm text-slate-300">{today.why_context}</p>
+                      <p className="text-sm text-slate-300">{coach_briefing?.today_context || today.why_context}</p>
                     </div>
                   </div>
                 )}
@@ -588,10 +609,17 @@ export default function HomePage() {
                     </div>
                     {getStatusBadge(week.status)}
                   </div>
-                  {week.trajectory_sentence && (
-                    <p className="text-xs text-slate-400 pt-1 border-t border-slate-700/50">
-                      {week.trajectory_sentence}
-                    </p>
+                  {(coach_briefing?.week_assessment || week.trajectory_sentence) && (
+                    <div className="pt-1 border-t border-slate-700/50">
+                      {coach_briefing?.week_assessment ? (
+                        <div className="flex gap-2">
+                          <Sparkles className="w-3.5 h-3.5 text-orange-400 flex-shrink-0 mt-0.5" />
+                          <p className="text-xs text-slate-300">{coach_briefing.week_assessment}</p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400">{week.trajectory_sentence}</p>
+                      )}
+                    </div>
                   )}
                 </>
               )}
@@ -607,6 +635,7 @@ export default function HomePage() {
               goalTime={race_countdown.goal_time ?? undefined}
               goalPace={race_countdown.goal_pace ?? undefined}
               predictedTime={race_countdown.predicted_time ?? undefined}
+              coachAssessment={coach_briefing?.race_assessment}
             />
           )}
 

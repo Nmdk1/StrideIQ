@@ -107,6 +107,13 @@ export interface HomeData {
     soreness_label?: string | null;
   } | null;
   strava_status?: StravaStatusDetail | null;
+  coach_briefing?: {
+    coach_noticed?: string;
+    checkin_reaction?: string;
+    today_context?: string;
+    week_assessment?: string;
+    race_assessment?: string;
+  } | null;
 }
 
 // --- API Functions ---

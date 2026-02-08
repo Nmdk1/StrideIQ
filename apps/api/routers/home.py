@@ -110,6 +110,7 @@ class RaceCountdown(BaseModel):
     goal_time: Optional[str] = None  # formatted e.g. "3:10:00"
     goal_pace: Optional[str] = None  # derived e.g. "7:15/mi"
     predicted_time: Optional[str] = None  # from race predictor
+    coach_assessment: Optional[str] = None  # Coach's readiness assessment
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -128,6 +129,7 @@ class TodayCheckin(BaseModel):
     motivation_label: Optional[str] = None
     sleep_label: Optional[str] = None
     soreness_label: Optional[str] = None
+    coach_reaction: Optional[str] = None  # Coach's response to check-in state
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -150,6 +152,7 @@ class HomeResponse(BaseModel):
     checkin_needed: bool = True
     today_checkin: Optional[TodayCheckin] = None  # Summary of today's check-in (if completed)
     strava_status: Optional[StravaStatusDetail] = None
+    coach_briefing: Optional[dict] = None  # LLM-generated coaching narratives for all cards
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -448,6 +451,143 @@ def generate_yesterday_insight(activity: Activity) -> str:
             insights.append(f"{distance_mi:.1f} mi at {pace_str}.")
     
     return " ".join(insights[:2]) if insights else None
+
+
+def generate_coach_home_briefing(
+    athlete_id: str,
+    checkin_data: Optional[dict],
+    workout_data: dict,
+    week_data: dict,
+    race_data: Optional[dict],
+    coach_noticed_text: Optional[str],
+    tsb_context: Optional[str],
+) -> Optional[dict]:
+    """
+    Generate real coaching narratives for every home page card using Gemini.
+    
+    One LLM call, structured output. Cached in Redis keyed by data hash.
+    Returns dict with keys: coach_noticed, checkin_reaction, today_context,
+    week_assessment, race_assessment.
+    """
+    import hashlib
+    import json as _json
+    
+    # Build data fingerprint for cache key
+    cache_input = _json.dumps({
+        "checkin": checkin_data,
+        "workout": workout_data,
+        "week": week_data,
+        "race": race_data,
+        "noticed": coach_noticed_text,
+        "tsb": tsb_context,
+    }, sort_keys=True, default=str)
+    data_hash = hashlib.md5(cache_input.encode()).hexdigest()[:12]
+    cache_key = f"coach_home_briefing:{athlete_id}:{data_hash}"
+    
+    # Check Redis cache
+    try:
+        import redis
+        import os
+        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+        r = redis.from_url(redis_url, decode_responses=True)
+        cached = r.get(cache_key)
+        if cached:
+            return _json.loads(cached)
+    except Exception:
+        r = None
+    
+    # Build the prompt with all context
+    sections = []
+    sections.append("You are an elite running coach speaking directly to your athlete about TODAY.")
+    sections.append("Be specific, direct, insightful. Reference their actual data. 1-2 sentences per section max.")
+    sections.append("Sound like a real coach who knows this athlete — not a dashboard, not a chatbot.")
+    sections.append("")
+    
+    if coach_noticed_text:
+        sections.append(f"## Key Insight Data\n{coach_noticed_text}")
+    
+    if checkin_data:
+        sections.append(f"## Today's Check-in\nFeeling: {checkin_data.get('motivation_label', 'unknown')}, Sleep: {checkin_data.get('sleep_label', 'unknown')}, Soreness: {checkin_data.get('soreness_label', 'unknown')}")
+    
+    if workout_data.get("has_workout"):
+        w = workout_data
+        workout_desc = f"{w.get('distance_mi', '?')}mi {w.get('workout_type', 'run')}"
+        if w.get("title"):
+            workout_desc = w["title"]
+        sections.append(f"## Today's Workout\nType: {w.get('workout_type')}, Distance: {w.get('distance_mi')}mi, Pace guidance: {w.get('pace_guidance', 'none')}")
+        if w.get("why_context"):
+            sections.append(f"Context: {w['why_context']}")
+        if w.get("phase"):
+            sections.append(f"Phase: {w['phase']}, Week {w.get('week_number', '?')}")
+    else:
+        sections.append("## Today's Workout\nNo workout scheduled (rest day or no plan).")
+    
+    week = week_data
+    sections.append(f"## This Week\nCompleted: {week.get('completed_mi', 0)}mi of {week.get('planned_mi', 0)}mi planned. Status: {week.get('status', 'unknown')}. Activities: {week.get('activities_count', 0)}.")
+    if tsb_context:
+        sections.append(f"Training state: {tsb_context}")
+    if week.get("trajectory_sentence"):
+        sections.append(f"Trajectory: {week['trajectory_sentence']}")
+    
+    if race_data:
+        sections.append(f"## Race\n{race_data.get('race_name', 'Race')} in {race_data.get('days_remaining')} days. Goal: {race_data.get('goal_time', 'not set')} ({race_data.get('goal_pace', '?')}/mi). Prediction: {race_data.get('predicted_time', 'insufficient data')}.")
+    
+    sections.append("")
+    sections.append("Respond in this exact JSON format (no markdown, just raw JSON):")
+    sections.append('{')
+    sections.append('  "coach_noticed": "Your enriched coaching take on the key insight — make it sound like a coach, not a stat line. 1-2 sentences.",')
+    if checkin_data:
+        sections.append('  "checkin_reaction": "React to their state in context of today\'s workout and where they are in training. 1-2 sentences.",')
+    sections.append('  "today_context": "Why this workout matters today, what to focus on, what to watch for. 1-2 sentences.",')
+    sections.append('  "week_assessment": "Assessment of the week so far — trajectory, what to prioritize. 1 sentence.",')
+    if race_data:
+        sections.append('  "race_assessment": "Honest readiness assessment. Where they stand. 1-2 sentences."')
+    sections.append('}')
+    
+    prompt = "\n".join(sections)
+    
+    try:
+        from google import genai
+        import os
+        
+        api_key = os.getenv("GOOGLE_AI_API_KEY")
+        if not api_key:
+            logger.warning("GOOGLE_AI_API_KEY not set — skipping coach home briefing")
+            return None
+        
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                max_output_tokens=500,
+                temperature=0.3,
+            ),
+        )
+        
+        raw = response.text.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+        if raw.endswith("```"):
+            raw = raw[:-3].strip()
+        if raw.startswith("json"):
+            raw = raw[4:].strip()
+        
+        result = _json.loads(raw)
+        
+        # Cache for 30 minutes
+        if r:
+            try:
+                r.setex(cache_key, 1800, _json.dumps(result))
+            except Exception:
+                pass
+        
+        return result
+        
+    except Exception as e:
+        logger.warning(f"Coach home briefing generation failed: {type(e).__name__}: {e}")
+        return None
 
 
 def compute_coach_noticed(
@@ -969,6 +1109,73 @@ async def get_home_data(
         needs_reconnect=not strava_connected and bool(current_user.strava_athlete_id),
     )
 
+    # --- Phase 2 (ADR-17): LLM Coach Briefing ---
+    # One Gemini call with all context → coaching voice for every card.
+    # Cached in Redis for 30 min; regenerates when data changes.
+    coach_briefing = None
+    if has_any_activities:
+        try:
+            # Build workout data dict for the briefing prompt
+            workout_data = {
+                "has_workout": today_workout.has_workout,
+                "workout_type": today_workout.workout_type,
+                "title": today_workout.title,
+                "distance_mi": today_workout.distance_mi,
+                "pace_guidance": today_workout.pace_guidance,
+                "why_context": today_workout.why_context,
+                "phase": today_workout.phase,
+                "week_number": today_workout.week_number,
+            }
+            
+            # Build week data dict
+            week_data_dict = {
+                "completed_mi": week_progress.completed_mi,
+                "planned_mi": week_progress.planned_mi,
+                "progress_pct": week_progress.progress_pct,
+                "status": week_progress.status,
+                "trajectory_sentence": week_progress.trajectory_sentence,
+                "activities_count": sum(1 for d in week_progress.days if d.completed),
+                "week_number": week_progress.week_number,
+                "total_weeks": week_progress.total_weeks,
+                "phase": week_progress.phase,
+            }
+            
+            # Build race data dict
+            race_data_dict = None
+            if race_countdown:
+                race_data_dict = {
+                    "race_name": race_countdown.race_name,
+                    "race_date": race_countdown.race_date,
+                    "days_remaining": race_countdown.days_remaining,
+                    "goal_time": race_countdown.goal_time,
+                    "goal_pace": race_countdown.goal_pace,
+                    "predicted_time": race_countdown.predicted_time,
+                }
+            
+            # Build check-in data dict
+            checkin_data_dict = None
+            if today_checkin:
+                checkin_data_dict = {
+                    "motivation_label": today_checkin.motivation_label,
+                    "sleep_label": today_checkin.sleep_label,
+                    "soreness_label": today_checkin.soreness_label,
+                }
+            
+            # Coach noticed text
+            noticed_text = coach_noticed.text if coach_noticed else hero_narrative
+            
+            coach_briefing = generate_coach_home_briefing(
+                athlete_id=str(current_user.id),
+                checkin_data=checkin_data_dict,
+                workout_data=workout_data,
+                week_data=week_data_dict,
+                race_data=race_data_dict,
+                coach_noticed_text=noticed_text,
+                tsb_context=week_progress.tsb_context,
+            )
+        except Exception as e:
+            logger.warning(f"Coach briefing failed: {type(e).__name__}: {e}")
+
     return HomeResponse(
         today=today_workout,
         yesterday=yesterday_insight,
@@ -985,6 +1192,7 @@ async def get_home_data(
         checkin_needed=checkin_needed,
         today_checkin=today_checkin,
         strava_status=strava_status_detail,
+        coach_briefing=coach_briefing,
     )
 
 
