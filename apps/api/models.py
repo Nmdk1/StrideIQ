@@ -78,7 +78,9 @@ class Athlete(Base):
     strava_athlete_id = Column(Integer, nullable=True)
     strava_access_token = Column(Text, nullable=True)  # Encrypted
     strava_refresh_token = Column(Text, nullable=True)  # Encrypted
+    strava_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # When access token expires
     last_strava_sync = Column(DateTime(timezone=True), nullable=True)
+    timezone = Column(Text, nullable=True)  # IANA timezone from Strava (e.g. "America/New_York")
     
     # Garmin Connect Integration
     garmin_username = Column(Text, nullable=True)  # For login (not encrypted - username only)

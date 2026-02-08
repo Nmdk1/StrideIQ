@@ -184,6 +184,12 @@ def exchange_code_for_token(code: str) -> Dict:
 
 
 def refresh_access_token(refresh_token: str) -> Dict:
+    """
+    Exchange a refresh token for a new access token from Strava.
+    
+    Returns dict with: access_token, refresh_token, expires_at, expires_in, token_type
+    Raises requests.HTTPError on failure (e.g. 400 = truly revoked).
+    """
     url = "https://www.strava.com/oauth/token"
     data = {
         "client_id": STRAVA_CLIENT_ID,
@@ -195,6 +201,55 @@ def refresh_access_token(refresh_token: str) -> Dict:
     r = requests.post(url, json=data)
     r.raise_for_status()
     return r.json()
+
+
+def ensure_fresh_token(athlete, db) -> bool:
+    """
+    Pre-flight check: refresh the Strava access token if it expires within 5 minutes.
+    
+    Call this before any Strava API request to avoid 401 errors.
+    Returns True if token is fresh (or was refreshed), False if refresh failed.
+    Commits to DB on success.
+    """
+    import logging
+    from datetime import datetime, timezone as tz, timedelta
+    from services.token_encryption import decrypt_token, encrypt_token
+
+    logger = logging.getLogger(__name__)
+
+    if not athlete.strava_access_token or not athlete.strava_refresh_token:
+        return False
+
+    # If we don't have expires_at stored, skip pre-flight (will rely on 401 reactive refresh)
+    expires_at = getattr(athlete, "strava_token_expires_at", None)
+    if expires_at is None:
+        return True  # Can't check, assume OK
+
+    now = datetime.now(tz.utc)
+    # Refresh if token expires within 5 minutes
+    if expires_at > now + timedelta(minutes=5):
+        return True  # Token still fresh
+
+    try:
+        raw_refresh = decrypt_token(athlete.strava_refresh_token)
+        if not raw_refresh:
+            return False
+
+        token_data = refresh_access_token(raw_refresh)
+
+        athlete.strava_access_token = encrypt_token(token_data["access_token"])
+        if token_data.get("refresh_token"):
+            athlete.strava_refresh_token = encrypt_token(token_data["refresh_token"])
+        if token_data.get("expires_at"):
+            athlete.strava_token_expires_at = datetime.fromtimestamp(
+                token_data["expires_at"], tz=tz.utc
+            )
+        db.commit()
+        logger.info(f"Pre-flight token refresh successful for athlete {athlete.id}")
+        return True
+    except Exception as e:
+        logger.warning(f"Pre-flight token refresh failed for athlete {athlete.id}: {e}")
+        return False
 
 
 class StravaRateLimitError(RuntimeError):
@@ -265,6 +320,11 @@ def poll_activities_page(
                     athlete.strava_access_token = encrypt_token(token["access_token"])
                     if token.get("refresh_token"):
                         athlete.strava_refresh_token = encrypt_token(token["refresh_token"])
+                    if token.get("expires_at"):
+                        from datetime import datetime, timezone as tz
+                        athlete.strava_token_expires_at = datetime.fromtimestamp(
+                            token["expires_at"], tz=tz.utc
+                        )
                     # Update headers with decrypted token
                     access_token = decrypt_token(athlete.strava_access_token)
                     headers["Authorization"] = f"Bearer {access_token}"
@@ -374,6 +434,11 @@ def get_activity_details(
                         athlete.strava_access_token = encrypt_token(token["access_token"])
                         if token.get("refresh_token"):
                             athlete.strava_refresh_token = encrypt_token(token["refresh_token"])
+                        if token.get("expires_at"):
+                            from datetime import datetime, timezone as tz
+                            athlete.strava_token_expires_at = datetime.fromtimestamp(
+                                token["expires_at"], tz=tz.utc
+                            )
                         # Update headers
                         access_token = decrypt_token(athlete.strava_access_token)
                         headers["Authorization"] = f"Bearer {access_token}"
@@ -438,8 +503,15 @@ def get_activity_laps(
                 from services.token_encryption import decrypt_token, encrypt_token
                 refresh_token = decrypt_token(athlete.strava_refresh_token)
                 token = refresh_access_token(refresh_token)
-                # SECURITY: Encrypt the new access token before storing
+                # SECURITY: Encrypt the new tokens before storing
                 athlete.strava_access_token = encrypt_token(token["access_token"])
+                if token.get("refresh_token"):
+                    athlete.strava_refresh_token = encrypt_token(token["refresh_token"])
+                if token.get("expires_at"):
+                    from datetime import datetime, timezone as tz
+                    athlete.strava_token_expires_at = datetime.fromtimestamp(
+                        token["expires_at"], tz=tz.utc
+                    )
                 headers["Authorization"] = f"Bearer {token['access_token']}"
                 continue
             
