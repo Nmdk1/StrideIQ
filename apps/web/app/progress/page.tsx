@@ -241,6 +241,29 @@ function CorrelationItem({ name, r, n, direction }: {
   );
 }
 
+function MetricDerivationDetails({
+  title,
+  points,
+}: {
+  title: string;
+  points: string[];
+}) {
+  return (
+    <details className="bg-slate-700/30 rounded-lg p-2.5 border border-slate-600/40">
+      <summary className="text-xs font-semibold text-slate-300 cursor-pointer select-none">
+        {title}
+      </summary>
+      <ul className="mt-2 space-y-1.5">
+        {points.map((point, idx) => (
+          <li key={idx} className="text-xs text-slate-400 leading-relaxed">
+            {point}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 
 // --- Main Page ---
 
@@ -382,6 +405,16 @@ export default function ProgressPage() {
                     ))}
                   </div>
                 )}
+
+                <MetricDerivationDetails
+                  title="How race readiness is derived"
+                  points={[
+                    'Predictions are generated from your recent training and performance patterns, then mapped to each race distance.',
+                    'Confidence reflects data coverage and consistency; it is stronger when recent, relevant efforts are available.',
+                    'Goal race timing and target context are included so readiness is interpreted against your actual objective.',
+                    'Treat predictions as directional coaching signals, not guarantees; use them with training load and recovery context.',
+                  ]}
+                />
               </div>
             </Section>
           )}
@@ -496,6 +529,16 @@ export default function ProgressPage() {
                     )}
                   </div>
                 )}
+
+                <MetricDerivationDetails
+                  title="How runner profile and pace zones are derived"
+                  points={[
+                    'RPI is your current performance index from your own data and is used to anchor training zone targets.',
+                    'Easy/Marathon/Threshold/Interval/Repetition paces are zone outputs from your current profile, not generic charts.',
+                    'Runner type and HR context help interpret how to apply those pace zones in day-to-day training.',
+                    'These ranges should guide effort intent; terrain, weather, and fatigue still matter in execution.',
+                  ]}
+                />
               </div>
             </Section>
           )}
@@ -661,6 +704,17 @@ export default function ProgressPage() {
                     {' — '}{loadHistory.data.personal_zones.zone_description}
                   </div>
                 )}
+
+                <MetricDerivationDetails
+                  title="How these numbers are derived and how to read them"
+                  points={[
+                    'Fitness (CTL) is your longer-term training load using an exponentially weighted ~42-day window; higher usually reflects more durable work capacity.',
+                    'Fatigue (ATL) is your short-term load using an exponentially weighted ~7-day window; it moves faster after hard blocks.',
+                    'Form (TSB) is the balance between long-term fitness and short-term fatigue (CTL minus ATL).',
+                    'Your zone label is personalized to your own history (N=1), so the same balance can mean different things for different athletes.',
+                    'Use the combination, not a single number: stable fitness + manageable fatigue + personalized zone context is the real signal.',
+                  ]}
+                />
               </div>
             ) : (
               <p className="text-sm text-slate-500 py-2">Insufficient training data for load analysis.</p>
@@ -705,6 +759,17 @@ export default function ProgressPage() {
                   <MetricBox label="Best" value={efficiency.data.summary.best_efficiency.toFixed(1)} color="text-emerald-400" />
                   <MetricBox label="Worst" value={efficiency.data.summary.worst_efficiency.toFixed(1)} color="text-red-400" />
                 </div>
+
+                <MetricDerivationDetails
+                  title="How efficiency is derived and how to read it"
+                  points={[
+                    'Efficiency is calculated as speed divided by heart rate (more ground covered per heartbeat means better running economy).',
+                    'When split-level grade-adjusted pace is available, the calculation uses that so hills do not unfairly skew the signal.',
+                    'Current is your most recent efficiency, Average is your period baseline, and Best/Worst show the observed range.',
+                    'The trend compares your recent runs against your own baseline over time; this is athlete-specific (N=1), not a population template.',
+                    'Interpret this with load and recovery context: a temporary dip during hard training can still be part of productive adaptation.',
+                  ]}
+                />
               </div>
             ) : (
               <p className="text-sm text-slate-500 py-2">Not enough efficiency data yet.</p>
@@ -770,6 +835,16 @@ export default function ProgressPage() {
                     <DeltaBadge value={volTraj.trend_pct} />
                   )}
                 </div>
+
+                <MetricDerivationDetails
+                  title="How volume trajectory is derived"
+                  points={[
+                    'Each bar is weekly running volume from synced activities, with run count shown as a secondary context signal.',
+                    'Peak is the highest completed week in the visible window; trend compares the window endpoints.',
+                    'Current week is partial by definition, so it should be read against day-of-week progress, not as a final total.',
+                    'The coaching goal is steady, sustainable progression rather than isolated spikes.',
+                  ]}
+                />
               </div>
             </Section>
           )}
@@ -817,6 +892,16 @@ export default function ProgressPage() {
                   Based on {wellness.checkin_count} check-in{wellness.checkin_count !== 1 ? 's' : ''} over {days} days
                   {wellness.trend_direction && <> — overall trend: <span className="text-slate-300">{wellness.trend_direction}</span></>}
                 </p>
+
+                <MetricDerivationDetails
+                  title="How wellness trends are derived"
+                  points={[
+                    'Wellness values are rolling averages from your daily check-ins over the selected window.',
+                    'Sleep is averaged in hours; motivation, soreness, and stress are averaged from your self-reported scales.',
+                    'Trend direction summarizes the recent direction of those check-in signals over time.',
+                    'These are your subjective inputs by design; they are used to personalize training decisions, not override how you feel.',
+                  ]}
+                />
               </div>
             </Section>
           )}
@@ -925,6 +1010,20 @@ export default function ProgressPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {pc && (
+              <div className="mt-3">
+                <MetricDerivationDetails
+                  title="How this comparison is derived"
+                  points={[
+                    'Current window compares your most recent period to the immediately preceding period of equal length.',
+                    'Volume, run count, duration, and HR are aggregated from run activities in each window.',
+                    'Change values are computed relative deltas to show directional shift, not absolute training quality.',
+                    'Interpret with context: increases can be positive or risky depending on recovery and readiness signals.',
+                  ]}
+                />
               </div>
             )}
           </Section>
