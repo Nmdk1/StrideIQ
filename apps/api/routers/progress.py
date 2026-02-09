@@ -8,7 +8,7 @@ consistency, pace decay, volume trajectory — the full system.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Athlete, Activity
+from models import Athlete, Activity, DailyCheckin
 from routers.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,16 @@ class PeriodComparison(BaseModel):
 class ProgressHeadline(BaseModel):
     text: str
     subtext: Optional[str] = None
+
+
+class ProgressCoachCard(BaseModel):
+    id: str
+    title: str
+    summary: str
+    trend_context: str
+    drivers: str
+    next_step: str
+    ask_coach_query: str
 
 
 class RecoveryData(BaseModel):
@@ -98,6 +108,7 @@ class VolumeTrajectory(BaseModel):
 
 class ProgressSummary(BaseModel):
     headline: Optional[ProgressHeadline] = None
+    coach_cards: Optional[List[ProgressCoachCard]] = None
     period_comparison: Optional[PeriodComparison] = None
     ctl: Optional[float] = None
     atl: Optional[float] = None
@@ -397,7 +408,6 @@ async def get_progress_summary(
     # --- Goal Race Info ---
     try:
         from models import TrainingPlan
-        from datetime import date
         plan = (
             db.query(TrainingPlan)
             .filter(TrainingPlan.athlete_id == athlete_id, TrainingPlan.status == "active")
@@ -420,6 +430,12 @@ async def get_progress_summary(
         result.headline = _generate_headline(str(athlete_id), db, result, days)
     except Exception as e:
         logger.warning(f"Progress headline generation failed: {e}")
+
+    # --- LLM Coach Cards (coach-led replacement for raw quick metrics) ---
+    try:
+        result.coach_cards = _generate_progress_cards(str(athlete_id), db, result, days)
+    except Exception as e:
+        logger.warning(f"Progress coach cards generation failed: {e}")
 
     return result
 
@@ -534,10 +550,14 @@ def _generate_headline(
     prompt = (
         "You are an elite running coach. Based on this athlete's full profile, "
         "write ONE headline about their overall progress trajectory — are they "
-        "getting better, plateauing, or declining? Be direct, reference specific "
-        "numbers. Sound like a coach who has been watching them for months.\n\n"
-        f"=== ATHLETE BRIEF ===\n{athlete_brief}\n\n"
-        "CRITICAL: Reference actual data from the brief. Do not invent numbers."
+        "getting better, plateauing, or declining? Be direct, concrete, and coach-like.\n\n"
+        "COACHING TONE RULES (non-negotiable):\n"
+        "- Lead with what is going well before concerns.\n"
+        "- Never quote raw metrics or numeric score readouts to the athlete.\n"
+        "- Frame any concern as a forward-looking action.\n"
+        "- Never use legacy trademarked terminology; use RPI when needed.\n"
+        "- Use only provided evidence. Do not invent.\n\n"
+        f"=== ATHLETE BRIEF ===\n{athlete_brief}\n"
     )
 
     try:
@@ -561,11 +581,11 @@ def _generate_headline(
                     "properties": {
                         "text": {
                             "type": "STRING",
-                            "description": "One coaching headline about overall progress. Reference specific numbers.",
+                            "description": "One coaching headline about overall progress. No raw metric readouts.",
                         },
                         "subtext": {
                             "type": "STRING",
-                            "description": "One supporting detail sentence with a specific data point.",
+                            "description": "One supporting sentence with context and action. No raw metric readouts.",
                         },
                     },
                     "required": ["text", "subtext"],
@@ -587,3 +607,279 @@ def _generate_headline(
     except Exception as e:
         logger.warning(f"Progress headline LLM failed: {type(e).__name__}: {e}")
         return None
+
+
+def _latest_checkin_context(db: Session, athlete_id: str) -> Optional[Dict[str, str]]:
+    """
+    Return latest self-report labels so coach language can validate athlete perception.
+    """
+    try:
+        athlete_uuid = UUID(athlete_id)
+        latest = (
+            db.query(DailyCheckin)
+            .filter(DailyCheckin.athlete_id == athlete_uuid)
+            .order_by(DailyCheckin.date.desc())
+            .first()
+        )
+        if not latest:
+            return None
+
+        motivation_map = {5: "Great", 4: "Fine", 3: "Neutral", 2: "Tired", 1: "Rough"}
+        sleep_map = {8: "Great", 7: "OK", 6: "Fair", 5: "Poor"}
+        soreness_map = {1: "None", 2: "Mild", 3: "Moderate", 4: "High", 5: "Severe"}
+
+        return {
+            "date": latest.date.isoformat() if latest.date else "",
+            "motivation": motivation_map.get(int(latest.motivation_1_5 or 0), "Unknown"),
+            "sleep": sleep_map.get(int(latest.sleep_h or 0), "Unknown"),
+            "soreness": soreness_map.get(int(latest.soreness_1_5 or 0), "Unknown"),
+        }
+    except Exception as e:
+        logger.debug(f"Progress check-in context lookup failed: {e}")
+        return None
+
+
+def _fallback_progress_cards(
+    summary: ProgressSummary,
+    checkin: Optional[Dict[str, str]],
+    days: int,
+) -> List[ProgressCoachCard]:
+    """Deterministic fallback card narratives when LLM or key is unavailable."""
+    trend = (summary.efficiency_trend or "").lower()
+    momentum_summary = (
+        "Your running economy trend is moving in a productive direction."
+        if trend == "improving"
+        else "Your fitness signal looks stable, and consistency is keeping momentum alive."
+        if trend == "stable"
+        else "You still have useful momentum, and this is a good moment to sharpen execution."
+    )
+    momentum_next = (
+        "Keep stacking mostly controlled runs this week, then let one quality session carry the progression."
+    )
+
+    freshness_state = (summary.tsb_zone or "").replace("_", " ").lower()
+    recovery_summary = (
+        "You are absorbing work well, which is exactly what supports the next block."
+        if "fresh" in freshness_state or "race" in freshness_state
+        else "Your load is doing its job; protect recovery so gains can consolidate."
+    )
+    if checkin and checkin.get("motivation"):
+        recovery_summary = (
+            f"You reported feeling {checkin['motivation'].lower()}, and the best move is to preserve that momentum with smart recovery rhythm."
+        )
+
+    volume_summary = (
+        "Your recent training rhythm is building the durability needed for long-term progress."
+    )
+    consistency_summary = (
+        "Your habits are the main advantage right now; repeating the basics is paying off."
+    )
+
+    return [
+        ProgressCoachCard(
+            id="fitness_momentum",
+            title="Fitness Momentum",
+            summary=momentum_summary,
+            trend_context="Your recent training arc points to progress when effort stays controlled.",
+            drivers="Consistency and repeatable aerobic work are the main contributors.",
+            next_step=momentum_next,
+            ask_coach_query="What should I focus on this week to keep momentum building?",
+        ),
+        ProgressCoachCard(
+            id="recovery_readiness",
+            title="Recovery Readiness",
+            summary=recovery_summary,
+            trend_context="The goal is to stay responsive, not just work harder.",
+            drivers="Training load and recovery habits are interacting in a manageable way.",
+            next_step="Use easy days intentionally so harder sessions stay high quality.",
+            ask_coach_query="How should I balance effort and recovery over the next few days?",
+        ),
+        ProgressCoachCard(
+            id="volume_trajectory",
+            title=f"Volume Pattern ({days}d)",
+            summary=volume_summary,
+            trend_context="You are creating repeatable volume instead of one-off spikes.",
+            drivers="Regular run frequency is supporting aerobic durability.",
+            next_step="Keep the weekly rhythm steady before adding any extra stress.",
+            ask_coach_query="Where should my volume focus be next: frequency or long-run support?",
+        ),
+        ProgressCoachCard(
+            id="consistency_signal",
+            title="Consistency Signal",
+            summary=consistency_summary,
+            trend_context="When training rhythm stays stable, performance usually follows.",
+            drivers="Showing up consistently is reducing performance volatility.",
+            next_step="Protect your routine anchors: easy days, key session, and recovery habits.",
+            ask_coach_query="What small habit would give me the biggest consistency gain right now?",
+        ),
+    ]
+
+
+def _generate_progress_cards(
+    athlete_id: str,
+    db: Session,
+    summary: ProgressSummary,
+    days: int,
+) -> List[ProgressCoachCard]:
+    """
+    Generate coach-led progress cards that replace raw quick metrics.
+    """
+    import hashlib
+    import json
+
+    checkin_context = _latest_checkin_context(db, athlete_id)
+    cache_input = json.dumps(
+        {
+            "days": days,
+            "headline": summary.headline.model_dump() if summary.headline else None,
+            "period_comparison": summary.period_comparison.model_dump() if summary.period_comparison else None,
+            "recovery": summary.recovery.model_dump() if summary.recovery else None,
+            "volume_trajectory": summary.volume_trajectory.model_dump() if summary.volume_trajectory else None,
+            "consistency_index": summary.consistency_index,
+            "efficiency_trend": summary.efficiency_trend,
+            "ctl_trend": summary.ctl_trend,
+            "tsb_zone": summary.tsb_zone,
+            "checkin": checkin_context,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    data_hash = hashlib.md5(cache_input.encode()).hexdigest()[:12]
+    cache_key = f"progress_coach_cards:{athlete_id}:{data_hash}"
+
+    r = None
+    try:
+        import os
+        import redis
+
+        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+        r = redis.from_url(redis_url, decode_responses=True)
+        cached = r.get(cache_key)
+        if cached:
+            data = json.loads(cached)
+            return [ProgressCoachCard(**card) for card in data.get("cards", [])]
+    except Exception:
+        r = None
+
+    try:
+        from services.coach_tools import build_athlete_brief
+
+        athlete_brief = build_athlete_brief(db, UUID(athlete_id))
+    except Exception as e:
+        logger.warning(f"Failed to build athlete brief for progress cards: {e}")
+        athlete_brief = "(Brief unavailable)"
+
+    prompt_parts = [
+        "You are an elite running coach creating the 4 top cards for an athlete's Progress page.",
+        "This must feel like coaching, not a dashboard.",
+        "Return card language that is motivating, specific, and actionable.",
+        "",
+        "CRITICAL SAFETY / TONE RULES (non-negotiable):",
+        "- ALWAYS lead each card with what is going well before concerns.",
+        "- NEVER quote raw metrics or values (no CTL/ATL/TSB numbers, no percentages, no score readouts).",
+        "- NEVER contradict how the athlete says they feel.",
+        "- Frame concerns as forward-looking actions.",
+        "- Never use legacy trademarked terminology. Use RPI if needed.",
+        "- Use only facts from provided context. Do not invent.",
+        "",
+        "OUTPUT REQUIREMENTS:",
+        "- Return EXACTLY 4 cards with ids:",
+        "  1) fitness_momentum",
+        "  2) recovery_readiness",
+        f"  3) volume_trajectory (reflect last {days} days context)",
+        "  4) consistency_signal",
+        "- 1-2 sentences per field max. Keep concise and coach-like.",
+        "- Every card must include a clear next action.",
+        "",
+        "=== LATEST SELF-REPORT ===",
+        json.dumps(checkin_context or {"status": "No recent check-in available"}, ensure_ascii=True),
+        "",
+        "=== PROGRESS SUMMARY (INTERNAL - translate, never quote raw values) ===",
+        json.dumps(
+            {
+                "headline": summary.headline.model_dump() if summary.headline else None,
+                "period_comparison": summary.period_comparison.model_dump() if summary.period_comparison else None,
+                "recovery": summary.recovery.model_dump() if summary.recovery else None,
+                "wellness": summary.wellness.model_dump() if summary.wellness else None,
+                "volume_trajectory": summary.volume_trajectory.model_dump() if summary.volume_trajectory else None,
+                "consistency_index": summary.consistency_index,
+                "goal_race_name": summary.goal_race_name,
+                "goal_race_days_remaining": summary.goal_race_days_remaining,
+                "pb_count_last_90d": summary.pb_count_last_90d,
+                "efficiency_trend": summary.efficiency_trend,
+                "ctl_trend": summary.ctl_trend,
+                "tsb_zone": summary.tsb_zone,
+            },
+            ensure_ascii=True,
+            default=str,
+        ),
+        "",
+        "=== ATHLETE BRIEF ===",
+        athlete_brief,
+    ]
+    prompt = "\n".join(prompt_parts)
+
+    try:
+        import os
+        from google import genai
+
+        api_key = os.getenv("GOOGLE_AI_API_KEY")
+        if not api_key:
+            return _fallback_progress_cards(summary, checkin_context, days)
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                max_output_tokens=2200,
+                temperature=0.25,
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "OBJECT",
+                    "properties": {
+                        "cards": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "id": {"type": "STRING"},
+                                    "title": {"type": "STRING"},
+                                    "summary": {"type": "STRING"},
+                                    "trend_context": {"type": "STRING"},
+                                    "drivers": {"type": "STRING"},
+                                    "next_step": {"type": "STRING"},
+                                    "ask_coach_query": {"type": "STRING"},
+                                },
+                                "required": [
+                                    "id",
+                                    "title",
+                                    "summary",
+                                    "trend_context",
+                                    "drivers",
+                                    "next_step",
+                                    "ask_coach_query",
+                                ],
+                            },
+                        }
+                    },
+                    "required": ["cards"],
+                },
+            ),
+        )
+
+        data = json.loads(response.text)
+        cards = [ProgressCoachCard(**card) for card in data.get("cards", [])]
+        if not cards:
+            return _fallback_progress_cards(summary, checkin_context, days)
+
+        if r:
+            try:
+                r.setex(cache_key, 1800, json.dumps({"cards": [c.model_dump() for c in cards]}))
+            except Exception:
+                pass
+
+        return cards
+    except Exception as e:
+        logger.warning(f"Progress coach cards LLM failed: {type(e).__name__}: {e}")
+        return _fallback_progress_cards(summary, checkin_context, days)

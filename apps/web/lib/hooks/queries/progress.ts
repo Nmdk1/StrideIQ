@@ -35,6 +35,16 @@ export interface ProgressHeadline {
   subtext?: string;
 }
 
+export interface ProgressCoachCard {
+  id: string;
+  title: string;
+  summary: string;
+  trend_context: string;
+  drivers: string;
+  next_step: string;
+  ask_coach_query: string;
+}
+
 export interface RecoveryData {
   durability_index: number | null;
   recovery_half_life_hours: number | null;
@@ -92,6 +102,7 @@ export interface VolumeTrajectory {
 
 export interface ProgressSummary {
   headline: ProgressHeadline | null;
+  coach_cards: ProgressCoachCard[] | null;
   period_comparison: PeriodComparison | null;
   ctl: number | null;
   atl: number | null;

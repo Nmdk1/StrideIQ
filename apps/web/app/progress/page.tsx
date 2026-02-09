@@ -152,6 +152,69 @@ function MetricBox({ label, value, sub, color = 'text-white' }: {
   );
 }
 
+function CoachProgressCard({
+  title,
+  summary,
+  trendContext,
+  drivers,
+  nextStep,
+  askCoachQuery,
+  expanded,
+  onToggle,
+}: {
+  title: string;
+  summary: string;
+  trendContext: string;
+  drivers: string;
+  nextStep: string;
+  askCoachQuery: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Card className="bg-slate-800/50 border-slate-700/50">
+      <CardHeader className="pb-2 cursor-pointer select-none" onClick={onToggle}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="text-sm text-slate-200">{title}</CardTitle>
+            <p className="text-sm text-slate-300 mt-1 leading-relaxed">{summary}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Link
+              href={`/coach?q=${encodeURIComponent(askCoachQuery)}`}
+              className="text-xs font-semibold text-orange-400 hover:text-orange-300 flex items-center gap-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Ask Coach <ArrowRight className="w-3 h-3" />
+            </Link>
+            {expanded ? (
+              <ChevronUp className="w-4 h-4 text-slate-500" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-500" />
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      {expanded && (
+        <CardContent className="pt-0 pb-4 space-y-2.5">
+          <div className="bg-slate-700/30 rounded-lg p-2.5">
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Trend Context</p>
+            <p className="text-sm text-slate-300">{trendContext}</p>
+          </div>
+          <div className="bg-slate-700/30 rounded-lg p-2.5">
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">What Is Driving This</p>
+            <p className="text-sm text-slate-300">{drivers}</p>
+          </div>
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2.5">
+            <p className="text-xs text-emerald-400/80 uppercase tracking-wide mb-1">Next Focus</p>
+            <p className="text-sm text-emerald-300">{nextStep}</p>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 function CorrelationItem({ name, r, n, direction }: {
   name: string; r: number; n: number; direction: 'positive' | 'negative';
 }) {
@@ -183,6 +246,7 @@ function CorrelationItem({ name, r, n, direction }: {
 
 export default function ProgressPage() {
   const [days] = useState(28);
+  const [expandedCoachCard, setExpandedCoachCard] = useState<string | null>(null);
 
   const summary = useProgressSummary(days);
   const whatWorks = useWhatWorks(90);
@@ -211,9 +275,7 @@ export default function ProgressPage() {
   const paces = profile?.training_paces;
   const wellness = s?.wellness;
   const volTraj = s?.volume_trajectory;
-
-  // Count how many quick metric columns we have
-  const quickMetricCols = [s?.ctl != null, true, pc != null, s?.consistency_index != null].filter(Boolean).length;
+  const coachCards = s?.coach_cards ?? [];
 
   return (
     <ProtectedRoute>
@@ -255,32 +317,25 @@ export default function ProgressPage() {
             </Card>
           )}
 
-          {/* ═══ SECTION 2: Quick Metrics Row ═══ */}
-          {s && (
-            <div className={`grid gap-2 grid-cols-${Math.min(quickMetricCols, 4)}`}>
-              {s.ctl != null && (
-                <MetricBox label="Fitness" value={s.ctl} sub={s.ctl_trend ?? undefined} />
-              )}
-              <MetricBox
-                label="Form"
-                value={`${(s.tsb ?? 0) > 0 ? '+' : ''}${s.tsb ?? '—'}`}
-                sub={s.tsb_zone?.replace(/_/g, ' ') ?? undefined}
-                color={(s.tsb ?? 0) > 0 ? 'text-emerald-400' : (s.tsb ?? 0) < -15 ? 'text-red-400' : 'text-white'}
-              />
-              {pc && (
-                <div className="bg-slate-700/30 rounded-lg p-2.5 text-center">
-                  <p className="text-xs text-slate-500 mb-0.5">Volume ({days}d)</p>
-                  <p className="text-base font-bold text-white">{pc.current.total_distance_mi}mi</p>
-                  <DeltaBadge value={pc.volume_change_pct} />
-                </div>
-              )}
-              {s.consistency_index != null && (
-                <MetricBox
-                  label="Consistency"
-                  value={`${s.consistency_index}%`}
-                  color={s.consistency_index >= 75 ? 'text-emerald-400' : s.consistency_index >= 50 ? 'text-blue-400' : 'text-orange-400'}
-                />
-              )}
+          {/* ═══ SECTION 2: Coach Interpreted Progress Cards ═══ */}
+          {s && coachCards.length > 0 && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {coachCards.map((card) => {
+                const expanded = expandedCoachCard === card.id;
+                return (
+                  <CoachProgressCard
+                    key={card.id}
+                    title={card.title}
+                    summary={card.summary}
+                    trendContext={card.trend_context}
+                    drivers={card.drivers}
+                    nextStep={card.next_step}
+                    askCoachQuery={card.ask_coach_query}
+                    expanded={expanded}
+                    onToggle={() => setExpandedCoachCard(expanded ? null : card.id)}
+                  />
+                );
+              })}
             </div>
           )}
 
