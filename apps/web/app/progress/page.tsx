@@ -241,6 +241,30 @@ function CorrelationItem({ name, r, n, direction }: {
   );
 }
 
+function describeLoadZone(zone: string | undefined): string {
+  const normalized = (zone ?? '').toLowerCase();
+  if (normalized.includes('race_ready')) return 'You are carrying freshness that can support a hard effort window.';
+  if (normalized.includes('recovering')) return 'You are trending fresh; good moment to absorb recent work and stay controlled.';
+  if (normalized.includes('optimal')) return 'You are in a productive training rhythm with manageable stress.';
+  if (normalized.includes('overreaching')) return 'You are in a heavy block; recovery rhythm matters so fitness can consolidate.';
+  if (normalized.includes('overtraining')) return 'Load is running hot; short-term restraint protects long-term momentum.';
+  return 'Your load profile is best interpreted with your recent trends and how you feel day to day.';
+}
+
+function describeEfficiencyTrend(direction: string | null | undefined): string {
+  if (direction === 'improving') return 'Economy trend is moving the right way — your recent work is converting well.';
+  if (direction === 'declining') return 'Economy trend is under pressure; execution quality and recovery can stabilize it.';
+  return 'Economy trend is steady, which can be a solid platform for the next progression block.';
+}
+
+function wellnessLabel(value: number | null | undefined, kind: 'sleep' | 'motivation' | 'soreness' | 'stress'): string | null {
+  if (value == null) return null;
+  if (kind === 'sleep') return value >= 7 ? 'Recovery support is strong' : value >= 6 ? 'Recovery support is mixed' : 'Recovery support needs attention';
+  if (kind === 'motivation') return value >= 4 ? 'Motivation is high' : value >= 3 ? 'Motivation is stable' : 'Motivation is low';
+  if (kind === 'soreness') return value <= 2 ? 'Soreness is manageable' : value <= 3 ? 'Soreness is elevated' : 'Soreness is high';
+  return value <= 2 ? 'Stress load is manageable' : value <= 3 ? 'Stress load is elevated' : 'Stress load is high';
+}
+
 function MetricDerivationDetails({
   title,
   points,
@@ -687,21 +711,18 @@ export default function ProgressPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <MetricBox label="Fitness (CTL)" value={loadHistory.data.summary.ctl.toFixed(1)} sub={loadHistory.data.summary.ctl_trend} color="text-blue-400" />
-                  <MetricBox label="Fatigue (ATL)" value={loadHistory.data.summary.atl.toFixed(1)} sub={loadHistory.data.summary.atl_trend} color="text-orange-400" />
-                  <MetricBox
-                    label="Form (TSB)"
-                    value={`${loadHistory.data.summary.tsb > 0 ? '+' : ''}${loadHistory.data.summary.tsb.toFixed(1)}`}
-                    sub={loadHistory.data.summary.tsb_trend}
-                    color={loadHistory.data.summary.tsb > 0 ? 'text-emerald-400' : loadHistory.data.summary.tsb < -15 ? 'text-red-400' : 'text-white'}
-                  />
+                <div className="bg-slate-700/30 rounded-lg p-3">
+                  <p className="text-sm text-slate-300">
+                    {describeLoadZone(loadHistory.data.personal_zones?.current_zone)}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1.5">
+                    Trend: chronic load {loadHistory.data.summary.ctl_trend}, short-term fatigue {loadHistory.data.summary.atl_trend}, balance {loadHistory.data.summary.tsb_trend}.
+                  </p>
                 </div>
 
                 {loadHistory.data.personal_zones && (
                   <div className="text-xs text-slate-400 text-center">
                     Zone: <span className="text-slate-200 font-medium">{loadHistory.data.personal_zones.current_zone.replace(/_/g, ' ')}</span>
-                    {' — '}{loadHistory.data.personal_zones.zone_description}
                   </div>
                 )}
 
@@ -737,7 +758,7 @@ export default function ProgressPage() {
                   <div className="flex gap-2">
                     <Sparkles className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
                     <p className="text-sm text-slate-300">
-                      Efficiency is{' '}
+                      Efficiency trend is{' '}
                       <span className={
                         efficiency.data.summary.trend_direction === 'improving' ? 'text-emerald-400 font-medium' :
                         efficiency.data.summary.trend_direction === 'declining' ? 'text-red-400 font-medium' :
@@ -745,19 +766,18 @@ export default function ProgressPage() {
                       }>
                         {efficiency.data.summary.trend_direction}
                       </span>
-                      {efficiency.data.summary.trend_magnitude != null && (
-                        <> ({efficiency.data.summary.trend_magnitude > 0 ? '+' : ''}{efficiency.data.summary.trend_magnitude.toFixed(1)}%)</>
-                      )}
-                      {' '}over {efficiency.data.summary.total_activities} runs.
+                      {' '}across your recent runs.
                     </p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <MetricBox label="Current" value={efficiency.data.summary.current_efficiency.toFixed(1)} />
-                  <MetricBox label="Average" value={efficiency.data.summary.average_efficiency.toFixed(1)} color="text-slate-300" />
-                  <MetricBox label="Best" value={efficiency.data.summary.best_efficiency.toFixed(1)} color="text-emerald-400" />
-                  <MetricBox label="Worst" value={efficiency.data.summary.worst_efficiency.toFixed(1)} color="text-red-400" />
+                <div className="bg-slate-700/30 rounded-lg p-3">
+                  <p className="text-sm text-slate-300">
+                    {describeEfficiencyTrend(efficiency.data.summary.trend_direction)}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1.5">
+                    Stability signal is built from recent efficiency behavior against your own historical baseline.
+                  </p>
                 </div>
 
                 <MetricDerivationDetails
@@ -859,33 +879,30 @@ export default function ProgressPage() {
               defaultOpen={true}
             >
               <div className="space-y-3">
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  {wellness.avg_sleep != null && (
-                    <MetricBox label="Avg Sleep" value={`${wellness.avg_sleep.toFixed(1)}h`} color="text-indigo-400" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {wellnessLabel(wellness.avg_sleep, 'sleep') && (
+                    <div className="bg-slate-700/30 rounded-lg p-2.5">
+                      <p className="text-xs text-slate-500 mb-0.5">Sleep Pattern</p>
+                      <p className="text-sm text-slate-200">{wellnessLabel(wellness.avg_sleep, 'sleep')}</p>
+                    </div>
                   )}
-                  {wellness.avg_motivation != null && (
-                    <MetricBox
-                      label="Motivation"
-                      value={wellness.avg_motivation.toFixed(1)}
-                      sub="/5"
-                      color={wellness.avg_motivation >= 4 ? 'text-emerald-400' : wellness.avg_motivation >= 3 ? 'text-blue-400' : 'text-orange-400'}
-                    />
+                  {wellnessLabel(wellness.avg_motivation, 'motivation') && (
+                    <div className="bg-slate-700/30 rounded-lg p-2.5">
+                      <p className="text-xs text-slate-500 mb-0.5">Motivation Pattern</p>
+                      <p className="text-sm text-slate-200">{wellnessLabel(wellness.avg_motivation, 'motivation')}</p>
+                    </div>
                   )}
-                  {wellness.avg_soreness != null && (
-                    <MetricBox
-                      label="Soreness"
-                      value={wellness.avg_soreness.toFixed(1)}
-                      sub="/5"
-                      color={wellness.avg_soreness <= 2 ? 'text-emerald-400' : wellness.avg_soreness <= 3 ? 'text-blue-400' : 'text-red-400'}
-                    />
+                  {wellnessLabel(wellness.avg_soreness, 'soreness') && (
+                    <div className="bg-slate-700/30 rounded-lg p-2.5">
+                      <p className="text-xs text-slate-500 mb-0.5">Soreness Pattern</p>
+                      <p className="text-sm text-slate-200">{wellnessLabel(wellness.avg_soreness, 'soreness')}</p>
+                    </div>
                   )}
-                  {wellness.avg_stress != null && (
-                    <MetricBox
-                      label="Stress"
-                      value={wellness.avg_stress.toFixed(1)}
-                      sub="/5"
-                      color={wellness.avg_stress <= 2 ? 'text-emerald-400' : wellness.avg_stress <= 3 ? 'text-blue-400' : 'text-red-400'}
-                    />
+                  {wellnessLabel(wellness.avg_stress, 'stress') && (
+                    <div className="bg-slate-700/30 rounded-lg p-2.5">
+                      <p className="text-xs text-slate-500 mb-0.5">Stress Pattern</p>
+                      <p className="text-sm text-slate-200">{wellnessLabel(wellness.avg_stress, 'stress')}</p>
+                    </div>
                   )}
                 </div>
                 <p className="text-xs text-slate-500 text-center">
