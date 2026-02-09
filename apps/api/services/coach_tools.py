@@ -1007,10 +1007,10 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
 
                 if athlete and getattr(athlete, "vdot", None):
                     fallback_vdot = float(athlete.vdot)
-                    fallback_source = "athlete_vdot"
+                    fallback_source = "athlete_rpi"
                 elif pb_vdot and pb_vdot.get("vdot"):
                     fallback_vdot = float(pb_vdot["vdot"])
-                    fallback_source = "pb_vdot"
+                    fallback_source = "pb_rpi"
 
                 if fallback_vdot and "athlete_calibrated_model" in msg:
                     seconds = calculate_race_time_from_vdot(float(fallback_vdot), dist_m)
@@ -1021,12 +1021,12 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                                 "time_formatted": _fmt_time(int(seconds)),
                                 "confidence_interval_seconds": None,
                                 "confidence_interval_formatted": None,
-                                "confidence": f"{fallback_source}_fallback",
+                                "confidence": "Estimate",
                             },
-                            "projections": {"rpi": round(float(fallback_vdot), 1), "vdot": round(float(fallback_vdot), 1), "ctl": None, "tsb": None},
+                            "projections": {"rpi": round(float(fallback_vdot), 1), "ctl": None, "tsb": None},
                             "factors": [
                                 "Calibrated performance model unavailable; using RPI-derived equivalent times.",
-                                f"RPI source: {fallback_source.replace('vdot', 'rpi') if fallback_source else 'unknown'}",
+                                f"RPI source: {fallback_source or 'unknown'}",
                             ],
                             "notes": ["This estimate is less personalized than the calibrated model pipeline."],
                         }

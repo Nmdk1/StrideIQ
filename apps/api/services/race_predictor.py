@@ -73,7 +73,7 @@ class RacePrediction:
                 "confidence": self.prediction_confidence
             },
             "projections": {
-                "vdot": round(self.projected_vdot, 1),
+                "rpi": round(self.projected_vdot, 1),
                 "ctl": round(self.projected_ctl, 1),
                 "tsb": round(self.projected_tsb, 1)
             },
