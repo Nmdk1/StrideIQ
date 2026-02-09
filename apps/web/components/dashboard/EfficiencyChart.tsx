@@ -95,7 +95,7 @@ export function EfficiencyChart({
     <div className={`bg-slate-800 rounded-lg border border-slate-700/50 p-6 ${className}`}>
       <h3 className="text-lg font-semibold mb-4">Efficiency Trend</h3>
       <p className="text-sm text-slate-400 mb-4">
-        Lower efficiency factor = more efficient (faster pace at same HR, or lower HR at same pace).
+        Higher efficiency factor = more efficient (more speed produced at the same heart rate).
         Rolling averages show meaningful fitness trends over training cycles (30-120 days).
       </p>
       <ResponsiveContainer width="100%" height={400}>

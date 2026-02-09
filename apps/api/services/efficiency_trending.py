@@ -27,8 +27,8 @@ class TrendConfidence(str, Enum):
 
 class TrendDirection(str, Enum):
     """Direction of efficiency trend."""
-    IMPROVING = "improving"     # Negative slope (lower EF = better)
-    DECLINING = "declining"     # Positive slope
+    IMPROVING = "improving"     # Positive slope (higher EF = better)
+    DECLINING = "declining"     # Negative slope
     STABLE = "stable"          # No significant trend
     INSUFFICIENT = "insufficient_data"
 
@@ -252,12 +252,12 @@ def analyze_efficiency_trend(
     else:
         confidence = TrendConfidence.INSUFFICIENT
     
-    # Determine direction (negative slope = improving for EF)
+    # Determine direction (positive slope = improving for EF)
     # Only declare direction if statistically significant
     if p_value < 0.05:
-        if slope < 0:
+        if slope > 0:
             direction = TrendDirection.IMPROVING
-        elif slope > 0:
+        elif slope < 0:
             direction = TrendDirection.DECLINING
         else:
             direction = TrendDirection.STABLE
@@ -345,13 +345,13 @@ def calculate_efficiency_percentile(
     """
     Calculate where current efficiency sits in athlete's own history.
     
-    Returns percentile (0-100), where lower is better for EF.
+    Returns percentile (0-100), where higher is better for EF.
     """
     if not historical_efs or len(historical_efs) < 5:
         return None
     
-    # Count how many historical values are worse (higher) than current
-    worse_count = sum(1 for ef in historical_efs if ef > current_ef)
+    # Count how many historical values are worse (lower) than current
+    worse_count = sum(1 for ef in historical_efs if ef < current_ef)
     percentile = (worse_count / len(historical_efs)) * 100
     
     return round(percentile, 1)
@@ -366,18 +366,18 @@ def estimate_days_to_pr_efficiency(
     Estimate days until current trend would reach PR efficiency level.
     
     Returns None if:
-    - Not improving (positive slope)
+    - Not improving (negative slope)
     - Already at or better than PR
     - Would take more than 365 days
     """
-    if slope_per_week >= 0:
+    if slope_per_week <= 0:
         return None  # Not improving
     
-    if current_ef <= pr_ef:
+    if current_ef >= pr_ef:
         return 0  # Already at or better than PR
     
     # EF difference to close
-    ef_gap = current_ef - pr_ef
+    ef_gap = pr_ef - current_ef
     
     # Weeks to close gap
     weeks_needed = ef_gap / abs(slope_per_week)

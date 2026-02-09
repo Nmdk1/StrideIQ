@@ -387,8 +387,9 @@ def get_efficiency_attribution(
 
     Tiered fallback:
       1. Same workout type + similar distance (±30%) — best apples-to-apples
-      2. Similar distance only (±30%) — still meaningful
-      3. All recent runs — last resort, lower confidence
+      2. Same workout type, any distance (still type-matched)
+      3. Similar distance only (±30%) — meaningful, lower confidence
+      4. All recent runs — last resort, lowest confidence
 
     Uses GAP (Grade Adjusted Pace) when available so hilly runs aren't
     penalized for slower raw pace. A 20-miler at 122 bpm with 2300ft
@@ -476,9 +477,15 @@ def get_efficiency_attribution(
                 dist_km = activity.distance_m / 1000
                 comparison_label = f"runs of similar distance (~{dist_km:.0f}km)"
                 tier_confidence_boost = -1  # Less reliable without type matching
+            elif len(similar_activities) >= 2 and activity.distance_m >= 24000:
+                # Long runs are often 1x/week. Accept 2 comparable long efforts
+                # before falling back to all-recent apples-to-oranges comparison.
+                dist_km = activity.distance_m / 1000
+                comparison_label = f"runs of similar distance (~{dist_km:.0f}km)"
+                tier_confidence_boost = -1
 
         # ---- Tier 4: All recent runs (28 days, lowest confidence) ----
-        if len(similar_activities) < 3:
+        if len(similar_activities) < 2:
             similar_activities = db.query(Activity).filter(
                 *base_filter,
                 Activity.start_time >= start_date_all,

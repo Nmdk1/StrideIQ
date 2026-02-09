@@ -57,10 +57,9 @@ def calculate_efficiency_factor(
     """
     Calculate Efficiency Factor (EF): Pace @ HR or HR @ Pace
     
-    EF = Pace (min/mile) / (HR as % of max HR)
-    
-    Lower EF = more efficient (faster pace at same HR, or lower HR at same pace)
-    Higher EF = less efficient
+    EF = speed / HR
+
+    Higher EF = more efficient (more speed at the same cardiovascular cost).
     
     If we don't have max HR, we use raw HR (less accurate but still useful)
     """
@@ -70,20 +69,11 @@ def calculate_efficiency_factor(
     if pace_per_mile <= 0 or avg_hr <= 0:
         return None
     
-    # Normalize HR to percentage if max HR available
-    if max_hr and max_hr > 0:
-        hr_percentage = avg_hr / max_hr
-        if hr_percentage <= 0:
-            return None
-        # EF = pace / hr_percentage (lower is better)
-        ef = pace_per_mile / hr_percentage
-    else:
-        # Use raw HR (less accurate but still meaningful)
-        # Normalize by assuming typical max HR of 200 for comparison
-        hr_percentage = avg_hr / 200.0
-        ef = pace_per_mile / hr_percentage
-    
-    return round(ef, 2)
+    # Convert pace (min/mi) to speed (m/s)
+    pace_sec_per_mile = pace_per_mile * 60.0
+    speed_mps = 1609.34 / pace_sec_per_mile
+    ef = speed_mps / avg_hr
+    return round(ef, 4)
 
 
 def is_quality_activity(activity: Activity) -> bool:
@@ -354,16 +344,16 @@ def calculate_load_response(
             if prev_week_data["efficiencies"]:
                 prev_avg = sum(prev_week_data["efficiencies"]) / len(prev_week_data["efficiencies"])
                 if avg_efficiency:
-                    efficiency_delta = avg_efficiency - prev_avg  # Negative = improvement
+                    efficiency_delta = avg_efficiency - prev_avg  # Positive = improvement
         
         # Classify load type
         load_type = "neutral"
         if efficiency_delta is not None and avg_efficiency:
-            if efficiency_delta < -0.5:  # Significant improvement
+            if efficiency_delta > 0.0005:  # Significant improvement
                 load_type = "productive"
-            elif efficiency_delta > 0.5:  # Significant decline
+            elif efficiency_delta < -0.0005:  # Significant decline
                 load_type = "harmful"
-            elif abs(efficiency_delta) < 0.1:  # No change
+            elif abs(efficiency_delta) < 0.0001:  # No change
                 load_type = "wasted"
         
         result.append({
@@ -372,8 +362,8 @@ def calculate_load_response(
             "total_distance_miles": round(week_data["total_distance_m"] / 1609.34, 2),
             "total_duration_hours": round(week_data["total_duration_s"] / 3600, 2),
             "activity_count": len(week_data["activities"]),
-            "avg_efficiency": round(avg_efficiency, 2) if avg_efficiency else None,
-            "efficiency_delta": round(efficiency_delta, 2) if efficiency_delta else None,
+            "avg_efficiency": round(avg_efficiency, 4) if avg_efficiency else None,
+            "efficiency_delta": round(efficiency_delta, 4) if efficiency_delta else None,
             "load_type": load_type
         })
     
@@ -397,13 +387,13 @@ def annotate_periods(
     efficiencies = [p["efficiency_factor"] for p in time_series]
     rolling_30d = calculate_rolling_average(efficiencies, window=30)
     
-    # Find best-effort windows (local minima in rolling average)
+    # Find best-effort windows (local maxima in rolling average)
     best_effort_windows = []
     for i in range(1, len(rolling_30d) - 1):
         if rolling_30d[i] and rolling_30d[i-1] and rolling_30d[i+1]:
-            if rolling_30d[i] < rolling_30d[i-1] and rolling_30d[i] < rolling_30d[i+1]:
-                # Local minimum - potential best-effort window
-                if rolling_30d[i] < min(efficiencies) * 1.05:  # Within 5% of best
+            if rolling_30d[i] > rolling_30d[i-1] and rolling_30d[i] > rolling_30d[i+1]:
+                # Local maximum - potential best-effort window
+                if rolling_30d[i] > max(efficiencies) * 0.95:  # Within 5% of best
                     best_effort_windows.append({
                         "date": time_series[i]["date"],
                         "type": "best_effort",
@@ -414,7 +404,7 @@ def annotate_periods(
     regressions = []
     for i in range(30, len(rolling_30d)):
         if rolling_30d[i] and rolling_30d[i-30]:
-            if rolling_30d[i] > rolling_30d[i-30] * 1.05:  # 5%+ decline
+            if rolling_30d[i] < rolling_30d[i-30] * 0.95:  # 5%+ decline
                 regressions.append({
                     "date": time_series[i]["date"],
                     "type": "regression",
@@ -572,7 +562,7 @@ def get_efficiency_trends(
         early_window = min(60, len(efficiencies))
         recent_avg = sum(efficiencies[-recent_window:]) / recent_window
         early_avg = sum(efficiencies[:early_window]) / early_window
-        trend_direction = "improving" if recent_avg < early_avg else "declining" if recent_avg > early_avg else "stable"
+        trend_direction = "improving" if recent_avg > early_avg else "declining" if recent_avg < early_avg else "stable"
         trend_magnitude = abs(recent_avg - early_avg)
     elif len(efficiencies) >= 30:
         # Fall back to 30-day if we don't have 60 days
@@ -580,7 +570,7 @@ def get_efficiency_trends(
         early_window = min(30, len(efficiencies))
         recent_avg = sum(efficiencies[-recent_window:]) / recent_window
         early_avg = sum(efficiencies[:early_window]) / early_window
-        trend_direction = "improving" if recent_avg < early_avg else "declining" if recent_avg > early_avg else "stable"
+        trend_direction = "improving" if recent_avg > early_avg else "declining" if recent_avg < early_avg else "stable"
         trend_magnitude = abs(recent_avg - early_avg)
     else:
         trend_direction = "insufficient_data"
@@ -597,8 +587,8 @@ def get_efficiency_trends(
     
     # Estimate days to PR efficiency if improving
     days_to_pr = None
-    if statistical_trend.slope_per_week and statistical_trend.slope_per_week < 0:
-        best_ef = min(efficiencies)
+    if statistical_trend.slope_per_week and statistical_trend.slope_per_week > 0:
+        best_ef = max(efficiencies)
         days_to_pr = estimate_days_to_pr_efficiency(
             efficiencies[-1], 
             best_ef, 
@@ -613,10 +603,10 @@ def get_efficiency_trends(
                 "start": time_series[0]["date"],
                 "end": time_series[-1]["date"]
             },
-            "current_efficiency": round(efficiencies[-1], 2),
-            "average_efficiency": round(sum(efficiencies) / len(efficiencies), 2),
-            "best_efficiency": round(min(efficiencies), 2),
-            "worst_efficiency": round(max(efficiencies), 2),
+            "current_efficiency": round(efficiencies[-1], 4),
+            "average_efficiency": round(sum(efficiencies) / len(efficiencies), 4),
+            "best_efficiency": round(max(efficiencies), 4),
+            "worst_efficiency": round(min(efficiencies), 4),
             "trend_direction": trend_direction,
             "trend_magnitude": round(trend_magnitude, 2) if trend_magnitude else None,
             # V2: Enhanced statistical metrics

@@ -251,12 +251,6 @@ function describeLoadZone(zone: string | undefined): string {
   return 'Your load profile is best interpreted with your recent trends and how you feel day to day.';
 }
 
-function describeEfficiencyTrend(direction: string | null | undefined): string {
-  if (direction === 'improving') return 'Economy trend is moving the right way — your recent work is converting well.';
-  if (direction === 'declining') return 'Economy trend is under pressure; execution quality and recovery can stabilize it.';
-  return 'Economy trend is steady, which can be a solid platform for the next progression block.';
-}
-
 function wellnessLabel(value: number | null | undefined, kind: 'sleep' | 'motivation' | 'soreness' | 'stress'): string | null {
   if (value == null) return null;
   if (kind === 'sleep') return value >= 7 ? 'Recovery support is strong' : value >= 6 ? 'Recovery support is mixed' : 'Recovery support needs attention';
@@ -324,6 +318,7 @@ export default function ProgressPage() {
   const volTraj = s?.volume_trajectory;
   const coachCards = s?.coach_cards ?? [];
   const recoveryCoachCard = coachCards.find((card) => card.id === 'recovery_readiness');
+  const momentumCoachCard = coachCards.find((card) => card.id === 'fitness_momentum');
 
   return (
     <ProtectedRoute>
@@ -759,27 +754,42 @@ export default function ProgressPage() {
                   <div className="flex gap-2">
                     <Sparkles className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
                     <p className="text-sm text-slate-300">
-                      Efficiency trend is{' '}
-                      <span className={
-                        efficiency.data.summary.trend_direction === 'improving' ? 'text-emerald-400 font-medium' :
-                        efficiency.data.summary.trend_direction === 'declining' ? 'text-red-400 font-medium' :
-                        'text-slate-200 font-medium'
-                      }>
-                        {efficiency.data.summary.trend_direction}
-                      </span>
-                      {' '}across your recent runs.
+                      {momentumCoachCard?.summary ?? (
+                        <>
+                          Efficiency trend is{' '}
+                          <span className={
+                            efficiency.data.summary.trend_direction === 'improving' ? 'text-emerald-400 font-medium' :
+                            efficiency.data.summary.trend_direction === 'declining' ? 'text-red-400 font-medium' :
+                            'text-slate-200 font-medium'
+                          }>
+                            {efficiency.data.summary.trend_direction}
+                          </span>
+                          {' '}across your recent runs.
+                        </>
+                      )}
                     </p>
                   </div>
                 </div>
 
                 <div className="bg-slate-700/30 rounded-lg p-3">
-                  <p className="text-sm text-slate-300">
-                    {describeEfficiencyTrend(efficiency.data.summary.trend_direction)}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1.5">
-                    Stability signal is built from recent efficiency behavior against your own historical baseline.
-                  </p>
+                  {momentumCoachCard ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-slate-300">{momentumCoachCard.trend_context}</p>
+                      <p className="text-xs text-slate-400">{momentumCoachCard.drivers}</p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">
+                      Stability signal is built from recent efficiency behavior against your own historical baseline.
+                    </p>
+                  )}
                 </div>
+
+                {momentumCoachCard && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2.5">
+                    <p className="text-xs text-emerald-400/80 mb-0.5">Next Focus</p>
+                    <p className="text-sm text-emerald-300">{momentumCoachCard.next_step}</p>
+                  </div>
+                )}
 
                 <MetricDerivationDetails
                   title="How efficiency is derived and how to read it"

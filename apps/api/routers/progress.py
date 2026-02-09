@@ -177,13 +177,14 @@ async def get_progress_summary(
 
     # --- Efficiency Trend ---
     try:
-        from services.efficiency_analyzer import EfficiencyAnalyzer
-        analyzer = EfficiencyAnalyzer(db)
-        trends = analyzer.get_efficiency_trends(
+        from services.efficiency_analytics import get_efficiency_trends
+        trends = get_efficiency_trends(
             athlete_id=str(athlete_id),
+            db=db,
             days=days,
             include_stability=False,
             include_load_response=False,
+            include_annotations=False,
         )
         if trends and trends.get("summary"):
             s = trends["summary"]

@@ -465,10 +465,10 @@ def get_efficiency_trend(db: Session, athlete_id: UUID, days: int = 30) -> Dict[
             if len(efficiencies) >= 6:
                 early_avg = sum(efficiencies[:3]) / 3
                 late_avg = sum(efficiencies[-3:]) / 3
-                # Lower EF is better in the main analytics implementation.
-                if late_avg < early_avg:
+                # EF = speed/HR. Higher EF is better.
+                if late_avg > early_avg:
                     trend_direction = "improving"
-                elif late_avg > early_avg:
+                elif late_avg < early_avg:
                     trend_direction = "declining"
                 else:
                     trend_direction = "stable"
@@ -480,11 +480,11 @@ def get_efficiency_trend(db: Session, athlete_id: UUID, days: int = 30) -> Dict[
                     "date_range": {"start": derived[0]["date"], "end": derived[-1]["date"]} if derived else None,
                     "current_efficiency": efficiencies[-1] if efficiencies else None,
                     "average_efficiency": round(sum(efficiencies) / len(efficiencies), 2) if efficiencies else None,
-                    "best_efficiency": round(min(efficiencies), 2) if efficiencies else None,
-                    "worst_efficiency": round(max(efficiencies), 2) if efficiencies else None,
+                    "best_efficiency": round(max(efficiencies), 4) if efficiencies else None,
+                    "worst_efficiency": round(min(efficiencies), 4) if efficiencies else None,
                     "trend_direction": trend_direction,
                     "trend_magnitude": trend_magnitude,
-                    "note": "Derived EF fallback (pace_per_mile + avg_hr). Lower EF is better.",
+                    "note": "Derived EF fallback (pace_per_mile + avg_hr). Higher EF is better.",
                 },
                 "trend_analysis": {
                     "method": "fallback_basic",
@@ -543,7 +543,7 @@ def get_efficiency_trend(db: Session, athlete_id: UUID, days: int = 30) -> Dict[
         ef_parts.append(f"Best EF: {ef_best:.2f}.")
     if ef_avg is not None:
         ef_parts.append(f"Average EF: {ef_avg:.2f}.")
-    ef_parts.append("Lower EF = faster at same heart rate = better.")
+    ef_parts.append("Higher EF = more speed at the same heart rate = better.")
     ef_narrative = " ".join(ef_parts)
 
     return {
@@ -1797,7 +1797,7 @@ def get_best_runs(
     Return the "best" runs by an explicit, auditable definition.
 
     Metrics:
-      - efficiency: lowest Pace(sec/km)/HR(bpm) (lower = better)
+      - efficiency: highest speed/HR (higher = better)
       - pace: fastest pace (min/mi or min/km depending on units)
       - distance: longest distance
       - intensity_score: highest intensity_score
@@ -1851,7 +1851,8 @@ def get_best_runs(
             pace_s_per_km = duration_s / (distance_m / 1000.0)
             pace_mi = _pace_str_mi(int(a.duration_s) if a.duration_s else None, int(a.distance_m) if a.distance_m else None)
             pace_km = _pace_str(int(a.duration_s) if a.duration_s else None, int(a.distance_m) if a.distance_m else None)
-            eff = (pace_s_per_km / float(a.avg_hr)) if a.avg_hr else None
+            speed_mps = (distance_m / duration_s) if duration_s > 0 else None
+            eff = (speed_mps / float(a.avg_hr)) if (speed_mps and a.avg_hr) else None
 
             rows.append(
                 {
@@ -1865,14 +1866,14 @@ def get_best_runs(
                     "pace_per_km": pace_km,
                     "pace_per_mile": pace_mi,
                     "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
-                    "efficiency_sec_per_km_per_bpm": round(eff, 6) if eff is not None else None,
+                    "efficiency_speed_per_hr": round(eff, 6) if eff is not None else None,
                 }
             )
 
         def _score(r: Dict[str, Any]) -> float:
             if metric == "efficiency":
-                v = r.get("efficiency_sec_per_km_per_bpm")
-                return float(v) if v is not None else 1e9  # lower is better
+                v = r.get("efficiency_speed_per_hr")
+                return -float(v) if v is not None else 1e9  # higher is better
             if metric == "pace":
                 # lower seconds per km is better; derive from formatted pace if possible
                 # fall back to distance/duration
@@ -1899,8 +1900,8 @@ def get_best_runs(
             parts = [r["name"], f"{dist:.1f} {unit}", f"@ {pace}"]
             if r.get("avg_hr") is not None:
                 parts.append(f"(avg HR {r['avg_hr']} bpm)")
-            if metric == "efficiency" and r.get("efficiency_sec_per_km_per_bpm") is not None:
-                parts.append(f"[eff {r['efficiency_sec_per_km_per_bpm']:.6f}]")
+            if metric == "efficiency" and r.get("efficiency_speed_per_hr") is not None:
+                parts.append(f"[eff {r['efficiency_speed_per_hr']:.6f}]")
             evidence.append(
                 {
                     "type": "activity",
