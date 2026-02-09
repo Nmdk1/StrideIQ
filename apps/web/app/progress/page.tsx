@@ -265,23 +265,6 @@ function wellnessLabel(value: number | null | undefined, kind: 'sleep' | 'motiva
   return value <= 2 ? 'Stress load is manageable' : value <= 3 ? 'Stress load is elevated' : 'Stress load is high';
 }
 
-function recoveryLabel(value: number | null | undefined, kind: 'durability' | 'half_life' | 'injury_risk'): string | null {
-  if (value == null) return null;
-  if (kind === 'durability') {
-    if (value >= 70) return 'Durability profile is strong and supports sustained load.';
-    if (value >= 40) return 'Durability profile is developing; consistency and recovery rhythm matter.';
-    return 'Durability profile is fragile right now; protect consistency before adding stress.';
-  }
-  if (kind === 'half_life') {
-    if (value <= 36) return 'Recovery response is quick after hard sessions.';
-    if (value <= 60) return 'Recovery response is moderate and manageable.';
-    return 'Recovery response is slower; spacing hard efforts becomes more important.';
-  }
-  if (value < 30) return 'Injury risk signal is low if training rhythm stays consistent.';
-  if (value < 60) return 'Injury risk signal is moderate; watch load transitions closely.';
-  return 'Injury risk signal is elevated; short-term restraint protects long-term progress.';
-}
-
 function MetricDerivationDetails({
   title,
   points,
@@ -340,6 +323,7 @@ export default function ProgressPage() {
   const wellness = s?.wellness;
   const volTraj = s?.volume_trajectory;
   const coachCards = s?.coach_cards ?? [];
+  const recoveryCoachCard = coachCards.find((card) => card.id === 'recovery_readiness');
 
   return (
     <ProtectedRoute>
@@ -496,37 +480,29 @@ export default function ProgressPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {recoveryLabel(recovery.durability_index, 'durability') && (
+                {recoveryCoachCard ? (
+                  <div className="space-y-2.5">
                     <div className="bg-slate-700/30 rounded-lg p-2.5">
-                      <p className="text-xs text-slate-500 mb-0.5">Durability Signal</p>
-                      <p className="text-sm text-slate-200">{recoveryLabel(recovery.durability_index, 'durability')}</p>
+                      <p className="text-xs text-slate-500 mb-0.5">Coach Read</p>
+                      <p className="text-sm text-slate-200">{recoveryCoachCard.summary}</p>
                     </div>
-                  )}
-                  {recoveryLabel(recovery.recovery_half_life_hours, 'half_life') && (
-                    <div className="bg-slate-700/30 rounded-lg p-2.5">
-                      <p className="text-xs text-slate-500 mb-0.5">Recovery Response</p>
-                      <p className="text-sm text-slate-200">{recoveryLabel(recovery.recovery_half_life_hours, 'half_life')}</p>
+                    <details className="bg-slate-700/30 rounded-lg p-2.5 border border-slate-600/40">
+                      <summary className="text-xs font-semibold text-slate-300 cursor-pointer select-none">
+                        Why this interpretation
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        <p className="text-xs text-slate-400 leading-relaxed">{recoveryCoachCard.trend_context}</p>
+                        <p className="text-xs text-slate-400 leading-relaxed">{recoveryCoachCard.drivers}</p>
+                      </div>
+                    </details>
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2.5">
+                      <p className="text-xs text-emerald-400/80 mb-0.5">Next Focus</p>
+                      <p className="text-sm text-emerald-300">{recoveryCoachCard.next_step}</p>
                     </div>
-                  )}
-                  {recoveryLabel(recovery.injury_risk_score, 'injury_risk') && (
-                    <div className="bg-slate-700/30 rounded-lg p-2.5 sm:col-span-2">
-                      <p className="text-xs text-slate-500 mb-0.5">Risk Signal</p>
-                      <p className="text-sm text-slate-200">{recoveryLabel(recovery.injury_risk_score, 'injury_risk')}</p>
-                    </div>
-                  )}
-                </div>
-
-                <MetricDerivationDetails
-                  title="How recovery and durability are derived"
-                  points={[
-                    'Recovery status combines training-load behavior and adaptation patterns to estimate how quickly you absorb stress.',
-                    'Durability reflects how stable your performance remains as load accumulates over time.',
-                    'Recovery half-life estimates how long hard-session fatigue tends to persist before returning toward baseline.',
-                    'Risk signal tracks patterns linked with breakdown probability (for example load spikes with poor recovery response).',
-                    'These are internal model outputs translated into coaching guidance rather than hard diagnoses.',
-                  ]}
-                />
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400">Recovery interpretation is loading.</p>
+                )}
               </div>
             </Section>
           )}
