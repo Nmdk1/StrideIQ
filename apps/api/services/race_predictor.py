@@ -31,9 +31,9 @@ from services.individual_performance_model import (
     BanisterModel,
     ModelConfidence
 )
-from services.vdot_calculator import (
-    calculate_vdot_from_race_time,
-    calculate_race_time_from_vdot
+from services.rpi_calculator import (
+    calculate_rpi_from_race_time,
+    calculate_race_time_from_rpi
 )
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class RacePrediction:
     prediction_confidence: str  # "high", "moderate", "low"
     
     # Underlying projections
-    projected_vdot: float
+    projected_rpi: float
     projected_ctl: float
     projected_tsb: float
     
@@ -73,7 +73,7 @@ class RacePrediction:
                 "confidence": self.prediction_confidence
             },
             "projections": {
-                "rpi": round(self.projected_vdot, 1),
+                "rpi": round(self.projected_rpi, 1),
                 "ctl": round(self.projected_ctl, 1),
                 "tsb": round(self.projected_tsb, 1)
             },
@@ -90,8 +90,8 @@ class DistanceProfile:
     n_races: int
     best_time_seconds: int
     avg_time_seconds: int
-    best_vdot: float
-    avg_vdot: float
+    best_rpi: float
+    avg_rpi: float
     trend: str  # "improving", "stable", "declining"
 
 
@@ -124,7 +124,7 @@ class RacePredictor:
     
     Combines:
     1. Individual model (τ1, τ2) for fitness projection
-    2. VDOT for race time conversion
+    2. RPI for race time conversion
     3. Historical performance for distance-specific adjustment
     4. Efficiency trend for fitness trajectory
     """
@@ -159,14 +159,14 @@ class RacePredictor:
         factors.append(f"Individual model (τ1={model.tau1:.0f}, τ2={model.tau2:.0f})")
         
         # Get current state
-        current_vdot = self._get_current_vdot(athlete_id)
-        if current_vdot:
-            factors.append(f"Current VDOT: {current_vdot:.1f}")
+        current_rpi = self._get_current_rpi(athlete_id)
+        if current_rpi:
+            factors.append(f"Current RPI: {current_rpi:.1f}")
         else:
-            current_vdot = self._estimate_vdot_from_training(athlete_id)
-            if current_vdot:
-                factors.append(f"Estimated VDOT: {current_vdot:.1f}")
-                notes.append("VDOT estimated from training - race data would improve accuracy")
+            current_rpi = self._estimate_rpi_from_training(athlete_id)
+            if current_rpi:
+                factors.append(f"Estimated RPI: {current_rpi:.1f}")
+                notes.append("RPI estimated from training - race data would improve accuracy")
             else:
                 return self._create_insufficient_data_prediction(distance_m)
         
@@ -178,36 +178,36 @@ class RacePredictor:
         factors.append(f"Projected race-day CTL: {projected_ctl:.0f}")
         factors.append(f"Projected race-day TSB: {projected_tsb:.0f}")
         
-        # Calculate projected VDOT based on fitness change
+        # Calculate projected RPI based on fitness change
         current_ctl = self._get_current_ctl(athlete_id)
         if current_ctl and current_ctl > 0:
             ctl_change_pct = (projected_ctl - current_ctl) / current_ctl
-            # Rough conversion: 10% CTL increase ≈ 1 VDOT point
-            vdot_adjustment = ctl_change_pct * 10
-            projected_vdot = current_vdot + vdot_adjustment
+            # Rough conversion: 10% CTL increase ≈ 1 RPI point
+            rpi_adjustment = ctl_change_pct * 10
+            projected_rpi = current_rpi + rpi_adjustment
         else:
-            projected_vdot = current_vdot
+            projected_rpi = current_rpi
         
         # Adjust for distance-specific performance
         distance_adjustment = self._get_distance_adjustment(athlete_id, distance_m)
         if distance_adjustment != 0:
-            projected_vdot += distance_adjustment
-            notes.append(f"Distance adjustment: {distance_adjustment:+.1f} VDOT")
+            projected_rpi += distance_adjustment
+            notes.append(f"Distance adjustment: {distance_adjustment:+.1f} RPI")
         
         # Adjust for TSB (form)
         tsb_adjustment = self._calculate_tsb_adjustment(projected_tsb)
-        projected_vdot += tsb_adjustment
+        projected_rpi += tsb_adjustment
         if abs(tsb_adjustment) > 0.3:
-            notes.append(f"Form adjustment: {tsb_adjustment:+.1f} VDOT")
+            notes.append(f"Form adjustment: {tsb_adjustment:+.1f} RPI")
         
-        # Convert VDOT to race time
-        predicted_seconds = calculate_race_time_from_vdot(projected_vdot, distance_m)
+        # Convert RPI to race time
+        predicted_seconds = calculate_race_time_from_rpi(projected_rpi, distance_m)
         if not predicted_seconds:
             return self._create_insufficient_data_prediction(distance_m)
         
         # Calculate confidence interval
         confidence_seconds = self._calculate_confidence_interval(
-            model, projected_vdot, distance_m
+            model, projected_rpi, distance_m
         )
         
         # Determine overall confidence
@@ -221,7 +221,7 @@ class RacePredictor:
             confidence_interval_seconds=confidence_seconds,
             confidence_interval_formatted=f"±{self._format_time(confidence_seconds)}",
             prediction_confidence=prediction_confidence,
-            projected_vdot=projected_vdot,
+            projected_rpi=projected_rpi,
             projected_ctl=projected_ctl,
             projected_tsb=projected_tsb,
             factors=factors,
@@ -253,19 +253,19 @@ class RacePredictor:
             return None
         
         times = [r.duration_s for r in races]
-        vdots = []
+        rpis = []
         for r in races:
-            v = calculate_vdot_from_race_time(r.distance_m, r.duration_s)
+            v = calculate_rpi_from_race_time(r.distance_m, r.duration_s)
             if v:
-                vdots.append(v)
+                rpis.append(v)
         
-        if not vdots:
+        if not rpis:
             return None
         
         # Determine trend
-        if len(vdots) >= 3:
-            recent = statistics.mean(vdots[:3])
-            older = statistics.mean(vdots[-3:])
+        if len(rpis) >= 3:
+            recent = statistics.mean(rpis[:3])
+            older = statistics.mean(rpis[-3:])
             if recent > older + 0.5:
                 trend = "improving"
             elif recent < older - 0.5:
@@ -283,8 +283,8 @@ class RacePredictor:
             n_races=len(races),
             best_time_seconds=min(times),
             avg_time_seconds=int(statistics.mean(times)),
-            best_vdot=max(vdots),
-            avg_vdot=statistics.mean(vdots),
+            best_rpi=max(rpis),
+            avg_rpi=statistics.mean(rpis),
             trend=trend
         )
     
@@ -292,8 +292,8 @@ class RacePredictor:
     # HELPER METHODS
     # =========================================================================
     
-    def _get_current_vdot(self, athlete_id: UUID) -> Optional[float]:
-        """Get athlete's current VDOT from recent races."""
+    def _get_current_rpi(self, athlete_id: UUID) -> Optional[float]:
+        """Get athlete's current RPI from recent races."""
         # Get recent races (last 6 months)
         cutoff = datetime.now() - timedelta(days=180)
         
@@ -313,25 +313,25 @@ class RacePredictor:
         if not races:
             return None
         
-        vdots = []
+        rpis = []
         for race in races:
-            v = calculate_vdot_from_race_time(race.distance_m, race.duration_s)
+            v = calculate_rpi_from_race_time(race.distance_m, race.duration_s)
             if v:
-                vdots.append(v)
+                rpis.append(v)
         
-        if not vdots:
+        if not rpis:
             return None
         
         # Weight recent races more heavily
-        if len(vdots) == 1:
-            return vdots[0]
-        elif len(vdots) == 2:
-            return vdots[0] * 0.7 + vdots[1] * 0.3
+        if len(rpis) == 1:
+            return rpis[0]
+        elif len(rpis) == 2:
+            return rpis[0] * 0.7 + rpis[1] * 0.3
         else:
-            return vdots[0] * 0.5 + vdots[1] * 0.3 + statistics.mean(vdots[2:]) * 0.2
+            return rpis[0] * 0.5 + rpis[1] * 0.3 + statistics.mean(rpis[2:]) * 0.2
     
-    def _estimate_vdot_from_training(self, athlete_id: UUID) -> Optional[float]:
-        """Estimate VDOT from training data when no race data available."""
+    def _estimate_rpi_from_training(self, athlete_id: UUID) -> Optional[float]:
+        """Estimate RPI from training data when no race data available."""
         # This is a rough estimate based on training paces
         # Get threshold workouts
         cutoff = datetime.now() - timedelta(days=90)
@@ -359,11 +359,11 @@ class RacePredictor:
         
         avg_threshold_pace = statistics.mean(paces)
         
-        # Convert threshold pace to estimated 10K time, then to VDOT
+        # Convert threshold pace to estimated 10K time, then to RPI
         estimated_10k_pace = avg_threshold_pace * 1.03  # Slightly slower than threshold
         estimated_10k_time = estimated_10k_pace * 10  # 10K = 10km
         
-        return calculate_vdot_from_race_time(10000, estimated_10k_time)
+        return calculate_rpi_from_race_time(10000, estimated_10k_time)
     
     def _get_current_ctl(self, athlete_id: UUID) -> Optional[float]:
         """Get athlete's current CTL."""
@@ -429,9 +429,9 @@ class RacePredictor:
     
     def _get_distance_adjustment(self, athlete_id: UUID, distance_m: float) -> float:
         """
-        Adjust VDOT based on athlete's distance-specific performance.
+        Adjust RPI based on athlete's distance-specific performance.
         
-        Some athletes are better at shorter or longer distances relative to VDOT.
+        Some athletes are better at shorter or longer distances relative to RPI.
         """
         # Get performance at multiple distances
         profiles = {}
@@ -443,24 +443,24 @@ class RacePredictor:
         if len(profiles) < 2:
             return 0  # Not enough data for adjustment
         
-        # Calculate VDOT variance across distances
-        vdots = {d: p.best_vdot for d, p in profiles.items()}
-        mean_vdot = statistics.mean(vdots.values())
+        # Calculate RPI variance across distances
+        rpis = {d: p.best_rpi for d, p in profiles.items()}
+        mean_rpi = statistics.mean(rpis.values())
         
         # Check if target distance has data
         closest_dist = min(profiles.keys(), key=lambda d: abs(d - distance_m))
         
         if abs(closest_dist - distance_m) < distance_m * 0.1:
             # Have data at this distance - check if athlete over/underperforms
-            distance_vdot = profiles[closest_dist].best_vdot
-            adjustment = distance_vdot - mean_vdot
+            distance_rpi = profiles[closest_dist].best_rpi
+            adjustment = distance_rpi - mean_rpi
             return adjustment * 0.5  # Partial adjustment
         
         return 0
     
     def _calculate_tsb_adjustment(self, tsb: float) -> float:
         """
-        Adjust VDOT based on form (TSB).
+        Adjust RPI based on form (TSB).
         
         Optimal TSB for racing is typically +10 to +20.
         """
@@ -482,7 +482,7 @@ class RacePredictor:
     def _calculate_confidence_interval(
         self,
         model: BanisterModel,
-        vdot: float,
+        rpi: float,
         distance_m: float
     ) -> int:
         """Calculate confidence interval in seconds."""
@@ -495,7 +495,7 @@ class RacePredictor:
             base_pct = 0.04  # ±4%
         
         # Calculate base time
-        base_time = calculate_race_time_from_vdot(vdot, distance_m) or 0
+        base_time = calculate_race_time_from_rpi(rpi, distance_m) or 0
         
         return int(base_time * base_pct)
     
@@ -564,7 +564,7 @@ class RacePredictor:
             confidence_interval_seconds=0,
             confidence_interval_formatted="N/A",
             prediction_confidence="insufficient_data",
-            projected_vdot=0,
+            projected_rpi=0,
             projected_ctl=0,
             projected_tsb=0,
             factors=[],

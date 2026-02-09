@@ -115,7 +115,7 @@ All core features implemented and tested. AI Coach upgraded with 90/10 model spl
 | Activity Analysis | `activity_analysis.py` | Efficiency, baselines |
 | Workout Classifier | `workout_classifier.py` | Auto-detect run types |
 | Correlation Engine | `correlation_engine.py` | Input/output correlations |
-| VDOT Calculator | `vdot_calculator.py` | Pace predictions |
+| RPI Calculator | `rpi_calculator.py` | Pace predictions |
 
 ---
 

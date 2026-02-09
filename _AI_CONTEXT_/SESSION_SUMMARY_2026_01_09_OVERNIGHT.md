@@ -17,7 +17,7 @@ Added to `apps/api/models.py`:
 - `name`, `status` (draft/active/completed/cancelled)
 - `goal_race_name`, `goal_race_date`, `goal_race_distance_m`, `goal_time_seconds`
 - `plan_start_date`, `plan_end_date`, `total_weeks`
-- `baseline_vdot`, `baseline_weekly_volume_km`
+- `baseline_rpi`, `baseline_weekly_volume_km`
 - `plan_type` (marathon/half_marathon/10k/5k)
 - `generation_method` (ai/template/custom)
 - `methodology_blend` (JSONB)
@@ -44,7 +44,7 @@ Features:
 - Phase distributions: Base → Build → Peak → Taper
 - Minimum weeks by distance (Marathon: 16, Half: 12, 10K: 8, 5K: 6)
 - Week templates for each phase
-- Training pace calculations from VDOT
+- Training pace calculations from RPI
 - Workout descriptions with guidance
 
 #### Training Plans API
@@ -66,7 +66,7 @@ Endpoints:
 Features:
 - Uses OpenAI Assistants API
 - Context injection from athlete's data:
-  - Athlete profile (age, VDOT, HR)
+  - Athlete profile (age, RPI, HR)
   - Personal bests
   - Current training plan
   - Last 7 days activities (detailed)

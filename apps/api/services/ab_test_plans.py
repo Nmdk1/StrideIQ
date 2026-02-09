@@ -441,7 +441,7 @@ def run_simulated_ab_test(db: Session) -> Dict:
             results["model"]["predictions"].append(pred.predicted_seconds)
             results["model"]["errors"].append(abs(pred.error_percent))
         
-        # Template "prediction" (use average VDOT approach)
+        # Template "prediction" (use average RPI approach)
         # Simulate template as using population average
         for race in athlete_data.races[-2:]:  # Last 2 races as "test"
             # Template prediction: assume 5% worse than model (simplified)

@@ -5,7 +5,7 @@ Generates periodized training plans from carefully designed archetypes.
 
 Philosophy:
 - Plans are built from tested archetypes, not generic algorithms
-- Individual paces come from Training Pace Calculator (VDOT-based)
+- Individual paces come from Training Pace Calculator (RPI-based)
 - Athlete data informs archetype selection, not the structure itself
 - Easy must be easy. Structure must be respected.
 
@@ -110,11 +110,11 @@ class ArchetypePlanGenerator:
         plan_end_date = goal_race_date
         
         # Get athlete's baseline fitness
-        baseline_vdot = athlete.vdot or self._estimate_vdot(athlete_id)
+        baseline_rpi = athlete.rpi or self._estimate_rpi(athlete_id)
         baseline_volume = self._get_recent_weekly_volume(athlete_id)
         
-        # Calculate training paces from VDOT
-        paces = self._calculate_training_paces(baseline_vdot)
+        # Calculate training paces from RPI
+        paces = self._calculate_training_paces(baseline_rpi)
         
         # Create the plan
         plan = TrainingPlan(
@@ -129,7 +129,7 @@ class ArchetypePlanGenerator:
             plan_start_date=plan_start_date,
             plan_end_date=plan_end_date,
             total_weeks=duration_weeks,
-            baseline_vdot=baseline_vdot,
+            baseline_rpi=baseline_rpi,
             baseline_weekly_volume_km=baseline_volume,
             plan_type=meta["distance"],
             generation_method="archetype",
@@ -190,14 +190,14 @@ class ArchetypePlanGenerator:
         # Fallback to generating a basic plan if no archetype exists
         raise ValueError(f"No archetype available for {distance_type}. Using fallback.")
     
-    def _estimate_vdot(self, athlete_id: UUID) -> float:
-        """Estimate VDOT from recent race times."""
+    def _estimate_rpi(self, athlete_id: UUID) -> float:
+        """Estimate RPI from recent race times."""
         recent_pb = self.db.query(PersonalBest).filter(
             PersonalBest.athlete_id == athlete_id
         ).order_by(PersonalBest.achieved_at.desc()).first()
         
         if recent_pb and recent_pb.distance_meters and recent_pb.time_seconds:
-            # Use Daniels' VDOT estimation
+            # Use Daniels' RPI estimation
             # This is simplified - real implementation uses full tables
             distance_km = recent_pb.distance_meters / 1000
             time_min = recent_pb.time_seconds / 60
@@ -205,9 +205,9 @@ class ArchetypePlanGenerator:
             # Rough estimation
             if 5 <= distance_km <= 42.195:
                 velocity_km_min = distance_km / time_min
-                # Very simplified VDOT approximation
-                vdot = velocity_km_min * 25 + 10
-                return min(max(vdot, 30), 80)
+                # Very simplified RPI approximation
+                rpi = velocity_km_min * 25 + 10
+                return min(max(rpi, 30), 80)
         
         return 45.0  # Default moderate fitness
     
@@ -223,26 +223,26 @@ class ArchetypePlanGenerator:
         
         return (total_distance / 1000) / weeks  # km per week
     
-    def _calculate_training_paces(self, vdot: float) -> Dict[str, int]:
+    def _calculate_training_paces(self, rpi: float) -> Dict[str, int]:
         """
-        Calculate training paces based on VDOT.
+        Calculate training paces based on RPI.
         Returns pace per km in seconds.
         
         Based on Daniels' Running Formula zones.
         """
         # These are approximations of Daniels' tables
-        # VDOT 40 ≈ 6:00/km easy, 5:15/km marathon, 4:50/km threshold
-        # VDOT 50 ≈ 5:00/km easy, 4:25/km marathon, 4:05/km threshold
-        # VDOT 60 ≈ 4:15/km easy, 3:45/km marathon, 3:25/km threshold
+        # RPI 40 ≈ 6:00/km easy, 5:15/km marathon, 4:50/km threshold
+        # RPI 50 ≈ 5:00/km easy, 4:25/km marathon, 4:05/km threshold
+        # RPI 60 ≈ 4:15/km easy, 3:45/km marathon, 3:25/km threshold
         
         # Linear interpolation (simplified)
         # Easy pace
-        if vdot <= 40:
+        if rpi <= 40:
             easy = 360  # 6:00/km
-        elif vdot >= 60:
+        elif rpi >= 60:
             easy = 255  # 4:15/km
         else:
-            easy = 360 - ((vdot - 40) * 5.25)  # ~5.25 sec/km per VDOT point
+            easy = 360 - ((rpi - 40) * 5.25)  # ~5.25 sec/km per RPI point
         
         # Marathon pace (roughly 88% of easy effort, actually uses race prediction)
         marathon = easy * 0.88

@@ -8,7 +8,7 @@ ARCHITECTURE:
 - Modular phase allocation (base/build/sharpen/taper)
 - Dynamic duration based on weeks_to_race
 - Principle synthesis from KB queries
-- VDOT-based workout prescriptions
+- RPI-based workout prescriptions
 """
 
 from typing import Dict, List, Optional, Tuple
@@ -22,7 +22,7 @@ from services.plan_generation import (
     validate_plan_coherence
 )
 from services.blending_heuristics import determine_methodology_blend, get_blending_rationale
-from services.vdot_calculator import calculate_training_paces, calculate_vdot_from_race_time
+from services.rpi_calculator import calculate_training_paces, calculate_rpi_from_race_time
 from services.neutral_terminology import format_workout_description
 
 logger = logging.getLogger(__name__)
@@ -160,7 +160,7 @@ def synthesize_workout_from_principles(
     slot_type: str,
     phase: str,
     methodologies: Dict[str, float],
-    vdot: float,
+    rpi: float,
     week_num: int,
     alternation_focus: Optional[str] = None,
     db_session = None
@@ -172,7 +172,7 @@ def synthesize_workout_from_principles(
         slot_type: Type of workout slot ("quality", "long_run", "easy")
         phase: Current training phase
         methodologies: Methodology blend
-        vdot: Athlete's VDOT
+        rpi: Athlete's RPI
         week_num: Week number (for progression)
         db_session: Database session
         
@@ -209,10 +209,10 @@ def synthesize_workout_from_principles(
         logger.warning(f"No principles found for {slot_type} in {phase}")
         return None
     
-    # Get training paces from VDOT
-    paces = calculate_training_paces(vdot)
+    # Get training paces from RPI
+    paces = calculate_training_paces(rpi)
     if not paces:
-        logger.warning(f"Could not calculate paces for VDOT {vdot}")
+        logger.warning(f"Could not calculate paces for RPI {rpi}")
         return None
     
     # Synthesize workout based on slot type
@@ -354,7 +354,7 @@ def generate_principle_based_plan(
     Args:
         athlete_id: Athlete ID
         goal_distance: Target race distance
-        current_fitness: Current fitness metrics (must include VDOT or recent race time)
+        current_fitness: Current fitness metrics (must include RPI or recent race time)
         diagnostic_signals: Diagnostic signals
         athlete_profile: Athlete characteristics
         weeks_to_race: Weeks until goal race (4-18)
@@ -372,19 +372,19 @@ def generate_principle_based_plan(
         athlete_profile=athlete_profile
     )
     
-    # Step 2: Get VDOT
-    vdot = current_fitness.get("vdot")
-    if not vdot:
+    # Step 2: Get RPI
+    rpi = current_fitness.get("rpi")
+    if not rpi:
         # Try to calculate from recent race time
         recent_race_time = current_fitness.get("recent_race_time_seconds")
         recent_race_distance = current_fitness.get("recent_race_distance_meters")
         if recent_race_time and recent_race_distance:
-            vdot = calculate_vdot_from_race_time(recent_race_distance, recent_race_time)
+            rpi = calculate_rpi_from_race_time(recent_race_distance, recent_race_time)
         
-        if not vdot:
-            # Default VDOT
-            vdot = 50.0
-            logger.warning(f"Using default VDOT {vdot} for athlete {athlete_id}")
+        if not rpi:
+            # Default RPI
+            rpi = 50.0
+            logger.warning(f"Using default RPI {rpi} for athlete {athlete_id}")
     
     # Step 3: Allocate phases
     current_mileage = athlete_profile.get("current_base_mileage", 0) or diagnostic_signals.get("current_weekly_mileage", 0)
@@ -437,7 +437,7 @@ def generate_principle_based_plan(
                     slot_type=slot_type,
                     phase=phase,
                     methodologies=methodologies,
-                    vdot=vdot,
+                    rpi=rpi,
                     week_num=week_num,
                     alternation_focus=alternation_focus if alternation_applied else None,
                     db_session=db_session
@@ -446,7 +446,7 @@ def generate_principle_based_plan(
                 # Fallback if no principles found
                 if not workout:
                     # Generate default workout based on slot type
-                    paces = calculate_training_paces(vdot) or {}
+                    paces = calculate_training_paces(rpi) or {}
                     if slot_type == "easy":
                         workout = {
                             "workout_type": "easy_run",
@@ -518,7 +518,7 @@ def generate_principle_based_plan(
             "alternation_applied": alternation_applied,
             "alternation_rationale": alternation_rationale,
             "phase_allocation": phase_allocation,
-            "vdot_used": vdot
+            "rpi_used": rpi
         },
         "rationale": f"Principle-based plan generated for {weeks_to_race} weeks using blended methodologies",
         "_internal": {

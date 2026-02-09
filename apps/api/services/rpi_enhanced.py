@@ -7,18 +7,18 @@ Provides comprehensive fitness score calculations with:
 - Equivalent tab: Equivalent race times for all standard distances
 
 Based on publicly available formulas from Dr. Jack Daniels' research.
-Not affiliated with VDOT O2 or The Run SMART Project.
+Not affiliated with RPI O2 or The Run SMART Project.
 """
 
 from typing import Dict, List, Optional
-from services.vdot_calculator import (
-    calculate_vdot_from_race_time,
+from services.rpi_calculator import (
+    calculate_rpi_from_race_time,
     STANDARD_DISTANCES,
     _get_distance_name,
     calculate_equivalent_race_time
 )
-from services.vdot_lookup import (
-    get_training_paces_from_vdot,
+from services.rpi_lookup import (
+    get_training_paces_from_rpi,
     get_equivalent_race_times
 )
 
@@ -29,7 +29,7 @@ INTERVAL_DISTANCES = {
 }
 
 
-def calculate_race_paces(vdot: float, input_distance_m: float, input_time_seconds: int) -> List[Dict]:
+def calculate_race_paces(rpi: float, input_distance_m: float, input_time_seconds: int) -> List[Dict]:
     """
     Calculate race paces for different distances (Race Paces tab).
     
@@ -39,7 +39,7 @@ def calculate_race_paces(vdot: float, input_distance_m: float, input_time_second
     race_paces = []
     
     # Get equivalent race times for standard distances
-    equivalent = get_equivalent_race_times(vdot, use_closest_integer=True)
+    equivalent = get_equivalent_race_times(rpi, use_closest_integer=True)
     
     # Distances to show in Race Paces tab (in order)
     race_pace_distances = [
@@ -51,12 +51,12 @@ def calculate_race_paces(vdot: float, input_distance_m: float, input_time_second
     ]
     
     # Get training paces for pace calculations
-    training_paces = get_training_paces_from_vdot(vdot, use_closest_integer=True)
+    training_paces = get_training_paces_from_rpi(rpi, use_closest_integer=True)
     
     # Fallback to embedded calculator if database lookup fails
     if not training_paces:
-        from services.vdot_calculator import calculate_training_paces
-        calc_paces = calculate_training_paces(vdot)
+        from services.rpi_calculator import calculate_training_paces
+        calc_paces = calculate_training_paces(rpi)
         if calc_paces:
             training_paces = {
                 "i_pace_seconds": calc_paces.get("interval_pace"),
@@ -75,8 +75,8 @@ def calculate_race_paces(vdot: float, input_distance_m: float, input_time_second
         
         # For other distances, calculate from equivalent race time function
         if not time_seconds:
-            from services.vdot_calculator import calculate_equivalent_race_time
-            equiv_result = calculate_equivalent_race_time(vdot, distance_m)
+            from services.rpi_calculator import calculate_equivalent_race_time
+            equiv_result = calculate_equivalent_race_time(rpi, distance_m)
             if equiv_result:
                 time_seconds = equiv_result.get("time_seconds")
                 time_formatted = equiv_result.get("time_formatted")
@@ -85,7 +85,7 @@ def calculate_race_paces(vdot: float, input_distance_m: float, input_time_second
         if not time_seconds and training_paces:
             i_pace_seconds = training_paces.get("i_pace_seconds")
             if i_pace_seconds:
-                # Distance-specific pace factors (based on vdoto2.com patterns)
+                # Distance-specific pace factors (based on rpio2.com patterns)
                 distance_miles = distance_m / 1609.34
                 if distance_miles <= 0.25:  # 400m
                     factor = 0.85
@@ -125,9 +125,9 @@ def calculate_race_paces(vdot: float, input_distance_m: float, input_time_second
     return race_paces
 
 
-def calculate_training_paces_enhanced(vdot: float) -> Dict:
+def calculate_training_paces_enhanced(rpi: float) -> Dict:
     """
-    Calculate comprehensive training paces matching vdoto2.com format.
+    Calculate comprehensive training paces matching rpio2.com format.
     
     Returns:
     - Per mile/km paces (with Easy pace range)
@@ -135,12 +135,12 @@ def calculate_training_paces_enhanced(vdot: float) -> Dict:
     - Shorter intervals (400m, 300m, 200m)
     """
     # Try database lookup first
-    training_paces = get_training_paces_from_vdot(vdot, use_closest_integer=True)
+    training_paces = get_training_paces_from_rpi(rpi, use_closest_integer=True)
     
     # Fallback to embedded calculator if database lookup fails
     if not training_paces:
-        from services.vdot_calculator import calculate_training_paces
-        calc_paces = calculate_training_paces(vdot)
+        from services.rpi_calculator import calculate_training_paces
+        calc_paces = calculate_training_paces(rpi)
         if calc_paces:
             # Map the calculator output to the expected format
             # Easy pace uses FAST end as boundary ("X:XX or slower")
@@ -271,7 +271,7 @@ def calculate_training_paces_enhanced(vdot: float) -> Dict:
     return result
 
 
-def calculate_equivalent_races_enhanced(vdot: float) -> List[Dict]:
+def calculate_equivalent_races_enhanced(rpi: float) -> List[Dict]:
     """
     Calculate equivalent race times for all standard distances.
     
@@ -298,7 +298,7 @@ def calculate_equivalent_races_enhanced(vdot: float) -> List[Dict]:
     
     for name, distance_m in distances:
         # Calculate using Daniels formula (no lookup dependency)
-        equiv_result = calculate_equivalent_race_time(vdot, distance_m)
+        equiv_result = calculate_equivalent_race_time(rpi, distance_m)
         
         if equiv_result:
             equivalent_races.append({
@@ -313,20 +313,20 @@ def calculate_equivalent_races_enhanced(vdot: float) -> List[Dict]:
     return equivalent_races
 
 
-def calculate_vdot_enhanced(distance_meters: float, time_seconds: int) -> Dict:
+def calculate_rpi_enhanced(distance_meters: float, time_seconds: int) -> Dict:
     """
-    Enhanced VDOT calculator matching vdoto2.com functionality.
+    Enhanced RPI calculator matching rpio2.com functionality.
     
     Returns comprehensive data structure with three tabs:
     1. Race Paces: Paces for different distances
     2. Training: Training paces with ranges and interval distances
     3. Equivalent: Equivalent race times for all distances
     """
-    # Calculate VDOT
-    vdot = calculate_vdot_from_race_time(distance_meters, time_seconds)
+    # Calculate RPI
+    rpi = calculate_rpi_from_race_time(distance_meters, time_seconds)
     
-    if vdot is None:
-        return {"error": "Could not calculate VDOT"}
+    if rpi is None:
+        return {"error": "Could not calculate RPI"}
     
     # Format input race time
     hours = time_seconds // 3600
@@ -348,9 +348,9 @@ def calculate_vdot_enhanced(distance_meters: float, time_seconds: int) -> Dict:
     return {
         # RPI (Running Performance Index) - our measure of running performance
         # Calculated using Daniels/Gilbert oxygen cost equations
-        "rpi": round(vdot, 1),
-        "fitness_score": round(vdot, 1),  # Backward compatibility
-        "vdot": round(vdot, 1),  # Backward compatibility
+        "rpi": round(rpi, 1),
+        "fitness_score": round(rpi, 1),  # Backward compatibility
+        "rpi": round(rpi, 1),  # Backward compatibility
         "input": {
             "distance_m": distance_meters,
             "distance_name": _get_distance_name(distance_meters),
@@ -358,7 +358,7 @@ def calculate_vdot_enhanced(distance_meters: float, time_seconds: int) -> Dict:
             "time_formatted": race_time_formatted,
             "pace_mi": input_pace_mi,
         },
-        "race_paces": calculate_race_paces(vdot, distance_meters, time_seconds),
-        "training": calculate_training_paces_enhanced(vdot),
-        "equivalent": calculate_equivalent_races_enhanced(vdot),
+        "race_paces": calculate_race_paces(rpi, distance_meters, time_seconds),
+        "training": calculate_training_paces_enhanced(rpi),
+        "equivalent": calculate_equivalent_races_enhanced(rpi),
     }

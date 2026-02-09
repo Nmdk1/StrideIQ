@@ -224,7 +224,7 @@ def _maybe_compute_and_persist_training_paces_from_goals(
 
     Trust contract:
     - Race/time-trial result only (no inference from training data).
-    - Does NOT mutate Athlete.vdot/threshold pace columns (safety).
+    - Does NOT mutate Athlete.rpi/threshold pace columns (safety).
     - Best-effort: failures should not block onboarding progression.
     """
     if not isinstance(responses, dict):

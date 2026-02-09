@@ -223,10 +223,10 @@ Docker Compose derives volume names from the project name, which defaults to the
 
 **Issue:** Calculator regressed to using copyrighted Daniels lookup tables instead of physics-based formulas. This has happened 3+ times.
 
-**Root cause:** `LOOKUP_AVAILABLE = True` was importing `vdot_lookup.py`
+**Root cause:** `LOOKUP_AVAILABLE = True` was importing `rpi_lookup.py`
 
 **Fix applied:**
-1. Set `LOOKUP_AVAILABLE = False` in `vdot_calculator.py`
+1. Set `LOOKUP_AVAILABLE = False` in `rpi_calculator.py`
 2. Updated docstring with clear "DO NOT RE-ENABLE" warning
 3. Added regression test that will FAIL if lookup is re-enabled
 4. Updated test expectations to match physics formula output

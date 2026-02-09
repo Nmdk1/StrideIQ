@@ -53,7 +53,7 @@ try:
         plan_start_date=plan.weeks[0].start_date,
         plan_end_date=race_date,  # Use race date as end date
         total_weeks=plan.total_weeks,
-        baseline_vdot=plan.bank.best_vdot if hasattr(plan, 'bank') else 50.0,
+        baseline_rpi=plan.bank.best_rpi if hasattr(plan, 'bank') else 50.0,
         baseline_weekly_volume_km=plan.bank.current_weekly_miles * 1.60934 if hasattr(plan, 'bank') else 100.0,
         plan_type='marathon',
         generation_method='constraint_aware'

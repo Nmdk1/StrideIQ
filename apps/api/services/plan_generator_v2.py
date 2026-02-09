@@ -6,7 +6,7 @@ Designed for review before production deployment.
 
 Philosophy:
 - Templates define structure, generator fills content
-- Paces are calculated from athlete VDOT or defaults
+- Paces are calculated from athlete RPI or defaults
 - Age adjustments apply to paces, not structure (until 60+)
 - 80/20 intensity distribution is sacred
 """
@@ -59,25 +59,25 @@ class TrainingPaces:
     interval: float
     
     @classmethod
-    def from_vdot(cls, vdot: float) -> "TrainingPaces":
-        """Calculate training paces from VDOT."""
+    def from_rpi(cls, rpi: float) -> "TrainingPaces":
+        """Calculate training paces from RPI."""
         # Daniels' formulas (simplified)
         # These are approximate - real implementation uses lookup tables
         
         # Easy: ~65-75% VO2max
-        easy = 14.5 - (vdot * 0.1)
+        easy = 14.5 - (rpi * 0.1)
         recovery = easy + 0.5
         long_run = easy + 0.25
         
         # Marathon: ~80% VO2max
-        marathon = 12.5 - (vdot * 0.1)
+        marathon = 12.5 - (rpi * 0.1)
         
         # Tempo/Threshold: ~88% VO2max
-        tempo = 11.0 - (vdot * 0.1)
+        tempo = 11.0 - (rpi * 0.1)
         threshold = tempo - 0.15
         
         # Interval: ~95-100% VO2max
-        interval = 9.5 - (vdot * 0.1)
+        interval = 9.5 - (rpi * 0.1)
         
         return cls(
             easy=max(6.0, min(15.0, easy)),
@@ -211,7 +211,7 @@ class PlanGenerator:
         days_per_week: int,
         duration_weeks: int,
         target_weekly_miles: Optional[float] = None,
-        vdot: Optional[float] = None,
+        rpi: Optional[float] = None,
         race_date: Optional[date] = None,
         athlete_age: Optional[int] = None,
     ) -> GeneratedPlan:
@@ -224,7 +224,7 @@ class PlanGenerator:
             days_per_week: 4, 5, 6, or 7
             duration_weeks: 12 or 18
             target_weekly_miles: Peak weekly mileage (optional)
-            vdot: Athlete's VDOT for pace calculation (optional)
+            rpi: Athlete's RPI for pace calculation (optional)
             race_date: Target race date (optional)
             athlete_age: For recovery adjustments (optional)
         """
@@ -246,8 +246,8 @@ class PlanGenerator:
             raise ValueError(f"{archetype_id} supports {supported} week plans, not {duration_weeks}")
         
         # Calculate paces
-        if vdot:
-            paces = TrainingPaces.from_vdot(vdot)
+        if rpi:
+            paces = TrainingPaces.from_rpi(rpi)
         else:
             paces = TrainingPaces.default_by_mileage(MileageLevel(mileage_level))
         
@@ -327,7 +327,7 @@ class PlanGenerator:
             meta={
                 "generated_at": date.today().isoformat(),
                 "archetype": archetype_id,
-                "vdot": vdot,
+                "rpi": rpi,
                 "target_weekly_miles": target_weekly_miles,
             }
         )

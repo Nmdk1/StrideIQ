@@ -44,7 +44,7 @@ interface PlanDetail {
   total_weeks: number;
   start_date: string | null;
   end_date: string | null;
-  baseline_vdot: number | null;
+  baseline_rpi: number | null;
   weeks: Record<string, PlannedWorkout[]>;
 }
 
@@ -151,9 +151,9 @@ export default function PlanOverviewPage() {
                   <span className="px-2 py-1 bg-blue-600/30 text-blue-300 rounded text-xs">
                     {plan.total_weeks} weeks
                   </span>
-                  {plan.baseline_vdot && (
+                  {plan.baseline_rpi && (
                     <span className="px-2 py-1 bg-orange-600/30 text-orange-300 rounded text-xs">
-                      Fitness Index {plan.baseline_vdot}
+                      Fitness Index {plan.baseline_rpi}
                     </span>
                   )}
                     <span className={`px-2 py-1 rounded text-xs ${

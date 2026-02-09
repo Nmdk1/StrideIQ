@@ -74,27 +74,27 @@ def _call_ai(prompt: str, model_preference: str = "claude") -> Optional[str]:
     return None
 
 
-def extract_vdot_formula(text: str) -> Optional[Dict]:
+def extract_rpi_formula(text: str) -> Optional[Dict]:
     """
-    Extract VDOT formula and pace tables from text.
+    Extract RPI formula and pace tables from text.
     
     Returns:
-        Dictionary with VDOT formula, pace tables, and training zones
+        Dictionary with RPI formula, pace tables, and training zones
     """
-    prompt = f"""Extract VDOT (Jack Daniels' Running Formula) information from this text.
+    prompt = f"""Extract RPI (Jack Daniels' Running Formula) information from this text.
 
 Focus on:
-1. VDOT calculation formula
+1. RPI calculation formula
 2. Training pace tables (E, M, T, I, R paces)
-3. VDOT-to-pace conversion tables
+3. RPI-to-pace conversion tables
 4. Training zone definitions
 
 Return as JSON with structure:
 {{
-    "vdot_formula": "formula description",
+    "rpi_formula": "formula description",
     "pace_tables": {{"E": "...", "M": "...", "T": "...", "I": "...", "R": "..."}},
     "training_zones": {{"description": "...", "heart_rate_ranges": "..."}},
-    "vdot_to_pace": "conversion method"
+    "rpi_to_pace": "conversion method"
 }}
 
 Text excerpt:
@@ -115,7 +115,7 @@ Text excerpt:
         else:
             return {"extracted_text": response}
     except Exception as e:
-        logger.error(f"Error parsing VDOT extraction: {e}")
+        logger.error(f"Error parsing RPI extraction: {e}")
         return {"extracted_text": response}
 
 

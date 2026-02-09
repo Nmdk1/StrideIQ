@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Calibrate VDOT Formula Against Reference Values
+Calibrate RPI Formula Against Reference Values
 
-Tests VDOT formula accuracy and adjusts if needed to match reference values.
+Tests RPI formula accuracy and adjusts if needed to match reference values.
 """
 import sys
 import math
@@ -10,18 +10,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from services.vdot_lookup import calculate_vdot_from_race_time_lookup
+from services.rpi_lookup import calculate_rpi_from_race_time_lookup
 
-# Reference test cases: race time -> expected VDOT
+# Reference test cases: race time -> expected RPI
 REFERENCE_CASES = [
-    {"distance_m": 5000, "time_s": 1200, "expected_vdot": 50.0},  # 5K in 20:00
-    {"distance_m": 5000, "time_s": 1080, "expected_vdot": 55.0},  # 5K in 18:00
-    {"distance_m": 10000, "time_s": 2400, "expected_vdot": 50.0},  # 10K in 40:00
-    {"distance_m": 42195, "time_s": 11220, "expected_vdot": 50.0},  # Marathon in 3:07:00
+    {"distance_m": 5000, "time_s": 1200, "expected_rpi": 50.0},  # 5K in 20:00
+    {"distance_m": 5000, "time_s": 1080, "expected_rpi": 55.0},  # 5K in 18:00
+    {"distance_m": 10000, "time_s": 2400, "expected_rpi": 50.0},  # 10K in 40:00
+    {"distance_m": 42195, "time_s": 11220, "expected_rpi": 50.0},  # Marathon in 3:07:00
 ]
 
-def calculate_vdot_formula(distance_meters: float, time_seconds: int) -> float:
-    """Calculate VDOT using the formula."""
+def calculate_rpi_formula(distance_meters: float, time_seconds: int) -> float:
+    """Calculate RPI using the formula."""
     velocity_m_per_min = (distance_meters / time_seconds) * 60
     time_minutes = time_seconds / 60.0
     
@@ -32,25 +32,25 @@ def calculate_vdot_formula(distance_meters: float, time_seconds: int) -> float:
     
     return numerator / denominator
 
-def find_vdot_adjustment():
-    """Find if VDOT formula needs adjustment."""
+def find_rpi_adjustment():
+    """Find if RPI formula needs adjustment."""
     print("=" * 60)
-    print("VDOT FORMULA CALIBRATION")
+    print("RPI FORMULA CALIBRATION")
     print("=" * 60)
     
-    print("\nTesting VDOT formula accuracy:")
+    print("\nTesting RPI formula accuracy:")
     print("-" * 60)
     
     adjustments = []
     
     for case in REFERENCE_CASES:
-        calculated = calculate_vdot_formula(case["distance_m"], case["time_s"])
-        expected = case["expected_vdot"]
+        calculated = calculate_rpi_formula(case["distance_m"], case["time_s"])
+        expected = case["expected_rpi"]
         diff = calculated - expected
         adjustment_factor = expected / calculated if calculated > 0 else 1.0
         
         print(f"\n{case['distance_m']/1000:.1f}K in {case['time_s']//60}:{case['time_s']%60:02d}:")
-        print(f"  Expected VDOT: {expected}")
+        print(f"  Expected RPI: {expected}")
         print(f"  Calculated: {calculated:.2f}")
         print(f"  Difference: {diff:+.2f}")
         print(f"  Adjustment factor: {adjustment_factor:.4f}")
@@ -71,5 +71,5 @@ def find_vdot_adjustment():
     print(f"If significantly different, may need formula correction.")
 
 if __name__ == "__main__":
-    find_vdot_adjustment()
+    find_rpi_adjustment()
 

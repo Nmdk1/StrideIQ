@@ -242,17 +242,17 @@ if not verify_webhook_signature(body_str, signature):
 
 ---
 
-### 1.3 Add Auth to knowledge.py VDOT Endpoints
+### 1.3 Add Auth to knowledge.py RPI Endpoints
 
 **File:** `apps/api/routers/knowledge.py`
 
-For VDOT endpoints that accept `athlete_id`:
+For RPI endpoints that accept `athlete_id`:
 - If `athlete_id` is provided, require auth and verify ownership
-- If `athlete_id` is not provided, return public VDOT info (no auth needed)
+- If `athlete_id` is not provided, return public RPI info (no auth needed)
 
 ```python
-@router.get("/vdot/formula")
-def get_vdot_formula(
+@router.get("/rpi/formula")
+def get_rpi_formula(
     athlete_id: Optional[UUID] = None,
     current_user: Optional[Athlete] = Depends(get_optional_user),  # Optional auth
     db: Session = Depends(get_db)
@@ -262,9 +262,9 @@ def get_vdot_formula(
             raise HTTPException(status_code=401, detail="Authentication required")
         if athlete_id != current_user.id:
             raise HTTPException(status_code=403, detail="Access denied")
-        # Return athlete-specific VDOT
+        # Return athlete-specific RPI
     else:
-        # Return generic VDOT formula
+        # Return generic RPI formula
 ```
 
 ---

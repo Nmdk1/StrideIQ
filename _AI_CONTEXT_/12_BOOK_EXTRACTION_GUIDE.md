@@ -69,7 +69,7 @@ The extraction script automatically stores extracted principles in the database.
 
 ### Priority 1: Core Books (Start Here)
 1. **Daniels' Running Formula (4th Edition)** - EPUB from Human Kinetics
-   - Contains VDOT formula and pace tables
+   - Contains RPI formula and pace tables
    - Core training principles
    - **Action:** Purchase EPUB, extract immediately
 
@@ -194,7 +194,7 @@ docker compose cp daniels_running_formula.epub running_app_api:/app/books/
 
 ### From Each Book:
 
-1. **VDOT Formula** (if present)
+1. **RPI Formula** (if present)
    - Calculation method
    - Pace tables
    - Training pace formulas
@@ -217,7 +217,7 @@ docker compose cp daniels_running_formula.epub running_app_api:/app/books/
    - Verify accuracy
    - Refine if needed
 
-2. **Update VDOT Calculator**
+2. **Update RPI Calculator**
    - Replace approximations with exact formulas
    - Test against reference calculator
 

@@ -10,7 +10,7 @@ Accepted
 
 The Training Pace Calculator has multiple issues:
 
-1. **Accuracy issues**: The fallback formulas in `vdot_calculator.py` were producing wildly incorrect values (26:16/mi for easy pace instead of ~8:00/mi). This was fixed with regression-based formulas, but needs comprehensive verification.
+1. **Accuracy issues**: The fallback formulas in `rpi_calculator.py` were producing wildly incorrect values (26:16/mi for easy pace instead of ~8:00/mi). This was fixed with regression-based formulas, but needs comprehensive verification.
 
 2. **Accessibility**: The pace calculator should be available to ALL users (free and paid) as a value-add tool that builds trust and demonstrates our expertise.
 
@@ -21,7 +21,7 @@ The Training Pace Calculator has multiple issues:
 ### 1. Calculator Accuracy
 
 Implement comprehensive verification against Daniels' Running Formula tables:
-- Test VDOT values 30-70 (covers recreational to elite runners)
+- Test RPI values 30-70 (covers recreational to elite runners)
 - Verify all pace types: Easy, Marathon, Threshold, Interval, Repetition
 - Maximum acceptable variance: ±5 seconds per mile from published tables
 - Create automated test suite that validates against known values
@@ -31,7 +31,7 @@ Implement comprehensive verification against Daniels' Running Formula tables:
 The pace calculator becomes available to ALL users:
 - No authentication required to use the calculator
 - Located at `/tools/pace-calculator` (or similar)
-- Full functionality: race time input, VDOT calculation, all training paces
+- Full functionality: race time input, RPI calculation, all training paces
 - Serves as a lead generation tool and demonstrates product quality
 
 ### 3. In-App Tool Access
@@ -63,7 +63,7 @@ Authenticated users access tools within the app:
 
 ### Daniels' Table Reference Values (sample)
 
-| VDOT | Easy (slow) | Marathon | Threshold | Interval | Rep |
+| RPI | Easy (slow) | Marathon | Threshold | Interval | Rep |
 |------|-------------|----------|-----------|----------|-----|
 | 35 | 11:00 | 10:26 | 9:36 | 8:42 | 8:03 |
 | 40 | 10:32 | 8:53 | 8:12 | 7:27 | 6:54 |
@@ -76,7 +76,7 @@ Authenticated users access tools within the app:
 
 ### Test Cases for Race Times
 
-| Race | Time | Expected VDOT |
+| Race | Time | Expected RPI |
 |------|------|---------------|
 | 5K | 20:00 | ~50 |
 | 5K | 25:00 | ~40 |
@@ -94,7 +94,7 @@ Authenticated users access tools within the app:
 
 ## Testing Requirements
 
-1. **Unit tests**: VDOT calculation accuracy across full range
+1. **Unit tests**: RPI calculation accuracy across full range
 2. **Unit tests**: Training pace accuracy for each pace type
 3. **Integration tests**: End-to-end calculator flow
 4. **Accessibility**: Calculator works for unauthenticated and authenticated users

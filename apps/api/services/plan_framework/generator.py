@@ -79,7 +79,7 @@ class GeneratedPlan:
     
     # Athlete info (if personalized)
     athlete_id: Optional[UUID]
-    vdot: Optional[float]
+    rpi: Optional[float]
     
     # Plan dates
     start_date: Optional[date]
@@ -118,7 +118,7 @@ class GeneratedPlan:
             "volume_tier": self.volume_tier,
             "days_per_week": self.days_per_week,
             "athlete_id": str(self.athlete_id) if self.athlete_id else None,
-            "vdot": self.vdot,
+            "rpi": self.rpi,
             "start_date": self.start_date.isoformat() if self.start_date else None,
             "end_date": self.end_date.isoformat() if self.end_date else None,
             "race_date": self.race_date.isoformat() if self.race_date else None,
@@ -275,7 +275,7 @@ class PlanGenerator:
             volume_tier=tier,
             days_per_week=days_per_week,
             athlete_id=None,
-            vdot=None,
+            rpi=None,
             start_date=start_date,
             end_date=start_date + timedelta(weeks=duration_weeks) if start_date else None,
             race_date=start_date + timedelta(weeks=duration_weeks - 1, days=6) if start_date else None,
@@ -318,14 +318,14 @@ class PlanGenerator:
         
         # Calculate paces if race time provided
         paces = None
-        vdot = None
+        rpi = None
         if recent_race_distance and recent_race_time_seconds:
             paces = self.pace_engine.calculate_from_race(
                 distance=recent_race_distance,
                 time_seconds=recent_race_time_seconds
             )
             if paces:
-                vdot = paces.vdot
+                rpi = paces.rpi
         
         # Calculate start date from race date
         start_date = race_date - timedelta(weeks=duration_weeks - 1, days=6)
@@ -373,7 +373,7 @@ class PlanGenerator:
             volume_tier=tier.value,
             days_per_week=days_per_week,
             athlete_id=athlete_id,
-            vdot=vdot,
+            rpi=rpi,
             start_date=start_date,
             end_date=race_date,
             race_date=race_date,
@@ -460,7 +460,7 @@ class PlanGenerator:
         # 1. User-provided race time (allows aspirational paces)
         # 2. Strava race activities
         # 3. Strava training estimate (conservative)
-        vdot = None
+        rpi = None
         paces = None
         pace_source = None
         
@@ -471,9 +471,9 @@ class PlanGenerator:
                 time_seconds=recent_race_time_seconds
             )
             if paces:
-                vdot = paces.vdot
+                rpi = paces.rpi
                 pace_source = "user_input"
-                logger.info(f"Calculated VDOT from user input: {vdot:.1f}")
+                logger.info(f"Calculated RPI from user input: {rpi:.1f}")
         
         # Priority 2: Strava race activities
         if not paces:
@@ -494,9 +494,9 @@ class PlanGenerator:
                         time_seconds=race_time
                     )
                     if paces:
-                        vdot = paces.vdot
+                        rpi = paces.rpi
                         pace_source = "strava_race"
-                        logger.info(f"Calculated VDOT from Strava race: {vdot:.1f}")
+                        logger.info(f"Calculated RPI from Strava race: {rpi:.1f}")
         
         # Priority 3: Strava training estimate (conservative)
         if not paces and recent_activities:
@@ -507,9 +507,9 @@ class PlanGenerator:
                     time_seconds=best_run.moving_time_s
                 )
                 if paces:
-                    vdot = paces.vdot * 0.95  # Conservative estimate from training
+                    rpi = paces.rpi * 0.95  # Conservative estimate from training
                     pace_source = "strava_training"
-                    logger.info(f"Estimated VDOT from Strava training: {vdot:.1f}")
+                    logger.info(f"Estimated RPI from Strava training: {rpi:.1f}")
         
         if pace_source:
             logger.info(f"Pace source for plan: {pace_source}")
@@ -565,7 +565,7 @@ class PlanGenerator:
             volume_tier=tier.value,
             days_per_week=days_per_week,
             athlete_id=athlete_id,
-            vdot=vdot,
+            rpi=rpi,
             start_date=start_date,
             end_date=race_date,
             race_date=race_date,

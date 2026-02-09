@@ -35,7 +35,7 @@ class VerificationResult:
 
 
 def create_test_bank(
-    vdot: float = 50,
+    rpi: float = 50,
     experience: ExperienceLevel = ExperienceLevel.EXPERIENCED,
     peak_weekly: float = 50,
     peak_long: float = 18,
@@ -46,7 +46,7 @@ def create_test_bank(
     from unittest.mock import MagicMock
     
     bank = MagicMock(spec=FitnessBank)
-    bank.best_vdot = vdot
+    bank.best_rpi = rpi
     bank.experience_level = experience
     bank.peak_weekly_miles = peak_weekly
     bank.peak_long_run_miles = peak_long

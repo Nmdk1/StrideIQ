@@ -9,17 +9,17 @@
 ## What Was Accomplished
 
 ### 1. RPI Terminology Fix (COMPLETE)
-Replaced trademarked term "VDOT" with "RPI" (Running Performance Index) throughout the Coach AI:
+Replaced trademarked term "RPI" with "RPI" (Running Performance Index) throughout the Coach AI:
 
 **Files Modified:**
-- `apps/api/services/ai_coach.py` - Added explicit "NEVER say VDOT" instructions to 3 system prompt locations (lines 183, 694, 2127)
-- `apps/api/services/coach_tools.py` - Changed tool response payloads to include both `"rpi"` and `"vdot"` keys for backward compatibility
+- `apps/api/services/ai_coach.py` - Added explicit "NEVER say RPI" instructions to 3 system prompt locations (lines 183, 694, 2127)
+- `apps/api/services/coach_tools.py` - Changed tool response payloads to include both `"rpi"` and `"rpi"` keys for backward compatibility
 - `apps/web/app/components/tools/VDOTCalculator.tsx` → Renamed to `TrainingPaceCalculator.tsx`
 - `apps/web/app/tools/page.tsx` and `apps/web/app/components/FreeTools.tsx` - Updated imports
 
 **Testing:** All 1326 backend tests pass, 3 skipped.
 
-**Production Status:** Code deployed. However, the Coach AI may still say "VDOT" due to cached OpenAI thread history. To force new behavior:
+**Production Status:** Code deployed. However, the Coach AI may still say "RPI" due to cached OpenAI thread history. To force new behavior:
 ```sql
 UPDATE athlete SET coach_thread_id = NULL WHERE email = 'owner-email@example.com';
 ```
@@ -114,7 +114,7 @@ git pull && docker compose -f docker-compose.prod.yml up -d --build api
 -- Clear your thread to get fresh Coach behavior
 UPDATE athlete SET coach_thread_id = NULL WHERE email = 'your-email';
 ```
-Then ask Coach "what is my threshold pace?" - should say "RPI" not "VDOT".
+Then ask Coach "what is my threshold pace?" - should say "RPI" not "RPI".
 
 **Check test user count:**
 ```bash

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""View extracted VDOT data from knowledge base."""
+"""View extracted RPI data from knowledge base."""
 import sys
 import json
 from pathlib import Path
@@ -13,17 +13,17 @@ def main():
     db = get_db_sync()
     try:
         entry = db.query(CoachingKnowledgeEntry).filter(
-            CoachingKnowledgeEntry.principle_type == "vdot_exact"
+            CoachingKnowledgeEntry.principle_type == "rpi_exact"
         ).first()
         
         if not entry:
-            print("❌ No VDOT extraction found")
+            print("❌ No RPI extraction found")
             return
         
         data = json.loads(entry.extracted_principles) if entry.extracted_principles else {}
         
         print("=" * 60)
-        print("EXTRACTED VDOT DATA SUMMARY")
+        print("EXTRACTED RPI DATA SUMMARY")
         print("=" * 60)
         
         formulas = data.get("formulas", {})
@@ -48,7 +48,7 @@ def main():
         
         equivalent = data.get("equivalent_tables", {})
         print(f"\n⏱️ EQUIVALENT PERFORMANCE TABLES:")
-        print(f"  VDOT to race times: {len(equivalent.get('vdot_to_race_times', []))}")
+        print(f"  RPI to race times: {len(equivalent.get('rpi_to_race_times', []))}")
         print(f"  Equivalent performances: {len(equivalent.get('equivalent_performances', []))}")
         
         zones = data.get("zone_formulas", {})

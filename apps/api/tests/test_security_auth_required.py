@@ -190,22 +190,22 @@ class TestV1ActivityModificationAuthRequired:
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
 
 
-class TestKnowledgeVdotAuthRequired:
-    """Test that VDOT endpoints with athlete_id require authentication."""
+class TestKnowledgeRpiAuthRequired:
+    """Test that RPI endpoints with athlete_id require authentication."""
     
-    def test_vdot_formula_with_athlete_id_requires_auth(self):
-        """GET /v1/knowledge/vdot/formula?athlete_id=X should return 401 without auth."""
-        response = client.get(f"/v1/knowledge/vdot/formula?athlete_id={uuid4()}")
+    def test_rpi_formula_with_athlete_id_requires_auth(self):
+        """GET /v1/knowledge/rpi/formula?athlete_id=X should return 401 without auth."""
+        response = client.get(f"/v1/knowledge/rpi/formula?athlete_id={uuid4()}")
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
     
-    def test_vdot_pace_tables_with_athlete_id_requires_auth(self):
-        """GET /v1/knowledge/vdot/pace-tables?athlete_id=X should return 401 without auth."""
-        response = client.get(f"/v1/knowledge/vdot/pace-tables?athlete_id={uuid4()}")
+    def test_rpi_pace_tables_with_athlete_id_requires_auth(self):
+        """GET /v1/knowledge/rpi/pace-tables?athlete_id=X should return 401 without auth."""
+        response = client.get(f"/v1/knowledge/rpi/pace-tables?athlete_id={uuid4()}")
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
     
-    def test_vdot_formula_requires_auth(self):
-        """GET /v1/knowledge/vdot/formula requires auth - knowledge base is protected."""
-        response = client.get("/v1/knowledge/vdot/formula")
+    def test_rpi_formula_requires_auth(self):
+        """GET /v1/knowledge/rpi/formula requires auth - knowledge base is protected."""
+        response = client.get("/v1/knowledge/rpi/formula")
         # SECURITY FIX: Knowledge base now requires authentication
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
 

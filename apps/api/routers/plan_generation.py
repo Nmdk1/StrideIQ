@@ -128,7 +128,7 @@ class PlanPreview(BaseModel):
     volume_tier: str
     days_per_week: int
     
-    vdot: Optional[float]
+    rpi: Optional[float]
     
     start_date: Optional[date]
     end_date: Optional[date]
@@ -384,7 +384,7 @@ async def create_semi_custom_plan(
         "success": True,
         "plan_id": str(saved_plan.id),
         "message": f"Created personalized {duration_weeks}-week {request.distance} plan",
-        "vdot": plan.vdot,
+        "rpi": plan.rpi,
     }
 
 
@@ -444,7 +444,7 @@ async def create_custom_plan(
         "success": True,
         "plan_id": str(saved_plan.id),
         "message": f"Created fully custom {plan.duration_weeks}-week {request.distance} plan",
-        "vdot": plan.vdot,
+        "rpi": plan.rpi,
         "detected_weekly_miles": plan.weekly_volumes[0] if plan.weekly_volumes else None,
         "peak_miles": plan.peak_volume,
     }
@@ -493,7 +493,7 @@ def _plan_to_preview(plan: GeneratedPlan) -> PlanPreview:
         duration_weeks=plan.duration_weeks,
         volume_tier=plan.volume_tier,
         days_per_week=plan.days_per_week,
-        vdot=plan.vdot,
+        rpi=plan.rpi,
         start_date=plan.start_date,
         end_date=plan.end_date,
         race_date=plan.race_date,
@@ -568,7 +568,7 @@ def _save_plan(
         plan_start_date=plan.start_date,
         plan_end_date=plan.end_date or plan.race_date,
         total_weeks=plan.duration_weeks,
-        baseline_vdot=plan.vdot,
+        baseline_rpi=plan.rpi,
         baseline_weekly_volume_km=(plan.weekly_volumes[0] * 1.609) if plan.weekly_volumes else None,
         plan_type=plan.distance,
         generation_method="framework_v2",
@@ -646,7 +646,7 @@ def _save_model_driven_plan(
         plan_start_date=plan.weeks[0].start_date if plan.weeks else None,
         plan_end_date=plan.race_date,
         total_weeks=plan.total_weeks,
-        baseline_vdot=plan.prediction.projected_vdot if plan.prediction else None,
+        baseline_rpi=plan.prediction.projected_rpi if plan.prediction else None,
         plan_type=plan.race_distance,
         generation_method="model_driven",
     )
@@ -1033,7 +1033,7 @@ async def get_plan(
         "total_weeks": plan.total_weeks,
         "start_date": plan.plan_start_date.isoformat() if plan.plan_start_date else None,
         "end_date": plan.plan_end_date.isoformat() if plan.plan_end_date else None,
-        "baseline_vdot": plan.baseline_vdot,
+        "baseline_rpi": plan.baseline_rpi,
         "weeks": weeks,
     }
 
@@ -2107,7 +2107,7 @@ def _save_constraint_aware_plan(
         plan_start_date=plan.weeks[0].start_date if plan.weeks else None,
         plan_end_date=plan.race_date,
         total_weeks=plan.total_weeks,
-        baseline_vdot=fb.get("best_vdot") if isinstance(fb, dict) else None,
+        baseline_rpi=fb.get("best_rpi") if isinstance(fb, dict) else None,
         baseline_weekly_volume_km=round(fb.get("peak", {}).get("weekly_miles", 0) * 1.609, 1) if isinstance(fb, dict) else None,
         plan_type=plan.race_distance,
         generation_method="constraint_aware",
@@ -2195,7 +2195,7 @@ async def create_constraint_aware_plan(
     Key Features:
     - Respects your detected training patterns (Sunday long runs, Thursday quality)
     - Injury-aware: protects first 2-3 weeks if returning from break
-    - Personal paces from YOUR race performances (VDOT)
+    - Personal paces from YOUR race performances (RPI)
     - Counter-conventional insights based on individual τ values
     """
     import logging

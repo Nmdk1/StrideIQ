@@ -17,7 +17,7 @@ def test_plan_generation():
     athlete_id = "test-athlete-001"
     goal_distance = "Marathon"
     current_fitness = {
-        "vdot": 50.0,
+        "rpi": 50.0,
         "recent_race_time_seconds": 3600,  # 1 hour 10K
         "recent_race_distance_meters": 10000
     }

@@ -52,7 +52,7 @@ class FitnessBank:
     
     # Proven race performances
     race_performances: List[RacePerformance]
-    best_vdot: float                  # From best race
+    best_rpi: float                  # From best race
     
     # Current state
     current_weekly_miles: float
@@ -85,7 +85,7 @@ class RacePerformance:
     distance_m: float
     finish_time_seconds: int
     pace_per_mile: float
-    vdot: float
+    rpi: float
     conditions: Optional[str]         # "limping", "hot", "hilly"
     confidence: float                 # How much to weight this
 ```
@@ -140,7 +140,7 @@ class FitnessBankCalculator:
         
         Steps:
         1. Find peak weekly/monthly volumes
-        2. Extract race performances with VDOT
+        2. Extract race performances with RPI
         3. Calculate current state (CTL/ATL)
         4. Determine τ values from response patterns
         5. Detect constraints (injury, time gap)
@@ -152,8 +152,8 @@ class FitnessBankCalculator:
         """Find and analyze all race performances."""
         pass
     
-    def _calculate_best_vdot(self, races: List[RacePerformance]) -> float:
-        """Find best VDOT, weighted by recency and conditions."""
+    def _calculate_best_rpi(self, races: List[RacePerformance]) -> float:
+        """Find best RPI, weighted by recency and conditions."""
         pass
     
     def _detect_constraint(self, 
@@ -295,7 +295,7 @@ For experienced athletes (peak_weekly_miles > 60):
 - Recovery weeks should be 40% reduction, not 25%
 
 ### Rule 2: Race Performance Priority
-- VDOT from races trumps calculated VDOT from training
+- RPI from races trumps calculated RPI from training
 - Recent race at suboptimal conditions (limping) still counts
 - Weight races by: recency × distance_relevance × conditions
 
@@ -323,7 +323,7 @@ For marathon plans > 10 weeks:
 ### Unit Tests
 - `test_fitness_bank_calculation`
 - `test_race_performance_extraction`
-- `test_vdot_calculation_with_conditions`
+- `test_rpi_calculation_with_conditions`
 - `test_constraint_detection`
 - `test_recovery_projection`
 - `test_week_theme_generation`
@@ -369,7 +369,7 @@ For marathon plans > 10 weeks:
 For Michael (mbshaf) with:
 - Peak: 71 mpw, 275 mi/month, 22mi long, 18@MP
 - Current: ~45 mpw (injury recovery)
-- Proven: 6:18 10K (VDOT 54-55), 1:27:40 half
+- Proven: 6:18 10K (RPI 54-55), 1:27:40 half
 - τ1: 25 days
 - Constraint: Leg injury
 

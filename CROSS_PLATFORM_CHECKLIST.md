@@ -173,7 +173,7 @@
    ```
    Open localhost:3000
    - Click through navigation
-   - Try VDOT calculator
+   - Try RPI calculator
    - Login/register flow
    - View dashboard
    - Check responsive breakpoints (resize window)

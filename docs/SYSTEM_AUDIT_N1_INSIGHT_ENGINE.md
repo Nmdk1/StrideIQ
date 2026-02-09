@@ -24,7 +24,7 @@ StrideIQ has substantial analytical infrastructure already built. The gap is not
 
 | Model | Purpose | Fields | Used in Correlations |
 |-------|---------|--------|---------------------|
-| `Athlete` | User profile | 30+ fields including physiological baselines (max_hr, vdot, threshold_pace) | Partially (baselines not correlated) |
+| `Athlete` | User profile | 30+ fields including physiological baselines (max_hr, rpi, threshold_pace) | Partially (baselines not correlated) |
 | `Activity` | Training activities | duration, distance, HR, pace, workout_type, weather | ✅ Yes |
 | `ActivitySplit` | Per-mile/km data | pace, HR, cadence, GAP | ✅ Yes (efficiency calculation) |
 | `PersonalBest` | PRs by distance | time, pace, distance_category | ❌ Not used as output |
@@ -412,8 +412,8 @@ Phase 5 (Nutrition Correlation) ←── Independent, can run anytime
 
 **Performance:**
 - race_predictor.py
-- vdot_calculator.py
-- vdot_enhanced.py
+- rpi_calculator.py
+- rpi_enhanced.py
 - performance_engine.py
 - pace_normalization.py
 - pace_decay.py
@@ -491,7 +491,7 @@ Phase 5 (Nutrition Correlation) ←── Independent, can run anytime
 - workout_feedback_capture.py
 - workout_templates.py
 - nutrition_parser.py
-- vdot_lookup.py (DEPRECATED - copyrighted)
+- rpi_lookup.py (DEPRECATED - copyrighted)
 
 </details>
 

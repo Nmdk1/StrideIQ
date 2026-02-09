@@ -99,8 +99,8 @@ def test_athlete(db_session):
 
 
 @pytest.fixture
-def sample_vdot():
-    """Sample VDOT value for testing"""
+def sample_rpi():
+    """Sample RPI value for testing"""
     return 50.0
 
 

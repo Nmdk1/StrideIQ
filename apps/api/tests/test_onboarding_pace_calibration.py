@@ -70,9 +70,9 @@ def test_goals_intake_with_recent_race_computes_and_persists_pace_profile_withou
         assert prof.paces.get("anchor", {}).get("distance_key") == "5k"
         assert prof.paces.get("paces", {}).get("threshold") is not None
 
-        # Safety: we did NOT mutate Athlete.vdot or Athlete.threshold_pace_per_km in this feature
+        # Safety: we did NOT mutate Athlete.rpi or Athlete.threshold_pace_per_km in this feature
         db.refresh(athlete)
-        assert athlete.vdot is None
+        assert athlete.rpi is None
         assert athlete.threshold_pace_per_km is None
 
     finally:

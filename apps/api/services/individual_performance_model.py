@@ -217,7 +217,7 @@ class BanisterModel:
 class PerformanceMarker:
     """A performance data point for model calibration."""
     date: date
-    performance_value: float  # VDOT or normalized efficiency
+    performance_value: float  # RPI or normalized efficiency
     source: str  # "race", "time_trial", "efficiency_trend"
     weight: float = 1.0  # Weight in fitting (races > efficiency)
 
@@ -363,7 +363,7 @@ class IndividualPerformanceModel:
         end_date: date
     ) -> List[PerformanceMarker]:
         """Get performance markers from races and time trials."""
-        from services.vdot_calculator import calculate_vdot_from_race_time
+        from services.rpi_calculator import calculate_rpi_from_race_time
         
         # Get races - use multiple signals to identify races
         # 1. user_verified_race = True (explicit confirmation)
@@ -391,12 +391,12 @@ class IndividualPerformanceModel:
             if not race.distance_m or not race.duration_s:
                 continue
             
-            # Calculate VDOT from race
-            vdot = calculate_vdot_from_race_time(race.distance_m, race.duration_s)
-            if vdot:
+            # Calculate RPI from race
+            rpi = calculate_rpi_from_race_time(race.distance_m, race.duration_s)
+            if rpi:
                 markers.append(PerformanceMarker(
                     date=race.start_time.date(),
-                    performance_value=vdot,
+                    performance_value=rpi,
                     source="race",
                     weight=1.5  # Higher weight for races
                 ))
@@ -455,14 +455,14 @@ class IndividualPerformanceModel:
         for (year, month), efs in monthly.items():
             if len(efs) >= 5:  # Need enough samples
                 avg_ef = statistics.mean(efs)
-                # Convert EF to pseudo-VDOT (lower EF = better = higher VDOT)
+                # Convert EF to pseudo-RPI (lower EF = better = higher RPI)
                 # This is a rough normalization
-                pseudo_vdot = 80 - (avg_ef * 10)  # Rough scaling
+                pseudo_rpi = 80 - (avg_ef * 10)  # Rough scaling
                 
                 mid_month = date(year, month, 15)
                 markers.append(PerformanceMarker(
                     date=mid_month,
-                    performance_value=pseudo_vdot,
+                    performance_value=pseudo_rpi,
                     source="efficiency_trend",
                     weight=0.5  # Lower weight than races
                 ))

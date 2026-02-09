@@ -62,7 +62,7 @@ def print_plan_sample(plan, distance):
         print(f"\n🎯 RACE PREDICTION")
         print(f"  Predicted Time: {format_time(pred.predicted_time_seconds)}")
         print(f"  Confidence Interval: ±{pred.confidence_interval_seconds//60:.0f} minutes")
-        print(f"  Projected VDOT: {pred.projected_vdot:.1f}")
+        print(f"  Projected RPI: {pred.projected_rpi:.1f}")
     
     print(f"\n💡 PERSONALIZED INSIGHTS")
     if plan.counter_conventional_notes:

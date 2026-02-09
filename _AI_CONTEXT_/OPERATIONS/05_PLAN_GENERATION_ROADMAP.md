@@ -118,7 +118,7 @@ The generator dynamically creates plans for all combinations:
 | Strava Integration | Auto-detect volume & paces | ✅ |
 | Variable Duration | Any length (4-24 weeks) | ✅ |
 | Training History Analysis | Uses recent activities | ✅ |
-| Race Effort Detection | Find best races for VDOT | ✅ |
+| Race Effort Detection | Find best races for RPI | ✅ |
 | Custom Endpoint | Full API implementation | ✅ |
 
 ---

@@ -10,7 +10,7 @@ from typing import Optional, Dict, List
 from sqlalchemy.orm import Session
 from models import Activity, PersonalBest, Athlete
 from services.performance_engine import calculate_age_at_date
-from services.vdot_calculator import calculate_vdot_from_race_time
+from services.rpi_calculator import calculate_rpi_from_race_time
 
 logger = logging.getLogger(__name__)
 
@@ -61,40 +61,40 @@ def get_distance_category(distance_meters: float) -> Optional[str]:
     return None
 
 
-def _update_vdot_from_pb(athlete: Athlete, pb: PersonalBest, db: Session) -> None:
+def _update_rpi_from_pb(athlete: Athlete, pb: PersonalBest, db: Session) -> None:
     """
-    Update athlete's VDOT from a new personal best if it's better than current.
+    Update athlete's RPI from a new personal best if it's better than current.
     
-    Uses standard race distances (5K, 10K, half marathon, marathon) for VDOT calculation.
-    Shorter distances (400m, 800m, mile) are less reliable for VDOT estimation.
+    Uses standard race distances (5K, 10K, half marathon, marathon) for RPI calculation.
+    Shorter distances (400m, 800m, mile) are less reliable for RPI estimation.
     """
-    # Only use standard race distances for VDOT (short distances less reliable)
-    VDOT_ELIGIBLE_DISTANCES = {'5k', '10k', '15k', 'half_marathon', 'marathon', '25k', '30k'}
+    # Only use standard race distances for RPI (short distances less reliable)
+    RPI_ELIGIBLE_DISTANCES = {'5k', '10k', '15k', 'half_marathon', 'marathon', '25k', '30k'}
     
-    if pb.distance_category not in VDOT_ELIGIBLE_DISTANCES:
+    if pb.distance_category not in RPI_ELIGIBLE_DISTANCES:
         return
     
     if not pb.distance_meters or not pb.time_seconds:
         return
     
     try:
-        new_vdot = calculate_vdot_from_race_time(
+        new_rpi = calculate_rpi_from_race_time(
             distance_meters=pb.distance_meters,
             time_seconds=pb.time_seconds
         )
         
-        if not new_vdot or new_vdot < 20:  # Sanity check
+        if not new_rpi or new_rpi < 20:  # Sanity check
             return
         
-        new_vdot = round(new_vdot, 1)
+        new_rpi = round(new_rpi, 1)
         
-        # Update if no VDOT or new one is higher (better)
-        if not athlete.vdot or new_vdot > athlete.vdot:
-            logger.info(f"Updating VDOT for {athlete.id}: {athlete.vdot} -> {new_vdot} from {pb.distance_category} PB")
-            athlete.vdot = new_vdot
+        # Update if no RPI or new one is higher (better)
+        if not athlete.rpi or new_rpi > athlete.rpi:
+            logger.info(f"Updating RPI for {athlete.id}: {athlete.rpi} -> {new_rpi} from {pb.distance_category} PB")
+            athlete.rpi = new_rpi
             db.flush()
     except Exception as e:
-        logger.warning(f"Failed to calculate VDOT from PB for {athlete.id}: {e}")
+        logger.warning(f"Failed to calculate RPI from PB for {athlete.id}: {e}")
 
 
 def update_personal_best(
@@ -150,8 +150,8 @@ def update_personal_best(
             
             db.flush()  # Use flush instead of commit to avoid nested transaction issues
             
-            # Update athlete's VDOT from new PB
-            _update_vdot_from_pb(athlete, existing_pb, db)
+            # Update athlete's RPI from new PB
+            _update_rpi_from_pb(athlete, existing_pb, db)
             
             return existing_pb
     else:
@@ -176,8 +176,8 @@ def update_personal_best(
         db.add(pb)
         db.flush()  # Use flush instead of commit to avoid nested transaction issues
         
-        # Update athlete's VDOT from new PB
-        _update_vdot_from_pb(athlete, pb, db)
+        # Update athlete's RPI from new PB
+        _update_rpi_from_pb(athlete, pb, db)
         
         return pb
     
@@ -334,11 +334,11 @@ def recalculate_all_pbs(athlete: Athlete, db: Session, preserve_strava_pbs: bool
     }
 
 
-def backfill_vdot_from_pbs(db: Session, athlete_id: Optional[str] = None) -> Dict[str, int]:
+def backfill_rpi_from_pbs(db: Session, athlete_id: Optional[str] = None) -> Dict[str, int]:
     """
-    Backfill VDOT for athletes from their personal bests.
+    Backfill RPI for athletes from their personal bests.
     
-    Useful for fixing athletes who have PBs but missing VDOT.
+    Useful for fixing athletes who have PBs but missing RPI.
     
     Args:
         db: Database session
@@ -349,7 +349,7 @@ def backfill_vdot_from_pbs(db: Session, athlete_id: Optional[str] = None) -> Dic
     """
     from uuid import UUID
     
-    VDOT_ELIGIBLE_DISTANCES = {'5k', '10k', '15k', 'half_marathon', 'marathon', '25k', '30k'}
+    RPI_ELIGIBLE_DISTANCES = {'5k', '10k', '15k', 'half_marathon', 'marathon', '25k', '30k'}
     
     updated = 0
     skipped = 0
@@ -360,47 +360,47 @@ def backfill_vdot_from_pbs(db: Session, athlete_id: Optional[str] = None) -> Dic
         athlete_uuid = UUID(athlete_id) if isinstance(athlete_id, str) else athlete_id
         athletes = db.query(Athlete).filter(Athlete.id == athlete_uuid).all()
     else:
-        # All athletes without VDOT
-        athletes = db.query(Athlete).filter(Athlete.vdot.is_(None)).all()
+        # All athletes without RPI
+        athletes = db.query(Athlete).filter(Athlete.rpi.is_(None)).all()
     
     for athlete in athletes:
         try:
             # Get best PB from eligible distances
             pbs = db.query(PersonalBest).filter(
                 PersonalBest.athlete_id == athlete.id,
-                PersonalBest.distance_category.in_(VDOT_ELIGIBLE_DISTANCES)
+                PersonalBest.distance_category.in_(RPI_ELIGIBLE_DISTANCES)
             ).all()
             
             if not pbs:
                 skipped += 1
                 continue
             
-            # Calculate VDOT from each PB and take the best
-            best_vdot = None
+            # Calculate RPI from each PB and take the best
+            best_rpi = None
             best_pb = None
             
             for pb in pbs:
                 if not pb.distance_meters or not pb.time_seconds:
                     continue
                     
-                vdot = calculate_vdot_from_race_time(
+                rpi = calculate_rpi_from_race_time(
                     distance_meters=pb.distance_meters,
                     time_seconds=pb.time_seconds
                 )
                 
-                if vdot and vdot > 20 and (best_vdot is None or vdot > best_vdot):
-                    best_vdot = vdot
+                if rpi and rpi > 20 and (best_rpi is None or rpi > best_rpi):
+                    best_rpi = rpi
                     best_pb = pb
             
-            if best_vdot:
-                athlete.vdot = round(best_vdot, 1)
-                logger.info(f"Backfilled VDOT for {athlete.id}: {athlete.vdot} from {best_pb.distance_category}")
+            if best_rpi:
+                athlete.rpi = round(best_rpi, 1)
+                logger.info(f"Backfilled RPI for {athlete.id}: {athlete.rpi} from {best_pb.distance_category}")
                 updated += 1
             else:
                 skipped += 1
                 
         except Exception as e:
-            logger.error(f"Error backfilling VDOT for {athlete.id}: {e}")
+            logger.error(f"Error backfilling RPI for {athlete.id}: {e}")
             errors += 1
     
     db.commit()

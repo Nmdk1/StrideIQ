@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Extract Exact VDOT Formulas and Tables from Daniels' Running Formula
+Extract Exact RPI Formulas and Tables from Daniels' Running Formula
 
 Aggregates all Daniels entries from knowledge base and extracts:
-1. VDOT calculation formulas
+1. RPI calculation formulas
 2. Training pace tables (E, M, T, I, R paces)
-3. Equivalent performance tables (VDOT → race times)
-4. Pace zone formulas (% of E/M/T/I/R relative to VDOT)
+3. Equivalent performance tables (RPI → race times)
+4. Pace zone formulas (% of E/M/T/I/R relative to RPI)
 
-Stores in structured format for use by VDOT calculator.
+Stores in structured format for use by RPI calculator.
 """
 import sys
 import os
@@ -50,12 +50,12 @@ def aggregate_daniels_text() -> str:
         db.close()
 
 
-def extract_vdot_formulas(text: str) -> Dict:
+def extract_rpi_formulas(text: str) -> Dict:
     """
-    Extract VDOT calculation formulas from text.
+    Extract RPI calculation formulas from text.
     
     Looks for:
-    - VDOT calculation equations
+    - RPI calculation equations
     - VO2max formulas
     - Regression equations
     - Percentage-based calculations
@@ -67,16 +67,16 @@ def extract_vdot_formulas(text: str) -> Dict:
         "percentage_formulas": []
     }
     
-    # Pattern 1: VDOT calculation mentions
-    vdot_calc_patterns = [
-        r"VDOT\s*[=:]\s*([^\.\n]{20,200})",
-        r"calculate.*VDOT[^\.\n]{10,300}",
-        r"VDOT.*formula[^\.\n]{10,300}",
-        r"VDOT.*equation[^\.\n]{10,300}",
-        r"determine.*VDOT[^\.\n]{10,300}",
+    # Pattern 1: RPI calculation mentions
+    rpi_calc_patterns = [
+        r"RPI\s*[=:]\s*([^\.\n]{20,200})",
+        r"calculate.*RPI[^\.\n]{10,300}",
+        r"RPI.*formula[^\.\n]{10,300}",
+        r"RPI.*equation[^\.\n]{10,300}",
+        r"determine.*RPI[^\.\n]{10,300}",
     ]
     
-    for pattern in vdot_calc_patterns:
+    for pattern in rpi_calc_patterns:
         matches = re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE)
         for match in matches:
             formula_text = match.group(0).strip()
@@ -138,7 +138,7 @@ def extract_pace_tables(text: str) -> Dict:
     - T pace (Threshold pace) tables
     - I pace (Interval pace) tables
     - R pace (Repetition pace) tables
-    - VDOT to pace mappings
+    - RPI to pace mappings
     """
     pace_tables = {
         "e_pace": [],  # Easy pace
@@ -146,7 +146,7 @@ def extract_pace_tables(text: str) -> Dict:
         "t_pace": [],  # Threshold pace
         "i_pace": [],  # Interval pace
         "r_pace": [],  # Repetition pace
-        "vdot_to_pace": [],  # VDOT → pace mappings
+        "rpi_to_pace": [],  # RPI → pace mappings
         "pace_definitions": {}  # Definitions of each pace type
     }
     
@@ -174,18 +174,18 @@ def extract_pace_tables(text: str) -> Dict:
                         pace_tables["pace_definitions"][key].append(definition[:500])
     
     # Extract pace tables (look for tabular structures)
-    # Pattern: VDOT followed by paces (e.g., "VDOT 50: E 7:30, M 6:45, T 6:15...")
+    # Pattern: RPI followed by paces (e.g., "RPI 50: E 7:30, M 6:45, T 6:15...")
     table_patterns = [
-        r"VDOT\s+[0-9]+\s*[:]\s*[^\.\n]{20,500}",  # VDOT 50: E pace, M pace...
+        r"RPI\s+[0-9]+\s*[:]\s*[^\.\n]{20,500}",  # RPI 50: E pace, M pace...
         r"[0-9]+\s+[EMTIR]\s+pace[^\.\n]{10,300}",  # "50 E pace..."
         r"pace\s+table[^\.\n]{50,2000}",  # "pace table" sections
         r"table\s+[0-9]+[^\.\n]{50,2000}",  # "Table 1", "Table 2", etc.
-        r"VDOT.*?[0-9]+:[0-9]+[^\.\n]{20,500}",  # VDOT with time formats
+        r"RPI.*?[0-9]+:[0-9]+[^\.\n]{20,500}",  # RPI with time formats
     ]
     
-    # Also look for multi-line tabular structures (VDOT values with corresponding paces)
-    # Pattern: Lines with VDOT numbers followed by pace values
-    multiline_table_pattern = r"(?:VDOT|vdot)\s*[0-9]+.*?(?:\n[^\n]{10,100}){3,20}"
+    # Also look for multi-line tabular structures (RPI values with corresponding paces)
+    # Pattern: Lines with RPI numbers followed by pace values
+    multiline_table_pattern = r"(?:RPI|rpi)\s*[0-9]+.*?(?:\n[^\n]{10,100}){3,20}"
     multiline_matches = re.finditer(multiline_table_pattern, text, re.IGNORECASE | re.MULTILINE)
     for match in multiline_matches:
         table_text = match.group(0).strip()
@@ -208,8 +208,8 @@ def extract_pace_tables(text: str) -> Dict:
             elif re.search(r"\bR\s+pace|\brepetition\s+pace", table_text, re.IGNORECASE):
                 pace_tables["r_pace"].append(table_text[:1000])
             else:
-                # Generic VDOT to pace mapping
-                pace_tables["vdot_to_pace"].append(table_text[:1000])
+                # Generic RPI to pace mapping
+                pace_tables["rpi_to_pace"].append(table_text[:1000])
     
     # Extract pace percentages (% of VO2max, % of pace)
     percentage_patterns = [
@@ -242,34 +242,34 @@ def extract_pace_tables(text: str) -> Dict:
 
 def extract_equivalent_performance_tables(text: str) -> Dict:
     """
-    Extract equivalent performance tables (VDOT → race times across distances).
+    Extract equivalent performance tables (RPI → race times across distances).
     
     Looks for:
-    - VDOT to race time mappings
+    - RPI to race time mappings
     - Equivalent performance tables
     - Race time predictions
     """
     equivalent_tables = {
-        "vdot_to_race_times": [],
+        "rpi_to_race_times": [],
         "equivalent_performances": [],
         "race_time_predictions": []
     }
     
-    # Pattern 1: VDOT followed by race times
-    vdot_race_patterns = [
-        r"VDOT\s+[0-9]+[^\.\n]{10,500}",  # VDOT 50: 5K 20:00, 10K 41:30...
+    # Pattern 1: RPI followed by race times
+    rpi_race_patterns = [
+        r"RPI\s+[0-9]+[^\.\n]{10,500}",  # RPI 50: 5K 20:00, 10K 41:30...
         r"equivalent\s+performance[^\.\n]{20,500}",
         r"race\s+time[^\.\n]{20,500}",
     ]
     
-    for pattern in vdot_race_patterns:
+    for pattern in rpi_race_patterns:
         matches = re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE)
         for match in matches:
             table_text = match.group(0).strip()
             if len(table_text) > 50:
                 # Check if it contains distance mentions
                 if re.search(r"\b5K|\b10K|\bmarathon|\bhalf", table_text, re.IGNORECASE):
-                    equivalent_tables["vdot_to_race_times"].append(table_text[:1000])
+                    equivalent_tables["rpi_to_race_times"].append(table_text[:1000])
     
     # Pattern 2: Distance-specific tables
     distance_patterns = [
@@ -291,7 +291,7 @@ def extract_equivalent_performance_tables(text: str) -> Dict:
 
 def extract_pace_zone_formulas(text: str) -> Dict:
     """
-    Extract pace zone formulas (% of E/M/T/I/R relative to VDOT).
+    Extract pace zone formulas (% of E/M/T/I/R relative to RPI).
     
     Looks for percentage relationships between paces.
     """
@@ -330,39 +330,39 @@ def extract_pace_zone_formulas(text: str) -> Dict:
     return zone_formulas
 
 
-def store_vdot_extraction(vdot_data: Dict):
-    """Store extracted VDOT data in knowledge base."""
+def store_rpi_extraction(rpi_data: Dict):
+    """Store extracted RPI data in knowledge base."""
     db = get_db_sync()
     try:
-        # Check if VDOT extraction entry already exists
+        # Check if RPI extraction entry already exists
         existing = db.query(CoachingKnowledgeEntry).filter(
-            CoachingKnowledgeEntry.principle_type == "vdot_exact",
+            CoachingKnowledgeEntry.principle_type == "rpi_exact",
             CoachingKnowledgeEntry.methodology == "Daniels"
         ).first()
         
         if existing:
             # Update existing entry
-            existing.extracted_principles = json.dumps(vdot_data, indent=2)
-            existing.text_chunk = json.dumps(vdot_data, indent=2)[:5000]  # Store summary
-            print("✅ Updated existing VDOT extraction entry")
+            existing.extracted_principles = json.dumps(rpi_data, indent=2)
+            existing.text_chunk = json.dumps(rpi_data, indent=2)[:5000]  # Store summary
+            print("✅ Updated existing RPI extraction entry")
         else:
             # Create new entry
             entry = CoachingKnowledgeEntry(
-                source="Daniels' Running Formula - Extracted VDOT Data",
+                source="Daniels' Running Formula - Extracted RPI Data",
                 methodology="Daniels",
                 source_type="extracted",
-                text_chunk=json.dumps(vdot_data, indent=2)[:5000],  # Store summary
-                extracted_principles=json.dumps(vdot_data, indent=2),
-                principle_type="vdot_exact"
+                text_chunk=json.dumps(rpi_data, indent=2)[:5000],  # Store summary
+                extracted_principles=json.dumps(rpi_data, indent=2),
+                principle_type="rpi_exact"
             )
             db.add(entry)
-            print("✅ Created new VDOT extraction entry")
+            print("✅ Created new RPI extraction entry")
         
         db.commit()
-        print(f"✅ Stored VDOT extraction data")
+        print(f"✅ Stored RPI extraction data")
         
     except Exception as e:
-        print(f"❌ Error storing VDOT extraction: {e}")
+        print(f"❌ Error storing RPI extraction: {e}")
         import traceback
         traceback.print_exc()
         db.rollback()
@@ -373,7 +373,7 @@ def store_vdot_extraction(vdot_data: Dict):
 def main():
     """Main extraction function."""
     print("=" * 60)
-    print("VDOT EXACT EXTRACTION FROM DANIELS' RUNNING FORMULA")
+    print("RPI EXACT EXTRACTION FROM DANIELS' RUNNING FORMULA")
     print("=" * 60)
     
     # Step 1: Aggregate all Daniels text
@@ -384,9 +384,9 @@ def main():
         print("❌ Error: Insufficient Daniels text found")
         return
     
-    # Step 2: Extract VDOT formulas
-    print("\n2. Extracting VDOT calculation formulas...")
-    formulas = extract_vdot_formulas(text)
+    # Step 2: Extract RPI formulas
+    print("\n2. Extracting RPI calculation formulas...")
+    formulas = extract_rpi_formulas(text)
     print(f"   Found {len(formulas['calculation_methods'])} calculation methods")
     print(f"   Found {len(formulas['vo2max_formulas'])} VO2max formulas")
     print(f"   Found {len(formulas['regression_equations'])} regression equations")
@@ -405,7 +405,7 @@ def main():
     # Step 4: Extract equivalent performance tables
     print("\n4. Extracting equivalent performance tables...")
     equivalent_tables = extract_equivalent_performance_tables(text)
-    print(f"   Found {len(equivalent_tables['vdot_to_race_times'])} VDOT to race time entries")
+    print(f"   Found {len(equivalent_tables['rpi_to_race_times'])} RPI to race time entries")
     print(f"   Found {len(equivalent_tables['equivalent_performances'])} equivalent performance entries")
     
     # Step 5: Extract pace zone formulas
@@ -416,7 +416,7 @@ def main():
     
     # Step 6: Combine and store
     print("\n6. Storing extracted data...")
-    vdot_data = {
+    rpi_data = {
         "formulas": formulas,
         "pace_tables": pace_tables,
         "equivalent_tables": equivalent_tables,
@@ -428,14 +428,14 @@ def main():
         }
     }
     
-    store_vdot_extraction(vdot_data)
+    store_rpi_extraction(rpi_data)
     
     print("\n" + "=" * 60)
-    print("✅ VDOT EXTRACTION COMPLETE")
+    print("✅ RPI EXTRACTION COMPLETE")
     print("=" * 60)
     print("\nNext steps:")
     print("1. Review extracted data in knowledge base")
-    print("2. Refine VDOT calculator with exact formulas")
+    print("2. Refine RPI calculator with exact formulas")
     print("3. Create structured pace tables from extracted data")
 
 

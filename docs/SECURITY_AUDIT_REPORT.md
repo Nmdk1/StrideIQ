@@ -192,12 +192,12 @@ if not x_strava_signature:
 
 ---
 
-### H3. Knowledge Router - VDOT Data Exposed
+### H3. Knowledge Router - RPI Data Exposed
 
 **Severity:** HIGH  
 **File:** `apps/api/routers/knowledge.py:234-268`
 
-**Issue:** VDOT endpoints accept optional `athlete_id` but have no authentication, allowing access to any athlete's calculated performance data.
+**Issue:** RPI endpoints accept optional `athlete_id` but have no authentication, allowing access to any athlete's calculated performance data.
 
 ---
 
@@ -558,7 +558,7 @@ The following security measures are correctly implemented:
 |----------|-------|--------|
 | P1-1 | Add auth to v1.py mark-race/backfill | 30 min |
 | P1-2 | Make Strava webhook signature mandatory | 15 min |
-| P1-3 | Add auth to knowledge.py VDOT endpoints | 30 min |
+| P1-3 | Add auth to knowledge.py RPI endpoints | 30 min |
 | P1-4 | Reduce JWT expiration to 1-7 days | 30 min |
 | P1-5 | Move account lockout to Redis | 2 hours |
 
@@ -614,7 +614,7 @@ apps/api/routers/work_pattern.py      - Add auth to all endpoints
 apps/api/routers/nutrition.py         - Add auth to all endpoints (except /parse)
 apps/api/routers/feedback.py          - Add auth to all endpoints
 apps/api/routers/v1.py                - Add auth to mark-race, backfill-splits
-apps/api/routers/knowledge.py         - Add auth to VDOT endpoints
+apps/api/routers/knowledge.py         - Add auth to RPI endpoints
 apps/api/routers/strava_webhook.py    - Make signature mandatory
 apps/api/services/strava_service.py   - Encrypt token at line 439
 apps/api/services/token_encryption.py - Fail hard on missing key

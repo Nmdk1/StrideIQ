@@ -8,7 +8,7 @@ Built and deployed a world-class public landing page for **Performance Focused C
 
 ### Landing Page Components
 1. **Hero Section** - Full-bleed background, headline, founder quote, CTA
-2. **Free Tools Section** - Three calculators (VDOT, WMA Age-Grading, Efficiency Estimator)
+2. **Free Tools Section** - Three calculators (RPI, WMA Age-Grading, Efficiency Estimator)
 3. **How It Works** - 3-step process explanation
 4. **Pricing Section** - Four-tier pricing cards (Free, Fixed Plans, Guided Coaching, Premium)
 5. **Footer** - Links, branding, copyright
@@ -16,7 +16,7 @@ Built and deployed a world-class public landing page for **Performance Focused C
 ### Technical Implementation
 - **Framework:** Next.js 14.0.0 with React 18
 - **Styling:** Tailwind CSS v3.4.1 (downgraded from v4 for compatibility)
-- **API Integration:** Public endpoints for calculators (`/v1/public/vdot/calculate`, `/v1/public/age-grade/calculate`)
+- **API Integration:** Public endpoints for calculators (`/v1/public/rpi/calculate`, `/v1/public/age-grade/calculate`)
 - **Production Build:** Standalone mode configured, Docker container deployed
 
 ## Branding Update

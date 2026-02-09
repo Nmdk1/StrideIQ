@@ -11,7 +11,7 @@
 
 The AI coach is the central product of StrideIQ. The athlete's entire experience is meant to be a conversation with a coach who knows them — their data, their patterns, their goals. The manifesto describes a "silent, brilliant assistant" that the athlete speaks through, backed by an Athlete Intelligence Bank of N-of-1 insights.
 
-**What was built:** A comprehensive analytics backend — correlation engine, training load calculator, VDOT/RPI model, efficiency analytics, durability indexing, race predictor, 22 coach tools, 1,393+ passing tests.
+**What was built:** A comprehensive analytics backend — correlation engine, training load calculator, RPI/RPI model, efficiency analytics, durability indexing, race predictor, 22 coach tools, 1,393+ passing tests.
 
 **What went wrong:** The LLM (Gemini 2.5 Flash) was placed *in front of* the intelligence instead of *behind it*. Gemini receives a thin ~800-token athlete state and 22 tool declarations, then decides what to call, interprets raw JSON, does its own math, and tries to coach. It fails at every step:
 

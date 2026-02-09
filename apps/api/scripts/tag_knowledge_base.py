@@ -11,7 +11,7 @@ Tag Taxonomy:
 - Periodization: base_building, specific_endurance, taper, recovery_week, peak
 - Load management: volume_progression, intensity_progression, load_efficiency, acute_chronic
 - Recovery: recovery_time, recovery_guidelines, adaptation_period
-- Concepts: vdot, pace_tables, training_zones, workout_prescription
+- Concepts: rpi, pace_tables, training_zones, workout_prescription
 """
 import sys
 import json
@@ -163,10 +163,10 @@ TAG_PATTERNS = {
     ],
     
     # Concepts
-    "vdot": [
-        r"\bvdot\b",
+    "rpi": [
+        r"\brpi\b",
         r"\bjack\s+daniels\b",
-        r"\bvdoto2\b",
+        r"\brpio2\b",
     ],
     "pace_tables": [
         r"\bpace\s+table\b",

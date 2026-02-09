@@ -48,7 +48,7 @@ export interface GeneratedPlan {
   duration_weeks: number;
   volume_tier: string;
   days_per_week: number;
-  vdot?: number;
+  rpi?: number;
   start_date?: string;
   end_date?: string;
   race_date?: string;
@@ -139,13 +139,13 @@ export interface FitnessBank {
     ctl: number;
     atl: number;
   };
-  best_vdot: number;
+  best_rpi: number;
   races: Array<{
     date: string;
     distance: string;
     finish_time: number;
     pace_per_mile: number;
-    vdot: number;
+    rpi: number;
     conditions: string | null;
   }>;
   tau1: number;
@@ -256,7 +256,7 @@ export interface ModelDrivenPlanResponse {
       confidence: string;
     };
     projections: {
-      vdot: number;
+      rpi: number;
       ctl: number;
       tsb: number;
     };

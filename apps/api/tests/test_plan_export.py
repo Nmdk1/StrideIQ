@@ -260,7 +260,7 @@ class TestJSONExport:
         plan.plan_start_date = date(2026, 1, 1)
         plan.plan_end_date = date(2026, 4, 20)
         plan.total_weeks = 16
-        plan.baseline_vdot = 55.0
+        plan.baseline_rpi = 55.0
         plan.plan_type = "marathon"
         plan.generation_method = "ai"
         return plan

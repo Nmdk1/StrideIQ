@@ -320,7 +320,7 @@ Extracted insights from 8 training books, synthesized with 5 coaches, created un
 | 2 | Hansons Method | Luke Humphrey | Cumulative fatigue, 6 days/week |
 | 3 | Fast 5K | Pete Magill | Goal-pace timing, Central Governor |
 | 4 | Advanced Marathoning | Pete Pfitzinger | HR zones, medium-long runs |
-| 5 | Daniels' Formula | Jack Daniels | VDOT, E/M/T/I/R zones |
+| 5 | Daniels' Formula | Jack Daniels | RPI, E/M/T/I/R zones |
 | 6 | Science of Running | Steve Magness | Amplifiers/dampeners of adaptation |
 | 7 | Perfect Race | Matt Fitzgerald | Pacing mastery, 30-second rule |
 | 8 | 80/20 Running | Matt Fitzgerald | 80/20 intensity distribution |
@@ -591,7 +591,7 @@ Complete ATL/CTL/TSB tracking system for training stress management.
   - `resting_hr`: Resting heart rate
   - `threshold_pace_per_km`: LT pace in seconds/km
   - `threshold_hr`: Lactate threshold HR
-  - `vdot`: Current VDOT from race/test
+  - `rpi`: Current RPI from race/test
 
 ---
 
@@ -733,7 +733,7 @@ The heart of the platform - contextual analysis for every run.
 ### Testing Complete
 - All 14 frontend pages returning 200
 - All public API endpoints verified working
-- VDOT calculator: ✅
+- RPI calculator: ✅
 - Age-grade calculator: ✅
 - Health endpoint: ✅
 

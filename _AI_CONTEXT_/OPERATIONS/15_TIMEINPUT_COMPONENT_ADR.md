@@ -10,7 +10,7 @@
 ## Context
 
 Users must enter race times in MM:SS or HH:MM:SS format in several places:
-- **RPI (VDOT) Calculator** — primary use case
+- **RPI (RPI) Calculator** — primary use case
 - **Plan Creation** — recent race time entry
 - **Activity manual entry** (future)
 

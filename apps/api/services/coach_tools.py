@@ -49,7 +49,7 @@ from services.correlation_engine import (
     aggregate_efficiency_by_effort_zone,
     aggregate_efficiency_trend,
 )
-from services.vdot_calculator import calculate_race_time_from_vdot
+from services.rpi_calculator import calculate_race_time_from_rpi
 
 
 def _iso(dt: datetime) -> str:
@@ -760,14 +760,14 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     now = datetime.utcnow()
     try:
-        from services.vdot_calculator import calculate_training_paces as calc_paces
+        from services.rpi_calculator import calculate_training_paces as calc_paces
 
         athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
             return {"ok": False, "tool": "get_training_paces", "error": "Athlete not found"}
 
-        vdot = athlete.vdot
-        if not vdot:
+        rpi = athlete.rpi
+        if not rpi:
             return {
                 "ok": False,
                 "tool": "get_training_paces",
@@ -775,7 +775,7 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             }
 
         units = athlete.preferred_units or "metric"
-        paces = calc_paces(vdot)
+        paces = calc_paces(rpi)
 
         # Format for display
         def format_display(pace_key: str) -> str:
@@ -795,7 +795,7 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
 
         # --- Narrative ---
         narrative = (
-            f"Training paces based on RPI {vdot:.1f}: "
+            f"Training paces based on RPI {rpi:.1f}: "
             f"Easy {format_display('easy')}, Marathon {format_display('marathon')}, "
             f"Threshold {format_display('threshold')}, Interval {format_display('interval')}, "
             f"Repetition {format_display('repetition')}. "
@@ -808,8 +808,8 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             "generated_at": _iso(now),
             "narrative": narrative,
             "data": {
-                "rpi": vdot,  # Running Performance Index
-                "vdot": vdot,  # Keep for backward compatibility
+                "rpi": rpi,  # Running Performance Index
+                "rpi": rpi,  # Keep for backward compatibility
                 "preferred_units": units,
                 "paces": {
                     "easy": format_display("easy"),
@@ -831,7 +831,7 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     "type": "calculation",
                     "id": f"rpi_paces:{athlete_id}",
                     "date": date.today().isoformat(),
-                    "value": f"RPI {vdot:.1f} → Threshold {format_display('threshold')}, Easy {format_display('easy')}",
+                    "value": f"RPI {rpi:.1f} → Threshold {format_display('threshold')}, Easy {format_display('easy')}",
                 }
             ],
         }
@@ -936,16 +936,16 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
         predictions: Dict[str, Any] = {}
         evidence: List[Dict[str, Any]] = []
 
-        def _best_vdot_from_personal_bests() -> Optional[Dict[str, Any]]:
+        def _best_rpi_from_personal_bests() -> Optional[Dict[str, Any]]:
             """
-            Derive a VDOT estimate from the athlete's PersonalBest table.
+            Derive a RPI estimate from the athlete's PersonalBest table.
 
             Returns:
-                {"vdot": float, "pb": PersonalBest} or None
+                {"rpi": float, "pb": PersonalBest} or None
             """
             try:
                 from models import PersonalBest
-                from services.vdot_calculator import calculate_vdot_from_race_time
+                from services.rpi_calculator import calculate_rpi_from_race_time
 
                 pbs = (
                     db.query(PersonalBest)
@@ -960,7 +960,7 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 # Prefer race PBs and standard race distances (better anchors).
                 candidates: List[tuple[float, Any]] = []
                 for pb in pbs:
-                    v = calculate_vdot_from_race_time(pb.distance_meters, pb.time_seconds)
+                    v = calculate_rpi_from_race_time(pb.distance_meters, pb.time_seconds)
                     if not v:
                         continue
                     weight = 0.0
@@ -976,18 +976,18 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 candidates.sort(key=lambda t: t[0], reverse=True)
                 best_weighted, best_pb = candidates[0]
 
-                # Remove weight for reporting a clean VDOT value.
-                base_vdot = float(best_weighted)
+                # Remove weight for reporting a clean RPI value.
+                base_rpi = float(best_weighted)
                 if getattr(best_pb, "is_race", False):
-                    base_vdot -= 0.3
+                    base_rpi -= 0.3
                 if best_pb.distance_category in {"5k", "10k", "half_marathon", "marathon"}:
-                    base_vdot -= 0.2
+                    base_rpi -= 0.2
 
-                return {"vdot": round(base_vdot, 1), "pb": best_pb}
+                return {"rpi": round(base_rpi, 1), "pb": best_pb}
             except Exception:
                 return None
 
-        pb_vdot = _best_vdot_from_personal_bests()
+        pb_rpi = _best_rpi_from_personal_bests()
         for label, dist_m in distances:
             try:
                 pred = predictor.predict(athlete_id=athlete_id, race_date=race_date, distance_m=dist_m)
@@ -1000,20 +1000,20 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 except Exception:
                     pass
                 # Fallback: if the calibrated model table isn't present in this environment,
-                # use the athlete's stored VDOT or derive one from PBs to provide a reasonable estimate.
+                # use the athlete's stored RPI or derive one from PBs to provide a reasonable estimate.
                 msg = str(e)
-                fallback_vdot: Optional[float] = None
+                fallback_rpi: Optional[float] = None
                 fallback_source: Optional[str] = None
 
-                if athlete and getattr(athlete, "vdot", None):
-                    fallback_vdot = float(athlete.vdot)
+                if athlete and getattr(athlete, "rpi", None):
+                    fallback_rpi = float(athlete.rpi)
                     fallback_source = "athlete_rpi"
-                elif pb_vdot and pb_vdot.get("vdot"):
-                    fallback_vdot = float(pb_vdot["vdot"])
+                elif pb_rpi and pb_rpi.get("rpi"):
+                    fallback_rpi = float(pb_rpi["rpi"])
                     fallback_source = "pb_rpi"
 
-                if fallback_vdot and "athlete_calibrated_model" in msg:
-                    seconds = calculate_race_time_from_vdot(float(fallback_vdot), dist_m)
+                if fallback_rpi and "athlete_calibrated_model" in msg:
+                    seconds = calculate_race_time_from_rpi(float(fallback_rpi), dist_m)
                     if seconds:
                         predictions[label] = {
                             "prediction": {
@@ -1023,7 +1023,7 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                                 "confidence_interval_formatted": None,
                                 "confidence": "Estimate",
                             },
-                            "projections": {"rpi": round(float(fallback_vdot), 1), "ctl": None, "tsb": None},
+                            "projections": {"rpi": round(float(fallback_rpi), 1), "ctl": None, "tsb": None},
                             "factors": [
                                 "Calibrated performance model unavailable; using RPI-derived equivalent times.",
                                 f"RPI source: {fallback_source or 'unknown'}",
@@ -1036,8 +1036,8 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     predictions[label] = {"error": msg}
 
         # Evidence: cite the PB used for fallback (if any), plus a derived marker.
-        if pb_vdot and pb_vdot.get("pb"):
-            pb = pb_vdot["pb"]
+        if pb_rpi and pb_rpi.get("pb"):
+            pb = pb_rpi["pb"]
             pb_date = (
                 getattr(pb, "achieved_at", None).date().isoformat()
                 if getattr(pb, "achieved_at", None)
@@ -2304,8 +2304,8 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
 
         # Build evidence
         evidence: List[Dict[str, Any]] = []
-        if athlete.vdot:
-            evidence.append({"type": "metric", "name": "RPI", "value": f"{athlete.vdot:.1f}"})
+        if athlete.rpi:
+            evidence.append({"type": "metric", "name": "RPI", "value": f"{athlete.rpi:.1f}"})
         if athlete.runner_type:
             evidence.append({"type": "classification", "name": "runner_type", "value": athlete.runner_type})
         if athlete.max_hr:
@@ -2318,8 +2318,8 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
         if athlete.sex:
             n_parts.append(f"{athlete.sex}")
         n_parts.append("runner.")
-        if athlete.vdot:
-            n_parts.append(f"RPI (Running Performance Index): {athlete.vdot:.1f}.")
+        if athlete.rpi:
+            n_parts.append(f"RPI (Running Performance Index): {athlete.rpi:.1f}.")
         if athlete.runner_type:
             n_parts.append(f"Runner type: {athlete.runner_type}.")
         if athlete.max_hr:
@@ -2353,8 +2353,8 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     "threshold_hr": athlete.threshold_hr,
                     "threshold_pace": threshold_pace_display,
                     "threshold_pace_sec_per_km": float(athlete.threshold_pace_per_km) if athlete.threshold_pace_per_km else None,
-                    "rpi": float(athlete.vdot) if athlete.vdot else None,  # Running Performance Index
-                    "vdot": float(athlete.vdot) if athlete.vdot else None,  # Keep for backward compatibility
+                    "rpi": float(athlete.rpi) if athlete.rpi else None,  # Running Performance Index
+                    "rpi": float(athlete.rpi) if athlete.rpi else None,  # Keep for backward compatibility
                     "hr_zones": hr_zones,
                 },
                 "runner_typing": {

@@ -19,7 +19,7 @@ from services.fitness_bank import (
     RacePerformance,
     ConstraintType,
     ExperienceLevel,
-    calculate_vdot,
+    calculate_rpi,
 )
 from services.week_theme_generator import (
     WeekTheme,
@@ -31,7 +31,7 @@ from services.workout_prescription import (
     WorkoutPrescriptionGenerator,
     DayPlan,
     WeekPlan,
-    calculate_paces_from_vdot,
+    calculate_paces_from_rpi,
 )
 from services.constraint_aware_planner import (
     ConstraintAwarePlanner,
@@ -61,7 +61,7 @@ def elite_fitness_bank():
                 distance_m=10000,
                 finish_time_seconds=2350,  # 39:10
                 pace_per_mile=6.30,
-                vdot=53.2,
+                rpi=53.2,
                 conditions=None,
                 confidence=1.0,
                 name="10K PR"
@@ -72,20 +72,20 @@ def elite_fitness_bank():
                 distance_m=21097,
                 finish_time_seconds=5260,  # 1:27:40
                 pace_per_mile=6.65,
-                vdot=52.9,
+                rpi=52.9,
                 conditions=None,
                 confidence=1.0,
                 name="Half Marathon"
             ),
         ],
-        best_vdot=53.2,
+        best_rpi=53.2,
         best_race=RacePerformance(
             date=date(2025, 12, 13),
             distance="10k",
             distance_m=10000,
             finish_time_seconds=2350,
             pace_per_mile=6.30,
-            vdot=53.2,
+            rpi=53.2,
             conditions=None,
             confidence=1.0,
         ),
@@ -122,7 +122,7 @@ def intermediate_fitness_bank():
         peak_threshold_miles=6.0,
         peak_ctl=60.0,
         race_performances=[],
-        best_vdot=45.0,
+        best_rpi=45.0,
         best_race=None,
         current_weekly_miles=40.0,
         current_ctl=55.0,
@@ -146,37 +146,37 @@ def intermediate_fitness_bank():
 
 
 # =============================================================================
-# VDOT CALCULATION TESTS
+# RPI CALCULATION TESTS
 # =============================================================================
 
-class TestVDOTCalculation:
-    """Tests for VDOT calculation."""
+class TestRPICalculation:
+    """Tests for RPI calculation."""
     
-    def test_10k_vdot(self):
-        """Test VDOT calculation for 10K race."""
-        # 39:10 10K should be ~VDOT 53
-        vdot = calculate_vdot(10000, 2350)
-        assert 52 <= vdot <= 55
+    def test_10k_rpi(self):
+        """Test RPI calculation for 10K race."""
+        # 39:10 10K should be ~RPI 53
+        rpi = calculate_rpi(10000, 2350)
+        assert 52 <= rpi <= 55
     
-    def test_half_marathon_vdot(self):
-        """Test VDOT calculation for half marathon."""
-        # 1:30:00 half should be ~VDOT 50
-        vdot = calculate_vdot(21097, 5400)
-        assert 48 <= vdot <= 52
+    def test_half_marathon_rpi(self):
+        """Test RPI calculation for half marathon."""
+        # 1:30:00 half should be ~RPI 50
+        rpi = calculate_rpi(21097, 5400)
+        assert 48 <= rpi <= 52
     
-    def test_marathon_vdot(self):
-        """Test VDOT calculation for marathon."""
-        # 3:00:00 marathon should be ~VDOT 53
-        vdot = calculate_vdot(42195, 10800)
-        assert 51 <= vdot <= 55
+    def test_marathon_rpi(self):
+        """Test RPI calculation for marathon."""
+        # 3:00:00 marathon should be ~RPI 53
+        rpi = calculate_rpi(42195, 10800)
+        assert 51 <= rpi <= 55
 
 
 class TestPaceCalculation:
     """Tests for pace zone calculation."""
     
-    def test_paces_from_vdot_53(self):
-        """Test pace calculation from VDOT 53."""
-        paces = calculate_paces_from_vdot(53.0)
+    def test_paces_from_rpi_53(self):
+        """Test pace calculation from RPI 53."""
+        paces = calculate_paces_from_rpi(53.0)
         
         # Easy should be ~7:45-8:15 (from lookup service)
         assert 7.7 <= paces["easy"] <= 8.3
@@ -187,11 +187,11 @@ class TestPaceCalculation:
         # Threshold should be ~6:20-6:30
         assert 6.2 <= paces["threshold"] <= 6.6
     
-    def test_paces_from_vdot_45(self):
-        """Test pace calculation from VDOT 45."""
-        paces = calculate_paces_from_vdot(45.0)
+    def test_paces_from_rpi_45(self):
+        """Test pace calculation from RPI 45."""
+        paces = calculate_paces_from_rpi(45.0)
         
-        # Easy should be slower than VDOT 53
+        # Easy should be slower than RPI 53
         assert paces["easy"] > 8.3
 
 
@@ -361,7 +361,7 @@ class TestWorkoutPrescription:
         assert peak_long.target_miles > early_long.target_miles
     
     def test_personal_paces(self, elite_fitness_bank):
-        """Test that workouts use personal VDOT paces."""
+        """Test that workouts use personal RPI paces."""
         generator = WorkoutPrescriptionGenerator(elite_fitness_bank, race_distance="marathon")
         
         week = generator.generate_week(

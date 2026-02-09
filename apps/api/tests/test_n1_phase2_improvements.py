@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 from services.fitness_bank import FitnessBank, ExperienceLevel, ConstraintType
 from services.workout_prescription import (
     WorkoutPrescriptionGenerator,
-    calculate_paces_from_vdot,
+    calculate_paces_from_rpi,
 )
 from services.week_theme_generator import (
     generate_week_themes,
@@ -44,7 +44,7 @@ def experienced_athlete_bank():
         peak_threshold_miles=10.0,
         peak_ctl=85.0,
         race_performances=[],
-        best_vdot=53.0,
+        best_rpi=53.0,
         best_race=None,
         current_weekly_miles=65.0,
         current_ctl=80.0,
@@ -80,7 +80,7 @@ def new_athlete_bank():
         peak_threshold_miles=4.0,
         peak_ctl=40.0,
         race_performances=[],
-        best_vdot=42.0,
+        best_rpi=42.0,
         best_race=None,
         current_weekly_miles=30.0,
         current_ctl=35.0,
@@ -138,7 +138,7 @@ class TestN1LongRunCap:
         generator = WorkoutPrescriptionGenerator(experienced_athlete_bank, "marathon")
         
         # Calculate what the population time cap would be
-        paces = calculate_paces_from_vdot(experienced_athlete_bank.best_vdot)
+        paces = calculate_paces_from_rpi(experienced_athlete_bank.best_rpi)
         time_cap = 150 / paces["long"]
         
         # Generator cap should be HIGHER than time cap (using proven capability)
@@ -159,7 +159,7 @@ class TestN1LongRunCap:
             peak_threshold_miles=6.0,
             peak_ctl=50.0,
             race_performances=[],
-            best_vdot=48.0,
+            best_rpi=48.0,
             best_race=None,
             current_weekly_miles=45.0,
             current_ctl=45.0,
@@ -195,7 +195,7 @@ class TestN1LongRunCap:
             peak_threshold_miles=6.0,
             peak_ctl=50.0,
             race_performances=[],
-            best_vdot=48.0,
+            best_rpi=48.0,
             best_race=None,
             current_weekly_miles=45.0,
             current_ctl=45.0,
@@ -282,7 +282,7 @@ class TestStridesAndHillSprints:
             peak_threshold_miles=3.0,
             peak_ctl=30.0,
             race_performances=[],
-            best_vdot=38.0,
+            best_rpi=38.0,
             best_race=None,
             current_weekly_miles=20.0,
             current_ctl=25.0,
@@ -326,7 +326,7 @@ class TestThresholdWorkouts:
     
     def test_threshold_pace_exists(self):
         """Pace calculation should include threshold pace."""
-        paces = calculate_paces_from_vdot(50.0)
+        paces = calculate_paces_from_rpi(50.0)
         
         assert "threshold" in paces
         # Tempo was removed - we only use threshold

@@ -33,7 +33,7 @@ class RacePerformance:
     distance_m: float
     finish_time_seconds: int
     pace_per_mile: float
-    vdot: float
+    rpi: float
     conditions: Optional[str] = None  # "limping", "hot", "hilly", "perfect"
     confidence: float = 1.0           # Weight for this performance
     name: Optional[str] = None
@@ -44,7 +44,7 @@ class RacePerformance:
             "distance": self.distance,
             "finish_time": self.finish_time_seconds,
             "pace_per_mile": round(self.pace_per_mile, 2),
-            "vdot": round(self.vdot, 1),
+            "rpi": round(self.rpi, 1),
             "conditions": self.conditions
         }
 
@@ -83,7 +83,7 @@ class FitnessBank:
     
     # Proven race performances
     race_performances: List[RacePerformance]
-    best_vdot: float
+    best_rpi: float
     best_race: Optional[RacePerformance]
     
     # Current state
@@ -134,7 +134,7 @@ class FitnessBank:
                 "long_run": round(self.current_long_run_miles, 1),
                 "avg_long_run": round(self.average_long_run_miles, 1)
             },
-            "best_vdot": round(self.best_vdot, 1),
+            "best_rpi": round(self.best_rpi, 1),
             "races": [r.to_dict() for r in self.race_performances[:5]],
             "tau1": round(self.tau1, 1),
             "tau2": round(self.tau2, 1),
@@ -153,12 +153,12 @@ class FitnessBank:
 
 
 # =============================================================================
-# VDOT CALCULATION
+# RPI CALCULATION
 # =============================================================================
 
-def calculate_vdot(distance_m: float, time_seconds: int) -> float:
+def calculate_rpi(distance_m: float, time_seconds: int) -> float:
     """
-    Calculate VDOT from race performance.
+    Calculate RPI from race performance.
     
     Uses Daniels' formula approximation.
     """
@@ -183,29 +183,29 @@ def calculate_vdot(distance_m: float, time_seconds: int) -> float:
     import math
     pct_vo2max = 0.8 + 0.1894393 * math.exp(-0.012778 * t) + 0.2989558 * math.exp(-0.1932605 * t)
     
-    # VDOT = VO2 / %VO2max
+    # RPI = VO2 / %VO2max
     if pct_vo2max > 0:
-        vdot = vo2 / pct_vo2max
+        rpi = vo2 / pct_vo2max
     else:
-        vdot = 0.0
+        rpi = 0.0
     
-    return max(20.0, min(85.0, vdot))  # Clamp to reasonable range
+    return max(20.0, min(85.0, rpi))  # Clamp to reasonable range
 
 
-def vdot_equivalent_time(vdot: float, distance_m: float) -> int:
-    """Calculate equivalent time for a distance given VDOT."""
+def rpi_equivalent_time(rpi: float, distance_m: float) -> int:
+    """Calculate equivalent time for a distance given RPI."""
     import math
     
-    # Binary search for time that gives this VDOT at this distance
+    # Binary search for time that gives this RPI at this distance
     low, high = 60, 36000  # 1 min to 10 hours
     
     for _ in range(50):
         mid = (low + high) // 2
-        calc_vdot = calculate_vdot(distance_m, mid)
+        calc_rpi = calculate_rpi(distance_m, mid)
         
-        if abs(calc_vdot - vdot) < 0.1:
+        if abs(calc_rpi - rpi) < 0.1:
             return mid
-        elif calc_vdot > vdot:
+        elif calc_rpi > rpi:
             low = mid
         else:
             high = mid
@@ -293,7 +293,7 @@ class FitnessBankCalculator:
         
         # Extract race performances
         races = self._extract_race_performances(activities)
-        best_vdot, best_race = self._find_best_race(races)
+        best_rpi, best_race = self._find_best_race(races)
         
         # Calculate current weekly volume
         current_weekly = self._calculate_current_weekly(activities)
@@ -335,7 +335,7 @@ class FitnessBankCalculator:
             peak_threshold_miles=peaks["peak_threshold"],
             peak_ctl=peaks["peak_ctl"],
             race_performances=races,
-            best_vdot=best_vdot,
+            best_rpi=best_rpi,
             best_race=best_race,
             current_weekly_miles=current_weekly,
             current_ctl=current_ctl,
@@ -486,7 +486,7 @@ class FitnessBankCalculator:
                 conditions = "hilly"
             
             if is_race and distance_type:
-                vdot = calculate_vdot(a.distance_m, duration_sec)
+                rpi = calculate_rpi(a.distance_m, duration_sec)
                 
                 # Adjust confidence based on conditions
                 confidence = 1.0
@@ -503,7 +503,7 @@ class FitnessBankCalculator:
                     distance_m=a.distance_m,
                     finish_time_seconds=duration_sec,
                     pace_per_mile=pace,
-                    vdot=vdot,
+                    rpi=rpi,
                     conditions=conditions,
                     confidence=confidence,
                     name=a.name
@@ -528,7 +528,7 @@ class FitnessBankCalculator:
             return "marathon"
     
     def _find_best_race(self, races: List[RacePerformance]) -> Tuple[float, Optional[RacePerformance]]:
-        """Find best VDOT from races, weighted by confidence and recency."""
+        """Find best RPI from races, weighted by confidence and recency."""
         if not races:
             return 45.0, None
         
@@ -540,18 +540,18 @@ class FitnessBankCalculator:
             days_ago = (today - r.date).days
             recency_weight = max(0.5, 1.0 - (days_ago / 365))  # Decay over year
             
-            # Adjust VDOT by confidence (limping = actual fitness higher)
-            adjusted_vdot = r.vdot * r.confidence
+            # Adjust RPI by confidence (limping = actual fitness higher)
+            adjusted_rpi = r.rpi * r.confidence
             
-            weighted_races.append((adjusted_vdot * recency_weight, r))
+            weighted_races.append((adjusted_rpi * recency_weight, r))
         
-        # Sort by weighted VDOT
+        # Sort by weighted RPI
         weighted_races.sort(key=lambda x: x[0], reverse=True)
         
         best_race = weighted_races[0][1]
         
-        # Return the actual (unadjusted) best VDOT from recent good races
-        return best_race.vdot * best_race.confidence, best_race
+        # Return the actual (unadjusted) best RPI from recent good races
+        return best_race.rpi * best_race.confidence, best_race
     
     def _calculate_current_weekly(self, activities: List) -> float:
         """Calculate current weekly mileage (last 4 weeks average)."""
@@ -780,7 +780,7 @@ class FitnessBankCalculator:
             peak_threshold_miles=5.0,
             peak_ctl=40.0,
             race_performances=[],
-            best_vdot=40.0,
+            best_rpi=40.0,
             best_race=None,
             current_weekly_miles=0.0,
             current_ctl=30.0,

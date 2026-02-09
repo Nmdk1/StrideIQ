@@ -1,7 +1,7 @@
 """
-VDOT Lookup Service
+RPI Lookup Service
 
-Provides lookup-based VDOT calculations using stored lookup tables.
+Provides lookup-based RPI calculations using stored lookup tables.
 More accurate than approximation formulas.
 """
 import json
@@ -13,12 +13,12 @@ from core.database import get_db_sync
 from models import CoachingKnowledgeEntry
 
 
-def get_vdot_lookup_tables() -> Optional[Dict]:
-    """Get VDOT lookup tables from knowledge base."""
+def get_rpi_lookup_tables() -> Optional[Dict]:
+    """Get RPI lookup tables from knowledge base."""
     db = get_db_sync()
     try:
         entry = db.query(CoachingKnowledgeEntry).filter(
-            CoachingKnowledgeEntry.principle_type == "vdot_lookup_tables",
+            CoachingKnowledgeEntry.principle_type == "rpi_lookup_tables",
             CoachingKnowledgeEntry.methodology == "Daniels"
         ).first()
         
@@ -29,29 +29,29 @@ def get_vdot_lookup_tables() -> Optional[Dict]:
         db.close()
 
 
-def interpolate_pace(vdot: float, pace_lookup: Dict) -> Optional[Dict]:
+def interpolate_pace(rpi: float, pace_lookup: Dict) -> Optional[Dict]:
     """
-    Interpolate training paces for a given VDOT value.
+    Interpolate training paces for a given RPI value.
     
     Args:
-        vdot: VDOT value
+        rpi: RPI value
         pace_lookup: Lookup table dictionary
         
     Returns:
-        Dictionary with training paces or None if VDOT out of range
+        Dictionary with training paces or None if RPI out of range
     """
     if not pace_lookup:
         return None
     
     # Convert keys to floats and sort
-    vdots = sorted([float(k) for k in pace_lookup.keys()])
+    rpis = sorted([float(k) for k in pace_lookup.keys()])
     
-    if vdot < vdots[0] or vdot > vdots[-1]:
+    if rpi < rpis[0] or rpi > rpis[-1]:
         return None  # Out of range
     
     # Find exact match (within 0.1 tolerance)
-    for v in vdots:
-        if abs(v - vdot) < 0.1:
+    for v in rpis:
+        if abs(v - rpi) < 0.1:
             # Find the actual key in the dictionary
             for k in pace_lookup.keys():
                 if abs(float(k) - v) < 0.1:
@@ -59,16 +59,16 @@ def interpolate_pace(vdot: float, pace_lookup: Dict) -> Optional[Dict]:
             return None
     
     # Find bounding values for interpolation
-    lower_vdot = None
-    upper_vdot = None
+    lower_rpi = None
+    upper_rpi = None
     
-    for v in vdots:
-        if v <= vdot:
-            lower_vdot = v
-        if v >= vdot and upper_vdot is None:
-            upper_vdot = v
+    for v in rpis:
+        if v <= rpi:
+            lower_rpi = v
+        if v >= rpi and upper_rpi is None:
+            upper_rpi = v
     
-    if lower_vdot is None or upper_vdot is None:
+    if lower_rpi is None or upper_rpi is None:
         return None
     
     # Get the actual dictionary keys (they might be floats as strings or actual floats)
@@ -76,9 +76,9 @@ def interpolate_pace(vdot: float, pace_lookup: Dict) -> Optional[Dict]:
     upper_key = None
     for k in pace_lookup.keys():
         k_float = float(k)
-        if abs(k_float - lower_vdot) < 0.1:
+        if abs(k_float - lower_rpi) < 0.1:
             lower_key = k
-        if abs(k_float - upper_vdot) < 0.1:
+        if abs(k_float - upper_rpi) < 0.1:
             upper_key = k
     
     if lower_key is None or upper_key is None:
@@ -88,7 +88,7 @@ def interpolate_pace(vdot: float, pace_lookup: Dict) -> Optional[Dict]:
     lower_paces = pace_lookup[lower_key]
     upper_paces = pace_lookup[upper_key]
     
-    ratio = (vdot - lower_vdot) / (upper_vdot - lower_vdot)
+    ratio = (rpi - lower_rpi) / (upper_rpi - lower_rpi)
     
     interpolated = {}
     for pace_type in ["e_pace", "m_pace", "t_pace", "i_pace", "r_pace"]:
@@ -107,12 +107,12 @@ def interpolate_pace(vdot: float, pace_lookup: Dict) -> Optional[Dict]:
     return interpolated
 
 
-def calculate_vdot_from_race_time_lookup(distance_meters: float, time_seconds: int) -> Optional[float]:
+def calculate_rpi_from_race_time_lookup(distance_meters: float, time_seconds: int) -> Optional[float]:
     """
-    Calculate VDOT from race time using the actual VDOT formula.
+    Calculate RPI from race time using the actual RPI formula.
     
     Uses the validated formula from Daniels' Running Formula:
-    VDOT = (-4.60 + 0.182258 * V + 0.000104 * V^2) / (0.8 + 0.1894393 * e^(-0.012778 * T) + 0.2989558 * e^(-0.1932605 * T))
+    RPI = (-4.60 + 0.182258 * V + 0.000104 * V^2) / (0.8 + 0.1894393 * e^(-0.012778 * T) + 0.2989558 * e^(-0.1932605 * T))
     
     Where:
     - V = velocity in meters per minute
@@ -128,7 +128,7 @@ def calculate_vdot_from_race_time_lookup(distance_meters: float, time_seconds: i
     velocity_m_per_min = (distance_meters / time_seconds) * 60
     time_minutes = time_seconds / 60.0
     
-    # Calculate VDOT using the formula
+    # Calculate RPI using the formula
     numerator = -4.60 + 0.182258 * velocity_m_per_min + 0.000104 * (velocity_m_per_min ** 2)
     
     exp1 = math.exp(-0.012778 * time_minutes)
@@ -138,25 +138,25 @@ def calculate_vdot_from_race_time_lookup(distance_meters: float, time_seconds: i
     if denominator == 0:
         return None
     
-    vdot = numerator / denominator
+    rpi = numerator / denominator
     
     # Round to 1 decimal place
     # Note: The Daniels formula is scientifically accurate and matches
     # industry-standard calculators when implemented correctly
-    return round(vdot, 1)
+    return round(rpi, 1)
 
 
-def get_training_paces_from_vdot(vdot: float, use_closest_integer: bool = True) -> Optional[Dict]:
+def get_training_paces_from_rpi(rpi: float, use_closest_integer: bool = True) -> Optional[Dict]:
     """
-    Get training paces for a given VDOT using lookup tables.
+    Get training paces for a given RPI using lookup tables.
     
     Args:
-        vdot: VDOT value (can be float)
-        use_closest_integer: If True, round to nearest integer VDOT for exact reference values
+        rpi: RPI value (can be float)
+        use_closest_integer: If True, round to nearest integer RPI for exact reference values
     
     Returns paces in both MM:SS format and seconds.
     """
-    tables = get_vdot_lookup_tables()
+    tables = get_rpi_lookup_tables()
     if not tables:
         return None
     
@@ -164,33 +164,33 @@ def get_training_paces_from_vdot(vdot: float, use_closest_integer: bool = True) 
     if not pace_lookup:
         return None
     
-    # Use closest integer VDOT for exact reference values
+    # Use closest integer RPI for exact reference values
     if use_closest_integer:
-        vdot_int = int(round(vdot))
-        vdot_float = float(vdot_int)
+        rpi_int = int(round(rpi))
+        rpi_float = float(rpi_int)
         # Check if exact integer exists
-        if vdot_float in pace_lookup:
-            return pace_lookup[vdot_float]
+        if rpi_float in pace_lookup:
+            return pace_lookup[rpi_float]
         # Try to find closest key
         for k in pace_lookup.keys():
-            if abs(float(k) - vdot_float) < 0.1:
+            if abs(float(k) - rpi_float) < 0.1:
                 return pace_lookup[k]
     
     # Otherwise interpolate
-    return interpolate_pace(vdot, pace_lookup)
+    return interpolate_pace(rpi, pace_lookup)
 
 
-def get_equivalent_race_times(vdot: float, use_closest_integer: bool = True) -> Optional[Dict]:
+def get_equivalent_race_times(rpi: float, use_closest_integer: bool = True) -> Optional[Dict]:
     """
-    Get equivalent race times for a given VDOT using lookup tables.
+    Get equivalent race times for a given RPI using lookup tables.
     
     Args:
-        vdot: VDOT value (can be float)
-        use_closest_integer: If True, round to nearest integer VDOT for exact reference values
+        rpi: RPI value (can be float)
+        use_closest_integer: If True, round to nearest integer RPI for exact reference values
     
     Returns race times for 5K, 10K, half marathon, and marathon.
     """
-    tables = get_vdot_lookup_tables()
+    tables = get_rpi_lookup_tables()
     if not tables:
         return None
     
@@ -198,50 +198,50 @@ def get_equivalent_race_times(vdot: float, use_closest_integer: bool = True) -> 
     if not equivalent_lookup:
         return None
     
-    # Use closest integer VDOT for exact reference values (like training paces)
+    # Use closest integer RPI for exact reference values (like training paces)
     if use_closest_integer:
-        vdot_int = int(round(vdot))
-        vdot_float = float(vdot_int)
+        rpi_int = int(round(rpi))
+        rpi_float = float(rpi_int)
         # Check if exact integer exists
-        if vdot_float in equivalent_lookup:
-            return equivalent_lookup[vdot_float]
+        if rpi_float in equivalent_lookup:
+            return equivalent_lookup[rpi_float]
         # Try to find closest key
         for k in equivalent_lookup.keys():
-            if abs(float(k) - vdot_float) < 0.1:
+            if abs(float(k) - rpi_float) < 0.1:
                 return equivalent_lookup[k]
     
-    # Find closest VDOT value
-    vdots = sorted([float(k) for k in equivalent_lookup.keys()])
+    # Find closest RPI value
+    rpis = sorted([float(k) for k in equivalent_lookup.keys()])
     
-    if vdot < vdots[0]:
+    if rpi < rpis[0]:
         # Return lowest available
         for k in equivalent_lookup.keys():
-            if abs(float(k) - vdots[0]) < 0.1:
+            if abs(float(k) - rpis[0]) < 0.1:
                 return equivalent_lookup[k]
         return None
-    if vdot > vdots[-1]:
+    if rpi > rpis[-1]:
         # Return highest available
         for k in equivalent_lookup.keys():
-            if abs(float(k) - vdots[-1]) < 0.1:
+            if abs(float(k) - rpis[-1]) < 0.1:
                 return equivalent_lookup[k]
         return None
     
     # Find exact match (within tolerance)
     for k in equivalent_lookup.keys():
-        if abs(float(k) - vdot) < 0.1:
+        if abs(float(k) - rpi) < 0.1:
             return equivalent_lookup[k]
     
     # Interpolate
-    lower_vdot = None
-    upper_vdot = None
+    lower_rpi = None
+    upper_rpi = None
     
-    for v in vdots:
-        if v <= vdot:
-            lower_vdot = v
-        if v >= vdot and upper_vdot is None:
-            upper_vdot = v
+    for v in rpis:
+        if v <= rpi:
+            lower_rpi = v
+        if v >= rpi and upper_rpi is None:
+            upper_rpi = v
     
-    if lower_vdot is None or upper_vdot is None:
+    if lower_rpi is None or upper_rpi is None:
         return None
     
     # Find actual keys
@@ -249,9 +249,9 @@ def get_equivalent_race_times(vdot: float, use_closest_integer: bool = True) -> 
     upper_key = None
     for k in equivalent_lookup.keys():
         k_float = float(k)
-        if abs(k_float - lower_vdot) < 0.1:
+        if abs(k_float - lower_rpi) < 0.1:
             lower_key = k
-        if abs(k_float - upper_vdot) < 0.1:
+        if abs(k_float - upper_rpi) < 0.1:
             upper_key = k
     
     if lower_key is None or upper_key is None:
@@ -260,7 +260,7 @@ def get_equivalent_race_times(vdot: float, use_closest_integer: bool = True) -> 
     lower_times = equivalent_lookup[lower_key]
     upper_times = equivalent_lookup[upper_key]
     
-    ratio = (vdot - lower_vdot) / (upper_vdot - lower_vdot)
+    ratio = (rpi - lower_rpi) / (upper_rpi - lower_rpi)
     
     interpolated = {
         "race_times_formatted": {},

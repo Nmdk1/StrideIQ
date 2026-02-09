@@ -60,7 +60,7 @@ Added permanent delete user functionality to the admin panel.
 ## Previously Completed
 
 ### RPI Terminology Fix (Phase 11)
-- Coach AI uses "RPI" instead of "VDOT"
+- Coach AI uses "RPI" instead of "RPI"
 - `TrainingPaceCalculator.tsx` renamed from `VDOTCalculator.tsx`
 - All tests pass
 
@@ -80,7 +80,7 @@ Added permanent delete user functionality to the admin panel.
 | File | Purpose |
 |------|---------|
 | `apps/api/services/ai_coach.py` | Coach system prompts with RPI terminology |
-| `apps/api/services/coach_tools.py` | Tool responses with dual rpi/vdot keys |
+| `apps/api/services/coach_tools.py` | Tool responses with dual rpi/rpi keys |
 | `_AI_CONTEXT_/SESSION_SUMMARY_2026_02_01_CLEANUP.md` | Test user cleanup details |
 
 ---

@@ -25,7 +25,7 @@ This session successfully completed:
 
 ### 4. Bug Fixes
 - **WMACalculator API endpoint**: Fixed from `/age-grade/calculate` to `/age-grade`
-- **Terminology**: Unified to "Training Pace Calculator", removed VDOT references
+- **Terminology**: Unified to "Training Pace Calculator", removed RPI references
 
 ### 5. Documentation
 - ADR: `_AI_CONTEXT_/OPERATIONS/15_TIMEINPUT_COMPONENT_ADR.md`
@@ -36,7 +36,7 @@ This session successfully completed:
 
 ## Commits
 ```
-41ef717 Fix all known issues: unit test failures, false positives, auto-estimation for max_hr/VDOT, Pydantic v2 migration, classifier improvements
+41ef717 Fix all known issues: unit test failures, false positives, auto-estimation for max_hr/RPI, Pydantic v2 migration, classifier improvements
 ef7a675 docs: Export chat history - session terminated due to premature commit
 c8879b6 Revert "feat: Add auto-formatting TimeInput for race time entry - type digits only, colons auto-inserted"
 ```

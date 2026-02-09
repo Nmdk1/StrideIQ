@@ -173,16 +173,16 @@ def estimate_max_hr(
     return None
 
 
-def estimate_vdot(
+def estimate_rpi(
     athlete: Athlete,
     db: Session,
     force_update: bool = False
 ) -> Optional[float]:
     """
-    Estimate VDOT for an athlete from their best recent race/effort.
+    Estimate RPI for an athlete from their best recent race/effort.
     
     Strategy:
-    1. If user has set VDOT, respect it (user override)
+    1. If user has set RPI, respect it (user override)
     2. Otherwise, calculate from best PersonalBest record
     3. Fallback: estimate from recent running activities
     
@@ -192,14 +192,14 @@ def estimate_vdot(
         force_update: If True, recalculate even if already set
         
     Returns:
-        Estimated VDOT or None if unable to estimate
+        Estimated RPI or None if unable to estimate
     """
-    from services.vdot_calculator import calculate_vdot_from_race_time
+    from services.rpi_calculator import calculate_rpi_from_race_time
     from models import PersonalBest
     
     # Don't override user-set value unless forced
-    if athlete.vdot and not force_update:
-        return athlete.vdot
+    if athlete.rpi and not force_update:
+        return athlete.rpi
     
     # Strategy 1: Calculate from best PersonalBest (most accurate)
     # Prefer race-verified PBs, but use any PB if no races
@@ -215,18 +215,18 @@ def estimate_vdot(
         ).order_by(PersonalBest.achieved_at.desc()).first()
     
     if best_pb and best_pb.distance_meters and best_pb.time_seconds:
-        vdot = calculate_vdot_from_race_time(
+        rpi = calculate_rpi_from_race_time(
             distance_meters=best_pb.distance_meters,
             time_seconds=best_pb.time_seconds
         )
         
-        if vdot and vdot > 20:  # Sanity check (VDOT < 20 is unrealistic)
+        if rpi and rpi > 20:  # Sanity check (RPI < 20 is unrealistic)
             # Update athlete if not user-set
-            if not athlete.vdot or force_update:
-                athlete.vdot = round(vdot, 1)
+            if not athlete.rpi or force_update:
+                athlete.rpi = round(rpi, 1)
                 db.commit()
             
-            return vdot
+            return rpi
     
     # Strategy 2: Estimate from recent running activities
     # Use best average pace from a sustained effort (30+ min runs)
@@ -240,27 +240,27 @@ def estimate_vdot(
     
     if recent_runs:
         # Find the fastest sustained effort
-        best_vdot = None
+        best_rpi = None
         for run in recent_runs:
             if run.distance_m and run.duration_s:
-                vdot = calculate_vdot_from_race_time(
+                rpi = calculate_rpi_from_race_time(
                     distance_meters=run.distance_m,
                     time_seconds=run.duration_s
                 )
-                if vdot and (best_vdot is None or vdot > best_vdot):
-                    best_vdot = vdot
+                if rpi and (best_rpi is None or rpi > best_rpi):
+                    best_rpi = rpi
         
-        if best_vdot and best_vdot > 20:
+        if best_rpi and best_rpi > 20:
             # Apply a slight discount since this isn't a race effort
             # (people typically run ~5-10% slower in training)
-            estimated_vdot = round(best_vdot * 0.95, 1)
+            estimated_rpi = round(best_rpi * 0.95, 1)
             
             # Update athlete if not user-set
-            if not athlete.vdot or force_update:
-                athlete.vdot = estimated_vdot
+            if not athlete.rpi or force_update:
+                athlete.rpi = estimated_rpi
                 db.commit()
             
-            return estimated_vdot
+            return estimated_rpi
     
     return None
 
@@ -271,7 +271,7 @@ def auto_estimate_athlete_thresholds(
     force_update: bool = False
 ) -> Dict[str, Optional[float]]:
     """
-    Auto-estimate missing max_hr and VDOT for an athlete.
+    Auto-estimate missing max_hr and RPI for an athlete.
     
     This is an optional enhancement that fills in values if not set.
     User-provided values are always respected unless force_update=True.
@@ -285,13 +285,13 @@ def auto_estimate_athlete_thresholds(
         Dictionary with estimated values:
         {
             'max_hr': int or None,
-            'vdot': float or None,
+            'rpi': float or None,
             'max_hr_source': 'user' | 'observed' | 'age_formula' | None,
-            'vdot_source': 'user' | 'personal_best' | 'training_estimate' | None
+            'rpi_source': 'user' | 'personal_best' | 'training_estimate' | None
         }
     """
     max_hr = estimate_max_hr(athlete, db, force_update)
-    vdot = estimate_vdot(athlete, db, force_update)
+    rpi = estimate_rpi(athlete, db, force_update)
     
     # Determine sources
     max_hr_source = None
@@ -307,18 +307,18 @@ def auto_estimate_athlete_thresholds(
         else:
             max_hr_source = 'observed'
     
-    vdot_source = None
-    if athlete.vdot:
-        # If we have personal bests, assume VDOT came from there
+    rpi_source = None
+    if athlete.rpi:
+        # If we have personal bests, assume RPI came from there
         from models import PersonalBest
         has_pbs = db.query(PersonalBest).filter(
             PersonalBest.athlete_id == athlete.id
         ).count() > 0
-        vdot_source = 'personal_best' if has_pbs else 'training_estimate'
+        rpi_source = 'personal_best' if has_pbs else 'training_estimate'
     
     return {
         'max_hr': max_hr,
-        'vdot': vdot,
+        'rpi': rpi,
         'max_hr_source': max_hr_source,
-        'vdot_source': vdot_source
+        'rpi_source': rpi_source
     }

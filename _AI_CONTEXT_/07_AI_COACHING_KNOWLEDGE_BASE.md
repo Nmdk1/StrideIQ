@@ -77,7 +77,7 @@ Clients never see methodology names (Daniels, Pfitzinger, Canova, etc.). The sys
 **Structure:**
 - **Coaches/Methodologies:** Daniels, Pfitzinger, Canova, Hansen, Roche, Bitter, etc.
 - **Core Principles:** Extracted from each methodology
-- **Training Concepts:** VDOT, periodization, load progression, recovery principles
+- **Training Concepts:** RPI, periodization, load progression, recovery principles
 - **Workout Types:** Easy runs, tempo, intervals, long runs, etc.
 - **Periodization Models:** Base building, sharpening, peaking, tapering
 
@@ -102,7 +102,7 @@ Clients never see methodology names (Daniels, Pfitzinger, Canova, etc.). The sys
 
 **Phase 2: Principle Encoding**
 - Convert coaching principles into algorithms/rules
-- Example: "Daniels VDOT formula" → function that calculates paces from race time
+- Example: "Daniels RPI formula" → function that calculates paces from race time
 - Example: "Pfitzinger periodization" → rules for volume/intensity progression
 - Example: "Canova special blocks" → principles for race-specific training
 
@@ -132,7 +132,7 @@ Clients never see methodology names (Daniels, Pfitzinger, Canova, etc.). The sys
 - Workout prescriptions (pace, duration, recovery)
 - Load adjustments
 - Periodization recommendations
-- Explanations ("Based on Daniels VDOT but adjusted for your +3% efficiency gain...")
+- Explanations ("Based on Daniels RPI but adjusted for your +3% efficiency gain...")
 
 ## Personalization Through Diagnostic Signals
 
@@ -188,7 +188,7 @@ coaching_knowledge/
 │   ├── advanced_marathoning.pdf
 │   └── ...
 ├── principles/
-│   ├── vdot_formula.py
+│   ├── rpi_formula.py
 │   ├── periodization_models.py
 │   └── ...
 └── embeddings/
@@ -254,7 +254,7 @@ coaching_knowledge/
 - Acquire and digitize coaching books/sources
 - Build knowledge extraction pipeline
 - Create initial knowledge base structure
-- Extract core principles (VDOT, periodization, etc.)
+- Extract core principles (RPI, periodization, etc.)
 
 ### Phase 2: Basic AI Integration (3-6 Months Post-Launch)
 - Integrate knowledge base with diagnostic engine

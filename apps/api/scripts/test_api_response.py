@@ -3,10 +3,10 @@
 import sys
 sys.path.insert(0, '/app')
 
-from services.vdot_enhanced import calculate_vdot_enhanced
+from services.rpi_enhanced import calculate_rpi_enhanced
 
 # Test with user's race
-result = calculate_vdot_enhanced(21097.5, 5234)  # Half marathon 1:27:14
+result = calculate_rpi_enhanced(21097.5, 5234)  # Half marathon 1:27:14
 
 print("API RESPONSE FORMAT TEST")
 print("=" * 60)

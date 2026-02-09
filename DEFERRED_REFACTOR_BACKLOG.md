@@ -20,7 +20,7 @@ A race time predictor using the Critical Speed (CS) and D' (D-prime) model — a
 
 ### Why Archived
 
-1. **Redundancy**: Training Pace Calculator (VDOT-based) already predicts race times more simply and accurately
+1. **Redundancy**: Training Pace Calculator (RPI-based) already predicts race times more simply and accurately
 2. **Low perceived value**: Users don't understand D' (421m) and CS (3.96 m/s) metrics
 3. **User confusion**: Two tools showing different predictions for same distance
 4. **Data complexity**: Required multiple PRs correctly synced — proved error-prone
@@ -43,7 +43,7 @@ The CS model could be revived if pivoted to **insight-only mode**:
 - Race pacing strategy based on D' depletion modeling
 - "Distance suitability: Your profile favors 10K+ over 5K"
 
-This would provide unique value that VDOT cannot offer — insights about the athlete's speed vs endurance profile, not just time predictions.
+This would provide unique value that RPI cannot offer — insights about the athlete's speed vs endurance profile, not just time predictions.
 
 ### How to Revive
 

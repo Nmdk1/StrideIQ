@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Test VDOT accuracy with exact values."""
+"""Test RPI accuracy with exact values."""
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from services.vdot_calculator import calculate_training_paces
-from services.vdot_lookup import get_training_paces_from_vdot
+from services.rpi_calculator import calculate_training_paces
+from services.rpi_lookup import get_training_paces_from_rpi
 
-def test_exact_vdot_50():
-    """Test exact VDOT 50 paces."""
-    print("Testing VDOT 50 (exact reference):")
+def test_exact_rpi_50():
+    """Test exact RPI 50 paces."""
+    print("Testing RPI 50 (exact reference):")
     paces = calculate_training_paces(50.0)
     
     expected = {
@@ -29,7 +29,7 @@ def test_exact_vdot_50():
     
     # Also test lookup directly
     print("\nDirect Lookup Test:")
-    lookup_paces = get_training_paces_from_vdot(50.0)
+    lookup_paces = get_training_paces_from_rpi(50.0)
     if lookup_paces:
         print(f"  E: {lookup_paces.get('e_pace')} (expected 8:15) {'✅' if lookup_paces.get('e_pace') == '8:15' else '❌'}")
         print(f"  M: {lookup_paces.get('m_pace')} (expected 7:00) {'✅' if lookup_paces.get('m_pace') == '7:00' else '❌'}")
@@ -38,5 +38,5 @@ def test_exact_vdot_50():
         print(f"  R: {lookup_paces.get('r_pace')} (expected 5:55) {'✅' if lookup_paces.get('r_pace') == '5:55' else '❌'}")
 
 if __name__ == "__main__":
-    test_exact_vdot_50()
+    test_exact_rpi_50()
 

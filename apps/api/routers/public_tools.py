@@ -11,8 +11,8 @@ the foundational exercise physiology behind most training methodologies.
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from services.vdot_calculator import calculate_vdot_comprehensive
-from services.vdot_enhanced import calculate_vdot_enhanced
+from services.rpi_calculator import calculate_rpi_comprehensive
+from services.rpi_enhanced import calculate_rpi_enhanced
 from services.performance_engine import calculate_age_graded_performance
 
 router = APIRouter(prefix="/v1/public", tags=["Public Tools"])
@@ -95,7 +95,7 @@ class PaceCalculatorRequest(BaseModel):
 
 
 # Keep old name for backward compatibility
-VDOTRequest = PaceCalculatorRequest
+RPIRequest = PaceCalculatorRequest
 
 
 class AgeGradeRequest(BaseModel):
@@ -106,7 +106,7 @@ class AgeGradeRequest(BaseModel):
     time_seconds: int
 
 
-@router.post("/vdot/calculate")
+@router.post("/rpi/calculate")
 def calculate_paces(request: PaceCalculatorRequest):
     """
     Calculate RPI (Running Performance Index) and training paces from race time.
@@ -128,7 +128,7 @@ def calculate_paces(request: PaceCalculatorRequest):
     
     # Use enhanced calculator for full functionality
     try:
-        result = calculate_vdot_enhanced(
+        result = calculate_rpi_enhanced(
             distance_meters=request.distance_meters,
             time_seconds=request.time_seconds
         )
@@ -139,7 +139,7 @@ def calculate_paces(request: PaceCalculatorRequest):
         return result
     except Exception as e:
         # Fallback to basic calculator if enhanced fails
-        result = calculate_vdot_comprehensive(
+        result = calculate_rpi_comprehensive(
             distance_meters=request.distance_meters,
             time_seconds=request.time_seconds
         )

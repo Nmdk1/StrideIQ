@@ -187,7 +187,7 @@ class AthleteThresholds:
     resting_hr: Optional[int]
     threshold_hr: Optional[int]
     threshold_pace_per_km: Optional[float]  # seconds per km
-    vdot: Optional[float]
+    rpi: Optional[float]
     marathon_pace_per_km: Optional[float]
     easy_pace_per_km: Optional[float]
 
@@ -322,29 +322,29 @@ class WorkoutClassifierService:
         if not athlete:
             return AthleteThresholds(
                 max_hr=None, resting_hr=None, threshold_hr=None,
-                threshold_pace_per_km=None, vdot=None,
+                threshold_pace_per_km=None, rpi=None,
                 marathon_pace_per_km=None, easy_pace_per_km=None
             )
 
-        # Calculate derived paces from VDOT if available
+        # Calculate derived paces from RPI if available
         easy_pace = None
         marathon_pace = None
         threshold_pace = athlete.threshold_pace_per_km
 
-        if athlete.vdot:
-            # Approximate paces from VDOT using Daniels formulas
+        if athlete.rpi:
+            # Approximate paces from RPI using Daniels formulas
             # E pace is typically 60-74% of vVO2max
             # These are rough approximations
-            vdot = athlete.vdot
-            easy_pace = 337.5 - 2.5 * vdot  # ~7:00/km for VDOT 30, ~5:00/km for VDOT 50
-            marathon_pace = 290 - 2.8 * vdot
+            rpi = athlete.rpi
+            easy_pace = 337.5 - 2.5 * rpi  # ~7:00/km for RPI 30, ~5:00/km for RPI 50
+            marathon_pace = 290 - 2.8 * rpi
 
         return AthleteThresholds(
             max_hr=athlete.max_hr,
             resting_hr=athlete.resting_hr,
             threshold_hr=athlete.threshold_hr,
             threshold_pace_per_km=threshold_pace,
-            vdot=athlete.vdot,
+            rpi=athlete.rpi,
             marathon_pace_per_km=marathon_pace,
             easy_pace_per_km=easy_pace
         )

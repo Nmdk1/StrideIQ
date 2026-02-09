@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
 """
-Validate VDOT Calculator Against vdoto2.com Reference
+Validate RPI Calculator Against rpio2.com Reference
 
-Tests VDOT calculations and training paces against known reference values.
+Tests RPI calculations and training paces against known reference values.
 """
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from services.vdot_calculator import (
-    calculate_vdot_from_race_time,
+from services.rpi_calculator import (
+    calculate_rpi_from_race_time,
     calculate_training_paces,
     calculate_equivalent_race_time
 )
-from services.vdot_lookup import (
-    calculate_vdot_from_race_time_lookup,
-    get_training_paces_from_vdot,
+from services.rpi_lookup import (
+    calculate_rpi_from_race_time_lookup,
+    get_training_paces_from_rpi,
     get_equivalent_race_times
 )
 
 
-# Reference test cases (validated against vdoto2.com)
+# Reference test cases (validated against rpio2.com)
 REFERENCE_CASES = [
     {
         "distance_m": 5000,
         "time_s": 1200,  # 20:00
-        "expected_vdot": 50.0,
+        "expected_rpi": 50.0,
         "expected_paces": {
             "e_pace": "8:15",  # Easy pace
             "m_pace": "7:00",  # Marathon pace
@@ -44,7 +44,7 @@ REFERENCE_CASES = [
     {
         "distance_m": 5000,
         "time_s": 1080,  # 18:00
-        "expected_vdot": 55.0,
+        "expected_rpi": 55.0,
         "expected_paces": {
             "e_pace": "7:30",
             "m_pace": "6:20",
@@ -56,12 +56,12 @@ REFERENCE_CASES = [
     {
         "distance_m": 10000,
         "time_s": 2400,  # 40:00
-        "expected_vdot": 50.0,
+        "expected_rpi": 50.0,
     },
     {
         "distance_m": 42195,
         "time_s": 11220,  # 3:07:00
-        "expected_vdot": 50.0,
+        "expected_rpi": 50.0,
     }
 ]
 
@@ -95,36 +95,36 @@ def format_pace_diff(actual: str, expected: str) -> str:
         return f"❌ Off by {diff_sec}s"
 
 
-def test_vdot_calculation():
-    """Test VDOT calculation accuracy."""
+def test_rpi_calculation():
+    """Test RPI calculation accuracy."""
     print("=" * 70)
-    print("VDOT CALCULATOR VALIDATION AGAINST REFERENCE")
+    print("RPI CALCULATOR VALIDATION AGAINST REFERENCE")
     print("=" * 70)
     
-    print("\n📊 VDOT Calculation Tests:")
+    print("\n📊 RPI Calculation Tests:")
     print("-" * 70)
     
     for i, test_case in enumerate(REFERENCE_CASES, 1):
         print(f"\nTest Case {i}: {test_case['distance_m']/1000:.1f}K in {test_case['time_s']//60}:{test_case['time_s']%60:02d}")
         
-        # Calculate VDOT
-        calculated_vdot = calculate_vdot_from_race_time(
+        # Calculate RPI
+        calculated_rpi = calculate_rpi_from_race_time(
             test_case["distance_m"],
             test_case["time_s"]
         )
         
-        expected_vdot = test_case.get("expected_vdot")
-        if expected_vdot:
-            diff = abs(calculated_vdot - expected_vdot) if calculated_vdot else None
+        expected_rpi = test_case.get("expected_rpi")
+        if expected_rpi:
+            diff = abs(calculated_rpi - expected_rpi) if calculated_rpi else None
             status = "✅" if diff and diff < 2 else "⚠️" if diff and diff < 5 else "❌"
-            print(f"  VDOT: Expected ~{expected_vdot}, Calculated {calculated_vdot}, Diff {diff:.1f} {status}")
+            print(f"  RPI: Expected ~{expected_rpi}, Calculated {calculated_rpi}, Diff {diff:.1f} {status}")
         else:
-            print(f"  VDOT: Calculated {calculated_vdot}")
+            print(f"  RPI: Calculated {calculated_rpi}")
         
         # Test training paces
-        if calculated_vdot and "expected_paces" in test_case:
+        if calculated_rpi and "expected_paces" in test_case:
             print(f"\n  Training Paces:")
-            paces = calculate_training_paces(calculated_vdot)
+            paces = calculate_training_paces(calculated_rpi)
             expected_paces = test_case["expected_paces"]
             
             pace_mapping = {
@@ -144,13 +144,13 @@ def test_vdot_calculation():
                     print(f"    {ref_key.upper()}: {actual} (expected {expected}) {diff_str}")
         
         # Test equivalent race times
-        # Use expected VDOT for lookup (not calculated) to test lookup table accuracy
-        if calculated_vdot and "expected_equivalents" in test_case:
+        # Use expected RPI for lookup (not calculated) to test lookup table accuracy
+        if calculated_rpi and "expected_equivalents" in test_case:
             print(f"\n  Equivalent Race Times:")
-            expected_vdot = test_case.get("expected_vdot")
-            # Use expected VDOT if available, otherwise use calculated
-            vdot_for_lookup = expected_vdot if expected_vdot else calculated_vdot
-            equivalents = get_equivalent_race_times(vdot_for_lookup)
+            expected_rpi = test_case.get("expected_rpi")
+            # Use expected RPI if available, otherwise use calculated
+            rpi_for_lookup = expected_rpi if expected_rpi else calculated_rpi
+            equivalents = get_equivalent_race_times(rpi_for_lookup)
             if equivalents:
                 for distance, expected_time in test_case["expected_equivalents"].items():
                     actual_time = equivalents.get("race_times_formatted", {}).get(distance, "")
@@ -166,5 +166,5 @@ def test_vdot_calculation():
 
 
 if __name__ == "__main__":
-    test_vdot_calculation()
+    test_rpi_calculation()
 

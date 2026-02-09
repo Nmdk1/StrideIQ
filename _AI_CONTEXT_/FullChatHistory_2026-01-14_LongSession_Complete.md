@@ -109,7 +109,7 @@ User requested that the diagnostic report format (demonstrated in `DIAGNOSTIC_RE
 
 | File | Reason |
 |------|--------|
-| `apps/api/services/critical_speed.py` | Archived (redundant with VDOT) |
+| `apps/api/services/critical_speed.py` | Archived (redundant with RPI) |
 | `apps/web/components/tools/CriticalSpeedPredictor.tsx` | Archived |
 | `apps/api/tests/test_critical_speed.py` | Archived |
 | `apps/api/tests/test_cs_prediction.py` | Archived |

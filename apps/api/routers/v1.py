@@ -278,7 +278,7 @@ def get_my_training_pace_profile(
 
     Trust contract:
     - This profile is computed from a race/time-trial anchor (not inferred from training).
-    - Stored separately from Athlete.vdot/threshold fields to avoid unintended plan changes.
+    - Stored separately from Athlete.rpi/threshold fields to avoid unintended plan changes.
     """
     prof = db.query(AthleteTrainingPaceProfile).filter(AthleteTrainingPaceProfile.athlete_id == current_user.id).first()
     if not prof:

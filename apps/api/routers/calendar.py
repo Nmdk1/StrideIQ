@@ -969,7 +969,7 @@ def _build_coach_context(
         "athlete": {
             "display_name": athlete.display_name,
             "subscription_tier": athlete.subscription_tier,
-            "vdot": athlete.vdot,
+            "rpi": athlete.rpi,
             "max_hr": athlete.max_hr,
             "threshold_pace_per_km": athlete.threshold_pace_per_km
         }

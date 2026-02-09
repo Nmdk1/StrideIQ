@@ -63,7 +63,7 @@ Today we completed the core AI coaching engine, implementing a complete principl
   - Flexible phase allocation (4-18 weeks)
   - Abbreviated build support (essential feature)
   - Week-by-week synthesis from principles
-  - VDOT-based workout prescriptions
+  - RPI-based workout prescriptions
   - Fallback workouts when principles not found
 
 **Key Functions:**
@@ -124,7 +124,7 @@ Today we completed the core AI coaching engine, implementing a complete principl
 ✅ Generate plans from 4-18 weeks  
 ✅ Adapt phase allocation to time available  
 ✅ Synthesize workouts from KB principles  
-✅ Apply VDOT-based pace prescriptions  
+✅ Apply RPI-based pace prescriptions  
 ✅ Validate plan safety and coherence  
 ✅ Deliver client-facing plans with neutral terminology  
 ✅ Track blending rationale internally  

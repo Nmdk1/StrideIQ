@@ -269,7 +269,7 @@ Generated Plan:
    - T-block and MP progression
 
 3. **External Validation**
-   - Daniels' Running Formula VDOT paces
+   - Daniels' Running Formula RPI paces
    - Pfitzinger Advanced Marathoning periodization
    - Scientific literature on Banister model
 

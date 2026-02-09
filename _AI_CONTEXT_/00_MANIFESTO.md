@@ -294,7 +294,7 @@ The product is structured as a freemium service with clear value progression fro
 **Purpose:** Acquisition funnel and value demonstration
 
 **Features:**
-- **VDOT Pace Calculator** - Free tool for runners to calculate training paces based on recent race times
+- **RPI Pace Calculator** - Free tool for runners to calculate training paces based on recent race times
 - Additional free tools (to be determined - e.g., age-grading calculator, pace converter)
 - Public content and resources
 - Lead generation for paid tiers
@@ -357,7 +357,7 @@ The product is structured as a freemium service with clear value progression fro
 - Lower tiers benefit from improved models but don't see recovery-specific insights
 
 **Conversion Funnel:**
-1. Free tools (VDOT calculator) → Demonstrate value
+1. Free tools (RPI calculator) → Demonstrate value
 2. Fixed plans → Low-barrier purchase, show coaching quality
 3. Guided coaching → Convert to subscription
 4. Premium insights → Upsell to top tier
@@ -375,7 +375,7 @@ The front-end is not a throwaway dashboard. It is a **world-class, multi-page we
 
 **Landing Page Requirements:**
 - Modern, fast, responsive — desktop and mobile equal priority  
-- **VDOT Pace Calculator** prominently featured (free tool)
+- **RPI Pace Calculator** prominently featured (free tool)
 - Clear value proposition for each tier
 - Conversion-optimized design
 - Multi-page architecture with clean URLs  
@@ -405,12 +405,12 @@ This website is the key that unlocks Garmin/Coros access and proves the product 
 **Phase 2 (Jan 19–Feb 1): Enhanced Diagnostics & Landing Page**  
 - **Landing Page & Free Tools:**
   - Build world-class landing page
-  - Implement VDOT Pace Calculator (free tool on landing page)
+  - Implement RPI Pace Calculator (free tool on landing page)
   - Additional free tools (age-grading calculator, pace converter)
 - **AI Knowledge Base Foundation:**
   - Acquire coaching books (Daniels, Pfitzinger, Canova, Hansen, Roche, Bitter, etc.)
   - Build knowledge extraction pipeline
-  - Extract core principles (VDOT, periodization, etc.)
+  - Extract core principles (RPI, periodization, etc.)
   - Build knowledge base storage (vector DB + structured DB)
 - **Diagnostic Engine:**
   - Efficiency Trend Signal (Master Signal)
@@ -458,7 +458,7 @@ This website is the key that unlocks Garmin/Coros access and proves the product 
 
 **Launch (March 15, 2026):**  
 Full release: 
-- Free landing page with VDOT calculator
+- Free landing page with RPI calculator
 - Fixed training plans (one-time purchase)
 - Guided coaching subscription (Tier 3 - activity-based insights)
 - Premium coaching subscription (Tier 4 - recovery insights, when Garmin/Coros available)

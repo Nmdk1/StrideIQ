@@ -81,21 +81,21 @@ app = FastAPI(
 
 
 @app.on_event("startup")
-async def backfill_missing_vdot():
-    """Backfill VDOT for athletes who have PBs but missing VDOT."""
+async def backfill_missing_rpi():
+    """Backfill RPI for athletes who have PBs but missing RPI."""
     try:
         from database import SessionLocal
-        from services.personal_best import backfill_vdot_from_pbs
+        from services.personal_best import backfill_rpi_from_pbs
         
         db = SessionLocal()
         try:
-            result = backfill_vdot_from_pbs(db)
+            result = backfill_rpi_from_pbs(db)
             if result['updated'] > 0:
-                logger.info(f"VDOT backfill complete: {result}")
+                logger.info(f"RPI backfill complete: {result}")
         finally:
             db.close()
     except Exception as e:
-        logger.warning(f"VDOT backfill failed (non-critical): {e}")
+        logger.warning(f"RPI backfill failed (non-critical): {e}")
 
 
 # CORS middleware
@@ -439,12 +439,12 @@ except ImportError:
 #     except Exception as e:
 #         logger.warning(f"Could not include Garmin router: {e}")
 
-# VDOT Calculator (free tool)
+# RPI Calculator (free tool)
 try:
-    from routers import vdot
-    app.include_router(vdot.router)
+    from routers import rpi
+    app.include_router(rpi.router)
 except ImportError:
-    pass  # VDOT router not available yet
+    pass  # RPI router not available yet
 
 # Knowledge Base Query API (Tier 3+)
 try:

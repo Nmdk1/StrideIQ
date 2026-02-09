@@ -70,7 +70,7 @@ Honest about what we know:
 - ✅ Personal bests tracking
 - ✅ Correlation discovery ("what works for you")
 - ✅ Recovery metrics
-- ✅ VDOT calculator with age grading
+- ✅ RPI calculator with age grading
 
 ### Data Privacy & Export
 - ✅ GDPR-compliant data export

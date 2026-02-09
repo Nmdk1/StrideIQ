@@ -3,7 +3,7 @@ Workout Prescription Generator (ADR-031)
 
 Generates specific workout prescriptions with:
 - Exact structures ("2x3mi @ T" not "threshold work")
-- Personal paces from VDOT
+- Personal paces from RPI
 - Appropriate progression based on week theme
 
 Tone: Sparse, precise, no motivational BS.
@@ -17,7 +17,7 @@ import logging
 import random
 
 from services.fitness_bank import FitnessBank, ExperienceLevel
-from services.vdot_calculator import calculate_training_paces
+from services.rpi_calculator import calculate_training_paces
 from services.week_theme_generator import WeekTheme
 
 logger = logging.getLogger(__name__)
@@ -61,20 +61,20 @@ def _parse_pace_str_to_seconds_per_mile(pace_str: Optional[str]) -> Optional[int
     return hrs * 3600 + mins * 60 + secs
 
 
-def _calculate_paces_from_training_paces(vdot: float) -> Dict[str, float]:
+def _calculate_paces_from_training_paces(rpi: float) -> Dict[str, float]:
     """
     Unified pace source (ADR-040).
 
-    Uses Daniels/Gilbert physics from `services.vdot_calculator.calculate_training_paces()`
+    Uses Daniels/Gilbert physics from `services.rpi_calculator.calculate_training_paces()`
     and adapts its output into this generator's expected format:
 
         {"threshold": 6.53, ...}  # float minutes per mile
 
     Notes:
-    - `vdot_calculator` doesn't provide explicit "long" or "recovery" paces; we derive them
+    - `rpi_calculator` doesn't provide explicit "long" or "recovery" paces; we derive them
       conservatively from easy pace (+9s and +30s respectively) to preserve existing keys.
     """
-    raw = calculate_training_paces(vdot)
+    raw = calculate_training_paces(rpi)
 
     def seconds_for(zone: str) -> Optional[int]:
         zone_val = raw.get(zone)
@@ -89,11 +89,11 @@ def _calculate_paces_from_training_paces(vdot: float) -> Dict[str, float]:
 
     if easy_sec is None or marathon_sec is None or threshold_sec is None or interval_sec is None:
         logger.warning(
-            "Could not derive training paces from vdot_calculator output; "
-            f"vdot={vdot}, raw_keys={list(raw.keys())}"
+            "Could not derive training paces from rpi_calculator output; "
+            f"rpi={rpi}, raw_keys={list(raw.keys())}"
         )
         # Fail-safe: keep generator functional with conservative defaults rather than crashing.
-        # (Should not happen for valid VDOTs.)
+        # (Should not happen for valid RPIs.)
         easy_sec = easy_sec or 540  # 9:00
         marathon_sec = marathon_sec or 480  # 8:00
         threshold_sec = threshold_sec or 450  # 7:30
@@ -114,8 +114,8 @@ def _calculate_paces_from_training_paces(vdot: float) -> Dict[str, float]:
 
 
 # Backward-compatible public API used elsewhere (planner, tests, scripts).
-def calculate_paces_from_vdot(vdot: float) -> Dict[str, float]:
-    return _calculate_paces_from_training_paces(vdot)
+def calculate_paces_from_rpi(rpi: float) -> Dict[str, float]:
+    return _calculate_paces_from_training_paces(rpi)
 
 
 def format_pace(pace_minutes: float) -> str:
@@ -320,7 +320,7 @@ class WorkoutPrescriptionGenerator:
     def __init__(self, bank: FitnessBank, race_distance: str = "marathon"):
         self.bank = bank
         self.race_distance = race_distance.lower()
-        self.paces = _calculate_paces_from_training_paces(bank.best_vdot)
+        self.paces = _calculate_paces_from_training_paces(bank.best_rpi)
         self.experience = bank.experience_level
         
         # =====================================================================

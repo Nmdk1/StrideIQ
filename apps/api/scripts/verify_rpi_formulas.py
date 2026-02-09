@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Verify VDOT Formula Accuracy
+Verify RPI Formula Accuracy
 
-Checks extracted formulas against known VDOT calculation methods and tests accuracy.
+Checks extracted formulas against known RPI calculation methods and tests accuracy.
 """
 import sys
 import json
@@ -24,9 +24,9 @@ def extract_formula_details(text: str) -> Dict:
         "lookup_mentions": []
     }
     
-    # Look for actual equations (y = ..., VDOT = ..., etc.)
+    # Look for actual equations (y = ..., RPI = ..., etc.)
     equation_patterns = [
-        r"VDOT\s*=\s*([^\.\n]{10,200})",
+        r"RPI\s*=\s*([^\.\n]{10,200})",
         r"y\s*=\s*([^\.\n]{10,200})",
         r"([a-zA-Z]+)\s*=\s*([0-9]+\.[0-9]+)\s*\*\s*[^\.\n]{5,100}",
         r"([0-9]+\.[0-9]+)\s*\*\s*[^\.\n]{5,100}",
@@ -69,27 +69,27 @@ def extract_formula_details(text: str) -> Dict:
     return formulas
 
 
-def test_vdot_calculation():
-    """Test VDOT calculation with known race times."""
-    # Known test cases: race time -> expected VDOT (approximate)
+def test_rpi_calculation():
+    """Test RPI calculation with known race times."""
+    # Known test cases: race time -> expected RPI (approximate)
     test_cases = [
-        {"distance_m": 5000, "time_s": 1200, "expected_vdot": 50.0},  # 5K in 20:00
-        {"distance_m": 10000, "time_s": 2400, "expected_vdot": 50.0},  # 10K in 40:00
-        {"distance_m": 5000, "time_s": 1080, "expected_vdot": 55.0},  # 5K in 18:00
+        {"distance_m": 5000, "time_s": 1200, "expected_rpi": 50.0},  # 5K in 20:00
+        {"distance_m": 10000, "time_s": 2400, "expected_rpi": 50.0},  # 10K in 40:00
+        {"distance_m": 5000, "time_s": 1080, "expected_rpi": 55.0},  # 5K in 18:00
     ]
     
-    from services.vdot_calculator import calculate_vdot_from_race_time
+    from services.rpi_calculator import calculate_rpi_from_race_time
     
-    print("\n🧪 Testing VDOT Calculator Accuracy:")
+    print("\n🧪 Testing RPI Calculator Accuracy:")
     print("-" * 60)
     
     for test in test_cases:
-        calculated = calculate_vdot_from_race_time(test["distance_m"], test["time_s"])
-        expected = test["expected_vdot"]
+        calculated = calculate_rpi_from_race_time(test["distance_m"], test["time_s"])
+        expected = test["expected_rpi"]
         diff = abs(calculated - expected) if calculated else None
         
         print(f"  {test['distance_m']/1000:.1f}K in {test['time_s']//60}:{test['time_s']%60:02d}")
-        print(f"    Expected VDOT: ~{expected}")
+        print(f"    Expected RPI: ~{expected}")
         print(f"    Calculated: {calculated}")
         if diff:
             print(f"    Difference: {diff:.1f} ({'✅ Good' if diff < 2 else '⚠️ Needs improvement'})")
@@ -98,18 +98,18 @@ def test_vdot_calculation():
 
 def main():
     print("=" * 60)
-    print("VDOT FORMULA VERIFICATION")
+    print("RPI FORMULA VERIFICATION")
     print("=" * 60)
     
     db = get_db_sync()
     try:
-        # Get extracted VDOT data
+        # Get extracted RPI data
         entry = db.query(CoachingKnowledgeEntry).filter(
-            CoachingKnowledgeEntry.principle_type == "vdot_exact"
+            CoachingKnowledgeEntry.principle_type == "rpi_exact"
         ).first()
         
         if not entry:
-            print("❌ No VDOT extraction found")
+            print("❌ No RPI extraction found")
             return
         
         data = json.loads(entry.extracted_principles) if entry.extracted_principles else {}
@@ -160,11 +160,11 @@ def main():
         
         if has_lookup_mentions:
             print("✅ Found mentions of lookup tables")
-            print("   Note: Daniels' VDOT system primarily uses lookup tables,")
+            print("   Note: Daniels' RPI system primarily uses lookup tables,")
             print("   not simple formulas. This is expected.")
         else:
             print("⚠️  No lookup table mentions found")
-            print("   Daniels' VDOT uses lookup tables - may need deeper extraction")
+            print("   Daniels' RPI uses lookup tables - may need deeper extraction")
         
         if has_equations:
             print("✅ Found mathematical equations")
@@ -182,11 +182,11 @@ def main():
         print("\n💡 RECOMMENDATIONS:")
         print("   1. Extract actual pace tables from Daniels book (tabular data)")
         print("   2. Use lookup table approach rather than formulas")
-        print("   3. Cross-reference with vdoto2.com calculator for validation")
-        print("   4. Consider using open-source VDOT implementations as reference")
+        print("   3. Cross-reference with rpio2.com calculator for validation")
+        print("   4. Consider using open-source RPI implementations as reference")
         
         # Test current calculator
-        test_vdot_calculation()
+        test_rpi_calculation()
         
     finally:
         db.close()

@@ -11,10 +11,10 @@ Purpose: Ensure our derived formulas produce training paces within
 acceptable tolerance of established exercise physiology standards.
 """
 
-from services.vdot_calculator import calculate_vdot_from_race_time, calculate_training_paces
+from services.rpi_calculator import calculate_rpi_from_race_time, calculate_training_paces
 
 # Daniels' Table Reference Values (from Daniels' Running Formula, 3rd Edition)
-# Format: VDOT -> {easy_slow, marathon, threshold, interval, rep} in seconds per mile
+# Format: RPI -> {easy_slow, marathon, threshold, interval, rep} in seconds per mile
 
 DANIELS_TABLES = {
     30: {'easy': 792, 'marathon': 720, 'threshold': 660, 'interval': 594, 'rep': 552},
@@ -28,7 +28,7 @@ DANIELS_TABLES = {
     70: {'easy': 400, 'marathon': 322, 'threshold': 295, 'interval': 267, 'rep': 247},
 }
 
-# Race time test cases: (distance_m, time_seconds, expected_vdot_range)
+# Race time test cases: (distance_m, time_seconds, expected_rpi_range)
 # Expected values verified against industry-standard calculators
 RACE_TIME_TESTS = [
     (5000, 1200, (48, 52)),      # 20:00 5K -> ~50
@@ -59,10 +59,10 @@ def verify_training_paces():
     all_pass = True
     results = []
     
-    for vdot, expected in DANIELS_TABLES.items():
-        paces = calculate_training_paces(vdot)
+    for rpi, expected in DANIELS_TABLES.items():
+        paces = calculate_training_paces(rpi)
         
-        print(f"VDOT {vdot}:")
+        print(f"RPI {rpi}:")
         
         # Map our keys to Daniels' keys
         mapping = {
@@ -89,10 +89,10 @@ def verify_training_paces():
             
             if abs_diff > max_variance:
                 max_variance = abs_diff
-                worst_case = f"VDOT {vdot} {daniels_key}"
+                worst_case = f"RPI {rpi} {daniels_key}"
             
             results.append({
-                'vdot': vdot,
+                'rpi': rpi,
                 'pace_type': daniels_key,
                 'ours': our_value,
                 'expected': expected_value,
@@ -109,19 +109,19 @@ def verify_training_paces():
     return all_pass, max_variance, worst_case, results
 
 
-def verify_vdot_calculation():
-    """Verify VDOT calculation from race times."""
+def verify_rpi_calculation():
+    """Verify RPI calculation from race times."""
     print("=" * 80)
-    print("VDOT CALCULATION VERIFICATION")
+    print("RPI CALCULATION VERIFICATION")
     print("=" * 80)
     print()
     
     all_pass = True
     
     for distance_m, time_s, (expected_low, expected_high) in RACE_TIME_TESTS:
-        vdot = calculate_vdot_from_race_time(distance_m, time_s)
+        rpi = calculate_rpi_from_race_time(distance_m, time_s)
         
-        in_range = expected_low <= vdot <= expected_high if vdot else False
+        in_range = expected_low <= rpi <= expected_high if rpi else False
         status = "PASS" if in_range else "FAIL"
         if not in_range:
             all_pass = False
@@ -147,7 +147,7 @@ def verify_vdot_calculation():
         else:
             dist_str = f"{distance_m}m"
         
-        print(f"  {dist_str:8} {time_str:>10} | VDOT: {vdot:5.1f} | "
+        print(f"  {dist_str:8} {time_str:>10} | RPI: {rpi:5.1f} | "
               f"Expected: {expected_low}-{expected_high} | {status}")
     
     print()
@@ -161,8 +161,8 @@ def main():
     print("*" * 80)
     print()
     
-    # Verify VDOT calculation
-    vdot_pass = verify_vdot_calculation()
+    # Verify RPI calculation
+    rpi_pass = verify_rpi_calculation()
     
     # Verify training paces
     pace_pass, max_var, worst, _ = verify_training_paces()
@@ -171,20 +171,20 @@ def main():
     print("=" * 80)
     print("SUMMARY")
     print("=" * 80)
-    print(f"  VDOT Calculation: {'PASS' if vdot_pass else 'FAIL'}")
+    print(f"  RPI Calculation: {'PASS' if rpi_pass else 'FAIL'}")
     print(f"  Training Paces:   {'PASS' if pace_pass else 'FAIL'}")
     print(f"  Max Variance:     {max_var} seconds")
     print(f"  Worst Case:       {worst}")
     print()
     
-    if vdot_pass and pace_pass:
+    if rpi_pass and pace_pass:
         print("  OVERALL: ALL TESTS PASSED (±55s tolerance)")
     else:
         print("  OVERALL: FAILURES DETECTED - CORRECTIONS NEEDED")
     
     print("=" * 80)
     
-    return vdot_pass and pace_pass
+    return rpi_pass and pace_pass
 
 
 if __name__ == "__main__":

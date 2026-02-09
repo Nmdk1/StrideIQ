@@ -114,21 +114,21 @@ def dev_race_history():
             "distance": "half_marathon",
             "distance_m": 21097,
             "time_seconds": 5700,  # ~1:35:00
-            "vdot": 48.5,
+            "rpi": 48.5,
         },
         {
             "date": today - timedelta(days=180),
             "distance": "10k",
             "distance_m": 10000,
             "time_seconds": 2520,  # 42:00
-            "vdot": 47.8,
+            "rpi": 47.8,
         },
         {
             "date": today - timedelta(days=270),
             "distance": "5k",
             "distance_m": 5000,
             "time_seconds": 1200,  # 20:00
-            "vdot": 47.2,
+            "rpi": 47.2,
         },
     ]
 

@@ -214,7 +214,7 @@ class TestGetAthleteProfile:
     """Test get_athlete_profile tool."""
 
     def test_returns_physiological_data(self):
-        """Should return max_hr, thresholds, VDOT."""
+        """Should return max_hr, thresholds, RPI."""
         from services.coach_tools import get_athlete_profile
         
         mock_db = MagicMock()
@@ -230,7 +230,7 @@ class TestGetAthleteProfile:
         mock_athlete.resting_hr = 52
         mock_athlete.threshold_hr = 165
         mock_athlete.threshold_pace_per_km = 270.0  # 4:30/km
-        mock_athlete.vdot = 52.5
+        mock_athlete.rpi = 52.5
         mock_athlete.runner_type = "balanced"
         mock_athlete.runner_type_confidence = 0.85
         mock_athlete.runner_type_last_calculated = datetime.utcnow()
@@ -246,7 +246,7 @@ class TestGetAthleteProfile:
         
         assert result["ok"] is True
         assert result["data"]["physiological"]["max_hr"] == 185
-        assert result["data"]["physiological"]["vdot"] == 52.5
+        assert result["data"]["physiological"]["rpi"] == 52.5
         assert result["data"]["runner_typing"]["type"] == "balanced"
 
     def test_calculates_hr_zones(self):
@@ -266,7 +266,7 @@ class TestGetAthleteProfile:
         mock_athlete.resting_hr = None
         mock_athlete.threshold_hr = None
         mock_athlete.threshold_pace_per_km = None
-        mock_athlete.vdot = None
+        mock_athlete.rpi = None
         mock_athlete.runner_type = None
         mock_athlete.runner_type_confidence = None
         mock_athlete.runner_type_last_calculated = None

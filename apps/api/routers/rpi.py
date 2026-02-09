@@ -11,26 +11,26 @@ Uses the Daniels/Gilbert oxygen cost equations (1979).
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
-from services.vdot_calculator import calculate_vdot_comprehensive
+from services.rpi_calculator import calculate_rpi_comprehensive
 
-router = APIRouter(prefix="/v1/vdot", tags=["Training Pace Calculator"])
+router = APIRouter(prefix="/v1/rpi", tags=["Training Pace Calculator"])
 
 
 # Request models for POST endpoints
-class VDOTCalculateRequest(BaseModel):
+class RPICalculateRequest(BaseModel):
     """Request for RPI/pace calculation from race result."""
     race_time_seconds: int
     distance_meters: float
 
 
-class VDOTTrainingPacesRequest(BaseModel):
+class RPITrainingPacesRequest(BaseModel):
     """Request for training paces from RPI value."""
-    vdot: float  # Internal field name, represents RPI
+    rpi: float  # Internal field name, represents RPI
 
 
 # POST endpoints (for test compatibility and proper API design)
 @router.post("/calculate")
-def calculate_vdot_post(request: VDOTCalculateRequest):
+def calculate_rpi_post(request: RPICalculateRequest):
     """
     Calculate RPI (Running Performance Index) from race time and distance.
     
@@ -41,7 +41,7 @@ def calculate_vdot_post(request: VDOTCalculateRequest):
     if request.race_time_seconds <= 0:
         raise HTTPException(status_code=400, detail="Time must be positive")
     
-    result = calculate_vdot_comprehensive(
+    result = calculate_rpi_comprehensive(
         distance_meters=request.distance_meters,
         time_seconds=request.race_time_seconds
     )
@@ -53,24 +53,24 @@ def calculate_vdot_post(request: VDOTCalculateRequest):
 
 
 @router.post("/training-paces")
-def get_training_paces_post(request: VDOTTrainingPacesRequest):
+def get_training_paces_post(request: RPITrainingPacesRequest):
     """
     Get training paces for a given RPI.
     
     Free tool - no authentication required.
     """
-    if request.vdot <= 0:
+    if request.rpi <= 0:
         raise HTTPException(status_code=400, detail="RPI value must be positive")
     
-    from services.vdot_calculator import calculate_training_paces
+    from services.rpi_calculator import calculate_training_paces
     
-    paces = calculate_training_paces(request.vdot)
+    paces = calculate_training_paces(request.rpi)
     
     return paces
 
 
 @router.get("/calculate-legacy")
-def calculate_vdot(
+def calculate_rpi(
     distance_m: Optional[float] = Query(None, description="Race distance in meters"),
     time_minutes: Optional[float] = Query(None, description="Race time in minutes (e.g., 20.5 for 20:30)"),
     time_hours: Optional[int] = Query(None, description="Hours component of race time"),
@@ -117,7 +117,7 @@ def calculate_vdot(
         if time_seconds <= 0:
             raise HTTPException(status_code=400, detail="Time must be positive")
         
-        result = calculate_vdot_comprehensive(
+        result = calculate_rpi_comprehensive(
             distance_meters=distance_m,
             time_seconds=time_seconds
         )
@@ -126,7 +126,7 @@ def calculate_vdot(
         if pace_minutes_per_mile <= 0:
             raise HTTPException(status_code=400, detail="Pace must be positive")
         
-        result = calculate_vdot_comprehensive(
+        result = calculate_rpi_comprehensive(
             pace_minutes_per_mile=pace_minutes_per_mile
         )
     else:
@@ -143,22 +143,22 @@ def calculate_vdot(
 
 @router.get("/equivalent-races")
 def get_equivalent_races(
-    vdot: float = Query(..., description="RPI (Running Performance Index) score")
+    rpi: float = Query(..., description="RPI (Running Performance Index) score")
 ):
     """
     Get equivalent race performances for a given RPI score.
     
     Returns equivalent times for all standard distances.
     """
-    if vdot <= 0:
+    if rpi <= 0:
         raise HTTPException(status_code=400, detail="RPI value must be positive")
     
-    from services.vdot_calculator import calculate_all_equivalent_races
+    from services.rpi_calculator import calculate_all_equivalent_races
     
-    equivalent_races = calculate_all_equivalent_races(vdot)
+    equivalent_races = calculate_all_equivalent_races(rpi)
     
     return {
-        "vdot": vdot,
+        "rpi": rpi,
         "equivalent_races": equivalent_races
     }
 

@@ -82,7 +82,7 @@ export default function TrainingPaceCalculator() {
         return;
       }
 
-      const response = await fetch(`${API_CONFIG.baseURL}/v1/public/vdot/calculate`, {
+      const response = await fetch(`${API_CONFIG.baseURL}/v1/public/rpi/calculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -222,7 +222,7 @@ export default function TrainingPaceCalculator() {
             </div>
             <div className="text-right">
               <div className="text-3xl font-bold text-orange-500">
-                {(results.rpi || results.fitness_score || results.vdot)?.toFixed(1)}
+                {(results.rpi || results.fitness_score || results.rpi)?.toFixed(1)}
               </div>
               {results.input && (
                 <div className="text-xs text-slate-500">{results.input.pace_mi}/mi</div>

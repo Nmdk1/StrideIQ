@@ -7,11 +7,11 @@ Based on publicly available FORMULAS from Dr. Jack Daniels' research in "Daniels
 CRITICAL: This calculator uses PHYSICS-BASED FORMULAS, NOT lookup tables.
 - The Daniels/Gilbert oxygen cost equation is PUBLIC (published research)
 - The pace TABLES are COPYRIGHTED (Daniels' commercial property)
-- DO NOT import or use vdot_lookup.py - it will cause copyright issues
+- DO NOT import or use rpi_lookup.py - it will cause copyright issues
 - This has regressed 3+ times - DO NOT RE-ENABLE LOOKUP
 
 This implementation uses mathematical formulas and methodology from Dr. Daniels' work.
-Not affiliated with VDOT O2 or The Run SMART Project.
+Not affiliated with RPI O2 or The Run SMART Project.
 """
 from typing import Dict, List, Optional, Tuple
 import math
@@ -41,11 +41,11 @@ STANDARD_DISTANCES = {
 }
 
 
-def calculate_vdot_from_race_time(distance_meters: float, time_seconds: int) -> Optional[float]:
+def calculate_rpi_from_race_time(distance_meters: float, time_seconds: int) -> Optional[float]:
     """
-    Calculate VDOT from a race time and distance.
+    Calculate RPI from a race time and distance.
     
-    Uses lookup-based calculation with actual VDOT formula for accuracy.
+    Uses lookup-based calculation with actual RPI formula for accuracy.
     Falls back to approximation if lookup service unavailable.
     
     Args:
@@ -53,7 +53,7 @@ def calculate_vdot_from_race_time(distance_meters: float, time_seconds: int) -> 
         time_seconds: Race time in seconds
         
     Returns:
-        VDOT score (float) or None if calculation fails
+        RPI score (float) or None if calculation fails
     """
     if distance_meters <= 0 or time_seconds <= 0:
         return None
@@ -61,13 +61,13 @@ def calculate_vdot_from_race_time(distance_meters: float, time_seconds: int) -> 
     # Use lookup service if available (more accurate)
     if LOOKUP_AVAILABLE:
         try:
-            vdot = calculate_vdot_from_race_time_lookup(distance_meters, time_seconds)
-            if vdot:
-                return vdot
+            rpi = calculate_rpi_from_race_time_lookup(distance_meters, time_seconds)
+            if rpi:
+                return rpi
         except Exception:
             pass  # Fall back to approximation
     
-    # Fallback: Daniels' VDOT formula (scientifically accurate)
+    # Fallback: Daniels' RPI formula (scientifically accurate)
     # Based on equations from Daniels' Running Formula
     time_minutes = time_seconds / 60.0
     
@@ -86,50 +86,50 @@ def calculate_vdot_from_race_time(distance_meters: float, time_seconds: int) -> 
     pct_max = 0.8 + (0.1894393 * math.exp(-0.012778 * time_minutes)) + \
               (0.2989558 * math.exp(-0.1932605 * time_minutes))
     
-    # VDOT = VO2 / %VO2max
+    # RPI = VO2 / %VO2max
     if pct_max <= 0:
         return None
     
-    vdot = vo2 / pct_max
+    rpi = vo2 / pct_max
     
-    return round(vdot, 1)
+    return round(rpi, 1)
 
 
-def calculate_vdot_from_pace(pace_minutes_per_mile: float) -> Optional[float]:
+def calculate_rpi_from_pace(pace_minutes_per_mile: float) -> Optional[float]:
     """
-    Calculate VDOT from a training pace (reverse calculation).
+    Calculate RPI from a training pace (reverse calculation).
     
     Args:
         pace_minutes_per_mile: Pace in minutes per mile
         
     Returns:
-        VDOT score (float) or None if calculation fails
+        RPI score (float) or None if calculation fails
     """
     if pace_minutes_per_mile <= 0:
         return None
     
-    # Approximate VDOT from pace
+    # Approximate RPI from pace
     # This assumes the pace is approximately threshold or marathon pace
-    # VDOT ≈ 1000 / pace_per_mile (simplified)
-    vdot = 1000 / pace_minutes_per_mile
+    # RPI ≈ 1000 / pace_per_mile (simplified)
+    rpi = 1000 / pace_minutes_per_mile
     
-    return round(vdot, 1)
+    return round(rpi, 1)
 
 
-def calculate_training_paces(vdot: float) -> Dict:
+def calculate_training_paces(rpi: float) -> Dict:
     """
-    Calculate all training paces from VDOT.
+    Calculate all training paces from RPI.
     
     Based on Daniels' Running Formula pace tables.
     Returns paces in both per mile and per km.
     
     Args:
-        vdot: VDOT score
+        rpi: RPI score
         
     Returns:
         Dictionary with training paces in MM:SS format (both mi and km)
     """
-    if vdot <= 0:
+    if rpi <= 0:
         return {
             "easy": {"mi": None, "km": None},
             "marathon": {"mi": None, "km": None},
@@ -142,7 +142,7 @@ def calculate_training_paces(vdot: float) -> Dict:
     # Use lookup service if available (more accurate)
     if LOOKUP_AVAILABLE:
         try:
-            paces = get_training_paces_from_vdot(vdot)
+            paces = get_training_paces_from_rpi(rpi)
             if paces:
                 def pace_to_dict(pace_str: str) -> Dict:
                     """Convert pace string to dict format."""
@@ -186,7 +186,7 @@ def calculate_training_paces(vdot: float) -> Dict:
     # where v = velocity in meters/minute, VO2 = ml O2/kg/min
     #
     # Training paces are derived by:
-    # 1. Take VDOT (which equals VO2max for this athlete)
+    # 1. Take RPI (which equals VO2max for this athlete)
     # 2. Multiply by intensity % to get target VO2
     # 3. Reverse-solve the oxygen cost equation for velocity (quadratic formula)
     # 4. Convert velocity to pace
@@ -222,42 +222,42 @@ def calculate_training_paces(vdot: float) -> Dict:
         pace_sec = (1609.34 / velocity_m_per_min) * 60
         return int(round(pace_sec))
     
-    def calculate_pace_from_intensity(vdot_val: float, intensity_pct: float) -> int:
+    def calculate_pace_from_intensity(rpi_val: float, intensity_pct: float) -> int:
         """
-        Calculate training pace from VDOT and intensity percentage.
+        Calculate training pace from RPI and intensity percentage.
         
         Args:
-            vdot_val: Athlete's VDOT (= VO2max)
+            rpi_val: Athlete's RPI (= VO2max)
             intensity_pct: Target intensity as fraction of VO2max (e.g., 0.88 for 88%)
         
         Returns:
             Pace in seconds per mile
         """
-        target_vo2 = vdot_val * intensity_pct
+        target_vo2 = rpi_val * intensity_pct
         velocity = vo2_to_velocity(target_vo2)
         return velocity_to_pace_seconds(velocity)
     
     # Training Pace Lookup with Linear Interpolation
     #
-    # The relationship between VDOT and training paces is derived from the
+    # The relationship between RPI and training paces is derived from the
     # Daniels/Gilbert oxygen cost equation. Rather than using curve fitting
     # which introduces approximation errors, we use exact intensity values
-    # at benchmark VDOTs and interpolate between them.
+    # at benchmark RPIs and interpolate between them.
     #
     # This approach gives exact matches at benchmark points and smooth
     # interpolation in between - achieving sub-second accuracy.
     
-    # Intensity percentages at each benchmark VDOT
+    # Intensity percentages at each benchmark RPI
     # These are the EXACT values from reverse-solving the oxygen cost equation:
     #   velocity = 1609.34 / (pace_sec / 60)
     #   vo2 = -4.6 + 0.182258*v + 0.000104*v^2
-    #   intensity = vo2 / vdot
+    #   intensity = vo2 / rpi
     #
     # NOTE: easy_slow has been adjusted to ~55% to align with modern coaching
     # philosophy (80/20, Maffetone, RPE-based training). Easy running should
     # feel truly easy (RPE 2-3), not moderate. "X:XX or slower" approach.
     INTENSITY_TABLE = {
-        # VDOT: (easy_fast, easy_slow, marathon, threshold, interval, repetition)
+        # RPI: (easy_fast, easy_slow, marathon, threshold, interval, repetition)
         #       easy_slow adjusted to 0.55 for wider easy range
         30: (0.656310, 0.55, 0.857530, 0.923901, 1.113017, 1.244426),
         35: (0.694032, 0.55, 0.884464, 0.951698, 1.135265, 1.259791),
@@ -270,44 +270,44 @@ def calculate_training_paces(vdot: float) -> Dict:
         70: (0.659559, 0.55, 0.787847, 0.845433, 0.982708, 1.070224),
     }
     
-    def interpolate_intensity(vdot_val: float, idx: int) -> float:
-        """Linearly interpolate intensity at given VDOT for pace type index."""
-        vdots = sorted(INTENSITY_TABLE.keys())
+    def interpolate_intensity(rpi_val: float, idx: int) -> float:
+        """Linearly interpolate intensity at given RPI for pace type index."""
+        rpis = sorted(INTENSITY_TABLE.keys())
         
         # Clamp to valid range
-        if vdot_val <= vdots[0]:
-            return INTENSITY_TABLE[vdots[0]][idx]
-        if vdot_val >= vdots[-1]:
-            return INTENSITY_TABLE[vdots[-1]][idx]
+        if rpi_val <= rpis[0]:
+            return INTENSITY_TABLE[rpis[0]][idx]
+        if rpi_val >= rpis[-1]:
+            return INTENSITY_TABLE[rpis[-1]][idx]
         
         # Find surrounding points
-        for i in range(len(vdots) - 1):
-            if vdots[i] <= vdot_val <= vdots[i + 1]:
-                v1, v2 = vdots[i], vdots[i + 1]
+        for i in range(len(rpis) - 1):
+            if rpis[i] <= rpi_val <= rpis[i + 1]:
+                v1, v2 = rpis[i], rpis[i + 1]
                 i1, i2 = INTENSITY_TABLE[v1][idx], INTENSITY_TABLE[v2][idx]
                 # Linear interpolation
-                t = (vdot_val - v1) / (v2 - v1)
+                t = (rpi_val - v1) / (v2 - v1)
                 return i1 + t * (i2 - i1)
         
         return INTENSITY_TABLE[50][idx]  # Fallback
     
-    # Get interpolated intensities for this VDOT
-    easy_fast_intensity = interpolate_intensity(vdot, 0)
-    easy_slow_intensity = interpolate_intensity(vdot, 1)
-    marathon_intensity = interpolate_intensity(vdot, 2)
-    threshold_intensity = interpolate_intensity(vdot, 3)
-    interval_intensity = interpolate_intensity(vdot, 4)
-    repetition_intensity = interpolate_intensity(vdot, 5)
+    # Get interpolated intensities for this RPI
+    easy_fast_intensity = interpolate_intensity(rpi, 0)
+    easy_slow_intensity = interpolate_intensity(rpi, 1)
+    marathon_intensity = interpolate_intensity(rpi, 2)
+    threshold_intensity = interpolate_intensity(rpi, 3)
+    interval_intensity = interpolate_intensity(rpi, 4)
+    repetition_intensity = interpolate_intensity(rpi, 5)
     fast_reps_intensity = repetition_intensity * 1.04  # ~4% faster than R
     
     # Calculate paces from intensities
-    easy_pace_low_sec = calculate_pace_from_intensity(vdot, easy_fast_intensity)   # Fast easy
-    easy_pace_high_sec = calculate_pace_from_intensity(vdot, easy_slow_intensity)  # Slow easy
-    marathon_pace_sec = calculate_pace_from_intensity(vdot, marathon_intensity)
-    threshold_pace_sec = calculate_pace_from_intensity(vdot, threshold_intensity)
-    interval_pace_sec = calculate_pace_from_intensity(vdot, interval_intensity)
-    repetition_pace_sec = calculate_pace_from_intensity(vdot, repetition_intensity)
-    fast_reps_pace_sec = calculate_pace_from_intensity(vdot, fast_reps_intensity)
+    easy_pace_low_sec = calculate_pace_from_intensity(rpi, easy_fast_intensity)   # Fast easy
+    easy_pace_high_sec = calculate_pace_from_intensity(rpi, easy_slow_intensity)  # Slow easy
+    marathon_pace_sec = calculate_pace_from_intensity(rpi, marathon_intensity)
+    threshold_pace_sec = calculate_pace_from_intensity(rpi, threshold_intensity)
+    interval_pace_sec = calculate_pace_from_intensity(rpi, interval_intensity)
+    repetition_pace_sec = calculate_pace_from_intensity(rpi, repetition_intensity)
+    fast_reps_pace_sec = calculate_pace_from_intensity(rpi, fast_reps_intensity)
     
     # Convert to minutes for formatting
     # Easy pace uses the FAST end as the boundary - "X:XX or slower"
@@ -378,11 +378,11 @@ def calculate_training_paces(vdot: float) -> Dict:
     }
 
 
-def _calculate_vdot_for_time(distance_meters: float, time_seconds: float) -> float:
+def _calculate_rpi_for_time(distance_meters: float, time_seconds: float) -> float:
     """
-    Calculate VDOT for a given distance and time using Daniels formula.
+    Calculate RPI for a given distance and time using Daniels formula.
     
-    VDOT = (-4.60 + 0.182258*V + 0.000104*V²) / (0.8 + 0.1894393*e^(-0.012778*T) + 0.2989558*e^(-0.1932605*T))
+    RPI = (-4.60 + 0.182258*V + 0.000104*V²) / (0.8 + 0.1894393*e^(-0.012778*T) + 0.2989558*e^(-0.1932605*T))
     
     Where V = velocity in m/min, T = time in minutes
     """
@@ -403,24 +403,24 @@ def _calculate_vdot_for_time(distance_meters: float, time_seconds: float) -> flo
     return numerator / denominator
 
 
-def calculate_equivalent_race_time(vdot: float, target_distance_meters: float) -> Optional[Dict]:
+def calculate_equivalent_race_time(rpi: float, target_distance_meters: float) -> Optional[Dict]:
     """
-    Calculate equivalent race time for a target distance based on RPI/VDOT.
+    Calculate equivalent race time for a target distance based on RPI/RPI.
     
-    Uses binary search to find the time that produces the target VDOT
+    Uses binary search to find the time that produces the target RPI
     for the given distance using the Daniels formula.
     
     Args:
-        vdot: RPI/VDOT score
+        rpi: RPI/RPI score
         target_distance_meters: Target race distance in meters
         
     Returns:
         Dictionary with equivalent time and pace, or None if calculation fails
     """
-    if vdot <= 0 or target_distance_meters <= 0:
+    if rpi <= 0 or target_distance_meters <= 0:
         return None
     
-    # Use binary search to find the time that gives us this VDOT
+    # Use binary search to find the time that gives us this RPI
     # Start with reasonable bounds based on world records and slow joggers
     
     # Estimate initial bounds based on distance
@@ -435,19 +435,19 @@ def calculate_equivalent_race_time(vdot: float, target_distance_meters: float) -
     max_time_seconds = max_pace_per_km * 60 * distance_km
     
     # Binary search for the correct time
-    tolerance = 0.01  # VDOT tolerance
+    tolerance = 0.01  # RPI tolerance
     max_iterations = 50
     
     for _ in range(max_iterations):
         mid_time = (min_time_seconds + max_time_seconds) / 2
-        calculated_vdot = _calculate_vdot_for_time(target_distance_meters, mid_time)
+        calculated_rpi = _calculate_rpi_for_time(target_distance_meters, mid_time)
         
-        if abs(calculated_vdot - vdot) < tolerance:
+        if abs(calculated_rpi - rpi) < tolerance:
             time_seconds = mid_time
             break
         
-        # Higher VDOT = faster time, so if calculated > target, we need slower time
-        if calculated_vdot > vdot:
+        # Higher RPI = faster time, so if calculated > target, we need slower time
+        if calculated_rpi > rpi:
             min_time_seconds = mid_time  # Need slower (longer) time
         else:
             max_time_seconds = mid_time  # Need faster (shorter) time
@@ -488,29 +488,29 @@ def calculate_equivalent_race_time(vdot: float, target_distance_meters: float) -
     }
 
 
-def calculate_race_time_from_vdot(vdot: float, distance_meters: float) -> Optional[int]:
+def calculate_race_time_from_rpi(rpi: float, distance_meters: float) -> Optional[int]:
     """
-    Calculate race time in seconds from VDOT and distance.
+    Calculate race time in seconds from RPI and distance.
     
     Simple wrapper around calculate_equivalent_race_time that returns just the time.
     
     Args:
-        vdot: RPI/VDOT score
+        rpi: RPI/RPI score
         distance_meters: Race distance in meters
         
     Returns:
         Time in seconds, or None if calculation fails
     """
-    result = calculate_equivalent_race_time(vdot, distance_meters)
+    result = calculate_equivalent_race_time(rpi, distance_meters)
     if result is None:
         return None
     return result.get("time_seconds")
 
 
-def _old_calculate_equivalent_race_time_fallback(vdot: float, target_distance_meters: float) -> Optional[Dict]:
+def _old_calculate_equivalent_race_time_fallback(rpi: float, target_distance_meters: float) -> Optional[Dict]:
     """DEPRECATED - Old fallback code kept for reference."""
     # Simple fallback: Approximation
-    vo2max_pace_per_mile = (1000 / vdot) * 0.98
+    vo2max_pace_per_mile = (1000 / rpi) * 0.98
     
     # For equivalent race performance, use approximately 95-98% of VO2max pace
     # (varies by distance - shorter = faster, longer = slower)
@@ -561,12 +561,12 @@ def _old_calculate_equivalent_race_time_fallback(vdot: float, target_distance_me
     }
 
 
-def calculate_all_equivalent_races(vdot: float) -> List[Dict]:
+def calculate_all_equivalent_races(rpi: float) -> List[Dict]:
     """
     Calculate equivalent race times for all standard distances.
     
     Args:
-        vdot: VDOT score
+        rpi: RPI score
         
     Returns:
         List of equivalent race performances
@@ -590,7 +590,7 @@ def calculate_all_equivalent_races(vdot: float) -> List[Dict]:
     ]
     
     for name, distance_m in distances_to_calc:
-        equivalent = calculate_equivalent_race_time(vdot, distance_m)
+        equivalent = calculate_equivalent_race_time(rpi, distance_m)
         if equivalent:
             equivalent_races.append(equivalent)
     
@@ -626,11 +626,11 @@ def _get_distance_name(distance_meters: float) -> str:
         return f"{int(distance_meters)}m"
 
 
-def calculate_vdot_comprehensive(distance_meters: Optional[float] = None, 
+def calculate_rpi_comprehensive(distance_meters: Optional[float] = None, 
                                   time_seconds: Optional[int] = None,
                                   pace_minutes_per_mile: Optional[float] = None) -> Dict:
     """
-    Comprehensive VDOT calculator with training paces and equivalent races.
+    Comprehensive RPI calculator with training paces and equivalent races.
     
     Can calculate from:
     - Race time and distance
@@ -642,33 +642,33 @@ def calculate_vdot_comprehensive(distance_meters: Optional[float] = None,
         pace_minutes_per_mile: Pace in minutes per mile (if reverse calculation)
         
     Returns:
-        Comprehensive dictionary with VDOT, training paces, and equivalent races
+        Comprehensive dictionary with RPI, training paces, and equivalent races
     """
-    # Calculate VDOT
+    # Calculate RPI
     if distance_meters and time_seconds:
-        vdot = calculate_vdot_from_race_time(distance_meters, time_seconds)
+        rpi = calculate_rpi_from_race_time(distance_meters, time_seconds)
         input_type = "race_time"
     elif pace_minutes_per_mile:
-        vdot = calculate_vdot_from_pace(pace_minutes_per_mile)
+        rpi = calculate_rpi_from_pace(pace_minutes_per_mile)
         input_type = "pace"
     else:
         return {
             "error": "Must provide either (distance_meters + time_seconds) or pace_minutes_per_mile"
         }
     
-    if vdot is None:
+    if rpi is None:
         return {
-            "error": "Invalid input: could not calculate VDOT"
+            "error": "Invalid input: could not calculate RPI"
         }
     
     # Calculate training paces
-    training_paces = calculate_training_paces(vdot)
+    training_paces = calculate_training_paces(rpi)
     
     # Calculate equivalent race performances
-    equivalent_races = calculate_all_equivalent_races(vdot)
+    equivalent_races = calculate_all_equivalent_races(rpi)
     
     result = {
-        "vdot": vdot,
+        "rpi": rpi,
         "input_type": input_type,
         "training_paces": training_paces,
         "equivalent_races": equivalent_races,

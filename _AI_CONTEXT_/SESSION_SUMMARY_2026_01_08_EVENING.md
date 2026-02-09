@@ -6,7 +6,7 @@
 |-----------|--------|-----|
 | Frontend | ✅ Running | http://localhost:3000 |
 | API | ✅ Running | http://localhost:8000 |
-| VDOT Calculator | ✅ Working | Tested: 5K 20:00 → VDOT 48.8 |
+| RPI Calculator | ✅ Working | Tested: 5K 20:00 → RPI 48.8 |
 | Age-Grade Calculator | ✅ Working | Tested: 57M 5K 20:00 → 69.57% |
 | Heat-Adjusted Pace | ✅ Client-side | No API needed |
 
@@ -70,8 +70,8 @@ docker compose up
 
 ```powershell
 # Test all endpoints
-$vdot = Invoke-WebRequest -Uri "http://localhost:8000/v1/public/vdot/calculate" -Method POST -ContentType "application/json" -Body '{"distance_meters": 5000, "time_seconds": 1200}' -UseBasicParsing
-Write-Host "VDOT: $($vdot.StatusCode)"
+$rpi = Invoke-WebRequest -Uri "http://localhost:8000/v1/public/rpi/calculate" -Method POST -ContentType "application/json" -Body '{"distance_meters": 5000, "time_seconds": 1200}' -UseBasicParsing
+Write-Host "RPI: $($rpi.StatusCode)"
 ```
 
 ---

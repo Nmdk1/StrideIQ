@@ -186,7 +186,7 @@ Without check-in data, we cannot determine:
 | **TSB/ATL/CTL** | ✅ Active | Activity history |
 | **Pace Decay Analysis** | ✅ Active | Split data from races |
 | **Pre-Race Fingerprinting** | ⚠️ Limited | Needs check-ins |
-| ~~Critical Speed Model~~ | 🗄️ Archived | Redundant with VDOT |
+| ~~Critical Speed Model~~ | 🗄️ Archived | Redundant with RPI |
 
 ---
 

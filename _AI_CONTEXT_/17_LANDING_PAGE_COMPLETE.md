@@ -16,10 +16,10 @@ The world-class public landing page for **Performance Focused Coaching System** 
 ### 2. Free High-Touch Tools Section (Acquisition Engine)
 Three prominently featured calculators, no login required:
 
-**VDOT Pace Calculator:**
+**RPI Pace Calculator:**
 - Input: Recent race time + distance
 - Output: Full training pace table (E/M/T/I/R) in min/mile and min/km
-- Connected to `/v1/public/vdot/calculate` API endpoint
+- Connected to `/v1/public/rpi/calculate` API endpoint
 
 **WMA Age-Grading Calculator:**
 - Input: Age, gender, distance, time
@@ -41,7 +41,7 @@ Three prominently featured calculators, no login required:
 
 ### 4. Transparent Pricing Section
 Four-tier pricing cards:
-- **Free:** $0 - VDOT Calculator, WMA Age-Grading, Efficiency Estimator, Basic insights
+- **Free:** $0 - RPI Calculator, WMA Age-Grading, Efficiency Estimator, Basic insights
 - **Fixed Plans:** $29/plan - Everything in Free + AI-generated training plan (4-18 weeks) + Manual verification
 - **Guided Coaching:** $99/mo - Everything in Fixed Plans + Adaptive plan updates + Efficiency trend analysis + Performance diagnostics
 - **Premium:** Coming Soon - Everything in Guided + Recovery metrics + HRV analysis + Advanced adaptation
@@ -61,9 +61,9 @@ Four-tier pricing cards:
 - **Components:** Modular React components (Hero, FreeTools, HowItWorks, Pricing, Footer)
 
 ### API Integration
-- **Public Tools Router:** `/v1/public/vdot/calculate` and `/v1/public/age-grade/calculate`
+- **Public Tools Router:** `/v1/public/rpi/calculate` and `/v1/public/age-grade/calculate`
 - **No Authentication Required:** Free tools accessible without login
-- **Server-Side Calculations:** Reuses existing VDOT logic and WMA age-grading formulas
+- **Server-Side Calculations:** Reuses existing RPI logic and WMA age-grading formulas
 
 ### Build & Deployment
 - **Production Build:** Next.js standalone mode configured
@@ -115,7 +115,7 @@ apps/web/app/
 │   ├── Pricing.tsx           # Pricing tiers
 │   ├── Footer.tsx             # Footer component
 │   └── tools/
-│       ├── VDOTCalculator.tsx    # VDOT calculator component
+│       ├── VDOTCalculator.tsx    # RPI calculator component
 │       ├── WMACalculator.tsx      # WMA age-grading calculator
 │       └── EfficiencyEstimator.tsx # Efficiency estimator
 └── ...

@@ -71,7 +71,7 @@ Before adding new features, we are ensuring the foundation is rock-solid.
 ### 1.2 Training Intelligence
 | Task | Status | Priority |
 |------|--------|----------|
-| VDOT Calculator | ✅ Done | P0 |
+| RPI Calculator | ✅ Done | P0 |
 | Age-graded performance | ✅ Done | P0 |
 | Personal best tracking | ✅ Done | P0 |
 | Workout classification system | ✅ Done | P0 |

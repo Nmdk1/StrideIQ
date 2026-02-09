@@ -418,7 +418,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 90) -> 
 **Implemented:**
 - **Expanded `get_recent_runs`**: Added `max_hr`, `elevation_gain_m/ft`, `temperature_f`, `humidity_pct`, `weather_condition`
 - **New `get_wellness_trends`**: Sleep/stress/soreness with trends, HRV rMSSD, resting HR, mindset (enjoyment/confidence/motivation)
-- **New `get_athlete_profile`**: Physiological (max_hr, threshold pace/HR, VDOT), HR zones, runner typing (speedster/endurance/balanced), training metrics (durability, recovery half-life, consistency, streaks)
+- **New `get_athlete_profile`**: Physiological (max_hr, threshold pace/HR, RPI), HR zones, runner typing (speedster/endurance/balanced), training metrics (durability, recovery half-life, consistency, streaks)
 - **New `get_training_load_history`**: Daily ATL/CTL/TSB snapshots, form state labels, injury risk (acute:chronic ratio), CTL trend direction
 
 **Key Improvement:**
@@ -664,7 +664,7 @@ Based on full reading of `coach_tools.py` (2,333 lines) and the data models.
 | `get_plan_week` | Current week's planned workouts | 474-553 |
 | `get_training_load` | CTL/ATL/TSB summary | 556-598 |
 | `get_correlations` | Wellness-performance correlations | 601-637 |
-| `get_race_predictions` | Race time predictions (with PB-VDOT fallback) | 640-822 |
+| `get_race_predictions` | Race time predictions (with PB-RPI fallback) | 640-822 |
 | `get_recovery_status` | Recovery half-life, durability, fatigue signals | 825-869 |
 | `get_active_insights` | Prioritized actionable insights | 872-948 |
 | `get_pb_patterns` | Training patterns before PBs | 951-1074 |
@@ -726,7 +726,7 @@ Based on full reading of `coach_tools.py` (2,333 lines) and the data models.
 | `resting_hr` | Yes | **NO** | Missing for recovery context |
 | `threshold_pace_per_km` | Yes | **NO** | Missing - threshold reference |
 | `threshold_hr` | Yes | **NO** | Missing - threshold reference |
-| `vdot` | Yes | Used in race predictions | Partially available |
+| `rpi` | Yes | Used in race predictions | Partially available |
 | `runner_type` | Yes | **NO** | Missing - speedster/endurance context |
 | `durability_index` | Yes | Via `get_recovery_status` | Available |
 | `consistency_index` | Yes | **NO** | Missing - consistency context |
@@ -775,7 +775,7 @@ def get_athlete_profile(db, athlete_id):
             "runner_type": "endurance_monster",
             "threshold_pace_per_km": 285.0,  # 4:45/km
             "threshold_hr": 168,
-            "vdot": 52.3,
+            "rpi": 52.3,
             "consistency_index": 78.5,
             "current_streak_weeks": 6,
             "max_hr": 185,

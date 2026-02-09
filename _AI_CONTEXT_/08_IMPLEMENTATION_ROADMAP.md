@@ -22,7 +22,7 @@
 **2. Knowledge Base → Fixed Plans (Tier 2)**
 - Fixed plans generated using knowledge base principles
 - Demonstrates value before subscription
-- Example: "Daniels-inspired 5K plan" but personalized to athlete's VDOT
+- Example: "Daniels-inspired 5K plan" but personalized to athlete's RPI
 
 **3. Knowledge Base → Guided Coaching (Tier 3)**
 - AI generates weekly guidance using knowledge base + activity data
@@ -66,7 +66,7 @@
    - ✅ 239 entries extracted from 9 sources
    - ✅ 20 training plans extracted and stored
    - ✅ 50+ principle entries extracted and stored
-   - 🚧 VDOT formula and pace tables (Daniels) - extraction in progress
+   - 🚧 RPI formula and pace tables (Daniels) - extraction in progress
    - 🚧 Periodization models (Pfitzinger, Canova) - extraction in progress
    - 🚧 Load progression principles - extraction in progress
    - 🚧 Recovery and adaptation principles - extraction in progress
@@ -111,7 +111,7 @@
 
 3. **Generate Fixed Plans (Tier 2)** ✅ COMPLETE
    - ✅ AI generates plans using knowledge base principles
-   - ✅ Personalized to athlete's current fitness (VDOT)
+   - ✅ Personalized to athlete's current fitness (RPI)
    - ✅ Flexible durations (4-18 weeks) for abbreviated builds
    - ✅ Enhanced validation ensures plan safety
    - 📋 Manual verification workflow (to be implemented)
@@ -188,7 +188,7 @@ coaching_knowledge/
 │   └── research/
 ├── extracted/
 │   ├── principles/
-│   │   ├── vdot_formula.py
+│   │   ├── rpi_formula.py
 │   │   ├── periodization_models.py
 │   │   └── ...
 │   └── embeddings/
@@ -218,7 +218,7 @@ services/
 ### 1. Knowledge Base Structure
 **Decision:** Hybrid approach (vector DB + structured DB)
 - Vector DB for semantic search ("find principles about tempo training")
-- Structured DB for algorithms and relationships (VDOT formula, periodization rules)
+- Structured DB for algorithms and relationships (RPI formula, periodization rules)
 
 ### 2. AI Model Selection
 **Decision:** Claude API for runtime (better reasoning) + embeddings for search
@@ -249,7 +249,7 @@ services/
 
 **Knowledge Base:**
 - Number of coaches/methodologies: Target 10+ major coaches
-- Coverage: All major training concepts (VDOT, periodization, etc.)
+- Coverage: All major training concepts (RPI, periodization, etc.)
 - Query quality: Accurate, relevant results
 
 **AI Coaching:**
@@ -284,13 +284,13 @@ services/
 
 1. **Immediate (Current Development):**
    - Continue Phase 1.5 infrastructure
-   - Build landing page + VDOT calculator
+   - Build landing page + RPI calculator
    - Set up subscription tiers
 
 2. **Post-Launch (Months 1-3):**
    - Acquire coaching books
    - Build knowledge extraction pipeline
-   - Extract core principles (VDOT, periodization)
+   - Extract core principles (RPI, periodization)
 
 3. **Months 3-6:**
    - Integrate AI coaching engine

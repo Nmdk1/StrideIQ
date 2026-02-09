@@ -21,14 +21,14 @@ class TestN1LongRunLogic:
     """Test that long run caps follow N=1 principles, not arbitrary rules."""
     
     def _create_bank(self, 
-                     vdot: float = 50,
+                     rpi: float = 50,
                      experience: ExperienceLevel = ExperienceLevel.EXPERIENCED,
                      peak_weekly: float = 50,
                      peak_long: float = 18,
                      tau1: float = 42) -> FitnessBank:
         """Create a FitnessBank for testing."""
         bank = MagicMock(spec=FitnessBank)
-        bank.best_vdot = vdot
+        bank.best_rpi = rpi
         bank.experience_level = experience
         bank.peak_weekly_miles = peak_weekly
         bank.peak_long_run_miles = peak_long
@@ -127,8 +127,8 @@ class TestN1LongRunLogic:
         long run capability. If an athlete has PROVEN they can do 20mi runs,
         their data overrides the time constraint.
         """
-        # Slow runner (vdot=35) but with proven 20mi capability
-        bank = self._create_bank(peak_weekly=60, peak_long=20, vdot=35)
+        # Slow runner (rpi=35) but with proven 20mi capability
+        bank = self._create_bank(peak_weekly=60, peak_long=20, rpi=35)
         gen = WorkoutPrescriptionGenerator(bank, race_distance="marathon")
         
         # Proven capability (20mi >= 15mi threshold) overrides time constraint
@@ -143,8 +143,8 @@ class TestN1LongRunLogic:
         
         The time limit is applied during weekly progression, not as a static cap.
         """
-        # Slow runner (vdot=35) with only 12mi proven (< 15mi threshold)
-        bank = self._create_bank(peak_weekly=60, peak_long=12, vdot=35)
+        # Slow runner (rpi=35) with only 12mi proven (< 15mi threshold)
+        bank = self._create_bank(peak_weekly=60, peak_long=12, rpi=35)
         gen = WorkoutPrescriptionGenerator(bank, race_distance="marathon")
         
         # Start should be conservative and based on *recent* long run capability.
@@ -153,7 +153,7 @@ class TestN1LongRunLogic:
             f"Start should respect the 10mi minimum, got {gen.long_run_start}"
         
         # Time limit is applied during progression (in calculate_long_run_for_week)
-        # For slow runner (vdot=35, ~11min/mi), time limit = 180/11 ≈ 16.4mi
+        # For slow runner (rpi=35, ~11min/mi), time limit = 180/11 ≈ 16.4mi
         from services.week_theme_generator import WeekTheme
         week6 = gen.calculate_long_run_for_week(6, 16, WeekTheme.BUILD_T_EMPHASIS)
         assert week6 <= 20, f"Week 6 should be time-limited during build, got {week6}"
@@ -221,7 +221,7 @@ class TestTaperIndividualization:
     
     def _create_bank(self, tau1: float) -> FitnessBank:
         bank = MagicMock(spec=FitnessBank)
-        bank.best_vdot = 50
+        bank.best_rpi = 50
         bank.experience_level = ExperienceLevel.EXPERIENCED
         bank.peak_weekly_miles = 50
         bank.current_weekly_miles = 45
@@ -271,7 +271,7 @@ class TestWeekThemeSequence:
                      constraint: ConstraintType = ConstraintType.NONE,
                      current_pct: float = 0.8) -> FitnessBank:
         bank = MagicMock(spec=FitnessBank)
-        bank.best_vdot = 50
+        bank.best_rpi = 50
         bank.experience_level = ExperienceLevel.EXPERIENCED
         bank.peak_weekly_miles = 50
         bank.current_weekly_miles = 50 * current_pct
@@ -359,7 +359,7 @@ class TestRaceWeekMiles:
     
     def _create_bank(self) -> FitnessBank:
         bank = MagicMock(spec=FitnessBank)
-        bank.best_vdot = 50
+        bank.best_rpi = 50
         bank.experience_level = ExperienceLevel.EXPERIENCED
         bank.peak_weekly_miles = 50
         bank.peak_long_run_miles = 18
@@ -405,7 +405,7 @@ class TestWorkoutVariety:
     
     def _create_bank(self) -> FitnessBank:
         bank = MagicMock(spec=FitnessBank)
-        bank.best_vdot = 50
+        bank.best_rpi = 50
         bank.experience_level = ExperienceLevel.EXPERIENCED
         bank.peak_weekly_miles = 50
         bank.peak_long_run_miles = 18

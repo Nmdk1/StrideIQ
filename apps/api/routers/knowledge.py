@@ -9,8 +9,8 @@ Endpoints:
 - GET /v1/knowledge/search - Search entries by tags, methodology, concept
 - GET /v1/knowledge/concepts/{concept} - Get all entries about a concept
 - GET /v1/knowledge/compare - Compare methodologies on a concept
-- GET /v1/knowledge/vdot/formula - Get exact VDOT formula
-- GET /v1/knowledge/vdot/pace-tables - Get training pace tables
+- GET /v1/knowledge/rpi/formula - Get exact RPI formula
+- GET /v1/knowledge/rpi/pace-tables - Get training pace tables
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -44,7 +44,7 @@ def check_tier_access(athlete: Athlete) -> str:
 def search_knowledge(
     tags: Optional[List[str]] = Query(None, description="Filter by tags (e.g., threshold, long_run)"),
     methodology: Optional[str] = Query(None, description="Filter by methodology (e.g., Daniels, Pfitzinger)"),
-    principle_type: Optional[str] = Query(None, description="Filter by principle type (e.g., vdot_formula, periodization)"),
+    principle_type: Optional[str] = Query(None, description="Filter by principle type (e.g., rpi_formula, periodization)"),
     concept: Optional[str] = Query(None, description="Search for a specific concept"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
     current_user: Athlete = Depends(get_current_user),
@@ -225,25 +225,25 @@ def compare_methodologies(
     }
 
 
-@router.get("/vdot/formula")
-def get_vdot_formula(
+@router.get("/rpi/formula")
+def get_rpi_formula(
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Get exact VDOT calculation formula from Daniels' Running Formula.
+    Get exact RPI calculation formula from Daniels' Running Formula.
     
     Tier: 3+ (Guided Coaching & Premium)
     """
     tier = check_tier_access(current_user)
     
     entry = db.query(CoachingKnowledgeEntry).filter(
-        CoachingKnowledgeEntry.principle_type == "vdot_exact",
+        CoachingKnowledgeEntry.principle_type == "rpi_exact",
         CoachingKnowledgeEntry.methodology == "Daniels"
     ).first()
     
     if not entry or not entry.extracted_principles:
-        raise HTTPException(status_code=404, detail="VDOT formula not found")
+        raise HTTPException(status_code=404, detail="RPI formula not found")
     
     data = json.loads(entry.extracted_principles)
     
@@ -255,8 +255,8 @@ def get_vdot_formula(
     }
 
 
-@router.get("/vdot/pace-tables")
-def get_vdot_pace_tables(
+@router.get("/rpi/pace-tables")
+def get_rpi_pace_tables(
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -268,12 +268,12 @@ def get_vdot_pace_tables(
     tier = check_tier_access(current_user)
     
     entry = db.query(CoachingKnowledgeEntry).filter(
-        CoachingKnowledgeEntry.principle_type == "vdot_exact",
+        CoachingKnowledgeEntry.principle_type == "rpi_exact",
         CoachingKnowledgeEntry.methodology == "Daniels"
     ).first()
     
     if not entry or not entry.extracted_principles:
-        raise HTTPException(status_code=404, detail="VDOT pace tables not found")
+        raise HTTPException(status_code=404, detail="RPI pace tables not found")
     
     data = json.loads(entry.extracted_principles)
     

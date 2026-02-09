@@ -105,7 +105,7 @@ class Athlete(Base):
     resting_hr = Column(Integer, nullable=True)  # Resting heart rate (bpm)
     threshold_pace_per_km = Column(Float, nullable=True)  # Lactate threshold pace (seconds/km)
     threshold_hr = Column(Integer, nullable=True)  # Lactate threshold heart rate (bpm)
-    vdot = Column(Float, nullable=True)  # Current VDOT (from recent race or test)
+    rpi = Column('vdot', Float, nullable=True)  # Current RPI (DB column: vdot for backward compat)
     
     # --- RUNNER TYPING (McMillan-inspired) ---
     # Automatically calculated from race history
@@ -1037,7 +1037,7 @@ class TrainingPlan(Base):
     total_weeks = Column(Integer, nullable=False)
     
     # Current fitness baseline (at plan creation)
-    baseline_vdot = Column(Float, nullable=True)
+    baseline_rpi = Column('baseline_vdot', Float, nullable=True)  # DB column: baseline_vdot for backward compat
     baseline_weekly_volume_km = Column(Float, nullable=True)
     
     # Plan generation metadata

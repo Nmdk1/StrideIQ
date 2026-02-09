@@ -19,27 +19,27 @@ from core.database import get_db_sync
 from models import CoachingKnowledgeEntry
 
 
-def extract_vdot_principles(text: str) -> Dict:
-    """Extract VDOT-related principles from text."""
+def extract_rpi_principles(text: str) -> Dict:
+    """Extract RPI-related principles from text."""
     principles = {
-        "vdot_formula": None,
+        "rpi_formula": None,
         "pace_definitions": {},
         "training_zones": {},
         "pace_tables": {}
     }
     
-    # Look for VDOT calculation mentions
-    vdot_patterns = [
-        r"VDOT\s*[=:]\s*([^\.\n]+)",
-        r"calculate.*VDOT[^\.\n]*",
-        r"VDOT.*formula[^\.\n]*"
+    # Look for RPI calculation mentions
+    rpi_patterns = [
+        r"RPI\s*[=:]\s*([^\.\n]+)",
+        r"calculate.*RPI[^\.\n]*",
+        r"RPI.*formula[^\.\n]*"
     ]
     
-    for pattern in vdot_patterns:
+    for pattern in rpi_patterns:
         matches = re.finditer(pattern, text, re.IGNORECASE)
         for match in matches:
-            if not principles["vdot_formula"]:
-                principles["vdot_formula"] = match.group(0)[:500]
+            if not principles["rpi_formula"]:
+                principles["rpi_formula"] = match.group(0)[:500]
     
     # Extract pace definitions (E, M, T, I, R)
     pace_types = ["E", "M", "T", "I", "R", "Easy", "Marathon", "Threshold", "Interval", "Repetition"]
@@ -141,20 +141,20 @@ def extract_and_store_principles(text_file: str, source: str, methodology: str):
         
         print(f"Text length: {len(text)} characters")
         
-        # Extract VDOT principles
-        print("Extracting VDOT principles...")
-        vdot_data = extract_vdot_principles(text)
-        if vdot_data and (vdot_data.get("vdot_formula") or vdot_data.get("pace_definitions")):
+        # Extract RPI principles
+        print("Extracting RPI principles...")
+        rpi_data = extract_rpi_principles(text)
+        if rpi_data and (rpi_data.get("rpi_formula") or rpi_data.get("pace_definitions")):
             entry = CoachingKnowledgeEntry(
                 source=source,
                 methodology=methodology,
                 source_type="book",
                 text_chunk=text[:2000],  # Store context
-                extracted_principles=json.dumps(vdot_data),
-                principle_type="vdot_formula"
+                extracted_principles=json.dumps(rpi_data),
+                principle_type="rpi_formula"
             )
             db.add(entry)
-            print(f"✅ Extracted VDOT principles")
+            print(f"✅ Extracted RPI principles")
         
         # Extract periodization principles
         print("Extracting periodization principles...")

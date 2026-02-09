@@ -114,7 +114,7 @@ This comprehensive audit identified **67 security findings** across all layers:
 |----|---------|------|
 | A-H1 | v1.py mark-race/backfill without auth | `routers/v1.py:577-605` |
 | A-H2 | Strava webhook signature optional | `routers/strava_webhook.py:64` |
-| A-H3 | VDOT endpoints expose any user | `routers/knowledge.py:234` |
+| A-H3 | RPI endpoints expose any user | `routers/knowledge.py:234` |
 | A-H4 | 30-day JWT expiration | `core/security.py:32` |
 | A-H5 | In-memory account lockout | `core/account_security.py:14` |
 
@@ -229,7 +229,7 @@ This comprehensive audit identified **67 security findings** across all layers:
 | **Identity** | Email, name, birthdate, sex | Medium - auth exists on main endpoints |
 | **Body Metrics** | Weight, body fat, BMI | **CRITICAL - No auth** |
 | **Health Vitals** | Heart rate, HRV, sleep, stress | **CRITICAL - No auth on check-ins** |
-| **Performance** | VDOT, pace, race times | Medium - some endpoints exposed |
+| **Performance** | RPI, pace, race times | Medium - some endpoints exposed |
 | **Training** | Activities, plans, calendar | Low - well protected |
 | **Financial** | Subscription, payment via Stripe | Low - Stripe handles |
 | **Third-Party Tokens** | Strava/Garmin OAuth | Medium - encryption bug |
@@ -337,7 +337,7 @@ These are actively exploitable and may be what the security researcher found:
 |----------|------|--------|
 | P1-1 | Add auth to v1.py mark-race/backfill | 30 min |
 | P1-2 | Make Strava webhook signature mandatory | 15 min |
-| P1-3 | Add auth to knowledge.py VDOT endpoints | 30 min |
+| P1-3 | Add auth to knowledge.py RPI endpoints | 30 min |
 | P1-4 | Add 24 missing tables to GDPR deletion | 2 hours |
 | P1-5 | Reduce JWT expiration to 7 days | 30 min |
 | P1-6 | Move account lockout to Redis | 2 hours |
@@ -570,7 +570,7 @@ Based on this audit, when the researcher sends their proof-of-concept, compare a
 **Most likely findings:**
 1. IDOR in body_composition, nutrition, work_pattern, or feedback endpoints
 2. Missing authentication on specific endpoints
-3. Information disclosure via VDOT endpoints
+3. Information disclosure via RPI endpoints
 
 **Recommended response template:**
 
@@ -608,7 +608,7 @@ CRITICAL - Add authentication:
   apps/api/routers/nutrition.py
   apps/api/routers/feedback.py
   apps/api/routers/v1.py (mark-race, backfill endpoints)
-  apps/api/routers/knowledge.py (VDOT endpoints)
+  apps/api/routers/knowledge.py (RPI endpoints)
 
 CRITICAL - Fix encryption:
   apps/api/services/strava_service.py (line 439)
