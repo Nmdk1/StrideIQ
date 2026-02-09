@@ -26,7 +26,18 @@ The founder (Michael Shaffer) is a physicist, former 4:07 miler, college XC runn
 
 ## What Was Done This Session (Chronological)
 
-### 1. Splits Table Cumulative Time
+### 1. Coach Suggestion Prompts Rewritten
+- **File:** `apps/api/services/ai_coach.py`
+- Rewrote all suggestion chip prompts to trigger coaching insight instead of data readback
+- Suggestions now ask questions like "What should I focus on?" instead of "Show me my CTL"
+
+### 2. Dual-Layer "What's Working" with N=1 Correlation Progress
+- **Files:** `apps/api/routers/progress.py`, `apps/web/app/progress/page.tsx`, `apps/web/lib/hooks/queries/progress.ts`
+- Added a new "What's Working" section to the Progress page
+- Shows N=1 correlation-driven insights (what patterns correlate with the athlete's best performances)
+- Created `_AI_CONTEXT_/OPERATIONS/V3_HOME_REDESIGN_NOTES.md` — a design document for the V3 coach-first home page vision (deferred for later)
+
+### 3. Splits Table Cumulative Time
 - **File:** `apps/web/components/activities/SplitsTable.tsx`
 - "Time" column now shows cumulative elapsed time, not per-split duration
 
@@ -85,20 +96,22 @@ The founder (Michael Shaffer) is a physicist, former 4:07 miler, college XC runn
 
 ---
 
-## Commits (chronological)
+## Commits (chronological, 14 total)
 
-1. `2080244` — fix: splits table Time column shows cumulative elapsed time
-2. `5bb7729` — fix: efficiency attribution compares against similar runs
-3. `939a597` — fix: strava token refresh test timezone comparison
-4. `4482914` — fix: efficiency attribution uses GAP from splits + same workout type
-5. `8e1b5e1` — fix: auto-classify workout type on Strava sync
-6. `bf3d3ab` — fix: long runs at low intensity classified as long_run
-7. `bb94030` — fix: EF formula corrected to speed/HR (higher=better)
-8. `2bd9572` — Coach tone: add LLM guardrails for raw metric parroting and negative framing
-9. `a69614b` — chore: strip trailing whitespace, remove temp scripts, add session handoff docs
-10. `93a31b5` — fix: mock send_email in complete_email_change tests
-11. `51baf57` — fix: remove trademarked VDOT term from user-facing labels and API responses
-12. `534bef2` — refactor: purge trademarked VDOT term from entire codebase, replace with RPI
+1. `9e544b9` — fix: rewrite suggestion prompts to trigger coaching insight, not data readback
+2. `0294918` — feat: dual-layer What's Working with N=1 correlation progress indicator
+3. `2080244` — fix: splits table Time column shows cumulative elapsed time
+4. `5bb7729` — fix: efficiency attribution compares against similar runs
+5. `939a597` — fix: strava token refresh test timezone comparison
+6. `4482914` — fix: efficiency attribution uses GAP from splits + same workout type
+7. `8e1b5e1` — fix: auto-classify workout type on Strava sync
+8. `bf3d3ab` — fix: long runs at low intensity classified as long_run
+9. `bb94030` — fix: EF formula corrected to speed/HR (higher=better)
+10. `2bd9572` — Coach tone: add LLM guardrails for raw metric parroting and negative framing
+11. `a69614b` — chore: strip trailing whitespace, remove temp scripts, add session handoff docs
+12. `93a31b5` — fix: mock send_email in complete_email_change tests
+13. `51baf57` — fix: remove trademarked VDOT term from user-facing labels and API responses
+14. `534bef2` — refactor: purge trademarked VDOT term from entire codebase, replace with RPI
 
 ---
 
