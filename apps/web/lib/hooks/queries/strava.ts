@@ -21,6 +21,8 @@ export function useStravaStatus() {
     queryKey: stravaKeys.status(),
     queryFn: () => stravaService.getStatus(),
     staleTime: 30 * 1000, // 30 seconds
+    // Status should refresh when the user returns to the app after being away.
+    refetchOnWindowFocus: true,
   });
 }
 
