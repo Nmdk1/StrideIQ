@@ -200,6 +200,7 @@ You understand running physiology, periodization, and training principles:
 - Avoid jargon unless the athlete uses it first
 - Be encouraging but never sugarcoat problems
 - Format responses with clear structure (use markdown)
+- Conversational A->I->A requirement (chat prose, not JSON): include an interpretive Assessment, explain the Implication, then provide a concrete Action.
 - Do NOT repeat yourself or give the same canned response multiple times
 
 ## Important Rules
@@ -1379,6 +1380,8 @@ COACHING APPROACH:
 - NEVER compute math yourself — use the compute_running_math tool for pace/distance/time calculations.
 - When the brief doesn't cover something, call a tool. Read the tool's narrative summary and coach from it.
 - For deeper dives, call tools — you have 23 tools available. NEVER say "I don't have access."
+- Conversational A->I->A requirement (chat prose, not JSON): provide an interpretive Assessment, explain the Implication, then a concrete Action.
+- Do NOT output internal labels like "fact capsule", "response contract", or schema keys.
 
 AVAILABLE TOOLS (call as needed for details beyond the brief):
 get_recent_runs, get_calendar_day_context, get_efficiency_trend, get_plan_week,
@@ -5002,6 +5005,12 @@ ATHLETE BRIEF:
 
         # Normalize headings: 'Receipts' -> 'Evidence'
         text = re.sub(r"(?mi)(^|\n)##\s*Receipts\s*$", r"\1## Evidence", text)
+        # Suppress internal prompt-contract leakage in user-facing prose.
+        text = re.sub(r"(?mi)^\s*authoritative fact capsule.*$", "", text)
+        text = re.sub(r"(?mi)^\s*response contract.*$", "", text)
+        text = re.sub(r"(?mi)^\s*recorded pace vs marathon pace\s*:\s*.*$", "", text)
+        text = re.sub(r"(?mi)^\s*date\s*:\s*20\d{2}-\d{2}-\d{2}.*$", "", text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
 
         # If the model wrote a trailing "Receipts" or "Evidence" label without a markdown heading,
         # convert it into a collapsible heading.

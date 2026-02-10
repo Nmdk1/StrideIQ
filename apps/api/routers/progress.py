@@ -57,6 +57,66 @@ class ProgressCoachCard(BaseModel):
     ask_coach_query: str
 
 
+_INTERPRETIVE_WORDS = (
+    "strong",
+    "controlled",
+    "smooth",
+    "solid",
+    "promising",
+    "balanced",
+    "productive",
+    "concerning",
+    "stable",
+    "breakthrough",
+    "sharp",
+    "fatigued",
+    "stressed",
+)
+
+
+def _has_interpretive_language(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lower = text.lower()
+    return any(w in lower for w in _INTERPRETIVE_WORDS)
+
+
+def _looks_like_action(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lower = text.lower()
+    action_tokens = (
+        "keep",
+        "plan",
+        "schedule",
+        "run",
+        "take",
+        "prioritize",
+        "reduce",
+        "recover",
+        "focus",
+        "sleep",
+        "fuel",
+        "hydrate",
+        "easy day",
+    )
+    return any(t in lower for t in action_tokens)
+
+
+def _valid_progress_card_contract(card: ProgressCoachCard) -> bool:
+    if not card.summary or not card.trend_context or not card.next_step:
+        return False
+    if not _has_interpretive_language(card.summary):
+        return False
+    if not _looks_like_action(card.next_step):
+        return False
+    forbidden = ("recorded pace vs marathon pace", "authoritative fact capsule", "response contract")
+    lower_blob = f"{card.summary} {card.trend_context} {card.drivers} {card.next_step}".lower()
+    if any(f in lower_blob for f in forbidden):
+        return False
+    return True
+
+
 class RecoveryData(BaseModel):
     durability_index: Optional[float] = None
     recovery_half_life_hours: Optional[float] = None
@@ -790,7 +850,11 @@ def _generate_progress_cards(
         f"  3) volume_trajectory (reflect last {days} days context)",
         "  4) consistency_signal",
         "- 1-2 sentences per field max. Keep concise and coach-like.",
-        "- Every card must include a clear next action.",
+        "- ENFORCE A->I->A SHAPE PER CARD:",
+        "  - summary = Assessment (interpretive; not just raw numbers).",
+        "  - trend_context = Implication (why this matters now).",
+        "  - next_step = Action (concrete next step).",
+        "- Never output internal labels or schema language.",
         "",
         "=== LATEST SELF-REPORT ===",
         json.dumps(checkin_context or {"status": "No recent check-in available"}, ensure_ascii=True),
@@ -872,6 +936,9 @@ def _generate_progress_cards(
         data = json.loads(response.text)
         cards = [ProgressCoachCard(**card) for card in data.get("cards", [])]
         if not cards:
+            return _fallback_progress_cards(summary, checkin_context, days)
+        if not all(_valid_progress_card_contract(c) for c in cards):
+            logger.warning("Progress coach cards failed A->I->A contract validation; using fallback cards.")
             return _fallback_progress_cards(summary, checkin_context, days)
 
         if r:

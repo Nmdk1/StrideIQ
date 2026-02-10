@@ -453,6 +453,74 @@ def generate_yesterday_insight(activity: Activity) -> str:
     return " ".join(insights[:2]) if insights else None
 
 
+_INTERPRETIVE_WORDS = (
+    "strong",
+    "controlled",
+    "smooth",
+    "solid",
+    "promising",
+    "balanced",
+    "productive",
+    "concerning",
+    "stable",
+    "breakthrough",
+    "sharp",
+    "fatigued",
+    "stressed",
+)
+
+
+def _has_interpretive_language(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lower = text.lower()
+    return any(w in lower for w in _INTERPRETIVE_WORDS)
+
+
+def _looks_like_action(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lower = text.lower()
+    return any(
+        v in lower
+        for v in (
+            "keep",
+            "plan",
+            "schedule",
+            "run",
+            "take",
+            "prioritize",
+            "reduce",
+            "recover",
+            "focus",
+            "sleep",
+            "fuel",
+            "hydrate",
+            "easy day",
+        )
+    )
+
+
+def _valid_home_briefing_contract(result: dict, checkin_data: Optional[dict], race_data: Optional[dict]) -> bool:
+    if not isinstance(result, dict):
+        return False
+    coach_noticed = result.get("coach_noticed")
+    week_assessment = result.get("week_assessment")
+    today_context = result.get("today_context")
+    if not coach_noticed or not week_assessment or not today_context:
+        return False
+    if not _has_interpretive_language(coach_noticed):
+        return False
+    action_sources = [today_context, result.get("checkin_reaction"), result.get("race_assessment")]
+    if not any(_looks_like_action(s) for s in action_sources if isinstance(s, str)):
+        return False
+    if checkin_data and not result.get("checkin_reaction"):
+        return False
+    if race_data and not result.get("race_assessment"):
+        return False
+    return True
+
+
 def generate_coach_home_briefing(
     athlete_id: str,
     db: Session,
@@ -511,6 +579,8 @@ def generate_coach_home_briefing(
         "Reference their actual numbers. Sound like a real coach, not a dashboard.",
         "CRITICAL: Only reference data explicitly provided. Do NOT invent or assume anything.",
         "1-2 sentences per field max.",
+        "A->I->A contract: coach_noticed must be interpretive assessment, week_assessment must explain implication, and at least one field must provide a concrete next action.",
+        "Do NOT emit internal labels or schema-like wording.",
         "",
         "COACHING TONE RULES (non-negotiable):",
         "- ALWAYS lead with what went well before raising concerns. Celebrate effort and progress first.",
@@ -558,15 +628,15 @@ def generate_coach_home_briefing(
         schema_properties = {
             "coach_noticed": {
                 "type": "STRING",
-                "description": "The single most important coaching observation from their data. Lead with progress or positive trends. If there is a concern, frame it as an actionable recommendation, not a warning. 1-2 sentences.",
+                "description": "Assessment: the single most important coaching observation from their data. Must be interpretive (not purely numeric). Lead with progress or positive trends. 1-2 sentences.",
             },
             "today_context": {
                 "type": "STRING",
-                "description": "If run completed: celebrate the effort first, then frame next steps. If not yet: what today should look like based on their actual training patterns, load state, and goals. 1-2 sentences.",
+                "description": "Action-focused context: if run completed, celebrate effort then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.",
             },
             "week_assessment": {
                 "type": "STRING",
-                "description": "Assessment of this week's trajectory based on actual training, not plan adherence. 1 sentence.",
+                "description": "Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.",
             },
             "checkin_reaction": {
                 "type": "STRING",
@@ -600,6 +670,9 @@ def generate_coach_home_briefing(
         )
 
         result = _json.loads(response.text)
+        if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
+            logger.warning("Coach home briefing failed A->I->A contract validation; returning None for deterministic fallback.")
+            return None
 
         # Cache for 30 minutes
         if r:

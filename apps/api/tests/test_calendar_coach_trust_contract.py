@@ -126,7 +126,17 @@ async def test_calendar_router_injects_authoritative_fact_capsule(monkeypatch, d
 
     async def _fake_chat(self, athlete_id, message, include_context=True):
         captured["message"] = message
-        return {"response": "ok", "error": False}
+        return {
+            "response": """{
+  "assessment": "Strong controlled run execution today.",
+  "implication": "This supports stable build progression for this phase.",
+  "action": ["Keep tomorrow easy and protect recovery before the next quality day."],
+  "athlete_alignment_note": "Aligned with reported effort.",
+  "evidence": ["2026-02-10: run paced slower by 0:09/mi vs marathon reference"],
+  "safety_status": "ok"
+}""",
+            "error": False,
+        }
 
     monkeypatch.setattr(calendar_router.coach_tools, "get_calendar_day_context", _fake_day_context)
     monkeypatch.setattr(calendar_router.AICoach, "chat", _fake_chat)
@@ -144,8 +154,52 @@ async def test_calendar_router_injects_authoritative_fact_capsule(monkeypatch, d
     assert "Date: 2026-02-10" in msg
     assert "Weekday: Tuesday" in msg
     assert "Recorded pace vs marathon pace: slower by 0:09/mi" in msg
-    assert "do not recompute pace relation" in msg
-    assert resp.response == "ok"
+    assert "Return JSON with keys: assessment, implication, action" in msg
+    assert "Next step:" in resp.response
+    assert "Strong controlled run execution today." in resp.response
+    assert "Recorded pace vs marathon pace" not in resp.response
+
+
+@pytest.mark.asyncio
+async def test_calendar_router_strips_internal_labels_and_enforces_action(monkeypatch, db_session, test_athlete):
+    def _fake_day_context(*_args, **_kwargs):
+        return {
+            "ok": True,
+            "data": {
+                "date": "2026-02-10",
+                "weekday": "Tuesday",
+                "marathon_pace_per_mile": "6:57/mi",
+                "planned_workout": {"title": "Hill Strides", "workout_type": "easy"},
+                "activities": [
+                    {
+                        "name": "Run",
+                        "pace_per_mile": "7:06/mi",
+                        "distance_mi": 10.0,
+                        "pace_vs_marathon_label": "slower by 0:09/mi",
+                    }
+                ],
+            },
+        }
+
+    async def _fake_chat(self, athlete_id, message, include_context=True):
+        return {
+            "response": "**Date: 2026-02-10 (Tuesday)**\nRecorded pace vs marathon pace: slower by 0:09/mi.\nYou ran 10 miles at 7:06/mi.",
+            "error": False,
+        }
+
+    monkeypatch.setattr(calendar_router.coach_tools, "get_calendar_day_context", _fake_day_context)
+    monkeypatch.setattr(calendar_router.AICoach, "chat", _fake_chat)
+
+    req = calendar_router.CoachMessageRequest(
+        message="How was run today?",
+        context_type="day",
+        context_date=date(2026, 2, 10),
+    )
+    resp = await calendar_router.send_coach_message(req, current_user=test_athlete, db=db_session)
+    lower = resp.response.lower()
+    assert "recorded pace vs marathon pace" not in lower
+    assert "next step:" in lower
+    assert "-" in resp.response
 
 
 def test_ai_coach_registers_compute_running_math_tool():

@@ -19,6 +19,8 @@ from datetime import date, datetime, timedelta
 from typing import Optional, List
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict
+import json
+import re
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -195,6 +197,176 @@ class CoachMessageResponse(BaseModel):
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
+INTERPRETIVE_WORDS = {
+    "strong",
+    "controlled",
+    "smooth",
+    "solid",
+    "productive",
+    "concerning",
+    "breakthrough",
+    "sharp",
+    "stable",
+    "balanced",
+    "promising",
+    "robust",
+    "fatigued",
+    "stressed",
+}
+
+
+def _has_interpretive_language(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lower = text.lower()
+    return any(w in lower for w in INTERPRETIVE_WORDS)
+
+
+def _looks_like_action(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lower = text.lower()
+    action_verbs = (
+        "keep",
+        "plan",
+        "schedule",
+        "run",
+        "take",
+        "prioritize",
+        "reduce",
+        "build",
+        "skip",
+        "focus",
+        "recover",
+        "hydrate",
+        "fuel",
+        "sleep",
+    )
+    return any(v in lower for v in action_verbs)
+
+
+def _extract_json_object(text: str) -> Optional[dict]:
+    if not text:
+        return None
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```[a-zA-Z]*\s*", "", candidate)
+        candidate = re.sub(r"\s*```$", "", candidate)
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+
+    match = re.search(r"\{[\s\S]*\}", text)
+    if not match:
+        return None
+    try:
+        parsed = json.loads(match.group(0))
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
+
+
+def _build_day_coach_contract_from_facts(day_data: dict) -> dict:
+    weekday = day_data.get("weekday") or "today"
+    planned = day_data.get("planned_workout") or {}
+    acts = day_data.get("activities") or []
+    marathon_pace = day_data.get("marathon_pace_per_mile") or day_data.get("marathon_pace_per_km")
+
+    if not acts:
+        planned_title = planned.get("title") or planned.get("workout_type") or "planned session"
+        return {
+            "assessment": f"{weekday} is set up as a controlled day with no logged run yet.",
+            "implication": "This is a stable point in the week to protect recovery and keep quality sessions effective.",
+            "action": [f"Execute {planned_title} as easy effort and reassess after the run."],
+            "athlete_alignment_note": "No completed run found for this day.",
+            "evidence": [f"{day_data.get('date')}: planned {planned_title}"],
+            "safety_status": "ok",
+        }
+
+    first = acts[0]
+    run_name = first.get("name") or "Run"
+    pace = first.get("pace_per_mile") or first.get("pace_per_km") or "pace unavailable"
+    distance = first.get("distance_mi") or first.get("distance_km")
+    unit = "mi" if first.get("distance_mi") is not None else "km"
+    rel = first.get("pace_vs_marathon_label")
+    assessment = f"{weekday}'s {run_name} was a strong, controlled execution."
+    if distance:
+        assessment = f"{weekday}'s {run_name} ({distance:.1f} {unit} at {pace}) was a strong, controlled execution."
+
+    implication = "That suggests your current aerobic base is supporting workload without obvious loss of control."
+    if rel:
+        implication = f"With pace tracking {rel}, your effort-to-speed relationship stays stable for this phase."
+    elif marathon_pace:
+        implication = f"Compared with your marathon reference pace ({marathon_pace}), this effort supports steady build progression."
+
+    action = "Prioritize an easy recovery day next, then keep the next quality session controlled rather than stacking hard days."
+    if planned.get("title"):
+        action = f"Keep tomorrow easy to absorb this, then execute {planned.get('title')} with controlled effort."
+
+    evidence = [f"{day_data.get('date')}: {run_name} @ {pace}"]
+    if rel:
+        evidence.append(f"{day_data.get('date')}: pace vs marathon reference = {rel}")
+
+    return {
+        "assessment": assessment,
+        "implication": implication,
+        "action": [action],
+        "athlete_alignment_note": "Anchored to day facts and run execution context.",
+        "evidence": evidence,
+        "safety_status": "ok",
+    }
+
+
+def _valid_day_coach_contract(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    assessment = payload.get("assessment")
+    implication = payload.get("implication")
+    action = payload.get("action")
+    if not assessment or not implication or not isinstance(action, list) or len(action) == 0:
+        return False
+    if not _has_interpretive_language(assessment):
+        return False
+    if not any(_looks_like_action(a) for a in action if isinstance(a, str)):
+        return False
+    return True
+
+
+def _format_day_coach_contract(payload: dict) -> str:
+    assessment = str(payload.get("assessment", "")).strip()
+    implication = str(payload.get("implication", "")).strip()
+    action_items = [str(a).strip() for a in payload.get("action", []) if str(a).strip()]
+    evidence = [str(e).strip() for e in payload.get("evidence", []) if str(e).strip()]
+    lines: List[str] = []
+    if assessment:
+        lines.append(assessment)
+    if implication:
+        lines.append(implication)
+    if action_items:
+        lines.append("")
+        lines.append("Next step:")
+        for item in action_items:
+            lines.append(f"- {item}")
+    if evidence:
+        lines.append("")
+        lines.append("## Evidence")
+        for ev in evidence[:4]:
+            lines.append(f"- {ev}")
+    return "\n".join(lines).strip()
+
+
+def _sanitize_day_coach_text(text: str) -> str:
+    out = (text or "").strip()
+    out = re.sub(r"(?im)^\s*\*{0,2}\s*date\s*:\s*.*$", "", out)
+    out = re.sub(r"(?im)^\s*\*{0,2}\s*recorded pace vs marathon pace\s*:\s*.*$", "", out)
+    out = re.sub(r"(?im)^\s*authoritative fact capsule.*$", "", out)
+    out = re.sub(r"(?im)^\s*response contract.*$", "", out)
+    out = re.sub(r"\n{3,}", "\n\n", out).strip()
+    return out
 
 def get_day_status(planned: Optional[PlannedWorkout], activities: List[Activity], day_date: date) -> str:
     """Determine the status of a calendar day."""
@@ -965,8 +1137,12 @@ async def send_coach_message(
             "AUTHORITATIVE FACT CAPSULE (MUST USE EXACTLY):\n"
             + "\n".join(canonical_facts)
             + "\n\nRESPONSE CONTRACT (MANDATORY):\n"
-            + "- First restate Date and Weekday exactly as listed in the fact capsule.\n"
-            + "- If pace-vs-marathon is present, quote that exact label; do not recompute pace relation.\n"
+            + "- Use the fact capsule for correctness but do NOT print raw capsule labels like 'Date:' or 'Recorded pace vs marathon pace'.\n"
+            + "- Return JSON with keys: assessment, implication, action (array), athlete_alignment_note, evidence (array), safety_status.\n"
+            + "- assessment must be interpretive (not purely numeric).\n"
+            + "- implication must explain why this matters for training direction.\n"
+            + "- action must include at least one concrete next step.\n"
+            + "- If pace-vs-marathon is present, use that exact relation and do not recompute.\n"
             + "- Never contradict the fact capsule.\n"
             + "- If any downstream data appears to conflict with the capsule, respond exactly: "
             + "\"I cannot verify day facts safely right now.\""
@@ -985,11 +1161,32 @@ async def send_coach_message(
     )
 
     coach_response = (result.get("response", "") or "").strip()
-    if result.get("error") or not coach_response or coach_response.lower().startswith("coach is temporarily unavailable"):
-        coach_response = (
-            "I cannot answer this safely right now because coach context verification failed. "
-            "Please retry in a moment."
-        )
+    if request.context_type == "day" and day_context_tool and day_context_tool.get("ok"):
+        day_data = (day_context_tool.get("data") or {})
+        if result.get("error") or not coach_response or coach_response.lower().startswith("coach is temporarily unavailable"):
+            payload = _build_day_coach_contract_from_facts(day_data)
+            coach_response = _format_day_coach_contract(payload)
+        else:
+            payload = _extract_json_object(coach_response)
+            if payload and _valid_day_coach_contract(payload):
+                coach_response = _format_day_coach_contract(payload)
+            else:
+                sanitized = _sanitize_day_coach_text(coach_response)
+                if (
+                    not _has_interpretive_language(sanitized)
+                    or not _looks_like_action(sanitized)
+                    or "recorded pace vs marathon pace" in sanitized.lower()
+                ):
+                    payload = _build_day_coach_contract_from_facts(day_data)
+                    coach_response = _format_day_coach_contract(payload)
+                else:
+                    coach_response = sanitized
+    else:
+        if result.get("error") or not coach_response or coach_response.lower().startswith("coach is temporarily unavailable"):
+            coach_response = (
+                "I cannot answer this safely right now because coach context verification failed. "
+                "Please retry in a moment."
+            )
     
     # Add coach response
     messages.append({
