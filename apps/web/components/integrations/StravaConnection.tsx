@@ -48,10 +48,15 @@ export function StravaConnection() {
     }
   }, [syncStatus?.status, refetchStatus]);
 
-  // Timeout safeguard: if sync is "pending" for over 2 minutes, assume stale
+  // Timeout safeguard: if sync is in an active state for over 2 minutes, assume stale
   // This is a backup in case Redis tracking fails
   useEffect(() => {
-    if (syncTaskId && syncStartTime && syncStatus?.status === 'pending') {
+    const isActive =
+      syncStatus?.status === 'pending' ||
+      syncStatus?.status === 'started' ||
+      syncStatus?.status === 'progress';
+
+    if (syncTaskId && syncStartTime && isActive) {
       const elapsed = Date.now() - syncStartTime;
       if (elapsed > 120000) {
         // Task is likely stale
