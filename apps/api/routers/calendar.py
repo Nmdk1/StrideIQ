@@ -28,6 +28,7 @@ from models import (
     CalendarNote, CoachChat, CalendarInsight, ActivityFeedback
 )
 from services.ai_coach import AICoach
+from services import coach_tools
 
 router = APIRouter(prefix="/v1/calendar", tags=["Calendar"])
 
@@ -190,7 +191,6 @@ class CoachMessageResponse(BaseModel):
     chat_id: UUID
     response: str
     context_type: str
-
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -915,12 +915,61 @@ async def send_coach_message(
     coach = AICoach(db)
 
     augmented_message = request.message
+    day_context_tool = None
     if request.context_type == "day" and request.context_date:
+        day_context_tool = coach_tools.get_calendar_day_context(
+            db=db,
+            athlete_id=current_user.id,
+            day=request.context_date.isoformat(),
+        )
+        day_data = (day_context_tool.get("data") or {}) if isinstance(day_context_tool, dict) else {}
+        if not day_context_tool or not day_context_tool.get("ok") or not day_data.get("date") or not day_data.get("weekday"):
+            coach_response = (
+                "I cannot answer this safely right now because the day context could not be verified. "
+                "Please try again in a moment."
+            )
+            messages.append(
+                {
+                    "role": "coach",
+                    "content": coach_response,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+            chat.messages = messages
+            chat.context_snapshot = context_snapshot
+            chat.updated_at = datetime.utcnow()
+            db.commit()
+            return CoachMessageResponse(
+                chat_id=chat.id,
+                response=coach_response,
+                context_type=request.context_type,
+            )
+
+        first_activity = (day_data.get("activities") or [{}])[0]
+        pace_vs_marathon = first_activity.get("pace_vs_marathon_label")
+        marathon_pace = day_data.get("marathon_pace_per_mile") or day_data.get("marathon_pace_per_km")
+        canonical_facts = [
+            f"- Date: {day_data.get('date')}",
+            f"- Weekday: {day_data.get('weekday')}",
+        ]
+        if marathon_pace:
+            canonical_facts.append(f"- Marathon pace reference: {marathon_pace}")
+        if pace_vs_marathon:
+            canonical_facts.append(f"- Recorded pace vs marathon pace: {pace_vs_marathon}")
+
         augmented_message = (
             f"{request.message}\n\n"
             f"Context: calendar day {request.context_date.isoformat()}.\n"
             f"Before answering, call get_calendar_day_context(day='{request.context_date.isoformat()}') "
-            f"and cite planned workout + activity IDs and values."
+            f"and cite planned workout + activity IDs and values.\n\n"
+            "AUTHORITATIVE FACT CAPSULE (MUST USE EXACTLY):\n"
+            + "\n".join(canonical_facts)
+            + "\n\nRESPONSE CONTRACT (MANDATORY):\n"
+            + "- First restate Date and Weekday exactly as listed in the fact capsule.\n"
+            + "- If pace-vs-marathon is present, quote that exact label; do not recompute pace relation.\n"
+            + "- Never contradict the fact capsule.\n"
+            + "- If any downstream data appears to conflict with the capsule, respond exactly: "
+            + "\"I cannot verify day facts safely right now.\""
         )
     elif request.context_type == "week" and request.context_week:
         augmented_message = (
@@ -935,7 +984,12 @@ async def send_coach_message(
         include_context=True,
     )
 
-    coach_response = result.get("response", "")
+    coach_response = (result.get("response", "") or "").strip()
+    if result.get("error") or not coach_response or coach_response.lower().startswith("coach is temporarily unavailable"):
+        coach_response = (
+            "I cannot answer this safely right now because coach context verification failed. "
+            "Please retry in a moment."
+        )
     
     # Add coach response
     messages.append({

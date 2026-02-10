@@ -49,7 +49,7 @@ from services.correlation_engine import (
     aggregate_efficiency_by_effort_zone,
     aggregate_efficiency_trend,
 )
-from services.rpi_calculator import calculate_race_time_from_rpi
+from services.rpi_calculator import calculate_race_time_from_rpi, calculate_training_paces
 
 
 def _iso(dt: datetime) -> str:
@@ -74,6 +74,28 @@ def _pace_str_mi(seconds: Optional[int], meters: Optional[int]) -> Optional[str]
     m = int(pace_s_per_mi // 60)
     s = int(round(pace_s_per_mi % 60))
     return f"{m}:{s:02d}/mi"
+
+
+def _pace_seconds_from_text(pace_text: Optional[str]) -> Optional[int]:
+    if not pace_text:
+        return None
+    cleaned = str(pace_text).strip()
+    if "/" in cleaned:
+        cleaned = cleaned.split("/", 1)[0]
+    parts = cleaned.split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return None
+
+
+def _fmt_mmss(total_seconds: int) -> str:
+    total_seconds = abs(int(total_seconds))
+    m = total_seconds // 60
+    s = total_seconds % 60
+    return f"{m}:{s:02d}"
 
 
 def _preferred_units(db: Session, athlete_id: UUID) -> str:
@@ -281,6 +303,34 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
         .all()
     )
 
+    weekday_name = day_date.strftime("%A")
+    weekday_index = day_date.weekday()
+
+    marathon_pace_per_mile: Optional[str] = None
+    marathon_pace_per_km: Optional[str] = None
+    marathon_pace_sec_per_mile: Optional[int] = None
+    try:
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if athlete and athlete.rpi:
+            paces = calculate_training_paces(float(athlete.rpi))
+            marathon_block = paces.get("marathon")
+            if isinstance(marathon_block, dict):
+                mi_val = marathon_block.get("mi")
+                km_val = marathon_block.get("km")
+                if isinstance(mi_val, str) and mi_val:
+                    marathon_pace_per_mile = f"{mi_val}/mi"
+                    marathon_pace_sec_per_mile = _pace_seconds_from_text(mi_val)
+                if isinstance(km_val, str) and km_val:
+                    marathon_pace_per_km = f"{km_val}/km"
+            if marathon_pace_sec_per_mile is None:
+                raw_mi = paces.get("marathon_pace")
+                if isinstance(raw_mi, (int, float)) and raw_mi > 0:
+                    marathon_pace_sec_per_mile = int(round(float(raw_mi)))
+                    marathon_pace_per_mile = f"{_fmt_mmss(marathon_pace_sec_per_mile)}/mi"
+    except Exception:
+        # Keep day-context available even if pace references are unavailable.
+        pass
+
     planned_data: Optional[Dict[str, Any]] = None
     evidence: List[Dict[str, Any]] = []
     if planned:
@@ -315,6 +365,28 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
     for a in acts:
         distance_km = (float(a.distance_m) / 1000.0) if a.distance_m is not None else None
         distance_mi = _mi_from_m(a.distance_m) if a.distance_m is not None else None
+        pace_mi_str = _pace_str_mi(a.duration_s, a.distance_m)
+        pace_km_str = _pace_str(a.duration_s, a.distance_m)
+        pace_sec_per_mile = _pace_seconds_from_text(pace_mi_str)
+        pace_vs_marathon_label: Optional[str] = None
+        pace_vs_marathon_seconds_per_mile: Optional[int] = None
+        pace_vs_marathon_direction: Optional[str] = None
+        if (
+            pace_sec_per_mile is not None
+            and marathon_pace_sec_per_mile is not None
+            and marathon_pace_sec_per_mile > 0
+        ):
+            delta = int(round(pace_sec_per_mile - marathon_pace_sec_per_mile))
+            pace_vs_marathon_seconds_per_mile = delta
+            if delta < 0:
+                pace_vs_marathon_direction = "faster"
+                pace_vs_marathon_label = f"faster by {_fmt_mmss(delta)}/mi"
+            elif delta > 0:
+                pace_vs_marathon_direction = "slower"
+                pace_vs_marathon_label = f"slower by {_fmt_mmss(delta)}/mi"
+            else:
+                pace_vs_marathon_direction = "equal"
+                pace_vs_marathon_label = "on marathon pace"
         activity_rows.append(
             {
                 "activity_id": str(a.id),
@@ -325,8 +397,11 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
                 "distance_km": round(distance_km, 2) if distance_km is not None else None,
                 "duration_s": int(a.duration_s) if a.duration_s is not None else None,
                 "avg_hr": int(a.avg_hr) if a.avg_hr is not None else None,
-                "pace_per_km": _pace_str(a.duration_s, a.distance_m),
-                "pace_per_mile": _pace_str_mi(a.duration_s, a.distance_m),
+                "pace_per_km": pace_km_str,
+                "pace_per_mile": pace_mi_str,
+                "pace_vs_marathon_label": pace_vs_marathon_label,
+                "pace_vs_marathon_seconds_per_mile": pace_vs_marathon_seconds_per_mile,
+                "pace_vs_marathon_direction": pace_vs_marathon_direction,
                 "workout_type": a.workout_type,
                 "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
             }
@@ -362,7 +437,7 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
         )
 
     # --- Narrative ---
-    cd_parts: List[str] = [f"Calendar day {day_date.isoformat()}:"]
+    cd_parts: List[str] = [f"Calendar day {day_date.isoformat()} ({weekday_name}):"]
     if planned_data:
         status = "completed" if planned_data.get("completed") else ("skipped" if planned_data.get("skipped") else "not yet completed")
         cd_parts.append(
@@ -391,8 +466,12 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
         "narrative": cd_narrative,
         "data": {
             "date": day_date.isoformat(),
+            "weekday": weekday_name,
+            "weekday_index": weekday_index,
             "preferred_units": units,
             "active_plan_id": str(plan.id) if plan else None,
+            "marathon_pace_per_mile": marathon_pace_per_mile,
+            "marathon_pace_per_km": marathon_pace_per_km,
             "planned_workout": planned_data,
             "activities": activity_rows,
         },

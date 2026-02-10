@@ -821,6 +821,25 @@ Policy:
                     "required": [],
                 },
             },
+            {
+                "name": "compute_running_math",
+                "description": "Compute pace/time/distance math deterministically.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "pace_per_mile": {"type": "string"},
+                        "pace_per_km": {"type": "string"},
+                        "distance_miles": {"type": "number"},
+                        "distance_km": {"type": "number"},
+                        "time_seconds": {"type": "integer"},
+                        "operation": {
+                            "type": "string",
+                            "description": "pace_to_finish | finish_to_pace | split_calc",
+                        },
+                    },
+                    "required": ["operation"],
+                },
+            },
         ]
 
     def _execute_opus_tool(self, athlete_id: UUID, tool_name: str, tool_input: Dict[str, Any]) -> str:
@@ -877,6 +896,8 @@ Policy:
                 result = coach_tools.get_athlete_profile(self.db, athlete_id)
             elif tool_name == "get_training_load_history":
                 result = coach_tools.get_training_load_history(self.db, athlete_id, **tool_input)
+            elif tool_name == "compute_running_math":
+                result = coach_tools.compute_running_math(self.db, athlete_id, **tool_input)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return json.dumps(result, default=str)
@@ -1320,6 +1341,22 @@ If you need more data to answer well, call the tools. That's why they're there."
                     }
                 }
             },
+            {
+                "name": "compute_running_math",
+                "description": "Compute pace/time/distance math deterministically.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pace_per_mile": {"type": "string"},
+                        "pace_per_km": {"type": "string"},
+                        "distance_miles": {"type": "number"},
+                        "distance_km": {"type": "number"},
+                        "time_seconds": {"type": "integer"},
+                        "operation": {"type": "string"},
+                    },
+                    "required": ["operation"],
+                },
+            },
         ]
         
         gemini_tools = genai_types.Tool(function_declarations=function_declarations)
@@ -1341,7 +1378,7 @@ COACHING APPROACH:
 - Every number you cite MUST come from the brief or a tool result. NEVER fabricate, estimate, or guess training data. If the brief doesn't have it and you haven't called a tool, call one.
 - NEVER compute math yourself — use the compute_running_math tool for pace/distance/time calculations.
 - When the brief doesn't cover something, call a tool. Read the tool's narrative summary and coach from it.
-- For deeper dives, call tools — you have 22 tools available. NEVER say "I don't have access."
+- For deeper dives, call tools — you have 23 tools available. NEVER say "I don't have access."
 
 AVAILABLE TOOLS (call as needed for details beyond the brief):
 get_recent_runs, get_calendar_day_context, get_efficiency_trend, get_plan_week,
@@ -1844,6 +1881,25 @@ ATHLETE BRIEF:
                             }
                         },
                         "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "compute_running_math",
+                    "description": "Compute pace/time/distance math deterministically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "pace_per_mile": {"type": "string"},
+                            "pace_per_km": {"type": "string"},
+                            "distance_miles": {"type": "number"},
+                            "distance_km": {"type": "number"},
+                            "time_seconds": {"type": "integer"},
+                            "operation": {"type": "string"},
+                        },
+                        "required": ["operation"],
                     },
                 },
             },
@@ -3164,6 +3220,8 @@ ATHLETE BRIEF:
                                 output = coach_tools.get_athlete_profile(self.db, athlete_id)
                             elif tool_name == "get_training_load_history":
                                 output = coach_tools.get_training_load_history(self.db, athlete_id, **args)
+                            elif tool_name == "compute_running_math":
+                                output = coach_tools.compute_running_math(self.db, athlete_id, **args)
                             else:
                                 output = {
                                     "ok": False,
@@ -4371,6 +4429,8 @@ ATHLETE BRIEF:
                             output = coach_tools.get_athlete_profile(self.db, athlete_id)
                         elif tool_name == "get_training_load_history":
                             output = coach_tools.get_training_load_history(self.db, athlete_id, **args)
+                        elif tool_name == "compute_running_math":
+                            output = coach_tools.compute_running_math(self.db, athlete_id, **args)
                         else:
                             output = {
                                 "ok": False,
