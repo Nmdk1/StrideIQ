@@ -3949,7 +3949,26 @@ ATHLETE BRIEF:
         # Suppress internal prompt-contract leakage in user-facing prose.
         text = re.sub(r"(?mi)^\s*authoritative fact capsule.*$", "", text)
         text = re.sub(r"(?mi)^\s*response contract.*$", "", text)
-        text = re.sub(r"(?mi)^\s*recorded pace vs marathon pace\s*:\s*.*$", "", text)
+        # Rewrite internal pace-comparison language into athlete-friendly prose.
+        # Matches both standalone lines and bullet-list items (e.g. "- Recorded pace…").
+        def _rewrite_pace_relation(m: re.Match) -> str:
+            prefix = m.group("prefix") or ""
+            direction = (m.group("direction") or "").strip().lower()
+            amount = (m.group("amount") or "").strip().rstrip(".")
+            if not amount:
+                return ""
+            if direction == "slower":
+                return f"{prefix}Pace sat about {amount} off marathon rhythm — controlled effort."
+            elif direction == "faster":
+                return f"{prefix}Pace was about {amount} quicker than marathon rhythm."
+            else:
+                return f"{prefix}Pace was about {amount} relative to marathon rhythm."
+        text = re.sub(
+            r"(?mi)^(?P<prefix>\s*[-*]\s*)?recorded pace vs marathon pace\s*:\s*"
+            r"(?P<direction>slower|faster)?\s*(?:by\s*)?(?P<amount>[0-9:]+/mi(?:le)?)?\s*\.?\s*$",
+            _rewrite_pace_relation,
+            text,
+        )
         text = re.sub(r"(?mi)^\s*date\s*:\s*20\d{2}-\d{2}-\d{2}.*$", "", text)
         text = re.sub(r"\n{3,}", "\n\n", text).strip()
 

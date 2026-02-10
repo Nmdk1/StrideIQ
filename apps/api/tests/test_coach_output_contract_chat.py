@@ -29,6 +29,51 @@ def test_chat_normalizer_strips_internal_fact_labels():
     assert "Strong controlled execution" in out
 
 
+def test_pace_relation_rewritten_in_evidence_bullets():
+    """The internal 'Recorded pace vs marathon pace:' must never appear in output,
+    even inside Evidence bullet lists. It should be rewritten to athlete-friendly
+    phrasing like 'Pace sat about X off marathon rhythm'.
+    """
+    coach = _coach_stub()
+    coach._UUID_RE = AICoach._UUID_RE
+    coach._user_explicitly_requested_ids = AICoach._user_explicitly_requested_ids.__get__(coach, AICoach)
+    normalize = AICoach._normalize_response_for_ui.__get__(coach, AICoach)
+
+    raw = (
+        "Great controlled effort today.\n\n"
+        "## Evidence\n"
+        "- Planned workout for 2026-02-10: 5mi + 8x hill strides.\n"
+        "- Actual activity: 10 mile run, 10.0 mi @ 7:06/mi (avg HR 152 bpm).\n"
+        "- Recorded pace vs marathon pace: slower by 0:09/mi.\n"
+    )
+    out = normalize(user_message="How was my run?", assistant_message=raw)
+
+    # Internal system language must be gone
+    assert "Recorded pace vs marathon pace" not in out
+    # Athlete-friendly rewrite must be present
+    assert "marathon rhythm" in out
+    # Coaching content must survive
+    assert "Great controlled effort" in out
+    assert "Planned workout" in out
+
+
+def test_pace_relation_faster_direction():
+    """When the athlete ran faster than marathon pace, the rewrite should say so."""
+    coach = _coach_stub()
+    coach._UUID_RE = AICoach._UUID_RE
+    coach._user_explicitly_requested_ids = AICoach._user_explicitly_requested_ids.__get__(coach, AICoach)
+    normalize = AICoach._normalize_response_for_ui.__get__(coach, AICoach)
+
+    raw = (
+        "Strong tempo session.\n\n"
+        "## Evidence\n"
+        "- Recorded pace vs marathon pace: faster by 0:15/mi.\n"
+    )
+    out = normalize(user_message="How was my tempo?", assistant_message=raw)
+    assert "Recorded pace vs marathon pace" not in out
+    assert "quicker than marathon rhythm" in out
+
+
 def test_system_instructions_include_conversational_aia_requirement():
     assert "Conversational A->I->A requirement" in AICoach.SYSTEM_INSTRUCTIONS
 
