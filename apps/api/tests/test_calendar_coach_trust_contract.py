@@ -209,10 +209,40 @@ def test_ai_coach_registers_compute_running_math_tool():
     with patch.object(AICoach, "__init__", lambda self, db: None):
         coach = AICoach(mock_db)
 
-    assistant_tools = coach._assistant_tools()
-    assistant_names = [t["function"]["name"] for t in assistant_tools]
-    assert "compute_running_math" in assistant_names
-
     opus_tools = coach._opus_tools()
     opus_names = [t["name"] for t in opus_tools]
     assert "compute_running_math" in opus_names
+
+
+def test_no_openai_references_in_ai_coach():
+    """Regression guard: ai_coach.py must not reference OpenAI runtime paths.
+
+    OpenAI Assistants were removed as a legacy fallback.  If someone
+    re-introduces them without discussion, this test will catch it.
+
+    Scoped to code lines only (strips # comments) to avoid false positives
+    from historical notes while still catching real re-introductions.
+    """
+    import pathlib
+    source = pathlib.Path(__file__).resolve().parent.parent / "services" / "ai_coach.py"
+    raw = source.read_text(encoding="utf-8")
+    # Strip single-line comments and docstrings aren't an issue — the
+    # forbidden terms are import/attribute patterns that only matter in code.
+    code_lines = [
+        line for line in raw.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    code_text = "\n".join(code_lines)
+    forbidden = [
+        "from openai",          # import
+        "import OpenAI",        # import
+        "OPENAI_AVAILABLE",     # flag
+        "self.client.beta",     # OpenAI Assistants API calls
+        "self.assistant_id",    # OpenAI assistant ID attribute
+        "fallback_to_assistants",  # fallback signal key
+    ]
+    for term in forbidden:
+        assert term not in code_text, (
+            f"Forbidden OpenAI reference found in ai_coach.py: '{term}'. "
+            "OpenAI Assistants were removed — do not re-introduce without ADR approval."
+        )

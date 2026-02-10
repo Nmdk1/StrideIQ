@@ -25,7 +25,6 @@ def mock_db():
 def coach(mock_db):
     """Create AICoach instance with mocked dependencies."""
     with patch.dict('os.environ', {
-        'OPENAI_API_KEY': '',  # Disable OpenAI client
         'COACH_MODEL_ROUTING': 'on',
         'COACH_VIP_ATHLETE_IDS': '',
         'OWNER_ATHLETE_ID': '',
@@ -178,7 +177,6 @@ class TestVIPLoading:
         vip2 = str(uuid4())
         
         with patch.dict('os.environ', {
-            'OPENAI_API_KEY': '',
             'COACH_VIP_ATHLETE_IDS': f'{vip1},{vip2}',
             'OWNER_ATHLETE_ID': '',
         }):
@@ -191,7 +189,6 @@ class TestVIPLoading:
         owner_id = str(uuid4())
         
         with patch.dict('os.environ', {
-            'OPENAI_API_KEY': '',
             'COACH_VIP_ATHLETE_IDS': '',
             'OWNER_ATHLETE_ID': owner_id,
         }):
@@ -201,7 +198,6 @@ class TestVIPLoading:
     def test_empty_vip_env_is_handled(self, mock_db):
         """Empty VIP env should result in empty set."""
         with patch.dict('os.environ', {
-            'OPENAI_API_KEY': '',
             'COACH_VIP_ATHLETE_IDS': '',
             'OWNER_ATHLETE_ID': '',
         }):
@@ -366,7 +362,6 @@ class TestEdgeCases:
         vip_id = str(uuid4())
         
         with patch.dict('os.environ', {
-            'OPENAI_API_KEY': '',
             'COACH_VIP_ATHLETE_IDS': f'  {vip_id}  ,  ',  # Whitespace and trailing comma
             'OWNER_ATHLETE_ID': '',
         }):
