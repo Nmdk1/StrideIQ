@@ -129,12 +129,22 @@ class GeneratedInsight:
     source: str = "n1"  # "n1" (individual data) or "population"
     confidence: float = 1.0  # 0-1
     
-    # For deduplication
+    # For deduplication — must be stable across regenerations.
+    # Do NOT include changing data (numbers, counts) in this key.
     dedup_key: str = ""
     
     def __post_init__(self):
         if not self.dedup_key:
-            self.dedup_key = f"{self.insight_type}:{self.title[:50]}"
+            # Use activity_id for activity-linked insights (unique per activity),
+            # otherwise use type + a stable title prefix (strip digits).
+            if self.activity_id:
+                self.dedup_key = f"{self.insight_type}:{self.activity_id}"
+            else:
+                # Strip digits so "30-day volume: 201.5 miles" and "30-day volume: 209.5 miles"
+                # both become the same key.
+                import re
+                stable_title = re.sub(r'[\d.]+', '', self.title).strip()[:40]
+                self.dedup_key = f"{self.insight_type}:{stable_title}"
 
 
 @dataclass
@@ -1085,7 +1095,11 @@ class InsightAggregator:
         """
         Persist generated insights to the database.
         
-        Returns number of insights saved.
+        For activity-linked insights: dedup by (athlete, date, type, activity_id).
+        For rolling-stat insights (no activity): dedup by (athlete, date, type)
+        and UPDATE existing rows so stale numbers don't accumulate.
+        
+        Returns number of insights saved or updated.
         """
         saved = 0
         
@@ -1094,19 +1108,29 @@ class InsightAggregator:
             if insight.insight_date is None:
                 insight.insight_date = date.today()
             
-            # Check if similar insight already exists for that date
-            existing = (
-                self.db.query(CalendarInsight)
-                .filter(
-                    CalendarInsight.athlete_id == self.athlete.id,
-                    CalendarInsight.insight_date == insight.insight_date,
-                    CalendarInsight.insight_type == insight.insight_type.value,
-                    CalendarInsight.title == insight.title,
-                )
-                .first()
-            )
+            # Build the dedup query — activity-linked insights match on activity_id too,
+            # rolling-stat insights match only on (athlete, date, type) so updated
+            # numbers replace old rows instead of piling up.
+            filters = [
+                CalendarInsight.athlete_id == self.athlete.id,
+                CalendarInsight.insight_date == insight.insight_date,
+                CalendarInsight.insight_type == insight.insight_type.value,
+            ]
+            if insight.activity_id:
+                filters.append(CalendarInsight.activity_id == insight.activity_id)
+            else:
+                filters.append(CalendarInsight.activity_id.is_(None))
             
-            if not existing:
+            existing = self.db.query(CalendarInsight).filter(*filters).first()
+            
+            if existing:
+                # Update in place — title/content/data may have changed
+                existing.title = insight.title
+                existing.content = insight.content
+                existing.priority = insight.priority
+                existing.generation_data = insight.data
+                saved += 1
+            else:
                 db_insight = CalendarInsight(
                     athlete_id=self.athlete.id,
                     insight_date=insight.insight_date,
