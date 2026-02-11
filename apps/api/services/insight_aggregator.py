@@ -120,7 +120,7 @@ class GeneratedInsight:
     
     # Context
     activity_id: Optional[UUID] = None
-    insight_date: date = field(default_factory=date.today)
+    insight_date: Optional[date] = None  # Set from activity.start_time; falls back to today
     
     # Supporting data for visualization
     data: Dict[str, Any] = field(default_factory=dict)
@@ -250,6 +250,20 @@ class InsightAggregator:
             
         except Exception as e:
             logger.error(f"Error generating insights: {e}")
+        
+        # Stamp insight_date from the triggering activity's actual date,
+        # not the date insight generation happens to run.
+        activity_date = (
+            activity.start_time.date()
+            if activity and getattr(activity, "start_time", None)
+            else None
+        )
+        for insight in all_insights:
+            if insight.insight_date is None:
+                if insight.activity_id and activity_date:
+                    insight.insight_date = activity_date
+                else:
+                    insight.insight_date = date.today()
         
         # Filter by Elite status
         if not self.is_elite:
@@ -469,10 +483,13 @@ class InsightAggregator:
         percentile = (better_count / len(all_efs)) * 100
         
         if percentile >= 80:
+            # "Top X%" means you're in the top X% — lower is better.
+            # Beating 100% of peers = top 1% (clamp to avoid "top 0%").
+            top_pct = max(1, round(100 - percentile))
             insights.append(GeneratedInsight(
                 insight_type=InsightType.COMPARISON,
                 priority=InsightPriority.MEDIUM,
-                title=f"Top {100-percentile:.0f}% efficiency for this distance",
+                title=f"Top {top_pct}% efficiency for this distance",
                 content=(
                     f"This {activity.distance_m/1609:.1f} mi run was more efficient than "
                     f"{percentile:.0f}% of your similar runs in the past 90 days. "
@@ -1073,7 +1090,11 @@ class InsightAggregator:
         saved = 0
         
         for insight in insights:
-            # Check if similar insight already exists today
+            # Safety: ensure insight_date is never None before DB write
+            if insight.insight_date is None:
+                insight.insight_date = date.today()
+            
+            # Check if similar insight already exists for that date
             existing = (
                 self.db.query(CalendarInsight)
                 .filter(
