@@ -287,9 +287,6 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
 
         LAP_FETCH_DELAY = 2.0  # 2 second delay between lap fetches
 
-        # Reserve one extra slot for post-processing so 100% means truly done
-        progress_total = total_from_api + 1
-
         # Process each activity
         for activity_idx, a in enumerate(strava_activities):
             # Report progress to Celery so frontend can show progress bar
@@ -297,7 +294,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 state='PROGRESS',
                 meta={
                     'current': activity_idx + 1,
-                    'total': progress_total,
+                    'total': total_from_api,
                     'message': f"Syncing activity {activity_idx + 1} of {total_from_api}..."
                 }
             )
@@ -762,54 +759,18 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
 
             synced_new += 1
 
-        # Signal post-processing phase so frontend doesn't show 100% prematurely
-        self.update_state(
-            state='PROGRESS',
-            meta={
-                'current': progress_total,
-                'total': progress_total,
-                'message': 'Finishing up — updating stats and insights...'
-            }
-        )
-
-        # Update last sync timestamp
+        # Update last sync timestamp and commit FIRST so the UI can
+        # show an up-to-date "Last sync" immediately.
         athlete.last_strava_sync = datetime.now(timezone.utc)
         db.commit()
 
-        # Calculate derived signals
+        # Return SUCCESS now so the frontend clears the spinner.
+        # Heavy post-processing (PB sync, insights, derived signals) runs
+        # in a separate fire-and-forget task so the UI isn't blocked.
         try:
-            metrics = calculate_athlete_derived_signals(athlete, db, force_recalculate=False)
+            post_sync_processing_task.delay(str(athlete.id))
         except Exception as e:
-            print(f"WARNING: Could not calculate derived signals: {e}")
-
-        # Sync Strava best efforts
-        strava_pb_result = {}
-        try:
-            strava_pb_result = sync_strava_best_efforts(athlete, db, limit=200)
-        except Exception as e:
-            print(f"Warning: Could not sync Strava best efforts: {e}")
-            # If the sync attempt raised due to a DB issue (or rate limiting logic),
-            # ensure the session is usable for subsequent work in this task.
-            try:
-                db.rollback()
-            except Exception:
-                pass
-
-        # Generate insights based on new activity
-        insights_generated = 0
-        try:
-            # Get the most recent activity for insight generation context
-            most_recent = (
-                db.query(Activity)
-                .filter(Activity.athlete_id == athlete.id)
-                .order_by(Activity.start_time.desc())
-                .first()
-            )
-            insights = generate_insights_for_athlete(db, athlete, most_recent, persist=True)
-            insights_generated = len(insights)
-            print(f"DEBUG: Generated {insights_generated} insights")
-        except Exception as e:
-            print(f"Warning: Could not generate insights: {e}")
+            print(f"Warning: Could not queue post-sync processing: {e}")
 
         return {
             "status": "success",
@@ -817,8 +778,6 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             "synced_new": synced_new,
             "updated_existing": updated_existing,
             "splits_backfilled": splits_backfilled,
-            "strava_pbs": strava_pb_result,
-            "insights_generated": insights_generated,
         }
 
     except Retry:
@@ -833,6 +792,69 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             "status": "error",
             "error": error_msg
         }
+    finally:
+        db.close()
+
+
+@celery_app.task(name="tasks.post_sync_processing", bind=True, max_retries=0)
+def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
+    """
+    Lightweight post-sync work: derived signals, PB sync, insight generation.
+
+    Runs as a separate task so the main sync returns SUCCESS immediately
+    and the frontend spinner clears without waiting for heavy PB backfill.
+    """
+    import traceback
+    from sqlalchemy import desc as sa_desc
+
+    db: Session = get_db_sync()
+    try:
+        athlete = db.get(Athlete, athlete_id)
+        if not athlete:
+            return {"status": "error", "error": f"Athlete {athlete_id} not found"}
+
+        # 1. Calculate derived signals (CTL/ATL/TSB etc.)
+        try:
+            calculate_athlete_derived_signals(athlete, db, force_recalculate=False)
+        except Exception as e:
+            print(f"WARNING [post-sync] Could not calculate derived signals: {e}")
+
+        # 2. Sync Strava best efforts (the expensive part — checks up to 200 activities)
+        strava_pb_result = {}
+        try:
+            strava_pb_result = sync_strava_best_efforts(athlete, db, limit=200)
+        except Exception as e:
+            print(f"Warning [post-sync] Could not sync Strava best efforts: {e}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
+        # 3. Generate insights for most recent activity
+        insights_generated = 0
+        try:
+            most_recent = (
+                db.query(Activity)
+                .filter(Activity.athlete_id == athlete.id)
+                .order_by(sa_desc(Activity.start_time))
+                .first()
+            )
+            insights = generate_insights_for_athlete(db, athlete, most_recent, persist=True)
+            insights_generated = len(insights)
+            print(f"DEBUG [post-sync] Generated {insights_generated} insights")
+        except Exception as e:
+            print(f"Warning [post-sync] Could not generate insights: {e}")
+
+        return {
+            "status": "success",
+            "strava_pbs": strava_pb_result,
+            "insights_generated": insights_generated,
+        }
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR [post-sync]: {e}")
+        traceback.print_exc()
+        return {"status": "error", "error": str(e)}
     finally:
         db.close()
 
