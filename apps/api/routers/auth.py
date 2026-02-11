@@ -418,9 +418,8 @@ If you didn't request this, you can safely ignore this email.
         if sent:
             logger.info(f"Password reset email sent to {email}")
         else:
-            # Email not configured - log for debugging
+            # Email not configured - log for debugging (NEVER log the reset URL/token)
             logger.warning(f"Password reset requested for {email} but email service is disabled")
-            logger.info(f"Reset URL (dev only): {reset_url}")
     else:
         # Don't reveal that email doesn't exist
         logger.info(f"Password reset requested for non-existent email: {email}")

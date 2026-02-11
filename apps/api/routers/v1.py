@@ -601,6 +601,10 @@ def get_best_efforts_status(
 def get_task_status(task_id: str, current_user: Athlete = Depends(get_current_user)):
     """
     Generic Celery task status endpoint (used by web polling).
+
+    Security: result payload is redacted to prevent cross-user data leakage.
+    The frontend only needs status; detailed results are fetched via
+    athlete-scoped endpoints after task completion.
     """
     from tasks import celery_app
 
@@ -610,8 +614,8 @@ def get_task_status(task_id: str, current_user: Athlete = Depends(get_current_us
     if task.state == "STARTED":
         return {"task_id": task_id, "status": "started"}
     if task.state == "SUCCESS":
-        return {"task_id": task_id, "status": "success", "result": task.result}
-    return {"task_id": task_id, "status": "error", "error": str(task.info) if task.info else "Unknown error"}
+        return {"task_id": task_id, "status": "success"}
+    return {"task_id": task_id, "status": "error"}
 
 
 @router.post("/athletes/{id}/strava/ingest-activity/{strava_activity_id}")
