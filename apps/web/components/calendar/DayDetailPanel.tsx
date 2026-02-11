@@ -199,8 +199,9 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
     setNoteText('');
   };
   
-  const handleSendCoachMessage = async () => {
-    if (!coachMessage.trim()) return;
+  const handleSendCoachMessage = async (messageOverride?: string) => {
+    const messageToSend = (messageOverride ?? coachMessage).trim();
+    if (!messageToSend) return;
     // Prevent double-submits even if React Query hasn't flipped isPending yet.
     if (isCoachSending) return;
 
@@ -211,7 +212,7 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
     try {
       const response = await sendCoachMessage.mutateAsync({
         request: {
-          message: coachMessage,
+          message: messageToSend,
           context_type: 'day',
           context_date: date,
         },
@@ -630,7 +631,8 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                 {quickQuestions.map((q) => (
                   <button
                     key={q}
-                    onClick={() => setCoachMessage(q)}
+                    onClick={() => handleSendCoachMessage(q)}
+                    disabled={isCoachSending}
                     className="text-xs bg-purple-900/40 border border-purple-700/50 text-purple-300 px-3 py-1.5 rounded-full hover:bg-purple-900/60 transition-colors"
                   >
                     {q}
@@ -687,7 +689,7 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                   disabled={isCoachSending}
                 />
                 <button
-                  onClick={handleSendCoachMessage}
+                  onClick={() => handleSendCoachMessage()}
                   disabled={isCoachSending}
                   className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:from-slate-700 disabled:to-slate-700 rounded-full flex items-center justify-center transition-colors"
                 >

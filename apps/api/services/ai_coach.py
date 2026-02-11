@@ -3517,6 +3517,32 @@ ATHLETE BRIEF:
         ml = (lower_message or "").lower()
         return any(p in ml for p in self._RETURN_CONTEXT_PHRASES)
 
+    def _looks_like_uncited_numeric_answer(self, text: str) -> bool:
+        """
+        Guardrail: detect uncited athlete metric claims (ATL, CTL, TSB, mileage, pace, efficiency).
+        Returns True if text appears to cite athlete data without receipts; False for prescriptions or when receipts present.
+        """
+        t = (text or "").strip()
+        if not t:
+            return False
+        lower = t.lower()
+        # Receipts present: inline activity ref or Receipts block
+        if "receipts:" in lower:
+            return False
+        if re.search(r"activity\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", lower):
+            return False
+        # Prescription patterns: instructions (do 2 runs, run 30 min, 6x20s) - not metric claims
+        if re.search(r"\b(do|run)\s+\d+\s+(easy|long|recovery)\s+run", lower):
+            return False
+        if re.search(r"run\s+\d+\s+min", lower) or re.search(r"\d+x\d+s?\s+strides?", lower):
+            return False
+        # Athlete metric claims: your ATL/CTL/TSB, you ran X miles, your pace, efficiency trend
+        metric_signals = (
+            "atl is", "ctl is", "tsb is", "atl:", "ctl:", "tsb:",
+            "you ran", "your pace", "efficiency trend", "your atl", "your ctl", "your tsb",
+        )
+        return any(s in lower for s in metric_signals)
+
     def _thread_mentions_return_context(self, athlete_id: UUID, limit: int = 10) -> bool:
         """
         Conversation context awareness (production beta):
