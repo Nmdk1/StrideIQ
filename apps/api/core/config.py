@@ -26,7 +26,7 @@ def validate_production_config(
     P0-3: Validate production config. Raises ValueError if invalid.
     Non-production environments are not validated.
     """
-    if environment != "production":
+    if (environment or "").strip().lower() != "production":
         return
     if debug:
         raise ValueError(

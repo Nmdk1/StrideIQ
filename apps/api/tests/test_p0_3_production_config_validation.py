@@ -77,6 +77,16 @@ class TestProductionConfigValidation:
             postgres_password="secure-password-12chars",
         )
 
+    def test_production_case_insensitive_triggers_validation(self):
+        """ENVIRONMENT=Production or PRODUCTION triggers validation."""
+        with pytest.raises(ValueError, match="DEBUG must be False"):
+            validate_production_config(
+                environment="Production",
+                debug=True,
+                cors_origins="https://x.com",
+                postgres_password="secure-password-12chars",
+            )
+
 
 class TestNonProductionNotValidated:
     """Non-production configs are not validated."""
