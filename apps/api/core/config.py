@@ -5,12 +5,42 @@ All environment variables are loaded and validated here.
 This ensures consistent configuration across the application.
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, model_validator
 from typing import Optional
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Known-weak DB passwords that must not be used in production (P0-3)
+_WEAK_DB_PASSWORDS = frozenset({"postgres", "password", "admin", "root", "test", ""})
+
+
+def validate_production_config(
+    environment: str,
+    debug: bool,
+    cors_origins: Optional[str],
+    postgres_password: str,
+) -> None:
+    """
+    P0-3: Validate production config. Raises ValueError if invalid.
+    Non-production environments are not validated.
+    """
+    if environment != "production":
+        return
+    if debug:
+        raise ValueError(
+            "Production config invalid: DEBUG must be False when ENVIRONMENT=production"
+        )
+    if not cors_origins or not cors_origins.strip():
+        raise ValueError(
+            "Production config invalid: CORS_ORIGINS must be set (comma-separated origins) when ENVIRONMENT=production"
+        )
+    pw = (postgres_password or "").strip()
+    if pw in _WEAK_DB_PASSWORDS or len(pw) < 12:
+        raise ValueError(
+            "Production config invalid: POSTGRES_PASSWORD must not be default/weak (min 12 chars) when ENVIRONMENT=production"
+        )
 
 
 class Settings(BaseSettings):
@@ -151,6 +181,17 @@ class Settings(BaseSettings):
     SENTRY_DSN: Optional[str] = Field(default=None)
     SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.1)  # 10% of transactions
     SENTRY_PROFILES_SAMPLE_RATE: float = Field(default=0.1)
+
+    @model_validator(mode="after")
+    def _validate_production_config(self) -> "Settings":
+        """P0-3: Hard-fail on invalid production config. Non-production unaffected."""
+        validate_production_config(
+            self.ENVIRONMENT,
+            self.DEBUG,
+            self.CORS_ORIGINS,
+            self.POSTGRES_PASSWORD,
+        )
+        return self
 
 
 # Global settings instance
