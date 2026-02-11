@@ -287,6 +287,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
 
         LAP_FETCH_DELAY = 2.0  # 2 second delay between lap fetches
 
+        # Reserve one extra slot for post-processing so 100% means truly done
+        progress_total = total_from_api + 1
+
         # Process each activity
         for activity_idx, a in enumerate(strava_activities):
             # Report progress to Celery so frontend can show progress bar
@@ -294,7 +297,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 state='PROGRESS',
                 meta={
                     'current': activity_idx + 1,
-                    'total': total_from_api,
+                    'total': progress_total,
                     'message': f"Syncing activity {activity_idx + 1} of {total_from_api}..."
                 }
             )
@@ -758,6 +761,16 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 print(f"Warning: Could not classify workout: {e}")
 
             synced_new += 1
+
+        # Signal post-processing phase so frontend doesn't show 100% prematurely
+        self.update_state(
+            state='PROGRESS',
+            meta={
+                'current': progress_total,
+                'total': progress_total,
+                'message': 'Finishing up — updating stats and insights...'
+            }
+        )
 
         # Update last sync timestamp
         athlete.last_strava_sync = datetime.now(timezone.utc)
