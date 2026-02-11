@@ -24,8 +24,11 @@ router = APIRouter(prefix="/v1", tags=["v1"])
 
 
 @router.get("/athletes", response_model=List[AthleteResponse])
-def get_athletes(db: Session = Depends(get_db)):
-    """Get all athletes"""
+def get_athletes(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Get all athletes (admin only)."""
     athletes = db.query(Athlete).all()
     result = []
     from services.performance_engine import calculate_age_at_date, get_age_category
@@ -109,8 +112,14 @@ def get_current_athlete_profile(
 
 
 @router.get("/athletes/{id}", response_model=AthleteResponse)
-def get_athlete(id: UUID, db: Session = Depends(get_db)):
-    """Get an athlete by ID with Performance Physics Engine metrics"""
+def get_athlete(
+    id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get an athlete by ID with Performance Physics Engine metrics (auth + ownership or admin)."""
+    if current_user.id != id and getattr(current_user, "role", "athlete") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Forbidden")
     from services.performance_engine import calculate_age_at_date, get_age_category
     from datetime import datetime
     
@@ -321,13 +330,48 @@ def format_duration(seconds: Optional[int]) -> Optional[str]:
 
 
 @router.post("/activities", response_model=ActivityResponse, status_code=201)
-def create_activity(activity: ActivityCreate, db: Session = Depends(get_db)):
-    """Create a new activity"""
-    db_activity = Activity(**activity.dict())
+def create_activity(
+    activity: ActivityCreate,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new activity (auth required; athlete_id from auth context only)."""
+    data = activity.model_dump() if hasattr(activity, "model_dump") else activity.dict()
+    data.pop("athlete_id", None)
+    db_activity = Activity(athlete_id=current_user.id, **data)
     db.add(db_activity)
     db.commit()
     db.refresh(db_activity)
-    return db_activity
+    activity_name = db_activity.name or f"{db_activity.sport.title()} Activity"
+    activity_dict = {
+        "id": str(db_activity.id),
+        "strava_id": None,
+        "name": activity_name,
+        "distance": float(db_activity.distance_m) if db_activity.distance_m else 0.0,
+        "moving_time": db_activity.duration_s or 0,
+        "start_date": db_activity.start_time.isoformat(),
+        "average_speed": float(db_activity.average_speed) if db_activity.average_speed else 0.0,
+        "max_hr": db_activity.max_hr,
+        "average_heartrate": db_activity.avg_hr,
+        "average_cadence": None,
+        "total_elevation_gain": float(db_activity.total_elevation_gain) if db_activity.total_elevation_gain else None,
+        "pace_per_mile": None,
+        "duration_formatted": None,
+        "splits": None,
+        "performance_percentage": db_activity.performance_percentage,
+        "performance_percentage_national": db_activity.performance_percentage_national,
+        "is_race_candidate": db_activity.is_race_candidate,
+        "race_confidence": db_activity.race_confidence,
+    }
+    if db_activity.average_speed and float(db_activity.average_speed) > 0:
+        pace_per_mile = 26.8224 / float(db_activity.average_speed)
+        minutes = int(pace_per_mile)
+        seconds = int(round((pace_per_mile - minutes) * 60))
+        activity_dict["pace_per_mile"] = f"{minutes}:{seconds:02d}/mi"
+    if db_activity.duration_s:
+        h, m, s = db_activity.duration_s // 3600, (db_activity.duration_s % 3600) // 60, db_activity.duration_s % 60
+        activity_dict["duration_formatted"] = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
+    return ActivityResponse(**activity_dict)
 
 
 @router.get("/activities/{activity_id}/splits", response_model=List[ActivitySplitResponse])
@@ -354,11 +398,17 @@ def get_activity_splits(
 
 
 @router.post("/athletes/{id}/calculate-metrics")
-def calculate_athlete_metrics(id: UUID, db: Session = Depends(get_db)):
+def calculate_athlete_metrics(
+    id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Calculate Performance Physics Engine derived signals for an athlete.
     This implements Manifesto Section 4: Derived Signals.
     """
+    if current_user.id != id and getattr(current_user, "role", "athlete") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Forbidden")
     from services.athlete_metrics import calculate_athlete_derived_signals
     
     athlete = db.query(Athlete).filter(Athlete.id == id).first()
@@ -376,8 +426,14 @@ def calculate_athlete_metrics(id: UUID, db: Session = Depends(get_db)):
 
 
 @router.get("/athletes/{id}/personal-bests", response_model=List[PersonalBestResponse])
-def get_personal_bests_endpoint(id: UUID, db: Session = Depends(get_db)):
-    """Get all personal bests for an athlete"""
+def get_personal_bests_endpoint(
+    id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all personal bests for an athlete (auth + ownership or admin)."""
+    if current_user.id != id and getattr(current_user, "role", "athlete") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Forbidden")
     from services.personal_best import get_personal_bests as get_pbs_service
     
     athlete = db.query(Athlete).filter(Athlete.id == id).first()
@@ -389,7 +445,11 @@ def get_personal_bests_endpoint(id: UUID, db: Session = Depends(get_db)):
 
 
 @router.post("/athletes/{id}/recalculate-pbs")
-def recalculate_pbs_endpoint(id: UUID, db: Session = Depends(get_db)):
+def recalculate_pbs_endpoint(
+    id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Recalculate personal bests from ALL sources (activities + BestEffort).
     
@@ -399,6 +459,8 @@ def recalculate_pbs_endpoint(id: UUID, db: Session = Depends(get_db)):
     
     The fastest time per distance wins, regardless of source.
     """
+    if current_user.id != id and getattr(current_user, "role", "athlete") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Forbidden")
     from services.personal_best import recalculate_all_pbs
     from services.best_effort_service import regenerate_personal_bests
     from models import BestEffort
@@ -431,7 +493,12 @@ def recalculate_pbs_endpoint(id: UUID, db: Session = Depends(get_db)):
 
 
 @router.post("/athletes/{id}/sync-best-efforts")
-def sync_best_efforts_endpoint(id: UUID, limit: int = 50, db: Session = Depends(get_db)):
+def sync_best_efforts_endpoint(
+    id: UUID,
+    limit: int = 50,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Sync best efforts from Strava API into the BestEffort table.
     
@@ -440,6 +507,8 @@ def sync_best_efforts_endpoint(id: UUID, limit: int = 50, db: Session = Depends(
     
     Best efforts are also synced automatically during regular Strava sync.
     """
+    if current_user.id != id and getattr(current_user, "role", "athlete") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Forbidden")
     from services.strava_pbs import sync_strava_best_efforts
 
     athlete = db.query(Athlete).filter(Athlete.id == id).first()
@@ -871,9 +940,15 @@ def backfill_activity_splits(
 
 
 @router.post("/checkins", response_model=DailyCheckinResponse, status_code=201)
-def create_checkin(checkin: DailyCheckinCreate, db: Session = Depends(get_db)):
-    """Create a new daily checkin"""
-    db_checkin = DailyCheckin(**checkin.dict())
+def create_checkin(
+    checkin: DailyCheckinCreate,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new daily checkin (auth required; athlete_id from auth context only)."""
+    data = checkin.model_dump() if hasattr(checkin, "model_dump") else checkin.dict()
+    data.pop("athlete_id", None)
+    db_checkin = DailyCheckin(athlete_id=current_user.id, **data)
     db.add(db_checkin)
     db.commit()
     db.refresh(db_checkin)
