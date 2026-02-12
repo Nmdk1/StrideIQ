@@ -33,7 +33,7 @@ import re
 # Workout type classifications
 QUALITY_TYPES = {
     "threshold", "threshold_intervals", "intervals",
-    "long_mp", "hills", "repetitions", "tempo",
+    "long_mp", "long_hmp", "hills", "repetitions", "tempo",
 }
 # long_mp is already in QUALITY_TYPES; HARD_TYPES is an alias here,
 # kept separate for clarity if the sets ever diverge.
@@ -46,6 +46,7 @@ LONG_TYPES = {"long"}
 THRESHOLD_TYPES = {"threshold", "threshold_intervals", "tempo"}
 INTERVAL_TYPES = {"intervals"}
 MP_TYPES = {"long_mp"}
+HMP_TYPES = {"long_hmp"}
 
 # Phases where threshold work should NOT appear
 NO_THRESHOLD_PHASES = {"base", "base_speed"}
@@ -308,7 +309,7 @@ class PlanValidator:
 
                 # Intervals ≤ spec% and ≤ abs mi (quality miles only)
                 if wtype in INTERVAL_TYPES:
-                    q_miles = self._quality_miles(w, {"interval", "intervals", "vo2max", "vo2"})
+                    q_miles = self._quality_miles(w, {"interval", "intervals", "vo2max", "vo2", "10k_pace"})
                     if q_miles > week_miles * i_cap:
                         self._fail(
                             "B1-I-PCT",
@@ -812,29 +813,137 @@ class PlanValidator:
             )
 
     def _assert_half_emphasis(self):
-        """Half marathon: threshold primary emphasis."""
-        threshold_count = sum(
-            1 for w in self.plan.workouts if w.workout_type in THRESHOLD_TYPES
-        )
-        if threshold_count == 0:
-            self._fail(
-                "DIST-HM-NO-T",
-                "Half marathon plan has no threshold sessions"
-            )
+        """
+        Half marathon: threshold must be the PRIMARY quality emphasis.
 
-    def _assert_10k_emphasis(self):
-        """10K: VO2max + threshold co-dominant."""
+        Phase 1E contract:
+        - Threshold sessions dominant (more T than I)
+        - Threshold count substantial (at least duration_weeks / 3)
+        - HMP long runs in race-specific phase (plans >= 12 weeks)
+        - No marathon-pace long runs (those are marathon-specific)
+        """
         threshold_count = sum(
             1 for w in self.plan.workouts if w.workout_type in THRESHOLD_TYPES
         )
         interval_count = sum(
             1 for w in self.plan.workouts if w.workout_type in INTERVAL_TYPES
         )
+        hmp_count = sum(
+            1 for w in self.plan.workouts if w.workout_type in HMP_TYPES
+        )
+        mp_count = sum(
+            1 for w in self.plan.workouts if w.workout_type in MP_TYPES
+        )
 
-        if threshold_count == 0 and interval_count == 0:
+        if threshold_count == 0:
             self._fail(
-                "DIST-10K-NO-QUALITY",
-                "10K plan has no threshold or interval sessions"
+                "DIST-HM-NO-T",
+                "Half marathon plan has no threshold sessions"
+            )
+
+        # Threshold must be dominant — more T sessions than I sessions
+        if interval_count > threshold_count and threshold_count > 0:
+            self._fail(
+                "DIST-HM-T-PRIMARY",
+                f"Half marathon: intervals ({interval_count}) > threshold "
+                f"({threshold_count}). Threshold must be primary quality."
+            )
+
+        # Threshold count should be substantial for the plan length
+        min_threshold = max(2, self.plan.duration_weeks // 3)
+        if threshold_count < min_threshold:
+            self._warn(
+                "DIST-HM-T-COUNT",
+                f"Half marathon: only {threshold_count} threshold sessions "
+                f"(expected >= {min_threshold} for {self.plan.duration_weeks}w plan)"
+            )
+
+        # HMP long runs should appear in race-specific phase (plans >= 12 weeks)
+        if self.plan.duration_weeks >= 12 and hmp_count == 0:
+            self._fail(
+                "DIST-HM-NO-HMP",
+                f"Half marathon {self.plan.duration_weeks}w plan has no "
+                f"HMP long runs in race-specific phase"
+            )
+
+        # Marathon-pace long runs should NOT appear in half marathon plans
+        if mp_count > 0:
+            self._warn(
+                "DIST-HM-HAS-MP",
+                f"Half marathon plan has {mp_count} marathon-pace long runs "
+                f"(expected HMP long runs instead)"
+            )
+
+    def _assert_10k_emphasis(self):
+        """
+        10K: VO2max + threshold co-dominant.
+
+        Phase 1F contract:
+        - Both interval and threshold sessions must be present
+        - Co-dominant: neither should overwhelm (ratio < 3.0)
+        - Both counts substantial for the plan length
+        - No marathon-pace or half-marathon-pace long runs
+        """
+        threshold_count = sum(
+            1 for w in self.plan.workouts if w.workout_type in THRESHOLD_TYPES
+        )
+        interval_count = sum(
+            1 for w in self.plan.workouts if w.workout_type in INTERVAL_TYPES
+        )
+        mp_count = sum(
+            1 for w in self.plan.workouts if w.workout_type in MP_TYPES
+        )
+        hmp_count = sum(
+            1 for w in self.plan.workouts if w.workout_type in HMP_TYPES
+        )
+
+        if threshold_count == 0:
+            self._fail(
+                "DIST-10K-NO-T",
+                "10K plan has no threshold sessions"
+            )
+
+        if interval_count == 0:
+            self._fail(
+                "DIST-10K-NO-I",
+                "10K plan has no interval/VO2max sessions"
+            )
+
+        # Co-dominant: neither should be more than 3x the other
+        if threshold_count > 0 and interval_count > 0:
+            ratio = max(threshold_count, interval_count) / min(threshold_count, interval_count)
+            if ratio > 3.0:
+                self._fail(
+                    "DIST-10K-NOT-CO-DOMINANT",
+                    f"10K: T={threshold_count}, I={interval_count}, ratio={ratio:.1f}. "
+                    f"VO2max and threshold should be co-dominant (ratio < 3.0)"
+                )
+
+        # Both should be substantial for plan length
+        min_each = max(2, self.plan.duration_weeks // 4)
+        if threshold_count < min_each:
+            self._warn(
+                "DIST-10K-T-COUNT",
+                f"10K: only {threshold_count} threshold sessions "
+                f"(expected >= {min_each} for {self.plan.duration_weeks}w plan)"
+            )
+        if interval_count < min_each:
+            self._warn(
+                "DIST-10K-I-COUNT",
+                f"10K: only {interval_count} interval sessions "
+                f"(expected >= {min_each} for {self.plan.duration_weeks}w plan)"
+            )
+
+        # No marathon-pace or HMP long runs in 10K plans
+        if mp_count > 0:
+            self._warn(
+                "DIST-10K-HAS-MP",
+                f"10K plan has {mp_count} marathon-pace long runs"
+            )
+        if hmp_count > 0:
+            self._warn(
+                "DIST-10K-HAS-HMP",
+                f"10K plan has {hmp_count} half-marathon-pace long runs"
             )
 
     def _assert_5k_emphasis(self):

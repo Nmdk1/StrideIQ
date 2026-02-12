@@ -45,52 +45,20 @@ MARATHON_VARIANTS = [
     pytest.param("marathon", "mid", 18, 5, id="marathon-mid-18w-5d"),
 ]
 
-# Half marathon variants — xfail until 1E delivers
+# Half marathon variants — Phase 1E delivered
 HALF_VARIANTS = [
-    pytest.param(
-        "half_marathon", "mid", 16, 6,
-        id="half-mid-16w-6d",
-        marks=pytest.mark.xfail(reason="Half marathon generator not yet rebuilt (Phase 1E)")
-    ),
-    pytest.param(
-        "half_marathon", "mid", 12, 6,
-        id="half-mid-12w-6d",
-        marks=pytest.mark.xfail(reason="Half marathon generator not yet rebuilt (Phase 1E)")
-    ),
-    pytest.param(
-        "half_marathon", "low", 16, 5,
-        id="half-low-16w-5d",
-        marks=pytest.mark.xfail(reason="Half marathon generator not yet rebuilt (Phase 1E)")
-    ),
-    pytest.param(
-        "half_marathon", "high", 16, 6,
-        id="half-high-16w-6d",
-        marks=pytest.mark.xfail(reason="Half marathon generator not yet rebuilt (Phase 1E)")
-    ),
+    pytest.param("half_marathon", "mid", 16, 6, id="half-mid-16w-6d"),
+    pytest.param("half_marathon", "mid", 12, 6, id="half-mid-12w-6d"),
+    pytest.param("half_marathon", "low", 16, 5, id="half-low-16w-5d"),
+    pytest.param("half_marathon", "high", 16, 6, id="half-high-16w-6d"),
 ]
 
-# 10K variants — xfail until 1F delivers
+# 10K variants — Phase 1F delivered
 TEN_K_VARIANTS = [
-    pytest.param(
-        "10k", "mid", 12, 6,
-        id="10k-mid-12w-6d",
-        marks=pytest.mark.xfail(reason="10K generator not yet rebuilt (Phase 1F)")
-    ),
-    pytest.param(
-        "10k", "mid", 8, 6,
-        id="10k-mid-8w-6d",
-        marks=pytest.mark.xfail(reason="10K generator not yet rebuilt (Phase 1F)")
-    ),
-    pytest.param(
-        "10k", "low", 12, 5,
-        id="10k-low-12w-5d",
-        marks=pytest.mark.xfail(reason="10K generator not yet rebuilt (Phase 1F)")
-    ),
-    pytest.param(
-        "10k", "high", 12, 6,
-        id="10k-high-12w-6d",
-        marks=pytest.mark.xfail(reason="10K generator not yet rebuilt (Phase 1F)")
-    ),
+    pytest.param("10k", "mid", 12, 6, id="10k-mid-12w-6d"),
+    pytest.param("10k", "mid", 8, 6, id="10k-mid-8w-6d"),
+    pytest.param("10k", "low", 12, 5, id="10k-low-12w-5d"),
+    pytest.param("10k", "high", 12, 6, id="10k-high-12w-6d"),
 ]
 
 # 5K variants — xfail until 1G delivers
@@ -498,6 +466,120 @@ class TestDistanceEmphasis:
         plan = generate_plan(distance, tier, weeks, days)
         v = PlanValidator(plan)
         v.assert_distance_emphasis()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", HALF_VARIANTS)
+    def test_half_marathon_emphasis(self, distance, tier, weeks, days):
+        """
+        Half marathon (Phase 1E):
+        - Threshold is PRIMARY quality emphasis
+        - HMP long runs in race-specific phase
+        - VO2max is secondary
+        """
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_distance_emphasis()
+        assert v.result.passed, v.result.summary()
+
+
+class TestHalfMarathonRules:
+    """Half-marathon-specific coaching rule tests (Phase 1E)."""
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", HALF_VARIANTS)
+    def test_half_source_b(self, distance, tier, weeks, days):
+        """Source B limits respected for half marathon plans."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_source_b_limits()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", HALF_VARIANTS)
+    def test_half_hard_easy(self, distance, tier, weeks, days):
+        """Hard day always followed by easy/rest."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_hard_easy_pattern()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", HALF_VARIANTS)
+    def test_half_quality_limit(self, distance, tier, weeks, days):
+        """Never 3 quality days in a week."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_quality_day_limit()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", HALF_VARIANTS)
+    def test_half_taper(self, distance, tier, weeks, days):
+        """Taper: volume reduces, some intensity maintained."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_taper_structure()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", HALF_VARIANTS)
+    def test_half_phase_rules(self, distance, tier, weeks, days):
+        """Phase rules: no threshold in base."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_phase_rules()
+        assert v.result.passed, v.result.summary()
+
+
+class Test10KRules:
+    """10K-specific coaching rule tests (Phase 1F)."""
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", TEN_K_VARIANTS)
+    def test_10k_emphasis(self, distance, tier, weeks, days):
+        """
+        10K (Phase 1F):
+        - VO2max + threshold co-dominant
+        - Neither overwhelms (ratio < 3.0)
+        - Both present and substantial
+        """
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_distance_emphasis()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", TEN_K_VARIANTS)
+    def test_10k_source_b(self, distance, tier, weeks, days):
+        """Source B limits respected for 10K plans."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_source_b_limits()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", TEN_K_VARIANTS)
+    def test_10k_hard_easy(self, distance, tier, weeks, days):
+        """Hard day always followed by easy/rest."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_hard_easy_pattern()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", TEN_K_VARIANTS)
+    def test_10k_quality_limit(self, distance, tier, weeks, days):
+        """Never 3 quality days in a week."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_quality_day_limit()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", TEN_K_VARIANTS)
+    def test_10k_taper(self, distance, tier, weeks, days):
+        """Taper: volume reduces, some intensity maintained."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_taper_structure()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", TEN_K_VARIANTS)
+    def test_10k_phase_rules(self, distance, tier, weeks, days):
+        """Phase rules: appropriate structure per phase."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_phase_rules()
         assert v.result.passed, v.result.summary()
 
 

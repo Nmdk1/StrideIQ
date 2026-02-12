@@ -181,18 +181,140 @@ Full suite                                — 1662 passed, 7 skipped, 0 failed
 
 ---
 
+### Phase 1E: Half Marathon — A-Level Quality
+
+Half-marathon-specific periodization where threshold is the PRIMARY quality
+emphasis, HMP long runs appear in race-specific phase, and VO2max serves as
+secondary quality.
+
+**Key design decisions:**
+
+1. **Threshold dominant** — Every half marathon plan has more threshold sessions
+   than interval sessions.  Threshold IS the half marathon's primary quality
+   (cruise intervals → continuous threshold → race-pace).
+
+2. **HMP long runs** — New `long_hmp` workout type.  Last 3-8 miles of the long
+   run at half marathon pace, introduced in race-specific phase, progressing
+   from 3mi @ HMP to 8mi @ HMP.  Distinct from marathon MP longs (which are
+   6-16mi race-pace).
+
+3. **Different alternation rule** — Marathon: MP long week → kill threshold
+   (MP long is too taxing).  Half marathon: HMP long week → KEEP threshold
+   (HMP portion is moderate, threshold is primary emphasis — removing it
+   defeats the purpose).  On HMP weeks, the medium_long slot stays easy to
+   cap at 2 quality sessions.
+
+4. **VO2max as secondary** — On non-HMP weeks, the medium_long slot becomes
+   VO2max intervals (1000m/1200m for economy, not primary VO2 development).
+   5-day schedules have no secondary slot, so quality remains threshold-only.
+
+5. **Phase builder taper fix** — Fixed overlapping taper/race week phases
+   in half marathon builder (taper now excludes race week, matching marathon).
+
+---
+
+## Files Changed (Phase 1E)
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `apps/api/services/plan_framework/generator.py` | Half-marathon-specific quality selection: `_will_week_have_hmp_long()`, `_get_long_run_type()` produces `long_hmp` for HM race-specific, `_get_secondary_quality()` returns intervals for HM, `_get_workout_for_day()` handles HMP long week quality/medium_long slot logic |
+| `apps/api/services/plan_framework/phase_builder.py` | `_build_half_marathon_phases()` rewritten: HMP-aware allowed workouts, fixed taper/race week overlap, docstring with Phase 1E rationale |
+| `apps/api/services/plan_framework/workout_scaler.py` | New `_scale_hmp_long_run()` method: progressive HMP segment (3→8mi), total distance from tier peaks |
+| `apps/api/tests/plan_validation_helpers.py` | `_assert_half_emphasis()` strengthened: threshold > intervals, HMP longs required for 12+w plans, MP longs flagged; `HMP_TYPES` constant; `long_hmp` added to `QUALITY_TYPES` |
+| `apps/api/tests/test_plan_validation_matrix.py` | Half marathon xfails REMOVED (4 tests → proper PASS); new `TestDistanceEmphasis.test_half_marathon_emphasis` (4 tests); new `TestHalfMarathonRules` class (20 tests: source B, hard-easy, quality limit, taper, phase rules) |
+
+---
+
+## Test Results (Phase 1E)
+
+```
+tests/test_plan_validation_matrix.py      — 102 passed, 3 xfailed, 8 xpassed
+Full suite                                — 1691 passed, 7 skipped, 0 failed
+```
+
+### Half Marathon Variants (all PASS)
+
+| Variant | T | I | HMP | T>I |
+|---------|---|---|-----|-----|
+| half-mid-16w-6d | 10 | 2 | 2 | ✓ |
+| half-mid-12w-6d | 7 | 1 | 1 | ✓ |
+| half-low-16w-5d | 10 | 0 | 2 | ✓ |
+| half-high-16w-6d | 10 | 6 | 2 | ✓ |
+
+### xpasses reduced: 12 → 8 (4 half marathon now proper PASS, 8 remain for 10K/5K)
+
+---
+
+### Phase 1F: 10K — A-Level Quality
+
+VO2max + threshold co-dominant periodization.  VO2max progression through the
+plan (400m → 800m → 1000m → 1200m), threshold as supporting quality, and
+race-specific phase with 10K-paced intervals.
+
+**Key design decisions:**
+
+1. **Co-dominant quality** — Every variant has both interval and threshold
+   sessions, with neither dominating by more than 3x.  Quality slot alternates
+   intervals and threshold by week.  Secondary slot is the complement.
+
+2. **VO2max progression** — New `_scale_10k_intervals()` method in the scaler:
+   - Plan weeks 1-3: 400m reps (neuromuscular + VO2 touch)
+   - Plan weeks 4-6: 800m reps (classic VO2 development)
+   - Plan weeks 7-9: 1000m reps (sustained VO2 power)
+   - Plan weeks 10+: 1200m at 10K pace (race simulation)
+
+3. **Phase builder fixes** — Taper/race week overlap fixed (same pattern as HM).
+   TAPER_WEEKS updated to 2 for 10K and 5K (1 taper + 1 race week).  Base phase
+   quality_sessions reduced to 1 (speed-only, no VO2 during base).
+
+4. **Source B fix** — Added "10k_pace" to quality_paces set for interval
+   Source B checking.  Without this, 10K-pace intervals at 1200m would use total
+   workout distance (including warmup/cooldown) instead of just interval portion.
+
+---
+
+## Files Changed (Phase 1F)
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `apps/api/services/plan_framework/generator.py` | 10K-specific quality in `_get_quality_workout()`: alternating intervals/threshold; `_get_secondary_quality()` returns complement for 10K |
+| `apps/api/services/plan_framework/phase_builder.py` | `_build_10k_phases()` rewritten with co-dominant structure, fixed taper/race overlap |
+| `apps/api/services/plan_framework/workout_scaler.py` | New `_scale_10k_intervals()`: 400m→800m→1000m→1200m progression; `_scale_intervals()` gains `distance` param |
+| `apps/api/services/plan_framework/constants.py` | `TAPER_WEEKS` for 10K/5K → 2 (1 taper + race week) |
+| `apps/api/tests/plan_validation_helpers.py` | `_assert_10k_emphasis()` strengthened: both T and I required, co-dominant ratio < 3.0; "10k_pace" added to quality_paces |
+| `apps/api/tests/test_plan_validation_matrix.py` | 10K xfails REMOVED; new `Test10KRules` class (24 tests); `TestDistanceEmphasis` unchanged (covered by Test10KRules) |
+
+---
+
+## Test Results (Phase 1F)
+
+```
+tests/test_plan_validation_matrix.py      — 130 passed, 3 xfailed, 4 xpassed
+Full suite                                — 1719 passed, 7 skipped, 0 failed
+```
+
+### 10K Variants (all PASS)
+
+| Variant | T | I | Ratio | Co-dom |
+|---------|---|---|-------|--------|
+| mid-12w-6d | 4 | 3 | 1.3 | yes |
+| mid-8w-6d | 3 | 3 | 1.0 | yes |
+| low-12w-5d | 4 | 3 | 1.3 | yes |
+| high-12w-6d | 6 | 5 | 1.2 | yes |
+
+### xpasses reduced: 8 → 4 (4 10K now proper PASS, 4 remain for 5K)
+
+---
+
 ## What's Next
 
 Per `TRAINING_PLAN_REBUILD_PLAN.md`:
 
-1. **Phase 1E: Half Marathon** — Distance-specific generator fixes
-2. **Phase 1F: 10K** — Distance-specific generator fixes
-3. **Phase 1G: 5K** — Distance-specific generator fixes
-
-The profile service and taper calculator are ready for these phases to
-consume — each distance can derive its own `AthleteProfile`, get a
-personalized taper, and the validator will apply the appropriate
-tier-aware thresholds.
+1. **Phase 1G: 5K** — VO2max dominant, repetition work, neuromuscular sharpness
 
 ---
 
@@ -203,8 +325,8 @@ tier-aware thresholds.
    not fixed here to avoid scope creep.  Will break at runtime for Strava race
    pace detection in custom plans.
 
-2. **12 xpasses** in the matrix need cleanup (remove xfail marks for passing
-   half/10k/5k variants).
+2. **8 xpasses** in the matrix (10K + 5K variants) — will be cleaned up
+   when Phases 1F and 1G deliver.
 
 3. **`performance_engine.calculate_recovery_half_life`** — the profile service
    tries to use it for recovery derivation but falls back gracefully if it's

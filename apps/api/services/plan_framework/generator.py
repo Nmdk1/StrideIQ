@@ -281,7 +281,7 @@ class PlanGenerator:
         # Calculate totals
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
-            "threshold", "threshold_intervals", "intervals", "long_mp"
+            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp"
         ]])
         
         return GeneratedPlan(
@@ -379,7 +379,7 @@ class PlanGenerator:
         # Calculate totals
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
-            "threshold", "threshold_intervals", "intervals", "long_mp"
+            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp"
         ]])
         
         return GeneratedPlan(
@@ -617,7 +617,7 @@ class PlanGenerator:
         # Calculate totals
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
-            "threshold", "threshold_intervals", "intervals", "long_mp"
+            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp"
         ]])
         
         return GeneratedPlan(
@@ -708,8 +708,9 @@ class PlanGenerator:
         # Get weekly structure
         structure = self.WEEKLY_STRUCTURES.get(days_per_week, self.WEEKLY_STRUCTURES[6])
         
-        # Track MP long run weeks for progressive loading
+        # Track MP/HMP long run weeks for progressive loading
         mp_long_run_count = 0
+        hmp_long_run_count = 0
         
         for week in range(1, duration_weeks + 1):
             # Get phase for this week
@@ -729,8 +730,16 @@ class PlanGenerator:
             # The is_cutback flag is used for INTENSITY decisions (easy long, no
             # secondary quality) but the VOLUME is already correct from the progression.
             
-            # Check if this week will have an MP long run (for tracking)
+            # Check if this week will have an MP long run (marathon)
             will_have_mp_long = self._will_week_have_mp_long(
+                phase=phase,
+                week_in_phase=week_in_phase,
+                is_cutback=is_cutback,
+                distance=distance
+            )
+            
+            # Check if this week will have an HMP long run (half marathon)
+            will_have_hmp_long = self._will_week_have_hmp_long(
                 phase=phase,
                 week_in_phase=week_in_phase,
                 is_cutback=is_cutback,
@@ -739,6 +748,8 @@ class PlanGenerator:
             
             if will_have_mp_long:
                 mp_long_run_count += 1
+            if will_have_hmp_long:
+                hmp_long_run_count += 1
             
             # Generate each day
             week_workouts = self._generate_week(
@@ -746,6 +757,7 @@ class PlanGenerator:
                 phase=phase,
                 week_in_phase=week_in_phase,
                 is_mp_long_week=will_have_mp_long,
+                is_hmp_long_week=will_have_hmp_long,
                 weekly_volume=weekly_volume,
                 tier=tier,
                 distance=distance,
@@ -785,12 +797,36 @@ class PlanGenerator:
         
         return False
     
+    def _will_week_have_hmp_long(
+        self,
+        phase: TrainingPhase,
+        week_in_phase: int,
+        is_cutback: bool,
+        distance: str
+    ) -> bool:
+        """Determine if this week will have an HMP long run (half marathon)."""
+        if is_cutback:
+            return False
+        
+        if distance != "half_marathon":
+            return False
+        
+        phase_type = phase.phase_type.value
+        
+        if phase_type == "race_specific":
+            # Alternating: HMP long, then easy long
+            if week_in_phase % 2 == 1:
+                return True
+        
+        return False
+    
     def _generate_week(
         self,
         week: int,
         phase: TrainingPhase,
         week_in_phase: int,
         is_mp_long_week: bool = False,
+        is_hmp_long_week: bool = False,
         weekly_volume: float = 0,
         tier: str = "mid",
         distance: str = "marathon",
@@ -845,6 +881,7 @@ class PlanGenerator:
                 week_in_phase=week_in_phase,
                 is_cutback=is_cutback,
                 is_mp_long_week=is_mp_long_week,
+                is_hmp_long_week=is_hmp_long_week,
                 week=week,
                 distance=distance,
                 weekly_volume=weekly_volume,
@@ -944,6 +981,7 @@ class PlanGenerator:
         week_in_phase: int,
         is_cutback: bool,
         is_mp_long_week: bool,
+        is_hmp_long_week: bool,
         week: int,
         distance: str,
         weekly_volume: float,
@@ -954,9 +992,11 @@ class PlanGenerator:
         
         This is where StrideIQ methodology is applied:
         - Quality sessions vary by phase
-        - Long runs get MP work in later phases
+        - Long runs get MP/HMP work in later phases
         - Cutback weeks reduce intensity
-        - Alternation rule: MP-long weeks have NO threshold (KB Source B)
+        - Alternation rule (marathon): MP-long weeks have NO threshold (KB Source B)
+        - Half marathon: HMP long weeks KEEP threshold (HMP portion is moderate,
+          threshold is the primary emphasis — removing it defeats the purpose)
         - Quality day limit: max 2 quality sessions per week
         """
         if structure_type == "rest":
@@ -981,6 +1021,10 @@ class PlanGenerator:
             # The MP long IS the second quality — adding threshold creates overload.
             if is_mp_long_week:
                 return "medium_long"  # Keep as easy-ish volume, not another quality session
+            # HMP long weeks: the HMP long is one quality session, the threshold
+            # slot is the other. Don't add a THIRD quality via secondary.
+            if is_hmp_long_week:
+                return "medium_long"
             if phase.quality_sessions >= 2 and not is_cutback and weekly_volume >= 55:
                 return self._get_secondary_quality(phase, distance, week_in_phase, weekly_volume, athlete_ctx)
             return "medium_long"
@@ -994,12 +1038,17 @@ class PlanGenerator:
             # easy with strides (neuromuscular touch without adding load).
             if is_mp_long_week:
                 return "easy_strides"
+            # Half marathon HMP weeks: threshold STAYS as the quality session.
+            # HMP long run is moderate, threshold is primary emphasis — don't kill it.
             return self._get_quality_workout(phase, week_in_phase, is_cutback, distance, weekly_volume, athlete_ctx)
         
         if structure_type == "quality_or_easy":
             # ALTERNATION RULE: MP long run weeks already have quality via the MP long.
             # Don't add another quality session — keep this as easy.
             if is_mp_long_week:
+                return "easy"
+            # HMP long weeks already have 2 quality (threshold + HMP long).
+            if is_hmp_long_week:
                 return "easy"
             # Second quality only in certain phases
             if phase.quality_sessions >= 2 and not is_cutback:
@@ -1015,31 +1064,29 @@ class PlanGenerator:
         is_cutback: bool,
         distance: str
     ) -> str:
-        """Determine long run type based on phase."""
+        """Determine long run type based on phase and goal distance."""
         if is_cutback:
             return "long"  # Easy long run on cutback
         
-        if distance != "marathon":
-            return "long"  # Non-marathon distances don't need MP longs
-        
         phase_type = phase.phase_type.value
         
-        if phase_type == "base_speed":
+        # --- Marathon: MP long runs in specific phases ---
+        if distance == "marathon":
+            if phase_type in ["marathon_specific", "race_specific"]:
+                # Alternating: MP long, then easy long
+                if week_in_phase % 2 == 1:
+                    return "long_mp"
             return "long"
         
-        if phase_type == "threshold":
-            # Occasional easy long run
+        # --- Half marathon: HMP long runs in race-specific phase ---
+        if distance == "half_marathon":
+            if phase_type == "race_specific":
+                # Alternating: HMP long, then easy long
+                if week_in_phase % 2 == 1:
+                    return "long_hmp"
             return "long"
         
-        if phase_type in ["marathon_specific", "race_specific"]:
-            # Alternating: MP long, then easy long
-            if week_in_phase % 2 == 1:
-                return "long_mp"
-            return "long"
-        
-        if phase_type == "taper":
-            return "long"  # Easy in taper
-        
+        # --- 10K / 5K: easy long runs only (quality comes from intervals) ---
         return "long"
     
     def _get_quality_workout(
@@ -1051,29 +1098,44 @@ class PlanGenerator:
         weekly_volume: float,
         athlete_ctx: Dict[str, Any],
     ) -> str:
-        """Determine quality workout based on phase."""
+        """Determine quality workout based on phase and distance."""
         phase_type = phase.phase_type.value
         
         if is_cutback:
             # Lighter quality on cutback
-            return "strides" if phase_type == "base_speed" else "threshold"
+            if phase_type == "base_speed":
+                return "strides"
+            # 10K cutback: alternate strides and short threshold
+            if distance == "10k":
+                return "strides" if week_in_phase % 2 == 1 else "threshold"
+            return "threshold"
         
         if phase_type == "base_speed":
             # Base speed: strides/hills most weeks.
             # For high-mileage, experienced athletes, include periodic VO2 touches early.
-            # Note: short plans may only have 1-2 base_speed weeks; ensure at least one VO2 touch.
             if athlete_ctx.get("experienced_high_volume") and weekly_volume >= 60 and week_in_phase % 2 == 0:
                 return "intervals"
             return "hills" if week_in_phase % 2 == 0 else "easy_strides"
         
         if phase_type == "threshold":
-            # T-block progression
+            # --- 10K: VO2max + threshold co-dominant ---
+            # Alternate intervals and threshold each week so both accumulate.
+            if distance == "10k":
+                if week_in_phase % 2 == 1:
+                    return "intervals"
+                return "threshold_intervals"
+            # --- Marathon / Half marathon: T-block progression ---
             if week_in_phase <= 2:
                 return "threshold_intervals"
             return "threshold"
         
         if phase_type in ["marathon_specific", "race_specific"]:
-            # Maintain threshold
+            # --- 10K race-specific: alternate intervals and threshold ---
+            if distance == "10k":
+                if week_in_phase % 2 == 1:
+                    return "intervals"
+                return "threshold"
+            # --- Marathon / Half marathon: maintain threshold ---
             return "threshold_intervals" if week_in_phase % 2 == 0 else "threshold"
         
         if phase_type == "taper":
@@ -1092,12 +1154,27 @@ class PlanGenerator:
         weekly_volume: float,
         athlete_ctx: Dict[str, Any],
     ) -> str:
-        """Determine secondary quality workout."""
-        # For shorter races, secondary quality is often VO2.
-        if distance in ["5k", "10k"]:
+        """Determine secondary quality workout (complement of primary)."""
+        # --- 10K: secondary complements the primary for co-dominant balance ---
+        # Primary alternates intervals/threshold; secondary is the OTHER type.
+        if distance == "10k":
+            if week_in_phase % 2 == 1:
+                # Primary is intervals → secondary is threshold
+                return "threshold"
+            else:
+                # Primary is threshold → secondary is intervals
+                return "intervals"
+
+        # For 5K, secondary quality is VO2 (dominant emphasis).
+        if distance == "5k":
             return "intervals"
 
-        # For HM/Marathon, secondary quality is usually a "touch" session.
+        # Half marathon: threshold is PRIMARY, so secondary is VO2max
+        # (1000m/1200m intervals for economy — not primary VO2 development).
+        if distance == "half_marathon":
+            return "intervals"
+
+        # For Marathon, secondary quality is usually a "touch" session.
         # Use VO2 touches early in the specific block for experienced high-volume athletes.
         phase_type = phase.phase_type.value
         if athlete_ctx.get("experienced_high_volume") and weekly_volume >= 60 and phase_type == "marathon_specific":

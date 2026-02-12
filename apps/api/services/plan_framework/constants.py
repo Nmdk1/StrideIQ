@@ -168,11 +168,13 @@ CUTBACK_RULES = {
 }
 
 # Taper durations by distance (weeks) — legacy, used by generate_standard()
+# Minimum 2 weeks for all distances: 1 taper week + 1 race week.
+# This gives even 10K/5K a proper taper phase in the structure.
 TAPER_WEEKS = {
     Distance.MARATHON: 2,      # 10-14 days
     Distance.HALF_MARATHON: 2,
-    Distance.TEN_K: 1,
-    Distance.FIVE_K: 1,
+    Distance.TEN_K: 2,         # 7-10 days (1 taper + race week)
+    Distance.FIVE_K: 2,        # 5-7 days (1 taper + race week)
 }
 
 # Taper durations by distance (days) — personalized plans use this
