@@ -167,10 +167,51 @@ CUTBACK_RULES = {
     VolumeTier.ELITE: {"frequency": 4, "reduction": 0.20},
 }
 
-# Taper durations by distance (weeks)
+# Taper durations by distance (weeks) — legacy, used by generate_standard()
 TAPER_WEEKS = {
     Distance.MARATHON: 2,      # 10-14 days
     Distance.HALF_MARATHON: 2,
     Distance.TEN_K: 1,
     Distance.FIVE_K: 1,
+}
+
+# Taper durations by distance (days) — personalized plans use this
+# These are POPULATION DEFAULTS (Priority 4 in ADR-062).  The TaperCalculator
+# will override with N=1 signals when available.
+TAPER_DAYS_DEFAULT = {
+    Distance.MARATHON: 14,
+    Distance.HALF_MARATHON: 10,
+    Distance.TEN_K: 7,
+    Distance.FIVE_K: 5,
+}
+
+
+class ReboundSpeed(str, Enum):
+    """Recovery rebound speed classification."""
+    FAST = "fast"       # recovery_half_life_hours <= 36
+    NORMAL = "normal"   # 36 < recovery_half_life_hours <= 60
+    SLOW = "slow"       # recovery_half_life_hours > 60
+
+
+# Direct mapping: (rebound_speed, distance) → taper_days
+# Anchored to coaching literature (Daniels, Pfitzinger, Vigil).
+# No τ1 conversion — this is an observable-to-prescription mapping.
+#
+# Fast recoverers adapt quickly but also LOSE fitness quickly → shorter taper.
+# Slow recoverers retain fitness longer → can handle longer taper.
+# Longer races need more taper because the training block generates more
+# accumulated fatigue (MP long runs, glycogen depletion, musculoskeletal load).
+TAPER_DAYS_BY_REBOUND = {
+    (ReboundSpeed.FAST, Distance.MARATHON): 10,
+    (ReboundSpeed.FAST, Distance.HALF_MARATHON): 7,
+    (ReboundSpeed.FAST, Distance.TEN_K): 5,
+    (ReboundSpeed.FAST, Distance.FIVE_K): 4,
+    (ReboundSpeed.NORMAL, Distance.MARATHON): 13,
+    (ReboundSpeed.NORMAL, Distance.HALF_MARATHON): 9,
+    (ReboundSpeed.NORMAL, Distance.TEN_K): 7,
+    (ReboundSpeed.NORMAL, Distance.FIVE_K): 5,
+    (ReboundSpeed.SLOW, Distance.MARATHON): 17,
+    (ReboundSpeed.SLOW, Distance.HALF_MARATHON): 12,
+    (ReboundSpeed.SLOW, Distance.TEN_K): 9,
+    (ReboundSpeed.SLOW, Distance.FIVE_K): 7,
 }

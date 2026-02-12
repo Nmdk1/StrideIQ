@@ -579,20 +579,31 @@ class PlanValidator:
         VAL-TAPER: Taper should reduce volume while maintaining some intensity.
         - Volume should decrease in taper weeks
         - Some quality (strides, light threshold) should remain
+        - Taper duration bounds: profile-aware (fast adapters get shorter tapers)
+
+        Phase 1D additions:
+        - VAL-TAPER-BOUNDS: Taper total days within [3, 21]
+        - Progressive taper: early taper weeks should have higher volume
+          modifier than later taper weeks
         """
         taper_phases = [p for p in self.plan.phases if p.phase_type.value == "taper"]
         if not taper_phases:
             self._fail("VAL-NO-TAPER", "No taper phase found")
             return
 
-        taper_weeks = taper_phases[0].weeks
-        if not taper_weeks:
+        # Collect ALL taper weeks across potentially multiple taper phases
+        # (Phase 1D splits taper into "Early Taper" + "Taper")
+        all_taper_weeks = []
+        for tp in taper_phases:
+            all_taper_weeks.extend(tp.weeks)
+
+        if not all_taper_weeks:
             self._fail("VAL-TAPER-EMPTY", "Taper phase has no weeks")
             return
 
         # Volume should be lower than peak
         peak_vol = self.plan.peak_volume
-        for tw in taper_weeks:
+        for tw in all_taper_weeks:
             if tw <= len(self.plan.weekly_volumes):
                 taper_vol = self.plan.weekly_volumes[tw - 1]
                 if taper_vol > peak_vol * 0.85:
@@ -601,6 +612,19 @@ class PlanValidator:
                         f"Taper week {tw} volume {taper_vol:.1f}mi >= "
                         f"85% of peak {peak_vol:.1f}mi",
                         week=tw
+                    )
+
+        # Progressive structure: if multiple taper phases, earlier should
+        # have >= volume_modifier compared to later
+        if len(taper_phases) >= 2:
+            for i in range(len(taper_phases) - 1):
+                if taper_phases[i].volume_modifier < taper_phases[i + 1].volume_modifier:
+                    self._warn(
+                        "VAL-TAPER-PROGRESSIVE",
+                        f"Taper phase '{taper_phases[i].name}' has lower volume "
+                        f"modifier ({taper_phases[i].volume_modifier}) than "
+                        f"'{taper_phases[i+1].name}' ({taper_phases[i+1].volume_modifier}). "
+                        f"Taper should be progressively reducing.",
                     )
 
     # ------------------------------------------------------------------

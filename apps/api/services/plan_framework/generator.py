@@ -525,11 +525,66 @@ class PlanGenerator:
         # Calculate start date
         start_date = race_date - td(weeks=duration_weeks - 1, days=6)
         
-        # Build phases
+        # --- Personalized Taper (Phase 1D) ---
+        from services.taper_calculator import TaperCalculator
+        from services.pre_race_fingerprinting import derive_pre_race_taper_pattern
+        from services.individual_performance_model import get_or_calibrate_model
+
+        taper_calc = TaperCalculator()
+
+        # Gather taper signals
+        observed_taper = None
+        banister_model_obj = None
+
+        try:
+            # Signal 1: Observed taper history from race data
+            all_activities = self.db.query(Activity).filter(
+                Activity.athlete_id == athlete_id,
+                Activity.start_time >= race_date - td(days=730),  # 2 years
+            ).order_by(Activity.start_time).all()
+
+            from sqlalchemy import or_
+            race_activities = self.db.query(Activity).filter(
+                Activity.athlete_id == athlete_id,
+                or_(
+                    Activity.user_verified_race == True,
+                    Activity.workout_type == 'race',
+                    Activity.is_race_candidate == True,
+                ),
+            ).order_by(Activity.start_time).all()
+
+            if race_activities:
+                observed_taper = derive_pre_race_taper_pattern(
+                    activities=all_activities,
+                    races=race_activities,
+                )
+
+            # Signal 3: Banister model (if calibrated)
+            banister_model_obj = get_or_calibrate_model(athlete_id, self.db)
+        except Exception as e:
+            logger.warning(f"Non-critical: taper signal gathering failed: {e}")
+
+        taper_rec = taper_calc.calculate(
+            distance=distance,
+            profile=profile,
+            banister_model=banister_model_obj,
+            observed_taper=observed_taper,
+        )
+
+        taper_days = taper_rec.taper_days
+        taper_weeks_for_vol = self.phase_builder._taper_days_to_weeks(taper_days)
+
+        logger.info(
+            f"Taper recommendation: {taper_days} days ({taper_rec.source}, "
+            f"confidence={taper_rec.confidence:.2f})"
+        )
+
+        # Build phases with personalized taper
         phases = self.phase_builder.build_phases(
             distance=distance,
             duration_weeks=duration_weeks,
-            tier=tier.value
+            tier=tier.value,
+            taper_days=taper_days,
         )
         
         # Calculate volume progression with N=1 cutback frequency
@@ -538,7 +593,7 @@ class PlanGenerator:
             distance=distance,
             starting_volume=current_weekly_miles,
             plan_weeks=duration_weeks,
-            taper_weeks=2,
+            taper_weeks=taper_weeks_for_vol,
             cutback_frequency_override=(
                 profile.suggested_cutback_frequency
                 if profile.recovery_confidence >= 0.4 else None

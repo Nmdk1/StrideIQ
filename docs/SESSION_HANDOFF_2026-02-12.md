@@ -123,18 +123,76 @@ phases deliver.
 
 ---
 
+### Phase 1D: Taper Democratization
+
+Personalized taper durations for all athletes, not just those with calibrated
+Banister models.  Taper is **empirical, not model-driven**.
+
+Signal priority hierarchy:
+1. **Observed taper history** — from best races (2+ races, `pre_race_fingerprinting.py`)
+2. **Recovery rebound speed** — from `AthleteProfile.recovery_half_life_hours` (Phase 1C)
+3. **Banister model** — `calculate_optimal_taper_days()` when calibrated (one input, not the answer)
+4. **Population defaults** — honest about being a template
+
+Taper duration is in **days** (not weeks) for finer granularity.  Progressive
+taper structure: 70% → 50% → 30% of peak volume, intensity maintained with
+short threshold touches and strides.
+
+### Fix: Volume Tier Test Alignment
+
+`test_volume_tier_classifier_skips_missing_elite_for_10k` updated to reflect
+universal thresholds (50mpw = MID, not HIGH).  Added
+`test_volume_tier_classifier_universal_boundaries` regression guard.
+
+---
+
+## Files Changed (Phase 1D)
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `apps/api/services/taper_calculator.py` | `TaperCalculator` service: signal evaluation + `TaperRecommendation` |
+| `apps/api/tests/test_taper_calculator.py` | 46 unit tests across 7 groups |
+| `docs/ADR_062_TAPER_DEMOCRATIZATION.md` | Architecture Decision Record |
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `apps/api/services/plan_framework/constants.py` | `TAPER_DAYS_DEFAULT`, `TAPER_DAYS_BY_REBOUND`, `ReboundSpeed` enum |
+| `apps/api/services/plan_framework/phase_builder.py` | `build_phases()` gains `taper_days` param; progressive taper structure (Early Taper + Taper); `_taper_days_to_weeks()` conversion |
+| `apps/api/services/plan_framework/generator.py` | `generate_custom()` computes taper via `TaperCalculator`, gathers observed taper + Banister signals, passes `taper_days` to phase builder |
+| `apps/api/services/pre_race_fingerprinting.py` | `derive_pre_race_taper_pattern()`: analyzes pre-race volume patterns for best races; `ObservedTaperPattern` dataclass |
+| `apps/api/tests/plan_validation_helpers.py` | `assert_taper_structure()` handles multiple taper phases; progressive volume check |
+| `apps/api/tests/test_volume_tier_classifier_skips_missing_tiers.py` | Corrected for universal thresholds; added universal boundaries guard |
+
+---
+
+## Test Results (Phase 1D)
+
+```
+tests/test_taper_calculator.py            — 46 passed
+tests/test_athlete_plan_profile.py        — 40 passed
+tests/test_plan_validation_matrix.py      — 114 passed, 3 xfailed, 12 xpassed
+tests/test_pre_race_fingerprinting.py     — 27 passed
+Full suite                                — 1662 passed, 7 skipped, 0 failed
+```
+
+---
+
 ## What's Next
 
 Per `TRAINING_PLAN_REBUILD_PLAN.md`:
 
-1. **Phase 1D: Taper Democratization** — Banister tau-1 model calibration
-2. **Phase 1E: Half Marathon** — Distance-specific generator fixes
-3. **Phase 1F: 10K** — Distance-specific generator fixes
-4. **Phase 1G: 5K** — Distance-specific generator fixes
+1. **Phase 1E: Half Marathon** — Distance-specific generator fixes
+2. **Phase 1F: 10K** — Distance-specific generator fixes
+3. **Phase 1G: 5K** — Distance-specific generator fixes
 
-The profile service is ready for these phases to consume — each distance
-can derive its own `AthleteProfile` and the validator will apply the
-appropriate tier-aware thresholds.
+The profile service and taper calculator are ready for these phases to
+consume — each distance can derive its own `AthleteProfile`, get a
+personalized taper, and the validator will apply the appropriate
+tier-aware thresholds.
 
 ---
 

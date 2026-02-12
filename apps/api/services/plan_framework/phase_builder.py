@@ -51,7 +51,8 @@ class PhaseBuilder:
         self,
         distance: str,
         duration_weeks: int,
-        tier: str
+        tier: str,
+        taper_days: int = None,
     ) -> List[TrainingPhase]:
         """
         Build phase structure for a plan.
@@ -60,6 +61,9 @@ class PhaseBuilder:
             distance: Goal race distance
             duration_weeks: Total plan weeks
             tier: Volume tier
+            taper_days: Personalized taper duration in days (Phase 1D).
+                        If provided, overrides TAPER_WEEKS for this plan.
+                        Converted to weeks via _taper_days_to_weeks().
             
         Returns:
             List of TrainingPhase objects
@@ -74,8 +78,12 @@ class PhaseBuilder:
         except ValueError:
             vol_tier = VolumeTier.MID
         
-        # Get taper duration
-        taper_weeks = TAPER_WEEKS.get(dist, 2)
+        # Get taper duration: use personalized days when provided,
+        # otherwise fall back to the legacy TAPER_WEEKS constant.
+        if taper_days is not None:
+            taper_weeks = self._taper_days_to_weeks(taper_days)
+        else:
+            taper_weeks = TAPER_WEEKS.get(dist, 2)
         
         # Build phases based on distance
         if dist == Distance.MARATHON:
@@ -86,6 +94,24 @@ class PhaseBuilder:
             return self._build_10k_phases(duration_weeks, taper_weeks, vol_tier)
         else:  # 5K
             return self._build_5k_phases(duration_weeks, taper_weeks, vol_tier)
+    
+    @staticmethod
+    def _taper_days_to_weeks(taper_days: int) -> int:
+        """
+        Convert taper days to the week-based structure the phase builder uses.
+
+        ADR-062 mapping:
+          4-7 days  → 1 week  (race week absorbs taper)
+          8-10 days → 1 week  (1 taper week + race week handled separately)
+          11-14 days → 2 weeks
+          15-21 days → 3 weeks
+        """
+        if taper_days <= 7:
+            return 1
+        elif taper_days <= 14:
+            return 2
+        else:
+            return 3
     
     def _build_marathon_phases(
         self,
@@ -189,20 +215,54 @@ class PhaseBuilder:
         ))
         current_week += race_specific_weeks
         
-        # Phase 5: Taper (exclude race week)
-        if taper_weeks > 1:
+        # Phase 5: Taper — progressive volume reduction (ADR-062)
+        # Volume drops progressively, intensity maintained with short touches.
+        # 3-week taper: 70% → 50% → race week (30%)
+        # 2-week taper: 50% → race week (30%)
+        # 1-week taper: race week only (30%)
+        taper_phase_weeks = taper_weeks - 1  # Exclude race week
+        if taper_phase_weeks >= 2:
+            # Early taper (higher volume, last real quality session)
+            phases.append(TrainingPhase(
+                name="Early Taper",
+                phase_type=Phase.TAPER,
+                weeks=[current_week],
+                focus="Begin volume reduction, last quality session",
+                quality_sessions=1,
+                volume_modifier=0.70,
+                long_run_modifier=0.6,
+                allowed_workouts=["easy", "threshold", "threshold_short", "strides", "recovery"],
+                key_sessions=["threshold", "strides"]
+            ))
+            current_week += 1
+            # Main taper (sharper reduction, threshold touches only)
+            remaining_taper = taper_phase_weeks - 1
+            if remaining_taper > 0:
+                phases.append(TrainingPhase(
+                    name="Taper",
+                    phase_type=Phase.TAPER,
+                    weeks=list(range(current_week, current_week + remaining_taper)),
+                    focus="Reduce volume, maintain intensity with short touches",
+                    quality_sessions=1,
+                    volume_modifier=0.50,
+                    long_run_modifier=0.5,
+                    allowed_workouts=["easy", "threshold_short", "strides", "recovery"],
+                    key_sessions=["sharpening", "strides"]
+                ))
+                current_week += remaining_taper
+        elif taper_phase_weeks == 1:
             phases.append(TrainingPhase(
                 name="Taper",
                 phase_type=Phase.TAPER,
-                weeks=list(range(current_week, current_week + taper_weeks - 1)),
+                weeks=[current_week],
                 focus="Reduce volume, maintain intensity, peak for race",
                 quality_sessions=1,
-                volume_modifier=0.5,  # 50% of peak
+                volume_modifier=0.50,
                 long_run_modifier=0.5,
                 allowed_workouts=["easy", "threshold_short", "strides", "recovery"],
                 key_sessions=["sharpening", "strides"]
             ))
-            current_week += taper_weeks - 1
+            current_week += 1
         
         # Race week (always separate)
         phases.append(TrainingPhase(

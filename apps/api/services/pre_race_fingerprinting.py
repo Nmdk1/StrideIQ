@@ -606,6 +606,222 @@ def generate_readiness_profile(
     )
 
 
+# =============================================================================
+# TAPER PATTERN ANALYSIS (Phase 1D — ADR-062)
+# =============================================================================
+
+@dataclass
+class ObservedTaperPattern:
+    """Taper pattern derived from an athlete's best race performances."""
+    taper_days: int                # Weighted average taper duration (days)
+    confidence: float              # 0.0-1.0
+    n_races_analyzed: int
+    volume_drop_pct: float         # Average volume reduction during taper
+    best_race_taper_days: int      # Taper duration before the single best race
+    patterns: List[Dict]           # Per-race breakdown for transparency
+    rationale: str                 # Human-readable explanation
+
+
+def derive_pre_race_taper_pattern(
+    activities: List,  # Activity objects with start_time, distance_m, sport
+    races: List,       # Race activities with performance_percentage or age-graded %
+    min_races: int = 2,
+    lookback_days: int = 21,
+) -> Optional[ObservedTaperPattern]:
+    """
+    Analyze pre-race volume patterns for the athlete's best races.
+
+    For each race, look at the ``lookback_days`` prior:
+    - Calculate daily volume
+    - Identify the volume inflection point (when did they start tapering?)
+    - Measure taper duration in days
+    - Correlate with race performance (age-graded %)
+
+    Returns the pattern from their best performances, or None if
+    insufficient race data.
+
+    ADR-062 Priority 1 signal.  Minimum 2 races (approved in review —
+    no artificial confidence penalty beyond what the data naturally produces).
+    """
+    if len(races) < min_races:
+        return None
+
+    # Sort races by performance (best first)
+    scored_races = []
+    for r in races:
+        perf = _get_race_performance(r)
+        if perf is not None:
+            scored_races.append((perf, r))
+    scored_races.sort(key=lambda x: x[0], reverse=True)
+
+    if len(scored_races) < min_races:
+        return None
+
+    # Build a date-keyed daily mileage index from all activities
+    daily_miles: Dict[date, float] = {}
+    for a in activities:
+        if getattr(a, "sport", "run") not in ("run", "Run", "running"):
+            continue
+        a_date = _activity_date(a)
+        if a_date is None:
+            continue
+        miles = (getattr(a, "distance_m", 0) or 0) / 1609.344
+        daily_miles[a_date] = daily_miles.get(a_date, 0.0) + miles
+
+    # Analyze the top half of races (best 50%)
+    analyze_count = max(min_races, len(scored_races) // 2)
+    best_races = scored_races[:analyze_count]
+
+    patterns = []
+    for perf_pct, race in best_races:
+        race_date = _activity_date(race)
+        if race_date is None:
+            continue
+
+        taper_info = _measure_taper_before_race(
+            daily_miles, race_date, lookback_days
+        )
+        if taper_info is not None:
+            patterns.append({
+                "race_date": race_date.isoformat(),
+                "performance_pct": round(perf_pct, 1),
+                "taper_days": taper_info["taper_days"],
+                "volume_drop_pct": round(taper_info["volume_drop_pct"], 1),
+            })
+
+    if not patterns:
+        return None
+
+    # Weight by performance: better race → higher weight
+    total_weight = 0.0
+    weighted_days = 0.0
+    weighted_drop = 0.0
+    for p in patterns:
+        weight = p["performance_pct"] / 100.0  # 0-1ish scale
+        weighted_days += p["taper_days"] * weight
+        weighted_drop += p["volume_drop_pct"] * weight
+        total_weight += weight
+
+    avg_taper_days = round(weighted_days / total_weight) if total_weight > 0 else 14
+    avg_volume_drop = weighted_drop / total_weight if total_weight > 0 else 50.0
+
+    # Confidence: scales naturally with data quantity
+    # 2 races → ~0.5, 3 → ~0.65, 5+ → 0.8+
+    confidence = min(1.0, 0.3 + 0.1 * len(patterns))
+
+    # Best race taper
+    best_race_taper = patterns[0]["taper_days"] if patterns else avg_taper_days
+
+    rationale = (
+        f"Analyzed {len(patterns)} of your best races. "
+        f"Your best performances followed ~{avg_taper_days}-day tapers with "
+        f"~{avg_volume_drop:.0f}% volume reduction."
+    )
+
+    return ObservedTaperPattern(
+        taper_days=avg_taper_days,
+        confidence=confidence,
+        n_races_analyzed=len(patterns),
+        volume_drop_pct=avg_volume_drop,
+        best_race_taper_days=best_race_taper,
+        patterns=patterns,
+        rationale=rationale,
+    )
+
+
+def _get_race_performance(race) -> Optional[float]:
+    """Extract performance percentage from a race activity."""
+    perf = getattr(race, "performance_percentage", None)
+    if perf is not None:
+        return float(perf)
+    perf = getattr(race, "performance_percentage_national", None)
+    if perf is not None:
+        return float(perf)
+    return None
+
+
+def _activity_date(a) -> Optional[date]:
+    """Get the date from an activity's start_time."""
+    st = getattr(a, "start_time", None)
+    if st is None:
+        return None
+    if isinstance(st, datetime):
+        return st.date()
+    if isinstance(st, date):
+        return st
+    return None
+
+
+def _measure_taper_before_race(
+    daily_miles: Dict[date, float],
+    race_date: date,
+    lookback_days: int = 21,
+) -> Optional[Dict]:
+    """
+    Measure the taper pattern in the days before a race.
+
+    Compares the volume in the lookback window to a "training baseline"
+    (4 weeks ending 1 week before the lookback window) to find:
+    - When volume started dropping (taper onset)
+    - How much volume dropped
+
+    Returns dict with taper_days and volume_drop_pct, or None.
+    """
+    # Baseline: 4-week block ending 1 week before the lookback window
+    baseline_end = race_date - timedelta(days=lookback_days + 7)
+    baseline_start = baseline_end - timedelta(days=28)
+
+    baseline_daily = []
+    d = baseline_start
+    while d <= baseline_end:
+        baseline_daily.append(daily_miles.get(d, 0.0))
+        d += timedelta(days=1)
+
+    if not baseline_daily or sum(baseline_daily) == 0:
+        return None
+
+    baseline_weekly_avg = sum(baseline_daily) / len(baseline_daily) * 7
+
+    # Pre-race window: daily volumes for lookback_days before race
+    pre_race_daily = []
+    for offset in range(lookback_days, 0, -1):
+        d = race_date - timedelta(days=offset)
+        pre_race_daily.append(daily_miles.get(d, 0.0))
+
+    if not pre_race_daily:
+        return None
+
+    # Find the inflection point: first 7-day window that drops below
+    # 75% of baseline weekly volume, scanning from race day backwards.
+    taper_onset_idx = len(pre_race_daily)  # default: entire window is taper
+
+    for i in range(len(pre_race_daily) - 7, -1, -1):
+        window = pre_race_daily[i:i + 7]
+        window_total = sum(window)
+        if window_total >= baseline_weekly_avg * 0.75:
+            # This 7-day window is still at training volume — taper
+            # starts AFTER this point.
+            taper_onset_idx = i + 7
+            break
+
+    taper_days = len(pre_race_daily) - taper_onset_idx
+    taper_days = max(3, min(lookback_days, taper_days))  # clamp 3-21
+
+    # Volume drop: average daily miles in taper vs baseline
+    taper_window = pre_race_daily[taper_onset_idx:]
+    if taper_window and baseline_weekly_avg > 0:
+        taper_weekly_equiv = sum(taper_window) / len(taper_window) * 7
+        volume_drop_pct = (1 - taper_weekly_equiv / baseline_weekly_avg) * 100
+        volume_drop_pct = max(0, min(100, volume_drop_pct))
+    else:
+        volume_drop_pct = 50.0  # reasonable default
+
+    return {
+        "taper_days": taper_days,
+        "volume_drop_pct": volume_drop_pct,
+    }
+
+
 def to_dict(profile: ReadinessProfile) -> Dict:
     """Convert ReadinessProfile to dictionary for API response."""
     return {
