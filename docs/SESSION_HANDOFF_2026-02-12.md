@@ -310,11 +310,84 @@ Full suite                                — 1719 passed, 7 skipped, 0 failed
 
 ---
 
+### Phase 1G: 5K — A-Level Quality
+
+VO2max dominant periodization with repetition work for neuromuscular recruitment.
+Threshold in supporting role only.  VO2max progression 400m → 800m → 1000m
+(caps at 1000m, unlike 10K's 1200m).  New `repetitions` workout type: 200m/300m
+at faster-than-5K pace.
+
+**Key design decisions:**
+
+1. **VO2max dominant** — Intervals always the primary quality slot in both
+   Speed Dev and Race Specific phases.  Validator enforces I > T.
+
+2. **Reps as cutback quality** — Most important design call in this phase.
+   5K cutback weeks return `repetitions` instead of `threshold`.  200m reps
+   at faster-than-5K pace with full recovery are a lighter stimulus than
+   intervals, perfect for cutback.  This prevents threshold from accumulating
+   on cutback weeks (which would violate I > T) AND ensures reps are present
+   even on 5-day low-tier plans where no secondary quality slot fires.
+
+3. **Repetition progression** — New `_scale_repetitions()` in the scaler:
+   - Early build: 200m x 8-10 (neuromuscular pattern)
+   - Late build: 300m x 5-7 (longer reps, economy)
+   - Race specific: 300m x 6-8 (race-simulation speed)
+
+4. **5K interval progression** — New `_scale_5k_intervals()`:
+   - Plan weeks 1-4: 400m (neuromuscular + VO2 touch)
+   - Plan weeks 5-8: 800m (classic VO2 development)
+   - Plan weeks 9+: 1000m (sustained VO2 power, caps here)
+
+5. **REP_TYPES added to validator** — New type set for validator checks.
+   `_assert_5k_emphasis()` now enforces: I > T, reps present for 8+ week
+   plans, no MP/HMP contamination.
+
+---
+
+## Files Changed (Phase 1G)
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `apps/api/services/plan_framework/generator.py` | 5K quality: intervals always primary; cutback returns reps; secondary alternates reps/threshold; `"repetitions"` in quality_count |
+| `apps/api/services/plan_framework/phase_builder.py` | `_build_5k_phases()` rewritten: VO2max-dominant structure, reps in allowed_workouts, taper/race overlap fixed |
+| `apps/api/services/plan_framework/workout_scaler.py` | New `_scale_5k_intervals()` (400→800→1000m), new `_scale_repetitions()` (200m/300m), routing for "repetitions" |
+| `apps/api/tests/plan_validation_helpers.py` | `REP_TYPES` added; `_assert_5k_emphasis()` strengthened: I>T, reps present, no MP/HMP |
+| `apps/api/tests/test_plan_validation_matrix.py` | 5K xfails REMOVED; new `Test5KRules` class (24 tests) |
+
+---
+
+## Test Results (Phase 1G)
+
+```
+tests/test_plan_validation_matrix.py      — 158 passed, 3 xfailed, 0 xpassed
+Full suite                                — 1747 passed, 7 skipped, 0 failed
+```
+
+### 5K Variants (all PASS)
+
+| Variant | T | I | R | I > T |
+|---------|---|---|---|-------|
+| mid-12w-6d | 0 | 5 | 3 | yes |
+| mid-8w-6d | 0 | 3 | 2 | yes |
+| low-12w-5d | 0 | 5 | 2 | yes |
+| high-12w-6d | 2 | 5 | 5 | yes |
+
+### xpasses: 4 → 0. ALL distance xfails resolved. Phase 1 complete.
+
+---
+
 ## What's Next
 
-Per `TRAINING_PLAN_REBUILD_PLAN.md`:
+**Phase 1 is COMPLETE.**  All distances (marathon, half marathon, 10K, 5K) have
+distance-specific generators with A-level quality, validated by the full test
+matrix with zero xpasses.
 
-1. **Phase 1G: 5K** — VO2max dominant, repetition work, neuromuscular sharpness
+Per `TRAINING_PLAN_REBUILD_PLAN.md`, Phase 2 is next:
+- **Phase 2**: Daily adaptation engine — readiness score, rules engine,
+  workout state machine, nightly replan, no-race modes.
 
 ---
 

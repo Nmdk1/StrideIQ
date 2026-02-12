@@ -128,6 +128,9 @@ class WorkoutScaler:
         elif workout_type in ["interval", "intervals", "vo2max"]:
             return self._scale_intervals(weekly_volume, tier, phase, athlete_ctx=athlete_ctx, plan_week=plan_week, distance=distance)
         
+        elif workout_type in ["repetitions", "reps"]:
+            return self._scale_repetitions(weekly_volume, tier, phase, plan_week=plan_week)
+        
         elif workout_type in ["strides"]:
             return self._scale_strides()
         
@@ -523,6 +526,12 @@ class WorkoutScaler:
         athlete_ctx = athlete_ctx or {}
         experienced_high_volume = bool(athlete_ctx.get("experienced_high_volume"))
 
+        # --- 5K VO2max progression (Phase 1G): caps at 1000m ---
+        if distance == "5k":
+            return self._scale_5k_intervals(
+                weekly_volume, max_i_miles, phase_norm, plan_week
+            )
+
         # --- 10K VO2max progression (Phase 1F) ---
         if distance == "10k":
             return self._scale_10k_intervals(
@@ -642,6 +651,134 @@ class WorkoutScaler:
                 {"type": "intervals", "reps": reps, "distance_m": rep_m,
                  "rest_min": rest_val, "pace": pace_label,
                  "distance_miles": total_interval_miles},
+                {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
+            ],
+            pace_description=pace_desc,
+            option="A",
+        )
+
+    def _scale_5k_intervals(
+        self,
+        weekly_volume: float,
+        max_i_miles: float,
+        phase: str,
+        plan_week: Optional[int],
+    ) -> ScaledWorkout:
+        """
+        5K-specific VO2max progression (Phase 1G).
+
+        Progression: 400m -> 800m -> 1000m (caps at 1000m, unlike 10K's 1200m).
+        5K VO2max intervals are shorter and faster than 10K's race-simulation
+        intervals. The goal is ceiling development, not race-pace simulation.
+        """
+        pw = plan_week or 1
+
+        if phase == "race_specific" or pw >= 9:
+            # 1000m at VO2max — sustained power, peak VO2 development
+            rep_m = 1000
+            rep_miles = 1000 / 1609.344
+            reps = min(6, max(4, int(max_i_miles / rep_miles)))
+            rest_desc = "2-3 min jog recovery"
+            rest_val = 2.5
+            pace_desc = "hard effort, controlled — peak VO2max development"
+        elif pw >= 5:
+            # 800m classic VO2
+            rep_m = 800
+            rep_miles = 800 / 1609.344
+            reps = min(8, max(5, int(max_i_miles / rep_miles)))
+            rest_desc = "2 min jog recovery"
+            rest_val = 2.0
+            pace_desc = "hard effort, smooth mechanics"
+        else:
+            # 400m neuromuscular + VO2 touch
+            rep_m = 400
+            rep_miles = 400 / 1609.344
+            reps = min(12, max(8, int(max_i_miles / rep_miles)))
+            rest_desc = "200m jog recovery"
+            rest_val = 1.0
+            pace_desc = "hard effort, controlled — smooth mechanics, not a sprint"
+
+        total_interval_miles = round(reps * rep_m / 1609.344, 1)
+        total_distance = round(3 + total_interval_miles, 1)
+
+        return ScaledWorkout(
+            workout_type="intervals",
+            category=WorkoutCategory.INTERVAL,
+            title=f"Intervals: {reps}x{rep_m}m",
+            description=f"{reps}x{rep_m}m with {rest_desc}",
+            total_distance_miles=total_distance,
+            duration_minutes=int(30 + reps * (rep_m / 1000 * 4 + rest_val)),
+            segments=[
+                {"type": "warmup", "distance_miles": 2, "pace": "easy"},
+                {"type": "intervals", "reps": reps, "distance_m": rep_m,
+                 "rest_min": rest_val, "pace": "interval",
+                 "distance_miles": total_interval_miles},
+                {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
+            ],
+            pace_description=pace_desc,
+            option="A",
+        )
+
+    def _scale_repetitions(
+        self,
+        weekly_volume: float,
+        tier: str,
+        phase: str,
+        *,
+        plan_week: Optional[int] = None,
+    ) -> ScaledWorkout:
+        """
+        Scale repetition workout (Phase 1G: 5K neuromuscular economy).
+
+        Repetitions: 200m/300m at faster-than-5K pace.
+        Purpose: neuromuscular recruitment, running economy, fast-twitch activation.
+        Recovery: full (200m jog or 90s between reps).
+
+        Progression:
+        - Early build: 200m x 8-10 (fast, neuromuscular pattern)
+        - Late build: 300m x 6-8 (longer reps, maintain economy)
+        - Race specific: 300m x 6-8 (race-simulation speed)
+        """
+        pw = plan_week or 1
+        phase_norm = (phase or "").strip().lower()
+
+        if phase_norm == "race_specific" or pw >= 9:
+            # 300m at faster-than-5K pace — race sharpening
+            rep_m = 300
+            reps = min(8, max(6, int(weekly_volume * 0.04 / (300 / 1609.344))))
+            rest_desc = "200m jog recovery (full recovery)"
+            rest_val = 1.5  # minutes
+            pace_desc = "faster than 5K pace — quick, powerful, controlled"
+        elif pw >= 5:
+            # 300m building volume
+            rep_m = 300
+            reps = min(7, max(5, int(weekly_volume * 0.04 / (300 / 1609.344))))
+            rest_desc = "200m jog recovery"
+            rest_val = 1.5
+            pace_desc = "faster than 5K pace — smooth, quick turnover"
+        else:
+            # 200m early introduction
+            rep_m = 200
+            reps = min(10, max(8, int(weekly_volume * 0.04 / (200 / 1609.344))))
+            rest_desc = "200m jog recovery (full recovery)"
+            rest_val = 1.0
+            pace_desc = "fast and controlled — not a sprint, smooth mechanics"
+
+        total_rep_miles = round(reps * rep_m / 1609.344, 1)
+        total_distance = round(3 + total_rep_miles, 1)
+
+        return ScaledWorkout(
+            workout_type="repetitions",
+            category=WorkoutCategory.SPEED,
+            title=f"Reps: {reps}x{rep_m}m",
+            description=f"{reps}x{rep_m}m with {rest_desc}",
+            total_distance_miles=total_distance,
+            duration_minutes=int(30 + reps * (rep_m / 1000 * 3 + rest_val)),
+            segments=[
+                {"type": "warmup", "distance_miles": 2, "pace": "easy"},
+                {"type": "repetitions", "reps": reps, "distance_m": rep_m,
+                 "rest_min": rest_val, "pace": "repetition",
+                 "distance_miles": total_rep_miles},
                 {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
             ],
             pace_description=pace_desc,

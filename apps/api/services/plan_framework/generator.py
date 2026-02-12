@@ -281,7 +281,8 @@ class PlanGenerator:
         # Calculate totals
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
-            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp"
+            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp",
+            "repetitions"
         ]])
         
         return GeneratedPlan(
@@ -379,7 +380,8 @@ class PlanGenerator:
         # Calculate totals
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
-            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp"
+            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp",
+            "repetitions"
         ]])
         
         return GeneratedPlan(
@@ -617,7 +619,8 @@ class PlanGenerator:
         # Calculate totals
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
-            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp"
+            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp",
+            "repetitions"
         ]])
         
         return GeneratedPlan(
@@ -1105,6 +1108,11 @@ class PlanGenerator:
             # Lighter quality on cutback
             if phase_type == "base_speed":
                 return "strides"
+            # 5K cutback: reps are lighter than intervals, maintain neuromuscular
+            # pattern without adding aerobic load. This prevents threshold from
+            # accumulating on cutback weeks and dominating the VO2max emphasis.
+            if distance == "5k":
+                return "repetitions"
             # 10K cutback: alternate strides and short threshold
             if distance == "10k":
                 return "strides" if week_in_phase % 2 == 1 else "threshold"
@@ -1118,6 +1126,11 @@ class PlanGenerator:
             return "hills" if week_in_phase % 2 == 0 else "easy_strides"
         
         if phase_type == "threshold":
+            # --- 5K: VO2max dominant ---
+            # Intervals always — VO2max is THE primary quality for 5K.
+            # Reps come from cutback weeks and secondary quality slot.
+            if distance == "5k":
+                return "intervals"
             # --- 10K: VO2max + threshold co-dominant ---
             # Alternate intervals and threshold each week so both accumulate.
             if distance == "10k":
@@ -1130,6 +1143,10 @@ class PlanGenerator:
             return "threshold"
         
         if phase_type in ["marathon_specific", "race_specific"]:
+            # --- 5K race-specific: intervals remain primary ---
+            # Reps come from cutbacks + secondary, not the primary quality slot.
+            if distance == "5k":
+                return "intervals"
             # --- 10K race-specific: alternate intervals and threshold ---
             if distance == "10k":
                 if week_in_phase % 2 == 1:
@@ -1165,9 +1182,13 @@ class PlanGenerator:
                 # Primary is threshold → secondary is intervals
                 return "intervals"
 
-        # For 5K, secondary quality is VO2 (dominant emphasis).
+        # --- 5K: reps dominant secondary, threshold occasionally ---
+        # Primary is VO2max (intervals) most weeks. Secondary adds reps
+        # for neuromuscular work with occasional threshold for aerobic support.
         if distance == "5k":
-            return "intervals"
+            if week_in_phase % 3 == 0:
+                return "threshold"      # aerobic support every 3rd week
+            return "repetitions"        # neuromuscular recruitment
 
         # Half marathon: threshold is PRIMARY, so secondary is VO2max
         # (1000m/1200m intervals for economy — not primary VO2 development).

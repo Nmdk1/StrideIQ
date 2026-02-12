@@ -61,28 +61,12 @@ TEN_K_VARIANTS = [
     pytest.param("10k", "high", 12, 6, id="10k-high-12w-6d"),
 ]
 
-# 5K variants — xfail until 1G delivers
+# 5K variants — Phase 1G delivered
 FIVE_K_VARIANTS = [
-    pytest.param(
-        "5k", "mid", 12, 6,
-        id="5k-mid-12w-6d",
-        marks=pytest.mark.xfail(reason="5K generator not yet rebuilt (Phase 1G)")
-    ),
-    pytest.param(
-        "5k", "mid", 8, 6,
-        id="5k-mid-8w-6d",
-        marks=pytest.mark.xfail(reason="5K generator not yet rebuilt (Phase 1G)")
-    ),
-    pytest.param(
-        "5k", "low", 12, 5,
-        id="5k-low-12w-5d",
-        marks=pytest.mark.xfail(reason="5K generator not yet rebuilt (Phase 1G)")
-    ),
-    pytest.param(
-        "5k", "high", 12, 6,
-        id="5k-high-12w-6d",
-        marks=pytest.mark.xfail(reason="5K generator not yet rebuilt (Phase 1G)")
-    ),
+    pytest.param("5k", "mid", 12, 6, id="5k-mid-12w-6d"),
+    pytest.param("5k", "mid", 8, 6, id="5k-mid-8w-6d"),
+    pytest.param("5k", "low", 12, 5, id="5k-low-12w-5d"),
+    pytest.param("5k", "high", 12, 6, id="5k-high-12w-6d"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -576,6 +560,63 @@ class Test10KRules:
 
     @pytest.mark.parametrize("distance,tier,weeks,days", TEN_K_VARIANTS)
     def test_10k_phase_rules(self, distance, tier, weeks, days):
+        """Phase rules: appropriate structure per phase."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_phase_rules()
+        assert v.result.passed, v.result.summary()
+
+
+class Test5KRules:
+    """5K-specific coaching rule tests (Phase 1G)."""
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", FIVE_K_VARIANTS)
+    def test_5k_emphasis(self, distance, tier, weeks, days):
+        """
+        5K (Phase 1G):
+        - VO2max dominant (I > T)
+        - Repetitions present for neuromuscular economy
+        - No MP/HMP contamination
+        """
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_distance_emphasis()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", FIVE_K_VARIANTS)
+    def test_5k_source_b(self, distance, tier, weeks, days):
+        """Source B limits respected for 5K plans."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_source_b_limits()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", FIVE_K_VARIANTS)
+    def test_5k_hard_easy(self, distance, tier, weeks, days):
+        """Hard day always followed by easy/rest."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_hard_easy_pattern()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", FIVE_K_VARIANTS)
+    def test_5k_quality_limit(self, distance, tier, weeks, days):
+        """Never 3 quality days in a week."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_quality_day_limit()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", FIVE_K_VARIANTS)
+    def test_5k_taper(self, distance, tier, weeks, days):
+        """Taper: volume reduces, neuromuscular sharpness maintained."""
+        plan = generate_plan(distance, tier, weeks, days)
+        v = PlanValidator(plan)
+        v.assert_taper_structure()
+        assert v.result.passed, v.result.summary()
+
+    @pytest.mark.parametrize("distance,tier,weeks,days", FIVE_K_VARIANTS)
+    def test_5k_phase_rules(self, distance, tier, weeks, days):
         """Phase rules: appropriate structure per phase."""
         plan = generate_plan(distance, tier, weeks, days)
         v = PlanValidator(plan)

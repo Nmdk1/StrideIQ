@@ -45,6 +45,7 @@ REST_TYPES = {"rest"}
 LONG_TYPES = {"long"}
 THRESHOLD_TYPES = {"threshold", "threshold_intervals", "tempo"}
 INTERVAL_TYPES = {"intervals"}
+REP_TYPES = {"repetitions"}
 MP_TYPES = {"long_mp"}
 HMP_TYPES = {"long_hmp"}
 
@@ -947,15 +948,72 @@ class PlanValidator:
             )
 
     def _assert_5k_emphasis(self):
-        """5K: VO2max should be dominant."""
+        """
+        5K: VO2max dominant, repetitions for neuromuscular recruitment.
+
+        Phase 1G contract:
+        - VO2max (intervals) must be PRIMARY: more I than T
+        - Repetitions present for neuromuscular economy
+        - Threshold in supporting role only (not dominant)
+        - No marathon-pace or half-marathon-pace long runs
+        """
+        threshold_count = sum(
+            1 for w in self.plan.workouts if w.workout_type in THRESHOLD_TYPES
+        )
         interval_count = sum(
             1 for w in self.plan.workouts if w.workout_type in INTERVAL_TYPES
         )
+        rep_count = sum(
+            1 for w in self.plan.workouts if w.workout_type in REP_TYPES
+        )
+        mp_count = sum(
+            1 for w in self.plan.workouts if w.workout_type in MP_TYPES
+        )
+        hmp_count = sum(
+            1 for w in self.plan.workouts if w.workout_type in HMP_TYPES
+        )
 
         if interval_count == 0:
-            self._warn(
+            self._fail(
                 "DIST-5K-NO-I",
                 "5K plan has no interval/VO2max sessions"
+            )
+
+        # VO2max must be dominant — more I than T (inverse of half marathon)
+        if threshold_count >= interval_count and interval_count > 0:
+            self._fail(
+                "DIST-5K-I-PRIMARY",
+                f"5K: threshold ({threshold_count}) >= intervals "
+                f"({interval_count}). VO2max must be primary quality."
+            )
+
+        # Intervals should be substantial for plan length
+        min_intervals = max(2, self.plan.duration_weeks // 3)
+        if interval_count < min_intervals:
+            self._warn(
+                "DIST-5K-I-COUNT",
+                f"5K: only {interval_count} interval sessions "
+                f"(expected >= {min_intervals} for {self.plan.duration_weeks}w plan)"
+            )
+
+        # Repetitions should be present (neuromuscular recruitment)
+        if rep_count == 0 and self.plan.duration_weeks >= 8:
+            self._fail(
+                "DIST-5K-NO-R",
+                f"5K {self.plan.duration_weeks}w plan has no repetition sessions "
+                f"(200m/300m reps needed for neuromuscular economy)"
+            )
+
+        # No marathon-pace or HMP long runs in 5K plans
+        if mp_count > 0:
+            self._warn(
+                "DIST-5K-HAS-MP",
+                f"5K plan has {mp_count} marathon-pace long runs"
+            )
+        if hmp_count > 0:
+            self._warn(
+                "DIST-5K-HAS-HMP",
+                f"5K plan has {hmp_count} half-marathon-pace long runs"
             )
 
     # ------------------------------------------------------------------
