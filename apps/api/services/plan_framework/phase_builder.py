@@ -405,15 +405,15 @@ class PhaseBuilder:
         """
         Build 10K phases.
 
-        Phase 1F: VO2max + threshold co-dominant.
-        VO2max progression: 400m → 800m → 1000m → 1200m through build.
-        Threshold supports aerobic ceiling development.
-        Race-specific: 10K-paced intervals + threshold.
+        Inverted model (KB synthesis):
+        - Speed/neuromuscular work in BASE (fresh legs, low injury risk)
+        - Threshold dominant in BUILD (LT is #1 for events >30 min — Source A)
+        - VO2max sharpening in RACE-SPECIFIC (closer to half marathon than 5K)
 
         Structure:
-        1. Base + Speed (aerobic + strides/hills)
-        2. VO2max + Threshold Development (co-dominant quality)
-        3. Race Specific (10K-pace intervals + threshold)
+        1. Base + Speed (aerobic + strides/hills/short reps)
+        2. Threshold Development (LT is primary — most 10K runners take 35-60+ min)
+        3. Race Specific (VO2max intervals as sharpening + T maintenance)
         4. Taper (short, crisp)
         5. Race Week
         """
@@ -422,52 +422,53 @@ class PhaseBuilder:
         
         if build_weeks >= 10:
             base_weeks = 3
-            vo2max_weeks = 4
+            threshold_weeks = 4
             race_specific_weeks = build_weeks - 7
         else:
             base_weeks = 2
-            vo2max_weeks = 3
+            threshold_weeks = 3
             race_specific_weeks = build_weeks - 5
         
         current_week = 1
         
-        # Phase 1: Base + Speed
+        # Phase 1: Base + Speed (inverted model: speed on fresh legs)
         phases.append(TrainingPhase(
             name="Base + Speed",
             phase_type=Phase.BASE_SPEED,
             weeks=list(range(current_week, current_week + base_weeks)),
-            focus="Aerobic base with speed development",
+            focus="Aerobic base with strides, hills, and short neuromuscular reps",
             quality_sessions=1,
             volume_modifier=0.8,
             long_run_modifier=0.75,
-            allowed_workouts=["easy", "long", "strides", "hills", "easy_strides"],
-            key_sessions=["strides", "hill_sprints"]
+            allowed_workouts=["easy", "long", "strides", "hills", "easy_strides",
+                              "repetitions"],
+            key_sessions=["strides", "hill_sprints", "repetitions"]
         ))
         current_week += base_weeks
         
-        # Phase 2: VO2max + Threshold Development (co-dominant)
+        # Phase 2: Threshold Development (inverted model: build the aerobic floor)
         phases.append(TrainingPhase(
-            name="VO2max + Threshold",
+            name="Threshold Development",
             phase_type=Phase.THRESHOLD,
-            weeks=list(range(current_week, current_week + vo2max_weeks)),
-            focus="Build aerobic power (intervals) and lactate threshold together",
-            quality_sessions=2,
+            weeks=list(range(current_week, current_week + threshold_weeks)),
+            focus="Build lactate threshold — the 10K's primary limiter for 35-60+ min efforts",
+            quality_sessions=1,
             volume_modifier=0.95,
             long_run_modifier=0.9,
-            allowed_workouts=["easy", "long", "intervals", "threshold",
-                              "threshold_intervals", "easy_strides"],
-            key_sessions=["intervals", "threshold"]
+            allowed_workouts=["easy", "long", "threshold", "threshold_intervals",
+                              "easy_strides"],
+            key_sessions=["threshold", "threshold_intervals"]
         ))
-        current_week += vo2max_weeks
+        current_week += threshold_weeks
         
-        # Phase 3: Race Specific (10K-pace intervals + threshold)
+        # Phase 3: Race Specific (VO2max sharpening + T maintenance)
         # Skip for very short plans where build phases consumed all weeks.
         if race_specific_weeks >= 1:
             phases.append(TrainingPhase(
                 name="Race Specific",
                 phase_type=Phase.RACE_SPECIFIC,
                 weeks=list(range(current_week, current_week + race_specific_weeks)),
-                focus="10K-pace intervals with short rest, threshold support",
+                focus="VO2max intervals as sharpening on threshold base, T maintenance",
                 quality_sessions=2,
                 volume_modifier=1.0,
                 long_run_modifier=1.0,
@@ -517,13 +518,15 @@ class PhaseBuilder:
         """
         Build 5K phases.
 
-        Phase 1G: VO2max dominant, repetition work for neuromuscular
-        recruitment, threshold in supporting role only.
+        Inverted model (KB synthesis):
+        - Speed/neuromuscular work in BASE (fresh legs, low injury risk)
+        - Threshold dominant in BUILD (aerobic floor first)
+        - VO2max intervals + goal-pace reps arrive in RACE-SPECIFIC (late)
 
         Structure:
-        1. Base + Speed (aerobic + strides/hills)
-        2. VO2max + Speed (intervals dominant, reps introduced)
-        3. Race Specific (VO2max maintained, race-simulation reps)
+        1. Base + Speed (aerobic + strides/hills/reps on fresh legs)
+        2. Threshold Development (LT is the floor — even for 5K)
+        3. Race Specific (5K-pace intervals + goal-pace reps)
         4. Taper (maintain neuromuscular sharpness)
         5. Race Week
         """
@@ -532,52 +535,53 @@ class PhaseBuilder:
         
         if build_weeks >= 10:
             base_weeks = 3
-            speed_weeks = 4
+            threshold_weeks = 4
             race_specific_weeks = build_weeks - 7
         else:
             base_weeks = 2
-            speed_weeks = 3
+            threshold_weeks = 3
             race_specific_weeks = build_weeks - 5
         
         current_week = 1
         
-        # Phase 1: Base + Speed
+        # Phase 1: Base + Speed (inverted model: speed on fresh legs)
         phases.append(TrainingPhase(
             name="Base + Speed",
             phase_type=Phase.BASE_SPEED,
             weeks=list(range(current_week, current_week + base_weeks)),
-            focus="Aerobic base with strides and short hill repeats",
+            focus="Aerobic base with strides, hills, and neuromuscular reps on fresh legs",
             quality_sessions=1,
             volume_modifier=0.8,
             long_run_modifier=0.75,
-            allowed_workouts=["easy", "long", "strides", "hills", "easy_strides"],
-            key_sessions=["strides", "hill_sprints"]
+            allowed_workouts=["easy", "long", "strides", "hills", "easy_strides",
+                              "repetitions"],
+            key_sessions=["strides", "hill_sprints", "repetitions"]
         ))
         current_week += base_weeks
         
-        # Phase 2: VO2max + Speed Development (VO2max dominant)
+        # Phase 2: Threshold Development (inverted model: build the aerobic floor)
         phases.append(TrainingPhase(
-            name="VO2max + Speed",
+            name="Threshold Development",
             phase_type=Phase.THRESHOLD,
-            weeks=list(range(current_week, current_week + speed_weeks)),
-            focus="Build VO2max ceiling, introduce repetition work",
-            quality_sessions=2,
+            weeks=list(range(current_week, current_week + threshold_weeks)),
+            focus="Build lactate threshold — the 5K's aerobic floor before VO2max sharpening",
+            quality_sessions=1,
             volume_modifier=0.95,
             long_run_modifier=0.9,
-            allowed_workouts=["easy", "long", "intervals", "repetitions",
-                              "threshold", "easy_strides"],
-            key_sessions=["intervals", "repetitions"]
+            allowed_workouts=["easy", "long", "threshold", "threshold_intervals",
+                              "repetitions", "easy_strides"],
+            key_sessions=["threshold", "threshold_intervals"]
         ))
-        current_week += speed_weeks
+        current_week += threshold_weeks
         
-        # Phase 3: Race Specific (VO2max + reps, threshold supporting)
+        # Phase 3: Race Specific (VO2max arrives here + goal-pace reps)
         # Skip for very short plans where build phases consumed all weeks.
         if race_specific_weeks >= 1:
             phases.append(TrainingPhase(
                 name="Race Specific",
                 phase_type=Phase.RACE_SPECIFIC,
                 weeks=list(range(current_week, current_week + race_specific_weeks)),
-                focus="5K-pace intervals and race-simulation reps",
+                focus="5K-pace intervals + goal-pace reps — VO2max sharpening on threshold base",
                 quality_sessions=2,
                 volume_modifier=1.0,
                 long_run_modifier=1.0,

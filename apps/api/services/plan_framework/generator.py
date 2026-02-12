@@ -1108,50 +1108,50 @@ class PlanGenerator:
             # Lighter quality on cutback
             if phase_type == "base_speed":
                 return "strides"
-            # 5K cutback: reps are lighter than intervals, maintain neuromuscular
-            # pattern without adding aerobic load. This prevents threshold from
-            # accumulating on cutback weeks and dominating the VO2max emphasis.
+            # 5K cutback: reps maintain neuromuscular pattern without aerobic load.
             if distance == "5k":
                 return "repetitions"
-            # 10K cutback: alternate strides and short threshold
+            # 10K cutback: strides for neuromuscular touch without adding quality load.
             if distance == "10k":
-                return "strides" if week_in_phase % 2 == 1 else "threshold"
+                return "strides"
             return "threshold"
         
         if phase_type == "base_speed":
-            # Base speed: strides/hills most weeks.
+            # --- 5K / 10K base: strides, hills, AND reps (inverted model) ---
+            # Speed/neuromuscular work on fresh legs, low injury risk.
+            # Reps here are neuromuscular tool-building, not race simulation.
+            if distance in ("5k", "10k"):
+                cycle = week_in_phase % 3
+                if cycle == 0:
+                    return "repetitions"  # neuromuscular reps on fresh legs
+                elif cycle == 2:
+                    return "hills"
+                return "easy_strides"
+            # Marathon / Half marathon base: strides/hills.
             # For high-mileage, experienced athletes, include periodic VO2 touches early.
             if athlete_ctx.get("experienced_high_volume") and weekly_volume >= 60 and week_in_phase % 2 == 0:
                 return "intervals"
             return "hills" if week_in_phase % 2 == 0 else "easy_strides"
         
         if phase_type == "threshold":
-            # --- 5K: VO2max dominant ---
-            # Intervals always — VO2max is THE primary quality for 5K.
-            # Reps come from cutback weeks and secondary quality slot.
-            if distance == "5k":
-                return "intervals"
-            # --- 10K: VO2max + threshold co-dominant ---
-            # Alternate intervals and threshold each week so both accumulate.
-            if distance == "10k":
-                if week_in_phase % 2 == 1:
-                    return "intervals"
-                return "threshold_intervals"
-            # --- Marathon / Half marathon: T-block progression ---
+            # --- Inverted model: threshold dominant in build for ALL distances ---
+            # LT is the limiting factor for most runners (Source A).
+            # Building the threshold floor first means the athlete clears lactate
+            # faster between race-specific intervals, making VO2max phase more productive.
+            # T-block progression: intervals format → continuous
             if week_in_phase <= 2:
                 return "threshold_intervals"
             return "threshold"
         
         if phase_type in ["marathon_specific", "race_specific"]:
-            # --- 5K race-specific: intervals remain primary ---
-            # Reps come from cutbacks + secondary, not the primary quality slot.
+            # --- 5K race-specific: VO2max intervals arrive HERE ---
+            # The threshold base is built. Now sharpen with 5K-pace work.
             if distance == "5k":
                 return "intervals"
-            # --- 10K race-specific: alternate intervals and threshold ---
+            # --- 10K race-specific: VO2max sharpening on threshold base ---
+            # Structure closer to half marathon than 5K (Source A: LT #1 for >30 min).
             if distance == "10k":
-                if week_in_phase % 2 == 1:
-                    return "intervals"
-                return "threshold"
+                return "intervals"
             # --- Marathon / Half marathon: maintain threshold ---
             return "threshold_intervals" if week_in_phase % 2 == 0 else "threshold"
         
@@ -1171,24 +1171,28 @@ class PlanGenerator:
         weekly_volume: float,
         athlete_ctx: Dict[str, Any],
     ) -> str:
-        """Determine secondary quality workout (complement of primary)."""
-        # --- 10K: secondary complements the primary for co-dominant balance ---
-        # Primary alternates intervals/threshold; secondary is the OTHER type.
-        if distance == "10k":
-            if week_in_phase % 2 == 1:
-                # Primary is intervals → secondary is threshold
-                return "threshold"
-            else:
-                # Primary is threshold → secondary is intervals
-                return "intervals"
+        """
+        Determine secondary quality workout (complement of primary).
 
-        # --- 5K: reps dominant secondary, threshold occasionally ---
-        # Primary is VO2max (intervals) most weeks. Secondary adds reps
-        # for neuromuscular work with occasional threshold for aerobic support.
+        Only fires when quality_sessions >= 2 (race-specific phases).
+        Build phases use quality_sessions=1 for 5K/10K (inverted model),
+        so secondary is not called during the threshold-dominant build.
+        """
+        phase_type = phase.phase_type.value
+
+        # --- 5K race-specific: reps alongside VO2max primary ---
+        # Goal-pace reps practice the effort pattern under fatigue.
+        # Occasional threshold for aerobic maintenance.
         if distance == "5k":
             if week_in_phase % 3 == 0:
-                return "threshold"      # aerobic support every 3rd week
-            return "repetitions"        # neuromuscular recruitment
+                return "threshold"      # aerobic maintenance every 3rd week
+            return "repetitions"        # goal-pace reps
+
+        # --- 10K race-specific: threshold maintenance alongside VO2max primary ---
+        # The threshold floor built in the build phase must be maintained
+        # while VO2max sharpening takes the primary slot.
+        if distance == "10k":
+            return "threshold"
 
         # Half marathon: threshold is PRIMARY, so secondary is VO2max
         # (1000m/1200m intervals for economy — not primary VO2 development).
@@ -1197,7 +1201,6 @@ class PlanGenerator:
 
         # For Marathon, secondary quality is usually a "touch" session.
         # Use VO2 touches early in the specific block for experienced high-volume athletes.
-        phase_type = phase.phase_type.value
         if athlete_ctx.get("experienced_high_volume") and weekly_volume >= 60 and phase_type == "marathon_specific":
             # Every other week early in MP integration (touch only).
             if week_in_phase <= 2 and week_in_phase % 2 == 1:

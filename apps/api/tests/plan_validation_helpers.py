@@ -771,11 +771,11 @@ class PlanValidator:
 
     def assert_distance_emphasis(self):
         """
-        Distance-specific quality emphasis rules:
-        - Marathon: threshold dominant, MP integration
-        - Half: threshold primary, some VO2max
-        - 10K: VO2max + threshold co-dominant
-        - 5K: VO2max dominant, repetitions
+        Distance-specific quality emphasis rules (inverted model):
+        - Marathon: threshold dominant, MP integration in race-specific
+        - Half: threshold primary, HMP longs + VO2max secondary in race-specific
+        - 10K: threshold dominant in build, VO2max sharpening in race-specific
+        - 5K: threshold dominant in build, VO2max + reps in race-specific
         """
         if self.plan.distance == "marathon":
             self._assert_marathon_emphasis()
@@ -877,11 +877,13 @@ class PlanValidator:
 
     def _assert_10k_emphasis(self):
         """
-        10K: VO2max + threshold co-dominant.
+        10K: Inverted model — threshold dominant in build, VO2max sharpening
+        in race-specific.
 
-        Phase 1F contract:
-        - Both interval and threshold sessions must be present
-        - Co-dominant: neither should overwhelm (ratio < 3.0)
+        Contract (KB synthesis):
+        - Threshold sessions present (primary in build phase)
+        - Interval sessions present (primary in race-specific phase)
+        - Threshold count >= interval count (build is longer than race-specific)
         - Both counts substantial for the plan length
         - No marathon-pace or half-marathon-pace long runs
         """
@@ -910,29 +912,29 @@ class PlanValidator:
                 "10K plan has no interval/VO2max sessions"
             )
 
-        # Co-dominant: neither should be more than 3x the other
-        if threshold_count > 0 and interval_count > 0:
-            ratio = max(threshold_count, interval_count) / min(threshold_count, interval_count)
-            if ratio > 3.0:
-                self._fail(
-                    "DIST-10K-NOT-CO-DOMINANT",
-                    f"10K: T={threshold_count}, I={interval_count}, ratio={ratio:.1f}. "
-                    f"VO2max and threshold should be co-dominant (ratio < 3.0)"
-                )
+        # Inverted model: threshold dominant (build is longer than race-specific)
+        if interval_count > threshold_count and threshold_count > 0:
+            self._fail(
+                "DIST-10K-T-PRIMARY",
+                f"10K: intervals ({interval_count}) > threshold "
+                f"({threshold_count}). Threshold must be primary quality "
+                f"(inverted model: LT is #1 for events >30 min)."
+            )
 
         # Both should be substantial for plan length
-        min_each = max(2, self.plan.duration_weeks // 4)
-        if threshold_count < min_each:
+        min_threshold = max(2, self.plan.duration_weeks // 3)
+        min_intervals = max(1, self.plan.duration_weeks // 4)
+        if threshold_count < min_threshold:
             self._warn(
                 "DIST-10K-T-COUNT",
                 f"10K: only {threshold_count} threshold sessions "
-                f"(expected >= {min_each} for {self.plan.duration_weeks}w plan)"
+                f"(expected >= {min_threshold} for {self.plan.duration_weeks}w plan)"
             )
-        if interval_count < min_each:
+        if interval_count < min_intervals:
             self._warn(
                 "DIST-10K-I-COUNT",
                 f"10K: only {interval_count} interval sessions "
-                f"(expected >= {min_each} for {self.plan.duration_weeks}w plan)"
+                f"(expected >= {min_intervals} for {self.plan.duration_weeks}w plan)"
             )
 
         # No marathon-pace or HMP long runs in 10K plans
@@ -949,12 +951,14 @@ class PlanValidator:
 
     def _assert_5k_emphasis(self):
         """
-        5K: VO2max dominant, repetitions for neuromuscular recruitment.
+        5K: Inverted model — threshold builds the floor, VO2max + reps arrive
+        in race-specific.
 
-        Phase 1G contract:
-        - VO2max (intervals) must be PRIMARY: more I than T
-        - Repetitions present for neuromuscular economy
-        - Threshold in supporting role only (not dominant)
+        Contract (KB synthesis):
+        - Threshold sessions present (primary in build phase)
+        - Interval sessions present (primary in race-specific phase)
+        - Threshold count >= interval count (build is longer than race-specific)
+        - Repetitions present for neuromuscular economy (base + race-specific)
         - No marathon-pace or half-marathon-pace long runs
         """
         threshold_count = sum(
@@ -973,22 +977,36 @@ class PlanValidator:
             1 for w in self.plan.workouts if w.workout_type in HMP_TYPES
         )
 
+        if threshold_count == 0:
+            self._fail(
+                "DIST-5K-NO-T",
+                "5K plan has no threshold sessions"
+            )
+
         if interval_count == 0:
             self._fail(
                 "DIST-5K-NO-I",
                 "5K plan has no interval/VO2max sessions"
             )
 
-        # VO2max must be dominant — more I than T (inverse of half marathon)
-        if threshold_count >= interval_count and interval_count > 0:
+        # Inverted model: threshold dominant (build is longer than race-specific)
+        if interval_count > threshold_count and threshold_count > 0:
             self._fail(
-                "DIST-5K-I-PRIMARY",
-                f"5K: threshold ({threshold_count}) >= intervals "
-                f"({interval_count}). VO2max must be primary quality."
+                "DIST-5K-T-PRIMARY",
+                f"5K: intervals ({interval_count}) > threshold "
+                f"({threshold_count}). Threshold must be primary quality "
+                f"(inverted model: LT floor before VO2max sharpening)."
             )
 
-        # Intervals should be substantial for plan length
-        min_intervals = max(2, self.plan.duration_weeks // 3)
+        # Both should be substantial for plan length
+        min_threshold = max(2, self.plan.duration_weeks // 3)
+        min_intervals = max(1, self.plan.duration_weeks // 4)
+        if threshold_count < min_threshold:
+            self._warn(
+                "DIST-5K-T-COUNT",
+                f"5K: only {threshold_count} threshold sessions "
+                f"(expected >= {min_threshold} for {self.plan.duration_weeks}w plan)"
+            )
         if interval_count < min_intervals:
             self._warn(
                 "DIST-5K-I-COUNT",
@@ -996,7 +1014,7 @@ class PlanValidator:
                 f"(expected >= {min_intervals} for {self.plan.duration_weeks}w plan)"
             )
 
-        # Repetitions should be present (neuromuscular recruitment)
+        # Repetitions should be present (neuromuscular economy — base + race-specific)
         if rep_count == 0 and self.plan.duration_weeks >= 8:
             self._fail(
                 "DIST-5K-NO-R",
