@@ -414,12 +414,14 @@ class PlanGenerator:
         """
         Generate a fully custom plan using all athlete data.
         
-        This is the premium tier - uses:
-        - User-provided race time (priority 1) OR auto-detected from Strava
-        - Auto-detected volume from Strava history
-        - Training history patterns
-        - Athlete preferences
-        - Dynamic adaptation capability
+        Uses athlete_plan_profile (Phase 1C) to derive N=1 overrides:
+        - Volume tier from actual training history (not questionnaire)
+        - Long run baseline from duration-gated identification
+        - Recovery half-life → cutback frequency
+        - Quality session tolerance
+        
+        Falls back to tier defaults when data is insufficient (cold_start).
+        Transparency: profile.disclosures tells the athlete what's estimated.
         
         Args:
             recent_race_distance: User-provided race distance (e.g., "5k", "half_marathon")
@@ -433,43 +435,28 @@ class PlanGenerator:
         from models import Activity, Athlete
         from sqlalchemy import func
         from datetime import timedelta as td
+        from services.athlete_plan_profile import AthletePlanProfileService
         
         # Get athlete
         athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
             raise ValueError(f"Athlete not found: {athlete_id}")
         
-        # Auto-detect current weekly volume from last 4 weeks
-        four_weeks_ago = race_date - td(weeks=30)  # Look back further for baseline
-        recent_activities = self.db.query(Activity).filter(
-            Activity.athlete_id == athlete_id,
-            Activity.distance_m >= 1000,  # At least 1km - filters out non-runs
-            Activity.start_time >= four_weeks_ago
-        ).all()
-        
-        # Calculate average weekly miles over last 4 complete weeks
-        weekly_totals = {}
-        for activity in recent_activities:
-            week_start = activity.start_time.date() - td(days=activity.start_time.weekday())
-            week_key = week_start.isoformat()
-            if week_key not in weekly_totals:
-                weekly_totals[week_key] = 0
-            weekly_totals[week_key] += (activity.distance_m or 0) / 1609.344
-        
-        if weekly_totals:
-            # Use median of last 4 weeks for stability
-            recent_volumes = sorted(weekly_totals.values())[-4:]
-            current_weekly_miles = sum(recent_volumes) / len(recent_volumes) if recent_volumes else 30
-        else:
-            current_weekly_miles = 30  # Default if no data
-        
-        logger.info(f"Detected weekly volume: {current_weekly_miles:.1f} miles")
-        
-        # Classify tier
-        tier = self.tier_classifier.classify(
-            current_weekly_miles=current_weekly_miles,
+        # --- N=1 Profile Derivation (Phase 1C) ---
+        profile_service = AthletePlanProfileService()
+        profile = profile_service.derive_profile(
+            athlete_id=athlete_id,
+            db=self.db,
             goal_distance=distance,
-            athlete_id=athlete_id
+        )
+        
+        current_weekly_miles = profile.current_weekly_miles or 30
+        tier = profile.volume_tier
+        
+        logger.info(
+            f"N=1 profile: {profile.data_sufficiency} data, "
+            f"tier={tier.value}, volume={current_weekly_miles:.1f}mpw, "
+            f"LR confidence={profile.long_run_confidence:.2f}"
         )
         
         # Calculate paces with priority:
@@ -545,13 +532,17 @@ class PlanGenerator:
             tier=tier.value
         )
         
-        # Calculate volume progression
+        # Calculate volume progression with N=1 cutback frequency
         weekly_volumes = self.tier_classifier.calculate_volume_progression(
             tier=tier,
             distance=distance,
             starting_volume=current_weekly_miles,
             plan_weeks=duration_weeks,
-            taper_weeks=2
+            taper_weeks=2,
+            cutback_frequency_override=(
+                profile.suggested_cutback_frequency
+                if profile.recovery_confidence >= 0.4 else None
+            ),
         )
         
         # Generate workouts

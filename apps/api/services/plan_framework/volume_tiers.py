@@ -69,11 +69,10 @@ class VolumeTierClassifier:
         # Get thresholds for this distance
         thresholds = VOLUME_TIER_THRESHOLDS.get(distance, {})
         
-        # Find appropriate tier
+        # Find appropriate tier (highest first — a 90mpw runner is ELITE, not HIGH)
+        # Tier boundaries are universal across distances; only peak volume varies.
         for tier in [VolumeTier.ELITE, VolumeTier.HIGH, VolumeTier.MID, VolumeTier.LOW, VolumeTier.BUILDER]:
             tier_config = thresholds.get(tier)
-            # Some distances (e.g., half/10k/5k) don't define all tiers (like ELITE).
-            # If a tier is not defined for this distance, skip it (never "match all" with defaults).
             if not isinstance(tier_config, dict) or not tier_config:
                 continue
             min_mpw = tier_config.get("min", 0)
@@ -150,17 +149,21 @@ class VolumeTierClassifier:
         distance: str,
         starting_volume: float,
         plan_weeks: int,
-        taper_weeks: int = 2
+        taper_weeks: int = 2,
+        cutback_frequency_override: int = None,
     ) -> list:
         """
         Calculate week-by-week volume targets.
         
         Returns list of target weekly volumes.
         Uses safe progression: max 10% increase week-over-week.
+        
+        cutback_frequency_override: If provided (from athlete_plan_profile),
+            overrides the tier default cutback frequency.
         """
         params = self.get_tier_params(tier, distance)
         peak_volume = params["peak_weekly_miles"]
-        cutback_freq = params["cutback_frequency"]
+        cutback_freq = cutback_frequency_override or params["cutback_frequency"]
         cutback_reduction = params["cutback_reduction"]
         
         # Build weeks (excluding taper)

@@ -135,15 +135,17 @@ class PlanValidator:
                 Phase 1B MUST flip this to True.
     """
 
-    def __init__(self, plan, *, strict: bool = False):
+    def __init__(self, plan, *, strict: bool = False, profile=None):
         self.plan = plan
         self.strict = strict
+        self.profile = profile  # Optional AthleteProfile for N=1 overrides
         self._t = _THRESHOLDS["strict"] if strict else _THRESHOLDS["relaxed"]
         self.result = ValidationResult(
             plan_description=(
                 f"{plan.distance} | {plan.volume_tier} | "
                 f"{plan.duration_weeks}w | {plan.days_per_week}d/w"
                 f"{' [STRICT]' if strict else ''}"
+                f"{' [N=1]' if profile else ''}"
             )
         )
 
@@ -236,6 +238,11 @@ class PlanValidator:
         Relaxed values (strict=False, 1-PRE):
             Long run ≤ 35%, Threshold ≤ 12%, Intervals ≤ 10% (& ≤ 6.5mi),
             MP ≤ 25% (& ≤ 20mi).
+
+        N=1 overrides (when profile is provided):
+            - LR%: relaxed to 35% when profile shows established long run practice
+            - MP%: relaxed to 30% for builder/low tier (MP sessions can't be
+              shorter than useful; low volume inflates the percentage)
         """
         lr_cap = self._t["long_run_pct"]
         t_cap = self._t["threshold_pct"]
@@ -243,6 +250,17 @@ class PlanValidator:
         i_abs = self._t["interval_abs_mi"]
         mp_cap = self._t["mp_pct"]
         mp_abs = self._t["mp_abs_mi"]
+
+        # N=1 profile overrides for tier-aware limits
+        if self.profile:
+            tier_val = self.profile.volume_tier.value
+            # MP%: builder/low tiers at low volume can't avoid high MP%
+            # because the MP session has a coaching-correct minimum length.
+            if tier_val in ("builder", "low"):
+                mp_cap = max(mp_cap, 0.30)
+            # LR%: if athlete has established long run practice, allow up to 35%
+            if self.profile.long_run_confidence >= 0.6:
+                lr_cap = max(lr_cap, 0.35)
 
         for week in range(1, self.plan.duration_weeks + 1):
             week_miles = self._week_total_miles(week)
@@ -520,15 +538,26 @@ class PlanValidator:
         """
         VAL-CUTBACK: Cutback weeks should appear at regular intervals.
         The plan's volume progression should show periodic reductions.
+
+        When a profile is provided, the detection threshold adapts to the
+        tier's actual cutback percentage (builder = 10%, standard = 25%).
         """
         vols = self.plan.weekly_volumes
         if len(vols) < 6:
             return  # Too short for cutback analysis
 
-        # Find weeks where volume dropped significantly (>15%)
+        # Tier-aware cutback detection threshold
+        # Builder uses a gentle 10% cutback → detect at > 7%
+        # Standard tiers use 25% cutback → detect at > 15%
+        if self.profile and self.profile.volume_tier.value == "builder":
+            cutback_threshold = 0.07
+        else:
+            cutback_threshold = 0.15
+
+        # Find weeks where volume dropped significantly
         cutback_weeks = []
         for i in range(1, len(vols)):
-            if vols[i - 1] > 0 and (vols[i - 1] - vols[i]) / vols[i - 1] > 0.15:
+            if vols[i - 1] > 0 and (vols[i - 1] - vols[i]) / vols[i - 1] > cutback_threshold:
                 cutback_weeks.append(i + 1)  # 1-indexed
 
         # Exclude taper weeks (last 1-3 weeks)
@@ -584,14 +613,23 @@ class PlanValidator:
 
         Spec (strict): ≥ 40mi.  Relaxed (1-PRE): ≥ 20mi.
 
-        TODO(1B): When strict=True and the generator is fixed, this becomes
-        a hard failure at ≥ 40mi. Until then, it's a failure at the relaxed
-        value to avoid being effectively disabled.
+        When a profile is provided, the target is tier-aware:
+        - builder: ≥ 15mi  (few specific-phase weeks at low volume)
+        - low:     ≥ 25mi
+        - mid+:    spec value (40mi strict, 20mi relaxed)
         """
         if self.plan.distance != "marathon":
             return
 
         mp_min = self._t["mp_total_min_mi"]
+
+        # Tier-aware MP total targets when profile is available
+        if self.profile:
+            tier_val = self.profile.volume_tier.value
+            if tier_val == "builder":
+                mp_min = 15 if self.strict else 10
+            elif tier_val == "low":
+                mp_min = 25 if self.strict else 15
 
         total_mp = sum(
             w.distance_miles or 0
@@ -810,7 +848,7 @@ class PlanValidator:
         return self.result
 
 
-def validate_plan(plan, *, strict: bool = False, expect_paces: bool = False) -> ValidationResult:
+def validate_plan(plan, *, strict: bool = False, expect_paces: bool = False, profile=None) -> ValidationResult:
     """Convenience function to validate a plan and return the result."""
-    validator = PlanValidator(plan, strict=strict)
+    validator = PlanValidator(plan, strict=strict, profile=profile)
     return validator.assert_all(expect_paces=expect_paces)

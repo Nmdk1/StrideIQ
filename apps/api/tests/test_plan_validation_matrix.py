@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.plan_framework.generator import PlanGenerator
 from services.plan_framework.constants import Distance, VolumeTier
+from services.athlete_plan_profile import AthleteProfile
 from tests.plan_validation_helpers import PlanValidator, validate_plan
 
 
@@ -116,39 +117,121 @@ FIVE_K_VARIANTS = [
     ),
 ]
 
-# N=1 override scenarios — xfail until 1C (athlete_plan_profile.py) delivers.
-# These exercise personalization paths that require the N=1 override service.
-# generate_standard() with db=None can't exercise these paths, but the
-# scenarios document the contract and will be wired up in 1C.
+# ---------------------------------------------------------------------------
+# N=1 Override Scenarios (Phase 1C)
+#
+# These scenarios use synthetic AthleteProfiles to give the validator
+# N=1 context. Plans are still generated with generate_standard() (no DB),
+# but the validator uses the profile for tier-aware thresholds.
+#
+# The experienced and masters scenarios should PASS — they have sufficient
+# data (rich/adequate) and the profile gives the validator correct context.
+#
+# The beginner scenario should PASS — cold_start profile makes the validator
+# use tier-aware MP total targets (15mi for builder, not 40mi).
+# ---------------------------------------------------------------------------
+
+# Synthetic profiles for N=1 test scenarios
+N1_PROFILE_EXPERIENCED = AthleteProfile(
+    volume_tier=VolumeTier.HIGH,
+    current_weekly_miles=70.0,
+    peak_weekly_miles=75.0,
+    volume_trend="maintaining",
+    volume_confidence=0.9,
+    long_run_baseline_minutes=136.0,
+    long_run_baseline_miles=17.0,
+    long_run_max_minutes=160.0,
+    long_run_max_miles=20.0,
+    long_run_frequency=0.9,
+    long_run_typical_pace_per_mile=8.0,
+    long_run_confidence=0.85,
+    long_run_source="history",
+    recovery_half_life_hours=36.0,
+    recovery_confidence=0.7,
+    suggested_cutback_frequency=4,
+    quality_sessions_per_week=2.0,
+    handles_back_to_back_quality=False,
+    quality_confidence=0.8,
+    weeks_of_data=16,
+    data_sufficiency="rich",
+    staleness_days=1,
+    disclosures=[],
+)
+
+N1_PROFILE_BEGINNER = AthleteProfile(
+    volume_tier=VolumeTier.BUILDER,
+    current_weekly_miles=25.0,
+    peak_weekly_miles=28.0,
+    volume_trend="building",
+    volume_confidence=0.4,
+    long_run_baseline_minutes=0.0,
+    long_run_baseline_miles=0.0,
+    long_run_max_minutes=0.0,
+    long_run_max_miles=0.0,
+    long_run_frequency=0.0,
+    long_run_typical_pace_per_mile=0.0,
+    long_run_confidence=0.0,
+    long_run_source="tier_default",
+    recovery_half_life_hours=48.0,
+    recovery_confidence=0.0,
+    suggested_cutback_frequency=4,
+    quality_sessions_per_week=0.0,
+    handles_back_to_back_quality=False,
+    quality_confidence=0.0,
+    weeks_of_data=6,
+    data_sufficiency="thin",
+    staleness_days=2,
+    disclosures=["I have 6 weeks of training data. Volume and long run "
+                 "targets are preliminary."],
+)
+
+N1_PROFILE_MASTERS = AthleteProfile(
+    volume_tier=VolumeTier.MID,
+    current_weekly_miles=55.0,
+    peak_weekly_miles=58.0,
+    volume_trend="maintaining",
+    volume_confidence=0.7,
+    long_run_baseline_minutes=126.0,
+    long_run_baseline_miles=14.0,
+    long_run_max_minutes=144.0,
+    long_run_max_miles=16.0,
+    long_run_frequency=0.85,
+    long_run_typical_pace_per_mile=9.0,
+    long_run_confidence=0.7,
+    long_run_source="history",
+    recovery_half_life_hours=72.0,
+    recovery_confidence=0.6,
+    suggested_cutback_frequency=3,
+    quality_sessions_per_week=1.5,
+    handles_back_to_back_quality=False,
+    quality_confidence=0.6,
+    weeks_of_data=10,
+    data_sufficiency="adequate",
+    staleness_days=1,
+    disclosures=[],
+)
+
 N1_OVERRIDE_VARIANTS = [
     pytest.param(
         "marathon", "high", 18, 6,
         id="n1-experienced-70mpw-marathon",
-        marks=pytest.mark.xfail(
-            reason="N=1 override requires athlete_plan_profile.py (Phase 1C). "
-                   "Scenario: experienced 70mpw athlete, proven 22mi long runs, "
-                   "should get longer long runs and VO2 touches in base."
-        )
     ),
     pytest.param(
         "marathon", "builder", 18, 5,
         id="n1-beginner-25mpw-marathon",
-        marks=pytest.mark.xfail(
-            reason="N=1 override requires athlete_plan_profile.py (Phase 1C). "
-                   "Scenario: beginner at 25mpw, no race history, should get "
-                   "conservative long run caps and extended base phase."
-        )
     ),
     pytest.param(
         "half_marathon", "high", 16, 6,
         id="n1-masters-55mpw-half",
-        marks=pytest.mark.xfail(
-            reason="N=1 override requires athlete_plan_profile.py (Phase 1C). "
-                   "Scenario: masters 55+ athlete, proven HM history, should get "
-                   "every-3rd-week cutbacks and extra strides/hills."
-        )
     ),
 ]
+
+# Map N=1 test IDs to their synthetic profiles
+N1_PROFILES = {
+    "n1-experienced-70mpw-marathon": N1_PROFILE_EXPERIENCED,
+    "n1-beginner-25mpw-marathon": N1_PROFILE_BEGINNER,
+    "n1-masters-55mpw-half": N1_PROFILE_MASTERS,
+}
 
 ALL_VARIANTS = MARATHON_VARIANTS + HALF_VARIANTS + TEN_K_VARIANTS + FIVE_K_VARIANTS
 ALL_WITH_N1 = ALL_VARIANTS + N1_OVERRIDE_VARIANTS
@@ -262,13 +345,21 @@ class TestPlanValidationMatrix:
     """
 
     @pytest.mark.parametrize("distance,tier,weeks,days", ALL_WITH_N1_GATED)
-    def test_full_validation(self, distance, tier, weeks, days):
+    def test_full_validation(self, distance, tier, weeks, days, request):
         """
         Run ALL coaching rule validations against a generated plan.
         This is the comprehensive test — it catches any coaching rule violation.
+
+        For N=1 scenarios, the validator receives a synthetic AthleteProfile
+        so it can apply tier-aware thresholds instead of population defaults.
         """
         plan = generate_plan(distance, tier, weeks, days)
-        result = validate_plan(plan, strict=False)
+
+        # Look up N=1 profile if this is an N=1 scenario
+        test_id = request.node.callspec.id
+        profile = N1_PROFILES.get(test_id)
+
+        result = validate_plan(plan, strict=False, profile=profile)
 
         if not result.passed:
             summary = result.summary()

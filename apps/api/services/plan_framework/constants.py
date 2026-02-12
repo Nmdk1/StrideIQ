@@ -76,6 +76,16 @@ STANDARD_DURATIONS = {
 }
 
 # Volume tier thresholds (miles per week)
+# Tier classification AND peak targets are UNIVERSAL across distances.
+#
+# Mileage is mileage.  The aerobic base is the aerobic base.  The best 5K
+# racers in the world run 120-130 mpw.  A 70mpw runner doing a 10K peak
+# block is training correctly.  The race determines the workout mix (more
+# VO2max for 5K, more MP for marathon), not the volume ceiling.
+#
+# These are DEFAULTS for standard (non-personalized) plans.  The N=1 profile
+# overrides peak, cutback frequency, and long run targets based on the
+# athlete's actual history.  The defaults just need to not get in the way.
 VOLUME_TIER_THRESHOLDS = {
     Distance.MARATHON: {
         VolumeTier.BUILDER: {"min": 20, "max": 35, "peak": 50},
@@ -85,22 +95,25 @@ VOLUME_TIER_THRESHOLDS = {
         VolumeTier.ELITE: {"min": 80, "max": 120, "peak": 110},
     },
     Distance.HALF_MARATHON: {
-        VolumeTier.BUILDER: {"min": 15, "max": 25, "peak": 40},
-        VolumeTier.LOW: {"min": 25, "max": 35, "peak": 45},
-        VolumeTier.MID: {"min": 35, "max": 50, "peak": 55},
-        VolumeTier.HIGH: {"min": 50, "max": 70, "peak": 70},
+        VolumeTier.BUILDER: {"min": 20, "max": 35, "peak": 50},
+        VolumeTier.LOW: {"min": 35, "max": 45, "peak": 55},
+        VolumeTier.MID: {"min": 45, "max": 60, "peak": 70},
+        VolumeTier.HIGH: {"min": 60, "max": 80, "peak": 85},
+        VolumeTier.ELITE: {"min": 80, "max": 120, "peak": 110},
     },
     Distance.TEN_K: {
-        VolumeTier.BUILDER: {"min": 10, "max": 20, "peak": 35},
-        VolumeTier.LOW: {"min": 20, "max": 30, "peak": 40},
-        VolumeTier.MID: {"min": 30, "max": 45, "peak": 50},
-        VolumeTier.HIGH: {"min": 45, "max": 60, "peak": 60},
+        VolumeTier.BUILDER: {"min": 20, "max": 35, "peak": 50},
+        VolumeTier.LOW: {"min": 35, "max": 45, "peak": 55},
+        VolumeTier.MID: {"min": 45, "max": 60, "peak": 70},
+        VolumeTier.HIGH: {"min": 60, "max": 80, "peak": 85},
+        VolumeTier.ELITE: {"min": 80, "max": 120, "peak": 110},
     },
     Distance.FIVE_K: {
-        VolumeTier.BUILDER: {"min": 10, "max": 18, "peak": 30},
-        VolumeTier.LOW: {"min": 18, "max": 28, "peak": 35},
-        VolumeTier.MID: {"min": 28, "max": 40, "peak": 45},
-        VolumeTier.HIGH: {"min": 40, "max": 55, "peak": 55},
+        VolumeTier.BUILDER: {"min": 20, "max": 35, "peak": 50},
+        VolumeTier.LOW: {"min": 35, "max": 45, "peak": 55},
+        VolumeTier.MID: {"min": 45, "max": 60, "peak": 70},
+        VolumeTier.HIGH: {"min": 60, "max": 80, "peak": 85},
+        VolumeTier.ELITE: {"min": 80, "max": 120, "peak": 110},
     },
 }
 
