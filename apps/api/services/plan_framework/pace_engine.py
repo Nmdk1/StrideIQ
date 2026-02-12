@@ -62,6 +62,11 @@ class TrainingPaces:
         elif workout_type in ["marathon", "mp", "marathon_pace", "long_mp"]:
             pace = f"{self._format_pace(self.marathon_pace)}/mi"
             return f"{pace} (goal race pace)"
+        elif workout_type in ["long_hmp"]:
+            # HMP long run: progression finish at half marathon effort.
+            # Pace sits between marathon and threshold.
+            pace = f"{self._format_pace(self.threshold_pace)}-{self._format_pace(self.marathon_pace)}/mi"
+            return f"{pace} (half marathon effort)"
         # Canonical: "threshold" is Training Pace Calculator threshold (T pace).
         # We do not use the ambiguous term "tempo" in athlete-facing outputs.
         elif workout_type in ["threshold", "t_run", "threshold_intervals"]:
@@ -70,7 +75,7 @@ class TrainingPaces:
         elif workout_type in ["interval", "vo2max", "i_run", "intervals"]:
             pace = f"{self._format_pace(self.interval_pace)}/mi"
             return f"{pace} (hard effort)"
-        elif workout_type in ["repetition", "reps", "strides"]:
+        elif workout_type in ["repetition", "repetitions", "reps", "strides"]:
             pace = f"{self._format_pace(self.repetition_pace)}/mi"
             return f"{pace} (quick, controlled)"
         elif workout_type in ["hills"]:
@@ -208,10 +213,14 @@ class PaceEngine:
             "recovery": "Very easy, slower than normal easy pace",
             "long": "Easy effort, building endurance through time on feet",
             "marathon_pace": "Goal marathon race pace - comfortably hard",
+            "long_mp": "Goal marathon race pace - comfortably hard",
+            "long_hmp": "Half marathon effort - between marathon pace and threshold",
             "threshold": "Comfortably hard - can speak in short sentences",
             "interval": "Hard effort, short recovery between reps",
+            "intervals": "Hard effort, short recovery between reps",
             "vo2max": "Near-maximum effort, very hard breathing",
             "repetition": "Fast and controlled, with full recovery",
+            "repetitions": "Fast and controlled, with full recovery",
             "strides": "Quick turnover, not all-out, focus on form",
             "hills": "Strong effort uphill, controlled descent",
         }

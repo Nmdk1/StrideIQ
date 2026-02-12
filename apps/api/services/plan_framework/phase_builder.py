@@ -201,19 +201,20 @@ class PhaseBuilder:
         current_week += mp_intro_weeks
         
         # Phase 4: Race Specific
-        race_specific_weeks = max(1, race_specific_weeks)
-        phases.append(TrainingPhase(
-            name="Race Specific",
-            phase_type=Phase.RACE_SPECIFIC,
-            weeks=list(range(current_week, current_week + race_specific_weeks)),
-            focus="Peak MP work, race simulation, peak fitness",
-            quality_sessions=2,
-            volume_modifier=1.0,  # Peak
-            long_run_modifier=1.0,  # Peak
-            allowed_workouts=["easy", "long", "long_mp", "threshold", "threshold_intervals", "race", "medium_long_mp", "easy_strides"],
-            key_sessions=["dress_rehearsal", "continuous_mp"]
-        ))
-        current_week += race_specific_weeks
+        # Skip for very short plans where build phases consumed all weeks.
+        if race_specific_weeks >= 1:
+            phases.append(TrainingPhase(
+                name="Race Specific",
+                phase_type=Phase.RACE_SPECIFIC,
+                weeks=list(range(current_week, current_week + race_specific_weeks)),
+                focus="Peak MP work, race simulation, peak fitness",
+                quality_sessions=2,
+                volume_modifier=1.0,  # Peak
+                long_run_modifier=1.0,  # Peak
+                allowed_workouts=["easy", "long", "long_mp", "threshold", "threshold_intervals", "race", "medium_long_mp", "easy_strides"],
+                key_sessions=["dress_rehearsal", "continuous_mp"]
+            ))
+            current_week += race_specific_weeks
         
         # Phase 5: Taper — progressive volume reduction (ADR-062)
         # Volume drops progressively, intensity maintained with short touches.
@@ -348,20 +349,21 @@ class PhaseBuilder:
         current_week += threshold_weeks
         
         # Phase 3: Race Specific (HMP long runs + threshold maintained)
-        race_specific_weeks = max(1, race_specific_weeks)
-        phases.append(TrainingPhase(
-            name="Race Specific",
-            phase_type=Phase.RACE_SPECIFIC,
-            weeks=list(range(current_week, current_week + race_specific_weeks)),
-            focus="HMP long runs, threshold maintained, race simulation",
-            quality_sessions=2,
-            volume_modifier=1.0,
-            long_run_modifier=1.0,
-            allowed_workouts=["easy", "long", "long_hmp", "threshold",
-                              "threshold_intervals", "intervals", "easy_strides"],
-            key_sessions=["long_hmp", "threshold"]
-        ))
-        current_week += race_specific_weeks
+        # Skip for very short plans where build phases consumed all weeks.
+        if race_specific_weeks >= 1:
+            phases.append(TrainingPhase(
+                name="Race Specific",
+                phase_type=Phase.RACE_SPECIFIC,
+                weeks=list(range(current_week, current_week + race_specific_weeks)),
+                focus="HMP long runs, threshold maintained, race simulation",
+                quality_sessions=2,
+                volume_modifier=1.0,
+                long_run_modifier=1.0,
+                allowed_workouts=["easy", "long", "long_hmp", "threshold",
+                                  "threshold_intervals", "intervals", "easy_strides"],
+                key_sessions=["long_hmp", "threshold"]
+            ))
+            current_week += race_specific_weeks
         
         # Phase 4: Taper — maintains threshold intensity (same pattern as marathon)
         taper_phase_weeks = taper_weeks - 1  # Exclude race week
@@ -459,20 +461,21 @@ class PhaseBuilder:
         current_week += vo2max_weeks
         
         # Phase 3: Race Specific (10K-pace intervals + threshold)
-        race_specific_weeks = max(1, race_specific_weeks)
-        phases.append(TrainingPhase(
-            name="Race Specific",
-            phase_type=Phase.RACE_SPECIFIC,
-            weeks=list(range(current_week, current_week + race_specific_weeks)),
-            focus="10K-pace intervals with short rest, threshold support",
-            quality_sessions=2,
-            volume_modifier=1.0,
-            long_run_modifier=1.0,
-            allowed_workouts=["easy", "long", "intervals", "threshold",
-                              "threshold_intervals", "easy_strides"],
-            key_sessions=["intervals", "threshold"]
-        ))
-        current_week += race_specific_weeks
+        # Skip for very short plans where build phases consumed all weeks.
+        if race_specific_weeks >= 1:
+            phases.append(TrainingPhase(
+                name="Race Specific",
+                phase_type=Phase.RACE_SPECIFIC,
+                weeks=list(range(current_week, current_week + race_specific_weeks)),
+                focus="10K-pace intervals with short rest, threshold support",
+                quality_sessions=2,
+                volume_modifier=1.0,
+                long_run_modifier=1.0,
+                allowed_workouts=["easy", "long", "intervals", "threshold",
+                                  "threshold_intervals", "easy_strides"],
+                key_sessions=["intervals", "threshold"]
+            ))
+            current_week += race_specific_weeks
         
         # Phase 4: Taper (1 week for 10K — short and crisp)
         taper_phase_weeks = taper_weeks - 1  # Exclude race week
@@ -568,20 +571,21 @@ class PhaseBuilder:
         current_week += speed_weeks
         
         # Phase 3: Race Specific (VO2max + reps, threshold supporting)
-        race_specific_weeks = max(1, race_specific_weeks)
-        phases.append(TrainingPhase(
-            name="Race Specific",
-            phase_type=Phase.RACE_SPECIFIC,
-            weeks=list(range(current_week, current_week + race_specific_weeks)),
-            focus="5K-pace intervals and race-simulation reps",
-            quality_sessions=2,
-            volume_modifier=1.0,
-            long_run_modifier=1.0,
-            allowed_workouts=["easy", "long", "intervals", "repetitions",
-                              "threshold", "easy_strides"],
-            key_sessions=["intervals", "repetitions"]
-        ))
-        current_week += race_specific_weeks
+        # Skip for very short plans where build phases consumed all weeks.
+        if race_specific_weeks >= 1:
+            phases.append(TrainingPhase(
+                name="Race Specific",
+                phase_type=Phase.RACE_SPECIFIC,
+                weeks=list(range(current_week, current_week + race_specific_weeks)),
+                focus="5K-pace intervals and race-simulation reps",
+                quality_sessions=2,
+                volume_modifier=1.0,
+                long_run_modifier=1.0,
+                allowed_workouts=["easy", "long", "intervals", "repetitions",
+                                  "threshold", "easy_strides"],
+                key_sessions=["intervals", "repetitions"]
+            ))
+            current_week += race_specific_weeks
         
         # Phase 4: Taper (maintain neuromuscular sharpness)
         taper_phase_weeks = taper_weeks - 1  # Exclude race week
