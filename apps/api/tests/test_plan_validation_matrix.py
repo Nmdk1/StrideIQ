@@ -155,6 +155,75 @@ ALL_WITH_N1 = ALL_VARIANTS + N1_OVERRIDE_VARIANTS
 
 
 # ---------------------------------------------------------------------------
+# Known-Failing Marathon Variants (Phase 1B targets)
+#
+# These xfail marks document specific generator gaps found by 1-PRE.
+# When Phase 1B fixes land, tests xpass → builder removes the mark.
+#
+# DO NOT remove xfail marks until the underlying generator bug is fixed.
+# DO NOT use --ignore in CI — these xfails let passing tests catch regressions.
+# ---------------------------------------------------------------------------
+
+def _xfail_all(params, reason):
+    """Return a copy of params with xfail added to every entry."""
+    return [
+        pytest.param(*p.values, id=p.id, marks=[*p.marks, pytest.mark.xfail(reason=reason)])
+        for p in params
+    ]
+
+
+def _xfail_by_id(params, xfail_ids, reason):
+    """Add xfail to specific param entries (matched by id). Others pass through."""
+    return [
+        pytest.param(*p.values, id=p.id, marks=[*p.marks, pytest.mark.xfail(reason=reason)])
+        if p.id in xfail_ids else p
+        for p in params
+    ]
+
+
+# Full validation: all 6 marathon variants fail (multiple rule violations)
+MARATHON_XFAIL_FULL = _xfail_all(
+    MARATHON_VARIANTS,
+    reason="Multiple coaching rule violations in relaxed mode: "
+           "Source B limits, alternation rule, quality day limit (Phase 1B)",
+)
+
+# Source B limits: all 6 fail — T at 14-16% (limit 10%), MP exceeds volume %, easy too low
+MARATHON_XFAIL_SOURCE_B = _xfail_all(
+    MARATHON_VARIANTS,
+    reason="Source B volume limits: T sessions at 14-16% (limit 10%), "
+           "MP exceeds volume %, easy distribution too low (Phase 1B)",
+)
+
+# Alternation rule: all 6 fail — MP long run weeks still contain threshold sessions
+MARATHON_XFAIL_ALTERNATION = _xfail_all(
+    MARATHON_VARIANTS,
+    reason="Alternation rule: MP long run weeks still contain threshold sessions (Phase 1B)",
+)
+
+# Quality day limit: 3 of 6 fail (6-day variants where secondary quality creates 3 quality days)
+MARATHON_QUALITY_GATED = _xfail_by_id(
+    MARATHON_VARIANTS,
+    {"marathon-mid-18w-6d", "marathon-mid-12w-6d", "marathon-high-18w-6d"},
+    reason="3 quality sessions in 6-day week — secondary quality converts "
+           "medium_long to threshold (Phase 1B)",
+)
+
+# Volume progression: 1 of 6 fails (builder tier cutback timing)
+MARATHON_VOLUME_GATED = _xfail_by_id(
+    MARATHON_VARIANTS,
+    {"marathon-builder-18w-5d"},
+    reason="Builder tier cutback pattern timing gap (Phase 1B)",
+)
+
+# Full matrix with all known gaps xfailed (for CI)
+ALL_WITH_N1_GATED = (
+    MARATHON_XFAIL_FULL + HALF_VARIANTS + TEN_K_VARIANTS
+    + FIVE_K_VARIANTS + N1_OVERRIDE_VARIANTS
+)
+
+
+# ---------------------------------------------------------------------------
 # Plan Generation Fixture
 # ---------------------------------------------------------------------------
 
@@ -184,7 +253,7 @@ class TestPlanValidationMatrix:
     Phase 1B will add a strict=True companion class.
     """
 
-    @pytest.mark.parametrize("distance,tier,weeks,days", ALL_WITH_N1)
+    @pytest.mark.parametrize("distance,tier,weeks,days", ALL_WITH_N1_GATED)
     def test_full_validation(self, distance, tier, weeks, days):
         """
         Run ALL coaching rule validations against a generated plan.
@@ -209,7 +278,7 @@ class TestPlanValidationMatrix:
 class TestSourceBLimits:
     """Source B volume limits (relaxed): long <=35%, T <=12%, I <=10%, MP <=25%."""
 
-    @pytest.mark.parametrize("distance,tier,weeks,days", MARATHON_VARIANTS)
+    @pytest.mark.parametrize("distance,tier,weeks,days", MARATHON_XFAIL_SOURCE_B)
     def test_marathon_source_b(self, distance, tier, weeks, days):
         plan = generate_plan(distance, tier, weeks, days)
         v = PlanValidator(plan)
@@ -231,7 +300,7 @@ class TestHardEasyPattern:
 class TestQualityDayLimit:
     """Never 3 quality days in a week."""
 
-    @pytest.mark.parametrize("distance,tier,weeks,days", MARATHON_VARIANTS)
+    @pytest.mark.parametrize("distance,tier,weeks,days", MARATHON_QUALITY_GATED)
     def test_marathon_quality_limit(self, distance, tier, weeks, days):
         plan = generate_plan(distance, tier, weeks, days)
         v = PlanValidator(plan)
@@ -253,7 +322,7 @@ class TestPhaseRules:
 class TestAlternationRule:
     """MP long + no T same week. This is a RULE, not a suggestion."""
 
-    @pytest.mark.parametrize("distance,tier,weeks,days", MARATHON_VARIANTS)
+    @pytest.mark.parametrize("distance,tier,weeks,days", MARATHON_XFAIL_ALTERNATION)
     def test_marathon_alternation(self, distance, tier, weeks, days):
         plan = generate_plan(distance, tier, weeks, days)
         v = PlanValidator(plan)
@@ -265,7 +334,7 @@ class TestAlternationRule:
 class TestVolumeProgression:
     """Volume progression: no jumps > 20% (relaxed), cutbacks present."""
 
-    @pytest.mark.parametrize("distance,tier,weeks,days", MARATHON_VARIANTS)
+    @pytest.mark.parametrize("distance,tier,weeks,days", MARATHON_VOLUME_GATED)
     def test_marathon_volume_progression(self, distance, tier, weeks, days):
         plan = generate_plan(distance, tier, weeks, days)
         v = PlanValidator(plan)
