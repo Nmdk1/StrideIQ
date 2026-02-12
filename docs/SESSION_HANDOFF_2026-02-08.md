@@ -203,6 +203,194 @@ COACHING TONE RULES (non-negotiable):
 
 ---
 
+## Session Update — February 10, 2026: OpenAI Removal + Normalization Fix
+
+### Problem
+- `ai_coach.py` still contained a legacy OpenAI Assistants fallback path (~1060 lines) introduced in commit `8376e8f` to stabilize chat after an earlier removal attempt.
+- Startup emitted `OpenAI not installed - AI Coach will be disabled` even though Gemini is the active runtime.
+- **Critical gap discovered:** `_normalize_response_for_ui` (which includes Coach Output Contract v1 normalization: stripping "fact capsule" labels, "response contract" echoes, date/pace label leaks) was only called inside the OpenAI Assistants path — meaning it **never ran on Gemini responses** (100% of production traffic). The entire chat normalization from the Coach Output Contract was dead code.
+
+### What Was Changed
+
+**`apps/api/services/ai_coach.py`** (~1060 lines removed, ~10 lines added):
+1. **Wired `_normalize_response_for_ui` into the Gemini success path** in `chat()`. This is the fix that makes the Coach Output Contract actually work for production chat responses.
+2. Removed OpenAI import guard (`from openai import OpenAI`, `OPENAI_AVAILABLE` flag).
+3. Removed `self.client` and `self.assistant_id` from `__init__`.
+4. Removed `_assistant_tools()` method (~370 lines of OpenAI function tool definitions).
+5. Removed `_get_or_create_assistant()` method (~45 lines).
+6. Removed the entire OpenAI Assistants fallback path in `chat()` (~380 lines: thread creation, message posting, polling loop, tool dispatch, timeout handling).
+7. Removed `_enforce_citations_contract()` and `_looks_like_uncited_numeric_answer()` (~245 lines) — both were OpenAI-thread-coupled and already dead code.
+8. Simplified Gemini failure path: `query_gemini()` now returns `error: True` directly instead of `fallback_to_assistants: True`.
+9. Updated module docstring, class docstring, and inline comments.
+10. Updated availability check in `chat()` to only check `gemini_client`.
+
+**`apps/api/tests/test_calendar_coach_trust_contract.py`**:
+- Updated `test_ai_coach_registers_compute_running_math_tool` to check Opus tools only (no more `_assistant_tools`).
+- Added `test_no_openai_references_in_ai_coach` regression test: asserts zero occurrences of `from openai`, `import OpenAI`, `OPENAI_AVAILABLE`, `self.client.beta`, `assistant_id`, and `fallback_to_assistants` in the source file.
+
+**`apps/api/tests/test_coach_model_tiering.py`**:
+- Removed `OPENAI_API_KEY` from test env patches (no longer relevant).
+
+### What Was NOT Changed
+- Anthropic/Opus path — untouched, still active for high-stakes routing.
+- Gemini tool declarations in `query_gemini()` — untouched.
+- Other files that independently use OpenAI (nutrition_parser, knowledge_extraction, transcribe_audible) — untouched.
+- `apps/web/components/calendar/DayDetailPanel.tsx` — remains modified and uncommitted (pre-existing).
+
+### Verification
+- `ai_coach.py` syntax validated via `ast.parse`.
+- Zero OpenAI references confirmed via automated scan.
+- All test errors are pre-existing (local Postgres not running), not caused by this change.
+- File reduced from ~5216 to 4156 lines.
+
+### Deploy Command
+```bash
+ssh root@<droplet-ip> "cd /opt/StrideIQ && git pull && docker compose -f docker-compose.prod.yml up --build -d --remove-orphans && docker compose -f docker-compose.prod.yml exec redis redis-cli FLUSHALL"
+```
+
+---
+
+## Session Update — February 11, 2026: Stabilization + Insight Engine + Strava Sync + Plan Research
+
+### Commits This Session (chronological)
+1. `2447b90` — fix(strava): make stale sync timeout interval-driven and remove dead result block
+2. `935254d` — fix(insights): stamp insight_date from activity start_time and clamp percentile title
+3. `693f2c5` — fix(strava): report post-processing as progress phase so UI doesn't show false 100%
+4. `9f05d8d` — fix(insights): dedup by type+date not title, update existing rows instead of duplicating
+5. `a9a4967` — fix(strava): split post-processing into separate task so sync returns SUCCESS immediately
+
+### What Was Fixed
+
+**1. Strava Sync — Three Layered Bugs**
+
+The sync UI showed "Syncing activity 2 of 2... 100%" and stayed stuck indefinitely. Root causes:
+
+- **Frontend timeout effect was dependency-driven** (`useEffect`) and never re-evaluated when `syncStatus` stayed on `progress`. Fixed: replaced with `setInterval` that ticks every 10s. (`StravaConnection.tsx`)
+- **Task reported 100% before it was done**: `self.update_state(state='PROGRESS', meta={current: 2, total: 2})` fired at the START of processing the last activity. Then ~37 seconds of post-processing (PB sync across 200 activities, derived signals, insight generation) ran while the UI showed 100% but the task hadn't returned SUCCESS.
+- **Real fix**: Split the Celery task. `sync_strava_activities_task` now returns SUCCESS immediately after processing activities and updating `last_strava_sync`. Heavy post-processing (PB sync, derived signals, insights) runs in a separate `post_sync_processing_task` that fires as a background task. The UI spinner clears within seconds.
+
+Key files:
+- `apps/web/components/integrations/StravaConnection.tsx` — frontend sync UI
+- `apps/web/lib/hooks/queries/strava.ts` — polling hook
+- `apps/api/tasks/strava_tasks.py` — `sync_strava_activities_task` + new `post_sync_processing_task`
+- `apps/api/routers/strava.py` — sync status endpoint (unchanged)
+
+**2. Insight Engine — Three Bugs**
+
+Calendar day detail panel showed wrong insights on wrong days, with duplicates accumulating.
+
+- **Wrong day**: `GeneratedInsight.insight_date` defaulted to `date.today()`. A Feb 10 activity synced on Feb 11 got its insight stamped Feb 11. Fixed: `insight_date` defaults to `None`, `generate_insights()` stamps from `activity.start_time.date()`.
+- **Percentile inversion**: `f"Top {100-percentile:.0f}%"` produced "Top 0% efficiency" when percentile=100. Fixed: `max(1, round(100 - percentile))` clamps to "Top 1%" minimum.
+- **Duplicate accumulation**: `persist_insights` matched on exact `title` for dedup. Since titles include numbers (`"30-day volume: 201.5 miles"` vs `"209.5 miles"`), every sync created new rows. Fixed: dedup now matches on `(athlete_id, insight_date, insight_type)` for non-activity insights (rolling stats), and `(athlete_id, insight_date, insight_type, activity_id)` for activity-linked insights. Existing rows are **updated** instead of duplicated. In-memory dedup key strips digits for stable matching.
+
+Key file: `apps/api/services/insight_aggregator.py`
+
+**3. Docker Build Caching**
+
+`docker compose up -d --build` was using cached layers even after `git pull` changed files. Required `docker compose build --no-cache web` to force fresh builds. This is a recurring issue — always verify build output shows actual steps running, not `CACHED`.
+
+### Security Fixes Deployed (from earlier in session)
+- `bdec399` — Redacted JWT reset token from auth.py logs, pinned anthropic/google-genai deps, stripped task result payload from v1 endpoint.
+- `e1d41f6` — Restored `_looks_like_uncited_numeric_answer` for CI, fixed DayDetailPanel click handler.
+
+### CI Status
+- All jobs green through `935254d`. Commits `693f2c5`, `9f05d8d`, `a9a4967` need CI verification (set repo public, verify, set private).
+
+---
+
+## NEXT SESSION: Training Plan Improvements (Decision Required)
+
+### Context
+The founder identified training plan quality as the highest-impact area. A deep research session was completed covering the entire knowledgebase, all 5 plan generators, and external coaching methodologies.
+
+### Current State of Plans
+- **5 generators exist**: principle-based, model-driven, archetype-based, constraint-aware, hybrid
+- **Only 2 archetypes built**: `marathon_mid_6d_18w` and `marathon_mid_5d_18w`
+- **9 workout types** with variants (easy, recovery, strides, long, tempo, threshold, intervals, hills, MP)
+- **Banister model** for individualization exists but needs calibrated data
+- **Methodology blending** (Daniels/Pfitzinger/Canova/Hansons/Hudson) — activates under narrow conditions
+- **3D workout selection** — in shadow mode
+
+### Key Gaps Identified
+1. Only marathon plans — no 5K, 10K, or half marathon
+2. No calculated paces injected into workouts (effort descriptions only)
+3. No "why" narratives explaining workout purpose to the athlete
+4. No weekly plan re-evaluation or adaptation after missed/modified workouts
+5. Plans are static calendars, not living coaching documents
+
+### Four Options Presented
+
+**Option A: "Depth First"** — Make marathon plans world-class before expanding
+- Complete all marathon archetypes, inject paces, add narratives, implement weekly re-evaluation
+- Pros: Deep product, easier to get right, word-of-mouth from marathoners
+- Cons: Small addressable market
+
+**Option B: "Breadth First"** — Cover all distances at minimum viable quality
+- Build 3-4 archetypes per distance, use principle-based generator
+- Pros: Much larger market, shows product range
+- Cons: Risk of being mediocre at everything
+
+**Option C: "Coach-Led Adaptive"** — Make plans secondary to the AI coach
+- Generate 2-week rolling blocks (like Jon Green), coach explains and adjusts
+- Pros: True differentiator, matches brand, most adaptive
+- Cons: Hardest to build, requires trust in AI quality
+
+**Option D: "Hybrid" (Recommended)** — Skeleton plan + adaptive coach
+- Generate visible full-plan calendar for psychological buy-in
+- Coach re-evaluates weekly and adjusts workouts, paces, recovery
+- Coach explains every adjustment
+
+**Recommended execution order if Option D is chosen:**
+1. Immediate: Inject calculated paces into existing archetypes + add "why" narratives to all workout types
+2. Next: Build half marathon and 10K archetypes (biggest market segments)
+3. Following: Implement weekly re-evaluation (coach reviews last week, adjusts next 1-2 weeks)
+4. Later: Build 2-week rolling block system for full adaptive mode
+
+### External Research Summary
+- **Jack Daniels**: VDOT-driven pace system, 5 intensity zones, season-tailored periodization
+- **Jon Green** (Verde Track Club, coached Molly Seidel): 2-week block planning, athlete education on "why", conservative progression, speed work even for marathoners
+- **Greg McMillan**: Training Cycle Builder, 6-step system linking lab metrics to training
+- **TrainAsONE/Athletica.ai**: AI-driven daily adaptation, readiness scores, auto-rephasing after missed sessions
+- **Modern AI coaching studies**: Persistent athlete models, multimodal sensing, safety-aware progression are the frontier requirements
+
+### Decision Point
+The founder will decide which option (A/B/C/D) to pursue. This determines the next 2-4 sprints of work.
+
+---
+
+### Deployed State
+- **HEAD:** `a9a4967` on `main`
+- **Droplet:** deployed and healthy (all 9 containers up)
+- **Repo:** private (needs temporary public for CI on latest 3 commits)
+
+### Untracked / Modified Files (not committed)
+```
+ M docs/SESSION_HANDOFF_2026-02-08.md
+?? .github/scripts/
+?? apps/api/coverage.xml
+?? docs/P0_1_PRE_MERGE_PACKAGE.md
+```
+
+---
+
+## Deploy Commands (Reference)
+```bash
+cd /opt/strideiq/repo
+git pull origin main
+docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs --tail 160 api
+```
+
+If Docker caching prevents changes from deploying:
+```bash
+docker compose -f docker-compose.prod.yml build --no-cache web
+docker compose -f docker-compose.prod.yml build --no-cache api
+docker compose -f docker-compose.prod.yml up -d
+```
+
+---
+
 ## Codebase Stats
 
 - **Total:** ~192K lines of code across 721 source files (Python + TypeScript + JavaScript)
