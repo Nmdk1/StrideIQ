@@ -116,6 +116,11 @@ Michael_Shaffer_*.pdf
 Michael_Shaffer_*.html
 Michael_Shaffer_*.md
 
+# Test coverage artifacts
+coverage.xml
+*.coverage
+htmlcov/
+
 # Temporary log files from debugging
 *-logs.txt
 *-logs-*.txt
