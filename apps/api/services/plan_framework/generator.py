@@ -217,14 +217,30 @@ class PlanGenerator:
         duration_weeks: int,
         tier: str,
         days_per_week: int,
-        start_date: date = None
+        start_date: date = None,
+        recent_race_distance: str = None,
+        recent_race_time_seconds: int = None,
     ) -> GeneratedPlan:
         """
         Generate a standard (free) training plan.
         
-        No personalization - uses effort descriptions, not paces.
+        If the athlete has race data (from signup or Strava), calculated
+        training paces are injected.  Otherwise falls back to effort-based
+        descriptions.  Paces are expected — they are not a differentiator.
+        N=1 intelligence and daily adaptation are the paid differentiators.
         """
         logger.info(f"Generating standard plan: {distance} {duration_weeks}w {tier} {days_per_week}d")
+        
+        # Calculate paces from race data when available (Resolved Decision #1)
+        paces = None
+        rpi = None
+        if recent_race_distance and recent_race_time_seconds:
+            paces = self.pace_engine.calculate_from_race(
+                distance=recent_race_distance,
+                time_seconds=recent_race_time_seconds
+            )
+            if paces:
+                rpi = paces.rpi
         
         # Get tier parameters
         tier_params = self.tier_classifier.get_tier_params(
@@ -257,7 +273,7 @@ class PlanGenerator:
             phases=phases,
             weekly_volumes=weekly_volumes,
             start_date=start_date,
-            paces=None,  # No paces for standard plans
+            paces=paces,
             athlete_id=None,
             current_weekly_miles=None,
         )
@@ -275,7 +291,7 @@ class PlanGenerator:
             volume_tier=tier,
             days_per_week=days_per_week,
             athlete_id=None,
-            rpi=None,
+            rpi=rpi,
             start_date=start_date,
             end_date=start_date + timedelta(weeks=duration_weeks) if start_date else None,
             race_date=start_date + timedelta(weeks=duration_weeks - 1, days=6) if start_date else None,
@@ -662,8 +678,10 @@ class PlanGenerator:
             cutback_freq = self.tier_classifier.get_tier_params(tier_enum, distance).get("cutback_frequency", 4)
             is_cutback = week % cutback_freq == 0 and week < duration_weeks - 2
             
-            if is_cutback:
-                weekly_volume *= 0.75  # Reduce volume for cutback
+            # NOTE: Do NOT multiply weekly_volume here — calculate_volume_progression()
+            # already applies tier-specific cutback reductions for cutback weeks.
+            # The is_cutback flag is used for INTENSITY decisions (easy long, no
+            # secondary quality) but the VOLUME is already correct from the progression.
             
             # Check if this week will have an MP long run (for tracking)
             will_have_mp_long = self._will_week_have_mp_long(
@@ -681,6 +699,7 @@ class PlanGenerator:
                 week=week,
                 phase=phase,
                 week_in_phase=week_in_phase,
+                is_mp_long_week=will_have_mp_long,
                 weekly_volume=weekly_volume,
                 tier=tier,
                 distance=distance,
@@ -725,20 +744,22 @@ class PlanGenerator:
         week: int,
         phase: TrainingPhase,
         week_in_phase: int,
-        weekly_volume: float,
-        tier: str,
-        distance: str,
-        days_per_week: int,
-        structure: Dict[int, str],
-        start_date: Optional[date],
-        paces: Optional[TrainingPaces],
-        is_cutback: bool,
+        is_mp_long_week: bool = False,
+        weekly_volume: float = 0,
+        tier: str = "mid",
+        distance: str = "marathon",
+        days_per_week: int = 6,
+        structure: Dict[int, str] = None,
+        start_date: Optional[date] = None,
+        paces: Optional[TrainingPaces] = None,
+        is_cutback: bool = False,
         mp_week: int = 1,
         athlete_ctx: Optional[Dict[str, Any]] = None,
     ) -> List[GeneratedWorkout]:
         """Generate workouts for a single week."""
         week_workouts = []
         athlete_ctx = athlete_ctx or {"experienced_high_volume": False}
+        structure = structure or {}
         
         for day in range(7):
             day_name = self.DAY_NAMES[day]
@@ -777,6 +798,7 @@ class PlanGenerator:
                 phase=phase,
                 week_in_phase=week_in_phase,
                 is_cutback=is_cutback,
+                is_mp_long_week=is_mp_long_week,
                 week=week,
                 distance=distance,
                 weekly_volume=weekly_volume,
@@ -844,6 +866,29 @@ class PlanGenerator:
             
             week_workouts.append(workout)
         
+        # --- Volume Fill: scale easy runs to hit weekly volume target ---
+        # Quality and long-run distances are set by the scaler based on
+        # coaching rules.  Easy runs absorb the remainder so the actual
+        # weekly total matches the plan target.  This prevents long runs
+        # from being disproportionately large as a % of actual volume
+        # (especially on 5-day schedules where fewer easy slots exist).
+        easy_types = {"easy", "easy_strides", "recovery", "medium_long"}
+        non_easy_miles = sum(
+            w.distance_miles or 0 for w in week_workouts
+            if w.workout_type not in easy_types
+        )
+        easy_workouts = [w for w in week_workouts if w.workout_type in easy_types
+                         and (w.distance_miles or 0) > 0]
+        if easy_workouts:
+            remaining = weekly_volume - non_easy_miles
+            remaining = max(remaining, len(easy_workouts) * 3)  # min 3mi per easy run
+            per_easy = round(remaining / len(easy_workouts), 1)
+            per_easy = max(per_easy, 3.0)
+            per_easy = min(per_easy, 12.0)  # cap single easy run at 12mi
+            for ew in easy_workouts:
+                ew.distance_miles = per_easy
+                ew.duration_minutes = int(per_easy * 9.5)
+        
         return week_workouts
     
     def _get_workout_for_day(
@@ -852,6 +897,7 @@ class PlanGenerator:
         phase: TrainingPhase,
         week_in_phase: int,
         is_cutback: bool,
+        is_mp_long_week: bool,
         week: int,
         distance: str,
         weekly_volume: float,
@@ -864,6 +910,8 @@ class PlanGenerator:
         - Quality sessions vary by phase
         - Long runs get MP work in later phases
         - Cutback weeks reduce intensity
+        - Alternation rule: MP-long weeks have NO threshold (KB Source B)
+        - Quality day limit: max 2 quality sessions per week
         """
         if structure_type == "rest":
             return "rest"
@@ -882,6 +930,11 @@ class PlanGenerator:
             # If the phase calls for 2 quality sessions and the athlete can handle it,
             # convert the mid-week medium long to the "touch" session.
             # This is the focus+touch model: the second session is a touch, not another sledgehammer.
+            #
+            # ALTERNATION RULE (Source B): MP long run weeks get NO threshold.
+            # The MP long IS the second quality — adding threshold creates overload.
+            if is_mp_long_week:
+                return "medium_long"  # Keep as easy-ish volume, not another quality session
             if phase.quality_sessions >= 2 and not is_cutback and weekly_volume >= 55:
                 return self._get_secondary_quality(phase, distance, week_in_phase, weekly_volume, athlete_ctx)
             return "medium_long"
@@ -890,9 +943,18 @@ class PlanGenerator:
             return self._get_long_run_type(phase, week_in_phase, is_cutback, distance)
         
         if structure_type == "quality":
+            # ALTERNATION RULE (Source B): On MP long run weeks, the MP long
+            # IS the quality session.  The mid-week quality slot becomes
+            # easy with strides (neuromuscular touch without adding load).
+            if is_mp_long_week:
+                return "easy_strides"
             return self._get_quality_workout(phase, week_in_phase, is_cutback, distance, weekly_volume, athlete_ctx)
         
         if structure_type == "quality_or_easy":
+            # ALTERNATION RULE: MP long run weeks already have quality via the MP long.
+            # Don't add another quality session — keep this as easy.
+            if is_mp_long_week:
+                return "easy"
             # Second quality only in certain phases
             if phase.quality_sessions >= 2 and not is_cutback:
                 return self._get_secondary_quality(phase, distance, week_in_phase, weekly_volume, athlete_ctx)

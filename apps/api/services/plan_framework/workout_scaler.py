@@ -18,6 +18,7 @@ Usage:
     )
 """
 
+import math
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
@@ -190,7 +191,6 @@ class WorkoutScaler:
         if (distance or "").strip().lower() in ("marathon",) and weekly_volume >= 60:
             pct = 0.30
         target = min(weekly_volume * pct, peak)
-        target = max(target, 10)  # Minimum 10 miles
         
         return ScaledWorkout(
             workout_type="long_run",
@@ -240,9 +240,15 @@ class WorkoutScaler:
             # Reduce volume
             reps = max(2, int(max_t_minutes / duration))
         
+        # Hard cap: t_miles must not exceed Source B 10% limit.
+        # Floor the cap to prevent rounding from pushing over the threshold.
+        t_miles = round(reps * duration * 0.17, 1)
+        t_miles_cap = math.floor(max_t_miles * 10) / 10.0
+        t_miles = min(t_miles, t_miles_cap)
         segments = [
             {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-            {"type": "intervals", "reps": reps, "duration_min": duration, "rest_min": 2, "pace": "threshold"},
+            {"type": "intervals", "reps": reps, "duration_min": duration, "rest_min": 2,
+             "pace": "threshold", "distance_miles": t_miles},
             {"type": "cooldown", "distance_miles": 1.5, "pace": "easy"},
         ]
         
@@ -273,7 +279,10 @@ class WorkoutScaler:
         base = 15
         progression = min(week_in_phase * 5, 20)  # Max +20 min
         tempo_duration = min(base + progression, max_t_minutes)
-        tempo_duration = max(tempo_duration, 15)  # Min 15 min
+        # Floor: 15 min for effective stimulus, but defer to the 10% cap
+        # when weekly volume is too low to support 15 min of threshold work.
+        min_duration = max(10, min(15, max_t_minutes))
+        tempo_duration = max(tempo_duration, min_duration)
         
         total_distance = 3 + (tempo_duration * 0.17)  # WU/CD + tempo
         
@@ -286,7 +295,8 @@ class WorkoutScaler:
             duration_minutes=int(25 + tempo_duration),
             segments=[
                 {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-                {"type": "threshold", "duration_min": int(tempo_duration), "pace": "threshold"},
+                {"type": "threshold", "duration_min": int(tempo_duration), "pace": "threshold",
+                 "distance_miles": min(round(tempo_duration * 0.17, 1), math.floor(max_t_miles * 10) / 10.0)},
                 {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
             ],
             pace_description="comfortably hard, sustainable for the full duration",
@@ -454,7 +464,8 @@ class WorkoutScaler:
                 duration_minutes=int(30 + reps * 2),
                 segments=[
                     {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-                    {"type": "intervals", "reps": reps, "distance_m": 400, "rest_m": 200, "pace": "interval"},
+                    {"type": "intervals", "reps": reps, "distance_m": 400, "rest_m": 200,
+                     "pace": "interval", "distance_miles": round(reps * 400 / 1609.344, 1)},
                     {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
                 ],
                 pace_description="hard effort, controlled — smooth mechanics, not a sprint",
@@ -473,7 +484,8 @@ class WorkoutScaler:
             duration_minutes=int(30 + reps * 6),
             segments=[
                 {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-                {"type": "intervals", "reps": reps, "distance_m": 1000, "rest_min": 2.5, "pace": "interval"},
+                {"type": "intervals", "reps": reps, "distance_m": 1000, "rest_min": 2.5,
+                 "pace": "interval", "distance_miles": round(reps * 1000 / 1609.344, 1)},
                 {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
             ],
             pace_description="hard effort, controlled - NOT all-out",

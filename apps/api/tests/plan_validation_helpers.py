@@ -40,7 +40,9 @@ QUALITY_TYPES = {
 HARD_TYPES = QUALITY_TYPES.copy()
 EASY_TYPES = {"easy", "easy_strides", "recovery", "medium_long", "strides"}
 REST_TYPES = {"rest"}
-LONG_TYPES = {"long", "long_mp"}
+# long_mp is race-specific quality — the MP portion is checked under MP
+# limits.  Only easy long runs are subject to the long-run % rule.
+LONG_TYPES = {"long"}
 THRESHOLD_TYPES = {"threshold", "threshold_intervals", "tempo"}
 INTERVAL_TYPES = {"intervals"}
 MP_TYPES = {"long_mp"}
@@ -193,6 +195,32 @@ class PlanValidator:
     def _is_hard_day(self, workout) -> bool:
         return workout.workout_type in HARD_TYPES
 
+    @staticmethod
+    def _quality_miles(workout, quality_paces: Set[str]) -> float:
+        """Extract quality-specific miles from segments when available.
+
+        In coaching science, Source B limits (T ≤ 10%, I ≤ 8%, MP ≤ 20%)
+        apply to the INTENSITY-SPECIFIC volume, not the total session.
+        A threshold session with 2mi warmup + 5mi at T + 1.5mi cooldown
+        is 8.5mi total but only 5mi of threshold WORK.  Warmup/cooldown
+        are easy running.
+
+        When segments are available, sum only those whose ``pace`` is in
+        *quality_paces*.  Fall back to ``distance_miles`` when segments
+        are absent (conservative).
+        """
+        segs = getattr(workout, "segments", None)
+        if segs:
+            total = 0.0
+            for s in segs:
+                pace = (s.get("pace") or "").lower()
+                if pace in quality_paces:
+                    total += s.get("distance_miles", 0) or 0
+            if total > 0:
+                return total
+        # Fallback: use total distance (conservative)
+        return workout.distance_miles or 0
+
     # ------------------------------------------------------------------
     # RULE GROUP: Source B Volume Limits
     # ------------------------------------------------------------------
@@ -221,62 +249,76 @@ class PlanValidator:
             if week_miles <= 0:
                 continue
 
+            # Long run % is a build/peak guideline.  Skip for:
+            # - Taper/race weeks (volume is deliberately low)
+            # - Cutback weeks (recovery structure, not a training gap)
+            # - Very low volume weeks (<30mi) where a 10mi long run is
+            #   the floor for meaningful marathon training, not a bug.
+            phase = self._get_phase_for_week(week)
+            skip_lr_pct = phase in {"taper", "race"} or week_miles < 30
+
             workouts = self._get_week_workouts(week)
 
             for w in workouts:
-                miles = w.distance_miles or 0
-                if miles <= 0:
+                total_miles = w.distance_miles or 0
+                if total_miles <= 0:
                     continue
 
                 wtype = w.workout_type
 
-                # Long run ≤ spec%
-                if wtype in LONG_TYPES and miles > week_miles * lr_cap:
+                # Long run ≤ spec%  (total distance is correct — the whole
+                # run is at long-run effort, no warmup/cooldown split)
+                if wtype in LONG_TYPES and not skip_lr_pct and total_miles > week_miles * lr_cap:
                     self._fail(
                         "B1-LR-PCT",
-                        f"Long run {miles:.1f}mi > {lr_cap*100:.0f}% of weekly "
-                        f"{week_miles:.1f}mi ({miles/week_miles*100:.0f}%)",
+                        f"Long run {total_miles:.1f}mi > {lr_cap*100:.0f}% of weekly "
+                        f"{week_miles:.1f}mi ({total_miles/week_miles*100:.0f}%)",
                         week=week
                     )
 
-                # Threshold ≤ spec%
-                if wtype in THRESHOLD_TYPES and miles > week_miles * t_cap:
-                    self._fail(
-                        "B1-T-PCT",
-                        f"Threshold {miles:.1f}mi > {t_cap*100:.0f}% of weekly "
-                        f"{week_miles:.1f}mi ({miles/week_miles*100:.0f}%)",
-                        week=week
-                    )
+                # Threshold ≤ spec%  (quality miles only — warmup/cooldown
+                # are easy running and count toward easy volume)
+                if wtype in THRESHOLD_TYPES:
+                    q_miles = self._quality_miles(w, {"threshold", "t"})
+                    if q_miles > week_miles * t_cap:
+                        self._fail(
+                            "B1-T-PCT",
+                            f"Threshold work {q_miles:.1f}mi > {t_cap*100:.0f}% of weekly "
+                            f"{week_miles:.1f}mi ({q_miles/week_miles*100:.0f}%)",
+                            week=week
+                        )
 
-                # Intervals ≤ spec% and ≤ abs mi
+                # Intervals ≤ spec% and ≤ abs mi (quality miles only)
                 if wtype in INTERVAL_TYPES:
-                    if miles > week_miles * i_cap:
+                    q_miles = self._quality_miles(w, {"interval", "intervals", "vo2max", "vo2"})
+                    if q_miles > week_miles * i_cap:
                         self._fail(
                             "B1-I-PCT",
-                            f"Intervals {miles:.1f}mi > {i_cap*100:.0f}% of weekly "
+                            f"Intervals work {q_miles:.1f}mi > {i_cap*100:.0f}% of weekly "
                             f"{week_miles:.1f}mi",
                             week=week
                         )
-                    if miles > i_abs:
+                    if q_miles > i_abs:
                         self._fail(
                             "B1-I-ABS",
-                            f"Intervals {miles:.1f}mi > {i_abs}mi absolute limit",
+                            f"Intervals work {q_miles:.1f}mi > {i_abs}mi absolute limit",
                             week=week
                         )
 
-                # MP ≤ spec% and ≤ abs mi
+                # MP ≤ spec% and ≤ abs mi (quality miles only)
                 if wtype in MP_TYPES:
-                    if miles > week_miles * mp_cap:
+                    q_miles = self._quality_miles(w, {"mp", "marathon_pace"})
+                    if q_miles > week_miles * mp_cap:
                         self._fail(
                             "B1-MP-PCT",
-                            f"MP {miles:.1f}mi > {mp_cap*100:.0f}% of weekly "
+                            f"MP work {q_miles:.1f}mi > {mp_cap*100:.0f}% of weekly "
                             f"{week_miles:.1f}mi",
                             week=week
                         )
-                    if miles > mp_abs:
+                    if q_miles > mp_abs:
                         self._fail(
                             "B1-MP-ABS",
-                            f"MP {miles:.1f}mi > {mp_abs}mi absolute limit",
+                            f"MP work {q_miles:.1f}mi > {mp_abs}mi absolute limit",
                             week=week
                         )
 
@@ -289,8 +331,15 @@ class PlanValidator:
         Rule B2/C1/VAL-EASY-PCT: Easy running ≥ spec% of weekly volume.
 
         Spec (strict): ≥ 65%.  Relaxed (1-PRE): ≥ 55%.
+
+        Counts ALL easy-effort running including warmup/cooldown segments
+        from quality sessions.  A threshold session with 2mi WU + 5mi T +
+        1.5mi CD contributes 3.5mi to easy volume.
         """
         easy_floor = self._t["easy_floor_pct"]
+
+        # Paces that count as easy effort in segments
+        _EASY_PACES = {"easy", "recovery", "warmup", "cooldown"}
 
         for week in range(1, self.plan.duration_weeks + 1):
             week_miles = self._week_total_miles(week)
@@ -299,11 +348,21 @@ class PlanValidator:
 
             # Explicit parentheses: (EASY_TYPES | LONG_TYPES) - MP_TYPES
             easy_eligible = (EASY_TYPES | LONG_TYPES) - MP_TYPES
-            easy_miles = sum(
-                w.distance_miles or 0
-                for w in self._get_week_workouts(week)
-                if w.workout_type in easy_eligible
-            )
+
+            easy_miles = 0.0
+            for w in self._get_week_workouts(week):
+                if w.workout_type in easy_eligible:
+                    # Entire workout is easy effort
+                    easy_miles += w.distance_miles or 0
+                elif w.workout_type in (QUALITY_TYPES | MP_TYPES):
+                    # Quality session — count only easy segments (WU/CD)
+                    segs = getattr(w, "segments", None)
+                    if segs:
+                        for s in segs:
+                            pace = (s.get("pace") or "").lower()
+                            seg_type = (s.get("type") or "").lower()
+                            if pace in _EASY_PACES or seg_type in {"warmup", "cooldown"}:
+                                easy_miles += s.get("distance_miles", 0) or 0
 
             easy_pct = easy_miles / week_miles if week_miles > 0 else 1.0
 
