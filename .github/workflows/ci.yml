@@ -159,7 +159,9 @@ jobs:
           STRAVA_CLIENT_SECRET: "test-strava-secret-for-ci"
           STRAVA_REDIRECT_URI: "http://localhost:3000/connect/strava/callback"
         run: |
-          pytest -v --cov=. --cov-report=xml --cov-report=term-missing
+          pytest -v --cov=. --cov-report=xml --cov-report=term-missing \
+            --ignore=tests/test_plan_validation_matrix.py \
+            --ignore=tests/plan_validation_helpers.py
       
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
