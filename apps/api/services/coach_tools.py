@@ -544,7 +544,9 @@ def get_efficiency_trend(db: Session, athlete_id: UUID, days: int = 30) -> Dict[
             if len(efficiencies) >= 6:
                 early_avg = sum(efficiencies[:3]) / 3
                 late_avg = sum(efficiencies[-3:]) / 3
-                # EF = speed/HR. Higher EF is better.
+                # EF = speed(m/s) / HR — this is the unambiguous speed-based
+                # efficiency factor (NOT pace/HR).  Higher IS better for speed/HR.
+                # See Athlete Trust Safety Contract for pace/HR ambiguity distinction.
                 if late_avg > early_avg:
                     trend_direction = "improving"
                 elif late_avg < early_avg:
@@ -563,7 +565,7 @@ def get_efficiency_trend(db: Session, athlete_id: UUID, days: int = 30) -> Dict[
                     "worst_efficiency": round(min(efficiencies), 4) if efficiencies else None,
                     "trend_direction": trend_direction,
                     "trend_magnitude": trend_magnitude,
-                    "note": "Derived EF fallback (pace_per_mile + avg_hr). Higher EF is better.",
+                    "note": "EF = speed(m/s) / avg_hr (unambiguous: higher = more speed per heartbeat). Not the same as pace/HR ratio.",
                 },
                 "trend_analysis": {
                     "method": "fallback_basic",
@@ -622,7 +624,7 @@ def get_efficiency_trend(db: Session, athlete_id: UUID, days: int = 30) -> Dict[
         ef_parts.append(f"Best EF: {ef_best:.2f}.")
     if ef_avg is not None:
         ef_parts.append(f"Average EF: {ef_avg:.2f}.")
-    ef_parts.append("Higher EF = more speed at the same heart rate = better.")
+    ef_parts.append("EF here is speed/HR (not pace/HR). Higher = more speed per heartbeat.")
     ef_narrative = " ".join(ef_parts)
 
     return {
@@ -1875,7 +1877,7 @@ def get_best_runs(
     Return the "best" runs by an explicit, auditable definition.
 
     Metrics:
-      - efficiency: highest speed/HR (higher = better)
+      - efficiency: highest speed/HR — unambiguous (higher = more speed per heartbeat)
       - pace: fastest pace (min/mi or min/km depending on units)
       - distance: longest distance
       - intensity_score: highest intensity_score
@@ -1951,7 +1953,7 @@ def get_best_runs(
         def _score(r: Dict[str, Any]) -> float:
             if metric == "efficiency":
                 v = r.get("efficiency_speed_per_hr")
-                return -float(v) if v is not None else 1e9  # higher is better
+                return -float(v) if v is not None else 1e9  # speed/HR: higher is better (unambiguous)
             if metric == "pace":
                 # lower seconds per km is better; derive from formatted pace if possible
                 # fall back to distance/duration
