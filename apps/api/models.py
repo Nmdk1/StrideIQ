@@ -1100,7 +1100,14 @@ class PlannedWorkout(Base):
     completed_activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=True)
     skipped = Column(Boolean, default=False, nullable=False)
     skip_reason = Column(Text, nullable=True)
-    
+
+    # Phase 2B: Self-regulation tracking
+    # What the athlete actually did (may differ from plan)
+    actual_workout_type = Column(Text, nullable=True)          # What they actually did (e.g., "tempo_run" when "easy" was planned)
+    planned_vs_actual_delta = Column(JSONB, nullable=True)     # {distance_delta_km, pace_delta_s, intensity_delta, type_changed}
+    readiness_at_execution = Column(Float, nullable=True)      # Readiness score when workout was done
+    execution_state = Column(Text, nullable=True)              # SCHEDULED, COMPLETED, SKIPPED, MODIFIED_BY_ATHLETE
+
     # Notes
     coach_notes = Column(Text, nullable=True)  # AI-generated guidance
     athlete_notes = Column(Text, nullable=True)  # Athlete's own notes
@@ -1920,4 +1927,97 @@ class ThresholdCalibrationLog(Base):
 
     __table_args__ = (
         Index("ix_threshold_cal_log_athlete_date", "athlete_id", "created_at"),
+    )
+
+
+# =========================================================================
+# Phase 2B: Self-Regulation + Intelligence Logging
+# =========================================================================
+
+class SelfRegulationLog(Base):
+    """
+    Records every planned ≠ actual delta as first-class data.
+
+    When an athlete deviates from the plan — running quality instead of easy,
+    cutting a long run short, adding an unplanned session — the delta is
+    logged here with the outcome tracked over the following days.
+
+    This data feeds:
+    - Self-regulation pattern recognition ("you override easy → quality well")
+    - Threshold calibration (readiness at decision → outcome)
+    - Intelligence engine SUGGEST mode (personal patterns from outcome data)
+    """
+    __tablename__ = "self_regulation_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    workout_id = Column(UUID(as_uuid=True), ForeignKey("planned_workout.id"), nullable=True)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=True)
+
+    # What was planned
+    planned_type = Column(Text, nullable=True)                  # e.g., "easy"
+    planned_distance_km = Column(Float, nullable=True)
+    planned_intensity = Column(Text, nullable=True)             # e.g., "easy_pace"
+
+    # What actually happened
+    actual_type = Column(Text, nullable=True)                   # e.g., "tempo_run"
+    actual_distance_km = Column(Float, nullable=True)
+    actual_intensity = Column(Text, nullable=True)              # e.g., "threshold_pace"
+
+    # Delta classification
+    delta_type = Column(Text, nullable=False)                   # "type_change", "distance_change", "intensity_change", "unplanned", "skipped"
+    delta_direction = Column(Text, nullable=True)               # "upgraded" (easy→quality), "downgraded" (quality→easy), "shortened", "extended"
+
+    # Context at time of decision
+    readiness_at_decision = Column(Float, nullable=True)        # Readiness score
+    trigger_date = Column(Date, nullable=False)
+
+    # Outcome tracking (populated asynchronously, next day or later)
+    outcome_efficiency_delta = Column(Float, nullable=True)     # Next-day efficiency change
+    outcome_subjective = Column(Integer, nullable=True)         # From check-in if available (1-5)
+    outcome_classification = Column(Text, nullable=True)        # "positive", "neutral", "negative" (set by outcome analysis)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_self_reg_log_athlete_date", "athlete_id", "trigger_date"),
+    )
+
+
+class InsightLog(Base):
+    """
+    Records every intelligence insight produced by the daily engine.
+
+    Every INFORM, SUGGEST, FLAG, ASK, and LOG insight is persisted here.
+    This provides:
+    - Audit trail of what the system told the athlete
+    - Data for measuring insight accuracy over time
+    - Input for the narration trust scoring system (Phase 3)
+    """
+    __tablename__ = "insight_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+
+    # Insight identity
+    rule_id = Column(Text, nullable=False)                      # e.g., "LOAD_SPIKE", "SELF_REG_DELTA"
+    mode = Column(Text, nullable=False)                         # "inform", "suggest", "flag", "ask", "log"
+    message = Column(Text, nullable=True)                       # Human-readable insight text
+    data_cited = Column(JSONB, nullable=True)                   # Evidence backing the insight
+
+    # Context
+    trigger_date = Column(Date, nullable=False)
+    readiness_score = Column(Float, nullable=True)              # Readiness at time of insight
+    confidence = Column(Float, nullable=True)                   # 0-1 confidence in the insight
+
+    # Athlete response tracking
+    athlete_seen = Column(Boolean, default=False, nullable=False)
+    athlete_response = Column(Text, nullable=True)              # "acknowledged", "dismissed", "acted_on"
+    athlete_response_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_insight_log_athlete_date", "athlete_id", "trigger_date"),
+        Index("ix_insight_log_rule_id", "rule_id"),
     )
