@@ -2017,7 +2017,66 @@ class InsightLog(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    # Phase 3A: Coach narration attached to this insight
+    narrative = Column(Text, nullable=True)                      # AI-generated explanation of this insight
+    narrative_score = Column(Float, nullable=True)               # 0-1 score from narration scorer
+    narrative_contradicts = Column(Boolean, nullable=True)       # True if narration contradicted engine
+
     __table_args__ = (
         Index("ix_insight_log_athlete_date", "athlete_id", "trigger_date"),
         Index("ix_insight_log_rule_id", "rule_id"),
+    )
+
+
+class NarrationLog(Base):
+    """
+    Records every narration scoring evaluation.
+
+    Each time the coach generates a narration for an intelligence insight,
+    the narration is scored against the engine's ground truth on 3 binary
+    criteria. Results stored here feed the Phase 3B gate (90% for 4 weeks).
+
+    This is the AUDIT TRAIL for coach narration quality.
+    """
+    __tablename__ = "narration_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    insight_log_id = Column(UUID(as_uuid=True), ForeignKey("insight_log.id"), nullable=True)
+
+    # The narration
+    trigger_date = Column(Date, nullable=False)
+    rule_id = Column(Text, nullable=False)                       # Which rule was narrated
+    narration_text = Column(Text, nullable=True)                 # The generated narration
+    prompt_used = Column(Text, nullable=True)                    # The prompt sent to the LLM (for debugging)
+
+    # Ground truth
+    ground_truth = Column(JSONB, nullable=True)                  # Engine data at narration time
+
+    # 3 binary scoring criteria
+    factually_correct = Column(Boolean, nullable=True)
+    no_raw_metrics = Column(Boolean, nullable=True)
+    actionable_language = Column(Boolean, nullable=True)
+    criteria_passed = Column(Integer, nullable=True)             # 0-3
+    score = Column(Float, nullable=True)                         # 0.0-1.0
+
+    # Contradiction detection
+    contradicts_engine = Column(Boolean, default=False, nullable=False)
+    contradiction_detail = Column(Text, nullable=True)
+
+    # Quality gate
+    suppressed = Column(Boolean, default=False, nullable=False)  # True if narration quality too low → hidden
+    suppression_reason = Column(Text, nullable=True)             # Why it was suppressed
+
+    # LLM metadata
+    model_used = Column(Text, nullable=True)                     # e.g., "gemini-2.5-flash"
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_narration_log_athlete_date", "athlete_id", "trigger_date"),
+        Index("ix_narration_log_score", "score"),
     )

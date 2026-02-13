@@ -1,21 +1,26 @@
 """
-Daily Intelligence Tasks (Phase 2D)
+Daily Intelligence Tasks (Phase 2D + 3A)
 
 Celery Beat runs `run_morning_intelligence` every 15 minutes.
 The task checks which athletes are at their 5 AM local window
 and runs the intelligence pipeline for each one.
 
+Phase 3A addition: after intelligence rules fire, each insight is
+narrated by the AdaptationNarrator (Gemini Flash). Narrations are
+scored against engine ground truth, and low-quality narrations are
+suppressed (silence > bad narrative).
+
 Design:
     - Global task runs every 15 minutes (not once per athlete).
     - Filters athletes whose local time is in the [05:00, 05:14] window.
-    - For each qualifying athlete: readiness → intelligence → persist.
+    - For each qualifying athlete: readiness → intelligence → narrate → persist.
     - One athlete's failure does NOT block others.
     - No insight = no notification (silence is fine).
     - FLAG-level insights get marked for prominent display.
-    - Results stored in InsightLog (already handled by the engine).
+    - Results stored in InsightLog + NarrationLog.
 
 Sources:
-    docs/TRAINING_PLAN_REBUILD_PLAN.md (Phase 2D)
+    docs/TRAINING_PLAN_REBUILD_PLAN.md (Phase 2D, 3A)
 """
 
 from datetime import date, datetime, timedelta, timezone
@@ -93,11 +98,13 @@ def _run_intelligence_for_athlete(
     Pipeline:
         1. Compute readiness score
         2. Run intelligence rules
-        3. Insights are persisted by the engine (InsightLog)
-        4. Return summary for monitoring
+        3. Generate narrations for each insight (Phase 3A)
+        4. Score narrations against engine ground truth
+        5. Persist insights + narrations (InsightLog + NarrationLog)
+        6. Return summary for monitoring
 
     Returns:
-        Dict with status, insight count, highest mode, etc.
+        Dict with status, insight count, highest mode, narration stats, etc.
     """
     from services.readiness_score import ReadinessScoreCalculator
     from services.daily_intelligence import DailyIntelligenceEngine
@@ -119,7 +126,16 @@ def _run_intelligence_for_athlete(
         readiness_score=readiness_result.score,
     )
 
-    # Step 3: Commit insights (engine already added to session via _persist_insights)
+    # Step 3: Narrate insights (Phase 3A)
+    narration_stats = _narrate_insights(
+        athlete_id=athlete_id,
+        target_date=target_date,
+        intel_result=intel_result,
+        readiness_result=readiness_result,
+        db=db,
+    )
+
+    # Step 4: Commit insights + narrations
     try:
         db.commit()
     except Exception:
@@ -137,7 +153,191 @@ def _run_intelligence_for_athlete(
         "highest_mode": highest.value if highest else None,
         "self_regulation_logged": intel_result.self_regulation_logged,
         "rules_fired": [i.rule_id for i in intel_result.insights],
+        **narration_stats,
     }
+
+
+def _narrate_insights(
+    athlete_id: UUID,
+    target_date: date,
+    intel_result,
+    readiness_result,
+    db: Session,
+) -> Dict:
+    """
+    Generate and score narrations for each insight (Phase 3A).
+
+    Narrations that fail scoring are suppressed — silence > bad narrative.
+    Results are persisted in NarrationLog and attached to InsightLog rows.
+
+    Returns dict with narration statistics for monitoring.
+    """
+    from services.adaptation_narrator import AdaptationNarrator
+    from services.daily_intelligence import InsightMode
+
+    stats = {
+        "narrations_generated": 0,
+        "narrations_suppressed": 0,
+        "narrations_passed": 0,
+        "narration_avg_score": 0.0,
+    }
+
+    if not intel_result.insights:
+        return stats
+
+    # Build ground truth from engine result
+    ground_truth = {
+        "highest_mode": intel_result.highest_mode.value if intel_result.highest_mode else None,
+        "insights": [
+            {
+                "rule_id": i.rule_id,
+                "mode": i.mode.value if hasattr(i.mode, "value") else i.mode,
+                "data_cited": i.data_cited,
+            }
+            for i in intel_result.insights
+        ],
+    }
+
+    # Initialize narrator — try to get Gemini client
+    gemini_client = _get_gemini_client()
+    if gemini_client is None:
+        logger.info("Gemini client not available — skipping narration generation")
+        return stats
+
+    narrator = AdaptationNarrator(gemini_client=gemini_client)
+
+    # Build readiness context
+    readiness_components = None
+    if hasattr(readiness_result, "components") and readiness_result.components:
+        readiness_components = readiness_result.components
+
+    insight_rule_ids = [i.rule_id for i in intel_result.insights]
+    scores = []
+
+    for insight in intel_result.insights:
+        # Skip LOG mode — internal tracking only
+        if insight.mode == InsightMode.LOG:
+            continue
+
+        try:
+            result = narrator.narrate(
+                rule_id=insight.rule_id,
+                mode=insight.mode.value if hasattr(insight.mode, "value") else insight.mode,
+                data_cited=insight.data_cited,
+                ground_truth=ground_truth,
+                insight_rule_ids=insight_rule_ids,
+                readiness_score=readiness_result.score,
+                readiness_components=readiness_components,
+            )
+
+            stats["narrations_generated"] += 1
+
+            if result.suppressed:
+                stats["narrations_suppressed"] += 1
+            else:
+                stats["narrations_passed"] += 1
+
+            if result.score_result:
+                scores.append(result.score_result.score)
+
+            # Persist narration log
+            _persist_narration(
+                athlete_id=athlete_id,
+                target_date=target_date,
+                insight=insight,
+                narration_result=result,
+                ground_truth=ground_truth,
+                db=db,
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Narration failed for {insight.rule_id} athlete {athlete_id}: {e}",
+                exc_info=True,
+            )
+
+    if scores:
+        stats["narration_avg_score"] = round(sum(scores) / len(scores), 3)
+
+    return stats
+
+
+def _persist_narration(
+    athlete_id: UUID,
+    target_date: date,
+    insight,
+    narration_result,
+    ground_truth: Dict,
+    db: Session,
+) -> None:
+    """Persist a narration result to NarrationLog and update InsightLog."""
+    from models import NarrationLog, InsightLog
+    import uuid
+
+    # Create NarrationLog entry
+    narration_log = NarrationLog(
+        id=uuid.uuid4(),
+        athlete_id=athlete_id,
+        trigger_date=target_date,
+        rule_id=insight.rule_id,
+        narration_text=narration_result.raw_response,
+        prompt_used=narration_result.prompt_used,
+        ground_truth=ground_truth,
+        model_used=narration_result.model_used,
+        input_tokens=narration_result.input_tokens,
+        output_tokens=narration_result.output_tokens,
+        latency_ms=narration_result.latency_ms,
+        suppressed=narration_result.suppressed,
+        suppression_reason=narration_result.suppression_reason,
+    )
+
+    # Fill in scoring fields
+    if narration_result.score_result:
+        sr = narration_result.score_result
+        narration_log.factually_correct = sr.factually_correct
+        narration_log.no_raw_metrics = sr.no_raw_metrics
+        narration_log.actionable_language = sr.actionable_language
+        narration_log.criteria_passed = sr.criteria_passed
+        narration_log.score = sr.score
+        narration_log.contradicts_engine = sr.contradicts_engine
+        narration_log.contradiction_detail = sr.contradiction_detail
+
+    db.add(narration_log)
+
+    # Update InsightLog with narration (find the matching row)
+    try:
+        insight_row = (
+            db.query(InsightLog)
+            .filter(
+                InsightLog.athlete_id == athlete_id,
+                InsightLog.trigger_date == target_date,
+                InsightLog.rule_id == insight.rule_id,
+            )
+            .order_by(InsightLog.created_at.desc())
+            .first()
+        )
+        if insight_row:
+            if not narration_result.suppressed and narration_result.narration:
+                insight_row.narrative = narration_result.narration
+            if narration_result.score_result:
+                insight_row.narrative_score = narration_result.score_result.score
+                insight_row.narrative_contradicts = narration_result.score_result.contradicts_engine
+    except Exception as e:
+        logger.warning(f"Could not update InsightLog with narration: {e}")
+
+
+def _get_gemini_client():
+    """Get a Gemini client instance, or None if unavailable."""
+    import os
+    google_key = os.environ.get("GOOGLE_API_KEY")
+    if not google_key:
+        return None
+    try:
+        from google import genai
+        return genai.Client(api_key=google_key)
+    except Exception as e:
+        logger.warning(f"Could not initialize Gemini client: {e}")
+        return None
 
 
 @celery_app.task(

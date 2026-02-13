@@ -1,17 +1,18 @@
 """
-Daily Intelligence API (Phase 2D)
+Daily Intelligence API (Phase 2D + 3A)
 
-Endpoints for the frontend to retrieve intelligence insights.
+Endpoints for the frontend to retrieve intelligence insights and narrations.
 These power the calendar card's daily intelligence display.
 
 Design:
-    - GET /today returns pre-computed insights (from the morning task)
+    - GET /today returns pre-computed insights + narrations (from the morning task)
     - GET /{date} returns insights for a specific date
     - POST /compute triggers on-demand computation (for pull-to-refresh)
+    - GET /narration/quality returns narration quality metrics (for admin/gating)
     - No mutation of the training plan — read-only intelligence surface
 
 Sources:
-    docs/TRAINING_PLAN_REBUILD_PLAN.md (Phase 2D)
+    docs/TRAINING_PLAN_REBUILD_PLAN.md (Phase 2D, 3A)
 """
 
 from datetime import date, datetime, timedelta
@@ -24,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.auth import get_current_user
-from models import Athlete, InsightLog, DailyReadiness
+from models import Athlete, InsightLog, DailyReadiness, NarrationLog
 
 import logging
 
@@ -44,10 +45,27 @@ class InsightResponse(BaseModel):
     rule_id: str
     mode: str                  # "inform", "suggest", "flag", "ask", "log"
     message: Optional[str] = None
+    narrative: Optional[str] = None       # Phase 3A: coach narration (None if suppressed)
     data_cited: Optional[dict] = None
     confidence: Optional[float] = None
     trigger_date: date
     readiness_score: Optional[float] = None
+
+
+class NarrationQualityResponse(BaseModel):
+    """Narration quality metrics for admin monitoring and Phase 3B gating."""
+    window_start: date
+    window_end: date
+    total_narrations: int = 0
+    total_criteria_checks: int = 0
+    total_criteria_passed: int = 0
+    score: float = 0.0
+    factual_pass_rate: float = 0.0
+    no_metrics_pass_rate: float = 0.0
+    actionable_pass_rate: float = 0.0
+    passes_90_threshold: bool = False
+    suppression_rate: float = 0.0
+    contradiction_rate: float = 0.0
 
 
 class ReadinessResponse(BaseModel):
@@ -189,6 +207,67 @@ def get_recent_intelligence(
     return results
 
 
+@router.get("/narration/quality", response_model=NarrationQualityResponse)
+def get_narration_quality(
+    days: int = Query(default=7, ge=1, le=28),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get narration quality metrics for the last N days.
+
+    Used for:
+    - Admin monitoring of narration quality
+    - Phase 3B gate check (90% for 4 weeks)
+    - Identifying which criterion is weakest
+    """
+    today = date.today()
+    window_start = today - timedelta(days=days)
+
+    narrations = (
+        db.query(NarrationLog)
+        .filter(
+            NarrationLog.athlete_id == current_user.id,
+            NarrationLog.trigger_date >= window_start,
+            NarrationLog.trigger_date <= today,
+            NarrationLog.score.isnot(None),
+        )
+        .all()
+    )
+
+    total = len(narrations)
+    if total == 0:
+        return NarrationQualityResponse(
+            window_start=window_start,
+            window_end=today,
+        )
+
+    factual_pass = sum(1 for n in narrations if n.factually_correct)
+    metrics_pass = sum(1 for n in narrations if n.no_raw_metrics)
+    action_pass = sum(1 for n in narrations if n.actionable_language)
+    suppressed = sum(1 for n in narrations if n.suppressed)
+    contradictions = sum(1 for n in narrations if n.contradicts_engine)
+
+    total_checks = total * 3
+    total_passed = factual_pass + metrics_pass + action_pass
+    score = total_passed / total_checks if total_checks > 0 else 0.0
+
+    return NarrationQualityResponse(
+        window_start=window_start,
+        window_end=today,
+        total_narrations=total,
+        total_criteria_checks=total_checks,
+        total_criteria_passed=total_passed,
+        score=round(score, 4),
+        factual_pass_rate=round(factual_pass / total, 4),
+        no_metrics_pass_rate=round(metrics_pass / total, 4),
+        actionable_pass_rate=round(action_pass / total, 4),
+        passes_90_threshold=score >= 0.90,
+        suppression_rate=round(suppressed / total, 4),
+        contradiction_rate=round(contradictions / total, 4),
+    )
+
+
 # =============================================================================
 # INTERNAL HELPERS
 # =============================================================================
@@ -235,6 +314,7 @@ def _get_intelligence_for_date(
             rule_id=i.rule_id,
             mode=i.mode,
             message=i.message,
+            narrative=i.narrative if hasattr(i, "narrative") else None,  # Phase 3A
             data_cited=i.data_cited,
             confidence=i.confidence,
             trigger_date=i.trigger_date,
