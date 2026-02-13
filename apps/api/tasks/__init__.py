@@ -31,6 +31,7 @@ from . import strava_tasks  # noqa: E402
 from . import digest_tasks  # noqa: E402
 from . import best_effort_tasks  # noqa: E402
 from . import import_tasks  # noqa: E402
+from . import intelligence_tasks  # noqa: E402
 try:
     from . import garmin_tasks  # noqa: E402
 except ImportError:
