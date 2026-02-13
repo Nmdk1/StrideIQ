@@ -1316,7 +1316,13 @@ def _interpret_combination(name1: str, name2: str, is_improvement: bool, effect_
     strength = "strongly" if abs(effect_size) > 0.8 else "moderately"
     
     # Determine if inputs are "good high" or "good low"
-    good_high_inputs = {'sleep_hours', 'hrv_rmssd', 'daily_protein_g', 'daily_carbs_g'}
+    # NOTE: hrv_rmssd is INTENTIONALLY excluded from good_high_inputs.
+    # Build plan Principle 6: "No metric is assumed directional."
+    # HRV direction must be discovered per-athlete by the correlation engine,
+    # not assumed from population norms. Some athletes perform better with
+    # lower HRV (parasympathetic withdrawal before competition).
+    # See: docs/TRAINING_PLAN_REBUILD_PLAN.md — HRV Correlation Study
+    good_high_inputs = {'sleep_hours', 'daily_protein_g', 'daily_carbs_g'}
     good_low_inputs = {'resting_hr', 'work_stress', 'work_hours'}
     
     def describe_input(name: str, is_high: bool) -> str:

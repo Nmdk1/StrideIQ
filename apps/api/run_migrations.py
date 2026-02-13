@@ -44,10 +44,22 @@ def _get_alembic_config():
 
 
 def alembic_upgrade_head() -> None:
-    """Apply all pending migrations."""
+    """Apply all pending migrations (single head)."""
     from alembic import command
 
     command.upgrade(_get_alembic_config(), "head")
+
+
+def alembic_upgrade_heads() -> None:
+    """Apply all pending migrations across all branches (multiple heads).
+
+    The project uses independent migration branches — Phase 2A, 2B, and 3A
+    each have down_revision=None and use IF NOT EXISTS / column-check patterns
+    for idempotent safety. This upgrades all branches to their respective heads.
+    """
+    from alembic import command
+
+    command.upgrade(_get_alembic_config(), "heads")
 
 
 def alembic_stamp_head() -> None:
@@ -73,8 +85,11 @@ def main():
         sys.exit(1)
     
     # Production rule: always apply migrations.
+    # Use "heads" (plural) because the project uses independent migration
+    # branches (Phases 2A, 2B, 3A are standalone with down_revision=None
+    # and IF NOT EXISTS / column-check safety patterns).
     try:
-        alembic_upgrade_head()
+        alembic_upgrade_heads()
         print("Migrations completed successfully!")
         return
     except Exception as e:
