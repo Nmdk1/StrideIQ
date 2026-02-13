@@ -183,7 +183,7 @@ def get_efficiency_signal(athlete_id: str, db: Session) -> Optional[Signal]:
         if p_value is not None and p_value >= 0.10:
             return None
         
-        # For efficiency, lower is better (more efficient)
+        # pace/HR ratio — directionally ambiguous (see OutputMetricMeta)
         if direction == "improving":
             return Signal(
                 id="efficiency_improving",

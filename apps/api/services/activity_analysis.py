@@ -44,7 +44,7 @@ class EfficiencyMetrics:
         self,
         pace_per_mile: Optional[float] = None,
         avg_heart_rate: Optional[int] = None,
-        efficiency_score: Optional[float] = None,  # pace_per_mile / avg_hr (lower is better)
+        efficiency_score: Optional[float] = None,  # pace_per_mile / avg_hr (directionally ambiguous — see OutputMetricMeta)
         distance_m: Optional[int] = None
     ):
         self.pace_per_mile = pace_per_mile

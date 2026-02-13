@@ -480,7 +480,7 @@ class RunAnalysisEngine:
                         similar_efficiencies.append(s_pace / s.avg_hr)
             
             if similar_efficiencies and context.efficiency_score:
-                # Lower pace/HR ratio = better efficiency
+                # pace/HR ratio (directionally ambiguous — see OutputMetricMeta)
                 # Count runs with HIGHER (worse) scores to get percentile
                 better_count = sum(1 for e in similar_efficiencies if e > context.efficiency_score)
                 context.percentile_vs_similar = (better_count / len(similar_efficiencies)) * 100

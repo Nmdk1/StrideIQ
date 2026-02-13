@@ -287,8 +287,15 @@ class AnchorFinder:
     ) -> Optional[EfficiencyAnchor]:
         """
         Find best (or worst) efficiency day in lookback period.
-        
-        Efficiency = pace / HR (lower pace at same HR = better)
+
+        Uses cardiac_speed = speed(m/s) / avg_hr * 1000.
+        Higher = faster at lower HR = unambiguously better.
+
+        NOTE: This is intentionally a different construct from the
+        correlation_engine's pace/HR ratio.  pace/HR is directionally
+        ambiguous (see OutputMetricMeta in n1_insight_generator).
+        speed/HR is not — higher is always better — so it is safe
+        for anchor comparisons.
         """
         today = date.today()
         start_date = today - timedelta(days=lookback_days)
@@ -307,11 +314,11 @@ class AnchorFinder:
         if len(activities) < 5:
             return None
         
-        # Calculate efficiency for each
+        # Calculate cardiac_speed for each (speed/HR — higher = better)
         efficiencies = []
         for a in activities:
             if a.avg_hr and a.average_speed and float(a.average_speed) > 0:
-                # Efficiency = speed / HR (higher = better, faster at lower HR)
+                # cardiac_speed = speed / HR (higher = faster at lower HR = better)
                 eff = float(a.average_speed) / a.avg_hr * 1000
                 efficiencies.append((a, eff))
         

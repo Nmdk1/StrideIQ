@@ -383,7 +383,7 @@ class PatternRecognitionEngine:
         
         weight_trend = self._calculate_weight_trend(athlete_id, activity_date)
         
-        # Calculate efficiency (pace / HR - lower is better efficiency)
+        # Calculate efficiency (pace / HR — directionally ambiguous, see OutputMetricMeta)
         pace = activity.duration_s / (activity.distance_m / 1000) if activity.distance_m else None
         efficiency = pace / activity.avg_hr if pace and activity.avg_hr else None
         

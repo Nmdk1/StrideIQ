@@ -1587,7 +1587,7 @@ def get_efficiency_by_zone(
                 "best_efficiency": round(best, 6) if best is not None else None,
                 "average_efficiency": round(avg, 6) if avg is not None else None,
                 "recent_trend_pct": round(trend_data[-1][1], 2) if trend_data else None,
-                "note": "Efficiency is Pace(sec/km)/HR(bpm). Lower = faster at same HR (better). Trend % is vs baseline (negative = improvement).",
+                "note": "Efficiency is Pace(sec/km)/HR(bpm) — directionally ambiguous (rises when HR drops, falls when pace improves). Do not infer direction from sign alone. See OutputMetricMeta.",
             },
             "evidence": evidence
             + [
@@ -2636,8 +2636,10 @@ def _interpret_nutrition_correlation(key: str, r: float) -> str:
     if abs(r) < 0.1:
         return "No meaningful relationship found"
 
-    # NOTE: Efficiency in our system is pace(sec/km)/HR, so LOWER is better.
-    # That means a NEGATIVE correlation between intake and efficiency can be a positive sign.
+    # NOTE: Efficiency is pace(sec/km)/HR — directionally ambiguous.
+    # This legacy interpretation assumes "lower = better" which is only valid
+    # when pace moves and HR is stable.  See OutputMetricMeta in n1_insight_generator.
+    # TODO: Migrate to unambiguous metrics (pace_at_effort, speed_at_fixed_hr).
     if "efficiency" in key and "delta" not in key:
         if r < -0.3:
             return "Strong positive effect: higher intake -> better efficiency"

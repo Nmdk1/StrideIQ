@@ -23,8 +23,11 @@ from services.efficiency_calculation import calculate_activity_efficiency_with_d
 from services.efficiency_analytics import bulk_load_splits_for_activities, is_quality_activity
 
 
-DELTA_PRODUCTIVE = -0.5  # Negative = improvement (lower EF)
-DELTA_HARMFUL = 0.5      # Positive = regression (higher EF)
+DELTA_PRODUCTIVE = -0.5  # Negative Δ = pace/HR dropped (pace improved, HR stable)
+DELTA_HARMFUL = 0.5      # Positive Δ = pace/HR rose (pace worsened, HR stable)
+# NOTE: These thresholds assume the dominant improvement mode is faster pace at
+# roughly constant HR.  The pace/HR ratio is directionally ambiguous when HR
+# moves instead — see OutputMetricMeta in n1_insight_generator.
 DELTA_WASTED_ABS = 0.1   # Flat zone
 
 
@@ -350,7 +353,7 @@ def explain_load_response_week(athlete_id: str, week_start: date, db: Session) -
         "productive_if_delta_lt": DELTA_PRODUCTIVE,
         "harmful_if_delta_gt": DELTA_HARMFUL,
         "wasted_if_abs_delta_lt": DELTA_WASTED_ABS,
-        "note": "Efficiency Δ is current_week_avg_EF - prior_week_avg_EF. Lower EF is better, so negative Δ is improvement.",
+        "note": "Efficiency Δ is current_week_avg(pace/HR) - prior_week_avg(pace/HR). Pace/HR ratio is directionally ambiguous; this assumes pace-dominant improvement. See OutputMetricMeta.",
     }
 
     return {

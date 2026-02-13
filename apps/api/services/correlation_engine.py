@@ -450,7 +450,7 @@ def aggregate_activity_nutrition(
             continue
 
         pace_per_km = duration_s / (distance_m / 1000.0)
-        efficiency = pace_per_km / avg_hr  # Lower is better
+        efficiency = pace_per_km / avg_hr  # Higher = same pace at lower HR = better
 
         if row.carbs_g is not None:
             carbs = float(row.carbs_g)
@@ -796,7 +796,7 @@ def aggregate_efficiency_by_effort_zone(
     - threshold: 80-88%
     - race: > 88%
     
-    Returns Pace/HR ratio (lower = better efficiency at that effort)
+    Returns Pace/HR ratio (higher = better efficiency — same pace at lower HR)
     """
     athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
     if not athlete or not athlete.max_hr:
@@ -826,7 +826,7 @@ def aggregate_efficiency_by_effort_zone(
     result = []
     for a in activities:
         pace_sec_km = a.duration_s / (a.distance_m / 1000)
-        efficiency = pace_sec_km / a.avg_hr  # Lower = faster at same HR
+        efficiency = pace_sec_km / a.avg_hr  # Higher = same pace at lower HR = better
         result.append((a.start_time.date(), efficiency))
     
     return result
@@ -843,7 +843,7 @@ def aggregate_efficiency_trend(
     """
     Calculate rolling efficiency improvement rate.
     
-    Returns % change in efficiency vs baseline (negative = improvement)
+    Returns % change in efficiency vs baseline (positive = improvement)
     """
     raw_data = aggregate_efficiency_by_effort_zone(
         athlete_id, start_date, end_date, db, effort_zone
@@ -1175,6 +1175,18 @@ def analyze_correlations(
     # Sort by correlation strength (absolute value)
     correlations.sort(key=lambda x: abs(x["correlation_coefficient"]), reverse=True)
     
+    # Attach output metric metadata so downstream consumers (insight generator,
+    # coach tools) never have to guess polarity from raw correlation sign.
+    from services.n1_insight_generator import get_metric_meta
+    meta = get_metric_meta(output_metric)
+    output_metric_metadata = {
+        "metric_key": meta.metric_key,
+        "metric_definition": meta.metric_definition,
+        "higher_is_better": meta.higher_is_better,
+        "polarity_ambiguous": meta.polarity_ambiguous,
+        "direction_interpretation": meta.direction_interpretation,
+    }
+
     return {
         "athlete_id": athlete_id,
         "analysis_period": {
@@ -1182,6 +1194,8 @@ def analyze_correlations(
             "end": end_date.isoformat(),
             "days": days
         },
+        "output_metric": output_metric,
+        "output_metric_metadata": output_metric_metadata,
         "sample_sizes": {
             "activities": len(outputs),
             "inputs": {name: len(data) for name, data in inputs.items()}

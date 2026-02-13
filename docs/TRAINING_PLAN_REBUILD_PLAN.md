@@ -625,3 +625,37 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 2. **Phase 4 (50K Ultra)** — new user segment + differentiation
 3. **Phase 3B** — when 4-week narration quality gate clears (monitor `/v1/intelligence/narration/quality`)
 4. **Phase 3C** — when 3+ month data/stat gates clear
+
+---
+
+## Athlete Trust Safety Contract (3C scope) — implemented and enforced
+
+Efficiency interpretation in the 3C insight layer is governed by a formal
+safety contract (`n1_insight_generator.py` module docstring + runtime gates).
+
+**Key behaviors:**
+
+- **Directional whitelist.** Only six approved metrics produce athlete-facing
+  "improves / declines" language: `pace_easy`, `pace_threshold`, `race_pace`
+  (lower is better), `completion_rate`, `completion`, `pb_events` (higher is
+  better).  All others — including raw and zone-filtered `efficiency`
+  (pace/HR) — emit neutral observation text only.
+- **Two-tier fail-closed suppression.**
+  - Tier 1 (ambiguous polarity): neutral wording, `category=pattern`.
+  - Tier 2 (missing / invalid / conflicting metadata): directional output
+    fully suppressed.
+- **No sign-only inference.** Correlation sign (r > 0 / r < 0) never
+  determines "beneficial" or "harmful" without explicit polarity metadata
+  from `OutputMetricMeta`.
+- **65 contract tests** enforce the whitelist, both fail-closed tiers,
+  mixed-scenario regression (same pace / lower HR AND same HR / faster pace),
+  and metadata validation.
+
+**Legacy migration backlog (intentionally open):**
+Local polarity assumptions remain in `load_response_explain`,
+`causal_attribution`, `coach_tools`, `home_signals`, `calendar_signals`,
+`pattern_recognition`, `run_analysis_engine`, `ai_coach`, and
+`activity_analysis`.  Each file has a comment referencing `OutputMetricMeta`.
+These are tracked for migration to the central registry but are not
+blockers — the 3C insight layer (the only path producing athlete-facing
+directional N=1 claims) is fully protected now.

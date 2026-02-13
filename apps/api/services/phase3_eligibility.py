@@ -33,9 +33,10 @@ MIN_TOTAL_RUNS = 60
 NARRATION_QUALITY_GATE = 0.90
 NARRATION_QUALITY_WINDOW_DAYS = 28
 
-# Tiers that qualify for each feature
+# Tiers that qualify for each feature.
+# Must stay aligned with the router tier checks in routers/insights.py.
 TIERS_3B = {"premium"}
-TIERS_3C = {"guided", "premium"}
+TIERS_3C = {"guided", "premium", "elite", "pro"}
 
 # Kill-switch env var (also checked via FeatureFlag table)
 KILL_SWITCH_3B_ENV = "STRIDEIQ_3B_KILL_SWITCH"
@@ -80,22 +81,41 @@ def _get_athlete(athlete_id: UUID, db: Session):
 
 
 def _history_stats(athlete_id: UUID, db: Session) -> Dict[str, Any]:
-    """Return summary of synced activity history."""
+    """Return summary of *synced* (provider-backed) activity history.
+
+    Only counts activities that came from a connected provider (Strava, Garmin,
+    etc.) — not manual entries.  This ensures the statistical foundation for
+    3B/3C is real device-recorded data, not thin manual backfill.
+
+    The Activity model has:
+      - source: "manual" (default) | "strava" | "garmin" | etc.
+      - provider: column mirroring the ingestion provider key.
+    A run counts as "synced" if source != 'manual' OR provider is set.
+    """
     from models import Activity
+    from sqlalchemy import or_
+
+    synced_filter = or_(
+        Activity.source != "manual",
+        Activity.provider.isnot(None),
+    )
+
     q = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.sport == "run",
+        synced_filter,
     )
     total_runs = q.count()
     if total_runs == 0:
         return {"total_runs": 0, "history_span_days": 0,
-                "earliest": None, "latest": None}
+                "earliest": None, "latest": None, "synced": True}
     dates = db.query(
         func.min(Activity.start_time),
         func.max(Activity.start_time),
     ).filter(
         Activity.athlete_id == athlete_id,
         Activity.sport == "run",
+        synced_filter,
     ).one()
     earliest, latest = dates
     span = (latest.date() - earliest.date()).days if earliest and latest else 0
@@ -104,6 +124,7 @@ def _history_stats(athlete_id: UUID, db: Session) -> Dict[str, Any]:
         "history_span_days": span,
         "earliest": earliest.isoformat() if earliest else None,
         "latest": latest.isoformat() if latest else None,
+        "synced": True,
     }
 
 
@@ -272,7 +293,7 @@ def get_3c_eligibility(
     if athlete.subscription_tier not in TIERS_3C:
         return EligibilityResult(
             eligible=False,
-            reason=f"N=1 insights require guided or premium tier. Current: {athlete.subscription_tier}.",
+            reason=f"N=1 insights require guided, premium, elite, or pro tier. Current: {athlete.subscription_tier}.",
             evidence={"tier": athlete.subscription_tier, "required": sorted(TIERS_3C)},
         )
 

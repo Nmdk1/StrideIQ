@@ -144,7 +144,7 @@ def get_efficiency_badge(
         
         avg_28 = sum(recent_efficiencies) / len(recent_efficiencies)
         
-        # Calculate difference (lower efficiency value = better)
+        # Calculate difference (pace/HR ratio — directionally ambiguous, see OutputMetricMeta)
         diff_pct = ((day_avg_eff - avg_28) / avg_28) * 100
         
         if diff_pct < -5:  # Better efficiency

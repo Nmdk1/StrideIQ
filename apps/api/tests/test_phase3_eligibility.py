@@ -442,6 +442,51 @@ class TestPhase3BEligibility:
 # Cross-tier: guided gets 3C but not 3B
 # ---------------------------------------------------------------------------
 
+class TestSyncedHistorySufficiency:
+    """Verify that only synced (provider-backed) activities count."""
+
+    def test_manual_only_history_does_not_unlock_3c(self):
+        """All manual entries, no provider → should not unlock."""
+        athlete = _make_athlete(tier="premium")
+        # Build a mock where activity count query returns 0 synced runs
+        # (the filter now excludes manual-only)
+        db = _mock_db_for_athlete(athlete, total_runs=0, span_days=0)
+
+        result = get_3c_eligibility(athlete.id, db)
+        assert result.eligible is False
+        assert "insufficient" in result.reason.lower() or "data" in result.reason.lower()
+
+    def test_synced_history_unlocks_day1(self):
+        """Synced 2y of Strava history → unlocks immediately."""
+        athlete = _make_athlete(tier="premium")
+        db = _mock_db_for_athlete(athlete, total_runs=400, span_days=730)
+
+        mock_corr = {
+            "correlations": [
+                {
+                    "input_name": "weekly_volume_km",
+                    "correlation_coefficient": 0.55,
+                    "p_value": 0.001,
+                    "sample_size": 50,
+                    "is_significant": True,
+                    "direction": "positive",
+                    "strength": "moderate",
+                    "time_lag_days": 2,
+                },
+            ],
+        }
+        with patch("services.correlation_engine.analyze_correlations", return_value=mock_corr):
+            result = get_3c_eligibility(athlete.id, db)
+
+        assert result.eligible is True
+
+    def test_manual_only_does_not_unlock_3b(self):
+        athlete = _make_athlete(tier="premium")
+        db = _mock_db_for_athlete(athlete, total_runs=0, span_days=0, has_workout=True)
+        result = get_3b_eligibility(athlete.id, db)
+        assert result.eligible is False
+
+
 class TestCrossTierGating:
 
     def test_guided_gets_3c_not_3b(self):
@@ -470,3 +515,53 @@ class TestCrossTierGating:
         with patch("services.correlation_engine.analyze_correlations", return_value=mock_corr):
             result_3c = get_3c_eligibility(athlete.id, db_3c)
         assert result_3c.eligible is True
+
+    def test_elite_gets_3c(self):
+        """Elite tier qualifies for 3C (backward compat with router)."""
+        athlete = _make_athlete(tier="elite")
+        db = _mock_db_for_athlete(athlete, total_runs=200, span_days=300)
+        mock_corr = {
+            "correlations": [
+                {
+                    "input_name": "weekly_volume_km",
+                    "correlation_coefficient": 0.55,
+                    "p_value": 0.001,
+                    "sample_size": 50,
+                    "is_significant": True,
+                    "direction": "positive",
+                    "strength": "moderate",
+                    "time_lag_days": 0,
+                },
+            ],
+        }
+        with patch("services.correlation_engine.analyze_correlations", return_value=mock_corr):
+            result = get_3c_eligibility(athlete.id, db)
+        assert result.eligible is True
+
+    def test_pro_gets_3c(self):
+        """Pro tier qualifies for 3C (aligned with router)."""
+        athlete = _make_athlete(tier="pro")
+        db = _mock_db_for_athlete(athlete, total_runs=200, span_days=300)
+        mock_corr = {
+            "correlations": [
+                {
+                    "input_name": "weekly_volume_km",
+                    "correlation_coefficient": 0.55,
+                    "p_value": 0.001,
+                    "sample_size": 50,
+                    "is_significant": True,
+                    "direction": "positive",
+                    "strength": "moderate",
+                    "time_lag_days": 0,
+                },
+            ],
+        }
+        with patch("services.correlation_engine.analyze_correlations", return_value=mock_corr):
+            result = get_3c_eligibility(athlete.id, db)
+        assert result.eligible is True
+
+    def test_free_gets_neither(self):
+        athlete = _make_athlete(tier="free")
+        db = _mock_db_for_athlete(athlete, total_runs=200, span_days=300, has_workout=True)
+        assert get_3b_eligibility(athlete.id, db).eligible is False
+        assert get_3c_eligibility(athlete.id, db).eligible is False

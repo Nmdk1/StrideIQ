@@ -1754,14 +1754,14 @@ ATHLETE BRIEF:
             for a in month_activities:
                 if a.avg_hr and a.distance_m and a.duration_s:
                     pace_km = a.duration_s / (a.distance_m / 1000)
-                    efficiency = pace_km / a.avg_hr  # Lower is better
+                    efficiency = pace_km / a.avg_hr  # pace/HR ratio (directionally ambiguous — see OutputMetricMeta)
                     efficiencies.append(efficiency)
             
             context_parts.append(f"Runs: {run_count} | Distance: {total_distance:.0f} km | Avg/week: {avg_weekly:.0f} km")
             
             if efficiencies:
                 avg_eff = sum(efficiencies) / len(efficiencies)
-                context_parts.append(f"Average efficiency: {avg_eff:.3f} (pace/HR ratio - lower is better)")
+                context_parts.append(f"Average efficiency: {avg_eff:.3f} (pace/HR ratio — directionally ambiguous, do not assume lower=better)")
         
         # --- Recent Check-ins ---
         recent_checkins = self.db.query(DailyCheckin).filter(

@@ -407,6 +407,33 @@ def get_workout_narrative(
         gemini_client=gemini_client,
     )
 
+    # Persist audit record for founder QA review (first 50 narratives).
+    # Uses the existing NarrationLog table with rule_id="WORKOUT_NARRATIVE".
+    try:
+        log = NarrationLog(
+            athlete_id=current_user.id,
+            trigger_date=target_date,
+            rule_id="WORKOUT_NARRATIVE",
+            narration_text=result.narrative,
+            prompt_used=result.prompt_used,
+            suppressed=result.suppressed,
+            suppression_reason=result.suppression_reason,
+            model_used=result.model_used,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            latency_ms=result.latency_ms,
+            # Store eligibility evidence as ground_truth for review
+            ground_truth={
+                "eligibility": eligibility_dict,
+                "suppression_reason": result.suppression_reason,
+            },
+        )
+        db.add(log)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning("Failed to persist workout narrative audit log", exc_info=True)
+
     return WorkoutNarrativeResponse(
         narrative=result.narrative,
         suppressed=result.suppressed,

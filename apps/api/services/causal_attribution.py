@@ -709,7 +709,7 @@ class CausalAttributionEngine:
             pace_per_km = a.duration_s / (a.distance_m / 1000)
             
             if metric == "efficiency" and a.avg_hr and a.avg_hr > 0:
-                # Efficiency = pace / HR (lower is better)
+                # pace/HR ratio (directionally ambiguous — see OutputMetricMeta)
                 efficiency = pace_per_km / a.avg_hr
                 dates.append(a.activity_date)
                 values.append(efficiency)
@@ -775,7 +775,7 @@ class CausalAttributionEngine:
             if pos_dir == 0:
                 effect_direction = ImpactDirection.NEUTRAL
             elif (corr_r > 0 and pos_dir > 0) or (corr_r < 0 and pos_dir < 0):
-                # Positive input -> negative correlation with efficiency (lower = better)
+                # Positive input -> correlation aligns with positive_direction config
                 effect_direction = ImpactDirection.POSITIVE
             else:
                 effect_direction = ImpactDirection.NEGATIVE
@@ -1399,7 +1399,7 @@ class CausalAttributionEngine:
         for a in activities:
             if a.distance_m and a.duration_s and a.avg_hr and a.avg_hr > 0:
                 pace = a.duration_s / (a.distance_m / 1000)
-                efficiency = pace / a.avg_hr  # Lower is better
+                efficiency = pace / a.avg_hr  # pace/HR ratio (directionally ambiguous)
                 runs_with_efficiency.append({
                     "id": str(a.id),
                     "date": a.start_time.date(),
