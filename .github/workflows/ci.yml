@@ -169,6 +169,30 @@ jobs:
           fail_ci_if_error: false
 
   # ============================================================
+  # Migration Integrity
+  # ============================================================
+  migration-check:
+    name: Migration Integrity
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: apps/api/requirements.txt
+
+      - name: Install Alembic
+        run: pip install alembic sqlalchemy psycopg2-binary
+
+      - name: Check migration heads and roots
+        run: python .github/scripts/ci_alembic_heads_check.py
+
+  # ============================================================
   # Backend Linting
   # ============================================================
   backend-lint:
