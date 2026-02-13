@@ -1,14 +1,15 @@
 """
 Load Response Explain Service
 
-Explains why a week was labeled productive/wasted/harmful/neutral in load-response.
+Explains why a week was labeled adaptation_signal/load_signal/stable/neutral in load-response.
 
 This is NOT a correlational attribution (needs many samples). Instead:
 - Shows the exact rule used for classification (delta thresholds)
 - Shows week metrics vs previous week
 - Surfaces the biggest "signal deviations" vs a recent baseline (sleep/stress/soreness/HRV/resting HR, etc.)
 
-Goal: When a user sees "harmful", they immediately learn "why" and what likely contributed.
+Note: Labels are intentionally neutral because the pace/HR efficiency ratio is
+directionally ambiguous.  See Athlete Trust Safety Contract in n1_insight_generator.py.
 """
 
 from __future__ import annotations
@@ -23,12 +24,16 @@ from services.efficiency_calculation import calculate_activity_efficiency_with_d
 from services.efficiency_analytics import bulk_load_splits_for_activities, is_quality_activity
 
 
-DELTA_PRODUCTIVE = -0.5  # Negative Δ = pace/HR dropped (pace improved, HR stable)
-DELTA_HARMFUL = 0.5      # Positive Δ = pace/HR rose (pace worsened, HR stable)
-# NOTE: These thresholds assume the dominant improvement mode is faster pace at
-# roughly constant HR.  The pace/HR ratio is directionally ambiguous when HR
-# moves instead — see OutputMetricMeta in n1_insight_generator.
-DELTA_WASTED_ABS = 0.1   # Flat zone
+DELTA_POSITIVE_SHIFT = -0.5  # Negative Δ = pace/HR ratio decreased
+DELTA_NEGATIVE_SHIFT = 0.5  # Positive Δ = pace/HR ratio increased
+# CAUTION: Pace/HR ratio is directionally ambiguous.  These thresholds
+# detect meaningful week-over-week change, but the labels below
+# ("adaptation signal" / "load signal" / "stable") intentionally avoid
+# claiming "productive" or "harmful" because both improvement modes
+# (faster pace at same HR, or same pace at lower HR) move the ratio
+# in opposite directions.  See Athlete Trust Safety Contract in
+# n1_insight_generator.py.
+DELTA_FLAT_ABS = 0.1   # Flat zone
 
 
 FACTOR_DEFS: Dict[str, Dict[str, Any]] = {
@@ -89,14 +94,21 @@ def _extract_checkin_factor(checkin: DailyCheckin, key: str) -> Optional[float]:
 
 
 def _classify_load_type(efficiency_delta: Optional[float], avg_efficiency: Optional[float]) -> str:
+    """Classify week-over-week efficiency shift.
+
+    Uses neutral labels because the pace/HR ratio is directionally ambiguous.
+    "adaptation_signal" and "load_signal" replace the old "productive" /
+    "harmful" labels to avoid false directional claims.
+    See Athlete Trust Safety Contract in n1_insight_generator.py.
+    """
     load_type = "neutral"
     if efficiency_delta is not None and avg_efficiency:
-        if efficiency_delta < DELTA_PRODUCTIVE:
-            load_type = "productive"
-        elif efficiency_delta > DELTA_HARMFUL:
-            load_type = "harmful"
-        elif abs(efficiency_delta) < DELTA_WASTED_ABS:
-            load_type = "wasted"
+        if efficiency_delta < DELTA_POSITIVE_SHIFT:
+            load_type = "adaptation_signal"
+        elif efficiency_delta > DELTA_NEGATIVE_SHIFT:
+            load_type = "load_signal"
+        elif abs(efficiency_delta) < DELTA_FLAT_ABS:
+            load_type = "stable"
     return load_type
 
 
@@ -350,10 +362,10 @@ def explain_load_response_week(athlete_id: str, week_start: date, db: Session) -
 
     # Human explanation of classification rule
     rule = {
-        "productive_if_delta_lt": DELTA_PRODUCTIVE,
-        "harmful_if_delta_gt": DELTA_HARMFUL,
-        "wasted_if_abs_delta_lt": DELTA_WASTED_ABS,
-        "note": "Efficiency Δ is current_week_avg(pace/HR) - prior_week_avg(pace/HR). Pace/HR ratio is directionally ambiguous; this assumes pace-dominant improvement. See OutputMetricMeta.",
+        "adaptation_signal_if_delta_lt": DELTA_POSITIVE_SHIFT,
+        "load_signal_if_delta_gt": DELTA_NEGATIVE_SHIFT,
+        "stable_if_abs_delta_lt": DELTA_FLAT_ABS,
+        "note": "Efficiency Δ is current_week_avg(pace/HR) - prior_week_avg(pace/HR). Pace/HR ratio is directionally ambiguous — labels indicate magnitude of change, not good/bad. See Athlete Trust Safety Contract.",
     }
 
     return {
@@ -364,8 +376,8 @@ def explain_load_response_week(athlete_id: str, week_start: date, db: Session) -
         "load_type": load_type,
         "confidence": confidence,
         "interpretation": {
-            "meaning": "This chart is computed from your runs. The label is a week-over-week efficiency signal (not a judgement). It reflects how your average efficiency changed vs the prior week.",
-            "taper_cutback_note": "A cutback week or taper can still show a short-term efficiency regression (more rest, fewer quality samples, different conditions). Treat this as a flag to inspect context, not automatically 'bad'.",
+            "meaning": "This chart is computed from your runs. The label reflects a week-over-week shift in your efficiency ratio (pace/HR). Because this ratio can move in different directions for different types of improvement, the label indicates change magnitude — not whether the change is good or bad.",
+            "taper_cutback_note": "A cutback week or taper can show a shift in efficiency ratio (fewer quality samples, different conditions). Treat this as a flag to inspect context, not as a judgment.",
             "volume_change_pct": volume_change_pct,
         },
         "data_sources": {

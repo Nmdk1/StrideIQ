@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 import statistics
 import math
+from scipy.stats import t as t_dist
 
 
 class TrendConfidence(str, Enum):
@@ -100,58 +101,11 @@ def linear_regression(x: List[float], y: List[float]) -> Tuple[float, float, flo
 
 def calculate_p_value_from_t(t_stat: float, df: int) -> float:
     """
-    Approximate two-tailed p-value from t-statistic using normal approximation.
-    For df > 30, t-distribution ≈ normal distribution.
-    
-    For more precise values, use scipy.stats.t.sf() - but this avoids scipy dependency.
+    Two-tailed p-value from t-statistic using exact t-distribution (scipy).
     """
     if df <= 0:
         return 1.0
-    
-    abs_t = abs(t_stat)
-    
-    # For very large t-stats (extremely significant), return very small p-value
-    if abs_t > 100:
-        return 0.0001  # Effectively 0, but avoid exact 0
-    
-    # For very small t-stats, return high p-value
-    if abs_t < 0.001:
-        return 1.0
-    
-    # Standard normal CDF approximation (Abramowitz and Stegun)
-    def norm_cdf(z):
-        # Clamp z to avoid overflow
-        z = max(-37, min(37, z))
-        
-        a1 = 0.254829592
-        a2 = -0.284496736
-        a3 = 1.421413741
-        a4 = -1.453152027
-        a5 = 1.061405429
-        p = 0.3275911
-        
-        sign = 1 if z >= 0 else -1
-        z = abs(z)
-        
-        t = 1.0 / (1.0 + p * z)
-        exp_val = math.exp(-z * z / 2)
-        y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * exp_val
-        
-        return 0.5 * (1.0 + sign * y)
-    
-    # For t-distribution with df degrees of freedom
-    # When df is large, t ≈ z
-    # For smaller df, we need a correction factor
-    if df > 30:
-        correction = 1.0
-    else:
-        # Rough correction for small df
-        correction = math.sqrt(df / (df - 2)) if df > 2 else 1.5
-    
-    adjusted_t = abs_t / correction
-    p_value = 2 * (1 - norm_cdf(adjusted_t))
-    
-    return min(1.0, max(0.0, p_value))
+    return float(min(1.0, max(0.0, 2 * t_dist.sf(abs(t_stat), df))))
 
 
 def analyze_efficiency_trend(

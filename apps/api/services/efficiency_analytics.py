@@ -346,15 +346,16 @@ def calculate_load_response(
                 if avg_efficiency:
                     efficiency_delta = avg_efficiency - prev_avg  # Positive = improvement
         
-        # Classify load type
+        # Classify load type — neutral labels because pace/HR ratio is
+        # directionally ambiguous.  See Athlete Trust Safety Contract.
         load_type = "neutral"
         if efficiency_delta is not None and avg_efficiency:
-            if efficiency_delta > 0.0005:  # Significant improvement
-                load_type = "productive"
-            elif efficiency_delta < -0.0005:  # Significant decline
-                load_type = "harmful"
-            elif abs(efficiency_delta) < 0.0001:  # No change
-                load_type = "wasted"
+            if efficiency_delta > 0.0005:
+                load_type = "adaptation_signal"
+            elif efficiency_delta < -0.0005:
+                load_type = "load_signal"
+            elif abs(efficiency_delta) < 0.0001:
+                load_type = "stable"
         
         result.append({
             "week_start": week_key,

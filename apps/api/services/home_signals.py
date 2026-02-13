@@ -183,30 +183,19 @@ def get_efficiency_signal(athlete_id: str, db: Session) -> Optional[Signal]:
         if p_value is not None and p_value >= 0.10:
             return None
         
-        # pace/HR ratio — directionally ambiguous (see OutputMetricMeta)
-        if direction == "improving":
+        # Efficiency (pace/HR) is directionally ambiguous — do not claim
+        # "improving" or "declining".  Show neutral change signal only.
+        # See Athlete Trust Safety Contract in n1_insight_generator.py.
+        if direction in ("improving", "declining"):
             return Signal(
-                id="efficiency_improving",
+                id="efficiency_change",
                 type=SignalType.EFFICIENCY,
                 priority=PRIORITY_EFFICIENCY_TREND,
                 confidence=SignalConfidence.HIGH if confidence == "high" else SignalConfidence.MODERATE,
-                icon=SignalIcon.TRENDING_UP,
-                color="emerald",
-                title=f"Efficiency up {change_pct:.1f}%",
-                subtitle="Last 4 weeks trend",
-                detail=f"p={p_value:.2f}" if p_value else None,
-                action_url="/analytics"
-            )
-        elif direction == "declining":
-            return Signal(
-                id="efficiency_declining",
-                type=SignalType.EFFICIENCY,
-                priority=PRIORITY_EFFICIENCY_TREND,
-                confidence=SignalConfidence.HIGH if confidence == "high" else SignalConfidence.MODERATE,
-                icon=SignalIcon.TRENDING_DOWN,
-                color="orange",
-                title=f"Efficiency down {change_pct:.1f}%",
-                subtitle="Watch this trend",
+                icon=SignalIcon.GAUGE,
+                color="blue",
+                title=f"Efficiency shifted {change_pct:.1f}%",
+                subtitle="Last 4 weeks trend — tap to explore",
                 detail=f"p={p_value:.2f}" if p_value else None,
                 action_url="/analytics"
             )

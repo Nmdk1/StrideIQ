@@ -18,8 +18,8 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 > | Phase 2 (Adaptation) | COMPLETE | 29 | 0 |
 > | Phase 3A (Narration) | COMPLETE | 66 | 0 |
 > | Coach Trust | COMPLETE | 22 | 0 |
-> | Phase 3B (Workout Narratives) | CONTRACT ONLY | 0 | 24 |
-> | Phase 3C (N=1 Insights) | CONTRACT ONLY | 0 | 26 |
+> | Phase 3B (Workout Narratives) | CODE COMPLETE — gate accruing | 65+ | 24 |
+> | Phase 3C (N=1 Insights) | CODE COMPLETE — gate accruing | 65+ | 26 |
 > | Phase 4 (50K Ultra) | CONTRACT ONLY | 0 | 37 |
 > | Monetization Tiers | CONTRACT ONLY | 0 | 29 |
 > | Other backend | COMPLETE | 1,603 | 3 |
@@ -515,7 +515,7 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 
 ---
 
-## Phase 3: Contextual Coach Narratives — 3A ✅ COMPLETE, 3B/3C CONTRACT ONLY
+## Phase 3: Contextual Coach Narratives — 3A ✅ COMPLETE, 3B/3C ✅ CODE COMPLETE (gate accruing)
 
 **Goal:** The coach explains adaptation decisions and eventually provides genuinely contextual workout notes — never templates, never repeated.
 **Dependencies:** Phase 2 running and creating context. Coach narration accuracy gated by parallel trust track.
@@ -594,8 +594,8 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 | **1** | World-class plans: marathon → half → 10K → 5K. N=1 overrides. Paces everywhere. Taper democratization. | None | ✅ COMPLETE |
 | **2** | Daily adaptation engine: readiness score, rules engine, workout state machine, nightly replan, no-race modes. | Phase 1 substantially complete | ✅ COMPLETE |
 | **3A** | Adaptation narration: coach explains intelligence decisions. | Phase 2 running | ✅ COMPLETE |
-| **3B** | Contextual workout narratives. | Narration accuracy > 90% for 4 weeks | ⏳ CONTRACT ONLY — gate accruing |
-| **3C** | N=1 personalized insights. | 3+ months data + significant correlations | ⏳ CONTRACT ONLY — gate accruing |
+| **3B** | Contextual workout narratives. | Narration accuracy > 90% for 4 weeks | ✅ CODE COMPLETE — gate accruing |
+| **3C** | N=1 personalized insights. | 3+ months data + significant correlations | ✅ CODE COMPLETE — gate accruing |
 | **4** | 50K ultra: new primitives. | Phases 1-2 complete | 📋 CONTRACT ONLY — ready to build |
 | **Monetization** | Tier mapping: Free / One-time / Guided / Premium. | Phases 1-2 complete | 📋 CONTRACT ONLY — ready to build |
 | **Parallel** | Coach trust: test harness, HRV study, narration scoring, advisory mode, autonomy. | Starts Day 1 | ✅ COMPLETE (ongoing accrual) |
@@ -651,11 +651,30 @@ safety contract (`n1_insight_generator.py` module docstring + runtime gates).
   mixed-scenario regression (same pace / lower HR AND same HR / faster pace),
   and metadata validation.
 
-**Legacy migration backlog (intentionally open):**
-Local polarity assumptions remain in `load_response_explain`,
-`causal_attribution`, `coach_tools`, `home_signals`, `calendar_signals`,
+**Legacy surface lockdown (Feb 13, 2026):**
+Directional efficiency language has been neutralized across all athlete-facing
+surfaces, not just the 3C insight layer:
+
+- `home_signals.py` — efficiency signal now uses neutral "shifted" language, blue color, no up/down claims.
+- `calendar_signals.py` — efficiency badge shows "Eff Δ" (not better/worse), trajectory does not set POSITIVE/CAUTION from efficiency.
+- `coach_tools.py` — zone narrative removed "Lower = better" claim, nutrition correlation uses neutral "association" language.
+- `load_response_explain.py` — load type labels renamed from `productive/harmful/wasted` to `adaptation_signal/load_signal/stable`.
+- `efficiency_analytics.py` — same neutral load type labels.
+- `insight_feed.py` — load response summaries use neutral phrasing.
+
+**17 contract enforcement tests** in `test_trust_contract_enforcement.py` guard
+against regression across all six surfaces.
+
+**Statistical integrity fix (Feb 13, 2026):**
+All custom p-value approximations replaced with exact `scipy.stats.t.sf`:
+- `correlation_engine.py` — removed crude `_t_cdf` (was: `0.5 + t / (2*sqrt(df))`).
+- `efficiency_trending.py` — replaced Abramowitz & Stegun + correction factor.
+- `causal_attribution.py` — replaced incomplete beta function + F-distribution approximations.
+- `pre_race_fingerprinting.py` — replaced manual normal CDF.
+- `trend_attribution.py` — replaced exponential decay approximation.
+
+**Remaining migration debt:**
 `pattern_recognition`, `run_analysis_engine`, `ai_coach`, and
-`activity_analysis`.  Each file has a comment referencing `OutputMetricMeta`.
-These are tracked for migration to the central registry but are not
-blockers — the 3C insight layer (the only path producing athlete-facing
-directional N=1 claims) is fully protected now.
+`activity_analysis` still have local efficiency comments (non-athlete-facing).
+These are low-priority — they produce coach-internal or debug data, not
+athlete-facing directional claims.

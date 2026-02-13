@@ -20,6 +20,7 @@ from enum import Enum
 from uuid import UUID
 import math
 import logging
+from scipy.stats import t as t_dist
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
@@ -163,28 +164,17 @@ def pearson_correlation(x: List[float], y: List[float]) -> Tuple[float, float]:
     denominator = math.sqrt(sum_sq_x * sum_sq_y)
     r = numerator / denominator if denominator != 0 else 0.0
     
-    # Calculate p-value using t-test approximation
+    # Exact two-tailed p-value from t-distribution (scipy)
     if abs(r) >= 0.9999 or n <= 2:
         p_value = 0.0001 if abs(r) >= 0.9999 else 1.0
     else:
         try:
             t_stat = r * math.sqrt((n - 2) / (1 - r ** 2))
-            # Simplified p-value approximation
-            p_value = 2 * _approx_p_from_t(abs(t_stat), n - 2)
+            p_value = float(2 * t_dist.sf(abs(t_stat), n - 2))
         except (ValueError, ZeroDivisionError):
             p_value = 1.0
     
     return r, max(0.0001, min(1.0, p_value))
-
-
-def _approx_p_from_t(t: float, df: int) -> float:
-    """Approximate p-value from t-statistic."""
-    if t > 6:
-        return 0.0001
-    if t < 0.5:
-        return 0.4
-    # Simple approximation
-    return max(0.0001, min(0.5, 0.5 * math.exp(-0.5 * t)))
 
 
 def classify_confidence(

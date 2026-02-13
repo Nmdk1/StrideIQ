@@ -147,24 +147,17 @@ def get_efficiency_badge(
         # Calculate difference (pace/HR ratio — directionally ambiguous, see OutputMetricMeta)
         diff_pct = ((day_avg_eff - avg_28) / avg_28) * 100
         
-        if diff_pct < -5:  # Better efficiency
+        # Efficiency (pace/HR) is directionally ambiguous — show neutral
+        # "notable change" badge without claiming better/worse.
+        # See Athlete Trust Safety Contract in n1_insight_generator.py.
+        if abs(diff_pct) > 5:
             return DayBadge(
                 type=SignalType.EFFICIENCY_SPIKE.value,
-                badge="Eff ↑",
-                color="emerald",
-                icon="trending_up",
-                confidence=SignalConfidence.HIGH.value if diff_pct < -8 else SignalConfidence.MODERATE.value,
-                tooltip=f"Efficiency {abs(diff_pct):.0f}% better than 28-day average",
-                priority=2
-            )
-        elif diff_pct > 5:  # Worse efficiency
-            return DayBadge(
-                type=SignalType.EFFICIENCY_DROP.value,
-                badge="Eff ↓",
-                color="orange",
-                icon="trending_down",
-                confidence=SignalConfidence.HIGH.value if diff_pct > 10 else SignalConfidence.MODERATE.value,
-                tooltip=f"Efficiency {diff_pct:.0f}% below 28-day average",
+                badge="Eff Δ",
+                color="blue",
+                icon="activity",
+                confidence=SignalConfidence.HIGH.value if abs(diff_pct) > 8 else SignalConfidence.MODERATE.value,
+                tooltip=f"Efficiency {abs(diff_pct):.0f}% different from 28-day average",
                 priority=3
             )
         
@@ -537,17 +530,16 @@ def get_week_trajectory(
             from services.efficiency_analytics import get_efficiency_trends
             
             eff_result = get_efficiency_trends(athlete_id, db, days=14)
+            # Efficiency (pace/HR) is directionally ambiguous — report
+            # change magnitude without claiming positive/negative direction.
+            # See Athlete Trust Safety Contract in n1_insight_generator.py.
             if eff_result and hasattr(eff_result, 'trend_direction'):
-                if eff_result.trend_direction == 'improving':
+                if eff_result.trend_direction in ('improving', 'declining'):
                     change = getattr(eff_result, 'percentage_change', 0)
-                    details['efficiency_trend'] = f"+{change:.1f}%"
-                    signals.append(f"efficiency trending up {change:.1f}%")
-                    trend = TrajectoryTrend.POSITIVE
-                elif eff_result.trend_direction == 'declining':
-                    change = getattr(eff_result, 'percentage_change', 0)
-                    details['efficiency_trend'] = f"{change:.1f}%"
-                    signals.append(f"efficiency down {abs(change):.1f}%")
-                    trend = TrajectoryTrend.CAUTION
+                    details['efficiency_trend'] = f"{change:+.1f}%"
+                    signals.append(f"efficiency shifted {abs(change):.1f}%")
+                    # Do NOT set trend to POSITIVE or CAUTION based on
+                    # ambiguous efficiency direction
         except Exception:
             pass
         

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 from statistics import mean, stdev
 import math
+from scipy.stats import t as t_dist
 
 from models import (
     Activity, ActivitySplit, NutritionEntry, DailyCheckin, 
@@ -117,24 +118,11 @@ def calculate_pearson_correlation(x: List[float], y: List[float], min_samples: i
         p_value = 0.0 if abs(r) == 1.0 else 1.0
     else:
         t_statistic = r * math.sqrt((n - 2) / (1 - r ** 2))
-        # Simplified p-value approximation (two-tailed)
-        # For production, use scipy.stats.pearsonr or proper t-distribution
         df = n - 2
-        p_value = 2 * (1 - _t_cdf(abs(t_statistic), df))
+        # Two-tailed p-value from exact t-distribution (scipy)
+        p_value = float(2 * t_dist.sf(abs(t_statistic), df))
     
     return r, p_value
-
-
-def _t_cdf(t: float, df: int) -> float:
-    """
-    Approximate t-distribution CDF.
-    Simplified version - for production use scipy.stats.t.cdf
-    """
-    # Very simplified approximation
-    # In production, use proper statistical library
-    if abs(t) > 3:
-        return 0.999 if t > 0 else 0.001
-    return 0.5 + (t / (2 * math.sqrt(df)))
 
 
 def classify_correlation_strength(r: float) -> str:

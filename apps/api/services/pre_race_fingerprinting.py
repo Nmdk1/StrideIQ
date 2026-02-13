@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import statistics
 import math
+from scipy.stats import norm
 from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
@@ -148,30 +149,10 @@ def mann_whitney_u_test(x: List[float], y: List[float]) -> Tuple[float, float]:
     
     z = (u - mean_u) / std_u
     
-    # Approximate p-value from z-score
-    p_value = 2 * (1 - _norm_cdf(abs(z)))
+    # Exact two-tailed p-value from normal distribution (scipy)
+    p_value = float(2 * norm.sf(abs(z)))
     
     return u, min(1.0, max(0.0, p_value))
-
-
-def _norm_cdf(z: float) -> float:
-    """Standard normal CDF approximation."""
-    z = max(-37, min(37, z))
-    
-    a1 = 0.254829592
-    a2 = -0.284496736
-    a3 = 1.421413741
-    a4 = -1.453152027
-    a5 = 1.061405429
-    p = 0.3275911
-    
-    sign = 1 if z >= 0 else -1
-    z = abs(z)
-    
-    t = 1.0 / (1.0 + p * z)
-    y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * math.exp(-z * z / 2)
-    
-    return 0.5 * (1.0 + sign * y)
 
 
 def calculate_cohens_d(x: List[float], y: List[float]) -> Optional[float]:

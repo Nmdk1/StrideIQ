@@ -1569,9 +1569,8 @@ def get_efficiency_by_zone(
             ez_parts.append(f"Average: {avg:.4f}.")
         if trend_data:
             trend_pct = round(trend_data[-1][1], 1)
-            direction = "improved" if trend_pct < 0 else ("declined" if trend_pct > 0 else "unchanged")
-            ez_parts.append(f"Trend vs baseline: {trend_pct:+.1f}% ({direction}).")
-        ez_parts.append("Lower = faster at same HR = better.")
+            ez_parts.append(f"Trend vs baseline: {trend_pct:+.1f}% (efficiency ratio shifted).")
+        ez_parts.append("Pace/HR ratio is directionally ambiguous — do not infer better/worse from sign alone.")
         ez_narrative = " ".join(ez_parts)
 
         return {
@@ -2636,19 +2635,14 @@ def _interpret_nutrition_correlation(key: str, r: float) -> str:
     if abs(r) < 0.1:
         return "No meaningful relationship found"
 
-    # NOTE: Efficiency is pace(sec/km)/HR — directionally ambiguous.
-    # This legacy interpretation assumes "lower = better" which is only valid
-    # when pace moves and HR is stable.  See OutputMetricMeta in n1_insight_generator.
-    # TODO: Migrate to unambiguous metrics (pace_at_effort, speed_at_fixed_hr).
+    # Efficiency (pace/HR) is directionally ambiguous — correlation sign
+    # cannot determine better/worse.  See Athlete Trust Safety Contract
+    # in n1_insight_generator.py.  Use neutral association language.
     if "efficiency" in key and "delta" not in key:
-        if r < -0.3:
-            return "Strong positive effect: higher intake -> better efficiency"
-        elif r < -0.1:
-            return "Moderate positive effect"
-        elif r > 0.3:
-            return "Possible negative effect: higher intake -> worse efficiency"
-        elif r > 0.1:
-            return "Slight negative effect"
+        if abs(r) > 0.3:
+            return f"Notable association with efficiency (r={r:.2f}) — review with context"
+        elif abs(r) > 0.1:
+            return f"Mild association with efficiency (r={r:.2f})"
 
     if "delta" in key:
         if r < -0.3:
