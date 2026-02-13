@@ -51,14 +51,8 @@ def runner(db_session):
     return ScenarioRunner(db_session)
 
 
-# Per-class xfail markers (not module-level):
-# - Readiness tests run without xfail after Phase 2A implementation.
-# - Intelligence tests are xfailed until Phase 2C implementation.
-# - Edge-case tests that only check absence of insights pass with empty intelligence.
-_XFAIL_INTELLIGENCE = pytest.mark.xfail(
-    reason="Phase 2C: daily_intelligence engine not yet implemented",
-    strict=True,
-)
+# Phase 2C intelligence engine is now implemented.
+# All xfail markers removed — tests should pass directly.
 
 
 # ===================================================================
@@ -175,19 +169,16 @@ class TestGoldenScenario:
         result = runner.run(self._build_golden_scenario())
         assert_no_workout_swap(result)
 
-    @_XFAIL_INTELLIGENCE
     def test_golden_load_spike_informed(self, runner):
         """System must surface the load spike as an INFORM insight."""
         result = runner.run(self._build_golden_scenario())
         assert_insight_present(result, "LOAD_SPIKE", "inform", message_contains="volume")
 
-    @_XFAIL_INTELLIGENCE
     def test_golden_self_regulation_logged(self, runner):
         """System must log the planned≠actual delta (planned easy, did MP)."""
         result = runner.run(self._build_golden_scenario())
         assert_self_regulation_logged(result)
 
-    @_XFAIL_INTELLIGENCE
     def test_golden_highest_mode_is_inform(self, runner):
         """Highest mode should be INFORM, never FLAG or INTERVENE."""
         result = runner.run(self._build_golden_scenario())
@@ -318,7 +309,6 @@ class TestReadinessComputation:
 # 3. INTELLIGENCE RULES (one per rule minimum)
 # ===================================================================
 
-@_XFAIL_INTELLIGENCE
 class TestIntelligenceRules:
     """Test each of the 7 intelligence rules individually."""
 
@@ -526,7 +516,6 @@ class TestIntelligenceRules:
 # 4. SELF-REGULATION TRACKING
 # ===================================================================
 
-@_XFAIL_INTELLIGENCE
 class TestSelfRegulation:
     """Test that planned ≠ actual is correctly detected and logged."""
 
@@ -624,7 +613,6 @@ class TestSustainedTrends:
         result = runner.run(scenario)
         assert_insight_absent(result, "SUSTAINED_DECLINE")
 
-    @_XFAIL_INTELLIGENCE
     def test_3_week_decline_flags(self, runner):
         """3 weeks declining → should FLAG."""
         activities = []
@@ -674,7 +662,6 @@ class TestSustainedTrends:
 # 6. FALSE POSITIVE PREVENTION
 # ===================================================================
 
-@_XFAIL_INTELLIGENCE
 class TestFalsePositivePrevention:
     """Ensure the system distinguishes normal patterns from real problems."""
 

@@ -299,6 +299,12 @@ class ScenarioRunner:
             db=self.db,
         )
 
+        # Override readiness score if the scenario provides one
+        # (allows testing intelligence rules with specific readiness values)
+        effective_readiness = readiness_result.score
+        if scenario.override_signals and "readiness_7d_avg" in scenario.override_signals:
+            effective_readiness = scenario.override_signals["readiness_7d_avg"]
+
         # Run intelligence rules — graceful degradation if not yet implemented
         try:
             engine = DailyIntelligenceEngine()
@@ -306,7 +312,7 @@ class ScenarioRunner:
                 athlete_id=athlete_id,
                 target_date=scenario.trigger_date,
                 db=self.db,
-                readiness_score=readiness_result.score,
+                readiness_score=effective_readiness,
             )
         except NotImplementedError:
             # Intelligence engine not yet implemented (Phase 2C).
