@@ -34,7 +34,8 @@ def _ensure_db_schema_is_at_head():
         # Alembic's script_location in alembic.ini is relative ("alembic")
         # so we set the working directory explicitly.
         cfg.set_main_option("script_location", str(api_root / "alembic"))
-        command.upgrade(cfg, "head")
+        # Use "heads" (plural) to handle multiple migration chains gracefully.
+        command.upgrade(cfg, "heads")
     except Exception as e:
         # Tests should fail loudly if migrations cannot be applied.
         raise RuntimeError(f"Failed to upgrade DB to Alembic head: {e}") from e

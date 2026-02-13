@@ -1832,3 +1832,92 @@ class RacePromoCode(Base):
         Index("ix_race_promo_code_code", "code"),
         Index("ix_race_promo_code_is_active", "is_active"),
     )
+
+
+# =========================================================================
+# Phase 2A: Readiness Score Models
+# =========================================================================
+
+class DailyReadiness(Base):
+    """
+    Daily readiness computation result.
+
+    Stores the composite readiness score and per-signal breakdown.
+    One row per athlete per day. The score is a SIGNAL — what fires from it
+    is governed by per-athlete thresholds, not hardcoded constants.
+    """
+    __tablename__ = "daily_readiness"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False)
+    score = Column(Float, nullable=False)                    # 0-100 composite
+    components = Column(JSONB, nullable=True)                # Per-signal breakdown
+    signals_available = Column(Integer, nullable=False, default=0)
+    signals_total = Column(Integer, nullable=False, default=5)
+    confidence = Column(Float, nullable=False, default=0.0)  # 0-1
+    weights_used = Column(JSONB, nullable=True)              # Weights at time of computation
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "date", name="uq_daily_readiness_athlete_date"),
+        Index("ix_daily_readiness_athlete_date", "athlete_id", "date"),
+    )
+
+
+class AthleteAdaptationThresholds(Base):
+    """
+    Per-athlete adaptation thresholds.
+
+    Cold-start defaults are conservative (system rarely intervenes early on).
+    Over time, calibrated from outcome data using the same pattern as the
+    HRV correlation engine: collect, study, report, then act.
+    """
+    __tablename__ = "athlete_adaptation_thresholds"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, unique=True, index=True)
+
+    # Readiness thresholds — parameters, not constants
+    swap_quality_threshold = Column(Float, nullable=False, default=35.0)
+    reduce_volume_threshold = Column(Float, nullable=False, default=25.0)
+    skip_day_threshold = Column(Float, nullable=False, default=15.0)
+    increase_volume_threshold = Column(Float, nullable=False, default=80.0)
+
+    # Calibration metadata
+    calibration_data_points = Column(Integer, nullable=False, default=0)
+    last_calibrated_at = Column(DateTime(timezone=True), nullable=True)
+    calibration_confidence = Column(Float, nullable=True)  # 0-1, None until first calibration
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class ThresholdCalibrationLog(Base):
+    """
+    Logs every readiness-at-decision + outcome pair.
+
+    This is the data that feeds the per-athlete threshold calibration process.
+    Pattern: every workout → log readiness + scheduled type + outcome.
+    When N >= 30: estimate per-athlete thresholds from outcome data.
+    """
+    __tablename__ = "threshold_calibration_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    workout_id = Column(UUID(as_uuid=True), ForeignKey("planned_workout.id"), nullable=True)
+
+    # State at decision point
+    readiness_score = Column(Float, nullable=False)
+    workout_type_scheduled = Column(Text, nullable=True)
+
+    # Outcome
+    outcome = Column(Text, nullable=True)                  # "completed", "skipped", "modified"
+    efficiency_delta = Column(Float, nullable=True)        # Next-day efficiency change
+    subjective_feel = Column(Integer, nullable=True)       # From check-in if available (1-5)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_threshold_cal_log_athlete_date", "athlete_id", "created_at"),
+    )
