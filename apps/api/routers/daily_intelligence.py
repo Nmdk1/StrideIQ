@@ -1,5 +1,5 @@
 """
-Daily Intelligence API (Phase 2D + 3A)
+Daily Intelligence API (Phase 2D + 3A + 3B)
 
 Endpoints for the frontend to retrieve intelligence insights and narrations.
 These power the calendar card's daily intelligence display.
@@ -9,10 +9,11 @@ Design:
     - GET /{date} returns insights for a specific date
     - POST /compute triggers on-demand computation (for pull-to-refresh)
     - GET /narration/quality returns narration quality metrics (for admin/gating)
+    - GET /workout-narrative/{target_date} returns Phase 3B contextual workout note
     - No mutation of the training plan — read-only intelligence surface
 
 Sources:
-    docs/TRAINING_PLAN_REBUILD_PLAN.md (Phase 2D, 3A)
+    docs/TRAINING_PLAN_REBUILD_PLAN.md (Phase 2D, 3A, 3B)
 """
 
 from datetime import date, datetime, timedelta
@@ -340,4 +341,75 @@ def _get_intelligence_for_date(
         highest_mode=highest_mode,
         insight_count=len(visible_insights),
         has_flag=any(i.mode == "flag" for i in visible_insights),
+    )
+
+
+# =============================================================================
+# Phase 3B: Contextual Workout Narrative
+# =============================================================================
+
+class WorkoutNarrativeResponse(BaseModel):
+    """Response for Phase 3B contextual workout narrative."""
+    narrative: Optional[str] = None
+    suppressed: bool = False
+    reason: Optional[str] = None
+    eligibility: Optional[dict] = None
+
+
+@router.get(
+    "/workout-narrative/{target_date}",
+    response_model=WorkoutNarrativeResponse,
+)
+def get_workout_narrative(
+    target_date: date,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a contextual workout narrative for the target date (Phase 3B).
+
+    Premium tier only.  Returns a fresh narrative on each request —
+    never cached, never templated.  If the generator can't produce
+    something genuinely contextual, returns null narrative with reason.
+    """
+    from services.phase3_eligibility import get_3b_eligibility
+
+    elig = get_3b_eligibility(current_user.id, db, as_of=target_date)
+    eligibility_dict = {
+        "eligible": elig.eligible,
+        "reason": elig.reason,
+        "confidence": elig.confidence,
+        "provisional": elig.provisional,
+    }
+
+    if not elig.eligible:
+        return WorkoutNarrativeResponse(
+            suppressed=True,
+            reason=elig.reason,
+            eligibility=eligibility_dict,
+        )
+
+    # Generate narrative
+    from services.workout_narrative_generator import generate_workout_narrative
+
+    # Get Gemini client (best-effort; None = suppressed with reason)
+    gemini_client = None
+    try:
+        from tasks.intelligence_tasks import _get_gemini_client
+        gemini_client = _get_gemini_client()
+    except Exception:
+        pass
+
+    result = generate_workout_narrative(
+        athlete_id=current_user.id,
+        target_date=target_date,
+        db=db,
+        gemini_client=gemini_client,
+    )
+
+    return WorkoutNarrativeResponse(
+        narrative=result.narrative,
+        suppressed=result.suppressed,
+        reason=result.suppression_reason,
+        eligibility=eligibility_dict,
     )

@@ -129,6 +129,7 @@ class IntelligenceItemResponse(BaseModel):
     text: str
     source: str = "n1"  # "n1" or "population"
     confidence: Optional[float] = None
+    evidence: Optional[dict] = None
 
 
 class PatternResponse(BaseModel):
@@ -138,6 +139,14 @@ class PatternResponse(BaseModel):
     data: Optional[dict] = None
 
 
+class N1EligibilityMeta(BaseModel):
+    """Phase 3C eligibility metadata returned alongside intelligence."""
+    eligible: bool
+    reason: str
+    confidence: float = 0.0
+    provisional: bool = False
+
+
 class AthleteIntelligenceResponse(BaseModel):
     """Athlete intelligence bank"""
     what_works: List[IntelligenceItemResponse]
@@ -145,6 +154,7 @@ class AthleteIntelligenceResponse(BaseModel):
     patterns: List[PatternResponse]
     injury_patterns: List[IntelligenceItemResponse]
     career_prs: dict
+    n1_eligibility: Optional[N1EligibilityMeta] = None
 
 
 # =============================================================================
@@ -279,18 +289,23 @@ def get_athlete_intelligence(
 ):
     """
     Get athlete intelligence bank.
-    
+
     Returns banked learnings: what works, what doesn't, patterns, injury history.
-    This is part of Elite.
+    Guided + Premium tiers get N=1 personalized insights (Phase 3C) when
+    eligibility gates are met.  Elite tier retains full access for backward compat.
     """
-    is_elite = getattr(current_user, "has_active_subscription", False) or current_user.subscription_tier == "elite"
-    
-    if not is_elite:
+    # Tier check: guided, premium, elite, pro all qualify
+    qualifying_tiers = {"guided", "premium", "elite", "pro"}
+    has_access = (
+        getattr(current_user, "has_active_subscription", False)
+        or current_user.subscription_tier in qualifying_tiers
+    )
+    if not has_access:
         raise HTTPException(
             status_code=403,
-            detail="Athlete Intelligence requires Elite tier."
+            detail="Athlete Intelligence requires Guided or Premium tier.",
         )
-    
+
     aggregator = InsightAggregator(db, current_user)
     intelligence = aggregator.get_athlete_intelligence()
 
@@ -301,28 +316,66 @@ def get_athlete_intelligence(
                 text=str(x.get("text") or ""),
                 source=str(x.get("source") or "n1"),
                 confidence=x.get("confidence"),
+                evidence=x.get("evidence"),
             )
         return IntelligenceItemResponse(text=str(x), source="n1")
 
+    what_works = [_to_item(item) for item in (intelligence.what_works or [])]
+    what_doesnt = [_to_item(item) for item in (intelligence.what_doesnt or [])]
+    patterns_list = [
+        PatternResponse(
+            name=str(k),
+            description=str(v),
+            data=v if isinstance(v, dict) else None,
+        )
+        for k, v in (intelligence.patterns or {}).items()
+    ]
+
+    # --- Phase 3C: N=1 personalized insights ---
+    n1_meta = None
+    try:
+        from services.phase3_eligibility import get_3c_eligibility
+        from services.n1_insight_generator import generate_n1_insights
+
+        elig = get_3c_eligibility(current_user.id, db)
+        n1_meta = N1EligibilityMeta(
+            eligible=elig.eligible,
+            reason=elig.reason,
+            confidence=elig.confidence,
+            provisional=elig.provisional,
+        )
+        if elig.eligible:
+            n1_insights = generate_n1_insights(current_user.id, db)
+            for ins in n1_insights:
+                item = IntelligenceItemResponse(
+                    text=ins.text,
+                    source=ins.source,
+                    confidence=ins.confidence,
+                    evidence=ins.evidence,
+                )
+                if ins.category == "what_works":
+                    what_works.append(item)
+                elif ins.category == "what_doesnt":
+                    what_doesnt.append(item)
+                else:
+                    patterns_list.append(PatternResponse(
+                        name="N=1 Pattern",
+                        description=ins.text,
+                        data=ins.evidence,
+                    ))
+    except Exception:
+        # N=1 is additive — never break the base endpoint.
+        pass
+
     return AthleteIntelligenceResponse(
-        what_works=[
-            _to_item(item) for item in (intelligence.what_works or [])
-        ],
-        what_doesnt=[
-            _to_item(item) for item in (intelligence.what_doesnt or [])
-        ],
-        patterns=[
-            PatternResponse(
-                name=str(k),
-                description=str(v),
-                data=v if isinstance(v, dict) else None,
-            )
-            for k, v in (intelligence.patterns or {}).items()
-        ],
+        what_works=what_works,
+        what_doesnt=what_doesnt,
+        patterns=patterns_list,
         injury_patterns=[
             _to_item(item) for item in (intelligence.injury_patterns or [])
         ],
         career_prs=intelligence.career_prs,
+        n1_eligibility=n1_meta,
     )
 
 
