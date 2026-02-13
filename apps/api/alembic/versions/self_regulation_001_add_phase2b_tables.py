@@ -1,7 +1,7 @@
 """Add Phase 2B self-regulation and insight logging tables
 
 Revision ID: self_regulation_001
-Revises: None (standalone — uses IF NOT EXISTS / IF NOT ADD for safety)
+Revises: readiness_score_001 (chained — uses IF NOT EXISTS / IF NOT ADD for safety)
 Create Date: 2026-02-12
 
 Phase 2B: Workout State Machine + Self-Regulation Tracking
@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers, used by Alembic.
 revision = 'self_regulation_001'
-down_revision = None
+down_revision = 'readiness_score_001'
 branch_labels = None
 depends_on = None
 

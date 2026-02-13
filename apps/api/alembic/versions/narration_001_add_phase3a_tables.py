@@ -1,7 +1,7 @@
 """Add Phase 3A narration tables and columns
 
 Revision ID: narration_001
-Revises: None (standalone — uses IF NOT EXISTS / IF NOT ADD for safety)
+Revises: self_regulation_001 (narration_log has FK to insight_log.id)
 Create Date: 2026-02-13
 
 Phase 3A: Adaptation Narration
@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers, used by Alembic.
 revision = 'narration_001'
-down_revision = None
+down_revision = 'self_regulation_001'
 branch_labels = None
 depends_on = None
 

@@ -34,6 +34,24 @@ def _ensure_db_schema_is_at_head():
         # Alembic's script_location in alembic.ini is relative ("alembic")
         # so we set the working directory explicitly.
         cfg.set_main_option("script_location", str(api_root / "alembic"))
+
+        # Clean up stale alembic_version entries from before phase migrations
+        # were chained.  A persistent test DB may have intermediate entries
+        # (readiness_score_001, self_regulation_001) from the old standalone
+        # layout that cause "overlaps" errors with the new chain.
+        try:
+            from core.database import engine as _engine
+            with _engine.connect() as conn:
+                conn.execute(
+                    __import__("sqlalchemy").text(
+                        "DELETE FROM alembic_version "
+                        "WHERE version_num IN ('readiness_score_001', 'self_regulation_001')"
+                    )
+                )
+                conn.commit()
+        except Exception:
+            pass  # Table might not exist yet (fresh DB)
+
         # Use "heads" (plural) to handle multiple migration chains gracefully.
         command.upgrade(cfg, "heads")
     except Exception as e:
