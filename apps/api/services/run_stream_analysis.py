@@ -117,6 +117,214 @@ def _estimate_threshold_hr(ctx: AthleteContext) -> float:
 
 
 # ---------------------------------------------------------------------------
+# RSI-Alpha: per-point effort intensity computation (ADR-064)
+# ---------------------------------------------------------------------------
+
+_VALID_TIERS = frozenset({
+    "tier1_threshold_hr",
+    "tier2_estimated_hrr",
+    "tier3_max_hr",
+    "tier4_stream_relative",
+})
+
+
+def _clamp01(value: float) -> float:
+    """Clamp a float to [0.0, 1.0]."""
+    if value < 0.0:
+        return 0.0
+    if value > 1.0:
+        return 1.0
+    return value
+
+
+def compute_effort_intensity(
+    hr: Optional[float] = None,
+    ctx: Optional[AthleteContext] = None,
+    tier: Optional[str] = None,
+    hr_series: Optional[List[float]] = None,
+    velocity: Optional[float] = None,
+) -> float:
+    """Compute a single-point effort intensity scalar in [0.0, 1.0].
+
+    Tier dispatch per ADR-064:
+        tier1_threshold_hr:    effort = HR / threshold_hr
+        tier2_estimated_hrr:   effort = (HR - resting) / (est_threshold - resting)
+        tier3_max_hr:          effort = HR / max_hr
+        tier4_stream_relative: percentile rank of HR within hr_series
+
+    Velocity fallback: when hr is None and velocity + threshold_pace_per_km
+    are available, effort = velocity / threshold_velocity.
+
+    Raises:
+        ValueError: if tier is not None and not in _VALID_TIERS.
+
+    Always returns a float in [0.0, 1.0].
+    """
+    # --- Validate tier ---
+    if tier is not None and tier not in _VALID_TIERS:
+        raise ValueError(
+            f"Unknown effort tier '{tier}'. "
+            f"Valid tiers: {sorted(_VALID_TIERS)}"
+        )
+
+    if ctx is None:
+        ctx = AthleteContext()
+
+    # --- Velocity fallback when HR is missing ---
+    if hr is None:
+        if (velocity is not None
+                and ctx.threshold_pace_per_km is not None
+                and ctx.threshold_pace_per_km > 0):
+            threshold_velocity = 1000.0 / ctx.threshold_pace_per_km
+            if threshold_velocity <= 0:
+                return 0.0
+            return _clamp01(velocity / threshold_velocity)
+        return 0.0
+
+    hr_float = float(hr)
+
+    # --- Tier 1: HR / threshold_hr ---
+    if tier == "tier1_threshold_hr":
+        if ctx.threshold_hr is not None and ctx.threshold_hr > 0:
+            return _clamp01(hr_float / ctx.threshold_hr)
+        return 0.0
+
+    # --- Tier 2: Karvonen HRR ---
+    if tier == "tier2_estimated_hrr":
+        if (ctx.max_hr is not None and ctx.max_hr > 0
+                and ctx.resting_hr is not None and ctx.resting_hr > 0):
+            est_threshold = _estimate_threshold_hr(ctx)
+            denominator = est_threshold - ctx.resting_hr
+            if denominator <= 0:
+                return 0.0
+            return _clamp01((hr_float - ctx.resting_hr) / denominator)
+        return 0.0
+
+    # --- Tier 3: % max HR ---
+    if tier == "tier3_max_hr":
+        if ctx.max_hr is not None and ctx.max_hr > 0:
+            return _clamp01(hr_float / ctx.max_hr)
+        return 0.0
+
+    # --- Tier 4: stream-relative percentile ---
+    if tier == "tier4_stream_relative":
+        if hr_series is not None and len(hr_series) > 0:
+            count_below = sum(1 for h in hr_series if h < hr_float)
+            return _clamp01(count_below / len(hr_series))
+        return 0.0
+
+    # tier is None — no computation possible
+    return 0.0
+
+
+def _compute_effort_array(
+    stream_data: Dict[str, List],
+    point_count: int,
+    tier: str,
+    ctx: Optional[AthleteContext],
+) -> List[float]:
+    """Compute effort intensity for every point in the stream.
+
+    Performance:
+        Tiers 1-3: O(n) — single pass, constant-time per point.
+        Tier 4: O(n log n) — pre-sorts hr_series, uses bisect for each lookup.
+
+    Args:
+        stream_data: channel name -> list of values.
+        point_count: number of data points (avoids fragile channel iteration).
+        tier: one of _VALID_TIERS.
+        ctx: athlete physiological context.
+
+    Returns:
+        List of floats with length == point_count, each in [0.0, 1.0].
+    """
+    import bisect
+
+    hr_series = stream_data.get("heartrate")
+    velocity_series = stream_data.get("velocity_smooth")
+    has_hr = hr_series is not None and len(hr_series) > 0
+    has_vel = velocity_series is not None and len(velocity_series) > 0
+
+    if point_count == 0:
+        return []
+
+    if ctx is None:
+        ctx = AthleteContext()
+
+    # --- Tier 4 optimisation: pre-sort + bisect for O(n log n) total ---
+    sorted_hr: Optional[List[float]] = None
+    hr_count = 0
+    if tier == "tier4_stream_relative" and has_hr:
+        sorted_hr = sorted(float(h) for h in hr_series)
+        hr_count = len(sorted_hr)
+
+    # --- Tiers 1-3: pre-compute denominators once ---
+    t1_denom: Optional[float] = None
+    t2_denom: Optional[float] = None
+    t2_resting: float = 0.0
+    t3_denom: Optional[float] = None
+
+    if tier == "tier1_threshold_hr" and ctx.threshold_hr and ctx.threshold_hr > 0:
+        t1_denom = float(ctx.threshold_hr)
+    elif tier == "tier2_estimated_hrr":
+        if (ctx.max_hr and ctx.max_hr > 0
+                and ctx.resting_hr and ctx.resting_hr > 0):
+            est = _estimate_threshold_hr(ctx)
+            denom = est - ctx.resting_hr
+            if denom > 0:
+                t2_denom = denom
+                t2_resting = float(ctx.resting_hr)
+    elif tier == "tier3_max_hr" and ctx.max_hr and ctx.max_hr > 0:
+        t3_denom = float(ctx.max_hr)
+
+    # --- Velocity fallback denominators ---
+    vel_denom: Optional[float] = None
+    if ctx.threshold_pace_per_km and ctx.threshold_pace_per_km > 0:
+        tv = 1000.0 / ctx.threshold_pace_per_km
+        if tv > 0:
+            vel_denom = tv
+
+    effort = [0.0] * point_count
+    for i in range(point_count):
+        hr_val = float(hr_series[i]) if has_hr and i < len(hr_series) else None
+        vel_val = float(velocity_series[i]) if has_vel and i < len(velocity_series) else None
+
+        # --- No HR: velocity fallback ---
+        if hr_val is None:
+            if vel_val is not None and vel_denom is not None:
+                effort[i] = _clamp01(vel_val / vel_denom)
+            # else stays 0.0
+            continue
+
+        # --- Tier 1 ---
+        if tier == "tier1_threshold_hr":
+            if t1_denom is not None:
+                effort[i] = _clamp01(hr_val / t1_denom)
+            continue
+
+        # --- Tier 2 ---
+        if tier == "tier2_estimated_hrr":
+            if t2_denom is not None:
+                effort[i] = _clamp01((hr_val - t2_resting) / t2_denom)
+            continue
+
+        # --- Tier 3 ---
+        if tier == "tier3_max_hr":
+            if t3_denom is not None:
+                effort[i] = _clamp01(hr_val / t3_denom)
+            continue
+
+        # --- Tier 4: bisect on pre-sorted array → O(log n) per point ---
+        if tier == "tier4_stream_relative":
+            if sorted_hr is not None and hr_count > 0:
+                rank = bisect.bisect_left(sorted_hr, hr_val)
+                effort[i] = _clamp01(rank / hr_count)
+            continue
+
+    return effort
+
+
+# ---------------------------------------------------------------------------
 # Configuration (ALL thresholds externalized — zero inline magic numbers)
 # ---------------------------------------------------------------------------
 
@@ -285,6 +493,8 @@ class StreamAnalysisResult:
     tier_used: str = "tier4_stream_relative"
     estimated_flags: List[str] = field(default_factory=list)
     cross_run_comparable: bool = False
+    # --- RSI-Alpha: per-point effort intensity [0.0, 1.0] ---
+    effort_intensity: List[float] = field(default_factory=list)
 
     def __eq__(self, other):
         if not isinstance(other, StreamAnalysisResult):
@@ -308,6 +518,7 @@ class StreamAnalysisResult:
             "tier_used": self.tier_used,
             "estimated_flags": self.estimated_flags,
             "cross_run_comparable": self.cross_run_comparable,
+            "effort_intensity": self.effort_intensity,
         }
 
 
@@ -1267,6 +1478,14 @@ def analyze_stream(
 
     confidence = _compute_confidence(tier, n, channels_present, segments)
 
+    # RSI-Alpha: per-point effort intensity
+    effort_array = _compute_effort_array(
+        stream_data=stream_data,
+        point_count=n,
+        tier=tier,
+        ctx=athlete_context,
+    )
+
     return StreamAnalysisResult(
         segments=segments, drift=drift, moments=moments,
         plan_comparison=plan_comparison,
@@ -1274,6 +1493,7 @@ def analyze_stream(
         point_count=n, confidence=confidence,
         tier_used=tier, estimated_flags=estimated_flags,
         cross_run_comparable=cross_run_comparable,
+        effort_intensity=effort_array,
     )
 
 
