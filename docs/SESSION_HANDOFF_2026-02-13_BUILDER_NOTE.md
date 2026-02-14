@@ -1,8 +1,11 @@
 # Builder Note — February 13, 2026
 
-## Read First
-- `docs/SESSION_HANDOFF_2026-02-13.md` — full session handoff with detailed scope for Run Shape Intelligence and Strava Write-Back
-- `docs/TRAINING_PLAN_REBUILD_PLAN.md` — north star build plan (principles, phases, priorities)
+## Read First (in this order)
+1. `docs/FOUNDER_OPERATING_CONTRACT.md` — **mandatory** — how to work with this founder, non-negotiables, build patterns, testing schema, anti-patterns. Read this before anything else. It applies to every session.
+2. `docs/RUN_SHAPE_VISION.md` — the soul of the feature you're building. Understand the athlete experience before the architecture.
+3. `docs/SESSION_HANDOFF_2026-02-13.md` — full session handoff with detailed scope for Run Shape Intelligence and Strava Write-Back
+4. `docs/TRAINING_PLAN_REBUILD_PLAN.md` — north star build plan (principles, phases, priorities)
+5. `docs/AGENT_WORKFLOW.md` — build loop mechanics, testing commands, validation workflow
 
 ---
 

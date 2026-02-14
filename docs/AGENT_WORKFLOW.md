@@ -1,6 +1,7 @@
 # Agent Workflow — How To Build With This Founder
 
-**Read this before you write any code. Read it every session.**
+**First read `docs/FOUNDER_OPERATING_CONTRACT.md` — that is the operating
+contract. This document covers the mechanics of building.**
 
 ---
 
