@@ -86,6 +86,31 @@ export interface StravaStatusDetail {
   needs_reconnect: boolean;
 }
 
+// --- RSI Layer 1 Types ---
+
+export interface LastRunSegment {
+  type: string;
+  start_time_s: number;
+  end_time_s: number;
+  duration_s: number;
+  avg_pace_s_km?: number | null;
+}
+
+export interface LastRun {
+  activity_id: string;
+  name: string;
+  start_time: string;  // ISO datetime
+  distance_m?: number | null;
+  moving_time_s?: number | null;
+  average_hr?: number | null;
+  stream_status?: 'success' | 'pending' | 'fetching' | 'unavailable' | null;
+  effort_intensity?: number[] | null;  // Only when stream_status === 'success'
+  tier_used?: string | null;
+  confidence?: number | null;
+  segments?: LastRunSegment[] | null;
+  pace_per_km?: number | null;  // Derived from distance/time (s/km)
+}
+
 export interface HomeData {
   today: TodayWorkout;
   yesterday: YesterdayInsight;
@@ -114,6 +139,8 @@ export interface HomeData {
     week_assessment?: string;
     race_assessment?: string;
   } | null;
+  // RSI Layer 1
+  last_run?: LastRun | null;
 }
 
 // --- API Functions ---

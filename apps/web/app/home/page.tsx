@@ -13,6 +13,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useHomeData, useQuickCheckin } from '@/lib/hooks/queries/home';
+import { LastRunHero } from '@/components/home/LastRunHero';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -375,6 +376,7 @@ export default function HomePage() {
     checkin_needed,
     today_checkin,
     coach_briefing,
+    last_run,
   } = data;
 
   const hasAnyData = has_any_activities || week.completed_mi > 0;
@@ -399,6 +401,9 @@ export default function HomePage() {
               <MessageSquare className="w-3.5 h-3.5" /> Coach
             </Link>
           </div>
+
+          {/* ═══ RSI Layer 1: Last Run Hero ═══ */}
+          {last_run && <LastRunHero lastRun={last_run} />}
 
           {/* ═══ TIER 1: Above the fold ═══ */}
 

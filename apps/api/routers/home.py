@@ -22,7 +22,7 @@ import logging
 from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
-from models import Athlete, Activity, PlannedWorkout, TrainingPlan, CalendarInsight, DailyCheckin
+from models import Athlete, Activity, ActivityStream, PlannedWorkout, TrainingPlan, CalendarInsight, DailyCheckin
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +134,40 @@ class TodayCheckin(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LastRunSegment(BaseModel):
+    """Segment from stream analysis for mini-canvas overlay."""
+    type: str
+    start_time_s: float
+    end_time_s: float
+    duration_s: float
+    avg_pace_s_km: Optional[float] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LastRun(BaseModel):
+    """RSI Layer 1: Most recent run (within 24h) for home page hero canvas.
+
+    When stream_status == 'success', effort_intensity is populated so the
+    home page can render an effort gradient canvas.  Otherwise, a clean
+    metrics-only card is shown (silent upgrade path).
+    """
+    activity_id: str
+    name: str
+    start_time: str  # ISO datetime
+    distance_m: Optional[float] = None
+    moving_time_s: Optional[float] = None
+    average_hr: Optional[float] = None
+    stream_status: Optional[str] = None  # 'success' | 'pending' | 'fetching' | 'unavailable' | null
+    effort_intensity: Optional[List[float]] = None  # Only when stream_status === 'success'
+    tier_used: Optional[str] = None
+    confidence: Optional[float] = None
+    segments: Optional[List[LastRunSegment]] = None  # For segment band overlay
+    pace_per_km: Optional[float] = None  # Derived from distance/time (s/km)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class HomeResponse(BaseModel):
     """Complete home page data."""
     today: TodayWorkout
@@ -153,6 +187,8 @@ class HomeResponse(BaseModel):
     today_checkin: Optional[TodayCheckin] = None  # Summary of today's check-in (if completed)
     strava_status: Optional[StravaStatusDetail] = None
     coach_briefing: Optional[dict] = None  # LLM-generated coaching narratives for all cards
+    # --- RSI Layer 1 ---
+    last_run: Optional[LastRun] = None  # Most recent run within 24h for hero canvas
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -833,6 +869,157 @@ def compute_race_countdown(
     )
 
 
+def _lttb_1d(values: list, target: int) -> list:
+    """Largest-Triangle-Three-Buckets downsampling for a 1D array.
+
+    Treats index as x and value as y. Returns a list of length ``target``.
+    This is the same LTTB algorithm used in the stream-analysis router for
+    per-point data — applied here to the effort_intensity scalar array.
+    """
+    n = len(values)
+    if n <= target:
+        return values
+
+    sampled = [values[0]]
+    bucket_size = (n - 2) / (target - 2)
+
+    a_idx = 0
+    for i in range(1, target - 1):
+        bucket_start = int((i - 1) * bucket_size) + 1
+        bucket_end = min(int(i * bucket_size) + 1, n - 1)
+
+        next_start = int(i * bucket_size) + 1
+        next_end = min(int((i + 1) * bucket_size) + 1, n)
+
+        # Average of next bucket
+        avg_x = sum(range(next_start, next_end)) / max(1, next_end - next_start)
+        avg_y = sum(values[j] for j in range(next_start, next_end)) / max(1, next_end - next_start)
+
+        # Pick point with max triangle area
+        max_area = -1
+        best_idx = bucket_start
+        a_x = a_idx
+        a_y = values[a_idx]
+
+        for j in range(bucket_start, bucket_end):
+            area = abs(
+                (a_x - avg_x) * (values[j] - a_y)
+                - (a_x - j) * (avg_y - a_y)
+            )
+            if area > max_area:
+                max_area = area
+                best_idx = j
+
+        sampled.append(values[best_idx])
+        a_idx = best_idx
+
+    sampled.append(values[-1])
+    return sampled
+
+
+def compute_last_run(
+    athlete_id,
+    db: Session,
+) -> Optional[LastRun]:
+    """RSI Layer 1: Build last_run for the home hero canvas.
+
+    Rules (from RSI_WIRING_SPEC Layer 1):
+    - Only the most recent activity within 24 hours
+    - If latest activity is >24h old, return None
+    - When stream_fetch_status == 'success': serve from cached analysis
+      (spec decision: "Cache full StreamAnalysisResult in DB")
+    - effort_intensity is LTTB downsampled to ~500 points
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=24)
+
+    latest = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.start_time >= cutoff,
+        )
+        .order_by(desc(Activity.start_time))
+        .first()
+    )
+
+    if latest is None:
+        return None
+
+    # Derive pace from distance/time
+    pace_per_km = None
+    if latest.distance_m and latest.duration_s and latest.distance_m > 0:
+        pace_per_km = round(latest.duration_s / (latest.distance_m / 1000.0), 1)
+
+    stream_status = getattr(latest, "stream_fetch_status", None)
+
+    # Base last_run (metrics-only card when stream not ready)
+    last_run = LastRun(
+        activity_id=str(latest.id),
+        name=latest.name or "Run",
+        start_time=latest.start_time.isoformat(),
+        distance_m=latest.distance_m,
+        moving_time_s=latest.duration_s,
+        average_hr=latest.avg_hr,
+        stream_status=stream_status,
+        pace_per_km=pace_per_km,
+    )
+
+    # Enrich with stream analysis data when available — serve from cache
+    if stream_status == "success":
+        try:
+            stream_row = (
+                db.query(ActivityStream)
+                .filter(ActivityStream.activity_id == latest.id)
+                .first()
+            )
+            if stream_row and stream_row.stream_data:
+                from services.run_stream_analysis import AthleteContext
+                from services.stream_analysis_cache import get_or_compute_analysis
+
+                athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+                athlete_ctx = AthleteContext(
+                    max_hr=getattr(athlete, "max_hr", None),
+                    resting_hr=getattr(athlete, "resting_hr", None),
+                    threshold_hr=getattr(athlete, "threshold_hr", None),
+                )
+
+                # Serve from cache (or compute + cache on first hit)
+                result_dict = get_or_compute_analysis(
+                    activity_id=latest.id,
+                    stream_row=stream_row,
+                    athlete_ctx=athlete_ctx,
+                    db=db,
+                    planned_workout_dict=None,  # Home doesn't need plan comparison
+                )
+
+                # LTTB downsample effort_intensity to ~500 points
+                effort = result_dict.get("effort_intensity", [])
+                if len(effort) > 500:
+                    effort = _lttb_1d(effort, 500)
+
+                last_run.effort_intensity = [round(e, 4) for e in effort]
+                last_run.tier_used = result_dict.get("tier_used")
+                last_run.confidence = result_dict.get("confidence")
+
+                segments_raw = result_dict.get("segments", [])
+                last_run.segments = [
+                    LastRunSegment(
+                        type=seg.get("type", "steady"),
+                        start_time_s=seg.get("start_time_s", 0),
+                        end_time_s=seg.get("end_time_s", 0),
+                        duration_s=seg.get("duration_s", 0),
+                        avg_pace_s_km=seg.get("avg_pace_s_km"),
+                    )
+                    for seg in segments_raw
+                ]
+        except Exception as e:
+            logger.warning(f"Last run stream analysis failed: {type(e).__name__}: {e}")
+            # Graceful degradation: keep last_run with metrics only
+
+    return last_run
+
+
 @router.get("", response_model=HomeResponse)
 async def get_home_data(
     db: Session = Depends(get_db),
@@ -1278,6 +1465,14 @@ async def get_home_data(
         except Exception as e:
             logger.warning(f"Coach briefing failed: {type(e).__name__}: {e}")
 
+    # --- RSI Layer 1: Last Run Hero ---
+    last_run = None
+    if has_any_activities:
+        try:
+            last_run = compute_last_run(current_user.id, db)
+        except Exception as e:
+            logger.warning(f"Last run computation failed: {type(e).__name__}: {e}")
+
     return HomeResponse(
         today=today_workout,
         yesterday=yesterday_insight,
@@ -1295,6 +1490,7 @@ async def get_home_data(
         today_checkin=today_checkin,
         strava_status=strava_status_detail,
         coach_briefing=coach_briefing,
+        last_run=last_run,
     )
 
 
