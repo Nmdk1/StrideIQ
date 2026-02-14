@@ -12,6 +12,7 @@ import { mockTier1Result, mockTier4Result, generateTestStreamData } from './rsi-
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
 jest.mock('@/components/activities/rsi/hooks/useStreamAnalysis', () => ({
+  ...jest.requireActual('@/components/activities/rsi/hooks/useStreamAnalysis'),
   useStreamAnalysis: jest.fn(),
 }));
 
@@ -22,7 +23,7 @@ const streamData = generateTestStreamData(500);
 
 function renderAndSwitchToLab(analysisResult = mockTier1Result) {
   mockUseStreamAnalysis.mockReturnValue({
-    data: { analysis: analysisResult, stream: streamData },
+    data: { ...analysisResult, stream: streamData },
     isLoading: false,
     error: null,
     refetch: jest.fn(),

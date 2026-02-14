@@ -1,26 +1,38 @@
 'use client';
 
 /**
- * Activity Detail Page
- * 
- * Shows complete analysis for a single run:
- * - Basic metrics (distance, time, pace, HR)
- * - Splits visualization
- * - Run Context Analysis (the core intelligence)
- * - Perception prompt if applicable
+ * Activity Detail Page — RSI Layer 2
+ *
+ * Restructured around the Run Shape Canvas as the centerpiece.
+ * Spec: docs/specs/RSI_WIRING_SPEC.md (Layer 2)
+ *
+ * Layout (top to bottom):
+ *   1. Header (back + name + date + Strava link)
+ *   2. Run Shape Canvas (hero — full width)
+ *   3. Coachable Moments (gated: confidence >= 0.8 AND moments.length > 0)
+ *   4. Reflection Prompt (3-tap: harder | expected | easier)
+ *   5. Metrics Ribbon (compact horizontal strip)
+ *   6. Plan Comparison (conditional — from stream analysis)
+ *   7. "Why This Run?" (existing component)
+ *   8. "Compare to Similar" (existing link)
+ *   9. Splits Table (secondary position)
+ *  10. Context Analysis (existing component)
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { API_CONFIG } from '@/lib/api/config';
+import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
+import { useStreamAnalysis, isAnalysisData } from '@/components/activities/rsi/hooks/useStreamAnalysis';
+import { CoachableMoments } from '@/components/activities/rsi/CoachableMoments';
+import { ReflectionPrompt } from '@/components/activities/ReflectionPrompt';
 import RunContextAnalysis from '@/components/activities/RunContextAnalysis';
 import { SplitsChart } from '@/components/activities/SplitsChart';
 import { SplitsTable } from '@/components/activities/SplitsTable';
-import { PerceptionPrompt } from '@/components/activities/PerceptionPrompt';
 import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
 import { WhyThisRun } from '@/components/activities/WhyThisRun';
 
@@ -111,6 +123,12 @@ export default function ActivityDetailPage() {
     enabled: !authLoading && !!token && !!activityId,
   });
 
+  // --- Stream analysis data (for coachable moments + plan comparison) ---
+  // Must be called before any conditional returns (React hooks rules)
+  const streamAnalysis = useStreamAnalysis(activityId);
+  const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
+  const [showSecondaryMetrics, setShowSecondaryMetrics] = useState(false);
+
   // Redirect if not authenticated (after auth loading is done)
   React.useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -180,6 +198,12 @@ export default function ActivityDetailPage() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Format minutes (from backend PlanComparison) to h:mm:ss display
+  const formatMinutesToDuration = (minutes: number): string => {
+    const totalSeconds = Math.round(minutes * 60);
+    return formatDuration(totalSeconds);
+  };
+
   // Calculate pace in seconds/km from activity data
   const getPaceSecondsPerKm = (seconds: number, meters: number): number | null => {
     if (!seconds || !meters) return null;
@@ -205,8 +229,8 @@ export default function ActivityDetailPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
+        {/* ── 1. Header ── */}
+        <div className="mb-6">
           <button
             onClick={() => router.back()}
             className="text-slate-400 hover:text-white mb-4 flex items-center gap-2 transition-colors"
@@ -217,142 +241,170 @@ export default function ActivityDetailPage() {
             Back
           </button>
           
-          <h1 className="text-3xl font-bold text-white mb-2">{activity.name}</h1>
-          <p className="text-slate-400">
+          <h1 className="text-3xl font-bold text-white mb-1">{activity.name}</h1>
+          <p className="text-slate-400 text-sm">
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
+            {activity.strava_activity_id && (
+              <>
+                {' · '}
+                <a
+                  href={`https://www.strava.com/activities/${activity.strava_activity_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-orange-400 hover:text-orange-300"
+                >
+                  Strava ↗
+                </a>
+              </>
+            )}
           </p>
-          
-          {activity.strava_activity_id && (
-            <a
-              href={`https://www.strava.com/activities/${activity.strava_activity_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-orange-400 hover:text-orange-300 text-sm mt-2"
-            >
-              View on Strava
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </a>
-          )}
-          
-          {/* Context Comparison Button - The Differentiator */}
-          <div className="mt-4">
-            <Link
-              href={`/compare/context/${activityId}`}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-semibold rounded-lg shadow-lg shadow-orange-500/25 transition-all hover:shadow-orange-500/40 hover:scale-[1.02]"
-            >
-              <span className="text-lg">👻</span>
-              Compare to Similar Runs
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
-            <p className="text-xs text-slate-500 mt-1.5">
-              See how this run compares to your similar efforts
-            </p>
-          </div>
         </div>
 
-        {/* Narrative Context - ADR-033 */}
-        {activity.narrative && (
-          <div className="mb-8 px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
-            <p className="text-sm text-slate-300 italic leading-relaxed">
-              &ldquo;{activity.narrative}&rdquo;
-            </p>
+        {/* ── 2. Run Shape Canvas (Hero) ── */}
+        <div className="mb-6">
+          <RunShapeCanvas activityId={activityId} />
+        </div>
+
+        {/* ── 3. Coachable Moments (gated: confidence >= 0.8 AND moments.length > 0) ── */}
+        {analysisData && (
+          <CoachableMoments
+            moments={analysisData.moments}
+            confidence={analysisData.confidence}
+            className="mb-6"
+          />
+        )}
+
+        {/* ── 4. Reflection Prompt ── */}
+        <ReflectionPrompt activityId={activityId} className="mb-6" />
+
+        {/* ── 5. Metrics Ribbon (compact horizontal strip) ── */}
+        <div className="mb-6">
+          <div className="flex items-center gap-4 overflow-x-auto pb-1">
+            <MetricPill label="Distance" value={formatDistance(activity.distance_m)} />
+            <MetricPill label="Duration" value={formatDuration(activity.moving_time_s)} />
+            <MetricPill
+              label="Pace"
+              value={formatPace(getPaceSecondsPerKm(activity.moving_time_s, activity.distance_m))}
+            />
+            <MetricPill
+              label="Avg HR"
+              value={activity.average_hr?.toString() || '--'}
+              unit="bpm"
+            />
+            <MetricPill
+              label="Elevation"
+              value={formatElevation(activity.total_elevation_gain_m)}
+            />
+            <MetricPill
+              label="Cadence"
+              value={
+                normalizeCadenceToSpm(activity.average_cadence) !== null
+                  ? Math.round(normalizeCadenceToSpm(activity.average_cadence) as number).toString()
+                  : '--'
+              }
+              unit="spm"
+            />
+          </div>
+          {/* Secondary metrics expand */}
+          <button
+            onClick={() => setShowSecondaryMetrics(!showSecondaryMetrics)}
+            className="text-xs text-slate-500 hover:text-slate-300 mt-2 transition-colors"
+          >
+            {showSecondaryMetrics ? 'Hide details ▲' : 'More details ▼'}
+          </button>
+          {showSecondaryMetrics && (
+            <div className="flex items-center gap-4 mt-2 overflow-x-auto pb-1">
+              <MetricPill label="Max HR" value={activity.max_hr?.toString() || '--'} unit="bpm" secondary />
+              <MetricPill label="Temp" value={activity.temperature_f?.toFixed(0) || '--'} unit="°F" secondary />
+              <MetricPill label="Workout" value={activity.workout_type?.replace(/_/g, ' ') || '--'} secondary />
+            </div>
+          )}
+        </div>
+
+        {/* ── 6. Plan Comparison (conditional — from stream analysis) ── */}
+        {/* Field names match backend PlanComparison dataclass exactly:
+            planned_duration_min, actual_duration_min, planned_distance_km,
+            actual_distance_km, planned_pace_s_km, actual_pace_s_km,
+            planned_interval_count, detected_work_count */}
+        {analysisData?.plan_comparison && (
+          <div className="mb-6 rounded-lg bg-slate-800/30 border border-slate-700/30 p-4">
+            <h3 className="text-sm font-medium text-slate-400 mb-3">Plan vs Actual</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              {analysisData.plan_comparison.planned_duration_min != null && analysisData.plan_comparison.actual_duration_min != null && (
+                <PlanComparisonCell
+                  label="Duration"
+                  planned={formatMinutesToDuration(analysisData.plan_comparison.planned_duration_min)}
+                  actual={formatMinutesToDuration(analysisData.plan_comparison.actual_duration_min)}
+                />
+              )}
+              {analysisData.plan_comparison.planned_distance_km != null && analysisData.plan_comparison.actual_distance_km != null && (
+                <PlanComparisonCell
+                  label="Distance"
+                  planned={formatDistance(analysisData.plan_comparison.planned_distance_km * 1000)}
+                  actual={formatDistance(analysisData.plan_comparison.actual_distance_km * 1000)}
+                />
+              )}
+              {analysisData.plan_comparison.planned_pace_s_km != null && analysisData.plan_comparison.actual_pace_s_km != null && (
+                <PlanComparisonCell
+                  label="Pace"
+                  planned={formatPace(analysisData.plan_comparison.planned_pace_s_km)}
+                  actual={formatPace(analysisData.plan_comparison.actual_pace_s_km)}
+                />
+              )}
+              {analysisData.plan_comparison.planned_interval_count != null && analysisData.plan_comparison.detected_work_count != null && (
+                <PlanComparisonCell
+                  label="Intervals"
+                  planned={String(analysisData.plan_comparison.planned_interval_count)}
+                  actual={String(analysisData.plan_comparison.detected_work_count)}
+                />
+              )}
+            </div>
           </div>
         )}
 
-        {/* Workout Type Classification */}
-        <div className="mb-8">
+        {/* ── 7. Workout Type Classification ── */}
+        <div className="mb-6">
           <WorkoutTypeSelector activityId={activityId} />
         </div>
 
-        {/* Key Metrics Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <MetricCard
-            label="Distance"
-            value={formatDistance(activity.distance_m)}
-          />
-          <MetricCard
-            label="Duration"
-            value={formatDuration(activity.moving_time_s)}
-          />
-          <MetricCard
-            label="Pace"
-            value={formatPace(getPaceSecondsPerKm(activity.moving_time_s, activity.distance_m))}
-          />
-          <MetricCard
-            label="Avg HR"
-            value={activity.average_hr?.toString() || '--'}
-            unit="bpm"
-          />
+        {/* ── 8. "Why This Run?" + Context Analysis ── */}
+        <div className="mb-6">
+          <WhyThisRun activityId={activityId} className="mb-4" />
+          <RunContextAnalysis activityId={activityId} />
         </div>
 
-        {/* Secondary Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <MetricCard
-            label="Max HR"
-            value={activity.max_hr?.toString() || '--'}
-            unit="bpm"
-            secondary
-          />
-          <MetricCard
-            label="Cadence"
-            value={
-              normalizeCadenceToSpm(activity.average_cadence) !== null
-                ? Math.round(normalizeCadenceToSpm(activity.average_cadence) as number).toString()
-                : '--'
-            }
-            unit="spm"
-            secondary
-          />
-          <MetricCard
-            label="Elevation"
-            value={formatElevation(activity.total_elevation_gain_m)}
-            secondary
-          />
-          <MetricCard
-            label="Temperature"
-            value={activity.temperature_f?.toFixed(0) || '--'}
-            unit="°F"
-            secondary
-          />
+        {/* ── 9. "Compare to Similar" ── */}
+        <div className="mb-6">
+          <Link
+            href={`/compare/context/${activityId}`}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-semibold rounded-lg shadow-lg shadow-orange-500/25 transition-all hover:shadow-orange-500/40 hover:scale-[1.02]"
+          >
+            Compare to Similar Runs
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
         </div>
 
-        {/* Splits Chart */}
+        {/* ── 10. Splits (secondary position) ── */}
         {splits && splits.length > 0 && (
-          <div className="bg-slate-800/50 rounded-lg p-6 mb-8 border border-slate-700/50">
-            <h2 className="text-xl font-bold text-white">Splits / Laps</h2>
-            <p className="text-sm text-slate-400 mt-1">
-              Real split detail (pace, HR, cadence, and GAP when available).
-            </p>
-            <div className="mt-5">
-              <SplitsChart splits={splits} className="mb-6" />
+          <div className="bg-slate-800/50 rounded-lg p-6 mb-6 border border-slate-700/50">
+            <h2 className="text-lg font-bold text-white">Splits / Laps</h2>
+            <div className="mt-4">
+              <SplitsChart splits={splits} className="mb-4" />
               <SplitsTable splits={splits} />
             </div>
           </div>
         )}
 
-        {/* Perception Prompt with Expected RPE */}
-        <div className="mb-8">
-          <PerceptionPrompt 
-            activityId={activityId}
-            workoutType={activity.workout_type || undefined}
-            expectedRpeRange={activity.expected_rpe_range || undefined}
-          />
-        </div>
-
-        {/* Run Context Analysis - The Core Intelligence */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold text-white mb-4">Context Analysis</h2>
-          {/* Why This Run? Attribution Analysis */}
-          <WhyThisRun activityId={activityId} className="mb-6" />
-          
-          {/* Run Context Analysis */}
-          <RunContextAnalysis activityId={activityId} />
-        </div>
+        {/* ── Narrative Context (secondary — canvas is now the hero) ── */}
+        {activity.narrative && (
+          <div className="mb-6 px-4 py-3 bg-slate-800/30 border border-slate-700/30 rounded-lg">
+            <p className="text-sm text-slate-400 italic leading-relaxed">
+              &ldquo;{activity.narrative}&rdquo;
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -360,7 +412,8 @@ export default function ActivityDetailPage() {
 
 // ============ Sub-Components ============
 
-function MetricCard({
+/** Compact metric pill for the horizontal ribbon */
+function MetricPill({
   label,
   value,
   unit,
@@ -372,12 +425,31 @@ function MetricCard({
   secondary?: boolean;
 }) {
   return (
-    <div className={`rounded-lg p-4 ${secondary ? 'bg-slate-800/30' : 'bg-slate-800/50'}`}>
-      <p className="text-slate-400 text-sm mb-1">{label}</p>
-      <p className={`font-bold ${secondary ? 'text-xl text-slate-300' : 'text-2xl text-white'}`}>
+    <div className="flex-shrink-0">
+      <p className={`text-xs ${secondary ? 'text-slate-500' : 'text-slate-400'}`}>{label}</p>
+      <p className={`font-semibold whitespace-nowrap ${secondary ? 'text-sm text-slate-400' : 'text-base text-white'}`}>
         {value}
-        {unit && <span className="text-slate-500 text-sm font-normal ml-1">{unit}</span>}
+        {unit && <span className="text-slate-500 text-xs font-normal ml-0.5">{unit}</span>}
       </p>
+    </div>
+  );
+}
+
+/** Plan comparison cell (planned vs actual) */
+function PlanComparisonCell({
+  label,
+  planned,
+  actual,
+}: {
+  label: string;
+  planned: string;
+  actual: string;
+}) {
+  return (
+    <div>
+      <p className="text-xs text-slate-500 mb-1">{label}</p>
+      <p className="text-sm text-white">{actual}</p>
+      <p className="text-xs text-slate-500">planned: {planned}</p>
     </div>
   );
 }

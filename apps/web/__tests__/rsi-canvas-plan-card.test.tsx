@@ -12,6 +12,7 @@ import { mockTier1Result, mockResultWithPlan, generateTestStreamData } from './r
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
 jest.mock('@/components/activities/rsi/hooks/useStreamAnalysis', () => ({
+  ...jest.requireActual('@/components/activities/rsi/hooks/useStreamAnalysis'),
   useStreamAnalysis: jest.fn(),
 }));
 
@@ -23,7 +24,7 @@ const streamData = generateTestStreamData(500);
 describe('AC-7: Plan Comparison Card', () => {
   test('card renders when plan_comparison is non-null', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockResultWithPlan, stream: streamData },
+      data: { ...mockResultWithPlan, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -38,7 +39,7 @@ describe('AC-7: Plan Comparison Card', () => {
 
   test('card shows planned vs actual duration, distance, pace', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockResultWithPlan, stream: streamData },
+      data: { ...mockResultWithPlan, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -54,7 +55,7 @@ describe('AC-7: Plan Comparison Card', () => {
 
   test('card shows interval count match when available', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockResultWithPlan, stream: streamData },
+      data: { ...mockResultWithPlan, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -68,7 +69,7 @@ describe('AC-7: Plan Comparison Card', () => {
 
   test('card is hidden when plan_comparison is null', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier1Result, stream: streamData },
+      data: { ...mockTier1Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),

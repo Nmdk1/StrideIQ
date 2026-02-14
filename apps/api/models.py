@@ -1049,6 +1049,60 @@ class ActivityFeedback(Base):
     )
 
 
+class ActivityReflection(Base):
+    """
+    RSI Layer 2 — Simplified post-run reflection.
+    
+    Three-option prompt: harder | expected | easier.
+    Replaces the heavier PerceptionPrompt on the activity detail page.
+    One reflection per activity. No free text in v1.
+    """
+    __tablename__ = "activity_reflection"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    response = Column(Text, nullable=False)  # 'harder' | 'expected' | 'easier'
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_activity_reflection_activity_id", "activity_id"),
+        Index("ix_activity_reflection_athlete_id", "athlete_id"),
+        UniqueConstraint('activity_id', name='uq_activity_reflection_activity'),
+        CheckConstraint("response IN ('harder', 'expected', 'easier')", name='ck_reflection_response_enum'),
+    )
+
+
+class CachedStreamAnalysis(Base):
+    """
+    RSI — Cached StreamAnalysisResult for an activity.
+
+    Spec decision (locked 2026-02-14): "Cache full StreamAnalysisResult in DB.
+    Compute once at ingest time, serve on every Home + Activity page load.
+    Recompute only on: new stream payload, analysis version bump, manual reprocess."
+
+    The result_json column stores the full asdict(StreamAnalysisResult) so both
+    /v1/home and /v1/activities/{id}/stream-analysis can serve without re-computing.
+    """
+    __tablename__ = "cached_stream_analysis"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False, unique=True)
+
+    # Full StreamAnalysisResult as JSON (segments, drift, moments, etc.)
+    result_json = Column(JSONB, nullable=False)
+
+    # Deterministic invalidation: bump when analysis logic changes
+    analysis_version = Column(Integer, nullable=False, default=1)
+
+    # Provenance
+    computed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_cached_stream_analysis_activity_id", "activity_id"),
+    )
+
+
 class InsightFeedback(Base):
     """
     User feedback on insights to refine correlation engine thresholds.

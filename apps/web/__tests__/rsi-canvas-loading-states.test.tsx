@@ -17,6 +17,7 @@ import {
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
 jest.mock('@/components/activities/rsi/hooks/useStreamAnalysis', () => ({
+  ...jest.requireActual('@/components/activities/rsi/hooks/useStreamAnalysis'),
   useStreamAnalysis: jest.fn(),
 }));
 
@@ -26,7 +27,7 @@ const mockUseStreamAnalysis = useStreamAnalysis as jest.MockedFunction<typeof us
 const streamData = generateTestStreamData(500);
 
 describe('AC-10: Loading States', () => {
-  test('pending status shows loading spinner', () => {
+  test('pending status shows analyzing pulse (not spinner)', () => {
     mockUseStreamAnalysis.mockReturnValue({
       data: mockPendingResponse,
       isLoading: false,
@@ -36,15 +37,16 @@ describe('AC-10: Loading States', () => {
 
     render(<RunShapeCanvas activityId="test-123" />);
 
-    // Spinner or loading indicator
-    const spinner = screen.getByTestId('loading-spinner') ||
-                    screen.getByRole('progressbar') ||
-                    document.querySelector('[class*="spinner"]') ||
-                    document.querySelector('[class*="animate-spin"]');
-    expect(spinner).toBeInTheDocument();
+    // RSI Layer 2: pulse dots instead of spinner (spec: "subtle pulse, NOT a spinner")
+    const pulses = document.querySelectorAll('[class*="animate-pulse"]');
+    expect(pulses.length).toBeGreaterThan(0);
 
-    // Loading text
-    expect(screen.getByText(/stream data loading/i)).toBeInTheDocument();
+    // Text says "Analyzing your run..." (not "Stream data loading")
+    expect(screen.getByText(/analyzing your run/i)).toBeInTheDocument();
+
+    // No spinner present (negative assertion)
+    expect(screen.queryByTestId('loading-spinner')).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
   test('failed status shows retry hint', () => {
@@ -81,7 +83,7 @@ describe('AC-10: Loading States', () => {
 
   test('success status renders full canvas', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier1Result, stream: streamData },
+      data: { ...mockTier1Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),

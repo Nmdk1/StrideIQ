@@ -12,6 +12,7 @@ import { mockTier1Result, mockTier4Result, generateTestStreamData } from './rsi-
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
 jest.mock('@/components/activities/rsi/hooks/useStreamAnalysis', () => ({
+  ...jest.requireActual('@/components/activities/rsi/hooks/useStreamAnalysis'),
   useStreamAnalysis: jest.fn(),
 }));
 
@@ -23,7 +24,7 @@ const streamData = generateTestStreamData(500);
 describe('AC-8: Confidence + Tier Badge', () => {
   test('badge renders on every canvas view', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier1Result, stream: streamData },
+      data: { ...mockTier1Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -38,7 +39,7 @@ describe('AC-8: Confidence + Tier Badge', () => {
 
   test('badge shows correct tier label for Tier 1', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier1Result, stream: streamData },
+      data: { ...mockTier1Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -52,7 +53,7 @@ describe('AC-8: Confidence + Tier Badge', () => {
 
   test('badge shows correct tier label for Tier 4', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier4Result, stream: streamData },
+      data: { ...mockTier4Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -66,7 +67,7 @@ describe('AC-8: Confidence + Tier Badge', () => {
 
   test('badge shows confidence as percentage', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier1Result, stream: streamData },
+      data: { ...mockTier1Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -80,7 +81,7 @@ describe('AC-8: Confidence + Tier Badge', () => {
 
   test('Tier 4 caveat subtitle is always visible, not tooltip-gated', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier4Result, stream: streamData },
+      data: { ...mockTier4Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),

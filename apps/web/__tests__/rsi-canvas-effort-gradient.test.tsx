@@ -14,6 +14,7 @@ import { mockTier1Result, mockTier4Result, generateTestStreamData } from './rsi-
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
 jest.mock('@/components/activities/rsi/hooks/useStreamAnalysis', () => ({
+  ...jest.requireActual('@/components/activities/rsi/hooks/useStreamAnalysis'),
   useStreamAnalysis: jest.fn(),
 }));
 
@@ -25,7 +26,7 @@ const streamData = generateTestStreamData(500);
 describe('AC-2: Effort Gradient', () => {
   beforeEach(() => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier1Result, stream: streamData },
+      data: { ...mockTier1Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -48,7 +49,7 @@ describe('AC-2: Effort Gradient', () => {
 
   test('Tier 4 caveat label visible when cross_run_comparable is false', () => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier4Result, stream: streamData },
+      data: { ...mockTier4Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),

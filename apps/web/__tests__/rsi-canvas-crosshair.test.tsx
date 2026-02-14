@@ -17,6 +17,7 @@ import { mockTier1Result, generateTestStreamData } from './rsi-fixtures';
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
 jest.mock('@/components/activities/rsi/hooks/useStreamAnalysis', () => ({
+  ...jest.requireActual('@/components/activities/rsi/hooks/useStreamAnalysis'),
   useStreamAnalysis: jest.fn(),
 }));
 
@@ -50,7 +51,7 @@ function hoverAtFraction(overlay: Element, fraction: number) {
 describe('AC-3: Unified Crosshair', () => {
   beforeEach(() => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier1Result, stream: streamData },
+      data: { ...mockTier1Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),

@@ -47,9 +47,14 @@ import {
 
 import {
   useStreamAnalysis,
+  isAnalysisData,
   type StreamHookData,
   type StreamLifecycleResponse,
   type StreamAnalysisData,
+  type StreamPoint,
+  type Segment,
+  type DriftAnalysis,
+  type PlanComparison,
 } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import { lttbDownsample } from '@/components/activities/rsi/utils/lttb';
 import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
@@ -71,47 +76,6 @@ interface ChartPoint {
   cadence: number | null;
   effort: number;
   [key: string]: number | null;
-}
-
-interface Segment {
-  type: string;
-  start_time_s: number;
-  end_time_s: number;
-  avg_hr: number | null;
-  avg_pace_sec_per_km: number | null;
-  avg_cadence: number | null;
-  avg_grade: number | null;
-}
-
-interface DriftAnalysis {
-  cardiac_drift_pct: number | null;
-  pace_drift_pct: number | null;
-  cadence_trend_bpm_per_km: number | null;
-}
-
-interface PlanComparison {
-  planned_duration_s: number;
-  actual_duration_s: number;
-  planned_distance_m: number | null;
-  actual_distance_m: number | null;
-  planned_pace_sec_per_km: number | null;
-  actual_pace_sec_per_km: number | null;
-  interval_count_planned: number | null;
-  interval_count_actual: number | null;
-}
-
-interface AnalysisResult {
-  segments: Segment[];
-  drift: DriftAnalysis;
-  plan_comparison: PlanComparison | null;
-  tier_used: string;
-  confidence: number;
-  cross_run_comparable: boolean;
-  channels_present: string[];
-  channels_missing: string[];
-  point_count: number;
-  estimated_flags: string[];
-  moments: unknown[];
 }
 
 type ViewMode = 'story' | 'lab';
@@ -436,6 +400,12 @@ function PlanComparisonCard({
 }: {
   plan: PlanComparison;
 }) {
+  // Backend sends duration in minutes, not seconds
+  const formatMinutes = (min: number) => {
+    const totalSec = Math.round(min * 60);
+    return formatDuration(totalSec);
+  };
+
   return (
     <div
       data-testid="plan-comparison-card"
@@ -444,46 +414,48 @@ function PlanComparisonCard({
       <h4 className="text-sm font-semibold text-white mb-2">Planned vs Actual</h4>
 
       <div className="grid grid-cols-3 gap-2 text-slate-300">
-        {/* Duration */}
-        <div>
-          <p className="text-slate-500">Duration</p>
-          <p>
-            {formatDuration(plan.planned_duration_s)}
-            <span className="text-slate-500 mx-1">→</span>
-            {formatDuration(plan.actual_duration_s)}
-          </p>
-        </div>
-
-        {/* Distance */}
-        {plan.planned_distance_m != null && plan.actual_distance_m != null && (
+        {/* Duration (backend: planned_duration_min / actual_duration_min) */}
+        {plan.planned_duration_min != null && plan.actual_duration_min != null && (
           <div>
-            <p className="text-slate-500">Distance</p>
+            <p className="text-slate-500">Duration</p>
             <p>
-              {(plan.planned_distance_m / 1000).toFixed(1)} km
+              {formatMinutes(plan.planned_duration_min)}
               <span className="text-slate-500 mx-1">→</span>
-              {(plan.actual_distance_m / 1000).toFixed(1)} km
+              {formatMinutes(plan.actual_duration_min)}
             </p>
           </div>
         )}
 
-        {/* Pace */}
-        {plan.planned_pace_sec_per_km != null && plan.actual_pace_sec_per_km != null && (
+        {/* Distance (backend: planned_distance_km / actual_distance_km) */}
+        {plan.planned_distance_km != null && plan.actual_distance_km != null && (
+          <div>
+            <p className="text-slate-500">Distance</p>
+            <p>
+              {plan.planned_distance_km.toFixed(1)} km
+              <span className="text-slate-500 mx-1">→</span>
+              {plan.actual_distance_km.toFixed(1)} km
+            </p>
+          </div>
+        )}
+
+        {/* Pace (backend: planned_pace_s_km / actual_pace_s_km — sec/km) */}
+        {plan.planned_pace_s_km != null && plan.actual_pace_s_km != null && (
           <div>
             <p className="text-slate-500">Pace</p>
             <p>
-              {formatPace(plan.planned_pace_sec_per_km)}
+              {formatPace(plan.planned_pace_s_km)}
               <span className="text-slate-500 mx-1">→</span>
-              {formatPace(plan.actual_pace_sec_per_km)}
+              {formatPace(plan.actual_pace_s_km)}
             </p>
           </div>
         )}
       </div>
 
-      {/* Interval count */}
-      {plan.interval_count_planned != null && plan.interval_count_actual != null && (
+      {/* Interval count (backend: planned_interval_count / detected_work_count) */}
+      {plan.planned_interval_count != null && plan.detected_work_count != null && (
         <div className="mt-2 text-slate-300">
           <span className="text-slate-500">Intervals: </span>
-          {plan.interval_count_actual}/{plan.interval_count_planned}
+          {plan.detected_work_count}/{plan.planned_interval_count}
         </div>
       )}
     </div>
@@ -497,7 +469,7 @@ function PlanComparisonCard({
 function LabModePanel({
   analysis,
 }: {
-  analysis: AnalysisResult;
+  analysis: StreamAnalysisData;
 }) {
   const showZones = hasPhysiologicalData(analysis.tier_used);
 
@@ -535,9 +507,9 @@ function LabModePanel({
                 <tr key={i} className="border-b border-slate-800">
                   <td className="px-2 py-1 capitalize">{seg.type}</td>
                   <td className="px-2 py-1">
-                    {formatDuration(seg.end_time_s - seg.start_time_s)}
+                    {formatDuration(seg.duration_s)}
                   </td>
-                  <td className="px-2 py-1">{formatPace(seg.avg_pace_sec_per_km)}</td>
+                  <td className="px-2 py-1">{formatPace(seg.avg_pace_s_km)}</td>
                   <td className="px-2 py-1">
                     {seg.avg_hr != null ? `${Math.round(seg.avg_hr)} bpm` : '--'}
                   </td>
@@ -556,16 +528,16 @@ function LabModePanel({
 
       {/* Drift metrics (AC-9: neutral language only — trust contract) */}
       <div data-testid="drift-metrics" className="space-y-1">
-        {analysis.drift.cardiac_drift_pct != null && (
+        {analysis.drift.cardiac_pct != null && (
           <div className="flex justify-between text-xs text-slate-300 bg-slate-800/30 rounded px-2 py-1">
             <span>Cardiac Drift</span>
-            <span>{analysis.drift.cardiac_drift_pct.toFixed(1)}%</span>
+            <span>{analysis.drift.cardiac_pct.toFixed(1)}%</span>
           </div>
         )}
-        {analysis.drift.pace_drift_pct != null && (
+        {analysis.drift.pace_pct != null && (
           <div className="flex justify-between text-xs text-slate-300 bg-slate-800/30 rounded px-2 py-1">
             <span>Pace Drift</span>
-            <span>{analysis.drift.pace_drift_pct.toFixed(1)}%</span>
+            <span>{analysis.drift.pace_pct.toFixed(1)}%</span>
           </div>
         )}
         {analysis.drift.cadence_trend_bpm_per_km != null && (
@@ -616,19 +588,19 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
   }, []);
 
   // --- Data preparation ---
-  // Type-safe extraction: only access .analysis/.stream when data is a full payload
-  const fullData = (data && typeof data === 'object' && 'analysis' in data)
-    ? (data as StreamAnalysisData)
-    : null;
-  const analysis: AnalysisResult | null = (fullData?.analysis as unknown as AnalysisResult) ?? null;
-  const rawStream = fullData?.stream ?? null;
+  // The API returns a flat StreamAnalysisData (all analysis fields + stream array).
+  // Type guard distinguishes full analysis from lifecycle responses.
+  const analysis: StreamAnalysisData | null = isAnalysisData(data) ? data : null;
+  const rawStream: StreamPoint[] | null = analysis?.stream ?? null;
 
   const chartData = useMemo<ChartPoint[]>(() => {
-    if (!rawStream || !Array.isArray(rawStream) || rawStream.length === 0) {
+    if (!rawStream || rawStream.length === 0) {
       return [];
     }
 
-    const points: ChartPoint[] = rawStream.map((p: Record<string, number>) => ({
+    // Stream points are already LTTB downsampled server-side to ≤500 points.
+    // Map to ChartPoint format for Recharts.
+    return rawStream.map((p: StreamPoint) => ({
       time: p.time ?? 0,
       hr: p.hr ?? null,
       pace: p.pace ?? null,
@@ -637,12 +609,6 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
       cadence: p.cadence ?? null,
       effort: p.effort ?? 0,
     }));
-
-    // AC-11: LTTB downsample to ≤500 points
-    if (points.length > MAX_DISPLAY_POINTS) {
-      return lttbDownsample(points, MAX_DISPLAY_POINTS, 'hr');
-    }
-    return points;
   }, [rawStream]);
 
   // --- Derived values ---
@@ -680,15 +646,19 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
   }
 
   // Pending/Loading: stream is being fetched or processing.
+  // Page-specific UX: "Analyzing your run..." with subtle pulse (not a spinner).
+  // This is intentionally different from Home's silent-upgrade (no loading indicator).
+  // On Activity Detail, the athlete navigated here intentionally, so an in-progress
+  // state is expected and informative.
   if (isLoading || lifecycleStatus === 'pending') {
     return (
-      <div data-testid="rsi-canvas" className="flex flex-col items-center justify-center h-64 gap-2">
-        <div
-          data-testid="loading-spinner"
-          role="progressbar"
-          className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full"
-        />
-        <p className="text-slate-400 text-sm">Stream data loading</p>
+      <div data-testid="rsi-canvas" className="flex flex-col items-center justify-center h-48 gap-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+        <div className="flex gap-1">
+          <div className="w-2 h-2 rounded-full bg-orange-400/60 animate-pulse" style={{ animationDelay: '0ms' }} />
+          <div className="w-2 h-2 rounded-full bg-orange-400/60 animate-pulse" style={{ animationDelay: '300ms' }} />
+          <div className="w-2 h-2 rounded-full bg-orange-400/60 animate-pulse" style={{ animationDelay: '600ms' }} />
+        </div>
+        <p className="text-slate-400 text-sm">Analyzing your run...</p>
       </div>
     );
   }

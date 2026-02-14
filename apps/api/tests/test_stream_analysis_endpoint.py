@@ -4,7 +4,10 @@ Tests the REST endpoint: GET /v1/activities/{id}/stream-analysis
 
 AC coverage:
     AC-1: Analysis endpoint returns correct status/shape for all lifecycle states.
+
+Contract fixture: contracts/stream_analysis_response.json  (shared with frontend)
 """
+import json
 import sys
 import os
 import pytest
@@ -425,13 +428,311 @@ class TestStreamAnalysisEndpoint:
         resp = client.get(url, headers=_auth_headers(test_athlete))
         assert resp.status_code == 200
         data = resp.json()
-        # Effort intensity is either a top-level array or within stream_data
-        has_effort = (
-            "effort_intensity" in data
-            or "effort" in data
-            or (
-                isinstance(data.get("segments"), list)
-                and len(data["segments"]) > 0
+        assert "effort_intensity" in data, "Response must include effort_intensity array"
+        assert isinstance(data["effort_intensity"], list)
+
+    # -------------------------------------------------------------------
+    # CONTRACT SNAPSHOT: exact field names must match frontend types
+    # -------------------------------------------------------------------
+    # These tests guard the frontend↔backend contract permanently.
+    # If you rename a backend field, these MUST break and force a
+    # corresponding frontend type update.
+    # -------------------------------------------------------------------
+
+    def test_contract_top_level_field_names(
+        self, client, test_athlete, activity_with_stream
+    ):
+        """Contract: top-level response keys match frontend StreamAnalysisData type."""
+        url = self.ENDPOINT.format(activity_id=activity_with_stream.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Exact set of expected top-level keys (from useStreamAnalysis.ts StreamAnalysisData)
+        expected_keys = {
+            "segments", "drift", "moments", "plan_comparison",
+            "channels_present", "channels_missing", "point_count",
+            "confidence", "tier_used", "estimated_flags",
+            "cross_run_comparable", "effort_intensity",
+            "stream",  # Per-point data added by router for canvas
+        }
+        actual_keys = set(data.keys())
+        missing = expected_keys - actual_keys
+        assert not missing, f"Contract breach: missing keys in response: {missing}"
+
+    def test_contract_segment_field_names(
+        self, client, test_athlete, activity_with_stream
+    ):
+        """Contract: segment objects use backend canonical field names."""
+        url = self.ENDPOINT.format(activity_id=activity_with_stream.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        data = resp.json()
+        segments = data.get("segments", [])
+        assert len(segments) > 0, "Need at least one segment for contract test"
+
+        seg = segments[0]
+        expected_fields = {
+            "type", "start_index", "end_index",
+            "start_time_s", "end_time_s", "duration_s",
+            "avg_pace_s_km", "avg_hr", "avg_cadence", "avg_grade",
+        }
+        actual = set(seg.keys())
+        missing = expected_fields - actual
+        assert not missing, f"Segment contract breach: missing {missing}"
+
+        # Negative: old frontend names must NOT be present
+        forbidden = {"avg_pace_sec_per_km"}
+        present_forbidden = forbidden & actual
+        assert not present_forbidden, f"Segment contains old field names: {present_forbidden}"
+
+    def test_contract_drift_field_names(
+        self, client, test_athlete, activity_with_stream
+    ):
+        """Contract: drift object uses backend canonical field names."""
+        url = self.ENDPOINT.format(activity_id=activity_with_stream.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        data = resp.json()
+        drift = data.get("drift", {})
+
+        expected_fields = {"cardiac_pct", "pace_pct", "cadence_trend_bpm_per_km"}
+        actual = set(drift.keys())
+        missing = expected_fields - actual
+        assert not missing, f"Drift contract breach: missing {missing}"
+
+        # Negative: old frontend names must NOT be present
+        forbidden = {"cardiac_drift_pct", "pace_drift_pct"}
+        present_forbidden = forbidden & actual
+        assert not present_forbidden, f"Drift contains old field names: {present_forbidden}"
+
+    def test_contract_plan_comparison_field_names(
+        self, client, test_athlete, activity_with_plan
+    ):
+        """Contract: plan_comparison uses backend canonical field names."""
+        url = self.ENDPOINT.format(activity_id=activity_with_plan.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        data = resp.json()
+        plan = data.get("plan_comparison")
+        assert plan is not None, "Need plan_comparison for contract test"
+
+        expected_fields = {
+            "planned_duration_min", "actual_duration_min", "duration_delta_min",
+            "planned_distance_km", "actual_distance_km", "distance_delta_km",
+            "planned_pace_s_km", "actual_pace_s_km", "pace_delta_s_km",
+            "planned_interval_count", "detected_work_count", "interval_count_match",
+        }
+        actual = set(plan.keys())
+        missing = expected_fields - actual
+        assert not missing, f"PlanComparison contract breach: missing {missing}"
+
+        # Negative: old frontend names must NOT be present
+        forbidden = {
+            "planned_duration_s", "actual_duration_s",
+            "planned_distance_m", "actual_distance_m",
+            "planned_pace_sec_per_km", "actual_pace_sec_per_km",
+            "interval_count_planned", "interval_count_actual",
+        }
+        present_forbidden = forbidden & actual
+        assert not present_forbidden, f"PlanComparison contains old field names: {present_forbidden}"
+
+    def test_contract_stream_points_shape(
+        self, client, test_athlete, activity_with_stream
+    ):
+        """Contract: stream array contains per-point objects with canvas-friendly keys."""
+        url = self.ENDPOINT.format(activity_id=activity_with_stream.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        data = resp.json()
+        stream = data.get("stream")
+        assert isinstance(stream, list), "stream must be a list"
+        assert len(stream) > 0, "stream must have at least one point"
+        assert len(stream) <= 500, f"stream should be LTTB-capped to ≤500 points, got {len(stream)}"
+
+        pt = stream[0]
+        expected_fields = {"time", "hr", "pace", "altitude", "grade", "cadence", "effort"}
+        actual = set(pt.keys())
+        missing = expected_fields - actual
+        assert not missing, f"StreamPoint contract breach: missing {missing}"
+
+    def test_contract_moment_field_names(
+        self, client, test_athlete, activity_with_stream
+    ):
+        """Contract: moment objects use backend canonical field names."""
+        url = self.ENDPOINT.format(activity_id=activity_with_stream.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        data = resp.json()
+        moments = data.get("moments", [])
+        # Moments may be empty for an easy run — that's fine.
+        # If present, verify field names.
+        if len(moments) > 0:
+            m = moments[0]
+            expected_fields = {"type", "index", "time_s", "value", "context"}
+            actual = set(m.keys())
+            missing = expected_fields - actual
+            assert not missing, f"Moment contract breach: missing {missing}"
+
+            # Negative: old frontend name must NOT be present
+            assert "label" not in actual, "Moment contains old 'label' field (should be 'context')"
+
+    def test_contract_lifecycle_pending_collapsed(
+        self, client, test_athlete, db_session
+    ):
+        """Contract: fetching/failed/None states all collapse to {status: 'pending'}."""
+        for fetch_state in ["pending", "fetching", "failed"]:
+            activity = Activity(
+                athlete_id=test_athlete.id,
+                name=f"Lifecycle {fetch_state}",
+                start_time=datetime.now(timezone.utc),
+                sport="run", source="strava", provider="strava",
+                external_activity_id=f"lc_{fetch_state}_{uuid4().hex[:6]}",
+                stream_fetch_status=fetch_state,
             )
+            db_session.add(activity)
+            db_session.commit()
+
+            url = self.ENDPOINT.format(activity_id=activity.id)
+            resp = client.get(url, headers=_auth_headers(test_athlete))
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data == {"status": "pending"}, \
+                f"fetch_state='{fetch_state}' should collapse to pending, got {data}"
+
+
+# ---------------------------------------------------------------------------
+# SHARED FIXTURE CROSS-VALIDATION
+# ---------------------------------------------------------------------------
+# These tests load the same contracts/stream_analysis_response.json fixture
+# used by the frontend rsi-contract.test.ts.  If the fixture drifts from
+# the real endpoint output, both backend and frontend suites break.
+# ---------------------------------------------------------------------------
+
+# Locate shared fixture relative to this file:
+# tests/ -> apps/api/ -> apps/ -> StrideIQ/
+CONTRACT_FILE = Path(__file__).resolve().parents[3] / "contracts" / "stream_analysis_response.json"
+
+
+@pytest.fixture(scope="module")
+def shared_contract():
+    """Load the shared contract fixture once per module."""
+    assert CONTRACT_FILE.exists(), f"Shared contract fixture not found: {CONTRACT_FILE}"
+    return json.loads(CONTRACT_FILE.read_text(encoding="utf-8"))
+
+
+class TestSharedContractFixture:
+    """Validate the shared contract fixture against a live endpoint response."""
+
+    ENDPOINT = "/v1/activities/{activity_id}/stream-analysis"
+
+    def test_fixture_top_level_keys_match_live_response(
+        self, client, test_athlete, activity_with_stream, shared_contract
+    ):
+        """Shared fixture expected_top_level_keys must match a real response."""
+        url = self.ENDPOINT.format(activity_id=activity_with_stream.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        assert resp.status_code == 200
+        live_keys = set(resp.json().keys())
+
+        fixture_keys = set(shared_contract["expected_top_level_keys"])
+        missing_from_live = fixture_keys - live_keys
+        assert not missing_from_live, (
+            f"Fixture declares keys missing from live response: {missing_from_live}"
         )
-        assert has_effort, "Response must include effort intensity data"
+
+    def test_fixture_segment_keys_match_live_response(
+        self, client, test_athlete, activity_with_stream, shared_contract
+    ):
+        """Shared fixture expected_segment_keys must match real segment objects."""
+        url = self.ENDPOINT.format(activity_id=activity_with_stream.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        segments = resp.json().get("segments", [])
+        assert len(segments) > 0
+
+        live_keys = set(segments[0].keys())
+        fixture_keys = set(shared_contract["expected_segment_keys"])
+        missing = fixture_keys - live_keys
+        assert not missing, f"Fixture segment keys missing from live: {missing}"
+
+    def test_fixture_drift_keys_match_live_response(
+        self, client, test_athlete, activity_with_stream, shared_contract
+    ):
+        """Shared fixture expected_drift_keys must match real drift object."""
+        url = self.ENDPOINT.format(activity_id=activity_with_stream.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        drift = resp.json().get("drift", {})
+
+        live_keys = set(drift.keys())
+        fixture_keys = set(shared_contract["expected_drift_keys"])
+        missing = fixture_keys - live_keys
+        assert not missing, f"Fixture drift keys missing from live: {missing}"
+
+    def test_fixture_stream_point_keys_match_live_response(
+        self, client, test_athlete, activity_with_stream, shared_contract
+    ):
+        """Shared fixture expected_stream_point_keys must match real stream points."""
+        url = self.ENDPOINT.format(activity_id=activity_with_stream.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        stream = resp.json().get("stream", [])
+        assert len(stream) > 0
+
+        live_keys = set(stream[0].keys())
+        fixture_keys = set(shared_contract["expected_stream_point_keys"])
+        missing = fixture_keys - live_keys
+        assert not missing, f"Fixture stream point keys missing from live: {missing}"
+
+    def test_fixture_plan_comparison_keys_match_live_response(
+        self, client, test_athlete, activity_with_plan, shared_contract
+    ):
+        """Shared fixture expected_plan_comparison_keys must match real plan_comparison."""
+        url = self.ENDPOINT.format(activity_id=activity_with_plan.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        plan = resp.json().get("plan_comparison")
+        assert plan is not None
+
+        live_keys = set(plan.keys())
+        fixture_keys = set(shared_contract["expected_plan_comparison_keys"])
+        missing = fixture_keys - live_keys
+        assert not missing, f"Fixture plan keys missing from live: {missing}"
+
+    def test_fixture_forbidden_keys_absent_from_live_response(
+        self, client, test_athlete, activity_with_stream, shared_contract
+    ):
+        """All forbidden_old_* keys from fixture must be absent in live response."""
+        url = self.ENDPOINT.format(activity_id=activity_with_stream.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        data = resp.json()
+
+        # Collect all forbidden keys from all categories
+        all_forbidden = set()
+        for key in shared_contract:
+            if key.startswith("forbidden_old_"):
+                all_forbidden.update(shared_contract[key])
+
+        # Check all nested objects
+        all_live_keys = set(data.keys())
+        if data.get("segments"):
+            all_live_keys.update(data["segments"][0].keys())
+        if data.get("drift"):
+            all_live_keys.update(data["drift"].keys())
+        if data.get("moments"):
+            for m in data["moments"]:
+                all_live_keys.update(m.keys())
+        if data.get("stream"):
+            all_live_keys.update(data["stream"][0].keys())
+
+        present_forbidden = all_forbidden & all_live_keys
+        assert not present_forbidden, (
+            f"Forbidden old field names found in live response: {present_forbidden}"
+        )
+
+    def test_fixture_sample_values_match_schema(self, shared_contract):
+        """Sanity-check the fixture's sample data shapes (not live, just fixture integrity)."""
+        success = shared_contract["success_response"]
+        assert isinstance(success["segments"], list)
+        assert len(success["segments"]) > 0
+        assert isinstance(success["drift"], dict)
+        assert isinstance(success["stream"], list)
+        assert len(success["stream"]) > 0
+        assert isinstance(success["moments"], list)
+        assert isinstance(success["effort_intensity"], list)
+
+        # Lifecycle shapes
+        assert shared_contract["pending_response"] == {"status": "pending"}
+        assert shared_contract["unavailable_response"] == {"status": "unavailable"}

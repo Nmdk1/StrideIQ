@@ -15,6 +15,7 @@ import { mockTier1Result, generateTestStreamData } from './rsi-fixtures';
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
 jest.mock('@/components/activities/rsi/hooks/useStreamAnalysis', () => ({
+  ...jest.requireActual('@/components/activities/rsi/hooks/useStreamAnalysis'),
   useStreamAnalysis: jest.fn(),
 }));
 
@@ -26,7 +27,7 @@ const streamData = generateTestStreamData(500);
 describe('AC-4: Story-Layer Toggles', () => {
   beforeEach(() => {
     mockUseStreamAnalysis.mockReturnValue({
-      data: { analysis: mockTier1Result, stream: streamData },
+      data: { ...mockTier1Result, stream: streamData },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
