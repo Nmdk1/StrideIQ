@@ -819,6 +819,20 @@ Policy:
                     "required": ["operation"],
                 },
             },
+            {
+                "name": "analyze_run_streams",
+                "description": "Analyze per-second stream data for a run activity. Returns segment classification, cardiac/pace drift, coachable moments, and optional plan comparison. Uses the athlete's physiological profile for N=1 individualized analysis.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "activity_id": {
+                            "type": "string",
+                            "description": "UUID of the activity to analyze (from get_recent_runs or get_calendar_day_context).",
+                        },
+                    },
+                    "required": ["activity_id"],
+                },
+            },
         ]
 
     def _execute_opus_tool(self, athlete_id: UUID, tool_name: str, tool_input: Dict[str, Any]) -> str:
@@ -877,6 +891,8 @@ Policy:
                 result = coach_tools.get_training_load_history(self.db, athlete_id, **tool_input)
             elif tool_name == "compute_running_math":
                 result = coach_tools.compute_running_math(self.db, athlete_id, **tool_input)
+            elif tool_name == "analyze_run_streams":
+                result = coach_tools.analyze_run_streams(self.db, athlete_id, **tool_input)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return json.dumps(result, default=str)
@@ -1336,6 +1352,20 @@ If you need more data to answer well, call the tools. That's why they're there."
                     "required": ["operation"],
                 },
             },
+            {
+                "name": "analyze_run_streams",
+                "description": "Analyze per-second stream data for a run activity. Returns segment classification, cardiac/pace drift, coachable moments, and optional plan comparison. Uses the athlete's physiological profile for N=1 individualized analysis.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "activity_id": {
+                            "type": "string",
+                            "description": "UUID of the activity to analyze (from get_recent_runs or get_calendar_day_context).",
+                        },
+                    },
+                    "required": ["activity_id"],
+                },
+            },
         ]
         
         gemini_tools = genai_types.Tool(function_declarations=function_declarations)
@@ -1357,7 +1387,7 @@ COACHING APPROACH:
 - Every number you cite MUST come from the brief or a tool result. NEVER fabricate, estimate, or guess training data. If the brief doesn't have it and you haven't called a tool, call one.
 - NEVER compute math yourself — use the compute_running_math tool for pace/distance/time calculations.
 - When the brief doesn't cover something, call a tool. Read the tool's narrative summary and coach from it.
-- For deeper dives, call tools — you have 23 tools available. NEVER say "I don't have access."
+- For deeper dives, call tools — you have 24 tools available. NEVER say "I don't have access."
 - Conversational A->I->A requirement (chat prose, not JSON): provide an interpretive Assessment, explain the Implication, then a concrete Action.
 - Do NOT output internal labels like "fact capsule", "response contract", or schema keys.
 
@@ -1368,7 +1398,7 @@ get_race_predictions, get_recovery_status, get_active_insights, get_pb_patterns,
 get_efficiency_by_zone, get_nutrition_correlations, get_best_runs,
 compare_training_periods, get_coach_intent_snapshot, set_coach_intent_snapshot,
 get_training_prescription_window, get_wellness_trends, get_athlete_profile,
-get_training_load_history, compute_running_math
+get_training_load_history, compute_running_math, analyze_run_streams
 
 TOOL OUTPUTS: Each tool returns a "narrative" field — a pre-interpreted summary. Coach from the narrative, not the raw JSON.
 

@@ -240,6 +240,49 @@ OUTPUT_METRIC_REGISTRY: Dict[str, OutputMetricMeta] = {
         polarity_ambiguous=False,
         direction_interpretation="Lower pace = faster race = unambiguously better.",
     ),
+    # --- Phase 2: Run Stream Analysis metrics ---
+    "cardiac_drift_pct": OutputMetricMeta(
+        metric_key="cardiac_drift_pct",
+        metric_definition="Percentage HR rise from first-half to second-half of work/steady segments",
+        higher_is_better=None,
+        polarity_ambiguous=True,
+        direction_interpretation=(
+            "Ambiguous: drift rises with fatigue (expected in long runs) but also "
+            "with dehydration or heat. Context-dependent — do not infer directional quality."
+        ),
+    ),
+    "pace_drift_pct": OutputMetricMeta(
+        metric_key="pace_drift_pct",
+        metric_definition="Percentage velocity change from first-half to second-half of work segments",
+        higher_is_better=None,
+        polarity_ambiguous=True,
+        direction_interpretation=(
+            "Ambiguous: positive = got faster (negative split, often good) but also "
+            "could mean started too slow. Negative = slowed (normal in long runs). "
+            "Do not infer direction without workout context."
+        ),
+    ),
+    "cadence_trend_bpm_per_km": OutputMetricMeta(
+        metric_key="cadence_trend_bpm_per_km",
+        metric_definition="Linear cadence change (steps/min) per km over work segments",
+        higher_is_better=None,
+        polarity_ambiguous=True,
+        direction_interpretation=(
+            "Ambiguous: cadence changes interact with pace, fatigue, and terrain. "
+            "Dropping cadence may indicate fatigue or intentional lengthening. "
+            "Do not infer directional quality."
+        ),
+    ),
+    "plan_execution_variance": OutputMetricMeta(
+        metric_key="plan_execution_variance",
+        metric_definition="Summary-level delta between planned and actual workout metrics",
+        higher_is_better=None,
+        polarity_ambiguous=True,
+        direction_interpretation=(
+            "Ambiguous: over-executing a plan may be harmful (injury risk), "
+            "under-executing may be adaptive (recovery). Do not infer direction."
+        ),
+    ),
 }
 
 

@@ -3789,6 +3789,176 @@ def compute_running_math(
         return {"ok": False, "tool": "compute_running_math", "error": str(e)}
 
 
+# ---------------------------------------------------------------------------
+# ANALYZE RUN STREAMS — Phase 2 coach tool
+# ---------------------------------------------------------------------------
+
+def analyze_run_streams(
+    db: Session,
+    athlete_id: UUID,
+    activity_id: str,
+) -> Dict[str, Any]:
+    """Analyze per-second stream data for a single run activity.
+
+    Resolves the athlete's physiological context (N=1) from the DB,
+    loads the stored stream, invokes the pure-computation engine,
+    and returns the standard coach tool envelope.
+
+    Returns:
+        Standard envelope with:
+            data.activity_id: str
+            data.analysis: dict (segments, drift, moments, plan_comparison,
+                                 channels_present, channels_missing, point_count,
+                                 confidence, tier_used, estimated_flags,
+                                 cross_run_comparable)
+            data.errors: List[dict] with {code, message, retryable}
+    """
+    from models import ActivityStream
+    from services.run_stream_analysis import (
+        AthleteContext, analyze_stream,
+    )
+
+    now = datetime.utcnow()
+    tool_name = "analyze_run_streams"
+    errors: List[Dict[str, Any]] = []
+
+    try:
+        activity_uuid = UUID(activity_id)
+    except (ValueError, TypeError):
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "error": "Invalid activity_id format",
+            "data": {"activity_id": activity_id, "analysis": None, "errors": [
+                {"code": "INVALID_INPUT", "message": "activity_id is not a valid UUID", "retryable": False},
+            ]},
+            "evidence": [],
+        }
+
+    # --- Verify activity exists and belongs to this athlete ---
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_uuid)
+        .first()
+    )
+    if activity is None:
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "error": "Activity not found",
+            "data": {"activity_id": activity_id, "analysis": None, "errors": [
+                {"code": "ACTIVITY_NOT_FOUND", "message": "No activity with this ID", "retryable": False},
+            ]},
+            "evidence": [],
+        }
+
+    if activity.athlete_id != athlete_id:
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "error": "Access denied",
+            "data": {"activity_id": activity_id, "analysis": None, "errors": [
+                {"code": "ACCESS_DENIED", "message": "Activity does not belong to this athlete", "retryable": False},
+            ]},
+            "evidence": [],
+        }
+
+    # --- Check stream availability ---
+    if activity.stream_fetch_status == "unavailable":
+        errors.append({
+            "code": "STREAMS_UNAVAILABLE",
+            "message": "Stream data is permanently unavailable for this activity (manual entry or API limitation)",
+            "retryable": False,
+        })
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "data": {"activity_id": activity_id, "analysis": None, "errors": errors},
+            "evidence": [],
+        }
+
+    # --- Load stream data ---
+    stream_row = (
+        db.query(ActivityStream)
+        .filter(ActivityStream.activity_id == activity_uuid)
+        .first()
+    )
+    if stream_row is None:
+        code = "STREAMS_NOT_FOUND"
+        retryable = activity.stream_fetch_status in ("pending", "failed")
+        errors.append({
+            "code": code,
+            "message": f"No stream data stored (fetch status: {activity.stream_fetch_status})",
+            "retryable": retryable,
+        })
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "data": {"activity_id": activity_id, "analysis": None, "errors": errors},
+            "evidence": [],
+        }
+
+    stream_data = stream_row.stream_data
+    channels_available = stream_row.channels_available or list(stream_data.keys())
+
+    # --- Resolve N=1 athlete context ---
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    athlete_ctx = None
+    if athlete is not None:
+        athlete_ctx = AthleteContext(
+            max_hr=athlete.max_hr,
+            resting_hr=athlete.resting_hr,
+            threshold_hr=athlete.threshold_hr,
+        )
+
+    # --- Resolve linked planned workout (additive) ---
+    planned_workout_dict = None
+    linked_plan = (
+        db.query(PlannedWorkout)
+        .filter(PlannedWorkout.completed_activity_id == activity_uuid)
+        .first()
+    )
+    if linked_plan is not None:
+        planned_workout_dict = {
+            "target_duration_minutes": linked_plan.target_duration_minutes,
+            "target_distance_km": linked_plan.target_distance_km,
+            "target_pace_per_km_seconds": linked_plan.target_pace_per_km_seconds,
+            "segments": linked_plan.segments,  # JSONB — may be None or list of dicts
+        }
+
+    # --- Run analysis ---
+    try:
+        result = analyze_stream(
+            stream_data=stream_data,
+            channels_available=channels_available,
+            planned_workout=planned_workout_dict,
+            athlete_context=athlete_ctx,
+        )
+    except Exception as e:
+        logger.exception("analyze_stream failed for activity %s", activity_id)
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "error": str(e),
+            "data": {"activity_id": activity_id, "analysis": None, "errors": [
+                {"code": "ANALYSIS_FAILED", "message": str(e), "retryable": True},
+            ]},
+            "evidence": [],
+        }
+
+    return {
+        "ok": True,
+        "tool": tool_name,
+        "generated_at": _iso(now),
+        "data": {
+            "activity_id": activity_id,
+            "analysis": result.to_dict(),
+            "errors": [],
+        },
+        "evidence": [{
+            "type": "stream_analysis",
+            "id": f"stream:{activity_id}",
+            "date": activity.start_time.date().isoformat() if activity.start_time else _iso(now)[:10],
+            "value": f"tier={result.tier_used}, confidence={result.confidence}, "
+                     f"segments={len(result.segments)}, moments={len(result.moments)}",
+        }],
+    }
+
+
 def _guardrails_from_pain(pain_flag: str) -> List[str]:
     if pain_flag == "pain":
         return [
