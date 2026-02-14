@@ -13,9 +13,9 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 
 // --- Mock effortToColor so canvas context calls are trackable ---
-const mockEffortToColor = jest.fn(() => 'rgb(100,100,100)');
+const mockEffortToColor = jest.fn((_value: number) => 'rgb(100,100,100)');
 jest.mock('@/components/activities/rsi/utils/effortColor', () => ({
-  effortToColor: (...args: any[]) => mockEffortToColor(...args),
+  effortToColor: (value: number) => mockEffortToColor(value),
 }));
 
 // --- Mock next/link to capture href ---

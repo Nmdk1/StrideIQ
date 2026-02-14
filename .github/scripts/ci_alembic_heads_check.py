@@ -26,7 +26,7 @@ sys.path.insert(0, str(api_root))
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-EXPECTED_HEADS = {"0d82917b8305"}
+EXPECTED_HEADS = {"rsi_cache_001"}
 MAX_ROOTS = 2  # main chain root + phase chain root (readiness_score_001)
 
 

@@ -35,17 +35,17 @@ const REAL_PLAN_COMPARISON = CONTRACT.success_with_plan_response.plan_comparison
 const REAL_PENDING_RESPONSE = CONTRACT.pending_response;
 const REAL_UNAVAILABLE_RESPONSE = CONTRACT.unavailable_response;
 
-// Expected/forbidden key sets from the shared fixture
-const EXPECTED_TOP_LEVEL_KEYS = new Set(CONTRACT.expected_top_level_keys);
-const EXPECTED_SEGMENT_KEYS = new Set(CONTRACT.expected_segment_keys);
-const EXPECTED_DRIFT_KEYS = new Set(CONTRACT.expected_drift_keys);
-const EXPECTED_PLAN_KEYS = new Set(CONTRACT.expected_plan_comparison_keys);
-const EXPECTED_MOMENT_KEYS = new Set(CONTRACT.expected_moment_keys);
-const EXPECTED_STREAM_POINT_KEYS = new Set(CONTRACT.expected_stream_point_keys);
-const FORBIDDEN_OLD_SEGMENT_KEYS = new Set(CONTRACT.forbidden_old_segment_keys);
-const FORBIDDEN_OLD_DRIFT_KEYS = new Set(CONTRACT.forbidden_old_drift_keys);
-const FORBIDDEN_OLD_PLAN_KEYS = new Set(CONTRACT.forbidden_old_plan_keys);
-const FORBIDDEN_OLD_MOMENT_KEYS = new Set(CONTRACT.forbidden_old_moment_keys);
+// Expected/forbidden key arrays from the shared fixture (readonly to prevent mutation)
+const EXPECTED_TOP_LEVEL_KEYS: readonly string[] = CONTRACT.expected_top_level_keys;
+const EXPECTED_SEGMENT_KEYS: readonly string[] = CONTRACT.expected_segment_keys;
+const EXPECTED_DRIFT_KEYS: readonly string[] = CONTRACT.expected_drift_keys;
+const EXPECTED_PLAN_KEYS: readonly string[] = CONTRACT.expected_plan_comparison_keys;
+const EXPECTED_MOMENT_KEYS: readonly string[] = CONTRACT.expected_moment_keys;
+const EXPECTED_STREAM_POINT_KEYS: readonly string[] = CONTRACT.expected_stream_point_keys;
+const FORBIDDEN_OLD_SEGMENT_KEYS: readonly string[] = CONTRACT.forbidden_old_segment_keys;
+const FORBIDDEN_OLD_DRIFT_KEYS: readonly string[] = CONTRACT.forbidden_old_drift_keys;
+const FORBIDDEN_OLD_PLAN_KEYS: readonly string[] = CONTRACT.forbidden_old_plan_keys;
+const FORBIDDEN_OLD_MOMENT_KEYS: readonly string[] = CONTRACT.forbidden_old_moment_keys;
 
 // ── Tests ──
 
@@ -81,8 +81,8 @@ describe('RSI Contract: backend payload → frontend types', () => {
 
 describe('RSI Contract: top-level keys', () => {
   test('all expected keys present in response', () => {
-    const actual = new Set(Object.keys(REAL_BACKEND_PAYLOAD));
-    const missing = [...EXPECTED_TOP_LEVEL_KEYS].filter(k => !actual.has(k));
+    const actual = Object.keys(REAL_BACKEND_PAYLOAD);
+    const missing = EXPECTED_TOP_LEVEL_KEYS.filter(k => !actual.includes(k));
     expect(missing).toEqual([]);
   });
 });
@@ -91,14 +91,14 @@ describe('RSI Contract: Segment fields', () => {
   const seg = REAL_BACKEND_PAYLOAD.segments[0] as unknown as Segment;
 
   test('has all required fields from shared fixture', () => {
-    const actual = new Set(Object.keys(seg));
-    const missing = [...EXPECTED_SEGMENT_KEYS].filter(k => !actual.has(k as string));
+    const actual = Object.keys(seg);
+    const missing = EXPECTED_SEGMENT_KEYS.filter(k => !actual.includes(k));
     expect(missing).toEqual([]);
   });
 
   test('does NOT have forbidden old field names', () => {
-    const actual = new Set(Object.keys(seg));
-    const present = [...FORBIDDEN_OLD_SEGMENT_KEYS].filter(k => actual.has(k as string));
+    const actual = Object.keys(seg);
+    const present = FORBIDDEN_OLD_SEGMENT_KEYS.filter(k => actual.includes(k));
     expect(present).toEqual([]);
   });
 
@@ -114,14 +114,14 @@ describe('RSI Contract: DriftAnalysis fields', () => {
   const drift = REAL_BACKEND_PAYLOAD.drift as unknown as DriftAnalysis;
 
   test('has all required fields from shared fixture', () => {
-    const actual = new Set(Object.keys(drift));
-    const missing = [...EXPECTED_DRIFT_KEYS].filter(k => !actual.has(k as string));
+    const actual = Object.keys(drift);
+    const missing = EXPECTED_DRIFT_KEYS.filter(k => !actual.includes(k));
     expect(missing).toEqual([]);
   });
 
   test('does NOT have forbidden old field names', () => {
-    const actual = new Set(Object.keys(drift));
-    const present = [...FORBIDDEN_OLD_DRIFT_KEYS].filter(k => actual.has(k as string));
+    const actual = Object.keys(drift);
+    const present = FORBIDDEN_OLD_DRIFT_KEYS.filter(k => actual.includes(k));
     expect(present).toEqual([]);
   });
 
@@ -135,14 +135,14 @@ describe('RSI Contract: Moment fields', () => {
   const moment = REAL_BACKEND_PAYLOAD.moments[0] as unknown as Moment;
 
   test('has all required fields from shared fixture', () => {
-    const actual = new Set(Object.keys(moment));
-    const missing = [...EXPECTED_MOMENT_KEYS].filter(k => !actual.has(k as string));
+    const actual = Object.keys(moment);
+    const missing = EXPECTED_MOMENT_KEYS.filter(k => !actual.includes(k));
     expect(missing).toEqual([]);
   });
 
   test('does NOT have forbidden old field names', () => {
-    const actual = new Set(Object.keys(moment));
-    const present = [...FORBIDDEN_OLD_MOMENT_KEYS].filter(k => actual.has(k as string));
+    const actual = Object.keys(moment);
+    const present = FORBIDDEN_OLD_MOMENT_KEYS.filter(k => actual.includes(k));
     expect(present).toEqual([]);
   });
 
@@ -157,14 +157,14 @@ describe('RSI Contract: PlanComparison fields', () => {
   const plan = REAL_PLAN_COMPARISON as unknown as PlanComparison;
 
   test('has all required fields from shared fixture', () => {
-    const actual = new Set(Object.keys(plan));
-    const missing = [...EXPECTED_PLAN_KEYS].filter(k => !actual.has(k as string));
+    const actual = Object.keys(plan);
+    const missing = EXPECTED_PLAN_KEYS.filter(k => !actual.includes(k));
     expect(missing).toEqual([]);
   });
 
   test('does NOT have forbidden old field names', () => {
-    const actual = new Set(Object.keys(plan));
-    const present = [...FORBIDDEN_OLD_PLAN_KEYS].filter(k => actual.has(k as string));
+    const actual = Object.keys(plan);
+    const present = FORBIDDEN_OLD_PLAN_KEYS.filter(k => actual.includes(k));
     expect(present).toEqual([]);
   });
 
@@ -180,8 +180,8 @@ describe('RSI Contract: StreamPoint fields', () => {
   const pt = REAL_BACKEND_PAYLOAD.stream[0] as unknown as StreamPoint;
 
   test('has all required fields from shared fixture', () => {
-    const actual = new Set(Object.keys(pt));
-    const missing = [...EXPECTED_STREAM_POINT_KEYS].filter(k => !actual.has(k as string));
+    const actual = Object.keys(pt);
+    const missing = EXPECTED_STREAM_POINT_KEYS.filter(k => !actual.includes(k));
     expect(missing).toEqual([]);
   });
 
