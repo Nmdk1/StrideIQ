@@ -12,10 +12,14 @@ import {
   mockPendingResponse,
   mockUnavailableResponse,
   generateTestStreamData,
+  mockUnitsImperial,
 } from './rsi-fixtures';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => mockUnitsImperial,
+}));
 jest.mock('@/components/activities/rsi/hooks/useStreamAnalysis', () => ({
   ...jest.requireActual('@/components/activities/rsi/hooks/useStreamAnalysis'),
   useStreamAnalysis: jest.fn(),

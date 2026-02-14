@@ -7,10 +7,13 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { mockTier1Result, generateTestStreamData } from './rsi-fixtures';
+import { mockTier1Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => mockUnitsImperial,
+}));
 jest.mock('@/components/activities/rsi/hooks/useStreamAnalysis', () => ({
   ...jest.requireActual('@/components/activities/rsi/hooks/useStreamAnalysis'),
   useStreamAnalysis: jest.fn(),

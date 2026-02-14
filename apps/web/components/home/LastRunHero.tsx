@@ -18,18 +18,12 @@ import React, { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
+import { useUnits } from '@/lib/context/UnitsContext';
 import type { LastRun } from '@/lib/api/services/home';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatPace(secPerKm: number | null | undefined): string {
-  if (secPerKm == null || secPerKm <= 0) return '--';
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${s.toString().padStart(2, '0')}/km`;
-}
 
 function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || seconds <= 0) return '--';
@@ -38,12 +32,6 @@ function formatDuration(seconds: number | null | undefined): string {
   const s = Math.round(seconds % 60);
   if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function formatDistance(meters: number | null | undefined): string {
-  if (meters == null || meters <= 0) return '--';
-  const km = meters / 1000;
-  return km >= 10 ? `${km.toFixed(1)} km` : `${km.toFixed(2)} km`;
 }
 
 function formatRelativeTime(isoString: string): string {
@@ -139,6 +127,7 @@ export interface LastRunHeroProps {
 }
 
 export function LastRunHero({ lastRun }: LastRunHeroProps) {
+  const { formatDistance, formatPace } = useUnits();
   const hasCanvas = lastRun.stream_status === 'success' && lastRun.effort_intensity && lastRun.effort_intensity.length > 0;
 
   // Canvas Hero — effort gradient + metrics ribbon

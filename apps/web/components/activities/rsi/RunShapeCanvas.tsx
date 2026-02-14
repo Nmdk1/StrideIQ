@@ -58,6 +58,7 @@ import {
 } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import { lttbDownsample } from '@/components/activities/rsi/utils/lttb';
 import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,13 +109,6 @@ const TIER_LABELS: Record<string, { tier: string; label: string }> = {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatPace(secPerKm: number | null): string {
-  if (secPerKm == null || secPerKm <= 0) return '--';
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${s.toString().padStart(2, '0')}/km`;
-}
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -239,6 +233,7 @@ function CrosshairTooltip({
   showCadence: boolean;
   showGrade: boolean;
 }) {
+  const { formatPace, formatElevation } = useUnits();
   return (
     <div
       data-testid="crosshair-tooltip"
@@ -256,7 +251,7 @@ function CrosshairTooltip({
       )}
       {point.altitude != null && (
         <p className="text-emerald-400" data-testid="tooltip-altitude">
-          {Math.round(point.altitude)}m
+          {formatElevation(point.altitude)}
         </p>
       )}
       {showCadence && point.cadence != null && (
@@ -400,6 +395,8 @@ function PlanComparisonCard({
 }: {
   plan: PlanComparison;
 }) {
+  const { formatPace, formatDistance } = useUnits();
+
   // Backend sends duration in minutes, not seconds
   const formatMinutes = (min: number) => {
     const totalSec = Math.round(min * 60);
@@ -426,14 +423,14 @@ function PlanComparisonCard({
           </div>
         )}
 
-        {/* Distance (backend: planned_distance_km / actual_distance_km) */}
+        {/* Distance (backend: planned_distance_km / actual_distance_km — convert km to meters for formatDistance) */}
         {plan.planned_distance_km != null && plan.actual_distance_km != null && (
           <div>
             <p className="text-slate-500">Distance</p>
             <p>
-              {plan.planned_distance_km.toFixed(1)} km
+              {formatDistance(plan.planned_distance_km * 1000)}
               <span className="text-slate-500 mx-1">→</span>
-              {plan.actual_distance_km.toFixed(1)} km
+              {formatDistance(plan.actual_distance_km * 1000)}
             </p>
           </div>
         )}
@@ -471,6 +468,7 @@ function LabModePanel({
 }: {
   analysis: StreamAnalysisData;
 }) {
+  const { formatPace, paceUnit } = useUnits();
   const showZones = hasPhysiologicalData(analysis.tier_used);
 
   return (
@@ -543,7 +541,7 @@ function LabModePanel({
         {analysis.drift.cadence_trend_bpm_per_km != null && (
           <div className="flex justify-between text-xs text-slate-300 bg-slate-800/30 rounded px-2 py-1">
             <span>Cadence Trend</span>
-            <span>{analysis.drift.cadence_trend_bpm_per_km.toFixed(1)} spm/km</span>
+            <span>{analysis.drift.cadence_trend_bpm_per_km.toFixed(1)} spm/{paceUnit === 'min/mi' ? 'mi' : 'km'}</span>
           </div>
         )}
       </div>

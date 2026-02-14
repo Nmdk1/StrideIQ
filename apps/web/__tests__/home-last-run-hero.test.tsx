@@ -25,6 +25,14 @@ jest.mock('next/link', () => {
   );
 });
 
+// --- Mock useUnits to return imperial (the real default for this athlete) ---
+// Uses shared mock from rsi-fixtures to avoid duplication
+import { mockUnitsImperial } from './rsi-fixtures';
+
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => mockUnitsImperial,
+}));
+
 import { LastRunHero } from '@/components/home/LastRunHero';
 import type { LastRun } from '@/lib/api/services/home';
 
@@ -106,11 +114,12 @@ describe('L1-4: Effort gradient canvas renders with stream data', () => {
     expect(gradient.tagName).toBe('CANVAS');
   });
 
-  test('shows run name and metrics alongside canvas', () => {
+  test('shows run name and metrics alongside canvas in imperial units', () => {
     render(<LastRunHero lastRun={LAST_RUN_WITH_STREAM} />);
 
     expect(screen.getByText('Morning Easy Run')).toBeInTheDocument();
-    expect(screen.getByText('10.0 km')).toBeInTheDocument();
+    // 10000m = 6.2 mi (imperial, 1 decimal)
+    expect(screen.getByText('6.2 mi')).toBeInTheDocument();
     expect(screen.getByText('1:00:00')).toBeInTheDocument();
     expect(screen.getByText('145 bpm')).toBeInTheDocument();
   });
@@ -145,8 +154,8 @@ describe('L1-5: Metrics-only card for non-success stream states', () => {
 
     // Metrics still visible
     expect(screen.getByText('Lunch Tempo')).toBeInTheDocument();
-    // 8000m = 8.00 km (< 10km so uses 2 decimals)
-    expect(screen.getByText('8.00 km')).toBeInTheDocument();
+    // 8000m = 5.0 mi (imperial, 1 decimal)
+    expect(screen.getByText('5.0 mi')).toBeInTheDocument();
   });
 
   test('renders metrics-only card when stream_status is fetching', () => {

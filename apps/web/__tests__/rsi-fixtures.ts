@@ -156,6 +156,40 @@ export const mockEmptyResult: StreamAnalysisResult = {
 export const mockPendingResponse = { status: 'pending' as const };
 export const mockUnavailableResponse = { status: 'unavailable' as const };
 
+// ── Shared useUnits mock (imperial — matches real athlete preference) ──
+
+const KM_TO_MILES = 0.621371;
+const MILES_TO_KM = 1.60934;
+const METERS_TO_FEET = 3.28084;
+
+export const mockUnitsImperial = {
+  units: 'imperial' as const,
+  formatDistance: (meters: number | null | undefined, decimals: number = 1): string => {
+    if (meters === null || meters === undefined) return '-';
+    const mi = (meters / 1000) * KM_TO_MILES;
+    return `${mi.toFixed(decimals)} mi`;
+  },
+  formatPace: (secPerKm: number | null | undefined): string => {
+    if (secPerKm === null || secPerKm === undefined) return '-';
+    const secPerMi = secPerKm * MILES_TO_KM;
+    const m = Math.floor(secPerMi / 60);
+    const s = Math.round(secPerMi % 60);
+    return `${m}:${s.toString().padStart(2, '0')}/mi`;
+  },
+  formatElevation: (meters: number | null | undefined): string => {
+    if (meters === null || meters === undefined) return '-';
+    return `${Math.round(meters * METERS_TO_FEET)} ft`;
+  },
+  convertDistance: (meters: number) => (meters / 1000) * KM_TO_MILES,
+  convertPace: (secPerKm: number) => secPerKm * MILES_TO_KM,
+  distanceUnit: 'miles',
+  distanceUnitShort: 'mi',
+  paceUnit: 'min/mi',
+  elevationUnit: 'ft',
+  isLoading: false,
+  setUnits: () => Promise.resolve(),
+};
+
 // ── Synthetic stream data (simplified for tests) ──
 
 export function generateTestStreamData(count: number = 100): StreamPoint[] {

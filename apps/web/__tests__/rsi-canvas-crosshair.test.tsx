@@ -12,9 +12,13 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { mockTier1Result, generateTestStreamData } from './rsi-fixtures';
+import { mockTier1Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
+
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => mockUnitsImperial,
+}));
 
 jest.mock('@/components/activities/rsi/hooks/useStreamAnalysis', () => ({
   ...jest.requireActual('@/components/activities/rsi/hooks/useStreamAnalysis'),
@@ -64,9 +68,9 @@ describe('AC-3: Unified Crosshair', () => {
     const overlay = screen.getByTestId('chart-overlay');
     hoverAtFraction(overlay, 0.5);
 
-    // Default visible: HR and pace
+    // Default visible: HR and pace (imperial units)
     expect(screen.getByText(/bpm/i)).toBeInTheDocument();
-    expect(screen.getByText(/\/km/i)).toBeInTheDocument();
+    expect(screen.getByText(/\/mi/i)).toBeInTheDocument();
   });
 
   test('crosshair shows values for toggled-on secondary channels', () => {
