@@ -187,23 +187,99 @@ git commit -m "<type>(<scope>): <description>"
 
 ### Deploy (production — exact commands, no guessing)
 
+**SSH access:**
 ```bash
-# Standard deploy
-ssh root@<droplet-ip> "cd /opt/strideiq/repo && git pull origin main && docker compose -f docker-compose.prod.yml up -d --build --remove-orphans && docker compose -f docker-compose.prod.yml ps"
-
-# Force rebuild if caching issues
-ssh root@<droplet-ip> "cd /opt/strideiq/repo && git pull origin main && docker compose -f docker-compose.prod.yml build --no-cache api && docker compose -f docker-compose.prod.yml build --no-cache web && docker compose -f docker-compose.prod.yml up -d --remove-orphans"
-
-# Flush Redis (after coach/prompt changes)
-ssh root@<droplet-ip> "cd /opt/strideiq/repo && docker compose -f docker-compose.prod.yml exec redis redis-cli FLUSHALL"
+ssh root@strideiq.run
 ```
+
+**Standard deploy (run from the droplet, already SSH'd in):**
+```bash
+cd /opt/strideiq/repo && git pull origin main && docker compose -f docker-compose.prod.yml up -d --build --remove-orphans && docker compose -f docker-compose.prod.yml ps
+```
+
+**Force rebuild if Docker caching issues (old code still running after deploy):**
+```bash
+cd /opt/strideiq/repo && git pull origin main && docker compose -f docker-compose.prod.yml build --no-cache api && docker compose -f docker-compose.prod.yml build --no-cache web && docker compose -f docker-compose.prod.yml up -d --remove-orphans
+```
+
+**Flush Redis (after coach/prompt changes):**
+```bash
+cd /opt/strideiq/repo && docker compose -f docker-compose.prod.yml exec redis redis-cli FLUSHALL
+```
+
+**Verify health after deploy:**
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs --tail 20 api 2>&1 | grep -i error
+```
+
+### Networking (critical — do not guess)
+
+The API container (`strideiq_api`) does **not** expose ports to the host.
+It is only accessible via the internal Docker network through the Caddy
+reverse proxy. Caddy routes `/v1/*` to `api:8000` internally.
+
+- **From the host or outside:** use `https://strideiq.run/v1/...`
+- **`localhost:8000` will NOT work** — the port is not published.
+- Health check from inside the container: `docker exec strideiq_api curl -s http://localhost:8000/health`
+
+### Generating auth tokens for smoke tests
+
+The founder may not know what a JWT token is. Here is how to generate one
+on the droplet for authenticated API calls:
+
+```bash
+# Generate a 30-day token for the founder's account
+docker exec strideiq_api python -c "from core.security import create_access_token;from core.database import SessionLocal;from models import Athlete;db=SessionLocal();a=db.query(Athlete).filter(Athlete.email=='mbshaf@gmail.com').first();print(create_access_token(data={'sub':str(a.id),'email':a.email,'role':a.role}));db.close()"
+
+# Set the token for subsequent curl commands
+export TOKEN="<paste-token-from-above>"
+
+# Use in smoke tests
+curl -s -H "Authorization: Bearer $TOKEN" https://strideiq.run/v1/home | python3 -m json.tool
+```
+
+### Container names (do not guess)
+
+| Service  | Container Name     | Image      |
+|----------|--------------------|------------|
+| API      | strideiq_api       | repo-api   |
+| Worker   | strideiq_worker    | repo-worker|
+| Web      | strideiq_web       | repo-web   |
+| Caddy    | strideiq_caddy     | caddy:2    |
+| Postgres | strideiq_postgres  | timescale/timescaledb:latest-pg16 |
+| Redis    | strideiq_redis     | redis:7-alpine |
+
+### Migrations
+
+Migrations run **automatically** on container start (`python run_migrations.py`
+in the API entrypoint). No manual step needed.
+
+### Docker caching lesson
+
+If you deploy and the old code is still running, it is almost always Docker
+layer caching. Use the `--no-cache` variant above. This was learned the hard
+way with the `scipy` dependency addition.
 
 ### CI Verification
 
 ```bash
-# Repo must be public for GitHub Actions (private repo has no free minutes)
-# Set public → push → verify green → set private
+# Check CI status after push
+gh run list --branch main --limit 3
+gh run view <run-id>
+
+# If a job fails, inspect its logs (only available after run completes)
+gh run view --job=<job-id> --log-failed
 ```
+
+### CI gates to be aware of
+
+- **Migration Integrity:** `EXPECTED_HEADS` in `.github/scripts/ci_alembic_heads_check.py`
+  must be updated whenever a new Alembic migration is added. If you add a migration,
+  update this file to match the new head revision.
+- **Frontend Build:** Runs `npx tsc --noEmit`. All TypeScript must pass strict type checking.
+  Common pitfalls: `Set` spread requires `downlevelIteration` (use `Array.from()` instead),
+  untyped mock parameters in test files.
 
 ---
 
