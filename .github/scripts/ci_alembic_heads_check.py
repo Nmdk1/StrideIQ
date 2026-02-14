@@ -4,11 +4,10 @@ Prevents accidental introduction of new standalone migration roots
 (down_revision = None) that cause non-deterministic ordering, FK failures,
 and "overlaps" errors in CI and production.
 
-Expected state:
-  Head 1: a1b2c3d4e5f7  (main schema chain)
-  Head 2: narration_001  (phase chain: readiness_score_001 -> self_regulation_001 -> narration_001)
+Expected state (after Phase 2 merge):
+  Single head: 0d82917b8305  (merges main chain + activity_stream branch)
 
-If a new migration is added, it MUST chain off an existing head — not introduce
+If a new migration is added, it MUST chain off the existing head — not introduce
 a new root.  If this check fails, the fix is to set down_revision to the
 appropriate parent.
 
@@ -27,7 +26,7 @@ sys.path.insert(0, str(api_root))
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-EXPECTED_HEADS = {"a1b2c3d4e5f7", "narration_001"}
+EXPECTED_HEADS = {"0d82917b8305"}
 MAX_ROOTS = 2  # main chain root + phase chain root (readiness_score_001)
 
 
