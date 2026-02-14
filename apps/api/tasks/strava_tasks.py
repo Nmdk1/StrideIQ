@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from core.database import get_db_sync
 from tasks import celery_app
-from models import Athlete, Activity, ActivitySplit
-from services.strava_service import poll_activities, poll_activities_page, get_activity_laps, get_activity_details
+from models import Athlete, Activity, ActivitySplit, ActivityStream
+from services.strava_service import poll_activities, poll_activities_page, get_activity_laps, get_activity_details, get_activity_streams, get_strava_read_budget_remaining
 from services.strava_pbs import sync_strava_best_efforts
 from services.athlete_metrics import calculate_athlete_derived_signals
 from services.personal_best import update_personal_best
@@ -168,6 +168,193 @@ def _calculate_performance_metrics(activity, athlete, db):
 from sqlalchemy import func, desc
 import time
 import traceback
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _fetch_and_store_stream(activity_id: str, athlete, db: Session) -> str:
+    """
+    Claim an activity, fetch its streams from Strava, and store the result.
+
+    Implements the full ADR-063 lifecycle:
+      pending/failed/deferred → fetching → success/failed/deferred/unavailable
+
+    State mapping from StreamFetchResult outcomes:
+      "success"          → store data, set activity to 'success'
+      "unavailable"      → terminal, set 'unavailable' (Strava confirms no streams)
+      "failed"           → retryable, set 'failed', increment retry_count
+      "skipped_no_redis" → revert to 'pending' (Redis down, leave for backfill)
+
+    StravaRateLimitError (raised by service) → set 'deferred' with cooldown.
+
+    Returns the final stream_fetch_status string.
+    """
+    from services.strava_service import StravaRateLimitError, StreamFetchResult
+
+    # --- Atomic claim (ADR-063 Decision 2) ---
+    result = db.execute(
+        text("""
+            UPDATE activity
+            SET stream_fetch_status = 'fetching',
+                stream_fetch_attempted_at = NOW()
+            WHERE id = :activity_id
+              AND (
+                stream_fetch_status = 'pending'
+                OR (stream_fetch_status = 'failed' AND stream_fetch_retry_count < 3)
+                OR (stream_fetch_status = 'deferred' AND stream_fetch_deferred_until < NOW())
+              )
+            RETURNING id
+        """),
+        {"activity_id": str(activity_id)},
+    )
+    if result.rowcount == 0:
+        # Already claimed, terminal, or cooldown not expired — skip
+        return "skipped"
+    db.commit()
+
+    # --- Fetch from Strava ---
+    try:
+        ext_id = db.execute(
+            text("SELECT external_activity_id FROM activity WHERE id = :id"),
+            {"id": str(activity_id)},
+        ).scalar()
+
+        if not ext_id:
+            db.execute(
+                text("""
+                    UPDATE activity
+                    SET stream_fetch_status = 'unavailable'
+                    WHERE id = :id
+                """),
+                {"id": str(activity_id)},
+            )
+            db.commit()
+            return "unavailable"
+
+        fetch_result = get_activity_streams(
+            athlete,
+            activity_id=int(ext_id),
+            allow_rate_limit_sleep=False,
+        )
+    except StravaRateLimitError as e:
+        retry_after = int(getattr(e, "retry_after_s", 900) or 900)
+        db.execute(
+            text("""
+                UPDATE activity
+                SET stream_fetch_status = 'deferred',
+                    stream_fetch_error = :error,
+                    stream_fetch_deferred_until = NOW() + make_interval(secs => :secs)
+                WHERE id = :id
+            """),
+            {"id": str(activity_id), "error": "429 rate limited", "secs": retry_after},
+        )
+        db.commit()
+        logger.info(
+            "stream_fetch_deferred activity_id=%s retry_after=%s",
+            activity_id, retry_after,
+        )
+        return "deferred"
+    except Exception as e:
+        db.execute(
+            text("""
+                UPDATE activity
+                SET stream_fetch_status = 'failed',
+                    stream_fetch_error = :error,
+                    stream_fetch_retry_count = stream_fetch_retry_count + 1
+                WHERE id = :id
+            """),
+            {"id": str(activity_id), "error": str(e)[:500]},
+        )
+        db.commit()
+        logger.warning("stream_fetch_failed activity_id=%s error=%s", activity_id, e)
+        return "failed"
+
+    # --- Map StreamFetchResult outcome to lifecycle state ---
+
+    if fetch_result.outcome == "skipped_no_redis":
+        # Redis down — revert claim back to 'pending' so backfill can retry later.
+        # This is NOT a terminal state (ADR-063: "leave pending for backfill").
+        db.execute(
+            text("""
+                UPDATE activity
+                SET stream_fetch_status = 'pending',
+                    stream_fetch_error = :error
+                WHERE id = :id
+            """),
+            {"id": str(activity_id), "error": fetch_result.error or "redis_unavailable"},
+        )
+        db.commit()
+        logger.info("stream_fetch_reverted_to_pending activity_id=%s reason=redis_down", activity_id)
+        return "skipped_no_redis"
+
+    if fetch_result.outcome == "failed":
+        # Transient/parse error — retryable, increment retry count.
+        db.execute(
+            text("""
+                UPDATE activity
+                SET stream_fetch_status = 'failed',
+                    stream_fetch_error = :error,
+                    stream_fetch_retry_count = stream_fetch_retry_count + 1
+                WHERE id = :id
+            """),
+            {"id": str(activity_id), "error": (fetch_result.error or "unknown")[:500]},
+        )
+        db.commit()
+        logger.warning(
+            "stream_fetch_failed activity_id=%s error=%s",
+            activity_id, fetch_result.error,
+        )
+        return "failed"
+
+    if fetch_result.outcome == "unavailable":
+        # Strava confirms no streams exist — terminal.
+        db.execute(
+            text("""
+                UPDATE activity
+                SET stream_fetch_status = 'unavailable'
+                WHERE id = :id
+            """),
+            {"id": str(activity_id)},
+        )
+        db.commit()
+        return "unavailable"
+
+    # --- outcome == "success": store stream data ---
+    stream_data = fetch_result.data
+    channels = list(stream_data.keys())
+    point_count = len(stream_data.get("time", []))
+
+    # Upsert: if a stream row already exists (idempotency), skip insert
+    existing_stream = db.query(ActivityStream).filter(
+        ActivityStream.activity_id == activity_id,
+    ).first()
+
+    if not existing_stream:
+        stream = ActivityStream(
+            activity_id=activity_id,
+            stream_data=stream_data,
+            channels_available=channels,
+            point_count=point_count,
+            source="strava",
+        )
+        db.add(stream)
+
+    db.execute(
+        text("""
+            UPDATE activity
+            SET stream_fetch_status = 'success'
+            WHERE id = :id
+        """),
+        {"id": str(activity_id)},
+    )
+    db.commit()
+
+    logger.info(
+        "stream_fetch_success activity_id=%s channels=%s points=%s",
+        activity_id, channels, point_count,
+    )
+    return "success"
 
 
 @celery_app.task(name="tasks.sync_strava_activities", bind=True)
@@ -757,6 +944,12 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             except Exception as e:
                 print(f"Warning: Could not classify workout: {e}")
 
+            # Fetch stream data (ADR-063: integrated into sync flow)
+            try:
+                _fetch_and_store_stream(activity.id, athlete, db)
+            except Exception as e:
+                logger.warning("stream_fetch_error_in_sync activity_id=%s error=%s", activity.id, e)
+
             synced_new += 1
 
         # Update last sync timestamp and commit FIRST so the UI can
@@ -958,6 +1151,178 @@ def backfill_strava_activity_index_task(self: Task, athlete_id: str, pages: int 
         except Exception:
             db.rollback()
         traceback.print_exc()
+        return {"status": "error", "error": str(e)}
+    finally:
+        db.close()
+
+
+# ===========================================================================
+# Stream Backfill + Stale Cleanup (ADR-063)
+# ===========================================================================
+
+@celery_app.task(name="tasks.backfill_strava_streams", bind=True)
+def backfill_strava_streams_task(self: Task, athlete_id: str, batch_size: int = 50) -> Dict:
+    """
+    Backfill stream data for existing Strava activities (ADR-063 Decision 5).
+
+    Processes activities in oldest-first order. Respects the global rate budget.
+    When Redis is down, exits immediately (streams disabled per ADR-063).
+
+    Args:
+        athlete_id: UUID string of the athlete to backfill
+        batch_size: Max activities per invocation (default 50)
+    """
+    from core.cache import get_redis_client
+
+    db: Session = get_db_sync()
+    try:
+        athlete = db.get(Athlete, athlete_id)
+        if not athlete:
+            return {"status": "error", "error": f"Athlete {athlete_id} not found"}
+        if not athlete.strava_access_token:
+            return {"status": "error", "error": "No Strava connection"}
+
+        # Redis-down guard: streams disabled entirely (ADR-063)
+        redis_client = get_redis_client()
+        if not redis_client:
+            logger.info("stream_backfill_skipped_no_redis athlete_id=%s", athlete_id)
+            return {"status": "skipped", "reason": "redis_unavailable"}
+
+        # Batch lock (ADR-063 Decision 5): 20min TTL, per-athlete
+        lock_key = f"strava:stream_backfill:{athlete_id}"
+        lock_acquired = redis_client.set(lock_key, "1", nx=True, ex=1200)
+        if not lock_acquired:
+            return {"status": "skipped", "reason": "backfill_already_running"}
+
+        try:
+            # ADR-063 Decision 5: FOR UPDATE SKIP LOCKED for concurrent worker safety
+            rows = db.execute(
+                text("""
+                    SELECT id, external_activity_id
+                    FROM activity
+                    WHERE athlete_id = :athlete_id
+                      AND provider = 'strava'
+                      AND external_activity_id IS NOT NULL
+                      AND (
+                        stream_fetch_status = 'pending'
+                        OR (stream_fetch_status = 'failed' AND stream_fetch_retry_count < 3)
+                        OR (stream_fetch_status = 'deferred' AND stream_fetch_deferred_until < NOW())
+                      )
+                    ORDER BY start_time ASC
+                    LIMIT :batch_size
+                    FOR UPDATE SKIP LOCKED
+                """),
+                {"athlete_id": str(athlete_id), "batch_size": batch_size},
+            ).fetchall()
+
+            if not rows:
+                return {"status": "success", "processed": 0, "message": "no eligible activities"}
+
+            processed = 0
+            success_count = 0
+            failed_count = 0
+            deferred_count = 0
+            unavailable_count = 0
+
+            for row in rows:
+                activity_id = row[0]
+
+                # --- ADR-063 yield threshold: pause if budget < 20 ---
+                remaining = get_strava_read_budget_remaining()
+                if remaining is None:
+                    # Redis died mid-batch — exit immediately (streams disabled)
+                    logger.info("stream_backfill_redis_died_mid_batch athlete_id=%s", athlete_id)
+                    break
+                if remaining < 20:
+                    # Yield to live sync (higher priority) — stop backfill
+                    logger.info(
+                        "stream_backfill_yield_threshold remaining=%s athlete_id=%s",
+                        remaining, athlete_id,
+                    )
+                    break
+
+                # Budget is consumed inside get_activity_streams() — single source of truth.
+                # _fetch_and_store_stream() returns "deferred" if budget is actually exhausted.
+                fetch_result = _fetch_and_store_stream(activity_id, athlete, db)
+                processed += 1
+
+                if fetch_result == "success":
+                    success_count += 1
+                elif fetch_result == "failed":
+                    failed_count += 1
+                elif fetch_result == "deferred":
+                    deferred_count += 1
+                    # Deferred = rate limited or Redis down — stop batch
+                    break
+                elif fetch_result == "unavailable":
+                    unavailable_count += 1
+
+                # --- ADR-063 pacing: even distribution across the window ---
+                # Formula: max(1.0, window_seconds_remaining / budget_remaining)
+                budget_now = get_strava_read_budget_remaining()
+                if budget_now and budget_now > 0:
+                    window_seconds_remaining = 900 - (int(time.time()) % 900)
+                    pace_delay = max(1.0, window_seconds_remaining / budget_now)
+                else:
+                    pace_delay = 1.0
+                time.sleep(pace_delay)
+
+            return {
+                "status": "success",
+                "athlete_id": athlete_id,
+                "processed": processed,
+                "success": success_count,
+                "failed": failed_count,
+                "deferred": deferred_count,
+                "unavailable": unavailable_count,
+            }
+        finally:
+            try:
+                redis_client.delete(lock_key)
+            except Exception:
+                pass
+
+    except Exception as e:
+        db.rollback()
+        logger.error("stream_backfill_error athlete_id=%s error=%s", athlete_id, e)
+        traceback.print_exc()
+        return {"status": "error", "error": str(e)}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="tasks.cleanup_stale_stream_fetches")
+def cleanup_stale_stream_fetches_task() -> Dict:
+    """
+    Reset activities stuck in 'fetching' for >10 minutes (ADR-063 Decision 2).
+
+    Run via Celery beat every 5 minutes. If a worker died mid-fetch,
+    the activity stays in 'fetching' forever. This resets it to 'failed'
+    so it becomes eligible for retry.
+    """
+    db: Session = get_db_sync()
+    try:
+        result = db.execute(
+            text("""
+                UPDATE activity
+                SET stream_fetch_status = 'failed',
+                    stream_fetch_error = 'fetching_timeout_cleanup',
+                    stream_fetch_retry_count = stream_fetch_retry_count + 1
+                WHERE stream_fetch_status = 'fetching'
+                  AND stream_fetch_attempted_at < NOW() - INTERVAL '10 minutes'
+                RETURNING id
+            """)
+        )
+        count = result.rowcount
+        db.commit()
+
+        if count > 0:
+            logger.info("stale_stream_fetch_cleanup reset=%d activities", count)
+
+        return {"status": "success", "reset": count}
+    except Exception as e:
+        db.rollback()
+        logger.error("stale_stream_fetch_cleanup_error error=%s", e)
         return {"status": "error", "error": str(e)}
     finally:
         db.close()

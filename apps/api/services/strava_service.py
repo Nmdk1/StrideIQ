@@ -1,6 +1,7 @@
 import os
 import time
 import requests
+from dataclasses import dataclass
 from typing import Optional, Dict, List
 from dotenv import load_dotenv
 
@@ -258,6 +259,21 @@ class StravaRateLimitError(RuntimeError):
         self.retry_after_s = int(retry_after_s)
 
 
+@dataclass
+class StreamFetchResult:
+    """Typed result from get_activity_streams() to distinguish failure modes.
+
+    Outcomes:
+        "success"          — data is populated; store and mark success
+        "unavailable"      — Strava confirms no streams (404, empty); terminal
+        "failed"           — transient/parse error; increment retry, re-eligible
+        "skipped_no_redis" — Redis down; revert to pending, leave for backfill
+    """
+    outcome: str          # "success" | "unavailable" | "failed" | "skipped_no_redis"
+    data: Optional[Dict] = None
+    error: Optional[str] = None
+
+
 def poll_activities_page(
     athlete,
     after_timestamp: Optional[int] = None,
@@ -293,6 +309,26 @@ def poll_activities_page(
     url = f"{STRAVA_API_BASE}/athlete/activities"
     
     for attempt in range(max_retries):
+        # Global rate budget (ADR-063): every HTTP request checks budget
+        budget = acquire_strava_read_budget()
+        if budget is False:
+            if not allow_rate_limit_sleep:
+                raise StravaRateLimitError(
+                    "Rate budget exhausted for poll_activities_page",
+                    retry_after_s=900,
+                )
+            window_remaining = 900 - (int(time.time()) % 900)
+            print(f"DEBUG: poll budget exhausted, sleeping {window_remaining}s")
+            time.sleep(window_remaining)
+            # Re-check after sleep
+            budget = acquire_strava_read_budget()
+            if not budget:
+                raise StravaRateLimitError(
+                    "Rate budget still exhausted after window rollover",
+                    retry_after_s=900,
+                )
+        # budget is None (Redis down): fall through for existing paths (degraded mode)
+
         try:
             r = requests.get(url, headers=headers, params=params)
             print(f"DEBUG: poll_activities - response status: {r.status_code}")
@@ -372,6 +408,79 @@ def poll_activities(
     )
 
 
+def acquire_strava_read_budget(window_budget: int = 100) -> Optional[bool]:
+    """
+    Global rate limiter for ALL Strava API reads (ADR-063 Decision 4).
+
+    App-wide sliding window aligned to Strava's 15-min boundaries.
+    Every Strava read path (poll, details, laps, streams) MUST call this
+    before making an HTTP request — including retries.
+
+    Returns:
+        True  — read allowed, budget decremented
+        False — budget exhausted for current window, caller must wait or defer
+        None  — Redis unavailable, caller must apply degraded-mode policy:
+                 - Streams: skip fetch entirely (leave pending for backfill)
+                 - Existing paths: fall through (existing behavior)
+    """
+    from core.cache import get_redis_client
+
+    client = get_redis_client()
+    if not client:
+        return None  # Redis down — caller applies degraded-mode policy
+
+    window_id = int(time.time()) // 900  # 15-min window aligned to Strava boundaries
+    key = f"strava:rate:global:window:{window_id}"
+    ttl = 1200  # 20 min (15-min window + 5-min buffer)
+
+    acquire_lua = """
+    local key = KEYS[1]
+    local limit = tonumber(ARGV[1])
+    local ttl = tonumber(ARGV[2])
+    local current = tonumber(redis.call("GET", key) or "0")
+    if current >= limit then
+        return 0
+    end
+    redis.call("INCR", key)
+    if current == 0 then
+        redis.call("EXPIRE", key, ttl)
+    end
+    return 1
+    """
+
+    try:
+        result = client.eval(acquire_lua, 1, key, str(window_budget), str(ttl))
+        return int(result) == 1
+    except Exception:
+        # Redis misbehaving — treat as unavailable
+        return None
+
+
+def get_strava_read_budget_remaining(window_budget: int = 100) -> Optional[int]:
+    """
+    Read the number of budget tokens remaining in the current 15-min window.
+
+    Returns:
+        int  — tokens remaining (0..window_budget)
+        None — Redis unavailable
+    """
+    from core.cache import get_redis_client
+
+    client = get_redis_client()
+    if not client:
+        return None
+
+    window_id = int(time.time()) // 900
+    key = f"strava:rate:global:window:{window_id}"
+
+    try:
+        current = client.get(key)
+        used = int(current) if current else 0
+        return max(0, window_budget - used)
+    except Exception:
+        return None
+
+
 def get_activity_details(
     athlete,
     activity_id: int,
@@ -406,6 +515,24 @@ def get_activity_details(
 
     try:
         for attempt in range(max_retries):
+            # Global rate budget (ADR-063): every HTTP request checks budget
+            budget = acquire_strava_read_budget()
+            if budget is False:
+                if not allow_rate_limit_sleep:
+                    raise StravaRateLimitError(
+                        f"Rate budget exhausted for activity details {activity_id}",
+                        retry_after_s=900,
+                    )
+                window_remaining = 900 - (int(time.time()) % 900)
+                time.sleep(window_remaining)
+                budget = acquire_strava_read_budget()
+                if not budget:
+                    raise StravaRateLimitError(
+                        f"Rate budget still exhausted for activity details {activity_id}",
+                        retry_after_s=900,
+                    )
+            # budget is None (Redis down): fall through (existing degraded behavior)
+
             try:
                 r = requests.get(url, headers=headers, params=params)
             
@@ -413,8 +540,6 @@ def get_activity_details(
                 if r.status_code == 429:
                     retry_after = int(r.headers.get("Retry-After", 60 * (2**attempt)))
                     if not allow_rate_limit_sleep:
-                        # Let callers decide how to handle rate limiting (e.g. stop early
-                        # in HTTP requests, retry later in background jobs).
                         raise StravaRateLimitError(
                             f"429 Rate limited for activity details {activity_id} (Retry-After {retry_after}s)",
                             retry_after_s=retry_after,
@@ -481,13 +606,30 @@ def get_activity_laps(
     url = f"{STRAVA_API_BASE}/activities/{activity_id}/laps"
     
     for attempt in range(max_retries):
+        # Global rate budget (ADR-063): every HTTP request checks budget
+        budget = acquire_strava_read_budget()
+        if budget is False:
+            if not allow_rate_limit_sleep:
+                raise StravaRateLimitError(
+                    f"Rate budget exhausted for activity laps {activity_id}",
+                    retry_after_s=900,
+                )
+            window_remaining = 900 - (int(time.time()) % 900)
+            time.sleep(window_remaining)
+            budget = acquire_strava_read_budget()
+            if not budget:
+                raise StravaRateLimitError(
+                    f"Rate budget still exhausted for activity laps {activity_id}",
+                    retry_after_s=900,
+                )
+        # budget is None (Redis down): fall through (existing degraded behavior)
+
         try:
             r = requests.get(url, headers=headers)
             
             # Handle rate limiting (429 Too Many Requests)
             if r.status_code == 429:
-                # Get retry-after header if available, otherwise use exponential backoff
-                retry_after = int(r.headers.get('Retry-After', 60 * (2 ** attempt)))  # Default: 60s, 120s, 240s
+                retry_after = int(r.headers.get('Retry-After', 60 * (2 ** attempt)))
                 if not allow_rate_limit_sleep:
                     raise StravaRateLimitError(
                         f"429 Rate limited for activity laps {activity_id} (Retry-After {retry_after}s)",
@@ -529,3 +671,190 @@ def get_activity_laps(
             time.sleep(wait_time)
     
     return []
+
+
+# --- Stream types requested from Strava (ADR-063) ---
+STRAVA_STREAM_TYPES = [
+    "time", "distance", "heartrate", "cadence", "altitude",
+    "velocity_smooth", "grade_smooth", "latlng", "moving",
+]
+
+
+def get_activity_streams(
+    athlete,
+    activity_id: int,
+    stream_types: Optional[List[str]] = None,
+    max_retries: int = 3,
+    allow_rate_limit_sleep: bool = True,
+) -> StreamFetchResult:
+    """
+    Fetch per-second resolution stream data for a Strava activity (ADR-063).
+
+    Returns a StreamFetchResult with typed outcome so callers can distinguish:
+        "success"          — data populated; store and mark success
+        "unavailable"      — Strava confirms no streams (404, empty); terminal
+        "failed"           — transient/parse error; retryable
+        "skipped_no_redis" — Redis down; revert to pending for backfill
+
+    StravaRateLimitError is still raised for rate-limit exhaustion
+    (allow_rate_limit_sleep=False), handled by callers as "deferred."
+
+    Channel length validation: all channels must have the same length as
+    the 'time' channel. Mismatched lengths → reject entire stream set as
+    "failed" (ADR-063: reject + log, not silent truncation).
+    """
+    from services.token_encryption import decrypt_token, encrypt_token
+
+    # --- Rate budget check (ADR-063 Decision 4) ---
+    # For streams, Redis-down = disabled entirely (no degraded-mode fallback)
+    budget = acquire_strava_read_budget()
+    if budget is None:
+        # Redis down — leave pending for backfill (NOT unavailable)
+        print(f"INFO: stream_fetch_skipped_no_redis activity_id={activity_id}")
+        return StreamFetchResult(outcome="skipped_no_redis", error="redis_unavailable")
+    if budget is False:
+        # Budget exhausted
+        if not allow_rate_limit_sleep:
+            raise StravaRateLimitError(
+                f"Rate budget exhausted for stream fetch {activity_id}",
+                retry_after_s=900,
+            )
+        # Sleep until next window boundary
+        window_seconds_remaining = 900 - (int(time.time()) % 900)
+        print(f"DEBUG: Stream rate budget exhausted, sleeping {window_seconds_remaining}s until next window")
+        time.sleep(window_seconds_remaining)
+        # Re-check budget after sleep
+        budget = acquire_strava_read_budget()
+        if not budget:
+            raise StravaRateLimitError(
+                f"Rate budget still exhausted after window rollover for {activity_id}",
+                retry_after_s=900,
+            )
+
+    # --- Decrypt token ---
+    access_token = decrypt_token(athlete.strava_access_token)
+    if not access_token:
+        return StreamFetchResult(outcome="failed", error="token_decrypt_failed")
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+    types = stream_types or STRAVA_STREAM_TYPES
+    types_str = ",".join(types)
+    url = f"{STRAVA_API_BASE}/activities/{activity_id}/streams"
+    params = {"keys": types_str, "key_by_type": "true"}
+
+    for attempt in range(max_retries):
+        try:
+            # Each retry attempt consumes rate budget
+            if attempt > 0:
+                retry_budget = acquire_strava_read_budget()
+                if retry_budget is None:
+                    print(f"INFO: stream_fetch_retry_skipped_no_redis activity_id={activity_id}")
+                    return StreamFetchResult(outcome="skipped_no_redis", error="redis_unavailable_on_retry")
+                if retry_budget is False:
+                    if not allow_rate_limit_sleep:
+                        raise StravaRateLimitError(
+                            f"Rate budget exhausted on retry for {activity_id}",
+                            retry_after_s=900,
+                        )
+                    window_remaining = 900 - (int(time.time()) % 900)
+                    time.sleep(window_remaining)
+
+            r = requests.get(url, headers=headers, params=params, timeout=30)
+
+            # --- 429 Rate Limited ---
+            if r.status_code == 429:
+                retry_after = int(r.headers.get("Retry-After", 60 * (2 ** attempt)))
+                if not allow_rate_limit_sleep:
+                    raise StravaRateLimitError(
+                        f"429 Rate limited for activity streams {activity_id} "
+                        f"(Retry-After {retry_after}s)",
+                        retry_after_s=retry_after,
+                    )
+                print(f"DEBUG: Rate limited (429) for streams {activity_id}, waiting {retry_after}s")
+                time.sleep(retry_after)
+                continue
+
+            # --- 401 Token Expired ---
+            if r.status_code == 401 and athlete.strava_refresh_token:
+                print(f"DEBUG: Token expired, refreshing for streams {activity_id}")
+                refresh_token = decrypt_token(athlete.strava_refresh_token)
+                if refresh_token:
+                    token = refresh_access_token(refresh_token)
+                    athlete.strava_access_token = encrypt_token(token["access_token"])
+                    if token.get("refresh_token"):
+                        athlete.strava_refresh_token = encrypt_token(token["refresh_token"])
+                    if token.get("expires_at"):
+                        from datetime import datetime, timezone as tz
+                        athlete.strava_token_expires_at = datetime.fromtimestamp(
+                            token["expires_at"], tz=tz.utc
+                        )
+                    access_token = decrypt_token(athlete.strava_access_token)
+                    headers["Authorization"] = f"Bearer {access_token}"
+                    continue
+
+            # --- 404 → Strava confirms no streams (terminal) ---
+            if r.status_code == 404:
+                return StreamFetchResult(outcome="unavailable", error="strava_404_no_streams")
+
+            r.raise_for_status()
+
+            # --- Parse response ---
+            try:
+                data = r.json()
+            except (ValueError, TypeError):
+                print(f"ERROR: Malformed JSON in streams response for {activity_id}")
+                return StreamFetchResult(outcome="failed", error="malformed_json")
+
+            if not data:
+                # Empty response — Strava confirms no streams (manual activity, etc.)
+                return StreamFetchResult(outcome="unavailable", error="empty_response")
+
+            # Strava returns a list of stream objects or a dict (key_by_type=true)
+            result = {}
+            if isinstance(data, list):
+                for stream_obj in data:
+                    stream_type = stream_obj.get("type")
+                    stream_data = stream_obj.get("data")
+                    if stream_type and stream_data is not None:
+                        result[stream_type] = stream_data
+            elif isinstance(data, dict):
+                for stream_type, stream_obj in data.items():
+                    if isinstance(stream_obj, dict) and "data" in stream_obj:
+                        result[stream_type] = stream_obj["data"]
+                    elif isinstance(stream_obj, list):
+                        result[stream_type] = stream_obj
+
+            if not result:
+                # Strava returned data but no usable channels — no streams
+                return StreamFetchResult(outcome="unavailable", error="no_usable_channels")
+
+            # --- Channel length validation (ADR-063) ---
+            # All channels must match the length of 'time'. Mismatch → reject.
+            if "time" in result:
+                expected_len = len(result["time"])
+                for ch_name, ch_data in result.items():
+                    if ch_name == "time":
+                        continue
+                    if len(ch_data) != expected_len:
+                        print(
+                            f"ERROR: channel_length_mismatch activity_id={activity_id} "
+                            f"time={expected_len} {ch_name}={len(ch_data)}"
+                        )
+                        return StreamFetchResult(
+                            outcome="failed",
+                            error=f"channel_length_mismatch:{ch_name}={len(ch_data)},time={expected_len}",
+                        )
+
+            return StreamFetchResult(outcome="success", data=result)
+
+        except StravaRateLimitError:
+            raise  # Let rate limit errors propagate
+        except requests.exceptions.RequestException as e:
+            if attempt == max_retries - 1:
+                print(f"ERROR: Failed to fetch streams for {activity_id} after {max_retries} attempts: {e}")
+                return StreamFetchResult(outcome="failed", error=f"request_error:{e}")
+            wait_time = 2 ** attempt
+            print(f"DEBUG: Error fetching streams for {activity_id}, retrying in {wait_time}s...")
+            time.sleep(wait_time)
+
+    return StreamFetchResult(outcome="failed", error="retries_exhausted")

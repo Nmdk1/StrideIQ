@@ -20,6 +20,12 @@ beat_schedule = {
         'task': 'tasks.send_all_weekly_digests',
         'schedule': crontab(hour=9, minute=0, day_of_week=1),  # Monday
     },
+    # Stale stream fetch cleanup (ADR-063): reset activities stuck in
+    # 'fetching' for >10 minutes (worker died mid-fetch).
+    'cleanup-stale-stream-fetches': {
+        'task': 'tasks.cleanup_stale_stream_fetches',
+        'schedule': crontab(minute='*/5'),  # Every 5 minutes
+    },
 }
 
 

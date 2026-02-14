@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, Boolean, Float, Date, DateTime, ForeignKey, Numeric, Text, String, Index, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, Boolean, CheckConstraint, Float, Date, DateTime, ForeignKey, Numeric, Text, String, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
@@ -117,6 +117,13 @@ class Athlete(Base):
     current_streak_weeks = Column(Integer, default=0)  # Consecutive weeks meeting targets
     longest_streak_weeks = Column(Integer, default=0)  # All-time best streak
     last_streak_update = Column(DateTime(timezone=True), nullable=True)
+
+    # --- RELATIONSHIPS ---
+    # Required for SQLAlchemy unit-of-work to know about the FK dependency
+    # from Activity → Athlete. Without this, delete ordering is arbitrary
+    # and can cause ForeignKeyViolation when both are deleted in one flush.
+    # lazy="dynamic" prevents auto-loading (returns query, no perf impact).
+    activities = relationship("Activity", back_populates="athlete", lazy="dynamic")
 
 
 class InviteAllowlist(Base):
@@ -381,13 +388,28 @@ class Activity(Base):
     # deterministic marker for "details fetched and extraction attempted".
     best_efforts_extracted_at = Column(DateTime(timezone=True), nullable=True)
 
+    # --- STREAM FETCH LIFECYCLE (ADR-063) ---
+    # Six-state machine: pending → fetching → success/failed/deferred/unavailable
+    # See docs/adr/ADR-063-activity-stream-storage-and-fetch-lifecycle.md
+    stream_fetch_status = Column(Text, nullable=False, default="pending", server_default="pending")
+    stream_fetch_attempted_at = Column(DateTime(timezone=True), nullable=True)
+    stream_fetch_error = Column(Text, nullable=True)
+    stream_fetch_retry_count = Column(Integer, nullable=False, default=0, server_default="0")
+    stream_fetch_deferred_until = Column(DateTime(timezone=True), nullable=True)
+
     # --- THE ARMOR: Unique Constraint prevents duplicates at the DB level ---
     __table_args__ = (
         UniqueConstraint('provider', 'external_activity_id', name='uq_activity_provider_external_id'),
+        CheckConstraint(
+            "stream_fetch_status IN ('pending', 'fetching', 'success', 'failed', 'deferred', 'unavailable')",
+            name='ck_activity_stream_fetch_status',
+        ),
     )
     
     # --- RELATIONSHIPS ---
+    athlete = relationship("Athlete", back_populates="activities")
     splits = relationship("ActivitySplit", back_populates="activity", lazy="dynamic", order_by="ActivitySplit.split_number")
+    stream = relationship("ActivityStream", back_populates="activity", uselist=False)
 
     @property
     def pace_per_mile(self) -> Optional[float]:
@@ -421,6 +443,55 @@ class ActivitySplit(Base):
     __table_args__ = (
         Index("ix_activity_split_activity_id", "activity_id"),
         UniqueConstraint('activity_id', 'split_number', name='uq_activity_split_number'),
+    )
+
+
+class ActivityStream(Base):
+    """
+    Per-second resolution stream data for an activity (ADR-063).
+
+    Stores raw time-series from Strava (or Garmin) as a single JSONB blob
+    containing all channels.  One row per activity.  The frontend reads the
+    entire blob for chart rendering; the coach tool reads it for stream
+    analysis.
+
+    Example stream_data:
+        {
+            "time": [0, 1, 2, ...],
+            "distance": [0.0, 2.8, 5.6, ...],
+            "heartrate": [140, 141, 142, ...],
+            "velocity_smooth": [3.1, 3.2, 3.1, ...],
+            "altitude": [100.5, 100.7, 101.0, ...],
+            "grade_smooth": [0.0, 0.2, 0.5, ...],
+            "cadence": [88, 89, 88, ...],
+            "latlng": [[38.60, -122.86], [38.61, -122.87], ...]
+        }
+    """
+    __tablename__ = "activity_stream"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False)
+
+    # Dict of channel_name → array of values
+    stream_data = Column(JSONB, nullable=False)
+
+    # Which channels are present (cheap filtering without parsing JSONB)
+    channels_available = Column(JSONB, nullable=False, default=list)
+
+    # Number of data points (length of time array)
+    point_count = Column(Integer, nullable=False)
+
+    # Provenance
+    source = Column(Text, nullable=False, default="strava")
+    fetched_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    # --- RELATIONSHIPS ---
+    activity = relationship("Activity", back_populates="stream")
+
+    # --- THE ARMOR: One stream row per activity ---
+    __table_args__ = (
+        UniqueConstraint("activity_id", name="uq_activity_stream_activity_id"),
+        Index("ix_activity_stream_activity_id", "activity_id"),
     )
 
 

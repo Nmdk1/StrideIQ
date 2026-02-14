@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from core.database import get_db
 from core.auth import get_current_user, require_admin
-from models import Athlete, Activity, DailyCheckin, ActivitySplit, AthleteTrainingPaceProfile, AthleteRaceResultAnchor
+from models import Athlete, Activity, ActivityStream, DailyCheckin, ActivitySplit, AthleteTrainingPaceProfile, AthleteRaceResultAnchor
 from schemas import (
     AthleteCreate,
     AthleteUpdate,
@@ -395,6 +395,60 @@ def get_activity_splits(
     ).order_by(ActivitySplit.split_number).all()
     
     return splits
+
+
+@router.get("/activities/{activity_id}/streams")
+def get_activity_streams(
+    activity_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get per-second stream data for a specific activity (ADR-063).
+
+    Returns stream_data (dict of channel → array), channels_available,
+    point_count, and fetch status. Auth + ownership enforced.
+
+    Response contract:
+        404 — activity not found or not owned by current user
+        200 — always returned when activity exists, with `status` field:
+              "success"     → stream_data populated
+              "pending"     → fetch not yet attempted (frontend: show spinner)
+              "fetching"    → fetch in progress (frontend: show spinner)
+              "failed"      → fetch failed, may retry (frontend: show retry hint)
+              "deferred"    → rate limited, will auto-retry (frontend: show spinner)
+              "unavailable" → manual activity, no streams exist (frontend: hide panel)
+    """
+    # Verify activity exists AND belongs to the authenticated user
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id, Activity.athlete_id == current_user.id)
+        .first()
+    )
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    stream = db.query(ActivityStream).filter(
+        ActivityStream.activity_id == activity_id
+    ).first()
+
+    if not stream:
+        return {
+            "activity_id": str(activity_id),
+            "status": activity.stream_fetch_status,
+            "stream_data": None,
+            "channels_available": [],
+            "point_count": 0,
+        }
+
+    return {
+        "activity_id": str(activity_id),
+        "status": "success",
+        "stream_data": stream.stream_data,
+        "channels_available": stream.channels_available,
+        "point_count": stream.point_count,
+        "source": stream.source,
+        "fetched_at": stream.fetched_at.isoformat() if stream.fetched_at else None,
+    }
 
 
 @router.post("/athletes/{id}/calculate-metrics")
