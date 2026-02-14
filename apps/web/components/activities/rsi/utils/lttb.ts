@@ -10,7 +10,7 @@
 
 export interface LTTBPoint {
   time: number;
-  [key: string]: number;
+  [key: string]: number | null;
 }
 
 export function lttbDownsample<T extends LTTBPoint>(

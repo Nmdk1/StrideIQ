@@ -45,7 +45,12 @@ import {
   YAxis,
 } from 'recharts';
 
-import { useStreamAnalysis } from '@/components/activities/rsi/hooks/useStreamAnalysis';
+import {
+  useStreamAnalysis,
+  type StreamHookData,
+  type StreamLifecycleResponse,
+  type StreamAnalysisData,
+} from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import { lttbDownsample } from '@/components/activities/rsi/utils/lttb';
 import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 
@@ -65,6 +70,7 @@ interface ChartPoint {
   grade: number | null;
   cadence: number | null;
   effort: number;
+  [key: string]: number | null;
 }
 
 interface Segment {
@@ -610,8 +616,12 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
   }, []);
 
   // --- Data preparation ---
-  const analysis: AnalysisResult | null = data?.analysis ?? null;
-  const rawStream = data?.stream ?? null;
+  // Type-safe extraction: only access .analysis/.stream when data is a full payload
+  const fullData = (data && typeof data === 'object' && 'analysis' in data)
+    ? (data as StreamAnalysisData)
+    : null;
+  const analysis: AnalysisResult | null = (fullData?.analysis as unknown as AnalysisResult) ?? null;
+  const rawStream = fullData?.stream ?? null;
 
   const chartData = useMemo<ChartPoint[]>(() => {
     if (!rawStream || !Array.isArray(rawStream) || rawStream.length === 0) {
@@ -659,7 +669,9 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
   // --- ADR-063 lifecycle state handling (AC-10) ---
   // The hook may return a lifecycle response ({ status: 'pending' | 'unavailable' })
   // instead of a full analysis result. Detect and handle before data extraction.
-  const lifecycleStatus = (data as Record<string, unknown>)?.status as string | undefined;
+  const lifecycleStatus = (data && typeof data === 'object' && 'status' in data)
+    ? (data as StreamLifecycleResponse).status
+    : undefined;
 
   // Unavailable: stream will never be available for this activity.
   // Hide the entire panel — return null so no rsi-canvas testid enters the DOM.
