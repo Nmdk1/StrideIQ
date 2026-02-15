@@ -644,7 +644,19 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
     return chartData.some((p) => p.pace != null && p.pace > 0);
   }, [chartData]);
 
-  // Pace-based gradient stops: slow=blue, fast=red (same palette, driven by pace not HR)
+  // Boost an effortToColor for the pace line — needs to pop over segment bands
+  const boostColor = useCallback((intensity: number): string => {
+    const base = effortToColor(intensity);
+    const match = base.match(/rgb\((\d+),(\d+),(\d+)\)/);
+    if (!match) return base;
+    const boost = 1.5; // 50% brighter so it reads over segment bands
+    const r = Math.min(255, Math.round(parseInt(match[1]) * boost));
+    const g = Math.min(255, Math.round(parseInt(match[2]) * boost));
+    const b = Math.min(255, Math.round(parseInt(match[3]) * boost));
+    return `rgb(${r},${g},${b})`;
+  }, []);
+
+  // Pace-based gradient stops: slow=blue, fast=red (driven by pace, boosted for visibility)
   const effortGradientStops = useMemo(() => {
     if (!hasEffortGradient || chartData.length === 0) return [];
 
@@ -665,7 +677,7 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
       const paceIntensity = 1 - (pace - paceMin) / paceRange;
       stops.push({
         offset: `${offset.toFixed(1)}%`,
-        color: effortToColor(paceIntensity),
+        color: boostColor(paceIntensity),
       });
     }
     // Ensure last point is included
@@ -676,11 +688,11 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
       const lastIntensity = 1 - (lastPace - paceMin) / paceRange;
       stops.push({
         offset: lastOffset,
-        color: effortToColor(lastIntensity),
+        color: boostColor(lastIntensity),
       });
     }
     return stops;
-  }, [hasEffortGradient, chartData]);
+  }, [hasEffortGradient, chartData, boostColor]);
 
   // --- Crosshair handlers ---
   const handleHover = useCallback((index: number) => {
@@ -896,7 +908,7 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
               dataKey="pace"
               stroke={paceStroke}
               dot={false}
-              strokeWidth={1.5}
+              strokeWidth={2.5}
               isAnimationActive={false}
             />
 
