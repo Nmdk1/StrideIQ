@@ -1675,15 +1675,25 @@ async def get_home_data(
         if existing_checkin is not None:
             # Build human-readable labels from stored values
             motivation_map = {5: 'Great', 4: 'Fine', 2: 'Tired', 1: 'Rough'}
-            sleep_map = {8: 'Great', 7: 'OK', 5: 'Poor'}
+            sleep_quality_map = {5: 'Great', 4: 'Good', 3: 'OK', 2: 'Poor', 1: 'Awful'}
+            # Legacy fallback: old rows stored quality as fake hours in sleep_h
+            sleep_legacy_map = {8: 'Great', 7: 'OK', 5: 'Poor'}
             soreness_map = {1: 'None', 2: 'Mild', 4: 'Yes'}
+
+            # Prefer sleep_quality_1_5; fall back to legacy sleep_h mapping for old rows
+            sleep_quality_val = getattr(existing_checkin, 'sleep_quality_1_5', None)
+            if sleep_quality_val is not None:
+                sleep_label = sleep_quality_map.get(int(sleep_quality_val))
+            elif existing_checkin.sleep_h is not None:
+                sleep_label = sleep_legacy_map.get(int(existing_checkin.sleep_h))
+            else:
+                sleep_label = None
+
             today_checkin = TodayCheckin(
                 motivation_label=motivation_map.get(
                     int(existing_checkin.motivation_1_5) if existing_checkin.motivation_1_5 is not None else -1
                 ),
-                sleep_label=sleep_map.get(
-                    int(existing_checkin.sleep_h) if existing_checkin.sleep_h is not None else -1
-                ),
+                sleep_label=sleep_label,
                 soreness_label=soreness_map.get(
                     int(existing_checkin.soreness_1_5) if existing_checkin.soreness_1_5 is not None else -1
                 ),
