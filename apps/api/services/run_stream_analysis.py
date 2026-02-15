@@ -788,6 +788,7 @@ def detect_segments(
     grade: Optional[List[float]],
     config: Optional[SegmentConfig] = None,
     athlete_context: Optional[AthleteContext] = None,
+    cadence: Optional[List[float]] = None,
 ) -> List[Segment]:
     """Detect run segments using tiered N=1 classification.
 
@@ -901,7 +902,7 @@ def detect_segments(
     merged = _enforce_minimum_duration(raw_segments, config.min_segment_duration)
 
     # --- Phase 5: Recompute averages for final segments ---
-    final = _compute_segment_averages(merged, time, velocity, heartrate, grade)
+    final = _compute_segment_averages(merged, time, velocity, heartrate, grade, cadence)
 
     return final
 
@@ -1182,7 +1183,7 @@ def _enforce_minimum_duration(
 def _compute_segment_averages(
     segments: List[Segment], time: List[int],
     velocity: Optional[List[float]], heartrate: Optional[List[float]],
-    grade: Optional[List[float]],
+    grade: Optional[List[float]], cadence: Optional[List[float]] = None,
 ) -> List[Segment]:
     """Recompute average metrics for each segment from raw data."""
     result = []
@@ -1203,12 +1204,19 @@ def _compute_segment_averages(
         if grade is not None and len(grade) > ei:
             avg_grade_val = round(sum(grade[si:ei + 1]) / count, 2)
 
+        avg_cadence_val = None
+        if cadence is not None and len(cadence) > ei and count > 0:
+            cadence_slice = [c for c in cadence[si:ei + 1] if c is not None and c > 0]
+            if cadence_slice:
+                avg_cadence_val = round(sum(cadence_slice) / len(cadence_slice), 1)
+
         result.append(Segment(
             type=seg.type, start_index=seg.start_index, end_index=seg.end_index,
             start_time_s=seg.start_time_s, end_time_s=seg.end_time_s,
             duration_s=seg.duration_s,
             avg_pace_s_km=round(avg_pace, 1) if avg_pace is not None else None,
             avg_hr=avg_hr, avg_grade=avg_grade_val,
+            avg_cadence=avg_cadence_val,
         ))
     return result
 
@@ -1679,6 +1687,7 @@ def analyze_stream(
     segments = detect_segments(
         time, velocity, analysis_heartrate, grade,
         athlete_context=athlete_context,
+        cadence=cadence,
     )
 
     work_steady = [s for s in segments if s.type in (

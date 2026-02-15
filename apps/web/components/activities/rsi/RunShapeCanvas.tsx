@@ -741,10 +741,15 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
 
     // Stream points are already LTTB downsampled server-side to ≤500 points.
     // Map to ChartPoint format for Recharts.
+    // Clip extreme pace outliers (>900 s/km ≈ standing still / GPS glitch)
+    // to prevent a single outlier from compressing the entire visual range.
+    const PACE_OUTLIER_CEILING = 900; // s/km (~15 min/km)
     return rawStream.map((p: StreamPoint) => ({
       time: p.time ?? 0,
       hr: p.hr ?? null,
-      pace: p.pace ?? null,
+      pace: (p.pace != null && p.pace > 0 && p.pace <= PACE_OUTLIER_CEILING)
+        ? p.pace
+        : null,
       altitude: p.altitude ?? null,
       grade: p.grade ?? null,
       cadence: p.cadence ?? null,
@@ -767,6 +772,23 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
   // Detect whether pace data exists for gradient coloring
   const hasEffortGradient = useMemo(() => {
     return chartData.some((p) => p.pace != null && p.pace > 0);
+  }, [chartData]);
+
+  // Compute explicit pace domain — clip to [p5, p95] with 10% padding so
+  // the line fills the chart height and small pace variations are visible.
+  // Without this, auto-scaling can compress the line into a flat ribbon
+  // when one outlier skews the range.
+  const paceDomain = useMemo<[number, number] | undefined>(() => {
+    const paces = chartData
+      .map((p) => p.pace)
+      .filter((p): p is number => p != null && p > 0);
+    if (paces.length < 4) return undefined; // let Recharts auto-scale
+    const sorted = [...paces].sort((a, b) => a - b);
+    const p5 = sorted[Math.floor(sorted.length * 0.05)];
+    const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1];
+    const range = p95 - p5 || 30; // minimum 30 s/km visual spread
+    const pad = range * 0.15;
+    return [Math.max(0, p5 - pad), p95 + pad];
   }, [chartData]);
 
   // Boost an effortToColor for the pace line — needs to pop over segment bands
@@ -1097,7 +1119,14 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
               tickFormatter={(t: number) => `${Math.floor(t / 60)}m`}
             />
             <YAxis yAxisId="hr" orientation="left" hide />
-            <YAxis yAxisId="pace" orientation="right" hide reversed />
+            <YAxis
+              yAxisId="pace"
+              orientation="right"
+              hide
+              reversed
+              domain={paceDomain ?? ['auto', 'auto']}
+              allowDataOverflow={!!paceDomain}
+            />
             <YAxis yAxisId="altitude" orientation="left" hide />
             <YAxis yAxisId="secondary" orientation="right" hide />
 

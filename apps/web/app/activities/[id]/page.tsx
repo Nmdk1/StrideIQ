@@ -33,6 +33,7 @@ import { ReflectionPrompt } from '@/components/activities/ReflectionPrompt';
 import RunContextAnalysis from '@/components/activities/RunContextAnalysis';
 import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
 import { WhyThisRun } from '@/components/activities/WhyThisRun';
+import { PerceptionPrompt } from '@/components/activities/PerceptionPrompt';
 
 interface Activity {
   id: string;
@@ -251,8 +252,21 @@ export default function ActivityDetailPage() {
           />
         )}
 
-        {/* ── 4. Reflection Prompt ── */}
-        <ReflectionPrompt activityId={activityId} className="mb-6" />
+        {/* ── 4. Reflection Prompt (quick 3-tap) ── */}
+        <ReflectionPrompt activityId={activityId} className="mb-4" />
+
+        {/* ── 4b. Full Feedback: RPE, Leg Feel, Notes ── */}
+        <PerceptionPrompt
+          activityId={activityId}
+          className="mb-4"
+          workoutType={activity.workout_type ?? undefined}
+          expectedRpeRange={activity.expected_rpe_range ?? undefined}
+        />
+
+        {/* ── 4c. Workout Type (compact) ── */}
+        <div className="mb-6">
+          <WorkoutTypeSelector activityId={activityId} compact />
+        </div>
 
         {/* ── 5. Metrics Ribbon (compact horizontal strip) ── */}
         <div className="mb-6">
@@ -355,11 +369,6 @@ export default function ActivityDetailPage() {
                 </div>
               </div>
             )}
-
-            {/* ── 7. Workout Type Classification ── */}
-            <div className="mb-6">
-              <WorkoutTypeSelector activityId={activityId} />
-            </div>
 
             {/* ── 8. "Why This Run?" + Context Analysis ── */}
             <div className="mb-6">
