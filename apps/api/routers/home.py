@@ -146,7 +146,7 @@ class LastRunSegment(BaseModel):
 
 
 class LastRun(BaseModel):
-    """RSI Layer 1: Most recent run (within 48h) for home page hero canvas.
+    """RSI Layer 1: Most recent run (within 96h) for home page hero canvas.
 
     When stream_status == 'success', effort_intensity is populated so the
     home page can render an effort gradient canvas.  Otherwise, a clean
@@ -190,7 +190,7 @@ class HomeResponse(BaseModel):
     strava_status: Optional[StravaStatusDetail] = None
     coach_briefing: Optional[dict] = None  # LLM-generated coaching narratives for all cards
     # --- RSI Layer 1 ---
-    last_run: Optional[LastRun] = None  # Most recent run within 48h for hero canvas
+    last_run: Optional[LastRun] = None  # Most recent run within 96h for hero canvas
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -1191,17 +1191,18 @@ def compute_last_run(
     """RSI Layer 1: Build last_run for the home hero canvas.
 
     Rules (from RSI_WIRING_SPEC Layer 1):
-    - Only the most recent activity within 48 hours
-    - If latest activity is >48h old, return None
+    - Only the most recent activity within 96 hours (4 days)
+    - If latest activity is >96h old, return None
     - When stream_fetch_status == 'success': serve from cached analysis
       (spec decision: "Cache full StreamAnalysisResult in DB")
     - effort_intensity is LTTB downsampled to ~500 points
 
-    Note: 24h was too restrictive — an athlete who runs Saturday morning
-    wouldn't see their hero by Sunday morning. 48h covers "yesterday's run."
+    Note: 96h ensures there's always a run showing unless the athlete
+    is injured or taking an extended break. Most training plans have
+    at least one run every 3-4 days.
     """
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=48)
+    cutoff = now - timedelta(hours=96)
 
     latest = (
         db.query(Activity)
