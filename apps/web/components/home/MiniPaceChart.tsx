@@ -12,19 +12,13 @@
 
 import React, { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 interface MiniPaceChartProps {
   paceStream: number[];
   effortIntensity: number[];
   elevationStream?: number[] | null;
   height?: number;
-}
-
-/** Convert pace in s/km to a display string like "5:23" */
-function formatPaceSKm(sPerKm: number): string {
-  const m = Math.floor(sPerKm / 60);
-  const s = Math.round(sPerKm % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 /** Boost an effortToColor result for hero rendering — increase lightness. */
@@ -48,6 +42,7 @@ export function MiniPaceChart({
   elevationStream,
   height = 140,
 }: MiniPaceChartProps) {
+  const { formatPace } = useUnits();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; idx: number } | null>(null);
 
@@ -260,8 +255,7 @@ export function MiniPaceChart({
           }}
         >
           <div className="bg-slate-800/90 backdrop-blur-sm border border-slate-600/50 rounded px-2 py-0.5 text-xs whitespace-nowrap">
-            <span className="font-semibold text-white">{formatPaceSKm(hoverPace)}</span>
-            <span className="text-slate-400">/km</span>
+            <span className="font-semibold text-white">{formatPace(hoverPace)}</span>
           </div>
         </div>
       )}

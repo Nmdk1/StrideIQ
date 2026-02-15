@@ -18,6 +18,18 @@ jest.mock('@/components/activities/rsi/utils/effortColor', () => ({
   effortToColor: (value: number) => `rgb(${Math.round(value * 120)},${Math.round(value * 80)},50)`,
 }));
 
+// Mock useUnits for imperial pace formatting
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => ({
+    formatPace: (sPerKm: number) => {
+      const sPerMi = sPerKm * 1.60934;
+      const m = Math.floor(sPerMi / 60);
+      const s = Math.round(sPerMi % 60);
+      return `${m}:${s.toString().padStart(2, '0')}/mi`;
+    },
+  }),
+}));
+
 import { MiniPaceChart } from '@/components/home/MiniPaceChart';
 
 // ---------------------------------------------------------------------------
