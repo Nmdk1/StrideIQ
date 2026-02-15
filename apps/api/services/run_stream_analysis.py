@@ -325,6 +325,136 @@ def _compute_effort_array(
 
 
 # ---------------------------------------------------------------------------
+# A2: HR Sanity Check — detect unreliable heart rate data
+# ---------------------------------------------------------------------------
+
+def hr_sanity_check(
+    heartrate: Optional[List[float]],
+    velocity: Optional[List[float]],
+) -> Dict[str, Any]:
+    """Check whether heart rate data is physiologically plausible.
+
+    Runs several heuristics to detect common wrist-sensor failures:
+        1. Missing/empty HR data
+        2. Sustained dropout (HR near zero)
+        3. Flatline (unreasonably low std dev for a run)
+        4. Inverse correlation with pace (HR drops when running harder)
+
+    Args:
+        heartrate: Per-second HR values (may be None).
+        velocity: Per-second velocity values in m/s (may be None).
+
+    Returns:
+        dict with:
+            reliable: bool — True if HR data appears trustworthy
+            reason: str — human-readable explanation (empty if reliable)
+    """
+    # --- No HR data at all ---
+    if heartrate is None or len(heartrate) == 0:
+        return {"reliable": False, "reason": "No heart rate data available"}
+
+    n = len(heartrate)
+
+    # --- Check 1: Sustained dropout (>20% of points near zero) ---
+    zero_threshold = 30.0  # bpm — anything below this during a run is implausible
+    zero_count = sum(1 for hr in heartrate if hr < zero_threshold)
+    zero_pct = zero_count / n
+    if zero_pct > 0.20:
+        return {
+            "reliable": False,
+            "reason": f"Heart rate dropped to near-zero for {zero_pct:.0%} of the activity",
+        }
+
+    # --- Filter out zero/near-zero for remaining checks ---
+    valid_hr = [hr for hr in heartrate if hr >= zero_threshold]
+    if len(valid_hr) < 60:  # need at least 60 valid seconds
+        return {"reliable": False, "reason": "Insufficient valid heart rate data"}
+
+    # --- Check 2: Flatline (std dev too low for running) ---
+    mean_hr = sum(valid_hr) / len(valid_hr)
+    variance = sum((hr - mean_hr) ** 2 for hr in valid_hr) / len(valid_hr)
+    std_hr = variance ** 0.5
+
+    # During any real run, HR varies by at least a few bpm
+    # Std dev < 2.0 across an entire run is almost certainly a stuck sensor
+    if std_hr < 2.0:
+        return {
+            "reliable": False,
+            "reason": f"Heart rate flatlined (std dev {std_hr:.1f} bpm — sensor may be stuck)",
+        }
+
+    # --- Check 3: Suspiciously low HR during hard pace ---
+    # If median HR < 100 bpm and there's meaningful velocity data,
+    # that's implausible for running
+    if velocity and len(velocity) > 0:
+        valid_vel = [v for v in velocity if v and v > 0.5]
+        if len(valid_vel) > n * 0.5:  # most of the run has pace data
+            median_vel = sorted(valid_vel)[len(valid_vel) // 2]
+            # If running faster than ~8:00/km (~2.1 m/s) with median HR < 100
+            if median_vel > 2.1:
+                sorted_hr = sorted(valid_hr)
+                median_hr = sorted_hr[len(sorted_hr) // 2]
+                if median_hr < 100.0:
+                    return {
+                        "reliable": False,
+                        "reason": (
+                            f"Median HR ({median_hr:.0f} bpm) is implausibly low "
+                            f"for running pace ({1000.0/median_vel:.0f} s/km)"
+                        ),
+                    }
+
+    # --- Check 4: Inverse correlation with velocity ---
+    # Normally HR and pace are positively correlated (run harder → HR goes up)
+    # Wrist sensors sometimes invert (lose contact during hard effort)
+    if velocity and len(velocity) >= n:
+        # Downsample to 30-second windows to reduce noise
+        window = 30
+        n_windows = n // window
+        if n_windows >= 10:
+            hr_windows = []
+            vel_windows = []
+            for w in range(n_windows):
+                start = w * window
+                end = start + window
+                hr_chunk = heartrate[start:end]
+                vel_chunk = velocity[start:end]
+
+                # Skip windows with dropout
+                valid_in_window = [h for h in hr_chunk if h >= zero_threshold]
+                valid_vel_in_window = [v for v in vel_chunk if v and v > 0.5]
+                if len(valid_in_window) > window * 0.7 and len(valid_vel_in_window) > window * 0.7:
+                    hr_windows.append(sum(valid_in_window) / len(valid_in_window))
+                    vel_windows.append(sum(valid_vel_in_window) / len(valid_vel_in_window))
+
+            if len(hr_windows) >= 8:
+                # Pearson correlation
+                n_w = len(hr_windows)
+                mean_hr_w = sum(hr_windows) / n_w
+                mean_vel_w = sum(vel_windows) / n_w
+
+                cov = sum(
+                    (hr_windows[i] - mean_hr_w) * (vel_windows[i] - mean_vel_w)
+                    for i in range(n_w)
+                ) / n_w
+
+                std_hr_w = (sum((h - mean_hr_w) ** 2 for h in hr_windows) / n_w) ** 0.5
+                std_vel_w = (sum((v - mean_vel_w) ** 2 for v in vel_windows) / n_w) ** 0.5
+
+                if std_hr_w > 0 and std_vel_w > 0:
+                    r = cov / (std_hr_w * std_vel_w)
+                    if r < -0.3:
+                        return {
+                            "reliable": False,
+                            "reason": (
+                                f"Heart rate inversely correlated with pace (r={r:.2f}) "
+                                f"— sensor may have lost contact during hard effort"
+                            ),
+                        }
+
+    return {"reliable": True, "reason": ""}
+
+
+# ---------------------------------------------------------------------------
 # Configuration (ALL thresholds externalized — zero inline magic numbers)
 # ---------------------------------------------------------------------------
 
@@ -495,6 +625,9 @@ class StreamAnalysisResult:
     cross_run_comparable: bool = False
     # --- RSI-Alpha: per-point effort intensity [0.0, 1.0] ---
     effort_intensity: List[float] = field(default_factory=list)
+    # --- A2: HR sanity check ---
+    hr_reliable: bool = True
+    hr_note: Optional[str] = None
 
     def __eq__(self, other):
         if not isinstance(other, StreamAnalysisResult):
@@ -519,6 +652,8 @@ class StreamAnalysisResult:
             "estimated_flags": self.estimated_flags,
             "cross_run_comparable": self.cross_run_comparable,
             "effort_intensity": self.effort_intensity,
+            "hr_reliable": self.hr_reliable,
+            "hr_note": self.hr_note,
         }
 
 
@@ -1463,13 +1598,33 @@ def analyze_stream(
     cadence = _safe_list(stream_data, "cadence", n)
     grade = _safe_list(stream_data, "grade_smooth", n)
 
+    # --- A2: HR sanity check — detect unreliable HR before it corrupts
+    #     effort, segments, and drift. Fail-closed: bad HR → pace fallback.
+    hr_check = hr_sanity_check(heartrate=heartrate, velocity=velocity)
+    hr_reliable = hr_check["reliable"]
+    hr_note: Optional[str] = hr_check["reason"] if not hr_reliable else None
+
+    # When HR is unreliable, force pace-based analysis:
+    # - Override tier to tier4 (stream-relative / pace fallback)
+    # - Null out heartrate so segments + effort use velocity only
+    # - Mark cross_run_comparable as False (no HR calibration)
+    analysis_heartrate = heartrate  # HR passed to segments/drift
+    if not hr_reliable:
+        tier = "tier4_stream_relative"
+        cross_run_comparable = False
+        if "hr_unreliable_fallback" not in estimated_flags:
+            estimated_flags = list(estimated_flags) + ["hr_unreliable_fallback"]
+        # Null out HR for segment detection — forces pace-based classification
+        analysis_heartrate = None
+
     segments = detect_segments(
-        time, velocity, heartrate, grade,
+        time, velocity, analysis_heartrate, grade,
         athlete_context=athlete_context,
     )
 
     work_steady = [s for s in segments if s.type in (
         SegmentType.work.value, SegmentType.steady.value)]
+    # Pass original heartrate for drift calculation (drift is informational)
     drift = compute_drift(time, heartrate, velocity, cadence, work_steady)
 
     moments = detect_moments(time, heartrate, velocity, cadence, grade, segments)
@@ -1479,8 +1634,14 @@ def analyze_stream(
     confidence = _compute_confidence(tier, n, channels_present, segments)
 
     # RSI-Alpha: per-point effort intensity
+    # When HR is unreliable, _compute_effort_array with tier4 and nulled HR
+    # will fall back to velocity-based effort
+    effort_stream_data = dict(stream_data)
+    if not hr_reliable:
+        effort_stream_data["heartrate"] = []  # force velocity fallback
+
     effort_array = _compute_effort_array(
-        stream_data=stream_data,
+        stream_data=effort_stream_data,
         point_count=n,
         tier=tier,
         ctx=athlete_context,
@@ -1494,6 +1655,8 @@ def analyze_stream(
         tier_used=tier, estimated_flags=estimated_flags,
         cross_run_comparable=cross_run_comparable,
         effort_intensity=effort_array,
+        hr_reliable=hr_reliable,
+        hr_note=hr_note,
     )
 
 

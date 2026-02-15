@@ -88,6 +88,9 @@ export interface StreamAnalysisData {
   estimated_flags: string[];
   cross_run_comparable: boolean;
   effort_intensity: number[];
+  // A2: HR sanity check (may be absent in older cached results)
+  hr_reliable?: boolean;
+  hr_note?: string | null;
   // Per-point stream data (added by router, not in dataclass)
   stream: StreamPoint[];
 }

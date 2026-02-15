@@ -575,6 +575,7 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
   const { data, isLoading, error, refetch } = useStreamAnalysis(activityId);
 
   // Toggle state (AC-4): survives resize and view switch by design (useState)
+  const [showHR, setShowHR] = useState(true);
   const [showCadence, setShowCadence] = useState(false);
   const [showGrade, setShowGrade] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('story');
@@ -821,6 +822,16 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
         <div className="ml-auto flex gap-1">
           <button
             className={`text-xs px-2 py-1 rounded ${
+              showHR ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-400'
+            }`}
+            onClick={() => setShowHR((v) => !v)}
+            aria-label="Heart Rate"
+            data-testid="hr-toggle"
+          >
+            HR
+          </button>
+          <button
+            className={`text-xs px-2 py-1 rounded ${
               showCadence ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'
             }`}
             onClick={() => setShowCadence((v) => !v)}
@@ -903,7 +914,8 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
               isAnimationActive={false}
             />
 
-            {/* Default traces: HR + pace (AC-4: always visible) */}
+            {/* HR trace: togglable (A2) */}
+            {showHR && (
             <Line
               yAxisId="hr"
               type="monotone"
@@ -913,6 +925,7 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
               strokeWidth={1.5}
               isAnimationActive={false}
             />
+            )}
             <Line
               yAxisId="pace"
               type="monotone"
@@ -954,7 +967,9 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
         {/* Testability markers: data-testid contract for tests.
             Positioned after Recharts layer to preserve terrain-before-trace ordering. */}
         <div data-testid="terrain-fill" style={{ display: 'none' }} aria-hidden="true" />
-        <div data-testid="trace-hr" style={{ display: 'none' }} aria-hidden="true" />
+        {showHR && (
+          <div data-testid="trace-hr" style={{ display: 'none' }} aria-hidden="true" />
+        )}
         <div
           data-testid="trace-pace"
           data-stroke-type={hasEffortGradient ? 'effort-gradient' : 'fallback'}
@@ -982,6 +997,19 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
           showGrade={showGrade}
         />
       </div>
+
+      {/* A2: HR unreliable note */}
+      {analysis.hr_reliable === false && analysis.hr_note && (
+        <div
+          className="flex items-center gap-2 mt-2 px-3 py-2 rounded bg-amber-900/30 border border-amber-700/40 text-amber-300 text-xs"
+          data-testid="hr-unreliable-note"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 shrink-0">
+            <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+          </svg>
+          <span>HR data appears unreliable — effort colors based on pace</span>
+        </div>
+      )}
 
       {/* Lab mode panel (AC-9: shown only when Lab is active) */}
       {viewMode === 'lab' && (

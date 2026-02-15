@@ -65,6 +65,8 @@ export interface StreamAnalysisResult {
   estimated_flags: string[];
   cross_run_comparable: boolean;
   effort_intensity: number[];
+  hr_reliable: boolean;
+  hr_note: string | null;
 }
 
 export interface StreamPoint {
@@ -102,6 +104,8 @@ export const mockTier1Result: StreamAnalysisResult = {
   estimated_flags: [],
   cross_run_comparable: true,
   effort_intensity: [],
+  hr_reliable: true,
+  hr_note: null,
 };
 
 // ── Tier 4 analysis result (no physiological data) ──
@@ -149,6 +153,8 @@ export const mockEmptyResult: StreamAnalysisResult = {
   estimated_flags: ['minimal_channels'],
   cross_run_comparable: false,
   effort_intensity: [],
+  hr_reliable: true,
+  hr_note: null,
 };
 
 // ── Lifecycle status responses ──

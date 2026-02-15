@@ -30,7 +30,10 @@ from services.run_stream_analysis import (
 logger = logging.getLogger(__name__)
 
 # Bump this when analysis logic changes to invalidate all caches.
-CURRENT_ANALYSIS_VERSION = 1
+# Bump when analysis logic changes to invalidate all caches.
+# v1: initial release
+# v2: A2 HR sanity check — adds hr_reliable/hr_note, pace-based fallback
+CURRENT_ANALYSIS_VERSION = 2
 
 
 def get_or_compute_analysis(
