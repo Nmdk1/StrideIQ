@@ -391,16 +391,18 @@ misinterpretation:
 
 For a new session, read in this order:
 
-1. **This document** — operating contract (how to work)
-2. **`docs/TRAINING_PLAN_REBUILD_PLAN.md`** — north star build plan (what
+1. **`docs/PRODUCT_MANIFESTO.md`** — the soul of the product. What StrideIQ
+   IS and what "done" looks like. Read this first, every time.
+2. **This document** — operating contract (how to work)
+3. **`docs/TRAINING_PLAN_REBUILD_PLAN.md`** — north star build plan (what
    to build and why)
-3. **`docs/AGENT_WORKFLOW.md`** — build loop mechanics, testing commands,
+4. **`docs/AGENT_WORKFLOW.md`** — build loop mechanics, testing commands,
    phase execution plan (how to build)
-4. **`docs/RUN_SHAPE_VISION.md`** — vision doc for Run Shape Intelligence
+5. **`docs/RUN_SHAPE_VISION.md`** — vision doc for Run Shape Intelligence
    (current priority — read if working on this feature)
-5. **Latest `docs/SESSION_HANDOFF_*.md`** — what happened in the last
+6. **Latest `docs/SESSION_HANDOFF_*.md`** — what happened in the last
    session (current state)
-6. **Latest `docs/SESSION_HANDOFF_*_BUILDER_NOTE.md`** — specific
+7. **Latest `docs/SESSION_HANDOFF_*_BUILDER_NOTE.md`** — specific
    assignment for the new agent (if one exists)
 
 ### Key Codebase References
