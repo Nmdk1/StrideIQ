@@ -237,6 +237,14 @@ def get_stream_analysis(
             "segments": getattr(linked_plan, "segments", None),
         }
 
+    # --- Get Gemini client for A3 moment narratives (best-effort) ---
+    gemini_client = None
+    try:
+        from tasks.intelligence_tasks import _get_gemini_client
+        gemini_client = _get_gemini_client()
+    except Exception:
+        pass
+
     # --- Get analysis from cache or compute + cache ---
     # Spec decision: "Cache full StreamAnalysisResult in DB."
     response = get_or_compute_analysis(
@@ -245,6 +253,7 @@ def get_stream_analysis(
         athlete_ctx=athlete_ctx,
         db=db,
         planned_workout_dict=planned_workout_dict,
+        gemini_client=gemini_client,
     )
 
     # --- Append per-point stream data for canvas visualization ---

@@ -630,6 +630,7 @@ class Moment:
     time_s: int
     value: Optional[float] = None
     context: Optional[str] = None  # Short enum-level label, not prose
+    narrative: Optional[str] = None  # A3: LLM-generated coaching sentence
 
     def __eq__(self, other):
         if not isinstance(other, Moment):
@@ -1614,6 +1615,7 @@ def analyze_stream(
     channels_available: List[str],
     planned_workout: Optional[Dict[str, Any]] = None,
     athlete_context: Optional[AthleteContext] = None,
+    gemini_client: Any = None,
 ) -> StreamAnalysisResult:
     """Analyze a run's per-second stream data.
 
@@ -1625,6 +1627,7 @@ def analyze_stream(
         channels_available: List of channel names present.
         planned_workout: Optional plan metadata. None is normal.
         athlete_context: Optional athlete physiology. None → Tier 4.
+        gemini_client: Optional Gemini client for A3 moment narratives.
     """
     tier, estimated_flags = _resolve_tier(athlete_context)
     cross_run_comparable = not tier.startswith("tier4")
@@ -1684,6 +1687,30 @@ def analyze_stream(
     drift = compute_drift(time, heartrate, velocity, cadence, work_steady)
 
     moments = detect_moments(time, heartrate, velocity, cadence, grade, segments)
+
+    # A3: Generate LLM coaching narratives for moments (best-effort enrichment)
+    if moments and gemini_client is not None:
+        try:
+            from services.moment_narrator import generate_moment_narratives
+            narratives, narrator_result = generate_moment_narratives(
+                moments=moments,
+                segments=segments,
+                stream_data=stream_data,
+                gemini_client=gemini_client,
+                athlete_context=athlete_context,
+            )
+            for m, narr in zip(moments, narratives):
+                m.narrative = narr
+            logger.info(
+                "Moment narrator: success=%s, fallback=%d/%d, latency=%dms",
+                narrator_result.success,
+                narrator_result.fallback_count,
+                len(moments),
+                narrator_result.latency_ms,
+            )
+        except Exception as exc:
+            logger.warning("Moment narrator failed (non-blocking): %s", exc)
+            # Moments keep narrative=None — frontend falls back to labels
 
     plan_comparison = compare_plan_summary(segments, stream_data, planned_workout)
 

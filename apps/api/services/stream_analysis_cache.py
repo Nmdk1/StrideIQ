@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 # Bump when analysis logic changes to invalidate all caches.
 # v1: initial release
 # v2: A2 HR sanity check — adds hr_reliable/hr_note, pace-based fallback
-CURRENT_ANALYSIS_VERSION = 2
+# v3: A3 Moment narratives — adds narrative field to moments
+CURRENT_ANALYSIS_VERSION = 3
 
 
 def get_or_compute_analysis(
@@ -43,6 +44,7 @@ def get_or_compute_analysis(
     db: Session,
     planned_workout_dict: Optional[Dict] = None,
     force_recompute: bool = False,
+    gemini_client: Any = None,
 ) -> Dict[str, Any]:
     """Get cached analysis or compute + cache it.
 
@@ -55,6 +57,7 @@ def get_or_compute_analysis(
         db: SQLAlchemy session.
         planned_workout_dict: Optional plan data for plan comparison.
         force_recompute: If True, ignore cache and recompute.
+        gemini_client: Optional Gemini client for A3 moment narratives.
     """
     if not force_recompute:
         cached = _get_cached(activity_id, db)
@@ -67,6 +70,7 @@ def get_or_compute_analysis(
         channels_available=stream_row.channels_available or list(stream_row.stream_data.keys()),
         planned_workout=planned_workout_dict,
         athlete_context=athlete_ctx,
+        gemini_client=gemini_client,
     )
 
     result_dict = asdict(result)
