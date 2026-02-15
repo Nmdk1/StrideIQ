@@ -122,10 +122,10 @@ const FEEL_OPTIONS = [
   { label: 'Rough', value: 1, emoji: '😓' },
 ];
 
-const SLEEP_OPTIONS = [
-  { label: 'Great', value: 8, emoji: '🌙' },
-  { label: 'OK',    value: 7, emoji: '😐' },
-  { label: 'Poor',  value: 5, emoji: '😵' },
+const SLEEP_QUALITY_OPTIONS = [
+  { label: 'Great', value: 5, emoji: '🌙' },
+  { label: 'OK',    value: 3, emoji: '😐' },
+  { label: 'Poor',  value: 1, emoji: '😵' },
 ];
 
 const SORENESS_OPTIONS = [
@@ -136,19 +136,24 @@ const SORENESS_OPTIONS = [
 
 function QuickCheckin() {
   const [feel, setFeel] = useState<number | null>(null);
-  const [sleep, setSleep] = useState<number | null>(null);
+  const [sleepQuality, setSleepQuality] = useState<number | null>(null);
+  const [sleepHours, setSleepHours] = useState<number | null>(null);
   const [soreness, setSoreness] = useState<number | null>(null);
   const checkin = useQuickCheckin();
 
   const handleSubmit = () => {
-    if (feel === null || sleep === null || soreness === null) return;
+    if (feel === null || sleepQuality === null || soreness === null) return;
     const today = new Date().toISOString().split('T')[0];
-    checkin.mutate(
-      { date: today, motivation_1_5: feel, sleep_h: sleep, soreness_1_5: soreness },
-    );
+    checkin.mutate({
+      date: today,
+      motivation_1_5: feel,
+      sleep_quality_1_5: sleepQuality,
+      sleep_h: sleepHours ?? undefined,
+      soreness_1_5: soreness,
+    });
   };
 
-  const allSelected = feel !== null && sleep !== null && soreness !== null;
+  const allSelected = feel !== null && sleepQuality !== null && soreness !== null;
 
   return (
     <Card className="bg-slate-800/50 border-slate-700/50">
@@ -179,17 +184,17 @@ function QuickCheckin() {
           </div>
         </div>
 
-        {/* Sleep */}
+        {/* Sleep Quality */}
         <div>
-          <p className="text-sm text-slate-300 mb-2">Sleep?</p>
+          <p className="text-sm text-slate-300 mb-2">How did you sleep?</p>
           <div className="flex gap-2">
-            {SLEEP_OPTIONS.map((opt) => (
+            {SLEEP_QUALITY_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => setSleep(opt.value)}
+                onClick={() => setSleepQuality(opt.value)}
                 className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
-                  sleep === opt.value
+                  sleepQuality === opt.value
                     ? 'bg-orange-600/30 text-orange-300 ring-1 ring-orange-500/50'
                     : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700'
                 }`}
@@ -198,6 +203,29 @@ function QuickCheckin() {
                 {opt.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Sleep Hours */}
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <p className="text-sm text-slate-300">Hours slept</p>
+            <span className="text-sm font-semibold text-blue-400">
+              {sleepHours != null ? `${sleepHours}h` : '--'}
+            </span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="12"
+            step="0.5"
+            value={sleepHours ?? 0}
+            onChange={(e) => setSleepHours(parseFloat(e.target.value))}
+            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+          />
+          <div className="flex justify-between text-[10px] text-slate-600 mt-0.5">
+            <span>0h</span>
+            <span>12h</span>
           </div>
         </div>
 

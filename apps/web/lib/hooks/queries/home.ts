@@ -16,11 +16,12 @@ export function useHomeData() {
   });
 }
 
-/** Quick check-in payload (3 taps) */
+/** Quick check-in payload */
 export interface QuickCheckinPayload {
   date: string; // ISO date
   motivation_1_5?: number;
-  sleep_h?: number;
+  sleep_quality_1_5?: number;  // 1=poor, 5=great
+  sleep_h?: number;            // actual hours (explicit input)
   soreness_1_5?: number;
 }
 

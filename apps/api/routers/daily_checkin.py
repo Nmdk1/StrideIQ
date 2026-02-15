@@ -23,6 +23,7 @@ router = APIRouter(prefix="/v1/daily-checkin", tags=["Daily Check-in"])
 class DailyCheckinCreate(BaseModel):
     date: date
     sleep_h: Optional[float] = None
+    sleep_quality_1_5: Optional[int] = None  # 1=poor, 5=great (separate from duration)
     stress_1_5: Optional[int] = None
     soreness_1_5: Optional[int] = None
     rpe_1_10: Optional[int] = None
@@ -42,6 +43,7 @@ class DailyCheckinResponse(BaseModel):
     athlete_id: UUID
     date: date
     sleep_h: Optional[float] = None
+    sleep_quality_1_5: Optional[int] = None
     stress_1_5: Optional[int] = None
     soreness_1_5: Optional[int] = None
     rpe_1_10: Optional[int] = None
