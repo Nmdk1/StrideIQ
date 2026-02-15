@@ -54,14 +54,17 @@ export function MiniPaceChart({
     const paceMax = 900;
     const clamped = paceStream.map(p => Math.max(paceMin, Math.min(paceMax, p)));
 
-    const actualMin = Math.min(...clamped);
-    const actualMax = Math.max(...clamped);
+    // Smooth the pace data so the run's shape reads clearly (not per-second noise)
+    const smoothed = _smooth(clamped, Math.max(3, Math.round(n / 40)));
+
+    const actualMin = Math.min(...smoothed);
+    const actualMax = Math.max(...smoothed);
     const range = actualMax - actualMin || 1;
     const padMin = Math.max(paceMin, actualMin - range * 0.1);
     const padMax = Math.min(paceMax, actualMax + range * 0.1);
 
-    // 0 = slow/bottom, 1 = fast/top
-    const paceNorm = clamped.map(p => 1 - (p - padMin) / (padMax - padMin || 1));
+    // 0 = slow/bottom, 1 = fast/top (using smoothed data for shape)
+    const paceNorm = smoothed.map(p => 1 - (p - padMin) / (padMax - padMin || 1));
 
     let elevNorm: number[] | null = null;
     if (elevationStream && elevationStream.length > 0) {
@@ -139,22 +142,23 @@ export function MiniPaceChart({
       ` L 100 ${height} Z`;
   }
 
-  // Gradient stops — brighter for hero
+  // Gradient stops — colored by PACE (slow=blue, fast=red), not HR effort
+  // paceNorm is 0 (slowest) to 1 (fastest) within this run's range
   const maxStops = 40;
   const stopStep = Math.max(1, Math.floor(n / maxStops));
   const lineStops: Array<{ offset: string; color: string }> = [];
   const areaStops: Array<{ offset: string; color: string }> = [];
   for (let i = 0; i < n; i += stopStep) {
-    const effort = effortIntensity[Math.min(i, effortIntensity.length - 1)] ?? 0.5;
+    const paceIntensity = paceNorm[i] ?? 0.5; // 0=slow/blue, 1=fast/red
     const off = `${((i / (n - 1)) * 100).toFixed(1)}%`;
-    lineStops.push({ offset: off, color: effortToHeroColor(effort) });
-    areaStops.push({ offset: off, color: effortToHeroColor(effort, 0.25) });
+    lineStops.push({ offset: off, color: effortToHeroColor(paceIntensity) });
+    areaStops.push({ offset: off, color: effortToHeroColor(paceIntensity, 0.25) });
   }
   // Ensure last stop
-  const lastE = effortIntensity[effortIntensity.length - 1] ?? 0.5;
+  const lastP = paceNorm[paceNorm.length - 1] ?? 0.5;
   if (!lineStops.length || lineStops[lineStops.length - 1].offset !== '100.0%') {
-    lineStops.push({ offset: '100.0%', color: effortToHeroColor(lastE) });
-    areaStops.push({ offset: '100.0%', color: effortToHeroColor(lastE, 0.25) });
+    lineStops.push({ offset: '100.0%', color: effortToHeroColor(lastP) });
+    areaStops.push({ offset: '100.0%', color: effortToHeroColor(lastP, 0.25) });
   }
 
   // Hover data
@@ -275,6 +279,18 @@ export function MiniPaceChart({
       )}
     </div>
   );
+}
+
+/** Simple moving average to smooth per-second noise into readable shape. */
+function _smooth(arr: number[], window: number): number[] {
+  const half = Math.floor(window / 2);
+  return arr.map((_, i) => {
+    const lo = Math.max(0, i - half);
+    const hi = Math.min(arr.length - 1, i + half);
+    let sum = 0;
+    for (let j = lo; j <= hi; j++) sum += arr[j];
+    return sum / (hi - lo + 1);
+  });
 }
 
 function _resample(arr: number[], targetLen: number): number[] {
