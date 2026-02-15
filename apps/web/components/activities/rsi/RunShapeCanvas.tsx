@@ -60,7 +60,7 @@ import { lttbDownsample } from '@/components/activities/rsi/utils/lttb';
 import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 import { useUnits } from '@/lib/context/UnitsContext';
 import type { Split } from '@/lib/types/splits';
-import { SplitsTable } from '@/components/activities/SplitsTable';
+import { SplitsTable, normalizeCadenceToSpm } from '@/components/activities/SplitsTable';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -558,14 +558,18 @@ function HighlightOverlay({
 
 function LabModePanel({
   analysis,
+  onRowHover,
+  rowRefs,
 }: {
   analysis: StreamAnalysisData;
+  onRowHover?: (index: number | null) => void;
+  rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
 }) {
   const { formatPace, paceUnit } = useUnits();
   const showZones = hasPhysiologicalData(analysis.tier_used);
 
   return (
-    <div data-testid="lab-mode" className="mt-3 space-y-3">
+    <div data-testid="lab-mode" className="mt-3 space-y-3 max-h-[300px] md:max-h-[400px] overflow-y-auto">
       {/* Zone overlay (AC-9): only when physiological data exists */}
       {showZones && (
         <div
@@ -594,24 +598,33 @@ function LabModePanel({
               </tr>
             </thead>
             <tbody>
-              {analysis.segments.map((seg, i) => (
-                <tr key={i} className="border-b border-slate-800">
-                  <td className="px-2 py-1 capitalize">{seg.type}</td>
-                  <td className="px-2 py-1">
-                    {formatDuration(seg.duration_s)}
-                  </td>
-                  <td className="px-2 py-1">{formatPace(seg.avg_pace_s_km)}</td>
-                  <td className="px-2 py-1">
-                    {seg.avg_hr != null ? `${Math.round(seg.avg_hr)} bpm` : '--'}
-                  </td>
-                  <td className="px-2 py-1">
-                    {seg.avg_cadence != null ? `${Math.round(seg.avg_cadence)} spm` : '--'}
-                  </td>
-                  <td className="px-2 py-1">
-                    {seg.avg_grade != null ? `${seg.avg_grade.toFixed(1)}%` : '--'}
-                  </td>
-                </tr>
-              ))}
+              {analysis.segments.map((seg, i) => {
+                const cadenceSpm = normalizeCadenceToSpm(seg.avg_cadence);
+                return (
+                  <tr
+                    key={i}
+                    className="border-b border-slate-800 transition-colors duration-75"
+                    ref={(el) => { if (el && rowRefs) rowRefs.current.set(i, el); }}
+                    onMouseEnter={() => onRowHover?.(i)}
+                    onMouseLeave={() => onRowHover?.(null)}
+                  >
+                    <td className="px-2 py-1 capitalize">{seg.type}</td>
+                    <td className="px-2 py-1">
+                      {formatDuration(seg.duration_s)}
+                    </td>
+                    <td className="px-2 py-1">{formatPace(seg.avg_pace_s_km)}</td>
+                    <td className="px-2 py-1">
+                      {seg.avg_hr != null ? `${Math.round(seg.avg_hr)} bpm` : '--'}
+                    </td>
+                    <td className="px-2 py-1">
+                      {cadenceSpm != null ? `${Math.round(cadenceSpm)} spm` : '--'}
+                    </td>
+                    <td className="px-2 py-1">
+                      {seg.avg_grade != null ? `${seg.avg_grade.toFixed(1)}%` : '--'}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -667,6 +680,9 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
   // Two-way hover: Chart → Row (ref-driven, 60fps, no re-renders)
   const splitRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
   const prevHighlightedSplitRef = useRef<number | null>(null);
+  // Lab segment refs (same pattern)
+  const segmentRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+  const prevHighlightedSegmentRef = useRef<number | null>(null);
 
   // Container sizing
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -820,10 +836,10 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
 
   const handleHover = useCallback((index: number) => {
     setHoveredIndex(index);
+    const time = chartData[index]?.time ?? 0;
 
     // Chart → Splits row: find which split contains this time point
     if (viewMode === 'splits' && chartData.length > 0 && splitBoundaries.length > 0) {
-      const time = chartData[index]?.time ?? 0;
       let splitIdx: number | null = null;
       for (let i = 0; i < splitBoundaries.length; i++) {
         if (time >= splitBoundaries[i].startTime && time < splitBoundaries[i].endTime) {
@@ -831,27 +847,46 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
           break;
         }
       }
-      // Update row highlight via ref (not state)
       const prev = prevHighlightedSplitRef.current;
       if (prev !== splitIdx) {
-        if (prev != null) {
-          splitRowRefs.current.get(prev)?.classList.remove(ROW_HIGHLIGHT_CLASS);
-        }
-        if (splitIdx != null) {
-          splitRowRefs.current.get(splitIdx)?.classList.add(ROW_HIGHLIGHT_CLASS);
-        }
+        if (prev != null) splitRowRefs.current.get(prev)?.classList.remove(ROW_HIGHLIGHT_CLASS);
+        if (splitIdx != null) splitRowRefs.current.get(splitIdx)?.classList.add(ROW_HIGHLIGHT_CLASS);
         prevHighlightedSplitRef.current = splitIdx;
       }
     }
-  }, [viewMode, chartData, splitBoundaries]);
+
+    // Chart → Lab segment row: find which segment contains this time point
+    if (viewMode === 'lab' && analysis && analysis.segments.length > 0) {
+      let segIdx: number | null = null;
+      for (let i = 0; i < analysis.segments.length; i++) {
+        const seg = analysis.segments[i];
+        if (time >= seg.start_time_s && time < seg.end_time_s) {
+          segIdx = i;
+          break;
+        }
+      }
+      const prev = prevHighlightedSegmentRef.current;
+      if (prev !== segIdx) {
+        if (prev != null) segmentRowRefs.current.get(prev)?.classList.remove(ROW_HIGHLIGHT_CLASS);
+        if (segIdx != null) segmentRowRefs.current.get(segIdx)?.classList.add(ROW_HIGHLIGHT_CLASS);
+        prevHighlightedSegmentRef.current = segIdx;
+      }
+    }
+  }, [viewMode, chartData, splitBoundaries, analysis]);
 
   const handleLeave = useCallback(() => {
     setHoveredIndex(null);
     // Clear split row highlight
-    const prev = prevHighlightedSplitRef.current;
-    if (prev != null) {
-      splitRowRefs.current.get(prev)?.classList.remove(ROW_HIGHLIGHT_CLASS);
+    const prevSplit = prevHighlightedSplitRef.current;
+    if (prevSplit != null) {
+      splitRowRefs.current.get(prevSplit)?.classList.remove(ROW_HIGHLIGHT_CLASS);
       prevHighlightedSplitRef.current = null;
+    }
+    // Clear segment row highlight
+    const prevSeg = prevHighlightedSegmentRef.current;
+    if (prevSeg != null) {
+      segmentRowRefs.current.get(prevSeg)?.classList.remove(ROW_HIGHLIGHT_CLASS);
+      prevHighlightedSegmentRef.current = null;
     }
   }, []);
 
@@ -863,6 +898,16 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
     }
     setHighlightRange(splitBoundaries[index]);
   }, [splitBoundaries]);
+
+  // Row → Chart: when hovering a segment row, highlight the corresponding time range
+  const handleSegmentRowHover = useCallback((index: number | null) => {
+    if (index == null || !analysis || index < 0 || index >= analysis.segments.length) {
+      setHighlightRange(null);
+      return;
+    }
+    const seg = analysis.segments[index];
+    setHighlightRange({ startTime: seg.start_time_s, endTime: seg.end_time_s });
+  }, [analysis]);
 
   // --- ADR-063 lifecycle state handling (AC-10) ---
   // The hook may return a lifecycle response ({ status: 'pending' | 'unavailable' })
@@ -1174,7 +1219,11 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
 
       {/* Lab mode panel (AC-9: shown only when Lab is active) */}
       {viewMode === 'lab' && (
-        <LabModePanel analysis={analysis} />
+        <LabModePanel
+          analysis={analysis}
+          onRowHover={handleSegmentRowHover}
+          rowRefs={segmentRowRefs}
+        />
       )}
 
       {/* Plan comparison card (AC-7: conditional on plan_comparison presence) */}

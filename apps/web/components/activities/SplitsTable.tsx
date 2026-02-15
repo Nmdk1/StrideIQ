@@ -6,7 +6,7 @@ import type { Split } from '@/lib/types/splits';
 
 const MILES_TO_KM = 1.60934;
 
-function normalizeCadenceToSpm(raw: number | null | undefined): number | null {
+export function normalizeCadenceToSpm(raw: number | null | undefined): number | null {
   if (raw === null || raw === undefined) return null;
   const v = Number(raw);
   if (!isFinite(v) || v <= 0) return null;
