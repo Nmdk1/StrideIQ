@@ -494,8 +494,12 @@ function PlanComparisonCard({
 
 function SplitsModePanel({
   splits,
+  onRowHover,
+  rowRefs,
 }: {
   splits: Split[];
+  onRowHover?: (index: number | null) => void;
+  rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
 }) {
   if (!splits || splits.length === 0) {
     return (
@@ -510,8 +514,40 @@ function SplitsModePanel({
       className="mt-3 max-h-[300px] md:max-h-[400px] overflow-y-auto"
       data-testid="splits-panel"
     >
-      <SplitsTable splits={splits} />
+      <SplitsTable splits={splits} onRowHover={onRowHover} rowRefs={rowRefs} />
     </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// HighlightOverlay — transient hover highlight on the chart (distinct from segment bands)
+// ---------------------------------------------------------------------------
+
+function HighlightOverlay({
+  startPct,
+  endPct,
+}: {
+  startPct: number;
+  endPct: number;
+}) {
+  return (
+    <div
+      data-testid="highlight-overlay"
+      style={{
+        position: 'absolute',
+        top: 0,
+        height: '100%',
+        left: `${startPct}%`,
+        width: `${endPct - startPct}%`,
+        // Distinct from segment bands: border lines + very faint fill
+        borderLeft: '1px solid rgba(255,255,255,0.4)',
+        borderRight: '1px solid rgba(255,255,255,0.4)',
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        pointerEvents: 'none',
+        zIndex: 2,
+      }}
+    />
   );
 }
 
@@ -626,6 +662,12 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
   // Crosshair state (AC-3): shared across Story/Lab views
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
+  // Two-way hover: Row → Chart (state-driven, infrequent)
+  const [highlightRange, setHighlightRange] = useState<{ startTime: number; endTime: number } | null>(null);
+  // Two-way hover: Chart → Row (ref-driven, 60fps, no re-renders)
+  const splitRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+  const prevHighlightedSplitRef = useRef<number | null>(null);
+
   // Container sizing
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(800);
@@ -662,6 +704,19 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
       }
     }
   }, [analysis]);
+
+  // Split time boundaries — cumulative start/end times for each split
+  const splitBoundaries = useMemo(() => {
+    if (!splits || splits.length === 0) return [];
+    const boundaries: Array<{ startTime: number; endTime: number }> = [];
+    let cumTime = 0;
+    for (const s of splits) {
+      const dur = s.moving_time ?? s.elapsed_time ?? 0;
+      boundaries.push({ startTime: cumTime, endTime: cumTime + dur });
+      cumTime += dur;
+    }
+    return boundaries;
+  }, [splits]);
 
   const chartData = useMemo<ChartPoint[]>(() => {
     if (!rawStream || rawStream.length === 0) {
@@ -760,13 +815,54 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
   }, [hasEffortGradient, chartData, boostColor]);
 
   // --- Crosshair handlers ---
+  // Chart → Row highlighting via ref (no state re-render at 60fps)
+  const ROW_HIGHLIGHT_CLASS = 'bg-slate-700/50';
+
   const handleHover = useCallback((index: number) => {
     setHoveredIndex(index);
-  }, []);
+
+    // Chart → Splits row: find which split contains this time point
+    if (viewMode === 'splits' && chartData.length > 0 && splitBoundaries.length > 0) {
+      const time = chartData[index]?.time ?? 0;
+      let splitIdx: number | null = null;
+      for (let i = 0; i < splitBoundaries.length; i++) {
+        if (time >= splitBoundaries[i].startTime && time < splitBoundaries[i].endTime) {
+          splitIdx = i;
+          break;
+        }
+      }
+      // Update row highlight via ref (not state)
+      const prev = prevHighlightedSplitRef.current;
+      if (prev !== splitIdx) {
+        if (prev != null) {
+          splitRowRefs.current.get(prev)?.classList.remove(ROW_HIGHLIGHT_CLASS);
+        }
+        if (splitIdx != null) {
+          splitRowRefs.current.get(splitIdx)?.classList.add(ROW_HIGHLIGHT_CLASS);
+        }
+        prevHighlightedSplitRef.current = splitIdx;
+      }
+    }
+  }, [viewMode, chartData, splitBoundaries]);
 
   const handleLeave = useCallback(() => {
     setHoveredIndex(null);
+    // Clear split row highlight
+    const prev = prevHighlightedSplitRef.current;
+    if (prev != null) {
+      splitRowRefs.current.get(prev)?.classList.remove(ROW_HIGHLIGHT_CLASS);
+      prevHighlightedSplitRef.current = null;
+    }
   }, []);
+
+  // Row → Chart: when hovering a split row, highlight the corresponding time range
+  const handleSplitRowHover = useCallback((index: number | null) => {
+    if (index == null || index < 0 || index >= splitBoundaries.length) {
+      setHighlightRange(null);
+      return;
+    }
+    setHighlightRange(splitBoundaries[index]);
+  }, [splitBoundaries]);
 
   // --- ADR-063 lifecycle state handling (AC-10) ---
   // The hook may return a lifecycle response ({ status: 'pending' | 'unavailable' })
@@ -916,6 +1012,14 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
         {/* Layer 1: Segment overlay bands (AC-6, behind traces) */}
         <SegmentBands segments={analysis.segments} maxTime={maxTime} />
 
+        {/* Layer 1b: Transient hover highlight (splits/lab row hover → chart) */}
+        {highlightRange && maxTime > 0 && (
+          <HighlightOverlay
+            startPct={(highlightRange.startTime / maxTime) * 100}
+            endPct={(highlightRange.endTime / maxTime) * 100}
+          />
+        )}
+
         {/* Layer 2: Recharts SVG (terrain + traces) */}
         <div
           data-testid="recharts-layer"
@@ -1061,7 +1165,11 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
 
       {/* Splits panel: shown only when Splits tab is active */}
       {viewMode === 'splits' && splits && (
-        <SplitsModePanel splits={splits} />
+        <SplitsModePanel
+          splits={splits}
+          onRowHover={handleSplitRowHover}
+          rowRefs={splitRowRefs}
+        />
       )}
 
       {/* Lab mode panel (AC-9: shown only when Lab is active) */}
