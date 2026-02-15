@@ -688,6 +688,40 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
 
   const isTier4 = analysis.cross_run_comparable === false;
 
+  // Detect whether effort data has meaningful (non-zero) values for gradient
+  const hasEffortGradient = useMemo(() => {
+    return chartData.some((p) => p.effort > 0);
+  }, [chartData]);
+
+  // Pace line stroke: effort gradient or slate-400 fallback
+  const PACE_FALLBACK_COLOR = '#94a3b8'; // slate-400
+  const paceStroke = hasEffortGradient ? 'url(#paceEffortGradient)' : PACE_FALLBACK_COLOR;
+
+  // Sample effort values for SVG linearGradient stops (~30 stops max for perf)
+  const effortGradientStops = useMemo(() => {
+    if (!hasEffortGradient || chartData.length === 0) return [];
+    const maxStops = 30;
+    const step = Math.max(1, Math.floor(chartData.length / maxStops));
+    const stops: Array<{ offset: string; color: string }> = [];
+    for (let i = 0; i < chartData.length; i += step) {
+      const offset = (i / (chartData.length - 1)) * 100;
+      stops.push({
+        offset: `${offset.toFixed(1)}%`,
+        color: effortToColor(chartData[i].effort),
+      });
+    }
+    // Ensure last point is included
+    const lastIdx = chartData.length - 1;
+    const lastOffset = '100%';
+    if (stops.length === 0 || stops[stops.length - 1].offset !== lastOffset) {
+      stops.push({
+        offset: lastOffset,
+        color: effortToColor(chartData[lastIdx].effort),
+      });
+    }
+    return stops;
+  }, [hasEffortGradient, chartData]);
+
   // Recharts margin (must match overlay positioning)
   const margin = { top: 5, right: 5, bottom: 5, left: 5 };
 
@@ -780,6 +814,21 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
             data={chartData}
             margin={margin}
           >
+            {/* Effort-colored pace gradient definition */}
+            {hasEffortGradient && effortGradientStops.length > 0 && (
+              <defs>
+                <linearGradient id="paceEffortGradient" x1="0" y1="0" x2="1" y2="0">
+                  {effortGradientStops.map((stop, i) => (
+                    <stop
+                      key={i}
+                      offset={stop.offset}
+                      stopColor={stop.color}
+                    />
+                  ))}
+                </linearGradient>
+              </defs>
+            )}
+
             <XAxis
               dataKey="time"
               tick={{ fontSize: 10 }}
@@ -814,7 +863,7 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
               yAxisId="pace"
               type="monotone"
               dataKey="pace"
-              stroke="#60a5fa"
+              stroke={paceStroke}
               dot={false}
               strokeWidth={1.5}
               isAnimationActive={false}
@@ -852,7 +901,16 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
             Positioned after Recharts layer to preserve terrain-before-trace ordering. */}
         <div data-testid="terrain-fill" style={{ display: 'none' }} aria-hidden="true" />
         <div data-testid="trace-hr" style={{ display: 'none' }} aria-hidden="true" />
-        <div data-testid="trace-pace" style={{ display: 'none' }} aria-hidden="true" />
+        <div
+          data-testid="trace-pace"
+          data-stroke-type={hasEffortGradient ? 'effort-gradient' : 'fallback'}
+          data-fallback-color={PACE_FALLBACK_COLOR}
+          style={{ display: 'none' }}
+          aria-hidden="true"
+        />
+        {hasEffortGradient && (
+          <div data-testid="pace-effort-gradient-def" style={{ display: 'none' }} aria-hidden="true" />
+        )}
         {showCadence && (
           <div data-testid="trace-cadence" style={{ display: 'none' }} aria-hidden="true" />
         )}
