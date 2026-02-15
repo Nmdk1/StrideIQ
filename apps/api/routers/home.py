@@ -823,22 +823,49 @@ def generate_coach_home_briefing(
             required_fields.append("race_assessment")
 
         client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                max_output_tokens=2000,
-                temperature=0.3,
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "OBJECT",
-                    "properties": schema_properties,
-                    "required": required_fields,
-                },
-            ),
-        )
 
-        result = _json.loads(response.text)
+        def _call_gemini(attempt: int = 1) -> dict:
+            """Call Gemini with retry on malformed JSON."""
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    max_output_tokens=4000,
+                    temperature=0.3,
+                    response_mime_type="application/json",
+                    response_schema={
+                        "type": "OBJECT",
+                        "properties": schema_properties,
+                        "required": required_fields,
+                    },
+                ),
+            )
+            raw_text = resp.text
+            if not raw_text or not raw_text.strip():
+                logger.warning(f"Gemini returned empty response (attempt {attempt})")
+                raise ValueError("empty_response")
+            try:
+                return _json.loads(raw_text)
+            except _json.JSONDecodeError as je:
+                logger.warning(
+                    f"Gemini JSON parse failed (attempt {attempt}): {je}; "
+                    f"raw response (first 500 chars): {raw_text[:500]!r}"
+                )
+                raise
+
+        # Attempt up to 2 times
+        result = None
+        for attempt in (1, 2):
+            try:
+                result = _call_gemini(attempt=attempt)
+                break
+            except (ValueError, _json.JSONDecodeError):
+                if attempt == 2:
+                    logger.warning("Gemini failed after 2 attempts; returning None")
+                    return None
+                import time
+                time.sleep(1)
+
         if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
             logger.warning("Coach home briefing failed A->I->A contract validation; returning None for deterministic fallback.")
             return None
