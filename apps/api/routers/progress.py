@@ -613,7 +613,7 @@ def _generate_headline(
         "write ONE headline about their overall progress trajectory — are they "
         "getting better, plateauing, or declining? Be direct, concrete, and coach-like.\n\n"
         "COACHING TONE RULES (non-negotiable):\n"
-        "- Lead with what is going well before concerns.\n"
+        "- State facts first, then implication. Let the data speak — no cheerleading, no praise.\n"
         "- Never quote raw metrics or numeric score readouts to the athlete.\n"
         "- Frame any concern as a forward-looking action.\n"
         "- Never use legacy trademarked terminology; use RPI when needed.\n"
@@ -836,7 +836,7 @@ def _generate_progress_cards(
         "Return card language that is motivating, specific, and actionable.",
         "",
         "CRITICAL SAFETY / TONE RULES (non-negotiable):",
-        "- ALWAYS lead each card with what is going well before concerns.",
+        "- State facts first, then implication. Let the data speak — no cheerleading, no praise.",
         "- NEVER quote raw metrics or values (no CTL/ATL/TSB numbers, no percentages, no score readouts).",
         "- NEVER contradict how the athlete says they feel.",
         "- Frame concerns as forward-looking actions.",
