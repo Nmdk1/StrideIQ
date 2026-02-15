@@ -7,7 +7,7 @@
  * Spec: docs/specs/RSI_WIRING_SPEC.md (Layer 2)
  *
  * Layout (top to bottom):
- *   1. Header (back + name + date + Strava link)
+ *   1. Header (back + name + date)
  *   2. Run Shape Canvas (hero — full width)
  *   3. Coachable Moments (gated: confidence >= 0.8 AND moments.length > 0)
  *   4. Reflection Prompt (3-tap: harder | expected | easier)
@@ -234,19 +234,6 @@ export default function ActivityDetailPage() {
           <h1 className="text-3xl font-bold text-white mb-1">{activity.name}</h1>
           <p className="text-slate-400 text-sm">
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
-            {activity.strava_activity_id && (
-              <>
-                {' · '}
-                <a
-                  href={`https://www.strava.com/activities/${activity.strava_activity_id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-orange-400 hover:text-orange-300"
-                >
-                  Strava ↗
-                </a>
-              </>
-            )}
           </p>
         </div>
 
