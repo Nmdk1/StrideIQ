@@ -31,7 +31,6 @@ import { useStreamAnalysis, isAnalysisData } from '@/components/activities/rsi/h
 import { CoachableMoments } from '@/components/activities/rsi/CoachableMoments';
 import { ReflectionPrompt } from '@/components/activities/ReflectionPrompt';
 import RunContextAnalysis from '@/components/activities/RunContextAnalysis';
-import { SplitsTable } from '@/components/activities/SplitsTable';
 import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
 import { WhyThisRun } from '@/components/activities/WhyThisRun';
 
@@ -252,7 +251,7 @@ export default function ActivityDetailPage() {
 
         {/* ── 2. Run Shape Canvas (Hero) ── */}
         <div className="mb-6">
-          <RunShapeCanvas activityId={activityId} />
+          <RunShapeCanvas activityId={activityId} splits={splits ?? null} />
         </div>
 
         {/* ── 3. Coachable Moments (gated: confidence >= 0.8 AND moments.length > 0) ── */}
@@ -376,15 +375,7 @@ export default function ActivityDetailPage() {
           </Link>
         </div>
 
-        {/* ── 10. Splits (secondary position) ── */}
-        {splits && splits.length > 0 && (
-          <div className="bg-slate-800/50 rounded-lg p-6 mb-6 border border-slate-700/50">
-            <h2 className="text-lg font-bold text-white">Splits / Laps</h2>
-            <div className="mt-4">
-              <SplitsTable splits={splits} />
-            </div>
-          </div>
-        )}
+        {/* Splits moved to RunShapeCanvas Splits tab — no longer rendered standalone */}
 
         {/* ── Narrative Context (secondary — canvas is now the hero) ── */}
         {activity.narrative && (

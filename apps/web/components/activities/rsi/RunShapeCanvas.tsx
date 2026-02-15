@@ -83,7 +83,14 @@ interface ChartPoint {
   [key: string]: number | null;
 }
 
-type ViewMode = 'story' | 'lab';
+type ViewMode = 'story' | 'splits' | 'lab';
+
+/** Tab definitions — extensible array, not hardcoded buttons */
+const VIEW_TABS: Array<{ id: ViewMode; label: string }> = [
+  { id: 'story', label: 'Story' },
+  { id: 'splits', label: 'Splits' },
+  { id: 'lab', label: 'Lab' },
+];
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -845,24 +852,19 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
 
       {/* View mode + toggle controls */}
       <div className="flex items-center gap-2 mb-2" data-testid="canvas-controls">
-        <button
-          className={`text-xs px-2 py-1 rounded ${
-            viewMode === 'story' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'
-          }`}
-          onClick={() => setViewMode('story')}
-          aria-label="Story view"
-        >
-          Story
-        </button>
-        <button
-          className={`text-xs px-2 py-1 rounded ${
-            viewMode === 'lab' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'
-          }`}
-          onClick={() => setViewMode('lab')}
-          aria-label="Lab view"
-        >
-          Lab
-        </button>
+        {VIEW_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`text-xs px-2 py-1 rounded ${
+              viewMode === tab.id ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'
+            }`}
+            onClick={() => setViewMode(tab.id)}
+            aria-label={`${tab.label} view`}
+            data-testid={`tab-${tab.id}`}
+          >
+            {tab.label}
+          </button>
+        ))}
 
         {/* Story-layer toggles (AC-4) */}
         <div className="ml-auto flex gap-1">
