@@ -448,6 +448,7 @@ def _get_or_create_demo_athlete(
             role="athlete",
             display_name=display_name,
             subscription_tier=subscription_tier,
+            is_demo=True,
             preferred_units="imperial",
             onboarding_completed=True,
             max_hr=180,
@@ -462,6 +463,7 @@ def _get_or_create_demo_athlete(
         athlete.password_hash = get_password_hash(password)
         athlete.display_name = display_name
         athlete.subscription_tier = subscription_tier
+        athlete.is_demo = True
         athlete.onboarding_completed = True
         if athlete.max_hr is None:
             athlete.max_hr = 180

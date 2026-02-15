@@ -22,6 +22,11 @@ class Athlete(Base):
     sex = Column(Text, nullable=True)
     subscription_tier = Column(Text, default="free", nullable=False)
 
+    # --- DEMO ACCOUNTS ---
+    # Demo accounts are shared credentials for prospects.  They must NOT link
+    # real Strava/Garmin accounts or store real athlete data.
+    is_demo = Column(Boolean, default=False, nullable=False)
+
     # --- PAYMENTS / ENTITLEMENTS (Phase 6-ready) ---
     # Pre-Phase-6: may be null for all users.
     stripe_customer_id = Column(Text, nullable=True)

@@ -250,6 +250,13 @@ def get_strava_auth_url(
     Returns URL that user should be redirected to.
     """
     try:
+        # Demo accounts must not link real provider accounts.
+        if getattr(current_user, "is_demo", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Demo accounts cannot connect to Strava. Create a free account to link your data.",
+            )
+
         # Prevent open redirect.
         if not return_to.startswith("/") or return_to.startswith("//"):
             raise HTTPException(status_code=400, detail="Invalid return_to")
@@ -312,6 +319,13 @@ def strava_callback(
         athlete = db.query(Athlete).filter(Athlete.id == payload["athlete_id"]).first()
         if not athlete:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid OAuth state")
+
+        # Double-guard: reject callback for demo accounts even if auth-url was bypassed.
+        if getattr(athlete, "is_demo", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Demo accounts cannot connect to Strava.",
+            )
 
         try:
             token_data = exchange_code_for_token(code)
