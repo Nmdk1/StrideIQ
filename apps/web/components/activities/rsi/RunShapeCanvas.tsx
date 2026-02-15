@@ -565,7 +565,7 @@ function LabModePanel({
   onRowHover?: (index: number | null) => void;
   rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
 }) {
-  const { formatPace, paceUnit } = useUnits();
+  const { formatPace, distanceUnitShort } = useUnits();
   const showZones = hasPhysiologicalData(analysis.tier_used);
 
   return (
@@ -647,7 +647,7 @@ function LabModePanel({
         {analysis.drift.cadence_trend_bpm_per_km != null && (
           <div className="flex justify-between text-xs text-slate-300 bg-slate-800/30 rounded px-2 py-1">
             <span>Cadence Trend</span>
-            <span>{analysis.drift.cadence_trend_bpm_per_km.toFixed(1)} spm/{paceUnit === 'min/mi' ? 'mi' : 'km'}</span>
+            <span>{analysis.drift.cadence_trend_bpm_per_km.toFixed(1)} spm/{distanceUnitShort}</span>
           </div>
         )}
       </div>
