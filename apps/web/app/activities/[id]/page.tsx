@@ -117,6 +117,7 @@ export default function ActivityDetailPage() {
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
   const [showSecondaryMetrics, setShowSecondaryMetrics] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   // Redirect if not authenticated (after auth loading is done)
   React.useEffect(() => {
@@ -310,80 +311,97 @@ export default function ActivityDetailPage() {
           )}
         </div>
 
-        {/* ── 6. Plan Comparison (conditional — from stream analysis) ── */}
-        {/* Field names match backend PlanComparison dataclass exactly:
-            planned_duration_min, actual_duration_min, planned_distance_km,
-            actual_distance_km, planned_pace_s_km, actual_pace_s_km,
-            planned_interval_count, detected_work_count */}
-        {analysisData?.plan_comparison && (
-          <div className="mb-6 rounded-lg bg-slate-800/30 border border-slate-700/30 p-4">
-            <h3 className="text-sm font-medium text-slate-400 mb-3">Plan vs Actual</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              {analysisData.plan_comparison.planned_duration_min != null && analysisData.plan_comparison.actual_duration_min != null && (
-                <PlanComparisonCell
-                  label="Duration"
-                  planned={formatMinutesToDuration(analysisData.plan_comparison.planned_duration_min)}
-                  actual={formatMinutesToDuration(analysisData.plan_comparison.actual_duration_min)}
-                />
-              )}
-              {analysisData.plan_comparison.planned_distance_km != null && analysisData.plan_comparison.actual_distance_km != null && (
-                <PlanComparisonCell
-                  label="Distance"
-                  planned={formatDistance(analysisData.plan_comparison.planned_distance_km * 1000)}
-                  actual={formatDistance(analysisData.plan_comparison.actual_distance_km * 1000)}
-                />
-              )}
-              {analysisData.plan_comparison.planned_pace_s_km != null && analysisData.plan_comparison.actual_pace_s_km != null && (
-                <PlanComparisonCell
-                  label="Pace"
-                  planned={formatPace(analysisData.plan_comparison.planned_pace_s_km)}
-                  actual={formatPace(analysisData.plan_comparison.actual_pace_s_km)}
-                />
-              )}
-              {analysisData.plan_comparison.planned_interval_count != null && analysisData.plan_comparison.detected_work_count != null && (
-                <PlanComparisonCell
-                  label="Intervals"
-                  planned={String(analysisData.plan_comparison.planned_interval_count)}
-                  actual={String(analysisData.plan_comparison.detected_work_count)}
-                />
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── 7. Workout Type Classification ── */}
+        {/* ── A6: Collapsible details (Plan Comparison through Narrative Context) ── */}
         <div className="mb-6">
-          <WorkoutTypeSelector activityId={activityId} />
-        </div>
-
-        {/* ── 8. "Why This Run?" + Context Analysis ── */}
-        <div className="mb-6">
-          <WhyThisRun activityId={activityId} className="mb-4" />
-          <RunContextAnalysis activityId={activityId} />
-        </div>
-
-        {/* ── 9. "Compare to Similar" ── */}
-        <div className="mb-6">
-          <Link
-            href={`/compare/context/${activityId}`}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-semibold rounded-lg shadow-lg shadow-orange-500/25 transition-all hover:shadow-orange-500/40 hover:scale-[1.02]"
+          <button
+            onClick={() => setShowDetails((v) => !v)}
+            className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+            data-testid="show-details-toggle"
           >
-            Compare to Similar Runs
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg
+              className={`w-3.5 h-3.5 transition-transform ${showDetails ? 'rotate-90' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
-          </Link>
+            {showDetails ? 'Hide details' : 'Show details'}
+          </button>
         </div>
 
-        {/* Splits moved to RunShapeCanvas Splits tab — no longer rendered standalone */}
+        {showDetails && (
+          <>
+            {/* ── 6. Plan Comparison (conditional — from stream analysis) ── */}
+            {analysisData?.plan_comparison && (
+              <div className="mb-6 rounded-lg bg-slate-800/30 border border-slate-700/30 p-4">
+                <h3 className="text-sm font-medium text-slate-400 mb-3">Plan vs Actual</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  {analysisData.plan_comparison.planned_duration_min != null && analysisData.plan_comparison.actual_duration_min != null && (
+                    <PlanComparisonCell
+                      label="Duration"
+                      planned={formatMinutesToDuration(analysisData.plan_comparison.planned_duration_min)}
+                      actual={formatMinutesToDuration(analysisData.plan_comparison.actual_duration_min)}
+                    />
+                  )}
+                  {analysisData.plan_comparison.planned_distance_km != null && analysisData.plan_comparison.actual_distance_km != null && (
+                    <PlanComparisonCell
+                      label="Distance"
+                      planned={formatDistance(analysisData.plan_comparison.planned_distance_km * 1000)}
+                      actual={formatDistance(analysisData.plan_comparison.actual_distance_km * 1000)}
+                    />
+                  )}
+                  {analysisData.plan_comparison.planned_pace_s_km != null && analysisData.plan_comparison.actual_pace_s_km != null && (
+                    <PlanComparisonCell
+                      label="Pace"
+                      planned={formatPace(analysisData.plan_comparison.planned_pace_s_km)}
+                      actual={formatPace(analysisData.plan_comparison.actual_pace_s_km)}
+                    />
+                  )}
+                  {analysisData.plan_comparison.planned_interval_count != null && analysisData.plan_comparison.detected_work_count != null && (
+                    <PlanComparisonCell
+                      label="Intervals"
+                      planned={String(analysisData.plan_comparison.planned_interval_count)}
+                      actual={String(analysisData.plan_comparison.detected_work_count)}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
 
-        {/* ── Narrative Context (secondary — canvas is now the hero) ── */}
-        {activity.narrative && (
-          <div className="mb-6 px-4 py-3 bg-slate-800/30 border border-slate-700/30 rounded-lg">
-            <p className="text-sm text-slate-400 italic leading-relaxed">
-              &ldquo;{activity.narrative}&rdquo;
-            </p>
-          </div>
+            {/* ── 7. Workout Type Classification ── */}
+            <div className="mb-6">
+              <WorkoutTypeSelector activityId={activityId} />
+            </div>
+
+            {/* ── 8. "Why This Run?" + Context Analysis ── */}
+            <div className="mb-6">
+              <WhyThisRun activityId={activityId} className="mb-4" />
+              <RunContextAnalysis activityId={activityId} />
+            </div>
+
+            {/* ── 9. "Compare to Similar" ── */}
+            <div className="mb-6">
+              <Link
+                href={`/compare/context/${activityId}`}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-semibold rounded-lg shadow-lg shadow-orange-500/25 transition-all hover:shadow-orange-500/40 hover:scale-[1.02]"
+              >
+                Compare to Similar Runs
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+
+            {/* ── Narrative Context (secondary — canvas is now the hero) ── */}
+            {activity.narrative && (
+              <div className="mb-6 px-4 py-3 bg-slate-800/30 border border-slate-700/30 rounded-lg">
+                <p className="text-sm text-slate-400 italic leading-relaxed">
+                  &ldquo;{activity.narrative}&rdquo;
+                </p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
