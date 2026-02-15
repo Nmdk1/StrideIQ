@@ -138,6 +138,9 @@ export interface HomeData {
     today_context?: string;
     week_assessment?: string;
     race_assessment?: string;
+    // Voice fields — "Give the Data a Voice"
+    morning_voice?: string;
+    workout_why?: string;
   } | null;
   // RSI Layer 1
   last_run?: LastRun | null;

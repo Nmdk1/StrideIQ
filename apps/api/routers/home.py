@@ -506,6 +506,92 @@ _INTERPRETIVE_WORDS = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Post-generation voice validator — fail-closed, no bypass
+# ---------------------------------------------------------------------------
+
+_VOICE_BAN_LIST = (
+    "incredible", "amazing", "phenomenal", "extraordinary", "fantastic",
+    "wonderful", "awesome", "brilliant", "magnificent", "outstanding",
+    "superb", "stellar", "remarkable", "spectacular",
+)
+
+_VOICE_CAUSAL_PHRASES = (
+    "because you", "caused by", "due to your", "as a result of your",
+    "that's why", "which caused", "which led to",
+)
+
+_VOICE_FALLBACK = (
+    "Your training data is ready. Check your workout below for today's plan."
+)
+
+
+def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
+    """
+    Post-generation validator for LLM-produced morning_voice / workout_why.
+
+    Fail-closed: if ANY check fails, returns valid=False with a deterministic
+    fallback. There is no bypass flag, no warn-only mode.
+
+    Checks:
+      1. Ban-list — sycophantic/hyperbolic language
+      2. Causal language — no pseudo-causal claims
+      3. Numeric grounding — at least one number present
+      4. Length — between 40 and 280 characters
+
+    Returns:
+        {"valid": True} or {"valid": False, "reason": str, "fallback": str}
+    """
+    if not text or not isinstance(text, str):
+        return {"valid": False, "reason": "empty", "fallback": _VOICE_FALLBACK}
+
+    lower = text.lower()
+
+    # 1. Ban-list check
+    for word in _VOICE_BAN_LIST:
+        if word in lower:
+            return {
+                "valid": False,
+                "reason": f"ban_list:{word}",
+                "fallback": _VOICE_FALLBACK,
+            }
+
+    # 2. Causal language check
+    for phrase in _VOICE_CAUSAL_PHRASES:
+        if phrase in lower:
+            return {
+                "valid": False,
+                "reason": f"causal:{phrase}",
+                "fallback": _VOICE_FALLBACK,
+            }
+
+    # 3. Numeric grounding — at least one digit (morning_voice only)
+    # workout_why may be conceptual ("Active recovery keeps blood flowing")
+    import re
+    if field == "morning_voice" and not re.search(r'\d', text):
+        return {
+            "valid": False,
+            "reason": "numeric:no_numbers_found",
+            "fallback": _VOICE_FALLBACK,
+        }
+
+    # 4. Length check
+    if len(text) < 40:
+        return {
+            "valid": False,
+            "reason": f"length:too_short({len(text)})",
+            "fallback": _VOICE_FALLBACK,
+        }
+    if len(text) > 280:
+        return {
+            "valid": False,
+            "reason": f"length:too_long({len(text)})",
+            "fallback": _VOICE_FALLBACK,
+        }
+
+    return {"valid": True}
+
+
 def _has_interpretive_language(text: Optional[str]) -> bool:
     if not text:
         return False
@@ -608,6 +694,30 @@ def generate_coach_home_briefing(
         logger.warning(f"Failed to build athlete brief for home briefing: {e}")
         athlete_brief = "(Brief unavailable)"
 
+    # Query InsightLog for recent non-LOG insights (top 3, last 7 days)
+    insight_context = ""
+    try:
+        from models import InsightLog
+        recent_insights = (
+            db.query(InsightLog)
+            .filter(
+                InsightLog.athlete_id == athlete_id,
+                InsightLog.mode != "log",
+                InsightLog.trigger_date >= date.today() - timedelta(days=7),
+            )
+            .order_by(desc(InsightLog.trigger_date))
+            .limit(3)
+            .all()
+        )
+        if recent_insights:
+            insight_lines = []
+            for ins in recent_insights:
+                msg = ins.message or ins.rule_id
+                insight_lines.append(f"- [{ins.mode.upper()}] {msg}")
+            insight_context = "\n".join(insight_lines)
+    except Exception as e:
+        logger.debug(f"InsightLog query failed (non-blocking): {e}")
+
     # Build the prompt
     parts = [
         "You are an elite running coach speaking directly to your athlete about TODAY.",
@@ -619,17 +729,32 @@ def generate_coach_home_briefing(
         "Do NOT emit internal labels or schema-like wording.",
         "",
         "COACHING TONE RULES (non-negotiable):",
-        "- ALWAYS lead with what went well before raising concerns. Celebrate effort and progress first.",
+        "- State facts first, then implication. Let the data speak — no cheerleading, no praise.",
         "- Frame load/fatigue concerns as FORWARD-LOOKING actions ('easy day tomorrow to absorb this') NOT as warnings or diagnoses.",
         "- NEVER contradict how the athlete says they feel. If they feel fine but load is high, say 'Glad you feel good — let's keep it that way with an easy day tomorrow.' Do NOT say 'but actually you are fatigued.'",
         "- NEVER quote raw metrics like TSB numbers, form scores, or load ratios to the athlete. Translate into plain coaching language.",
-        "- You are a motivator and strategist, not a liability disclaimer. Athletes who feel good after a hard effort should leave feeling BETTER, not anxious.",
+        "- Be direct and honest, not sycophantic. The athlete trusts data, not flattery.",
+        "",
+        "TRUST-SAFETY CONSTRAINTS (enforced by post-generation validator):",
+        "- Do NOT use sycophantic words: incredible, amazing, phenomenal, extraordinary, fantastic, wonderful, awesome, brilliant, magnificent, outstanding, superb, stellar, remarkable, spectacular.",
+        "- Do NOT make causal claims: avoid 'because you', 'caused by', 'due to your'.",
+        "- morning_voice MUST contain at least one specific number from the data.",
+        "- morning_voice must be 40-280 characters.",
+        "- workout_why must be a single sentence explaining why today's workout matters.",
         "",
         "=== ATHLETE BRIEF ===",
         athlete_brief,
         "",
-        "=== TODAY ===",
     ]
+
+    if insight_context:
+        parts.extend([
+            "=== RECENT INTELLIGENCE INSIGHTS (last 7 days) ===",
+            insight_context,
+            "",
+        ])
+
+    parts.append("=== TODAY ===")
 
     if today_completed:
         c = today_completed
@@ -682,8 +807,16 @@ def generate_coach_home_briefing(
                 "type": "STRING",
                 "description": "Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.",
             },
+            "morning_voice": {
+                "type": "STRING",
+                "description": "The voice of the athlete's data. Single paragraph, 40-280 characters. Must cite at least one specific number from their training. Speak as the data, not as a coach. No sycophancy. Example: '48 miles across 6 runs this week. HR averaged 142 bpm — consistent with your build phase targets.'",
+            },
+            "workout_why": {
+                "type": "STRING",
+                "description": "One sentence explaining WHY today's workout matters in the context of their training. Must reference a specific number. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.",
+            },
         }
-        required_fields = ["coach_noticed", "today_context", "week_assessment"]
+        required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
         if checkin_data:
             required_fields.append("checkin_reaction")
         if race_data:
@@ -709,6 +842,24 @@ def generate_coach_home_briefing(
         if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
             logger.warning("Coach home briefing failed A->I->A contract validation; returning None for deterministic fallback.")
             return None
+
+        # --- Post-generation validator: morning_voice ---
+        raw_voice = result.get("morning_voice")
+        if raw_voice:
+            voice_check = validate_voice_output(raw_voice, field="morning_voice")
+            if not voice_check["valid"]:
+                logger.warning(f"morning_voice failed validation ({voice_check.get('reason')}); using fallback")
+                result["morning_voice"] = voice_check["fallback"]
+        else:
+            result["morning_voice"] = _VOICE_FALLBACK
+
+        # --- Post-generation validator: workout_why ---
+        raw_why = result.get("workout_why")
+        if raw_why:
+            why_check = validate_voice_output(raw_why, field="workout_why")
+            if not why_check["valid"]:
+                logger.warning(f"workout_why failed validation ({why_check.get('reason')}); using fallback")
+                result["workout_why"] = None  # workout_why is optional, drop if invalid
 
         # Cache for 30 minutes
         if r:

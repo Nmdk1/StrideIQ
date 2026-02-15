@@ -402,37 +402,23 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* ═══ RSI Layer 1: Last Run Hero ═══ */}
+          {/* ═══ ABOVE THE FOLD: Three things ═══ */}
+
+          {/* 1. Full-bleed hero (last run canvas) */}
           {last_run && <LastRunHero lastRun={last_run} />}
 
-          {/* ═══ TIER 1: Above the fold ═══ */}
-
-          {/* Coach Noticed */}
-          {coach_noticed && (
-            <CoachNoticedCard
-              text={coach_noticed.text}
-              coachText={coach_briefing?.coach_noticed}
-              askQuery={coach_noticed.ask_coach_query}
-            />
+          {/* 2. The Voice — morning_voice as plain text */}
+          {coach_briefing?.morning_voice && (
+            <div data-testid="morning-voice" className="px-1 py-2">
+              <p className="text-base text-slate-200 leading-relaxed">
+                {coach_briefing.morning_voice}
+              </p>
+            </div>
           )}
 
-          {/* Quick Check-in (only when needed) / Check-in Summary (after) */}
-          {checkin_needed && hasAnyData ? (
-            <QuickCheckin />
-          ) : today_checkin ? (
-            <CheckinSummary
-              motivation={today_checkin.motivation_label}
-              sleep={today_checkin.sleep_label}
-              soreness={today_checkin.soreness_label}
-              coachReaction={coach_briefing?.checkin_reaction}
-            />
-          ) : null}
-
-          {/* ═══ TIER 2: Below the fold ═══ */}
-
-          {/* Today */}
+          {/* 3. Today's workout with WHY */}
           {today.has_workout ? (
-            <Card className="bg-slate-800/50 border-slate-700/50">
+            <Card data-testid="today-workout" className="bg-slate-800/50 border-slate-700/50">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -462,7 +448,13 @@ export default function HomePage() {
                     </p>
                   </div>
                 </div>
-                {(coach_briefing?.today_context || today.why_context) && (
+                {/* Workout WHY — the explicit reason for this workout */}
+                {coach_briefing?.workout_why && (
+                  <p data-testid="workout-why" className="text-sm text-slate-300 leading-relaxed">
+                    {coach_briefing.workout_why}
+                  </p>
+                )}
+                {!coach_briefing?.workout_why && (coach_briefing?.today_context || today.why_context) && (
                   <div className="bg-slate-700/40 rounded-lg p-3 border border-slate-600/40">
                     <div className="flex gap-2">
                       <Sparkles className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
@@ -484,7 +476,7 @@ export default function HomePage() {
               </CardContent>
             </Card>
           ) : (
-            <Card className="bg-slate-800/50 border-slate-700/50">
+            <Card data-testid="today-workout" className="bg-slate-800/50 border-slate-700/50">
               <CardContent className="py-5 px-5">
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 rounded-xl bg-slate-700 ring-1 ring-slate-600">
@@ -510,6 +502,22 @@ export default function HomePage() {
               </CardContent>
             </Card>
           )}
+
+          {/* ═══ BELOW THE FOLD ═══ */}
+
+          {/* Check-in (moved below workout — intentional) */}
+          <div data-testid="checkin-section">
+            {checkin_needed && hasAnyData ? (
+              <QuickCheckin />
+            ) : today_checkin ? (
+              <CheckinSummary
+                motivation={today_checkin.motivation_label}
+                sleep={today_checkin.sleep_label}
+                soreness={today_checkin.soreness_label}
+                coachReaction={coach_briefing?.checkin_reaction}
+              />
+            ) : null}
+          </div>
 
           {/* This Week */}
           <Card className="bg-slate-800/50 border-slate-700/50">

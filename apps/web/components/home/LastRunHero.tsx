@@ -99,7 +99,7 @@ function MiniEffortCanvas({
     <canvas
       ref={canvasRef}
       data-testid="hero-effort-gradient"
-      className="w-full rounded-t-lg"
+      className="w-full"
       style={{ height, display: 'block' }}
     />
   );
@@ -130,16 +130,17 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
   const { formatDistance, formatPace } = useUnits();
   const hasCanvas = lastRun.stream_status === 'success' && lastRun.effort_intensity && lastRun.effort_intensity.length > 0;
 
-  // Canvas Hero — effort gradient + metrics ribbon
+  // Canvas Hero — full-bleed effort gradient + metrics ribbon
   if (hasCanvas) {
     return (
       <Link
         href={`/activities/${lastRun.activity_id}`}
         data-testid="last-run-hero"
-        className="block rounded-lg overflow-hidden bg-slate-800/50 border border-slate-700/50 hover:border-slate-600/70 transition-colors"
+        data-hero-mode="full-bleed"
+        className="block overflow-hidden -mx-4 hover:opacity-95 transition-opacity"
       >
-        {/* Effort gradient canvas */}
-        <MiniEffortCanvas effortIntensity={lastRun.effort_intensity!} height={80} />
+        {/* Full-bleed effort gradient canvas */}
+        <MiniEffortCanvas effortIntensity={lastRun.effort_intensity!} height={120} />
 
         {/* Metrics ribbon */}
         <div className="px-4 py-3 space-y-2">
