@@ -1,99 +1,131 @@
 'use client';
 
 /**
- * MiniPaceChart — Home hero mini pace chart with effort-colored gradient line
- * and elevation fill.
+ * MiniPaceChart — Home hero pace chart.
  *
- * Spec (BUILD_SPEC_HOME_AND_ACTIVITY.md, Change H1):
- *   - 100-120px tall, full-bleed (edge to edge within container)
- *   - Pace line colored by effort intensity via effortToColor()
- *   - Y-axis: pace inverted (faster at top, like the full canvas)
- *   - Elevation fill behind the line (subtle, low opacity)
- *   - No axis labels, no gridlines. Clean.
- *   - Pure SVG — no Recharts dependency for this compact component
+ * NOT clean and minimal. Visually impactful:
+ *   - Effort-gradient AREA fill (the main visual mass)
+ *   - Bright pace line with glow on top
+ *   - Elevation terrain behind
+ *   - Interactive hover crosshair with pace tooltip
  */
 
-import React, { useId, useMemo } from 'react';
+import React, { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 
 interface MiniPaceChartProps {
-  paceStream: number[];       // s/km per point
-  effortIntensity: number[];  // 0-1 per point
+  paceStream: number[];
+  effortIntensity: number[];
   elevationStream?: number[] | null;
   height?: number;
+}
+
+/** Convert pace in s/km to a display string like "5:23" */
+function formatPaceSKm(sPerKm: number): string {
+  const m = Math.floor(sPerKm / 60);
+  const s = Math.round(sPerKm % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/** Boost an effortToColor result for hero rendering — increase lightness. */
+function effortToHeroColor(effort: number, alpha = 1): string {
+  const base = effortToColor(effort);
+  // Parse rgb values, boost lightness by blending toward white
+  const match = base.match(/rgb\((\d+),(\d+),(\d+)\)/);
+  if (!match) return base;
+  const [, rs, gs, bs] = match;
+  const boost = 1.4; // 40% brighter
+  const r = Math.min(255, Math.round(parseInt(rs) * boost));
+  const g = Math.min(255, Math.round(parseInt(gs) * boost));
+  const b = Math.min(255, Math.round(parseInt(bs) * boost));
+  if (alpha < 1) return `rgba(${r},${g},${b},${alpha})`;
+  return `rgb(${r},${g},${b})`;
 }
 
 export function MiniPaceChart({
   paceStream,
   effortIntensity,
   elevationStream,
-  height = 120,
+  height = 140,
 }: MiniPaceChartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<{ x: number; idx: number } | null>(null);
+
   const chartData = useMemo(() => {
     const n = paceStream.length;
     if (n === 0) return null;
 
-    // Pace bounds (inverted: min pace = fastest = top of chart)
-    // Clamp outliers: anything slower than 15 min/km or faster than 2 min/km
-    const paceMin = 120;   // 2:00/km — fastest reasonable
-    const paceMax = 900;   // 15:00/km — slowest reasonable
+    const paceMin = 120;
+    const paceMax = 900;
     const clamped = paceStream.map(p => Math.max(paceMin, Math.min(paceMax, p)));
-    
-    // Find actual range within clamped data for better scaling
+
     const actualMin = Math.min(...clamped);
     const actualMax = Math.max(...clamped);
-    // Add 10% padding
     const range = actualMax - actualMin || 1;
     const padMin = Math.max(paceMin, actualMin - range * 0.1);
     const padMax = Math.min(paceMax, actualMax + range * 0.1);
 
-    // Normalize pace to 0-1 (inverted: 0 = slow/bottom, 1 = fast/top)
+    // 0 = slow/bottom, 1 = fast/top
     const paceNorm = clamped.map(p => 1 - (p - padMin) / (padMax - padMin || 1));
 
-    // Elevation normalization (if present)
     let elevNorm: number[] | null = null;
     if (elevationStream && elevationStream.length > 0) {
-      // Resample elevation to match pace length if different
       const elev = elevationStream.length === n
         ? elevationStream
         : _resample(elevationStream, n);
       const eMin = Math.min(...elev);
       const eMax = Math.max(...elev);
       const eRange = eMax - eMin || 1;
-      // Elevation fills the bottom 40% of the chart
-      elevNorm = elev.map(e => ((e - eMin) / eRange) * 0.4);
+      elevNorm = elev.map(e => ((e - eMin) / eRange) * 0.35);
     }
 
-    return { n, paceNorm, elevNorm };
+    return { n, paceNorm, elevNorm, padMin, padMax };
   }, [paceStream, elevationStream]);
 
-  const gradientId = `miniPaceGrad-${useId()}`;
+  const lineGradientId = `paceLineGrad-${useId()}`;
+  const areaGradientId = `paceAreaGrad-${useId()}`;
+  const glowFilterId = `paceGlow-${useId()}`;
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect || !chartData) return;
+    const relX = (e.clientX - rect.left) / rect.width;
+    const idx = Math.round(relX * (chartData.n - 1));
+    const clampedIdx = Math.max(0, Math.min(chartData.n - 1, idx));
+    setHover({ x: relX * 100, idx: clampedIdx });
+  }, [chartData]);
+
+  const handleMouseLeave = useCallback(() => setHover(null), []);
 
   if (!chartData) return null;
 
   const { n, paceNorm, elevNorm } = chartData;
-  const padding = { top: 4, bottom: 4 };
-  const drawHeight = height - padding.top - padding.bottom;
-
-  // Build SVG path points
-  const xStep = 100 / (n - 1); // percentage-based for viewBox
+  const pad = { top: 8, bottom: 8 };
+  const drawH = height - pad.top - pad.bottom;
+  const xStep = 100 / (n - 1);
 
   // Pace line points
   const pacePoints = paceNorm.map((py, i) => ({
     x: i * xStep,
-    y: padding.top + (1 - py) * drawHeight,
+    y: pad.top + (1 - py) * drawH,
   }));
 
+  // Pace LINE path
   const pacePath = pacePoints
     .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
     .join(' ');
 
-  // Elevation fill path (area from bottom up)
+  // Pace AREA path (line + close to bottom)
+  const areaPath = pacePath +
+    ` L ${pacePoints[pacePoints.length - 1].x.toFixed(2)} ${height}` +
+    ` L ${pacePoints[0].x.toFixed(2)} ${height} Z`;
+
+  // Elevation fill path
   let elevPath: string | null = null;
   if (elevNorm) {
     const elevPoints = elevNorm.map((ey, i) => ({
       x: i * xStep,
-      y: height - padding.bottom - ey * drawHeight,
+      y: height - pad.bottom - ey * drawH,
     }));
     elevPath =
       `M 0 ${height} ` +
@@ -101,64 +133,142 @@ export function MiniPaceChart({
       ` L 100 ${height} Z`;
   }
 
-  // Effort gradient stops (~30 stops for performance)
-  const maxStops = 30;
+  // Gradient stops — brighter for hero
+  const maxStops = 40;
   const stopStep = Math.max(1, Math.floor(n / maxStops));
-  const gradientStops: Array<{ offset: string; color: string }> = [];
+  const lineStops: Array<{ offset: string; color: string }> = [];
+  const areaStops: Array<{ offset: string; color: string }> = [];
   for (let i = 0; i < n; i += stopStep) {
     const effort = effortIntensity[Math.min(i, effortIntensity.length - 1)] ?? 0.5;
-    gradientStops.push({
-      offset: `${((i / (n - 1)) * 100).toFixed(1)}%`,
-      color: effortToColor(effort),
-    });
+    const off = `${((i / (n - 1)) * 100).toFixed(1)}%`;
+    lineStops.push({ offset: off, color: effortToHeroColor(effort) });
+    areaStops.push({ offset: off, color: effortToHeroColor(effort, 0.25) });
   }
   // Ensure last stop
-  const lastEffort = effortIntensity[effortIntensity.length - 1] ?? 0.5;
-  if (gradientStops.length === 0 || gradientStops[gradientStops.length - 1].offset !== '100.0%') {
-    gradientStops.push({ offset: '100.0%', color: effortToColor(lastEffort) });
+  const lastE = effortIntensity[effortIntensity.length - 1] ?? 0.5;
+  if (!lineStops.length || lineStops[lineStops.length - 1].offset !== '100.0%') {
+    lineStops.push({ offset: '100.0%', color: effortToHeroColor(lastE) });
+    areaStops.push({ offset: '100.0%', color: effortToHeroColor(lastE, 0.25) });
   }
 
+  // Hover data
+  const hoverPace = hover ? paceStream[hover.idx] : null;
+  const hoverEffort = hover ? (effortIntensity[hover.idx] ?? 0.5) : null;
+  const hoverY = hover ? pacePoints[hover.idx]?.y : null;
+
   return (
-    <svg
-      data-testid="mini-pace-chart"
-      viewBox={`0 0 100 ${height}`}
-      preserveAspectRatio="none"
-      className="w-full"
-      style={{ height, display: 'block' }}
+    <div
+      ref={containerRef}
+      className="relative cursor-crosshair"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{ height }}
+      data-testid="mini-pace-chart-container"
     >
-      <defs>
-        {/* Effort-colored gradient for the pace line */}
-        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-          {gradientStops.map((stop, i) => (
-            <stop key={i} offset={stop.offset} stopColor={stop.color} />
-          ))}
-        </linearGradient>
-      </defs>
+      <svg
+        data-testid="mini-pace-chart"
+        viewBox={`0 0 100 ${height}`}
+        preserveAspectRatio="none"
+        className="w-full absolute inset-0"
+        style={{ height, display: 'block' }}
+      >
+        <defs>
+          {/* Line gradient — boosted colors */}
+          <linearGradient id={lineGradientId} x1="0" y1="0" x2="1" y2="0">
+            {lineStops.map((s, i) => (
+              <stop key={i} offset={s.offset} stopColor={s.color} />
+            ))}
+          </linearGradient>
+          {/* Area gradient — same colors at 25% alpha */}
+          <linearGradient id={areaGradientId} x1="0" y1="0" x2="1" y2="0">
+            {areaStops.map((s, i) => (
+              <stop key={i} offset={s.offset} stopColor={s.color} />
+            ))}
+          </linearGradient>
+          {/* Glow filter for the pace line */}
+          <filter id={glowFilterId} x="-10%" y="-10%" width="120%" height="120%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
 
-      {/* Elevation fill — subtle, behind everything */}
-      {elevPath && (
+        {/* Elevation terrain — visible, slate-tinted */}
+        {elevPath && (
+          <path
+            d={elevPath}
+            fill="rgba(148, 163, 184, 0.15)"
+            data-testid="elevation-fill"
+          />
+        )}
+
+        {/* Area fill under the pace line — this is the main visual mass */}
         <path
-          d={elevPath}
-          fill="rgba(148, 163, 184, 0.08)"
-          data-testid="elevation-fill"
+          d={areaPath}
+          fill={`url(#${areaGradientId})`}
+          data-testid="pace-area"
         />
-      )}
 
-      {/* Pace line — effort gradient stroke */}
-      <path
-        d={pacePath}
-        fill="none"
-        stroke={`url(#${gradientId})`}
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-        data-testid="pace-line"
-      />
-    </svg>
+        {/* Pace line — thick, glowing, effort-colored */}
+        <path
+          d={pacePath}
+          fill="none"
+          stroke={`url(#${lineGradientId})`}
+          strokeWidth="2.5"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          filter={`url(#${glowFilterId})`}
+          data-testid="pace-line"
+        />
+
+        {/* Hover crosshair */}
+        {hover && (
+          <line
+            x1={hover.x}
+            y1={0}
+            x2={hover.x}
+            y2={height}
+            stroke="rgba(255,255,255,0.4)"
+            strokeWidth="0.3"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+
+        {/* Hover dot on the line */}
+        {hover && hoverY != null && (
+          <circle
+            cx={hover.x}
+            cy={hoverY}
+            r="1"
+            fill="white"
+            vectorEffect="non-scaling-stroke"
+            style={{ filter: 'drop-shadow(0 0 2px rgba(255,255,255,0.8))' }}
+          />
+        )}
+      </svg>
+
+      {/* Hover tooltip — positioned above the chart */}
+      {hover && hoverPace != null && hoverEffort != null && (
+        <div
+          className="absolute top-1 pointer-events-none"
+          style={{
+            left: `${Math.max(5, Math.min(85, hover.x))}%`,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <div className="bg-slate-800/90 backdrop-blur-sm border border-slate-600/50 rounded px-2 py-0.5 text-xs whitespace-nowrap">
+            <span className="font-semibold text-white">{formatPaceSKm(hoverPace)}</span>
+            <span className="text-slate-400">/km</span>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
-/** Resample an array to a target length using linear interpolation. */
 function _resample(arr: number[], targetLen: number): number[] {
   if (arr.length === targetLen) return arr;
   const result: number[] = [];

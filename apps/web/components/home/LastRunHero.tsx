@@ -147,7 +147,7 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
             paceStream={lastRun.pace_stream!}
             effortIntensity={lastRun.effort_intensity!}
             elevationStream={lastRun.elevation_stream}
-            height={120}
+            height={140}
           />
         ) : (
           <MiniEffortCanvas effortIntensity={lastRun.effort_intensity!} height={120} />

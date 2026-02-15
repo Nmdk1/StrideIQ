@@ -2,19 +2,20 @@
  * MiniPaceChart — Unit tests for the home hero pace chart.
  *
  * Tests:
- * - Renders SVG with gradient pace line when valid data provided
+ * - Renders SVG with gradient pace line + area fill
  * - Renders elevation fill when elevation_stream is present
  * - Does not render elevation fill when elevation_stream is absent
  * - Returns null when paceStream is empty
  * - Handles mismatched array lengths gracefully (resamples)
+ * - Gradient stops use boosted effortToColor
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 
 // Mock effortToColor to return predictable colors
 jest.mock('@/components/activities/rsi/utils/effortColor', () => ({
-  effortToColor: (value: number) => `hsl(${Math.round(value * 120)}, 80%, 50%)`,
+  effortToColor: (value: number) => `rgb(${Math.round(value * 120)},${Math.round(value * 80)},50)`,
 }));
 
 import { MiniPaceChart } from '@/components/home/MiniPaceChart';
@@ -23,8 +24,8 @@ import { MiniPaceChart } from '@/components/home/MiniPaceChart';
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const PACE_50 = Array.from({ length: 50 }, (_, i) => 300 + i * 2);  // 300-398 s/km
-const EFFORT_50 = Array.from({ length: 50 }, (_, i) => i / 49);      // 0..1
+const PACE_50 = Array.from({ length: 50 }, (_, i) => 300 + i * 2);
+const EFFORT_50 = Array.from({ length: 50 }, (_, i) => i / 49);
 const ELEV_50 = Array.from({ length: 50 }, (_, i) => 40 + Math.sin(i / 5) * 20);
 
 // ---------------------------------------------------------------------------
@@ -32,12 +33,12 @@ const ELEV_50 = Array.from({ length: 50 }, (_, i) => 40 + Math.sin(i / 5) * 20);
 // ---------------------------------------------------------------------------
 
 describe('MiniPaceChart', () => {
-  test('renders SVG with pace-line path when valid data', () => {
+  test('renders SVG with pace-line and pace-area', () => {
     render(
       <MiniPaceChart
         paceStream={PACE_50}
         effortIntensity={EFFORT_50}
-        height={120}
+        height={140}
       />
     );
 
@@ -48,7 +49,13 @@ describe('MiniPaceChart', () => {
     const paceLine = screen.getByTestId('pace-line');
     expect(paceLine).toBeInTheDocument();
     expect(paceLine.getAttribute('d')).toMatch(/^M /);
-    expect(paceLine.getAttribute('stroke')).toMatch(/^url\(#miniPaceGrad-/);
+    // Gradient stroke
+    expect(paceLine.getAttribute('stroke')).toMatch(/^url\(#paceLineGrad-/);
+
+    // Area fill exists
+    const paceArea = screen.getByTestId('pace-area');
+    expect(paceArea).toBeInTheDocument();
+    expect(paceArea.getAttribute('fill')).toMatch(/^url\(#paceAreaGrad-/);
   });
 
   test('renders elevation fill when elevation_stream provided', () => {
@@ -57,14 +64,13 @@ describe('MiniPaceChart', () => {
         paceStream={PACE_50}
         effortIntensity={EFFORT_50}
         elevationStream={ELEV_50}
-        height={120}
+        height={140}
       />
     );
 
     const elevFill = screen.getByTestId('elevation-fill');
     expect(elevFill).toBeInTheDocument();
     expect(elevFill.getAttribute('d')).toMatch(/^M 0/);
-    expect(elevFill.getAttribute('fill')).toContain('rgba');
   });
 
   test('does not render elevation fill when elevation_stream absent', () => {
@@ -72,7 +78,7 @@ describe('MiniPaceChart', () => {
       <MiniPaceChart
         paceStream={PACE_50}
         effortIntensity={EFFORT_50}
-        height={120}
+        height={140}
       />
     );
 
@@ -84,7 +90,7 @@ describe('MiniPaceChart', () => {
       <MiniPaceChart
         paceStream={[]}
         effortIntensity={[]}
-        height={120}
+        height={140}
       />
     );
 
@@ -92,7 +98,6 @@ describe('MiniPaceChart', () => {
   });
 
   test('handles elevation_stream of different length (resamples)', () => {
-    // Elevation has 30 points, pace has 50 — should resample elevation
     const shortElev = Array.from({ length: 30 }, (_, i) => 50 + i);
 
     render(
@@ -100,30 +105,41 @@ describe('MiniPaceChart', () => {
         paceStream={PACE_50}
         effortIntensity={EFFORT_50}
         elevationStream={shortElev}
-        height={100}
+        height={140}
       />
     );
 
-    // Should still render both elements
     expect(screen.getByTestId('pace-line')).toBeInTheDocument();
     expect(screen.getByTestId('elevation-fill')).toBeInTheDocument();
   });
 
-  test('gradient stops use effortToColor mapping', () => {
+  test('gradient stops use boosted colors', () => {
     render(
       <MiniPaceChart
         paceStream={PACE_50}
         effortIntensity={EFFORT_50}
-        height={120}
+        height={140}
       />
     );
 
     const svg = screen.getByTestId('mini-pace-chart');
     const stops = svg.querySelectorAll('stop');
     expect(stops.length).toBeGreaterThan(0);
-    // Each stop should have an hsl color from our mock
     stops.forEach(stop => {
-      expect(stop.getAttribute('stop-color')).toMatch(/^hsl\(/);
+      expect(stop.getAttribute('stop-color')).toMatch(/^rgb/);
     });
+  });
+
+  test('has interactive container with cursor-crosshair', () => {
+    render(
+      <MiniPaceChart
+        paceStream={PACE_50}
+        effortIntensity={EFFORT_50}
+        height={140}
+      />
+    );
+
+    const container = screen.getByTestId('mini-pace-chart-container');
+    expect(container.className).toContain('cursor-crosshair');
   });
 });
