@@ -31,7 +31,6 @@ import { useStreamAnalysis, isAnalysisData } from '@/components/activities/rsi/h
 import { CoachableMoments } from '@/components/activities/rsi/CoachableMoments';
 import { ReflectionPrompt } from '@/components/activities/ReflectionPrompt';
 import RunContextAnalysis from '@/components/activities/RunContextAnalysis';
-import { SplitsChart } from '@/components/activities/SplitsChart';
 import { SplitsTable } from '@/components/activities/SplitsTable';
 import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
 import { WhyThisRun } from '@/components/activities/WhyThisRun';
@@ -391,7 +390,6 @@ export default function ActivityDetailPage() {
           <div className="bg-slate-800/50 rounded-lg p-6 mb-6 border border-slate-700/50">
             <h2 className="text-lg font-bold text-white">Splits / Laps</h2>
             <div className="mt-4">
-              <SplitsChart splits={splits} className="mb-4" />
               <SplitsTable splits={splits} />
             </div>
           </div>
