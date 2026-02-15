@@ -643,6 +643,141 @@ def _valid_home_briefing_contract(result: dict, checkin_data: Optional[dict], ra
     return True
 
 
+def _call_opus_briefing(
+    prompt: str,
+    schema_fields: dict,
+    required_fields: list,
+    api_key: str,
+) -> Optional[dict]:
+    """
+    Call Claude Opus 4.5 for the home briefing. Returns parsed dict or None on failure.
+    Opus is the primary model for the product's most visible AI surface.
+    """
+    import json as _json
+
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        logger.warning("anthropic package not installed — cannot use Opus for home briefing")
+        return None
+
+    # Build JSON schema instructions for Opus
+    field_descriptions = "\n".join(
+        f'  - "{k}" ({"REQUIRED" if k in required_fields else "optional"}): {v}'
+        for k, v in schema_fields.items()
+    )
+
+    system_prompt = (
+        "You are an elite running coach generating a structured home page briefing. "
+        "Respond with ONLY a valid JSON object — no markdown, no code fences, no explanation. "
+        "The JSON must contain these fields:\n"
+        f"{field_descriptions}\n\n"
+        "Rules:\n"
+        "- Every required field MUST be present.\n"
+        "- Optional fields should be included only when relevant data exists.\n"
+        "- Keep each field concise: 1-2 sentences max.\n"
+        "- Respond with the raw JSON object only."
+    )
+
+    try:
+        client = Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-opus-4-5-20251101",
+            system=system_prompt,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+            temperature=0.3,
+        )
+
+        raw_text = response.content[0].text if response.content else ""
+        if not raw_text.strip():
+            logger.warning("Opus returned empty response for home briefing")
+            return None
+
+        # Strip markdown fences if present (defensive)
+        text = raw_text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+
+        result = _json.loads(text)
+        logger.info(
+            f"Home briefing generated via Opus "
+            f"(input={response.usage.input_tokens}, output={response.usage.output_tokens})"
+        )
+        return result
+
+    except _json.JSONDecodeError as je:
+        logger.warning(f"Opus JSON parse failed: {je}; raw (first 500): {raw_text[:500]!r}")
+        return None
+    except Exception as e:
+        logger.warning(f"Opus home briefing call failed: {type(e).__name__}: {e}")
+        return None
+
+
+def _call_gemini_briefing(
+    prompt: str,
+    schema_fields: dict,
+    required_fields: list,
+    api_key: str,
+) -> Optional[dict]:
+    """
+    Fallback: Call Gemini 2.5 Flash for the home briefing.
+    Used only when Opus is unavailable.
+    """
+    import json as _json
+
+    try:
+        from google import genai
+    except ImportError:
+        logger.warning("google-genai package not installed — cannot use Gemini for home briefing")
+        return None
+
+    schema_properties = {
+        k: {"type": "STRING", "description": v}
+        for k, v in schema_fields.items()
+    }
+
+    client = genai.Client(api_key=api_key)
+
+    for attempt in (1, 2):
+        try:
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    max_output_tokens=4000,
+                    temperature=0.3,
+                    response_mime_type="application/json",
+                    response_schema={
+                        "type": "OBJECT",
+                        "properties": schema_properties,
+                        "required": required_fields,
+                    },
+                ),
+            )
+            raw_text = resp.text
+            if not raw_text or not raw_text.strip():
+                logger.warning(f"Gemini returned empty response (attempt {attempt})")
+                raise ValueError("empty_response")
+            result = _json.loads(raw_text)
+            logger.info(f"Home briefing generated via Gemini Flash (attempt {attempt})")
+            return result
+        except (ValueError, _json.JSONDecodeError) as e:
+            logger.warning(f"Gemini JSON parse failed (attempt {attempt}): {e}")
+            if attempt == 2:
+                return None
+            import time
+            time.sleep(1)
+        except Exception as e:
+            logger.warning(f"Gemini home briefing call failed: {type(e).__name__}: {e}")
+            return None
+
+    return None
+
+
 def generate_coach_home_briefing(
     athlete_id: str,
     db: Session,
@@ -652,7 +787,10 @@ def generate_coach_home_briefing(
     race_data: Optional[dict] = None,
 ) -> Optional[dict]:
     """
-    Generate coaching narratives for every home page card using Gemini.
+    Generate coaching narratives for every home page card.
+
+    Primary model: Claude Opus 4.5 (highest reasoning quality).
+    Fallback: Gemini 2.5 Flash (if Opus unavailable).
 
     Uses the full ADR-16 athlete brief as context — the same rich
     pre-computed brief the coach chat uses. No ad-hoc data scraping.
@@ -776,95 +914,44 @@ def generate_coach_home_briefing(
 
     prompt = "\n".join(parts)
 
+    # --- Schema description (shared by Opus prompt and fallback) ---
+    schema_fields = {
+        "coach_noticed": "Assessment: the single most important coaching observation from their data. Must be interpretive (not purely numeric). State the fact, then the implication. 1-2 sentences.",
+        "today_context": "Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.",
+        "week_assessment": "Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.",
+        "checkin_reaction": "Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.",
+        "race_assessment": "Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.",
+        "morning_voice": "The voice of the athlete's data. Single paragraph, 40-280 characters. Must cite at least one specific number from their training. Speak as the data, not as a coach. No sycophancy. Example: '48 miles across 6 runs this week. HR averaged 142 bpm — consistent with your build phase targets.'",
+        "workout_why": "One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.",
+    }
+    required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
+    if checkin_data:
+        required_fields.append("checkin_reaction")
+    if race_data:
+        required_fields.append("race_assessment")
+
     try:
-        from google import genai
         import os
 
-        api_key = os.getenv("GOOGLE_AI_API_KEY")
-        if not api_key:
-            logger.warning("GOOGLE_AI_API_KEY not set -- skipping coach home briefing")
+        # --- Primary: Claude Opus 4.5 (highest reasoning quality for the product's voice) ---
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        if anthropic_key:
+            result = _call_opus_briefing(prompt, schema_fields, required_fields, anthropic_key)
+        else:
+            logger.info("ANTHROPIC_API_KEY not set — falling back to Gemini for home briefing")
+            result = None
+
+        # --- Fallback: Gemini Flash (if Opus unavailable or failed) ---
+        if result is None:
+            google_key = os.getenv("GOOGLE_AI_API_KEY")
+            if google_key:
+                result = _call_gemini_briefing(prompt, schema_fields, required_fields, google_key)
+            else:
+                logger.warning("No LLM API keys available for home briefing")
+                return None
+
+        if result is None:
             return None
-
-        # Build schema — always include all fields, Gemini will populate what's relevant
-        schema_properties = {
-            "coach_noticed": {
-                "type": "STRING",
-                "description": "Assessment: the single most important coaching observation from their data. Must be interpretive (not purely numeric). State the fact, then the implication. 1-2 sentences.",
-            },
-            "today_context": {
-                "type": "STRING",
-                "description": "Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.",
-            },
-            "week_assessment": {
-                "type": "STRING",
-                "description": "Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.",
-            },
-            "checkin_reaction": {
-                "type": "STRING",
-                "description": "Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.",
-            },
-            "race_assessment": {
-                "type": "STRING",
-                "description": "Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.",
-            },
-            "morning_voice": {
-                "type": "STRING",
-                "description": "The voice of the athlete's data. Single paragraph, 40-280 characters. Must cite at least one specific number from their training. Speak as the data, not as a coach. No sycophancy. Example: '48 miles across 6 runs this week. HR averaged 142 bpm — consistent with your build phase targets.'",
-            },
-            "workout_why": {
-                "type": "STRING",
-                "description": "One sentence explaining WHY today's workout matters in the context of their training. Must reference a specific number. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.",
-            },
-        }
-        required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
-        if checkin_data:
-            required_fields.append("checkin_reaction")
-        if race_data:
-            required_fields.append("race_assessment")
-
-        client = genai.Client(api_key=api_key)
-
-        def _call_gemini(attempt: int = 1) -> dict:
-            """Call Gemini with retry on malformed JSON."""
-            resp = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(
-                    max_output_tokens=4000,
-                    temperature=0.3,
-                    response_mime_type="application/json",
-                    response_schema={
-                        "type": "OBJECT",
-                        "properties": schema_properties,
-                        "required": required_fields,
-                    },
-                ),
-            )
-            raw_text = resp.text
-            if not raw_text or not raw_text.strip():
-                logger.warning(f"Gemini returned empty response (attempt {attempt})")
-                raise ValueError("empty_response")
-            try:
-                return _json.loads(raw_text)
-            except _json.JSONDecodeError as je:
-                logger.warning(
-                    f"Gemini JSON parse failed (attempt {attempt}): {je}; "
-                    f"raw response (first 500 chars): {raw_text[:500]!r}"
-                )
-                raise
-
-        # Attempt up to 2 times
-        result = None
-        for attempt in (1, 2):
-            try:
-                result = _call_gemini(attempt=attempt)
-                break
-            except (ValueError, _json.JSONDecodeError):
-                if attempt == 2:
-                    logger.warning("Gemini failed after 2 attempts; returning None")
-                    return None
-                import time
-                time.sleep(1)
 
         if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
             logger.warning("Coach home briefing failed A->I->A contract validation; returning None for deterministic fallback.")
