@@ -789,11 +789,11 @@ def generate_coach_home_briefing(
         schema_properties = {
             "coach_noticed": {
                 "type": "STRING",
-                "description": "Assessment: the single most important coaching observation from their data. Must be interpretive (not purely numeric). Lead with progress or positive trends. 1-2 sentences.",
+                "description": "Assessment: the single most important coaching observation from their data. Must be interpretive (not purely numeric). State the fact, then the implication. 1-2 sentences.",
             },
             "today_context": {
                 "type": "STRING",
-                "description": "Action-focused context: if run completed, celebrate effort then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.",
+                "description": "Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.",
             },
             "week_assessment": {
                 "type": "STRING",
