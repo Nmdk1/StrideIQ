@@ -160,6 +160,8 @@ class LastRun(BaseModel):
     average_hr: Optional[float] = None
     stream_status: Optional[str] = None  # 'success' | 'pending' | 'fetching' | 'unavailable' | null
     effort_intensity: Optional[List[float]] = None  # Only when stream_status === 'success'
+    pace_stream: Optional[List[float]] = None  # LTTB-downsampled pace (s/km) per point
+    elevation_stream: Optional[List[float]] = None  # LTTB-downsampled altitude (m) per point
     tier_used: Optional[str] = None
     confidence: Optional[float] = None
     segments: Optional[List[LastRunSegment]] = None  # For segment band overlay
@@ -1266,6 +1268,25 @@ def compute_last_run(
                 last_run.effort_intensity = [round(e, 4) for e in effort]
                 last_run.tier_used = result_dict.get("tier_used")
                 last_run.confidence = result_dict.get("confidence")
+
+                # Extract pace_stream from velocity_smooth (m/s → s/km)
+                raw_velocity = stream_row.stream_data.get("velocity_smooth", [])
+                if raw_velocity and len(raw_velocity) > 0:
+                    # Convert m/s to pace (s/km); clamp zero/near-zero velocity
+                    pace_raw = [
+                        round(1000.0 / max(v, 0.3), 1) if v and v > 0.3 else 1200.0
+                        for v in raw_velocity
+                    ]
+                    if len(pace_raw) > 500:
+                        pace_raw = _lttb_1d(pace_raw, 500)
+                    last_run.pace_stream = [round(p, 1) for p in pace_raw]
+
+                # Extract elevation_stream from altitude
+                raw_altitude = stream_row.stream_data.get("altitude", [])
+                if raw_altitude and len(raw_altitude) > 0:
+                    if len(raw_altitude) > 500:
+                        raw_altitude = _lttb_1d(raw_altitude, 500)
+                    last_run.elevation_stream = [round(a, 1) for a in raw_altitude]
 
                 segments_raw = result_dict.get("segments", [])
                 last_run.segments = [

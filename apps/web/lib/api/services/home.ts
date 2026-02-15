@@ -105,6 +105,8 @@ export interface LastRun {
   average_hr?: number | null;
   stream_status?: 'success' | 'pending' | 'fetching' | 'unavailable' | null;
   effort_intensity?: number[] | null;  // Only when stream_status === 'success'
+  pace_stream?: number[] | null;  // LTTB-downsampled pace (s/km) per point
+  elevation_stream?: number[] | null;  // LTTB-downsampled altitude (m) per point
   tier_used?: string | null;
   confidence?: number | null;
   segments?: LastRunSegment[] | null;

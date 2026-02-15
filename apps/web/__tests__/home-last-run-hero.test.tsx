@@ -117,23 +117,35 @@ describe('L1-4: Effort gradient canvas renders with stream data', () => {
   test('shows run name and metrics alongside canvas in imperial units', () => {
     render(<LastRunHero lastRun={LAST_RUN_WITH_STREAM} />);
 
-    expect(screen.getByText('Morning Easy Run')).toBeInTheDocument();
-    // 10000m = 6.2 mi (imperial, 1 decimal)
-    expect(screen.getByText('6.2 mi')).toBeInTheDocument();
-    expect(screen.getByText('1:00:00')).toBeInTheDocument();
-    expect(screen.getByText('145 bpm')).toBeInTheDocument();
+    // All metrics are in one line — use partial matching
+    expect(screen.getByText(/Morning Easy Run/)).toBeInTheDocument();
+    expect(screen.getByText(/6\.2 mi/)).toBeInTheDocument();
+    expect(screen.getByText(/1:00:00/)).toBeInTheDocument();
+    expect(screen.getByText(/145 bpm/)).toBeInTheDocument();
   });
 
-  test('shows "See Full Analysis" link when canvas present', () => {
+  test('hero is full-bleed with no card chrome when canvas present', () => {
     render(<LastRunHero lastRun={LAST_RUN_WITH_STREAM} />);
 
-    expect(screen.getByText(/See Full Analysis/)).toBeInTheDocument();
+    const hero = screen.getByTestId('last-run-hero');
+    expect(hero).toHaveAttribute('data-hero-mode', 'full-bleed');
+    // No card border/chrome in full-bleed mode
+    expect(hero.className).not.toContain('rounded-lg');
+    expect(hero.className).not.toContain('border');
   });
 
-  test('shows confidence percentage when available', () => {
-    render(<LastRunHero lastRun={LAST_RUN_WITH_STREAM} />);
+  test('renders MiniPaceChart when pace_stream is available', () => {
+    const runWithPace: LastRun = {
+      ...LAST_RUN_WITH_STREAM,
+      pace_stream: Array.from({ length: 50 }, (_, i) => 300 + (i % 10) * 5),
+      elevation_stream: Array.from({ length: 50 }, (_, i) => 40 + Math.sin(i / 5) * 10),
+    };
+    render(<LastRunHero lastRun={runWithPace} />);
 
-    expect(screen.getByText('95% confidence')).toBeInTheDocument();
+    expect(screen.getByTestId('mini-pace-chart')).toBeInTheDocument();
+    expect(screen.getByTestId('elevation-fill')).toBeInTheDocument();
+    // Falls back to MiniEffortCanvas when pace_stream absent
+    expect(screen.queryByTestId('hero-effort-gradient')).not.toBeInTheDocument();
   });
 });
 
@@ -172,11 +184,10 @@ describe('L1-5: Metrics-only card for non-success stream states', () => {
     expect(screen.getByText('Manual Entry')).toBeInTheDocument();
   });
 
-  test('shows "View Run" (not "See Full Analysis") when no canvas', () => {
+  test('shows "View Run" in metrics-only card', () => {
     render(<LastRunHero lastRun={LAST_RUN_PENDING} />);
 
     expect(screen.getByText(/View Run/)).toBeInTheDocument();
-    expect(screen.queryByText(/See Full Analysis/)).not.toBeInTheDocument();
   });
 });
 

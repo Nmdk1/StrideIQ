@@ -178,6 +178,20 @@ class TestLastRunWithStreams:
         assert "start_time_s" in seg
         assert "end_time_s" in seg
 
+        # H1: pace_stream and elevation_stream populated from velocity_smooth/altitude
+        assert lr["pace_stream"] is not None, "pace_stream should be populated when velocity_smooth exists"
+        assert isinstance(lr["pace_stream"], list)
+        assert len(lr["pace_stream"]) > 0
+        assert len(lr["pace_stream"]) <= 500, "Should be LTTB capped to ≤500"
+        # Pace values should be reasonable (s/km)
+        for p in lr["pace_stream"]:
+            assert 120 <= p <= 1200, f"Pace {p} s/km out of reasonable range"
+
+        assert lr["elevation_stream"] is not None, "elevation_stream should be populated when altitude exists"
+        assert isinstance(lr["elevation_stream"], list)
+        assert len(lr["elevation_stream"]) > 0
+        assert len(lr["elevation_stream"]) <= 500, "Should be LTTB capped to ≤500"
+
         # Derived metrics
         assert lr["distance_m"] == 10000
         assert lr["moving_time_s"] == 3600
@@ -259,6 +273,8 @@ class TestLastRunPendingStream:
         assert lr is not None
         assert lr["stream_status"] == "pending"
         assert lr["effort_intensity"] is None
+        assert lr["pace_stream"] is None
+        assert lr["elevation_stream"] is None
         assert lr["tier_used"] is None
         assert lr["confidence"] is None
         assert lr["segments"] is None

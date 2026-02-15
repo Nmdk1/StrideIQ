@@ -215,15 +215,16 @@ describe('Home Page Voice: Voice rendering', () => {
     expect(voiceEl).toHaveTextContent('48 miles across 6 runs this week');
   });
 
-  test('Coach noticed card renders with coach_briefing insight', () => {
+  test('Coach noticed card is not separately rendered (absorbed into morning_voice per H2/H4)', () => {
     const { container } = render(<HomePage />);
 
-    // Coach noticed card should be present with the briefing text
+    // CoachNoticedCard is no longer rendered as a separate element —
+    // intelligence is absorbed into morning_voice (spec H2/H4)
     const coachNoticedElements = container.querySelectorAll('*');
     const found = Array.from(coachNoticedElements).some(
       (el) => el.textContent?.includes('Coach noticed')
     );
-    expect(found).toBe(true);
+    expect(found).toBe(false);
   });
 });
 

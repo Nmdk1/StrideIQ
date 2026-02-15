@@ -385,7 +385,7 @@ export default function HomePage() {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-slate-900 text-slate-100">
-        <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+        <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
 
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -416,100 +416,42 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Coach Insight — the single most important observation */}
-          {(coach_briefing?.coach_noticed || coach_noticed) && (
-            <CoachNoticedCard
-              text={coach_noticed?.text || ''}
-              coachText={coach_briefing?.coach_noticed}
-              askQuery={coach_noticed?.ask_coach_query || 'Coach, what should I know today?'}
-            />
-          )}
-
-          {/* 3. Today's workout with WHY */}
+          {/* 3. Today's workout — plain text, no card chrome */}
           {today.has_workout ? (
-            <Card data-testid="today-workout" className="bg-slate-800/50 border-slate-700/50">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-orange-500" />
-                    <span className="text-sm font-semibold text-slate-300">Today</span>
-                  </div>
-                  {today.phase && (
-                    <Badge variant="outline" className="text-orange-400 border-orange-500/30 text-xs">
-                      {today.phase}
-                    </Badge>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="pb-4 space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className={`p-3 rounded-xl ${workoutConfig.bgColor} ${workoutConfig.color} ring-1 ring-white/10`}>
-                    {workoutConfig.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-lg font-bold ${workoutConfig.color}`}>
-                      {today.title || formatWorkoutType(today.workout_type)}
-                    </p>
-                    <p className="text-sm text-slate-400">
-                      {today.distance_mi && <span className="font-medium text-slate-300">{today.distance_mi} mi</span>}
-                      {today.distance_mi && today.pace_guidance && <span className="mx-2 text-slate-600">&middot;</span>}
-                      {today.pace_guidance && <span>{today.pace_guidance}</span>}
-                    </p>
-                  </div>
-                </div>
-                {/* Workout WHY — the explicit reason for this workout */}
-                {coach_briefing?.workout_why && (
-                  <p data-testid="workout-why" className="text-sm text-slate-300 leading-relaxed">
-                    {coach_briefing.workout_why}
-                  </p>
-                )}
-                {!coach_briefing?.workout_why && (coach_briefing?.today_context || today.why_context) && (
-                  <div className="bg-slate-700/40 rounded-lg p-3 border border-slate-600/40">
-                    <div className="flex gap-2">
-                      <Sparkles className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
-                      <p className="text-sm text-slate-300">{coach_briefing?.today_context || today.why_context}</p>
-                    </div>
-                  </div>
-                )}
-                <div className="flex items-center justify-between pt-1">
-                  <div className="text-xs text-slate-500">
-                    {today.week_number && <span>Week {today.week_number}</span>}
-                  </div>
-                  <Link
-                    href={`/coach?q=${encodeURIComponent(`Tell me about today's ${formatWorkoutType(today.workout_type) || 'workout'}`)}`}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-orange-400 hover:text-orange-300"
-                  >
-                    Ask Coach <ArrowRight className="w-3 h-3" />
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
+            <div data-testid="today-workout" className="px-1 pt-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-blue-400">Today</span>
+              <h2 className={`text-xl font-bold mt-1 ${workoutConfig.color}`}>
+                {today.title || formatWorkoutType(today.workout_type)}
+              </h2>
+              {coach_briefing?.workout_why && (
+                <p data-testid="workout-why" className="text-sm text-slate-400 mt-1 leading-relaxed">
+                  {coach_briefing.workout_why}
+                </p>
+              )}
+              {!coach_briefing?.workout_why && (coach_briefing?.today_context || today.why_context) && (
+                <p className="text-sm text-slate-400 mt-1 leading-relaxed">
+                  {coach_briefing?.today_context || today.why_context}
+                </p>
+              )}
+              <p className="text-xs text-slate-500 mt-1.5">
+                {today.distance_mi && <span>{today.distance_mi} mi</span>}
+                {today.distance_mi && today.pace_guidance && <span> · </span>}
+                {today.pace_guidance && <span>{today.pace_guidance}</span>}
+                {today.week_number && <span> · Week {today.week_number}</span>}
+                {today.phase && <span> · {today.phase}</span>}
+              </p>
+            </div>
           ) : (
-            <Card data-testid="today-workout" className="bg-slate-800/50 border-slate-700/50">
-              <CardContent className="py-5 px-5">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-slate-700 ring-1 ring-slate-600">
-                    <Clock className="w-5 h-5 text-slate-500" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-slate-400">No workout scheduled</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {hasAnyData
-                        ? 'Recovery day.'
-                        : strava_connected
-                          ? 'Create a plan to see workouts.'
-                          : 'Connect Strava or create a plan.'}
-                    </p>
-                  </div>
-                  <Link
-                    href="/coach?q=What%20should%20I%20do%20today%3F"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-orange-400 hover:text-orange-300 flex-shrink-0"
-                  >
-                    Ask Coach <ArrowRight className="w-3 h-3" />
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
+            <div data-testid="today-workout" className="px-1 pt-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Today</span>
+              <p className="text-sm text-slate-400 mt-1">
+                {hasAnyData
+                  ? 'Recovery day.'
+                  : strava_connected
+                    ? 'Create a plan to see workouts.'
+                    : 'Connect Strava or create a plan.'}
+              </p>
+            </div>
           )}
 
           {/* ═══ BELOW THE FOLD ═══ */}
