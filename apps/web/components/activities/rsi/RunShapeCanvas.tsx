@@ -289,18 +289,33 @@ function InteractionOverlay({
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+  const updateFromClientX = useCallback(
+    (clientX: number) => {
       const el = overlayRef.current;
       if (!el || data.length === 0) return;
 
       const rect = el.getBoundingClientRect();
-      const x = e.clientX - rect.left;
+      const x = clientX - rect.left;
       const fraction = x / rect.width;
       const index = clamp(Math.round(fraction * (data.length - 1)), 0, data.length - 1);
       onHover(index);
     },
     [data, onHover],
+  );
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => updateFromClientX(e.clientX),
+    [updateFromClientX],
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (e.touches.length > 0) {
+        e.preventDefault();
+        updateFromClientX(e.touches[0].clientX);
+      }
+    },
+    [updateFromClientX],
   );
 
   const hoveredPoint = hoveredIndex != null ? data[hoveredIndex] : null;
@@ -311,6 +326,9 @@ function InteractionOverlay({
       data-testid="chart-overlay"
       onMouseMove={handleMouseMove}
       onMouseLeave={onLeave}
+      onTouchStart={handleTouchMove}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={onLeave}
       style={{
         position: 'absolute',
         top: 0,

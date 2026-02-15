@@ -81,16 +81,27 @@ export function MiniPaceChart({
   const areaGradientId = `paceAreaGrad-${useId()}`;
   const glowFilterId = `paceGlow-${useId()}`;
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const updateHover = useCallback((clientX: number) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || !chartData) return;
-    const relX = (e.clientX - rect.left) / rect.width;
+    const relX = (clientX - rect.left) / rect.width;
     const idx = Math.round(relX * (chartData.n - 1));
     const clampedIdx = Math.max(0, Math.min(chartData.n - 1, idx));
     setHover({ x: relX * 100, idx: clampedIdx });
   }, [chartData]);
 
-  const handleMouseLeave = useCallback(() => setHover(null), []);
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    updateHover(e.clientX);
+  }, [updateHover]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length > 0) {
+      e.preventDefault(); // prevent scroll while scrubbing
+      updateHover(e.touches[0].clientX);
+    }
+  }, [updateHover]);
+
+  const handleLeave = useCallback(() => setHover(null), []);
 
   if (!chartData) return null;
 
@@ -156,7 +167,10 @@ export function MiniPaceChart({
       ref={containerRef}
       className="relative cursor-crosshair"
       onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
+      onMouseLeave={handleLeave}
+      onTouchStart={handleTouchMove}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleLeave}
       style={{ height }}
       data-testid="mini-pace-chart-container"
     >
