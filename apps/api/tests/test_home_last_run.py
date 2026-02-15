@@ -327,20 +327,20 @@ class TestLastRunNoActivities:
 
 
 # ---------------------------------------------------------------------------
-# L1-extra: 24h decay
+# L1-extra: 96h decay (widened from 24h per founder directive)
 # ---------------------------------------------------------------------------
 
-class TestLastRun24hDecay:
-    """Layer 1 spec: last_run is null when latest activity is >24h old."""
+class TestLastRun96hDecay:
+    """Layer 1 spec: last_run is null when latest activity is >96h old."""
 
-    def test_last_run_null_when_activity_older_than_24h(
+    def test_last_run_null_when_activity_older_than_96h(
         self, client, test_athlete, db_session
     ):
-        """Activity from 25 hours ago → last_run is null."""
+        """Activity from 97 hours ago → last_run is null."""
         activity = Activity(
             athlete_id=test_athlete.id,
             name="Old Run",
-            start_time=datetime.now(timezone.utc) - timedelta(hours=25),
+            start_time=datetime.now(timezone.utc) - timedelta(hours=97),
             sport="run",
             source="strava",
             provider="strava",
@@ -356,7 +356,7 @@ class TestLastRun24hDecay:
         assert resp.status_code == 200
         assert resp.json()["last_run"] is None
 
-    def test_last_run_present_when_activity_within_24h(
+    def test_last_run_present_when_activity_within_96h(
         self, client, test_athlete, db_session
     ):
         """Activity from 23 hours ago → last_run is present."""
