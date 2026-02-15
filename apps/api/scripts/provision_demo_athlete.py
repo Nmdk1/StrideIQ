@@ -16,7 +16,7 @@ Usage (inside api container):
   python scripts/provision_demo_athlete.py --commit
 
 Optional:
-  python scripts/provision_demo_athlete.py --commit --source-email you@example.com
+  python scripts/provision_demo_athlete.py --commit --source-email <your-email>
   python scripts/provision_demo_athlete.py --commit --days 30 --runs-per-week 5
 """
 
