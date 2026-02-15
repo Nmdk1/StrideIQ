@@ -667,12 +667,23 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
     const paceMax = Math.max(...paces);
     const paceRange = paceMax - paceMin || 1;
 
-    const maxStops = 30;
+    // Smooth pace for gradient coloring (removes per-second noise)
+    const rawPaces = chartData.map(p => p.pace ?? paceMax);
+    const smoothWindow = Math.max(3, Math.round(rawPaces.length / 30));
+    const smoothedPaces = rawPaces.map((_, i) => {
+      const lo = Math.max(0, i - Math.floor(smoothWindow / 2));
+      const hi = Math.min(rawPaces.length - 1, i + Math.floor(smoothWindow / 2));
+      let sum = 0;
+      for (let j = lo; j <= hi; j++) sum += rawPaces[j];
+      return sum / (hi - lo + 1);
+    });
+
+    const maxStops = 60;
     const step = Math.max(1, Math.floor(chartData.length / maxStops));
     const stops: Array<{ offset: string; color: string }> = [];
     for (let i = 0; i < chartData.length; i += step) {
       const offset = (i / (chartData.length - 1)) * 100;
-      const pace = chartData[i].pace ?? paceMax;
+      const pace = smoothedPaces[i];
       // Invert: faster (lower s/km) = higher intensity = hotter color
       const paceIntensity = 1 - (pace - paceMin) / paceRange;
       stops.push({
@@ -684,7 +695,7 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
     const lastIdx = chartData.length - 1;
     const lastOffset = '100%';
     if (stops.length === 0 || stops[stops.length - 1].offset !== lastOffset) {
-      const lastPace = chartData[lastIdx].pace ?? paceMax;
+      const lastPace = smoothedPaces[lastIdx];
       const lastIntensity = 1 - (lastPace - paceMin) / paceRange;
       stops.push({
         offset: lastOffset,
@@ -878,7 +889,7 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
               tickFormatter={(t: number) => `${Math.floor(t / 60)}m`}
             />
             <YAxis yAxisId="hr" orientation="left" hide />
-            <YAxis yAxisId="pace" orientation="right" hide />
+            <YAxis yAxisId="pace" orientation="right" hide reversed />
             <YAxis yAxisId="altitude" orientation="left" hide />
             <YAxis yAxisId="secondary" orientation="right" hide />
 
