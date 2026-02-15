@@ -47,7 +47,9 @@ from services.run_stream_analysis import AthleteContext
 from services.stream_analysis_cache import get_or_compute_analysis
 
 
-DEFAULT_EMAIL = "demo@strideiq.run"
+# Email and password sourced from environment only — no hardcoded PII.
+# Set STRIDEIQ_DEMO_EMAIL and STRIDEIQ_DEMO_PASSWORD before running.
+DEFAULT_EMAIL_ENV = "STRIDEIQ_DEMO_EMAIL"
 DEFAULT_PASSWORD_ENV = "STRIDEIQ_DEMO_PASSWORD"
 
 
@@ -474,7 +476,11 @@ def _get_or_create_demo_athlete(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--email", default=DEFAULT_EMAIL, help="demo athlete email")
+    parser.add_argument(
+        "--email",
+        default=os.environ.get(DEFAULT_EMAIL_ENV),
+        help="demo athlete email (or set STRIDEIQ_DEMO_EMAIL env var)",
+    )
     parser.add_argument("--display-name", default="Demo Athlete", help="demo display name")
     parser.add_argument(
         "--password-env",
