@@ -416,6 +416,15 @@ export default function HomePage() {
             </div>
           )}
 
+          {/* Coach Insight — the single most important observation */}
+          {(coach_briefing?.coach_noticed || coach_noticed) && (
+            <CoachNoticedCard
+              text={coach_noticed?.text || ''}
+              coachText={coach_briefing?.coach_noticed}
+              askQuery={coach_noticed?.ask_coach_query || 'Coach, what should I know today?'}
+            />
+          )}
+
           {/* 3. Today's workout with WHY */}
           {today.has_workout ? (
             <Card data-testid="today-workout" className="bg-slate-800/50 border-slate-700/50">

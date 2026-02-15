@@ -139,23 +139,25 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
         data-hero-mode="full-bleed"
         className="block overflow-hidden -mx-4 hover:opacity-95 transition-opacity"
       >
+        {/* Title row — above the gradient so the athlete knows what this is */}
+        <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-white">{lastRun.name}</p>
+            <p className="text-xs text-slate-400">{formatRelativeTime(lastRun.start_time)}</p>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Effort</span>
+            {lastRun.tier_used && lastRun.confidence != null && (
+              <p className="text-[10px] text-slate-600">{Math.round(lastRun.confidence * 100)}% confidence</p>
+            )}
+          </div>
+        </div>
+
         {/* Full-bleed effort gradient canvas */}
         <MiniEffortCanvas effortIntensity={lastRun.effort_intensity!} height={120} />
 
         {/* Metrics ribbon */}
         <div className="px-4 py-3 space-y-2">
-          {/* Title row */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-white">{lastRun.name}</p>
-              <p className="text-xs text-slate-400">{formatRelativeTime(lastRun.start_time)}</p>
-            </div>
-            {lastRun.tier_used && lastRun.confidence != null && (
-              <div className="text-xs text-slate-500">
-                {Math.round(lastRun.confidence * 100)}% confidence
-              </div>
-            )}
-          </div>
 
           {/* Compact metrics row */}
           <div className="flex justify-between items-center">

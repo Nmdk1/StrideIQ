@@ -4,13 +4,13 @@
  * These tests are written RED-first: they will FAIL until the
  * home page layout is restructured with:
  *   1. Full-bleed effort gradient (data-hero-mode="full-bleed")
- *   2. morning_voice as plain <p> text (no "Coach noticed" card)
+ *   2. morning_voice as plain <p> text + Coach noticed card with Opus insight
  *   3. Today's workout with workout_why
  *   4. Check-in positioned AFTER workout (below fold)
  *
  * Guardrails:
  *   - DOM order: hero → voice → workout → checkin
- *   - No CoachNoticedCard in the new layout
+ *   - CoachNoticedCard restored with richer Opus-generated insight
  *   - morning_voice and workout_why rendered via data-testid
  */
 
@@ -215,15 +215,15 @@ describe('Home Page Voice: Voice rendering', () => {
     expect(voiceEl).toHaveTextContent('48 miles across 6 runs this week');
   });
 
-  test('no "Coach noticed" card in the new layout', () => {
+  test('Coach noticed card renders with coach_briefing insight', () => {
     const { container } = render(<HomePage />);
 
-    // The old "Coach noticed" label should not appear
-    const coachNoticedText = container.querySelectorAll('*');
-    const found = Array.from(coachNoticedText).some(
-      (el) => el.textContent?.includes('Coach noticed') && el.closest('[class*="Card"]')
+    // Coach noticed card should be present with the briefing text
+    const coachNoticedElements = container.querySelectorAll('*');
+    const found = Array.from(coachNoticedElements).some(
+      (el) => el.textContent?.includes('Coach noticed')
     );
-    expect(found).toBe(false);
+    expect(found).toBe(true);
   });
 });
 
