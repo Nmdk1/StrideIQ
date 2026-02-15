@@ -56,10 +56,11 @@ export function CoachableMoments({ moments, confidence, className = '' }: Coacha
             <span className="text-xs text-slate-500 font-mono flex-shrink-0 w-12">
               {formatTimeS(moment.time_s)}
             </span>
-            <span className="text-sm text-slate-300 flex-1">
-              {moment.context || formatMomentType(moment.type)}
+            <span className="text-sm text-slate-300 flex-1" data-testid={`moment-text-${i}`}>
+              {moment.narrative || moment.context || formatMomentType(moment.type)}
             </span>
-            {moment.value != null && (
+            {/* Show metric value only when narrative is absent (fallback mode) */}
+            {!moment.narrative && moment.value != null && (
               <span className="text-xs text-slate-500 flex-shrink-0">
                 {moment.value.toFixed(1)}
               </span>

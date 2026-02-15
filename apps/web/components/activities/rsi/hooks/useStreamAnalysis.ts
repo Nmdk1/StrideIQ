@@ -61,6 +61,7 @@ export interface Moment {
   time_s: number;
   value: number | null;
   context: string | null;  // Short enum-level label, not prose
+  narrative?: string | null;  // A3: LLM-generated coaching sentence
 }
 
 /** Per-point stream data for canvas visualization (server-side LTTB ≤500 points) */

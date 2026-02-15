@@ -50,6 +50,7 @@ export interface Moment {
   time_s: number;
   value: number | null;
   context: string | null;               // Backend: context (NOT label)
+  narrative?: string | null;            // A3: LLM-generated coaching sentence
 }
 
 export interface StreamAnalysisResult {
