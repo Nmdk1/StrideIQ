@@ -1199,11 +1199,13 @@ def compute_last_run(
 
     Note: 96h ensures there's always a run showing unless the athlete
     is injured or taking an extended break. Most training plans have
-    at least one run every 3-4 days.
+    at least one run every 3-4 days. Demo accounts skip the cutoff
+    entirely so the demo always has a hero visible.
     """
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=96)
 
+    # First try within the 96h window
     latest = (
         db.query(Activity)
         .filter(
@@ -1213,6 +1215,18 @@ def compute_last_run(
         .order_by(desc(Activity.start_time))
         .first()
     )
+
+    # Demo accounts: if nothing in 96h, show most recent regardless of age
+    if latest is None:
+        latest = (
+            db.query(Activity)
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.source == "demo",
+            )
+            .order_by(desc(Activity.start_time))
+            .first()
+        )
 
     if latest is None:
         return None
