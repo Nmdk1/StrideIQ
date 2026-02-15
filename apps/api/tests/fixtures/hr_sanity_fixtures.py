@@ -168,6 +168,154 @@ def make_dropout_hr_stream(
     }
 
 
+def make_over_reporting_hr_stream(
+    duration_s: int = 3600,
+    spike_start_s: int = 1200,
+    spike_end_s: int = 2400,
+    spike_hr: float = 230.0,
+) -> Dict[str, List]:
+    """HR locked to cadence / optical interference — sustained readings > 220.
+
+    Normal HR for first and last thirds, 230 bpm for the middle third.
+    This simulates optical sensor lock-on to cadence or sunlight interference.
+
+    Expected: hr_reliable = False (hard ceiling check).
+    """
+    time = list(range(duration_s))
+    heartrate = []
+    velocity = []
+    cadence = []
+    distance = []
+    altitude = []
+    grade = []
+    cum_dist = 0.0
+
+    for t in time:
+        v = 3.0  # steady pace
+
+        if t < spike_start_s:
+            hr = 150.0
+        elif t < spike_end_s:
+            hr = spike_hr  # way above physiological max
+        else:
+            hr = 148.0
+
+        cum_dist += v
+        velocity.append(round(v, 3))
+        heartrate.append(round(hr, 1))
+        cadence.append(175)
+        distance.append(round(cum_dist, 1))
+        altitude.append(100.0)
+        grade.append(0.0)
+
+    return {
+        "time": time,
+        "heartrate": heartrate,
+        "velocity_smooth": velocity,
+        "cadence": cadence,
+        "distance": distance,
+        "altitude": altitude,
+        "grade_smooth": grade,
+    }
+
+
+def make_soft_ceiling_hr_stream(
+    duration_s: int = 3600,
+    athlete_max_hr: int = 185,
+) -> Dict[str, List]:
+    """HR sustained above athlete max_hr * 1.05 for 120+ seconds.
+
+    Simulates optical sensor producing readings just above max for extended period.
+    Normal effort doesn't sustain above max for that long.
+
+    Expected: hr_reliable = False (soft ceiling check, requires max_hr).
+    """
+    time = list(range(duration_s))
+    heartrate = []
+    velocity = []
+    cadence = []
+    distance = []
+    altitude = []
+    grade = []
+    cum_dist = 0.0
+    soft_ceiling = athlete_max_hr * 1.05
+
+    for t in time:
+        v = 3.2
+
+        if t < 600:
+            hr = 140.0  # warmup
+        elif t < 600 + 300:
+            # 300 seconds (5 min) sustained above soft ceiling
+            hr = soft_ceiling + 5.0
+        else:
+            hr = 155.0  # normal running
+
+        cum_dist += v
+        velocity.append(round(v, 3))
+        heartrate.append(round(hr, 1))
+        cadence.append(172)
+        distance.append(round(cum_dist, 1))
+        altitude.append(100.0)
+        grade.append(0.0)
+
+    return {
+        "time": time,
+        "heartrate": heartrate,
+        "velocity_smooth": velocity,
+        "cadence": cadence,
+        "distance": distance,
+        "altitude": altitude,
+        "grade_smooth": grade,
+    }
+
+
+def make_brief_spike_hr_stream(
+    duration_s: int = 3600,
+) -> Dict[str, List]:
+    """Brief HR spike above 220 (< 60 seconds) — should NOT trigger.
+
+    Transient spikes can happen with optical sensors but aren't sustained.
+    This is the control fixture for the hard ceiling check.
+
+    Expected: hr_reliable = True.
+    """
+    time = list(range(duration_s))
+    heartrate = []
+    velocity = []
+    cadence = []
+    distance = []
+    altitude = []
+    grade = []
+    cum_dist = 0.0
+
+    for t in time:
+        v = 3.0
+
+        if 1800 <= t < 1830:  # only 30 seconds above 220
+            hr = 225.0
+        else:
+            hr = 155.0
+
+        cum_dist += v
+        velocity.append(round(v, 3))
+        heartrate.append(round(hr, 1))
+        cadence.append(172)
+        distance.append(round(cum_dist, 1))
+        altitude.append(100.0)
+        grade.append(0.0)
+
+    return {
+        "time": time,
+        "heartrate": heartrate,
+        "velocity_smooth": velocity,
+        "cadence": cadence,
+        "distance": distance,
+        "altitude": altitude,
+        "grade_smooth": grade,
+    }
+
+
 def make_normal_hr_stream(
     duration_s: int = 3600,
 ) -> Dict[str, List]:

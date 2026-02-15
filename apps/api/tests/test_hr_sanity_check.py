@@ -23,6 +23,9 @@ from fixtures.hr_sanity_fixtures import (
     make_flatline_hr_stream,
     make_dropout_hr_stream,
     make_normal_hr_stream,
+    make_over_reporting_hr_stream,
+    make_soft_ceiling_hr_stream,
+    make_brief_spike_hr_stream,
 )
 from services.run_stream_analysis import (
     analyze_stream,
@@ -80,22 +83,90 @@ class TestHRSanityDetection:
         )
         assert result["reliable"] is True
 
-    def test_no_hr_data_returns_reliable_false(self):
-        """Missing HR channel → reliable is False (no HR to trust)."""
+    def test_no_hr_data_returns_reliable_true(self):
+        """Missing HR channel → reliable is True (absence != unreliability)."""
         result = hr_sanity_check(
             heartrate=None,
             velocity=[3.0] * 100,
         )
-        # No HR data means we can't trust it — default to pace
-        assert result["reliable"] is False
+        assert result["reliable"] is True
 
-    def test_empty_hr_returns_reliable_false(self):
-        """Empty HR list → reliable is False."""
+    def test_empty_hr_returns_reliable_true(self):
+        """Empty HR list → reliable is True (no sensor, not bad sensor)."""
         result = hr_sanity_check(
             heartrate=[],
             velocity=[3.0] * 100,
         )
+        assert result["reliable"] is True
+
+
+# ---------------------------------------------------------------------------
+# 1b. Over-reporting detection tests
+# ---------------------------------------------------------------------------
+
+class TestHROverReportingDetection:
+    """Verify that over-reporting HR patterns are detected."""
+
+    def test_sustained_hr_above_220_detected_as_unreliable(self):
+        """HR > 220 for 60+ seconds → unreliable (hard ceiling)."""
+        stream = make_over_reporting_hr_stream()
+        result = hr_sanity_check(
+            heartrate=stream["heartrate"],
+            velocity=stream["velocity_smooth"],
+        )
         assert result["reliable"] is False
+        assert "220" in result["reason"] or "sensor" in result["reason"].lower()
+
+    def test_sustained_hr_above_max_detected_as_unreliable(self):
+        """HR > 105% of max_hr for 120+ seconds → unreliable (soft ceiling)."""
+        athlete_max = 185
+        stream = make_soft_ceiling_hr_stream(athlete_max_hr=athlete_max)
+        result = hr_sanity_check(
+            heartrate=stream["heartrate"],
+            velocity=stream["velocity_smooth"],
+            max_hr=athlete_max,
+        )
+        assert result["reliable"] is False
+        assert "max" in result["reason"].lower() or "105%" in result["reason"]
+
+    def test_soft_ceiling_not_checked_without_max_hr(self):
+        """Without max_hr, soft ceiling check is skipped entirely."""
+        athlete_max = 185
+        stream = make_soft_ceiling_hr_stream(athlete_max_hr=athlete_max)
+        # Pass max_hr=None — soft ceiling should not fire
+        result = hr_sanity_check(
+            heartrate=stream["heartrate"],
+            velocity=stream["velocity_smooth"],
+            max_hr=None,
+        )
+        # The stream stays under 220 hard ceiling, so it should pass
+        assert result["reliable"] is True
+
+    def test_brief_spike_above_220_not_flagged(self):
+        """Transient HR spike (< 60s) above 220 should NOT trigger."""
+        stream = make_brief_spike_hr_stream()
+        result = hr_sanity_check(
+            heartrate=stream["heartrate"],
+            velocity=stream["velocity_smooth"],
+        )
+        assert result["reliable"] is True
+
+    def test_over_reporting_in_analyze_stream_with_max_hr(self):
+        """analyze_stream passes max_hr from athlete_context to hr_sanity_check."""
+        athlete_max = 185
+        stream = make_soft_ceiling_hr_stream(athlete_max_hr=athlete_max)
+        ctx = AthleteContext(
+            max_hr=athlete_max,
+            resting_hr=55,
+            threshold_hr=170,
+        )
+        result = analyze_stream(
+            stream_data=stream,
+            channels_available=list(stream.keys()),
+            athlete_context=ctx,
+        )
+        assert result.hr_reliable is False
+        assert result.hr_note is not None
 
 
 # ---------------------------------------------------------------------------

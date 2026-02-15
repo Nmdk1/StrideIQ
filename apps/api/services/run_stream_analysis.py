@@ -331,27 +331,34 @@ def _compute_effort_array(
 def hr_sanity_check(
     heartrate: Optional[List[float]],
     velocity: Optional[List[float]],
+    max_hr: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Check whether heart rate data is physiologically plausible.
 
     Runs several heuristics to detect common wrist-sensor failures:
-        1. Missing/empty HR data
-        2. Sustained dropout (HR near zero)
-        3. Flatline (unreasonably low std dev for a run)
+        1. Sustained dropout (HR near zero)
+        2. Flatline (unreasonably low std dev for a run)
+        3. Suspiciously low HR during hard pace
         4. Inverse correlation with pace (HR drops when running harder)
+        5. Over-reporting (sustained HR above physiological max)
 
     Args:
         heartrate: Per-second HR values (may be None).
         velocity: Per-second velocity values in m/s (may be None).
+        max_hr: Athlete's known max HR (optional). Enables soft-ceiling check.
 
     Returns:
         dict with:
             reliable: bool — True if HR data appears trustworthy
             reason: str — human-readable explanation (empty if reliable)
+
+    Note: When HR data is absent (None/empty), returns reliable=True.
+    Absence is not unreliability — it just means no HR sensor was used.
+    The caller handles the no-HR case separately (no toggle, no note).
     """
-    # --- No HR data at all ---
+    # --- No HR data at all — not unreliable, just absent ---
     if heartrate is None or len(heartrate) == 0:
-        return {"reliable": False, "reason": "No heart rate data available"}
+        return {"reliable": True, "reason": ""}
 
     n = len(heartrate)
 
@@ -450,6 +457,50 @@ def hr_sanity_check(
                                 f"— sensor may have lost contact during hard effort"
                             ),
                         }
+
+    # --- Check 5: Over-reporting (sustained HR above physiological max) ---
+    # Optical sensors can lock onto cadence rhythm or sunlight interference,
+    # producing sustained readings far above actual HR.
+
+    # Hard ceiling: no human sustains HR > 220 for 60+ seconds
+    hard_ceiling = 220.0
+    hard_ceiling_window = 60  # seconds
+    consecutive_above = 0
+    for hr in heartrate:
+        if hr > hard_ceiling:
+            consecutive_above += 1
+            if consecutive_above >= hard_ceiling_window:
+                return {
+                    "reliable": False,
+                    "reason": (
+                        f"Heart rate exceeded {hard_ceiling:.0f} bpm for "
+                        f"{hard_ceiling_window}+ seconds — likely sensor interference"
+                    ),
+                }
+        else:
+            consecutive_above = 0
+
+    # Soft ceiling: if athlete max_hr is known, sustained HR > 105% of max
+    # for 120+ seconds indicates sensor failure (allows 5% headroom for
+    # true max efforts which are transient, not sustained)
+    if max_hr is not None and max_hr > 0:
+        soft_ceiling = max_hr * 1.05
+        soft_ceiling_window = 120  # seconds
+        consecutive_above = 0
+        for hr in heartrate:
+            if hr > soft_ceiling:
+                consecutive_above += 1
+                if consecutive_above >= soft_ceiling_window:
+                    return {
+                        "reliable": False,
+                        "reason": (
+                            f"Heart rate exceeded {soft_ceiling:.0f} bpm "
+                            f"(105% of max HR {max_hr}) for {soft_ceiling_window}+ "
+                            f"seconds — likely optical sensor interference"
+                        ),
+                    }
+            else:
+                consecutive_above = 0
 
     return {"reliable": True, "reason": ""}
 
@@ -1600,7 +1651,12 @@ def analyze_stream(
 
     # --- A2: HR sanity check — detect unreliable HR before it corrupts
     #     effort, segments, and drift. Fail-closed: bad HR → pace fallback.
-    hr_check = hr_sanity_check(heartrate=heartrate, velocity=velocity)
+    athlete_max_hr = getattr(athlete_context, 'max_hr', None) if athlete_context else None
+    hr_check = hr_sanity_check(
+        heartrate=heartrate,
+        velocity=velocity,
+        max_hr=athlete_max_hr,
+    )
     hr_reliable = hr_check["reliable"]
     hr_note: Optional[str] = hr_check["reason"] if not hr_reliable else None
 
