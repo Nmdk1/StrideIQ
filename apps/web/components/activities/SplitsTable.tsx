@@ -2,17 +2,7 @@
 
 import React from 'react';
 import { useUnits } from '@/lib/context/UnitsContext';
-
-type Split = {
-  split_number: number;
-  distance: number | null; // meters
-  elapsed_time: number | null; // seconds
-  moving_time: number | null; // seconds
-  average_heartrate: number | null;
-  max_heartrate: number | null;
-  average_cadence: number | null;
-  gap_seconds_per_mile: number | null;
-};
+import type { Split } from '@/lib/types/splits';
 
 const MILES_TO_KM = 1.60934;
 
@@ -44,7 +34,15 @@ function gapSecondsPerKmFromPerMile(gapSecondsPerMile: number | null | undefined
   return gapSecondsPerMile / MILES_TO_KM;
 }
 
-export function SplitsTable({ splits }: { splits: Split[] }) {
+export interface SplitsTableProps {
+  splits: Split[];
+  /** Optional: callback when mouse enters a split row (index into splits array) */
+  onRowHover?: (index: number | null) => void;
+  /** Optional: ref map for direct DOM manipulation of row highlights */
+  rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
+}
+
+export function SplitsTable({ splits, onRowHover, rowRefs }: SplitsTableProps) {
   const { formatDistance, formatPace } = useUnits();
 
   if (!splits?.length) return null;
@@ -92,7 +90,13 @@ export function SplitsTable({ splits }: { splits: Split[] }) {
             {rows.map((r) => {
               const isBest = typeof r.paceSecKm === 'number' && isFinite(r.paceSecKm) && r.paceSecKm === bestPace;
               return (
-                <tr key={r.split_number} className="text-slate-200">
+                <tr
+                  key={r.split_number}
+                  className="text-slate-200 transition-colors duration-75"
+                  ref={(el) => { if (el && rowRefs) rowRefs.current.set(r.split_number - 1, el); }}
+                  onMouseEnter={() => onRowHover?.(r.split_number - 1)}
+                  onMouseLeave={() => onRowHover?.(null)}
+                >
                   <td className="px-3 py-2 whitespace-nowrap">{r.split_number}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatDistance(r.distance, 2)}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatDuration(r.cumulativeTime)}</td>

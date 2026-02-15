@@ -59,6 +59,8 @@ import {
 import { lttbDownsample } from '@/components/activities/rsi/utils/lttb';
 import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 import { useUnits } from '@/lib/context/UnitsContext';
+import type { Split } from '@/lib/types/splits';
+import { SplitsTable } from '@/components/activities/SplitsTable';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,6 +68,8 @@ import { useUnits } from '@/lib/context/UnitsContext';
 
 export interface RunShapeCanvasProps {
   activityId: string;
+  /** Optional splits data for the Splits tab panel */
+  splits?: Split[] | null;
 }
 
 interface ChartPoint {
@@ -478,6 +482,34 @@ function PlanComparisonCard({
 }
 
 // ---------------------------------------------------------------------------
+// SplitsModePanel — Splits tab panel (reuses SplitsTable with scroll container)
+// ---------------------------------------------------------------------------
+
+function SplitsModePanel({
+  splits,
+}: {
+  splits: Split[];
+}) {
+  if (!splits || splits.length === 0) {
+    return (
+      <div className="mt-3 text-sm text-slate-500" data-testid="splits-panel-empty">
+        No splits data available for this activity.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-3 max-h-[300px] md:max-h-[400px] overflow-y-auto"
+      data-testid="splits-panel"
+    >
+      <SplitsTable splits={splits} />
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
 // LabModePanel (AC-9: zone overlay, segment table, drift metrics)
 // ---------------------------------------------------------------------------
 
@@ -571,7 +603,7 @@ function LabModePanel({
 // RunShapeCanvas (main export)
 // ---------------------------------------------------------------------------
 
-export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
+export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
   const { data, isLoading, error, refetch } = useStreamAnalysis(activityId);
 
   // Toggle state (AC-4): survives resize and view switch by design (useState)
@@ -1023,6 +1055,11 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
           </svg>
           <span>HR data flagged as unreliable — hidden by default. Toggle to view.</span>
         </div>
+      )}
+
+      {/* Splits panel: shown only when Splits tab is active */}
+      {viewMode === 'splits' && splits && (
+        <SplitsModePanel splits={splits} />
       )}
 
       {/* Lab mode panel (AC-9: shown only when Lab is active) */}

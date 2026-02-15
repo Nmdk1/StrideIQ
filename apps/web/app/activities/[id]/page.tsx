@@ -67,16 +67,7 @@ interface Activity {
   narrative: string | null;
 }
 
-interface Split {
-  split_number: number;
-  distance: number | null;
-  elapsed_time: number | null;
-  moving_time: number | null;
-  average_heartrate: number | null;
-  max_heartrate: number | null;
-  average_cadence: number | null;
-  gap_seconds_per_mile: number | null;
-}
+import type { Split } from '@/lib/types/splits';
 
 function normalizeCadenceToSpm(raw: number | null | undefined): number | null {
   if (raw === null || raw === undefined) return null;
