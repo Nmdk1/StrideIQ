@@ -621,6 +621,36 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
     return Math.max(chartMax, segMax) || 1;
   }, [analysis, chartData]);
 
+  // Detect whether effort data has meaningful (non-zero) values for gradient
+  const hasEffortGradient = useMemo(() => {
+    return chartData.some((p) => p.effort > 0);
+  }, [chartData]);
+
+  // Sample effort values for SVG linearGradient stops (~30 stops max for perf)
+  const effortGradientStops = useMemo(() => {
+    if (!hasEffortGradient || chartData.length === 0) return [];
+    const maxStops = 30;
+    const step = Math.max(1, Math.floor(chartData.length / maxStops));
+    const stops: Array<{ offset: string; color: string }> = [];
+    for (let i = 0; i < chartData.length; i += step) {
+      const offset = (i / (chartData.length - 1)) * 100;
+      stops.push({
+        offset: `${offset.toFixed(1)}%`,
+        color: effortToColor(chartData[i].effort),
+      });
+    }
+    // Ensure last point is included
+    const lastIdx = chartData.length - 1;
+    const lastOffset = '100%';
+    if (stops.length === 0 || stops[stops.length - 1].offset !== lastOffset) {
+      stops.push({
+        offset: lastOffset,
+        color: effortToColor(chartData[lastIdx].effort),
+      });
+    }
+    return stops;
+  }, [hasEffortGradient, chartData]);
+
   // --- Crosshair handlers ---
   const handleHover = useCallback((index: number) => {
     setHoveredIndex(index);
@@ -688,39 +718,9 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
 
   const isTier4 = analysis.cross_run_comparable === false;
 
-  // Detect whether effort data has meaningful (non-zero) values for gradient
-  const hasEffortGradient = useMemo(() => {
-    return chartData.some((p) => p.effort > 0);
-  }, [chartData]);
-
   // Pace line stroke: effort gradient or slate-400 fallback
   const PACE_FALLBACK_COLOR = '#94a3b8'; // slate-400
   const paceStroke = hasEffortGradient ? 'url(#paceEffortGradient)' : PACE_FALLBACK_COLOR;
-
-  // Sample effort values for SVG linearGradient stops (~30 stops max for perf)
-  const effortGradientStops = useMemo(() => {
-    if (!hasEffortGradient || chartData.length === 0) return [];
-    const maxStops = 30;
-    const step = Math.max(1, Math.floor(chartData.length / maxStops));
-    const stops: Array<{ offset: string; color: string }> = [];
-    for (let i = 0; i < chartData.length; i += step) {
-      const offset = (i / (chartData.length - 1)) * 100;
-      stops.push({
-        offset: `${offset.toFixed(1)}%`,
-        color: effortToColor(chartData[i].effort),
-      });
-    }
-    // Ensure last point is included
-    const lastIdx = chartData.length - 1;
-    const lastOffset = '100%';
-    if (stops.length === 0 || stops[stops.length - 1].offset !== lastOffset) {
-      stops.push({
-        offset: lastOffset,
-        color: effortToColor(chartData[lastIdx].effort),
-      });
-    }
-    return stops;
-  }, [hasEffortGradient, chartData]);
 
   // Recharts margin (must match overlay positioning)
   const margin = { top: 5, right: 5, bottom: 5, left: 5 };
