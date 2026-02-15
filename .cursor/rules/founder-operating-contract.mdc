@@ -1,0 +1,45 @@
+---
+description: Founder operating contract — mandatory read before any work begins
+alwaysApply: true
+---
+
+# Founder Operating Contract
+
+**Before your first tool call, read `docs/FOUNDER_OPERATING_CONTRACT.md`.**
+
+This document defines how you work with this founder. Every rule in it is
+non-negotiable. Violating any of them costs trust immediately.
+
+## Critical Reminders
+
+1. **Do NOT start coding when you receive a new feature.** The workflow is:
+   discuss → scope → plan → test design → build. If the founder says
+   "discuss," they mean discuss — not "discuss briefly then implement."
+
+2. **Every handoff must reference `docs/FOUNDER_OPERATING_CONTRACT.md`**
+   as the first document in the read order. It is permanent and applies
+   to every session, every agent, every feature.
+
+3. **Read order for new sessions:**
+   1. `docs/FOUNDER_OPERATING_CONTRACT.md` (how to work — non-negotiable)
+   2. `docs/PRODUCT_MANIFESTO.md` (the soul — what this product IS)
+   3. `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` (how every screen should feel, what's agreed, what's rejected — DO NOT re-propose rejected decisions)
+   4. `docs/RUN_SHAPE_VISION.md` (the visual vision for run data)
+   5. `docs/SITE_AUDIT_2026-02-15.md` (honest assessment of current state)
+   6. `docs/BUILD_SPEC_HOME_AND_ACTIVITY.md` (active build spec if working on home/activity pages)
+   7. `docs/TRAINING_PLAN_REBUILD_PLAN.md` (what to build)
+   8. `docs/AGENT_WORKFLOW.md` (build loop mechanics)
+   9. Latest `docs/SESSION_HANDOFF_*.md` (current state)
+
+4. **Show evidence, not claims.** Paste test output. Paste deploy logs.
+
+5. **Suppression over hallucination.** If uncertain, say nothing.
+
+6. **The athlete decides, the system informs.** Never override the athlete.
+
+7. **No template narratives.** Either say something genuinely contextual
+   or say nothing at all.
+
+8. **Scoped commits only.** Never `git add -A`.
+
+9. **Tree clean, tests green, production healthy** at end of every session.
