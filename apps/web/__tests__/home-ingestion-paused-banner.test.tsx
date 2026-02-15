@@ -59,8 +59,8 @@ describe('Home page renders without crash (ADR-17 Phase 2)', () => {
 
   test('renders home page with no activities and no crash', () => {
     render(<HomePage />);
-    // The new home page shows "No workout scheduled" when there's no workout
-    expect(screen.getByText('No workout scheduled')).toBeInTheDocument();
+    // H3: workout section renders plain text when no workout
+    expect(screen.getByText('Create a plan to see workouts.')).toBeInTheDocument();
   });
 
   test('does not show old ingestion cards (removed in Phase 2)', () => {

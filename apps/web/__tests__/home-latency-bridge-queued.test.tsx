@@ -37,8 +37,8 @@ import HomePage from '@/app/home/page';
 describe('Home page (queued state)', () => {
   test('renders home page without crashing when ingestion not started', () => {
     render(<HomePage />);
-    // ADR-17 Phase 2: ingestion cards removed; page renders cleanly
-    expect(screen.getByText('No workout scheduled')).toBeInTheDocument();
+    // H3: workout section renders plain text when no workout
+    expect(screen.getByText('Create a plan to see workouts.')).toBeInTheDocument();
     // Welcome card removed in Phase 2
     expect(screen.queryByText('Welcome to StrideIQ')).not.toBeInTheDocument();
   });

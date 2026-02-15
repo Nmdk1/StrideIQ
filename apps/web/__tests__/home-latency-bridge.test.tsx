@@ -37,8 +37,8 @@ import HomePage from '@/app/home/page';
 describe('Home page (connected, no activities)', () => {
   test('renders home page without crashing when Strava connected but no activities', () => {
     render(<HomePage />);
-    // ADR-17 Phase 2: ingestion cards removed from home; page still renders
-    expect(screen.getByText('No workout scheduled')).toBeInTheDocument();
+    // H3: workout section renders plain text when no workout
+    expect(screen.getByText('Create a plan to see workouts.')).toBeInTheDocument();
     // Welcome card removed in Phase 2
     expect(screen.queryByText('Welcome to StrideIQ')).not.toBeInTheDocument();
   });
