@@ -29,8 +29,11 @@ const mockUseStreamAnalysis = useStreamAnalysis as jest.MockedFunction<typeof us
 
 const streamDataWithEffort = generateTestStreamData(500);
 
-// Stream data with no effort (all zeros)
+// Stream data with no effort (all zeros) — still has pace so gradient should render
 const streamDataNoEffort = streamDataWithEffort.map((p) => ({ ...p, effort: 0 }));
+
+// Stream data with no pace data at all — gradient should fallback
+const streamDataNoPace = streamDataWithEffort.map((p) => ({ ...p, pace: null, effort: 0 }));
 
 describe('Tier A: Effort-colored pace line', () => {
   test('pace stroke marker indicates gradient mode when effort data present', () => {
@@ -74,12 +77,31 @@ describe('Tier A: Effort-colored pace line', () => {
     expect(tracePace).not.toHaveAttribute('data-stroke-type', 'flat');
   });
 
-  test('pace stroke falls back to slate-400 when effort data is all zeros', () => {
+  test('pace stroke still uses gradient when effort is zero but pace exists', () => {
     mockUseStreamAnalysis.mockReturnValue({
       data: {
         ...mockTier1Result,
         effort_intensity: [],
         stream: streamDataNoEffort,
+      },
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+    } as any);
+
+    render(<RunShapeCanvas activityId="test-123" />);
+
+    const tracePace = screen.getByTestId('trace-pace');
+    // Gradient is now pace-based, so it renders even when effort is zero
+    expect(tracePace).toHaveAttribute('data-stroke-type', 'effort-gradient');
+  });
+
+  test('pace stroke falls back to slate-400 when no pace data at all', () => {
+    mockUseStreamAnalysis.mockReturnValue({
+      data: {
+        ...mockTier1Result,
+        effort_intensity: [],
+        stream: streamDataNoPace,
       },
       isLoading: false,
       error: null,
@@ -97,7 +119,7 @@ describe('Tier A: Effort-colored pace line', () => {
       data: {
         ...mockTier1Result,
         effort_intensity: [],
-        stream: streamDataNoEffort,
+        stream: streamDataNoPace,
       },
       isLoading: false,
       error: null,

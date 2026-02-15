@@ -639,31 +639,44 @@ export function RunShapeCanvas({ activityId }: RunShapeCanvasProps) {
     return Math.max(chartMax, segMax) || 1;
   }, [analysis, chartData]);
 
-  // Detect whether effort data has meaningful (non-zero) values for gradient
+  // Detect whether pace data exists for gradient coloring
   const hasEffortGradient = useMemo(() => {
-    return chartData.some((p) => p.effort > 0);
+    return chartData.some((p) => p.pace != null && p.pace > 0);
   }, [chartData]);
 
-  // Sample effort values for SVG linearGradient stops (~30 stops max for perf)
+  // Pace-based gradient stops: slow=blue, fast=red (same palette, driven by pace not HR)
   const effortGradientStops = useMemo(() => {
     if (!hasEffortGradient || chartData.length === 0) return [];
+
+    // Find pace range for normalization
+    const paces = chartData.map(p => p.pace).filter((p): p is number => p != null && p > 0);
+    if (paces.length === 0) return [];
+    const paceMin = Math.min(...paces);
+    const paceMax = Math.max(...paces);
+    const paceRange = paceMax - paceMin || 1;
+
     const maxStops = 30;
     const step = Math.max(1, Math.floor(chartData.length / maxStops));
     const stops: Array<{ offset: string; color: string }> = [];
     for (let i = 0; i < chartData.length; i += step) {
       const offset = (i / (chartData.length - 1)) * 100;
+      const pace = chartData[i].pace ?? paceMax;
+      // Invert: faster (lower s/km) = higher intensity = hotter color
+      const paceIntensity = 1 - (pace - paceMin) / paceRange;
       stops.push({
         offset: `${offset.toFixed(1)}%`,
-        color: effortToColor(chartData[i].effort),
+        color: effortToColor(paceIntensity),
       });
     }
     // Ensure last point is included
     const lastIdx = chartData.length - 1;
     const lastOffset = '100%';
     if (stops.length === 0 || stops[stops.length - 1].offset !== lastOffset) {
+      const lastPace = chartData[lastIdx].pace ?? paceMax;
+      const lastIntensity = 1 - (lastPace - paceMin) / paceRange;
       stops.push({
         offset: lastOffset,
-        color: effortToColor(chartData[lastIdx].effort),
+        color: effortToColor(lastIntensity),
       });
     }
     return stops;
