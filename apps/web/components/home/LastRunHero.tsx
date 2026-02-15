@@ -153,9 +153,11 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
           <MiniEffortCanvas effortIntensity={lastRun.effort_intensity!} height={120} />
         )}
 
-        {/* Single-line metrics + link */}
+        {/* Single-line metrics + link — date first so you know what run this is */}
         <div className="px-4 py-2.5 flex items-center justify-between">
           <p className="text-sm text-slate-400">
+            <span className="text-slate-500">{formatRelativeTime(lastRun.start_time)}</span>
+            <span className="mx-1.5 text-slate-600">&middot;</span>
             {lastRun.name}
             <span className="mx-1.5 text-slate-600">&middot;</span>
             {formatDistance(lastRun.distance_m)}
