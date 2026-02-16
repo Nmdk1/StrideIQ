@@ -373,7 +373,7 @@ class TestAdaptationEngineIntegration:
 
     def test_intelligence_rules_apply_to_50k(self):
         """
-        All 7 intelligence rules (LOAD_SPIKE, SELF_REG_DELTA, etc.)
+        All 8 intelligence rules (LOAD_SPIKE, SELF_REG_DELTA, CORRELATION_CONFIRMED, etc.)
         must work with 50K workout types without modification to the
         rule logic — only the input metrics change.
         """

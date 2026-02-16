@@ -1175,7 +1175,7 @@ def analyze_correlations(
         "direction_interpretation": meta.direction_interpretation,
     }
 
-    return {
+    result = {
         "athlete_id": athlete_id,
         "analysis_period": {
             "start": start_date.isoformat(),
@@ -1191,6 +1191,22 @@ def analyze_correlations(
         "correlations": correlations,
         "total_correlations_found": len(correlations)
     }
+
+    # Persist significant findings for reproducibility tracking.
+    # This is fire-and-forget — persistence failures must never break
+    # the correlation API response.
+    try:
+        from services.correlation_persistence import persist_correlation_findings
+        persist_correlation_findings(
+            athlete_id=UUID(athlete_id) if isinstance(athlete_id, str) else athlete_id,
+            analysis_result=result,
+            db=db,
+            output_metric=output_metric,
+        )
+    except Exception as e:
+        logger.warning(f"Correlation persistence failed for {athlete_id}: {e}")
+
+    return result
 
 
 def discover_combination_correlations(

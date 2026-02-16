@@ -133,7 +133,7 @@ class TestGuidedTier:
         raise NotImplementedError("Tier: readiness for guided")
 
     def test_guided_gets_intelligence_insights(self):
-        """All 7 intelligence rules surface insights for guided athletes."""
+        """All 8 intelligence rules surface insights for guided athletes."""
         raise NotImplementedError("Tier: intelligence for guided")
 
     def test_guided_gets_completion_tracking(self):

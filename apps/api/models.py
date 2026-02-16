@@ -2211,3 +2211,73 @@ class NarrationLog(Base):
         Index("ix_narration_log_athlete_date", "athlete_id", "trigger_date"),
         Index("ix_narration_log_score", "score"),
     )
+
+
+class CorrelationFinding(Base):
+    """
+    Persists significant correlation discoveries for each athlete.
+
+    When the correlation engine finds a significant relationship (e.g.,
+    "sleep > 7h → efficiency +8% two days later"), it is recorded here.
+    Each subsequent confirmation of the same pattern increments
+    times_confirmed, building reproducibility weight.
+
+    Only reproducible findings (times_confirmed >= SURFACING_THRESHOLD)
+    are eligible to be narrated to the athlete.  The coach speaks only
+    when the pattern is real — not after a single lucky coincidence.
+
+    Lifecycle:
+        1. Correlation engine discovers a significant (p < 0.05, |r| >= 0.3)
+           relationship between an input (e.g. sleep_hours) and an output
+           metric (e.g. efficiency).
+        2. persist_correlation_findings() upserts the row:
+           - New finding → times_confirmed = 1.
+           - Existing finding → times_confirmed += 1, stats updated.
+        3. If a previously-significant finding drops below threshold in a
+           later run, is_active is set to False (patterns can fade).
+        4. Daily intelligence checks for reproducible findings
+           (times_confirmed >= 3, is_active) and emits InsightLog entries
+           with rule_id = "CORRELATION_CONFIRMED".
+    """
+    __tablename__ = "correlation_finding"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+
+    # --- What was correlated ---
+    input_name = Column(Text, nullable=False)          # e.g. "sleep_hours", "soreness_1_5"
+    output_metric = Column(Text, nullable=False)       # e.g. "efficiency", "pace_easy"
+    direction = Column(Text, nullable=False)           # "positive" or "negative"
+    time_lag_days = Column(Integer, default=0, nullable=False)
+
+    # --- Statistical strength (most recent computation) ---
+    correlation_coefficient = Column(Float, nullable=False)
+    p_value = Column(Float, nullable=False)
+    sample_size = Column(Integer, nullable=False)
+    strength = Column(Text, nullable=False)            # "weak", "moderate", "strong"
+
+    # --- Reproducibility tracking ---
+    times_confirmed = Column(Integer, default=1, nullable=False)
+    first_detected_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_confirmed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_surfaced_at = Column(DateTime(timezone=True), nullable=True)
+
+    # --- Human-readable insight text ---
+    insight_text = Column(Text, nullable=True)
+
+    # --- Categorization ---
+    category = Column(Text, nullable=False)            # "what_works", "what_doesnt", "pattern"
+    confidence = Column(Float, nullable=False)         # 0.0-1.0
+
+    # --- Lifecycle ---
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        # One row per unique (athlete, input, output, lag) combination.
+        Index(
+            "uq_corr_finding_natural_key",
+            "athlete_id", "input_name", "output_metric", "time_lag_days",
+            unique=True,
+        ),
+        Index("ix_corr_finding_active", "athlete_id", "is_active"),
+    )

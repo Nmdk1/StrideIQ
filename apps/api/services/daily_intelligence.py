@@ -10,14 +10,15 @@ Three operating modes:
     SUGGEST (earned):  Surface personal patterns from outcome data.
     FLAG (extreme):    Flag sustained negative trends. Still not an override.
 
-Seven intelligence rules:
-    1. LOAD_SPIKE           → INFORM: volume/intensity change detected
-    2. SELF_REG_DELTA       → LOG + LEARN: planned ≠ actual
-    3. EFFICIENCY_BREAK     → INFORM: efficiency breakthrough detected
-    4. PACE_IMPROVEMENT     → INFORM: faster pace + lower HR
-    5. SUSTAINED_DECLINE    → FLAG: 3+ weeks declining efficiency
-    6. SUSTAINED_MISSED     → ASK: pattern of missed sessions
-    7. READINESS_HIGH       → SUGGEST: consistently high readiness, not increasing
+Eight intelligence rules:
+    1. LOAD_SPIKE             → INFORM: volume/intensity change detected
+    2. SELF_REG_DELTA         → LOG + LEARN: planned ≠ actual
+    3. EFFICIENCY_BREAK       → INFORM: efficiency breakthrough detected
+    4. PACE_IMPROVEMENT       → INFORM: faster pace + lower HR
+    5. SUSTAINED_DECLINE      → FLAG: 3+ weeks declining efficiency
+    6. SUSTAINED_MISSED       → ASK: pattern of missed sessions
+    7. READINESS_HIGH         → SUGGEST: consistently high readiness, not increasing
+    8. CORRELATION_CONFIRMED  → INFORM: reproducible check-in → performance pattern
 
 Sources:
     - _AI_CONTEXT_/KNOWLEDGE_BASE/TRAINING_PHILOSOPHY.md
@@ -80,7 +81,7 @@ class IntelligenceResult:
         return any(i.workout_swap for i in self.insights)
 
 
-# The 7 intelligence rules
+# The 8 intelligence rules
 INTELLIGENCE_RULES = [
     "LOAD_SPIKE",           # 1. Volume/intensity spike detected
     "SELF_REG_DELTA",       # 2. Planned ≠ actual (self-regulation)
@@ -89,6 +90,7 @@ INTELLIGENCE_RULES = [
     "SUSTAINED_DECLINE",    # 5. 3+ weeks declining efficiency
     "SUSTAINED_MISSED",     # 6. Pattern of missed sessions
     "READINESS_HIGH",       # 7. Consistently high readiness
+    "CORRELATION_CONFIRMED",  # 8. Reproducible check-in → performance pattern
 ]
 
 # --- Thresholds (cold-start, will become per-athlete) ---
@@ -174,6 +176,11 @@ class DailyIntelligenceEngine:
             self._rule_readiness_high(athlete_id, target_date, db, result, readiness_score)
         except Exception as e:
             logger.warning(f"Rule READINESS_HIGH failed for {athlete_id}: {e}")
+
+        try:
+            self._rule_correlation_confirmed(athlete_id, target_date, db, result)
+        except Exception as e:
+            logger.warning(f"Rule CORRELATION_CONFIRMED failed for {athlete_id}: {e}")
 
         # Persist insights to InsightLog
         self._persist_insights(result, db)
@@ -683,6 +690,77 @@ class DailyIntelligenceEngine:
             workout_swap=False,
             suggested_action="Consider adding a quality session",
         ))
+
+    # ==================================================================
+    # Rule 8: CORRELATION_CONFIRMED → INFORM
+    # Surfaces reproducible check-in → performance correlations.
+    # Only fires when a pattern has been confirmed >= 3 times and
+    # hasn't been surfaced recently (cooldown period).
+    # ==================================================================
+
+    def _rule_correlation_confirmed(
+        self, athlete_id: UUID, target_date: date, db: Any,
+        result: IntelligenceResult,
+    ) -> None:
+        """Surface reproducible correlation findings as intelligence insights."""
+        from services.correlation_persistence import (
+            get_surfaceable_findings,
+            mark_surfaced,
+        )
+
+        findings = get_surfaceable_findings(athlete_id, db)
+        if not findings:
+            return
+
+        # Surface up to 2 findings per day (avoid overwhelming the athlete)
+        surfaced_ids = []
+        for finding in findings[:2]:
+            message = finding.insight_text or (
+                f"A reproducible pattern: your {finding.input_name} "
+                f"has a {finding.strength} {finding.direction} correlation "
+                f"with your {finding.output_metric}."
+            )
+
+            # Add reproducibility context
+            if finding.times_confirmed >= 5:
+                message += (
+                    f" This pattern has held consistently across "
+                    f"{finding.times_confirmed} analysis windows — "
+                    f"it's a reliable part of your personal profile."
+                )
+            elif finding.times_confirmed >= 3:
+                message += (
+                    f" This pattern has been confirmed {finding.times_confirmed} times — "
+                    f"it's becoming a reliable signal."
+                )
+
+            result.insights.append(IntelligenceInsight(
+                rule_id="CORRELATION_CONFIRMED",
+                mode=InsightMode.INFORM,
+                message=message,
+                data_cited={
+                    "input_name": finding.input_name,
+                    "output_metric": finding.output_metric,
+                    "direction": finding.direction,
+                    "correlation_coefficient": finding.correlation_coefficient,
+                    "time_lag_days": finding.time_lag_days,
+                    "times_confirmed": finding.times_confirmed,
+                    "strength": finding.strength,
+                    "category": finding.category,
+                    "first_detected": finding.first_detected_at.isoformat()
+                    if finding.first_detected_at else None,
+                },
+                confidence=min(
+                    finding.confidence * (1 + 0.1 * (finding.times_confirmed - 1)),
+                    1.0,
+                ),
+                workout_swap=False,
+            ))
+            surfaced_ids.append(finding.id)
+
+        # Mark as surfaced so cooldown kicks in
+        if surfaced_ids:
+            mark_surfaced(surfaced_ids, db)
 
     # ==================================================================
     # Shared helpers

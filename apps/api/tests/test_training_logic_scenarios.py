@@ -310,7 +310,7 @@ class TestReadinessComputation:
 # ===================================================================
 
 class TestIntelligenceRules:
-    """Test each of the 7 intelligence rules individually."""
+    """Test each of the 8 intelligence rules individually."""
 
     def test_rule1_load_spike_detected(self, runner):
         """Rule 1: Volume spike → INFORM with load context."""
