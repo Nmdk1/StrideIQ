@@ -255,6 +255,36 @@ curl -s -H "Authorization: Bearer $TOKEN" https://strideiq.run/v1/home | python3
 Migrations run **automatically** on container start (`python run_migrations.py`
 in the API entrypoint). No manual step needed.
 
+### Migration conflict recovery (production)
+
+If deploy logs show a duplicate-object failure while applying
+`corr_persist_001` (for example duplicate `correlation_finding` relation/type),
+the schema object exists but Alembic version tracking is behind. Use:
+
+```bash
+docker compose -f docker-compose.prod.yml exec api alembic current
+docker compose -f docker-compose.prod.yml exec api alembic heads
+docker compose -f docker-compose.prod.yml exec api alembic stamp corr_persist_001
+docker compose -f docker-compose.prod.yml exec api alembic upgrade head
+docker compose -f docker-compose.prod.yml exec api alembic current
+```
+
+Important: when running direct `psql` checks in prod, use the configured
+`POSTGRES_USER` (defaults to `postgres` in `docker-compose.prod.yml`) unless
+the environment overrides it.
+
+### Domain verification (always use real domain)
+
+Do not hand the founder placeholder hostnames for final smoke checks.
+Use the actual production host:
+
+```bash
+curl -I https://strideiq.run
+curl -s https://strideiq.run/health
+dig +short strideiq.run
+dig +short www.strideiq.run
+```
+
 ### Docker caching lesson
 
 If you deploy and the old code is still running, it is almost always Docker

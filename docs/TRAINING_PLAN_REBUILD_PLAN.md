@@ -26,6 +26,11 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 >
 > **Do not relitigate completed phases.** Acceptance criteria below are marked `[x]` for done.
 > Future sessions start from this baseline.
+>
+> **Operational Update — February 16, 2026**
+> - Correlation findings persistence + reproducibility tracking is now live.
+> - Correlation narrative specificity (lag timing + confirmation count + evidence `r=`) is aligned across daily intelligence and home surfaced text.
+> - Production migration bookkeeping for `corr_persist_001` required a one-time stamp in an environment where table objects already existed.
 
 ---
 
