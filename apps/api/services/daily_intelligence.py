@@ -721,18 +721,23 @@ class DailyIntelligenceEngine:
                 f"with your {finding.output_metric}."
             )
 
-            # Add reproducibility context
-            if finding.times_confirmed >= 5:
-                message += (
-                    f" This pattern has held consistently across "
-                    f"{finding.times_confirmed} analysis windows — "
-                    f"it's a reliable part of your personal profile."
-                )
-            elif finding.times_confirmed >= 3:
-                message += (
-                    f" This pattern has been confirmed {finding.times_confirmed} times — "
-                    f"it's becoming a reliable signal."
-                )
+            # Add explicit specificity anchors so the surfaced text cites:
+            # - lag timing,
+            # - confirmation history,
+            # - a numeric evidence value (correlation coefficient).
+            lag_days = finding.time_lag_days or 0
+            if lag_days == 0:
+                lag_phrase = "same day"
+            elif lag_days == 1:
+                lag_phrase = "the following day"
+            else:
+                lag_phrase = f"within {lag_days} days"
+
+            message += (
+                f" Timing signal: effect usually appears {lag_phrase}."
+                f" Confirmed {finding.times_confirmed} times."
+                f" Evidence: r={finding.correlation_coefficient:.2f}."
+            )
 
             result.insights.append(IntelligenceInsight(
                 rule_id="CORRELATION_CONFIRMED",

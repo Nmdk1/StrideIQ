@@ -1018,9 +1018,17 @@ def compute_coach_noticed(
             if abs(r) >= 0.5 and n >= 15:
                 input_name = corr.get("input_name", "factor")
                 direction = "positively" if r > 0 else "negatively"
+                lag_days = int(corr.get("time_lag_days", 0) or 0)
+                if lag_days == 0:
+                    lag_phrase = "same day"
+                elif lag_days == 1:
+                    lag_phrase = "the following day"
+                else:
+                    lag_phrase = f"within {lag_days} days"
                 text = (
                     f"{input_name.replace('_', ' ').title()} {direction} correlates "
-                    f"with your efficiency (r={r:.2f}, {n} observations)."
+                    f"with your efficiency (r={r:.2f}, {n} observations). "
+                    f"Timing signal: effect usually appears {lag_phrase}."
                 )
                 return CoachNoticed(
                     text=text,

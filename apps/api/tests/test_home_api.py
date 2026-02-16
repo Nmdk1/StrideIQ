@@ -409,6 +409,7 @@ class TestComputeCoachNoticed:
                     "correlation_coefficient": 0.65,
                     "sample_size": 20,
                     "input_name": "sleep_hours",
+                    "time_lag_days": 2,
                 }
             ]
         }
@@ -417,6 +418,8 @@ class TestComputeCoachNoticed:
         assert result is not None
         assert result.source == "correlation"
         assert "Sleep Hours" in result.text
+        assert "Timing signal: effect usually appears within 2 days." in result.text
+        assert "r=0.65, 20 observations" in result.text
         assert result.ask_coach_query
 
     @patch("services.home_signals.aggregate_signals", side_effect=Exception("disabled"))
