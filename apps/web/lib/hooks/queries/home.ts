@@ -3,7 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getHomeData } from '@/lib/api/services/home';
+import { getHomeData, type HomeData } from '@/lib/api/services/home';
 import { apiClient } from '@/lib/api/client';
 import { toast } from 'sonner';
 
@@ -40,8 +40,7 @@ export function useQuickCheckin() {
       // Optimistically update the home cache so the UI switches from
       // QuickCheckin → CheckinSummary instantly, without waiting for
       // the slow /v1/home refetch (coach briefing, LLM, etc.).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      queryClient.setQueryData(['home'], (old: any) => {
+      queryClient.setQueryData<HomeData | undefined>(['home'], (old) => {
         if (!old) return old;
         return {
           ...old,
