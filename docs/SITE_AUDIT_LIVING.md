@@ -1,8 +1,8 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Single source of truth for every new builder session. Updated every session.
-**Last updated:** February 16, 2026
-**Last updated by:** Builder session that shipped correlation persistence + check-in optimistic UI
+**Last updated:** February 17, 2026
+**Last updated by:** Builder session that shipped SEV-1 LLM timeout/concurrency hotfix
 
 ---
 
@@ -282,11 +282,17 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - **Insights feed noise:** `/insights` Active Insights section has duplicate volume alerts and low-quality achievement cards — needs deduplication and quality filter
 - **Activity detail moments:** Key Moments show raw numbers ("Grade Adjusted Anomaly: 4.7") — need narrative translation
 - **Home page dual voice:** `compute_coach_noticed` and `morning_voice` are separate systems producing overlapping content — should be merged into single synthesis
+- **Missing table: `athlete_calibrated_model`** — fitness_bank.py queries it but migration doesn't exist in production. Fails gracefully (try/except), but logs warnings on every `/v1/home` load.
 
 ### Technical Debt (Tracked, Not Blocking)
 - 8 services with local efficiency polarity assumptions — migrate to `OutputMetricMeta` registry
 - Timezone-aware vs naive datetime comparisons in `ensure_fresh_token` (observed during Danny's Strava debug)
 - Sleep weight = 0.00 in readiness score — excluded until correlation engine proves individual relationship
+
+### Resolved Issues (Feb 17, 2026)
+- **SEV-1: Coach stream hanging on "Thinking..."** — fixed with 120s hard timeout + try/except + SSE error event in `ai_coach.py`
+- **SEV-1: Home page LLM blocking all requests** — fixed by splitting `generate_coach_home_briefing` into two phases: DB on request thread, LLM on worker thread via `asyncio.to_thread` + 15s `asyncio.wait_for`
+- **SEV-1: `--workers 3` OOM** — reverted; 1 vCPU / 2GB droplet cannot run multiple uvicorn workers
 
 ### Demo Account Safety
 - `is_demo` flag on Athlete model (migration: `demo_guard_001`)
@@ -312,6 +318,13 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 ### Emergency Brake
 - `system.ingestion_paused` DB flag prevents new ingestion work during incidents
 - Workers on 429 mark as deferred (not error) with `deferred_until`
+
+### Infrastructure Constraints (HARD RULES)
+- **Droplet: 1 vCPU, 2GB RAM.** Do NOT increase uvicorn workers above 1. Multiple workers OOM and take the entire API down. Learned the hard way on Feb 17, 2026.
+- **Deploys cause ~30s-5min downtime.** `docker compose up -d --build` rebuilds images. During this window the API returns 502. The web frontend shows a loading spinner. This is expected — do not panic, but do not deploy during demo calls.
+- **LLM calls MUST have hard timeouts.** Every external LLM call (Anthropic, Gemini) must have both an SDK-level timeout AND a callsite-level `asyncio.wait_for` timeout. A single hung LLM call blocks the only uvicorn worker and takes down the entire API.
+- **Never pass a request-scoped SQLAlchemy `db` session to `asyncio.to_thread`.** Sessions are not thread-safe. Do DB work on the request thread, pass pure data to the worker thread.
+- **Home page (`/v1/home`) must never block on LLM.** If LLM times out, return `coach_briefing=None` and let deterministic data render. The page must load in <5s worst case.
 
 ---
 

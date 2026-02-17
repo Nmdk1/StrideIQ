@@ -455,6 +455,16 @@ These are real mistakes from real sessions. Learn from them.
    output. "Production is healthy" without `docker ps` output. The
    founder requires evidence. Every time.
 
+7. **Writing code without understanding the runtime environment.** An
+   agent shipped a SEV-1 hotfix with `--workers 3` on a 1 vCPU / 2GB
+   droplet, causing OOM and a second outage. The same hotfix passed a
+   SQLAlchemy `Session` across thread boundaries (not thread-safe) and
+   used a blocking `ThreadPoolExecutor` pattern that defeated its own
+   timeout. Three iterations were needed because the agent didn't read
+   the infrastructure constraints or the code it was modifying before
+   writing. **Research the code you're touching AND the infrastructure
+   it runs on.** Every time.
+
 ---
 
 *This contract represents patterns established across multiple deep
