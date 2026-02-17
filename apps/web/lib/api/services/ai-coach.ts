@@ -122,23 +122,24 @@ export const aiCoachService = {
       return;
     }
 
+    const IDLE_TIMEOUT_MS = 135_000; // 135s — slightly above backend 120s hard ceiling
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let receivedDone = false;
 
     const handlePacket = (packet: string) => {
       const lines = packet.split(/\r?\n/);
       const dataLines: string[] = [];
       for (const line of lines) {
         if (line.startsWith('data:')) {
-          // SSE spec: keep text after 'data:' (optionally a single leading space).
           const v = line.slice(5);
           dataLines.push(v.startsWith(' ') ? v.slice(1) : v);
         }
       }
       const dataStr = dataLines.join('\n').trim();
       if (!dataStr) return;
-      let obj: any = null;
+      let obj: Record<string, unknown> | null = null;
       try {
         obj = JSON.parse(dataStr);
       } catch {
@@ -147,39 +148,61 @@ export const aiCoachService = {
       if (obj?.type === 'delta' && typeof obj.delta === 'string') {
         opts.onDelta(obj.delta);
       }
+      if (obj?.type === 'error' && typeof obj.error === 'string') {
+        opts.onDelta(`\n\n${obj.error}`);
+      }
       if (obj?.type === 'done') {
+        receivedDone = true;
         opts.onDone?.({
-          timed_out: obj.timed_out,
-          thread_id: obj.thread_id,
-          history_thin: obj.history_thin,
-          used_baseline: obj.used_baseline,
-          baseline_needed: obj.baseline_needed,
-          rebuild_plan_prompt: obj.rebuild_plan_prompt,
+          timed_out: obj.timed_out as boolean | undefined,
+          thread_id: obj.thread_id as string | undefined,
+          history_thin: obj.history_thin as boolean | undefined,
+          used_baseline: obj.used_baseline as boolean | undefined,
+          baseline_needed: obj.baseline_needed as boolean | undefined,
+          rebuild_plan_prompt: obj.rebuild_plan_prompt as boolean | undefined,
         });
       }
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      // Normalize CRLF defensively (some environments/proxies).
-      if (buffer.includes('\r\n')) buffer = buffer.replace(/\r\n/g, '\n');
+    const readWithTimeout = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error('Coach response timed out — please try again.'));
+        }, IDLE_TIMEOUT_MS);
+        reader.read().then(
+          (result) => { clearTimeout(timer); resolve(result); },
+          (err) => { clearTimeout(timer); reject(err); },
+        );
+      });
+    };
 
-      let idx = buffer.indexOf('\n\n');
-      while (idx !== -1) {
-        const packet = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        handlePacket(packet);
-        idx = buffer.indexOf('\n\n');
+    try {
+      while (true) {
+        const { done, value } = await readWithTimeout();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        if (buffer.includes('\r\n')) buffer = buffer.replace(/\r\n/g, '\n');
+
+        let idx = buffer.indexOf('\n\n');
+        while (idx !== -1) {
+          const packet = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          handlePacket(packet);
+          idx = buffer.indexOf('\n\n');
+        }
       }
+    } catch (timeoutErr) {
+      reader.cancel().catch(() => {});
+      if (!receivedDone) {
+        opts.onDone?.({ timed_out: true });
+      }
+      throw timeoutErr;
     }
 
     // Flush any remaining decoder state + trailing packet without delimiter.
     buffer += decoder.decode();
     if (buffer.includes('\r\n')) buffer = buffer.replace(/\r\n/g, '\n');
     if (buffer.trim()) {
-      // If it ended with the delimiter, buffer will be empty; otherwise handle the last event.
       handlePacket(buffer.trim());
     }
   },

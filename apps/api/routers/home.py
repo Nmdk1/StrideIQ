@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from pydantic import BaseModel, ConfigDict
+import asyncio
 import logging
 
 from core.database import get_db
@@ -645,15 +646,18 @@ def _valid_home_briefing_contract(result: dict, checkin_data: Optional[dict], ra
     return True
 
 
-def _call_opus_briefing(
+HOME_BRIEFING_TIMEOUT_S = 15  # hard ceiling — home page must never block on LLM
+
+
+def _call_opus_briefing_sync(
     prompt: str,
     schema_fields: dict,
     required_fields: list,
     api_key: str,
 ) -> Optional[dict]:
     """
-    Call Claude Opus 4.5 for the home briefing. Returns parsed dict or None on failure.
-    Opus is the primary model for the product's most visible AI surface.
+    Synchronous Opus call — meant to be run via asyncio.to_thread().
+    Uses SDK-level timeout so the HTTP request itself is bounded.
     """
     import json as _json
 
@@ -663,7 +667,6 @@ def _call_opus_briefing(
         logger.warning("anthropic package not installed — cannot use Opus for home briefing")
         return None
 
-    # Build JSON schema instructions for Opus
     field_descriptions = "\n".join(
         f'  - "{k}" ({"REQUIRED" if k in required_fields else "optional"}): {v}'
         for k, v in schema_fields.items()
@@ -682,7 +685,7 @@ def _call_opus_briefing(
     )
 
     try:
-        client = Anthropic(api_key=api_key)
+        client = Anthropic(api_key=api_key, timeout=HOME_BRIEFING_TIMEOUT_S)
         response = client.messages.create(
             model="claude-opus-4-5-20251101",
             system=system_prompt,
@@ -696,7 +699,6 @@ def _call_opus_briefing(
             logger.warning("Opus returned empty response for home briefing")
             return None
 
-        # Strip markdown fences if present (defensive)
         text = raw_text.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
@@ -712,22 +714,22 @@ def _call_opus_briefing(
         return result
 
     except _json.JSONDecodeError as je:
-        logger.warning(f"Opus JSON parse failed: {je}; raw (first 500): {raw_text[:500]!r}")
+        logger.warning(f"Opus JSON parse failed: {je}")
         return None
     except Exception as e:
         logger.warning(f"Opus home briefing call failed: {type(e).__name__}: {e}")
         return None
 
 
-def _call_gemini_briefing(
+def _call_gemini_briefing_sync(
     prompt: str,
     schema_fields: dict,
     required_fields: list,
     api_key: str,
 ) -> Optional[dict]:
     """
-    Fallback: Call Gemini 2.5 Flash for the home briefing.
-    Used only when Opus is unavailable.
+    Synchronous Gemini call — meant to be run via asyncio.to_thread().
+    Fallback when Opus is unavailable.
     """
     import json as _json
 
@@ -780,6 +782,81 @@ def _call_gemini_briefing(
     return None
 
 
+def _fetch_llm_briefing_sync(
+    prompt: str,
+    schema_fields: dict,
+    required_fields: list,
+    checkin_data: Optional[dict],
+    race_data: Optional[dict],
+    cache_key: str,
+    athlete_id: str,
+) -> Optional[dict]:
+    """
+    Pure LLM call + validation + Redis cache write.  No DB access.
+
+    Designed to run in a worker thread via ``asyncio.to_thread`` so the
+    event loop is never blocked by a slow LLM response.  The caller is
+    responsible for building the prompt (which requires DB) on the
+    request thread before handing off.
+    """
+    import json as _json
+    import os
+
+    # --- Primary: Claude Opus 4.5 ---
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        result = _call_opus_briefing_sync(prompt, schema_fields, required_fields, anthropic_key)
+    else:
+        logger.info("ANTHROPIC_API_KEY not set — falling back to Gemini for home briefing")
+        result = None
+
+    # --- Fallback: Gemini Flash ---
+    if result is None:
+        google_key = os.getenv("GOOGLE_AI_API_KEY")
+        if google_key:
+            result = _call_gemini_briefing_sync(prompt, schema_fields, required_fields, google_key)
+        else:
+            logger.warning("No LLM API keys available for home briefing")
+            return None
+
+    if result is None:
+        return None
+
+    if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
+        logger.warning("Coach home briefing failed A->I->A contract validation; returning None for deterministic fallback.")
+        return None
+
+    # --- Post-generation validator: morning_voice ---
+    raw_voice = result.get("morning_voice")
+    if raw_voice:
+        voice_check = validate_voice_output(raw_voice, field="morning_voice")
+        if not voice_check["valid"]:
+            logger.warning(f"morning_voice failed validation ({voice_check.get('reason')}); using fallback")
+            result["morning_voice"] = voice_check["fallback"]
+    else:
+        result["morning_voice"] = _VOICE_FALLBACK
+
+    # --- Post-generation validator: workout_why ---
+    raw_why = result.get("workout_why")
+    if raw_why:
+        why_check = validate_voice_output(raw_why, field="workout_why")
+        if not why_check["valid"]:
+            logger.warning(f"workout_why failed validation ({why_check.get('reason')}); using fallback")
+            result["workout_why"] = None
+
+    # Cache for 30 minutes
+    try:
+        import redis as _redis
+        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+        r = _redis.from_url(redis_url, decode_responses=True)
+        r.setex(cache_key, 1800, _json.dumps(result))
+    except Exception:
+        pass
+
+    logger.info(f"Coach home briefing generated successfully for {athlete_id}")
+    return result
+
+
 def generate_coach_home_briefing(
     athlete_id: str,
     db: Session,
@@ -787,16 +864,18 @@ def generate_coach_home_briefing(
     planned_workout: Optional[dict] = None,
     checkin_data: Optional[dict] = None,
     race_data: Optional[dict] = None,
-) -> Optional[dict]:
+) -> tuple:
     """
-    Generate coaching narratives for every home page card.
+    Prepare everything the LLM needs (DB work on request thread), then
+    return the args for ``_fetch_llm_briefing_sync`` so the caller can
+    run the LLM call in a worker thread via ``asyncio.to_thread``.
+
+    Returns ``(cached_result,)`` if Redis hit, or
+    ``(None, prompt, schema_fields, required_fields, cache_key)`` if
+    the LLM call is needed.
 
     Primary model: Claude Opus 4.5 (highest reasoning quality).
     Fallback: Gemini 2.5 Flash (if Opus unavailable).
-
-    Uses the full ADR-16 athlete brief as context — the same rich
-    pre-computed brief the coach chat uses. No ad-hoc data scraping.
-
     Cached in Redis keyed by athlete + data hash.
     """
     import hashlib
@@ -813,7 +892,6 @@ def generate_coach_home_briefing(
     cache_key = f"coach_home_briefing:{athlete_id}:{data_hash}"
 
     # Check Redis cache
-    r = None
     try:
         import redis
         import os
@@ -821,9 +899,9 @@ def generate_coach_home_briefing(
         r = redis.from_url(redis_url, decode_responses=True)
         cached = r.get(cache_key)
         if cached:
-            return _json.loads(cached)
+            return (_json.loads(cached),)
     except Exception:
-        r = None
+        pass
 
     # ADR-16: Get the full athlete brief — same context the coach chat uses
     try:
@@ -916,7 +994,6 @@ def generate_coach_home_briefing(
 
     prompt = "\n".join(parts)
 
-    # --- Schema description (shared by Opus prompt and fallback) ---
     schema_fields = {
         "coach_noticed": "Assessment: the single most important coaching observation from their data. Must be interpretive (not purely numeric). State the fact, then the implication. 1-2 sentences.",
         "today_context": "Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.",
@@ -932,64 +1009,7 @@ def generate_coach_home_briefing(
     if race_data:
         required_fields.append("race_assessment")
 
-    try:
-        import os
-
-        # --- Primary: Claude Opus 4.5 (highest reasoning quality for the product's voice) ---
-        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-        if anthropic_key:
-            result = _call_opus_briefing(prompt, schema_fields, required_fields, anthropic_key)
-        else:
-            logger.info("ANTHROPIC_API_KEY not set — falling back to Gemini for home briefing")
-            result = None
-
-        # --- Fallback: Gemini Flash (if Opus unavailable or failed) ---
-        if result is None:
-            google_key = os.getenv("GOOGLE_AI_API_KEY")
-            if google_key:
-                result = _call_gemini_briefing(prompt, schema_fields, required_fields, google_key)
-            else:
-                logger.warning("No LLM API keys available for home briefing")
-                return None
-
-        if result is None:
-            return None
-
-        if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
-            logger.warning("Coach home briefing failed A->I->A contract validation; returning None for deterministic fallback.")
-            return None
-
-        # --- Post-generation validator: morning_voice ---
-        raw_voice = result.get("morning_voice")
-        if raw_voice:
-            voice_check = validate_voice_output(raw_voice, field="morning_voice")
-            if not voice_check["valid"]:
-                logger.warning(f"morning_voice failed validation ({voice_check.get('reason')}); using fallback")
-                result["morning_voice"] = voice_check["fallback"]
-        else:
-            result["morning_voice"] = _VOICE_FALLBACK
-
-        # --- Post-generation validator: workout_why ---
-        raw_why = result.get("workout_why")
-        if raw_why:
-            why_check = validate_voice_output(raw_why, field="workout_why")
-            if not why_check["valid"]:
-                logger.warning(f"workout_why failed validation ({why_check.get('reason')}); using fallback")
-                result["workout_why"] = None  # workout_why is optional, drop if invalid
-
-        # Cache for 30 minutes
-        if r:
-            try:
-                r.setex(cache_key, 1800, _json.dumps(result))
-            except Exception:
-                pass
-
-        logger.info(f"Coach home briefing generated successfully for {athlete_id}")
-        return result
-
-    except Exception as e:
-        logger.warning(f"Coach home briefing failed: {type(e).__name__}: {e}")
-        return None
+    return (None, prompt, schema_fields, required_fields, cache_key)
 
 
 def compute_coach_noticed(
@@ -1775,8 +1795,9 @@ async def get_home_data(
                     "soreness_label": today_checkin.soreness_label,
                 }
 
-            # ADR-16: Full athlete brief is built inside generate_coach_home_briefing
-            coach_briefing = generate_coach_home_briefing(
+            # Two-phase briefing: DB work on request thread, LLM call on worker thread.
+            # Phase 1: build prompt (uses db — must stay on this thread)
+            prep = generate_coach_home_briefing(
                 athlete_id=str(current_user.id),
                 db=db,
                 today_completed=today_completed,
@@ -1784,6 +1805,30 @@ async def get_home_data(
                 checkin_data=checkin_data_dict,
                 race_data=race_data_dict,
             )
+
+            if len(prep) == 1:
+                # Redis cache hit — no LLM call needed
+                coach_briefing = prep[0]
+            else:
+                # Phase 2: LLM call on worker thread (no db access)
+                _, prompt, schema_fields, required_fields, cache_key = prep
+                try:
+                    coach_briefing = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            _fetch_llm_briefing_sync,
+                            prompt=prompt,
+                            schema_fields=schema_fields,
+                            required_fields=required_fields,
+                            checkin_data=checkin_data_dict,
+                            race_data=race_data_dict,
+                            cache_key=cache_key,
+                            athlete_id=str(current_user.id),
+                        ),
+                        timeout=HOME_BRIEFING_TIMEOUT_S,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Coach home briefing timed out at callsite (%ss) — returning without briefing", HOME_BRIEFING_TIMEOUT_S)
+                    coach_briefing = None
         except Exception as e:
             logger.warning(f"Coach briefing failed: {type(e).__name__}: {e}")
 
