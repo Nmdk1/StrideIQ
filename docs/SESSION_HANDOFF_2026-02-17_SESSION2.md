@@ -58,6 +58,27 @@ Droplet is being resized from 1 vCPU / 2GB to **2 vCPU / 4GB Regular** on Digita
 - **Containers:** will auto-restart after resize
 - **Site:** was healthy before resize began
 
+## Garmin Connect Developer Program — APPROVED
+
+Garmin integration is targeted for **this weekend**. Compliance doc: `docs/GARMIN_CONNECT_DEVELOPER_COMPLIANCE.md`.
+
+### Priority order for tomorrow
+1. Verify droplet resize (2 vCPU / 4GB) + config-only `--workers 3` deploy
+2. Scope Garmin integration build plan (discuss first, no code until sign-off)
+3. Scope Lane 2 home briefing Celery+cache
+
+### Garmin key decisions to discuss
+- **Consent system**: build unified (Strava + Garmin) or Garmin-only?
+- **Build sequence**: consent/privacy first (compliance gate), then provider adapter, then UI attribution
+- **Section 15.10 is the hard gate**: no Garmin sync until privacy policy + consent flow + withdrawal mechanism are live
+- **30-day display notice**: send proactively for existing visualizations now
+- **Section 4.6 write-back**: never push proprietary intelligence to Garmin
+- **Adapter pattern**: follows Strava's shape — OAuth, token management, activity sync, map to internal models at boundary
+
+### Reference docs for Garmin work
+- `docs/GARMIN_CONNECT_DEVELOPER_COMPLIANCE.md` — contractual obligations
+- `docs/GARMIN_API_APPLICATION.md` — application details
+
 ## Key constraints (from today's incident)
 - Never pass request-scoped `db` session to `asyncio.to_thread`
 - Every LLM call needs SDK-level timeout AND callsite-level `asyncio.wait_for`
