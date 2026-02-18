@@ -17,7 +17,7 @@ strideiq.run, www.strideiq.run {
     # HSTS - enforce HTTPS (1 year, include subdomains)
     Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
     # Content Security Policy
-    Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://api.strideiq.run https://api.stripe.com wss:; frame-src https://js.stripe.com https://hooks.stripe.com; frame-ancestors 'none';"
+    Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://strideiq.run https://api.strideiq.run https://api.stripe.com wss:; frame-src https://js.stripe.com https://hooks.stripe.com; frame-ancestors 'none';"
   }
 
   # Route API + operational endpoints to FastAPI
