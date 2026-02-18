@@ -190,6 +190,7 @@ class HomeResponse(BaseModel):
     today_checkin: Optional[TodayCheckin] = None  # Summary of today's check-in (if completed)
     strava_status: Optional[StravaStatusDetail] = None
     coach_briefing: Optional[dict] = None  # LLM-generated coaching narratives for all cards
+    briefing_state: Optional[str] = None  # ADR-065: fresh | stale | missing | refreshing
     # --- RSI Layer 1 ---
     last_run: Optional[LastRun] = None  # Most recent run within 96h for hero canvas
 
@@ -1737,98 +1738,115 @@ async def get_home_data(
         needs_reconnect=not strava_connected and bool(current_user.strava_athlete_id),
     )
 
-    # --- Phase 2 (ADR-17): LLM Coach Briefing ---
-    # ADR-16: Uses build_athlete_brief() for full context — same brief the coach chat uses.
-    # Cached in Redis for 30 min; regenerates when data changes.
+    # --- Phase 2 (ADR-17) / ADR-065: LLM Coach Briefing ---
+    # Lane 2A: briefing is served from Redis cache, never inline LLM.
+    # If cache is stale or missing, a Celery task is enqueued (fire-and-forget).
     coach_briefing = None
+    briefing_state = "missing"
     if has_any_activities:
         try:
-            # Check if athlete has a completed activity TODAY
-            today_actual = db.query(Activity).filter(
-                Activity.athlete_id == current_user.id,
-                Activity.start_time >= today,
-                Activity.start_time < today + timedelta(days=1),
-            ).order_by(Activity.start_time.desc()).first()
-
-            today_completed = None
-            if today_actual:
-                actual_mi = round(today_actual.distance_m / 1609.344, 1) if today_actual.distance_m else None
-                actual_pace = None
-                if today_actual.distance_m and today_actual.duration_s:
-                    pace_s = today_actual.duration_s / (today_actual.distance_m / 1609.344)
-                    mins = int(pace_s // 60)
-                    secs = int(pace_s % 60)
-                    actual_pace = f"{mins}:{secs:02d}/mi"
-                today_completed = {
-                    "name": today_actual.name or "Run",
-                    "distance_mi": actual_mi,
-                    "pace": actual_pace,
-                    "avg_hr": int(today_actual.avg_hr) if today_actual.avg_hr else None,
-                    "duration_min": round(today_actual.duration_s / 60, 0) if today_actual.duration_s else None,
-                }
-
-            # Build planned workout dict (light — just today's plan context)
-            planned_workout_dict = None
-            if today_workout and today_workout.has_workout:
-                planned_workout_dict = {
-                    "has_workout": True,
-                    "workout_type": today_workout.workout_type,
-                    "title": today_workout.title,
-                    "distance_mi": today_workout.distance_mi,
-                }
-
-            # Build race data dict
-            race_data_dict = None
-            if race_countdown:
-                race_data_dict = {
-                    "race_name": race_countdown.race_name,
-                    "days_remaining": race_countdown.days_remaining,
-                    "goal_time": race_countdown.goal_time,
-                }
-
-            # Build check-in data dict
-            checkin_data_dict = None
-            if today_checkin:
-                checkin_data_dict = {
-                    "motivation_label": today_checkin.motivation_label,
-                    "sleep_label": today_checkin.sleep_label,
-                    "soreness_label": today_checkin.soreness_label,
-                }
-
-            # Two-phase briefing: DB work on request thread, LLM call on worker thread.
-            # Phase 1: build prompt (uses db — must stay on this thread)
-            prep = generate_coach_home_briefing(
-                athlete_id=str(current_user.id),
-                db=db,
-                today_completed=today_completed,
-                planned_workout=planned_workout_dict,
-                checkin_data=checkin_data_dict,
-                race_data=race_data_dict,
+            _use_cache_briefing = is_feature_enabled(
+                "lane_2a_cache_briefing", str(current_user.id), db
             )
+            if _use_cache_briefing:
+                from services.home_briefing_cache import read_briefing_cache, BriefingState
+                from tasks.home_briefing_tasks import enqueue_briefing_refresh
 
-            if len(prep) == 1:
-                # Redis cache hit — no LLM call needed
-                coach_briefing = prep[0]
+                cached_payload, b_state = read_briefing_cache(str(current_user.id))
+                briefing_state = b_state.value
+                coach_briefing = cached_payload
+
+                if b_state in (BriefingState.STALE, BriefingState.MISSING):
+                    enqueue_briefing_refresh(str(current_user.id))
+
+                logger.info(
+                    f"Home briefing cache: state={briefing_state} "
+                    f"athlete={current_user.id}"
+                )
             else:
-                # Phase 2: LLM call on worker thread (no db access)
-                _, prompt, schema_fields, required_fields, cache_key = prep
-                try:
-                    coach_briefing = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            _fetch_llm_briefing_sync,
-                            prompt=prompt,
-                            schema_fields=schema_fields,
-                            required_fields=required_fields,
-                            checkin_data=checkin_data_dict,
-                            race_data=race_data_dict,
-                            cache_key=cache_key,
-                            athlete_id=str(current_user.id),
-                        ),
-                        timeout=HOME_BRIEFING_TIMEOUT_S,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning("Coach home briefing timed out at callsite (%ss) — returning without briefing", HOME_BRIEFING_TIMEOUT_S)
-                    coach_briefing = None
+                # Legacy inline path (preserved until Lane 2A stable)
+                briefing_state = None
+                today_actual = db.query(Activity).filter(
+                    Activity.athlete_id == current_user.id,
+                    Activity.start_time >= today,
+                    Activity.start_time < today + timedelta(days=1),
+                ).order_by(Activity.start_time.desc()).first()
+
+                today_completed = None
+                if today_actual:
+                    actual_mi = round(today_actual.distance_m / 1609.344, 1) if today_actual.distance_m else None
+                    actual_pace = None
+                    if today_actual.distance_m and today_actual.duration_s:
+                        pace_s = today_actual.duration_s / (today_actual.distance_m / 1609.344)
+                        mins = int(pace_s // 60)
+                        secs = int(pace_s % 60)
+                        actual_pace = f"{mins}:{secs:02d}/mi"
+                    today_completed = {
+                        "name": today_actual.name or "Run",
+                        "distance_mi": actual_mi,
+                        "pace": actual_pace,
+                        "avg_hr": int(today_actual.avg_hr) if today_actual.avg_hr else None,
+                        "duration_min": round(today_actual.duration_s / 60, 0) if today_actual.duration_s else None,
+                    }
+
+                planned_workout_dict = None
+                if today_workout and today_workout.has_workout:
+                    planned_workout_dict = {
+                        "has_workout": True,
+                        "workout_type": today_workout.workout_type,
+                        "title": today_workout.title,
+                        "distance_mi": today_workout.distance_mi,
+                    }
+
+                race_data_dict = None
+                if race_countdown:
+                    race_data_dict = {
+                        "race_name": race_countdown.race_name,
+                        "days_remaining": race_countdown.days_remaining,
+                        "goal_time": race_countdown.goal_time,
+                    }
+
+                checkin_data_dict = None
+                if today_checkin:
+                    checkin_data_dict = {
+                        "motivation_label": today_checkin.motivation_label,
+                        "sleep_label": today_checkin.sleep_label,
+                        "soreness_label": today_checkin.soreness_label,
+                    }
+
+                prep = generate_coach_home_briefing(
+                    athlete_id=str(current_user.id),
+                    db=db,
+                    today_completed=today_completed,
+                    planned_workout=planned_workout_dict,
+                    checkin_data=checkin_data_dict,
+                    race_data=race_data_dict,
+                )
+
+                if len(prep) == 1:
+                    coach_briefing = prep[0]
+                else:
+                    _, prompt, schema_fields, required_fields, cache_key = prep
+                    try:
+                        coach_briefing = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                _fetch_llm_briefing_sync,
+                                prompt=prompt,
+                                schema_fields=schema_fields,
+                                required_fields=required_fields,
+                                checkin_data=checkin_data_dict,
+                                race_data=race_data_dict,
+                                cache_key=cache_key,
+                                athlete_id=str(current_user.id),
+                            ),
+                            timeout=HOME_BRIEFING_TIMEOUT_S,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "Coach home briefing timed out at callsite (%ss)",
+                            HOME_BRIEFING_TIMEOUT_S,
+                        )
+                        coach_briefing = None
         except Exception as e:
             logger.warning(f"Coach briefing failed: {type(e).__name__}: {e}")
 
@@ -1857,6 +1875,7 @@ async def get_home_data(
         today_checkin=today_checkin,
         strava_status=strava_status_detail,
         coach_briefing=coach_briefing,
+        briefing_state=briefing_state,
         last_run=last_run,
     )
 
@@ -1923,3 +1942,44 @@ async def get_home_signals(
         suppressed_count=result["suppressed_count"],
         last_updated=result["last_updated"]
     )
+
+
+# --- ADR-065: Admin Refresh Endpoint ---
+
+@router.post("/admin/briefing-refresh/{athlete_id}", status_code=202)
+async def admin_refresh_briefing(
+    athlete_id: str,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Manually trigger a home briefing refresh for an athlete.
+    Requires admin or owner role. Audit-logged.
+    """
+    from core.auth import require_admin
+    from services.audit_logger import log_audit
+    from uuid import UUID
+
+    if current_user.role not in ("admin", "owner"):
+        from fastapi import HTTPException, status
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Required roles: ['admin', 'owner']",
+        )
+
+    from tasks.home_briefing_tasks import enqueue_briefing_refresh
+
+    enqueued = enqueue_briefing_refresh(athlete_id)
+
+    log_audit(
+        action="home_briefing.admin_refresh",
+        athlete_id=UUID(athlete_id),
+        success=enqueued,
+        metadata={
+            "triggered_by": str(current_user.id),
+            "triggered_by_email": current_user.email,
+            "enqueued": enqueued,
+        },
+    )
+
+    return {"status": "enqueued" if enqueued else "skipped", "athlete_id": athlete_id}

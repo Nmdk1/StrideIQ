@@ -1038,6 +1038,13 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
         except Exception as e:
             print(f"Warning [post-sync] Could not generate insights: {e}")
 
+        # ADR-065: trigger home briefing refresh after sync
+        try:
+            from tasks.home_briefing_tasks import enqueue_briefing_refresh
+            enqueue_briefing_refresh(athlete_id)
+        except Exception:
+            pass
+
         return {
             "status": "success",
             "strava_pbs": strava_pb_result,

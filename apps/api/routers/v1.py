@@ -1010,4 +1010,12 @@ def create_checkin(
     db.add(db_checkin)
     db.commit()
     db.refresh(db_checkin)
+
+    # ADR-065: trigger home briefing refresh on check-in
+    try:
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        enqueue_briefing_refresh(str(current_user.id))
+    except Exception:
+        pass
+
     return db_checkin

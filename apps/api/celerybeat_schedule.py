@@ -26,6 +26,11 @@ beat_schedule = {
         'task': 'tasks.cleanup_stale_stream_fetches',
         'schedule': crontab(minute='*/5'),  # Every 5 minutes
     },
+    # ADR-065: refresh home briefings for athletes active in last 24h
+    'refresh-home-briefings': {
+        'task': 'tasks.refresh_active_home_briefings',
+        'schedule': crontab(minute='*/15'),  # Every 15 minutes
+    },
 }
 
 

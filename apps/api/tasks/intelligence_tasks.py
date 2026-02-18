@@ -142,6 +142,13 @@ def _run_intelligence_for_athlete(
         db.rollback()
         raise
 
+    # ADR-065: trigger home briefing refresh after intelligence write
+    try:
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        enqueue_briefing_refresh(str(athlete_id))
+    except Exception:
+        pass
+
     # Summary for monitoring
     highest = intel_result.highest_mode
     return {

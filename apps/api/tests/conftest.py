@@ -16,12 +16,15 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 @pytest.fixture(scope="session", autouse=True)
-def _ensure_db_schema_is_at_head():
+def _ensure_db_schema_is_at_head(request):
     """
     Ensure the test database schema includes the latest Alembic migrations.
 
     This prevents "UndefinedTable" failures when new migrations are added but the
     dev/test database wasn't manually upgraded.
+
+    Skips gracefully when Postgres is unreachable (e.g., running outside Docker)
+    so pure-unit tests that mock all IO can still execute.
     """
     try:
         from alembic import command
@@ -55,23 +58,35 @@ def _ensure_db_schema_is_at_head():
         # Use "heads" (plural) to handle multiple migration chains gracefully.
         command.upgrade(cfg, "heads")
     except Exception as e:
-        # Tests should fail loudly if migrations cannot be applied.
+        import psycopg2
+        if isinstance(e.__cause__, psycopg2.OperationalError):
+            request.config._db_unavailable = True
+            return
         raise RuntimeError(f"Failed to upgrade DB to Alembic head: {e}") from e
 
 from sqlalchemy import event
 from sqlalchemy.orm import Session
-from core.database import SessionLocal, engine
-from models import Athlete, Activity, PersonalBest, BestEffort
+
+try:
+    from core.database import SessionLocal, engine
+    from models import Athlete, Activity, PersonalBest, BestEffort
+    _DB_IMPORTS_OK = True
+except Exception:
+    _DB_IMPORTS_OK = False
+    engine = None
+    Athlete = Activity = PersonalBest = BestEffort = None
 
 
 @pytest.fixture(scope="function")
-def db_session():
+def db_session(request):
     """
     Create a database session with transactional rollback.
     
     All changes made during the test are rolled back after the test completes.
     This guarantees zero test data pollution - nothing persists.
     """
+    if getattr(request.config, "_db_unavailable", False) or not _DB_IMPORTS_OK:
+        pytest.skip("Database unavailable (not in Docker)")
     connection = engine.connect()
     transaction = connection.begin()
     
