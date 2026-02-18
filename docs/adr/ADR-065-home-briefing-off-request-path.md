@@ -62,7 +62,7 @@ The home coach briefing is served **cache-first, never inline LLM**. The `/v1/ho
 3. Training plan created, updated, or deleted
 4. Race goal updated
 5. Daily intelligence write completion (new insights/narration landed)
-6. Manual refresh: `POST /v1/admin/home-briefing/refresh/{athlete_id}` (admin/founder only, audit-logged)
+6. Manual refresh: `POST /v1/home/admin/briefing-refresh/{athlete_id}` (admin/owner only, audit-logged; founder == owner by convention)
 7. Celery beat: every 15 min for athletes active in last 24 hours
 
 ## Stampede Protection

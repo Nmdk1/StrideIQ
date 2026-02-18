@@ -4,12 +4,13 @@ Tests for Lane 2A: Home Briefing Off Request Path (ADR-065)
 Covers:
 - Unit tests 1-16: cache state logic, fingerprint, dedupe, cooldown, circuit breaker
 - Integration tests 17-28: endpoint behavior, triggers, admin auth
-- Celery task tests 29-33
+- Celery task tests 29-33 (behavioral, not source-inspection)
 - Schema contract tests 34-35
-- (Production smoke tests 36-38 are manual post-deploy)
+- Provider timeout & constant tests 36-39
+- (Production smoke tests are manual post-deploy)
 
 Tests that don't need a database (majority) use FakeRedis only.
-Tests that need DB (fingerprint, endpoint) are marked with @pytest.mark.db.
+Tests that need DB (endpoint integration) use db_session fixture.
 """
 
 import json
@@ -224,7 +225,7 @@ class TestDataFingerprint:
         activity = Activity(
             athlete_id=test_athlete.id,
             name="Morning Run",
-            sport_type="Run",
+            sport="run",
             start_time=datetime.now(timezone.utc),
             distance_m=5000,
             duration_s=1800,
@@ -324,13 +325,18 @@ class TestTaskSession:
     """Test 15: task creates its own DB session."""
 
     def test_task_uses_own_db_session(self):
-        """Test 15: task creates SessionLocal, never uses a passed-in session."""
-        import inspect
-        from tasks.home_briefing_tasks import generate_home_briefing_task
-
-        source = inspect.getsource(generate_home_briefing_task)
-        assert "get_db_sync()" in source
-        assert "Depends(get_db)" not in source
+        """Test 15: task creates its own DB session via get_db_sync(), not injected."""
+        with patch("tasks.home_briefing_tasks.get_db_sync") as mock_get_db, \
+             patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=None):
+            mock_db = MagicMock()
+            mock_get_db.return_value = mock_db
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            generate_home_briefing_task(athlete_id=str(uuid4()))
+            mock_get_db.assert_called_once()
+            mock_db.close.assert_called_once()
 
 
 class TestBriefingStateEnum:
@@ -372,100 +378,317 @@ class TestBriefingStateEnum:
 class TestHomeEndpointNoLLM:
     """Tests 17-22b: endpoint never blocks on LLM."""
 
-    @patch("services.home_briefing_cache.get_redis_client")
-    def test_home_endpoint_no_llm_call(self, mock_redis_client, client, db_session, test_athlete):
-        """Test 17: GET /v1/home completes without any LLM SDK call."""
-        mock_r = FakeRedis()
-        mock_redis_client.return_value = mock_r
+    def test_home_endpoint_no_llm_call(self, db_session, test_athlete):
+        """Test 17: GET /v1/home with flag on never invokes inline LLM call."""
+        from core.auth import get_current_user
+        from main import app
+        from fastapi.testclient import TestClient
 
-        with patch("routers.home.is_feature_enabled", return_value=True):
-            with patch("routers.home._fetch_llm_briefing_sync") as mock_llm:
-                from core.auth import get_current_user
-                from main import app
-                app.dependency_overrides[get_current_user] = lambda: test_athlete
-
-                from fastapi.testclient import TestClient
+        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        try:
+            with patch("routers.home.is_feature_enabled", return_value=True), \
+                 patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
+                 patch("routers.home._fetch_llm_briefing_sync") as mock_llm, \
+                 patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+                mock_task.delay = MagicMock()
                 with TestClient(app) as tc:
                     response = tc.get("/v1/home")
+                assert response.status_code == 200
+                mock_llm.assert_not_called()
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
 
-                # The inline LLM path should not be called when feature flag is on
-                # (This test validates the new code path once implemented)
-
-    def test_home_endpoint_returns_briefing_state_field(self, client, db_session, test_athlete):
+    def test_home_endpoint_returns_briefing_state_field(self, db_session, test_athlete):
         """Test 18: response JSON includes briefing_state with valid enum value."""
-        # Will pass once endpoint is modified to include briefing_state
-        pass
+        from core.auth import get_current_user
+        from main import app
+        from fastapi.testclient import TestClient
 
-    def test_home_endpoint_deterministic_payload_intact(self, client, db_session, test_athlete):
-        """Test 19: all non-briefing fields populated correctly."""
-        pass
+        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        try:
+            with patch("routers.home.is_feature_enabled", return_value=True), \
+                 patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
+                 patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+                mock_task.delay = MagicMock()
+                with TestClient(app) as tc:
+                    response = tc.get("/v1/home")
+                assert response.status_code == 200
+                data = response.json()
+                assert "briefing_state" in data
+                assert data["briefing_state"] in ("fresh", "stale", "missing", "refreshing")
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
 
-    @patch("services.home_briefing_cache.get_redis_client")
-    def test_home_endpoint_with_cached_briefing(self, mock_redis_client, client, db_session, test_athlete):
+    def test_home_endpoint_deterministic_payload_intact(self, db_session, test_athlete):
+        """Test 19: all non-briefing fields populated correctly when briefing missing."""
+        from core.auth import get_current_user
+        from main import app
+        from fastapi.testclient import TestClient
+
+        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        try:
+            with patch("routers.home.is_feature_enabled", return_value=True), \
+                 patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
+                 patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+                mock_task.delay = MagicMock()
+                with TestClient(app) as tc:
+                    response = tc.get("/v1/home")
+                assert response.status_code == 200
+                data = response.json()
+                assert "today" in data
+                assert "yesterday" in data
+                assert "week_summary" in data
+                assert data["briefing_state"] == "missing"
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+    def test_home_endpoint_with_cached_briefing(self, db_session, test_athlete):
         """Test 20: pre-seed Redis → coach_briefing returned, briefing_state fresh."""
+        from core.auth import get_current_user
+        from main import app
+        from fastapi.testclient import TestClient
+
         mock_r = FakeRedis()
         athlete_id = str(test_athlete.id)
         mock_r.setex(
             _cache_key(athlete_id), CACHE_TTL_S,
             _make_cache_entry(age_seconds=60)
         )
-        mock_redis_client.return_value = mock_r
-        # Will pass once endpoint reads from cache
+        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        try:
+            with patch("routers.home.is_feature_enabled", return_value=True), \
+                 patch("services.home_briefing_cache.get_redis_client", return_value=mock_r), \
+                 patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+                mock_task.delay = MagicMock()
+                with TestClient(app) as tc:
+                    response = tc.get("/v1/home")
+                assert response.status_code == 200
+                data = response.json()
+                assert data["briefing_state"] == "fresh"
+                assert data["coach_briefing"] is not None
+                assert data["coach_briefing"]["coach_noticed"] == "Test insight"
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
 
-    @patch("services.home_briefing_cache.get_redis_client")
-    def test_home_endpoint_without_cache(self, mock_redis_client, client, db_session, test_athlete):
-        """Test 21: empty Redis → coach_briefing null, briefing_state missing."""
-        mock_r = FakeRedis()
-        mock_redis_client.return_value = mock_r
-        # Will pass once endpoint reads from cache
+    def test_home_endpoint_without_cache(self, db_session, test_athlete):
+        """Test 21: empty Redis → coach_briefing null, briefing_state missing, task enqueued."""
+        from core.auth import get_current_user
+        from main import app
+        from fastapi.testclient import TestClient
 
-    def test_home_p95_unaffected_when_llm_down(self, client, db_session, test_athlete):
-        """Test 22: mock provider timeout → /v1/home still returns fast."""
-        pass
+        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        try:
+            with patch("routers.home.is_feature_enabled", return_value=True), \
+                 patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
+                 patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+                mock_task.delay = MagicMock()
+                with TestClient(app) as tc:
+                    response = tc.get("/v1/home")
+                assert response.status_code == 200
+                data = response.json()
+                assert data["coach_briefing"] is None
+                assert data["briefing_state"] == "missing"
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
 
-    def test_home_does_not_await_task_result(self):
-        """Test 22b: mock slow Celery task + cache miss → /v1/home returns < 500ms."""
-        # Behavioral proof: the endpoint uses task.delay() and does not await
-        import inspect
-        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+    def test_home_p95_unaffected_when_llm_down(self, db_session, test_athlete):
+        """Test 22: mock provider timeout → /v1/home still returns < 2s."""
+        from core.auth import get_current_user
+        from main import app
+        from fastapi.testclient import TestClient
 
-        source = inspect.getsource(enqueue_briefing_refresh)
-        assert ".delay(" in source
-        assert "await" not in source.lower() or "# await" in source.lower()
+        def slow_delay(*args, **kwargs):
+            time.sleep(15)
+
+        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        try:
+            with patch("routers.home.is_feature_enabled", return_value=True), \
+                 patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
+                 patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+                mock_task.delay = MagicMock(side_effect=slow_delay)
+                with TestClient(app) as tc:
+                    start = time.monotonic()
+                    response = tc.get("/v1/home")
+                    elapsed = time.monotonic() - start
+                assert response.status_code == 200
+                assert elapsed < 2.0, f"/v1/home took {elapsed:.2f}s — SLO is < 2s"
+                assert response.json()["briefing_state"] == "missing"
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+    def test_home_does_not_await_task_result(self, db_session, test_athlete):
+        """Test 22b: /v1/home returns < 2s even when enqueue raises (broker down)."""
+        from core.auth import get_current_user
+        from main import app
+        from fastapi.testclient import TestClient
+
+        def exploding_enqueue(*args, **kwargs):
+            """Simulate broker being down — enqueue raises ConnectionError."""
+            raise ConnectionError("Redis broker unreachable")
+
+        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        try:
+            with patch("routers.home.is_feature_enabled", return_value=True), \
+                 patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
+                 patch("tasks.home_briefing_tasks.enqueue_briefing_refresh", side_effect=exploding_enqueue):
+                with TestClient(app) as tc:
+                    start = time.monotonic()
+                    response = tc.get("/v1/home")
+                    elapsed = time.monotonic() - start
+                assert response.status_code == 200, (
+                    f"Expected 200 even when enqueue fails, got {response.status_code}"
+                )
+                assert elapsed < 2.0, (
+                    f"/v1/home took {elapsed:.2f}s with failing enqueue — "
+                    f"proves endpoint is resilient to broker failure"
+                )
+                data = response.json()
+                assert data["coach_briefing"] is None
+                assert data["briefing_state"] == "missing"
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
 
 
 class TestTriggers:
-    """Tests 23-25: regeneration triggers enqueue the task."""
+    """Tests 23-25: regeneration triggers wired at actual call sites."""
+
+    def _assert_enqueue_call_in_source(self, module_path: str):
+        """Parse a Python file's AST and assert enqueue_briefing_refresh is called."""
+        import ast
+        source_file = os.path.join(os.path.dirname(__file__), "..", module_path)
+        with open(source_file) as f:
+            tree = ast.parse(f.read())
+
+        has_import = False
+        has_call = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.module and "home_briefing_tasks" in node.module:
+                    for alias in node.names:
+                        if alias.name == "enqueue_briefing_refresh":
+                            has_import = True
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Name) and func.id == "enqueue_briefing_refresh":
+                    has_call = True
+                elif isinstance(func, ast.Attribute) and func.attr == "enqueue_briefing_refresh":
+                    has_call = True
+
+        assert has_import, f"{module_path} does not import enqueue_briefing_refresh"
+        assert has_call, f"{module_path} imports but never calls enqueue_briefing_refresh"
 
     def test_trigger_checkin_enqueues_refresh(self):
-        """Test 23: saving check-in fires Celery task."""
-        # Verified once trigger wiring is implemented
-        pass
+        """Test 23: routers/v1.py check-in handler imports and calls enqueue_briefing_refresh."""
+        self._assert_enqueue_call_in_source("routers/v1.py")
 
     def test_trigger_activity_ingest_enqueues_refresh(self):
-        """Test 24: new activity sync fires Celery task."""
-        pass
+        """Test 24: tasks/strava_tasks.py post-sync handler imports and calls enqueue_briefing_refresh."""
+        self._assert_enqueue_call_in_source("tasks/strava_tasks.py")
 
     def test_trigger_plan_change_enqueues_refresh(self):
-        """Test 25: plan create/update fires Celery task."""
-        pass
+        """Test 25: routers/training_plans.py plan creation imports and calls enqueue_briefing_refresh."""
+        self._assert_enqueue_call_in_source("routers/training_plans.py")
+
+    def test_trigger_intelligence_enqueues_refresh(self):
+        """Test 25b: tasks/intelligence_tasks.py intelligence write imports and calls enqueue_briefing_refresh."""
+        self._assert_enqueue_call_in_source("tasks/intelligence_tasks.py")
+
+    def test_enqueue_calls_delay_on_celery_task(self, fake_redis):
+        """Test 25c: enqueue_briefing_refresh invokes .delay() on the Celery task (behavioral)."""
+        with patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+            mock_task.delay = MagicMock()
+            from tasks.home_briefing_tasks import enqueue_briefing_refresh
+            athlete_id = str(uuid4())
+            result = enqueue_briefing_refresh(athlete_id)
+            assert result is True
+            mock_task.delay.assert_called_once_with(athlete_id)
 
 
 class TestAdminRefreshEndpoint:
     """Tests 26-28: admin refresh endpoint auth and audit."""
 
-    def test_admin_refresh_endpoint_202(self, client, db_session, test_athlete):
-        """Test 26: POST /v1/admin/home-briefing/refresh/{id} returns 202 for admin."""
-        # Will pass once admin endpoint is implemented
-        pass
+    def _make_athlete_with_role(self, role="athlete"):
+        """Create a mock athlete with a given role."""
+        athlete = MagicMock()
+        athlete.id = uuid4()
+        athlete.email = f"test_{uuid4()}@example.com"
+        athlete.role = role
+        athlete.display_name = "Test"
+        return athlete
 
-    def test_admin_refresh_endpoint_403_non_admin(self, client, db_session, test_athlete):
+    def test_admin_refresh_endpoint_202(self):
+        """Test 26: POST /v1/home/admin/briefing-refresh/{id} returns 202 for admin."""
+        from core.auth import get_current_user
+        from core.database import get_db
+        from main import app
+        from fastapi.testclient import TestClient
+
+        admin = self._make_athlete_with_role("admin")
+        target_id = str(uuid4())
+        app.dependency_overrides[get_current_user] = lambda: admin
+        app.dependency_overrides[get_db] = lambda: MagicMock()
+        try:
+            with patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task, \
+                 patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
+                 patch("services.audit_logger.log_audit") as mock_audit:
+                mock_task.delay = MagicMock()
+                with TestClient(app) as tc:
+                    response = tc.post(f"/v1/home/admin/briefing-refresh/{target_id}")
+                assert response.status_code == 202, f"Expected 202, got {response.status_code}: {response.text}"
+                data = response.json()
+                assert data["athlete_id"] == target_id
+                assert data["status"] in ("enqueued", "skipped")
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_db, None)
+
+    def test_admin_refresh_endpoint_403_non_admin(self):
         """Test 27: same endpoint returns 403 for non-admin athlete."""
-        pass
+        from core.auth import get_current_user
+        from core.database import get_db
+        from main import app
+        from fastapi.testclient import TestClient
 
-    def test_admin_refresh_audit_logged(self, client, db_session, test_athlete):
-        """Test 28: admin refresh writes audit log entry."""
-        pass
+        regular = self._make_athlete_with_role("athlete")
+        target_id = str(uuid4())
+        app.dependency_overrides[get_current_user] = lambda: regular
+        app.dependency_overrides[get_db] = lambda: MagicMock()
+        try:
+            with TestClient(app) as tc:
+                response = tc.post(f"/v1/home/admin/briefing-refresh/{target_id}")
+            assert response.status_code == 403
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_db, None)
+
+    def test_admin_refresh_audit_logged(self):
+        """Test 28: admin refresh writes audit log entry with correct action."""
+        from core.auth import get_current_user
+        from core.database import get_db
+        from main import app
+        from fastapi.testclient import TestClient
+
+        owner = self._make_athlete_with_role("owner")
+        target_id = str(uuid4())
+        app.dependency_overrides[get_current_user] = lambda: owner
+        app.dependency_overrides[get_db] = lambda: MagicMock()
+        try:
+            with patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task, \
+                 patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
+                 patch("services.audit_logger.log_audit") as mock_audit:
+                mock_task.delay = MagicMock()
+                with TestClient(app) as tc:
+                    response = tc.post(f"/v1/home/admin/briefing-refresh/{target_id}")
+                assert response.status_code == 202
+                mock_audit.assert_called_once()
+                call_args = mock_audit.call_args
+                if call_args.kwargs:
+                    assert call_args.kwargs.get("action") == "home_briefing.admin_refresh"
+                else:
+                    assert call_args[1].get("action") == "home_briefing.admin_refresh"
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_db, None)
 
 
 # ===========================================================================
@@ -491,23 +714,45 @@ class TestCeleryTask:
         assert entry["data_fingerprint"] == "fp123"
         assert entry["payload"]["coach_noticed"] == "Good run"
 
-    def test_celery_task_uses_gemini_by_default(self):
-        """Test 30: task calls Gemini, not Opus."""
-        import inspect
-        from tasks.home_briefing_tasks import generate_home_briefing_task
+    def test_celery_task_uses_gemini_by_default(self, fake_redis):
+        """Test 30: with flag off, task calls Gemini and writes gemini model tag."""
+        from tasks.home_briefing_tasks import _call_gemini_briefing
 
-        source = inspect.getsource(generate_home_briefing_task)
-        # Default source_model should be gemini
-        assert 'source_model = "gemini-2.5-flash"' in source
+        gemini_result = {"coach_noticed": "Gemini says hi", "morning_voice": "30 miles."}
+        with patch("tasks.home_briefing_tasks._call_gemini_briefing", return_value=gemini_result) as mock_gemini, \
+             patch("tasks.home_briefing_tasks._call_opus_briefing") as mock_opus, \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
+             patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("core.feature_flags.is_feature_enabled", return_value=False), \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("routers.home.validate_voice_output", return_value={"valid": True}):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=str(uuid4()))
+            mock_gemini.assert_called_once()
+            mock_opus.assert_not_called()
+            assert result["model"] == "gemini-2.5-flash"
 
-    def test_celery_task_respects_feature_flag_for_opus(self):
-        """Test 31: flag on → task uses Opus; flag off → Gemini."""
-        import inspect
-        from tasks.home_briefing_tasks import generate_home_briefing_task
-
-        source = inspect.getsource(generate_home_briefing_task)
-        assert "home_briefing_use_opus" in source
-        assert "_call_opus_briefing" in source
+    def test_celery_task_respects_feature_flag_for_opus(self, fake_redis):
+        """Test 31: flag on → task tries Opus first; if it returns result, uses it."""
+        opus_result = {"coach_noticed": "Opus insight", "morning_voice": "50 miles."}
+        with patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=opus_result) as mock_opus, \
+             patch("tasks.home_briefing_tasks._call_gemini_briefing") as mock_gemini, \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
+             patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("core.feature_flags.is_feature_enabled", return_value=True), \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("routers.home.validate_voice_output", return_value={"valid": True}):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=str(uuid4()))
+            mock_opus.assert_called_once()
+            mock_gemini.assert_not_called()
+            assert result["model"] == "claude-opus-4-5"
 
     def test_celery_task_handles_provider_failure(self, fake_redis):
         """Test 32: on failure: record failure, no cache written."""
@@ -530,6 +775,67 @@ class TestCeleryTask:
         assert acquire_task_lock(athlete_id) is False
 
         release_task_lock(athlete_id)
+
+
+class TestProviderTimeout:
+    """Test 36: provider timeout enforcement (behavioral)."""
+
+    def test_gemini_provider_timeout_enforced(self):
+        """Test 36: _call_gemini_briefing kills provider call after PROVIDER_TIMEOUT_S."""
+        from tasks.home_briefing_tasks import PROVIDER_TIMEOUT_S
+
+        def slow_gemini(*args, **kwargs):
+            time.sleep(PROVIDER_TIMEOUT_S + 5)
+            return {"coach_noticed": "Too late"}
+
+        with patch("routers.home._call_gemini_briefing_sync", side_effect=slow_gemini), \
+             patch.dict(os.environ, {"GOOGLE_AI_API_KEY": "fake-key"}):
+            from tasks.home_briefing_tasks import _call_gemini_briefing
+            start = time.monotonic()
+            result = _call_gemini_briefing("prompt", {}, [])
+            elapsed = time.monotonic() - start
+
+        assert result is None, "Timed-out provider should return None"
+        assert elapsed < PROVIDER_TIMEOUT_S + 2, (
+            f"Timeout took {elapsed:.1f}s — expected ~{PROVIDER_TIMEOUT_S}s"
+        )
+
+    def test_opus_provider_timeout_enforced(self):
+        """Test 37: _call_opus_briefing kills provider call after PROVIDER_TIMEOUT_S."""
+        from tasks.home_briefing_tasks import PROVIDER_TIMEOUT_S
+
+        def slow_opus(*args, **kwargs):
+            time.sleep(PROVIDER_TIMEOUT_S + 5)
+            return {"coach_noticed": "Too late"}
+
+        with patch("routers.home._call_opus_briefing_sync", side_effect=slow_opus), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "fake-key"}):
+            from tasks.home_briefing_tasks import _call_opus_briefing
+            start = time.monotonic()
+            result = _call_opus_briefing("prompt", {}, [])
+            elapsed = time.monotonic() - start
+
+        assert result is None, "Timed-out provider should return None"
+        assert elapsed < PROVIDER_TIMEOUT_S + 2, (
+            f"Timeout took {elapsed:.1f}s — expected ~{PROVIDER_TIMEOUT_S}s"
+        )
+
+
+class TestTaskHardTimeoutConstant:
+    """Test 38: task-level timeout constants match ADR spec."""
+
+    def test_task_hard_timeout_is_15s(self):
+        """Test 38: Celery task hard limit is exactly 15s per ADR-065."""
+        from tasks.home_briefing_tasks import generate_home_briefing_task, TASK_HARD_TIMEOUT_S
+
+        assert TASK_HARD_TIMEOUT_S == 15
+        assert generate_home_briefing_task.time_limit == TASK_HARD_TIMEOUT_S
+
+    def test_provider_timeout_is_12s(self):
+        """Test 39: provider timeout is exactly 12s per ADR-065."""
+        from tasks.home_briefing_tasks import PROVIDER_TIMEOUT_S
+
+        assert PROVIDER_TIMEOUT_S == 12
 
 
 # ===========================================================================

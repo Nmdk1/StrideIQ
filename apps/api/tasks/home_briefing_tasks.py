@@ -254,7 +254,8 @@ def _call_gemini_briefing(
     schema_fields: dict,
     required_fields: list,
 ) -> Optional[dict]:
-    """Call Gemini 2.5 Flash with provider timeout."""
+    """Call Gemini 2.5 Flash with PROVIDER_TIMEOUT_S enforced."""
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
     from routers.home import _call_gemini_briefing_sync
 
     google_key = os.getenv("GOOGLE_AI_API_KEY")
@@ -262,7 +263,21 @@ def _call_gemini_briefing(
         logger.warning("GOOGLE_AI_API_KEY not set — cannot generate home briefing")
         return None
 
-    return _call_gemini_briefing_sync(prompt, schema_fields, required_fields, google_key)
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(
+        _call_gemini_briefing_sync, prompt, schema_fields, required_fields, google_key
+    )
+    try:
+        return future.result(timeout=PROVIDER_TIMEOUT_S)
+    except FuturesTimeout:
+        logger.warning(
+            "Gemini home briefing provider timeout (%ss)", PROVIDER_TIMEOUT_S
+        )
+        future.cancel()
+        pool.shutdown(wait=False)
+        return None
+    finally:
+        pool.shutdown(wait=False)
 
 
 def _call_opus_briefing(
@@ -270,14 +285,29 @@ def _call_opus_briefing(
     schema_fields: dict,
     required_fields: list,
 ) -> Optional[dict]:
-    """Call Opus (feature-flagged path)."""
+    """Call Opus with PROVIDER_TIMEOUT_S enforced (feature-flagged path)."""
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
     from routers.home import _call_opus_briefing_sync
 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     if not anthropic_key:
         return None
 
-    return _call_opus_briefing_sync(prompt, schema_fields, required_fields, anthropic_key)
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(
+        _call_opus_briefing_sync, prompt, schema_fields, required_fields, anthropic_key
+    )
+    try:
+        return future.result(timeout=PROVIDER_TIMEOUT_S)
+    except FuturesTimeout:
+        logger.warning(
+            "Opus home briefing provider timeout (%ss)", PROVIDER_TIMEOUT_S
+        )
+        future.cancel()
+        pool.shutdown(wait=False)
+        return None
+    finally:
+        pool.shutdown(wait=False)
 
 
 @celery_app.task(

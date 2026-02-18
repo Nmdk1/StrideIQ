@@ -729,8 +729,8 @@ def _call_gemini_briefing_sync(
     api_key: str,
 ) -> Optional[dict]:
     """
-    Synchronous Gemini call — meant to be run via asyncio.to_thread().
-    Fallback when Opus is unavailable.
+    Synchronous Gemini call with SDK-level timeout.
+    Called directly or via ThreadPoolExecutor in Celery tasks.
     """
     import json as _json
 
@@ -745,7 +745,10 @@ def _call_gemini_briefing_sync(
         for k, v in schema_fields.items()
     }
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(
+        api_key=api_key,
+        http_options={"timeout": HOME_BRIEFING_TIMEOUT_S * 1000},
+    )
 
     for attempt in (1, 2):
         try:
@@ -1757,7 +1760,12 @@ async def get_home_data(
                 coach_briefing = cached_payload
 
                 if b_state in (BriefingState.STALE, BriefingState.MISSING):
-                    enqueue_briefing_refresh(str(current_user.id))
+                    try:
+                        enqueue_briefing_refresh(str(current_user.id))
+                    except Exception as enq_err:
+                        logger.warning(
+                            "Home briefing enqueue failed (non-blocking): %s", enq_err
+                        )
 
                 logger.info(
                     f"Home briefing cache: state={briefing_state} "

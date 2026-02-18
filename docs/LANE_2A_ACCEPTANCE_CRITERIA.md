@@ -48,11 +48,11 @@
 - Training plan created, updated, or deleted
 - Race goal update
 - Daily intelligence write completion
-- Manual refresh: `POST /v1/admin/home-briefing/refresh/{athlete_id}`
+- Manual refresh: `POST /v1/home/admin/briefing-refresh/{athlete_id}`
 - Celery beat: every 15 min for athletes active in last 24 hours
 
 ### AC-7: Admin refresh endpoint security
-- `POST /v1/admin/home-briefing/refresh/{athlete_id}` requires admin or founder role.
+- `POST /v1/home/admin/briefing-refresh/{athlete_id}` requires `admin` or `owner` role (founder == owner by convention).
 - Returns 403 for non-admin athletes.
 - Returns 202 Accepted on success.
 - Writes audit log entry recording who triggered the refresh and for which athlete.
@@ -123,7 +123,7 @@
 | 23 | `test_trigger_checkin_enqueues_refresh` | Saving check-in fires Celery task |
 | 24 | `test_trigger_activity_ingest_enqueues_refresh` | New activity sync fires Celery task |
 | 25 | `test_trigger_plan_change_enqueues_refresh` | Plan create/update fires Celery task |
-| 26 | `test_admin_refresh_endpoint_202` | `POST /v1/admin/home-briefing/refresh/{id}` returns 202 for admin |
+| 26 | `test_admin_refresh_endpoint_202` | `POST /v1/home/admin/briefing-refresh/{id}` returns 202 for admin |
 | 27 | `test_admin_refresh_endpoint_403_non_admin` | Same endpoint returns 403 for non-admin athlete |
 | 28 | `test_admin_refresh_audit_logged` | Admin refresh writes audit log entry |
 
@@ -143,6 +143,15 @@
 |---|------|---------------|
 | 34 | `test_briefing_state_present_when_briefing_null` | `briefing_state` always present even when `coach_briefing` is null |
 | 35 | `test_briefing_state_enum_values_exhaustive` | Only valid enum values accepted by response model |
+
+### Category 5: Provider Timeout & Constant Tests
+
+| # | Test | What it proves |
+|---|------|---------------|
+| 36 | `test_gemini_provider_timeout_enforced` | `_call_gemini_briefing` kills provider call after `PROVIDER_TIMEOUT_S` (12s) |
+| 37 | `test_opus_provider_timeout_enforced` | `_call_opus_briefing` kills provider call after `PROVIDER_TIMEOUT_S` (12s) |
+| 38 | `test_task_hard_timeout_is_15s` | Celery task hard limit is exactly 15s per ADR-065 |
+| 39 | `test_provider_timeout_is_12s` | Provider timeout is exactly 12s per ADR-065 |
 
 ### Category 6: Production Smoke Tests (post-deploy)
 
