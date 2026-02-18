@@ -31,6 +31,13 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 > - Correlation findings persistence + reproducibility tracking is now live.
 > - Correlation narrative specificity (lag timing + confirmation count + evidence `r=`) is aligned across daily intelligence and home surfaced text.
 > - Production migration bookkeeping for `corr_persist_001` required a one-time stamp in an environment where table objects already existed.
+>
+> **Operational Update — February 18, 2026**
+> - **Lane 2A shipped (founder-only):** Home briefing moved off request path to Celery + Redis cache (ADR-065).
+> - `/v1/home` p95 improved from 13.05s to 1.98s (6.6x improvement). SLO contract p95 < 2s met.
+> - Feature flag `lane_2a_cache_briefing` live for founder only. 24-48h stability soak before wider rollout.
+> - 42 tests covering cache states, triggers (runtime integration), admin auth, provider timeouts, schema contract.
+> - Lane 2B (non-LLM compute optimization) scoped but not started — needed if p95 margin stays tight.
 
 ---
 
