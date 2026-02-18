@@ -616,11 +616,9 @@ class TestTriggers:
              patch("tasks.strava_tasks.generate_insights_for_athlete", return_value=[]):
             mock_enqueue.return_value = True
             from tasks.strava_tasks import post_sync_processing_task
-            try:
-                post_sync_processing_task.run(athlete_id)
-            except Exception:
-                pass
+            result = post_sync_processing_task.run(athlete_id)
             mock_enqueue.assert_called_once_with(athlete_id)
+            assert result["status"] == "success"
 
     def test_trigger_plan_change_enqueues_refresh(self, db_session, test_athlete):
         """Test 25: plan creation endpoint calls enqueue_briefing_refresh at runtime."""
@@ -675,27 +673,32 @@ class TestTriggers:
 
         mock_readiness = MagicMock()
         mock_readiness.score = 75.0
+        mock_readiness.confidence = 0.8
         mock_readiness.status = "green"
         mock_readiness.component_scores = {}
         mock_readiness.recommendation = "Go"
 
         mock_intel = MagicMock()
-        mock_intel.highest_mode = "green"
+        mock_intel.highest_mode = MagicMock()
+        mock_intel.highest_mode.value = "green"
         mock_intel.insights = []
         mock_intel.has_workout_swap = False
+        mock_intel.self_regulation_logged = False
+
+        narration_stats = {"narrations_generated": 0, "narrations_scored": 0}
 
         with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enqueue, \
              patch("services.readiness_score.ReadinessScoreCalculator") as mock_readiness_cls, \
-             patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine_cls:
+             patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine_cls, \
+             patch("tasks.intelligence_tasks._narrate_insights", return_value=narration_stats):
             mock_readiness_cls.return_value.compute.return_value = mock_readiness
-            mock_engine_cls.return_value.run.return_value = mock_intel
+            mock_engine_cls.return_value.evaluate.return_value = mock_intel
             mock_enqueue.return_value = True
             from tasks.intelligence_tasks import _run_intelligence_for_athlete
-            try:
-                _run_intelligence_for_athlete(athlete_id, date(2026, 2, 18), mock_db)
-            except Exception:
-                pass
+            result = _run_intelligence_for_athlete(athlete_id, date(2026, 2, 18), mock_db)
             mock_enqueue.assert_called_once_with(str(athlete_id))
+            assert result["athlete_id"] == str(athlete_id)
+            mock_db.commit.assert_called_once()
 
     def test_enqueue_calls_delay_on_celery_task(self, fake_redis):
         """Test 25c: enqueue_briefing_refresh invokes .delay() on the Celery task (behavioral)."""
