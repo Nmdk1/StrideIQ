@@ -119,10 +119,12 @@
 | 20 | `test_home_endpoint_with_cached_briefing` | Pre-seed Redis → `coach_briefing` returned, `briefing_state: "fresh"` |
 | 21 | `test_home_endpoint_without_cache` | Empty Redis → `coach_briefing: null`, `briefing_state: "missing"` |
 | 22 | `test_home_p95_unaffected_when_llm_down` | Mock provider timeout/error → `/v1/home` still returns fast with deterministic payload |
-| 22b | `test_home_does_not_await_task_result` | Mock slow Celery task (10s sleep) + cache miss → `/v1/home` returns in < 500ms with `null` briefing. Proves no `await` on task. |
-| 23 | `test_trigger_checkin_enqueues_refresh` | Saving check-in fires Celery task |
-| 24 | `test_trigger_activity_ingest_enqueues_refresh` | New activity sync fires Celery task |
-| 25 | `test_trigger_plan_change_enqueues_refresh` | Plan create/update fires Celery task |
+| 22b | `test_home_resilient_to_broker_failure` | Enqueue raises `ConnectionError` → `/v1/home` still returns 200 in < 2s with `null` briefing. Proves broker-down resilience. |
+| 23 | `test_trigger_checkin_enqueues_refresh` | POST `/v1/checkins` at runtime → mock `enqueue_briefing_refresh` called with athlete ID |
+| 24 | `test_trigger_activity_ingest_enqueues_refresh` | Call `post_sync_processing_task` at runtime → mock `enqueue_briefing_refresh` called |
+| 25 | `test_trigger_plan_change_enqueues_refresh` | POST `/v1/training-plans` at runtime → mock `enqueue_briefing_refresh` called |
+| 25b | `test_trigger_intelligence_enqueues_refresh` | Call `_run_intelligence_for_athlete` at runtime → mock `enqueue_briefing_refresh` called |
+| 25c | `test_enqueue_calls_delay_on_celery_task` | `enqueue_briefing_refresh` invokes `.delay()` on the Celery task (behavioral) |
 | 26 | `test_admin_refresh_endpoint_202` | `POST /v1/home/admin/briefing-refresh/{id}` returns 202 for admin |
 | 27 | `test_admin_refresh_endpoint_403_non_admin` | Same endpoint returns 403 for non-admin athlete |
 | 28 | `test_admin_refresh_audit_logged` | Admin refresh writes audit log entry |

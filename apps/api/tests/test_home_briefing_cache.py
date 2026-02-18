@@ -539,8 +539,8 @@ class TestHomeEndpointNoLLM:
         finally:
             self._cleanup_overrides(app)
 
-    def test_home_does_not_await_task_result(self, db_session, test_athlete):
-        """Test 22b: /v1/home returns < 2s even when enqueue raises (broker down)."""
+    def test_home_resilient_to_broker_failure(self, db_session, test_athlete):
+        """Test 22b: /v1/home returns 200 < 2s even when broker is down (enqueue raises)."""
         from main import app
         from fastapi.testclient import TestClient
 
@@ -572,48 +572,130 @@ class TestHomeEndpointNoLLM:
 
 
 class TestTriggers:
-    """Tests 23-25: regeneration triggers wired at actual call sites."""
+    """Tests 23-25c: runtime integration tests proving triggers fire enqueue."""
 
-    def _assert_enqueue_call_in_source(self, module_path: str):
-        """Parse a Python file's AST and assert enqueue_briefing_refresh is called."""
-        import ast
-        source_file = os.path.join(os.path.dirname(__file__), "..", module_path)
-        with open(source_file) as f:
-            tree = ast.parse(f.read())
+    def test_trigger_checkin_enqueues_refresh(self, db_session, test_athlete):
+        """Test 23: POST /v1/checkins fires enqueue_briefing_refresh at runtime."""
+        from core.auth import get_current_user
+        from core.database import get_db
+        from main import app
+        from fastapi.testclient import TestClient
 
-        has_import = False
-        has_call = False
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                if node.module and "home_briefing_tasks" in node.module:
-                    for alias in node.names:
-                        if alias.name == "enqueue_briefing_refresh":
-                            has_import = True
-            if isinstance(node, ast.Call):
-                func = node.func
-                if isinstance(func, ast.Name) and func.id == "enqueue_briefing_refresh":
-                    has_call = True
-                elif isinstance(func, ast.Attribute) and func.attr == "enqueue_briefing_refresh":
-                    has_call = True
-
-        assert has_import, f"{module_path} does not import enqueue_briefing_refresh"
-        assert has_call, f"{module_path} imports but never calls enqueue_briefing_refresh"
-
-    def test_trigger_checkin_enqueues_refresh(self):
-        """Test 23: routers/v1.py check-in handler imports and calls enqueue_briefing_refresh."""
-        self._assert_enqueue_call_in_source("routers/v1.py")
+        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        app.dependency_overrides[get_db] = lambda: db_session
+        try:
+            with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enqueue:
+                mock_enqueue.return_value = True
+                with TestClient(app) as tc:
+                    response = tc.post("/v1/checkins", json={
+                        "athlete_id": str(test_athlete.id),
+                        "date": "2026-02-18",
+                        "sleep_h": 7.5,
+                    })
+                assert response.status_code == 201, (
+                    f"Checkin failed: {response.status_code} {response.text}"
+                )
+                mock_enqueue.assert_called_once_with(str(test_athlete.id))
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_db, None)
 
     def test_trigger_activity_ingest_enqueues_refresh(self):
-        """Test 24: tasks/strava_tasks.py post-sync handler imports and calls enqueue_briefing_refresh."""
-        self._assert_enqueue_call_in_source("tasks/strava_tasks.py")
+        """Test 24: post_sync_processing_task calls enqueue_briefing_refresh at runtime."""
+        athlete_id = str(uuid4())
+        mock_db = MagicMock()
+        mock_athlete = MagicMock()
+        mock_athlete.id = athlete_id
+        mock_db.get.return_value = mock_athlete
+        mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
 
-    def test_trigger_plan_change_enqueues_refresh(self):
-        """Test 25: routers/training_plans.py plan creation imports and calls enqueue_briefing_refresh."""
-        self._assert_enqueue_call_in_source("routers/training_plans.py")
+        with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enqueue, \
+             patch("tasks.strava_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.strava_tasks.calculate_athlete_derived_signals"), \
+             patch("tasks.strava_tasks.sync_strava_best_efforts", return_value={}), \
+             patch("tasks.strava_tasks.generate_insights_for_athlete", return_value=[]):
+            mock_enqueue.return_value = True
+            from tasks.strava_tasks import post_sync_processing_task
+            try:
+                post_sync_processing_task.run(athlete_id)
+            except Exception:
+                pass
+            mock_enqueue.assert_called_once_with(athlete_id)
+
+    def test_trigger_plan_change_enqueues_refresh(self, db_session, test_athlete):
+        """Test 25: plan creation endpoint calls enqueue_briefing_refresh at runtime."""
+        from core.auth import get_current_user, get_current_athlete
+        from core.database import get_db
+        from main import app
+        from fastapi.testclient import TestClient
+
+        mock_plan = MagicMock()
+        mock_plan.id = uuid4()
+        mock_plan.name = "Test Plan"
+        mock_plan.status = "active"
+        mock_plan.goal_race_name = "Marathon"
+        mock_plan.goal_race_date = date(2026, 6, 1)
+        mock_plan.goal_race_distance_m = 42195
+        mock_plan.goal_time_seconds = 14400
+        mock_plan.plan_start_date = date(2026, 2, 18)
+        mock_plan.plan_end_date = date(2026, 5, 31)
+        mock_plan.total_weeks = 15
+        mock_plan.weeks = []
+
+        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        app.dependency_overrides[get_current_athlete] = lambda: test_athlete
+        app.dependency_overrides[get_db] = lambda: db_session
+        try:
+            with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enqueue, \
+                 patch("routers.training_plans.PlanGenerator") as mock_gen_cls:
+                mock_enqueue.return_value = True
+                mock_gen_cls.return_value.generate_plan.return_value = mock_plan
+                with TestClient(app) as tc:
+                    response = tc.post("/v1/training-plans", json={
+                        "goal_race_name": "Marathon",
+                        "goal_race_date": "2026-06-01",
+                        "goal_race_distance_m": 42195,
+                        "goal_time_seconds": 14400,
+                        "plan_start_date": "2026-02-18",
+                    })
+                assert response.status_code == 201, (
+                    f"Plan creation failed: {response.status_code} {response.text}"
+                )
+                mock_enqueue.assert_called_once_with(str(test_athlete.id))
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_current_athlete, None)
+            app.dependency_overrides.pop(get_db, None)
 
     def test_trigger_intelligence_enqueues_refresh(self):
-        """Test 25b: tasks/intelligence_tasks.py intelligence write imports and calls enqueue_briefing_refresh."""
-        self._assert_enqueue_call_in_source("tasks/intelligence_tasks.py")
+        """Test 25b: _run_intelligence_for_athlete calls enqueue_briefing_refresh at runtime."""
+        athlete_id = uuid4()
+        mock_db = MagicMock()
+        mock_db.commit = MagicMock()
+
+        mock_readiness = MagicMock()
+        mock_readiness.score = 75.0
+        mock_readiness.status = "green"
+        mock_readiness.component_scores = {}
+        mock_readiness.recommendation = "Go"
+
+        mock_intel = MagicMock()
+        mock_intel.highest_mode = "green"
+        mock_intel.insights = []
+        mock_intel.has_workout_swap = False
+
+        with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enqueue, \
+             patch("services.readiness_score.ReadinessScoreCalculator") as mock_readiness_cls, \
+             patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine_cls:
+            mock_readiness_cls.return_value.compute.return_value = mock_readiness
+            mock_engine_cls.return_value.run.return_value = mock_intel
+            mock_enqueue.return_value = True
+            from tasks.intelligence_tasks import _run_intelligence_for_athlete
+            try:
+                _run_intelligence_for_athlete(athlete_id, date(2026, 2, 18), mock_db)
+            except Exception:
+                pass
+            mock_enqueue.assert_called_once_with(str(athlete_id))
 
     def test_enqueue_calls_delay_on_celery_task(self, fake_redis):
         """Test 25c: enqueue_briefing_refresh invokes .delay() on the Celery task (behavioral)."""
