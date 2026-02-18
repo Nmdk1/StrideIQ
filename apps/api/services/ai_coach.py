@@ -264,14 +264,13 @@ Policy:
     # Model tiers (ADR-061: Hybrid architecture with cost caps)
     # 95% of queries use Gemini 2.5 Flash (cost-efficient, 1M context)
     # 5% high-stakes queries use Claude Opus 4.5 (maximum reasoning quality)
-    MODEL_DEFAULT = "gemini-2.5-flash"      # Standard coaching (95%) - replaced GPT-4o-mini Feb 2026
+    MODEL_DEFAULT = "gemini-2.5-flash"      # Standard coaching (95%)
     MODEL_HIGH_STAKES = "claude-opus-4-5-20251101"  # Injury/recovery/load decisions (5%)
-    MODEL_FALLBACK = "gpt-4o-mini"          # When Gemini unavailable
     
     # Legacy aliases for backward compatibility
     MODEL_LOW = MODEL_DEFAULT
     MODEL_MEDIUM = MODEL_DEFAULT
-    MODEL_HIGH = MODEL_FALLBACK
+    MODEL_HIGH = MODEL_DEFAULT
     MODEL_HIGH_VIP = MODEL_HIGH_STAKES
     MODEL_SIMPLE = MODEL_DEFAULT
     MODEL_STANDARD = MODEL_DEFAULT
@@ -416,6 +415,11 @@ Policy:
         self.db.refresh(usage)
         return usage
     
+    def _is_founder(self, athlete_id: UUID) -> bool:
+        """Owner/founder bypasses all budget limits."""
+        owner_id = os.getenv("OWNER_ATHLETE_ID", "")
+        return owner_id and str(athlete_id) == owner_id.strip()
+
     def check_budget(self, athlete_id: UUID, is_opus: bool = False, is_vip: bool = False) -> Tuple[bool, str]:
         """
         Check if athlete has budget remaining for a query.
@@ -429,6 +433,9 @@ Policy:
             (allowed, reason) - True if request can proceed, else False with reason
         """
         try:
+            if self._is_founder(athlete_id):
+                return True, "founder_bypass"
+
             usage = self._get_or_create_usage(athlete_id)
             
             # VIP multiplier for Opus allocation (ADR-061)
@@ -2176,11 +2183,11 @@ ATHLETE BRIEF:
                 )
                 return self.MODEL_HIGH_STAKES, True
             else:
-                # Fallback to GPT-4o (not mini) when Opus unavailable/budget exhausted
-                logger.info(f"Opus fallback to GPT-4o: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
-                return self.MODEL_FALLBACK, False
+                # Fallback to Gemini when Opus unavailable/budget exhausted
+                logger.info(f"Opus fallback to Gemini: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
+                return self.MODEL_DEFAULT, False
         
-        # Default: GPT-4o-mini for cost efficiency
+        # Default: Gemini 2.5 Flash
         return self.MODEL_DEFAULT, False
     
     def get_model_for_query_legacy(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> str:
@@ -2622,7 +2629,41 @@ ATHLETE BRIEF:
                 gemini_result["thread_id"] = thread_id
                 return gemini_result
 
-            # Gemini client not available — fail closed
+            # Safety net: any unhandled model routes to Gemini if available
+            if self.gemini_client:
+                logger.warning(f"Unhandled model '{model}' — routing to Gemini as safety net")
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                conversation_context = []
+                if thread_id:
+                    try:
+                        history_data = self.get_thread_history(athlete_id, limit=10)
+                        history = history_data.get("messages", [])
+                        conversation_context = [
+                            {"role": m.get("role"), "content": m.get("content")}
+                            for m in history if m.get("role") in ("user", "assistant")
+                        ]
+                    except Exception:
+                        pass
+                gemini_result = await self.query_gemini(
+                    athlete_id=athlete_id,
+                    message=message,
+                    athlete_state="",
+                    conversation_context=conversation_context,
+                )
+                if not gemini_result.get("error"):
+                    raw_response = gemini_result.get("response", "")
+                    try:
+                        normalized = self._normalize_response_for_ui(
+                            user_message=message,
+                            assistant_message=raw_response,
+                        )
+                        gemini_result["response"] = normalized
+                    except Exception as e:
+                        logger.warning(f"Coach response normalization failed: {e}")
+                    self._save_chat_messages(athlete_id, message, gemini_result.get("response", ""))
+                gemini_result["thread_id"] = thread_id
+                return gemini_result
+
             return {
                 "response": "Coach is temporarily unavailable. Please try again in a moment.",
                 "error": True,
