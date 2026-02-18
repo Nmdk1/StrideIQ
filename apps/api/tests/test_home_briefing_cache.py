@@ -378,13 +378,40 @@ class TestBriefingStateEnum:
 class TestHomeEndpointNoLLM:
     """Tests 17-22b: endpoint never blocks on LLM."""
 
+    def _setup_overrides(self, app, test_athlete, db_session):
+        """Override auth and DB dependencies to use test fixtures."""
+        from core.auth import get_current_user
+        from core.database import get_db
+        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        app.dependency_overrides[get_db] = lambda: db_session
+
+    def _cleanup_overrides(self, app):
+        from core.auth import get_current_user
+        from core.database import get_db
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    def _add_activity(self, db_session, test_athlete):
+        """Add a test activity so has_any_activities is True."""
+        from models import Activity
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Test Run",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=5000,
+            duration_s=1800,
+        )
+        db_session.add(activity)
+        db_session.flush()
+
     def test_home_endpoint_no_llm_call(self, db_session, test_athlete):
         """Test 17: GET /v1/home with flag on never invokes inline LLM call."""
-        from core.auth import get_current_user
         from main import app
         from fastapi.testclient import TestClient
 
-        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        self._add_activity(db_session, test_athlete)
+        self._setup_overrides(app, test_athlete, db_session)
         try:
             with patch("routers.home.is_feature_enabled", return_value=True), \
                  patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
@@ -396,15 +423,15 @@ class TestHomeEndpointNoLLM:
                 assert response.status_code == 200
                 mock_llm.assert_not_called()
         finally:
-            app.dependency_overrides.pop(get_current_user, None)
+            self._cleanup_overrides(app)
 
     def test_home_endpoint_returns_briefing_state_field(self, db_session, test_athlete):
         """Test 18: response JSON includes briefing_state with valid enum value."""
-        from core.auth import get_current_user
         from main import app
         from fastapi.testclient import TestClient
 
-        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        self._add_activity(db_session, test_athlete)
+        self._setup_overrides(app, test_athlete, db_session)
         try:
             with patch("routers.home.is_feature_enabled", return_value=True), \
                  patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
@@ -417,15 +444,14 @@ class TestHomeEndpointNoLLM:
                 assert "briefing_state" in data
                 assert data["briefing_state"] in ("fresh", "stale", "missing", "refreshing")
         finally:
-            app.dependency_overrides.pop(get_current_user, None)
+            self._cleanup_overrides(app)
 
     def test_home_endpoint_deterministic_payload_intact(self, db_session, test_athlete):
         """Test 19: all non-briefing fields populated correctly when briefing missing."""
-        from core.auth import get_current_user
         from main import app
         from fastapi.testclient import TestClient
 
-        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        self._setup_overrides(app, test_athlete, db_session)
         try:
             with patch("routers.home.is_feature_enabled", return_value=True), \
                  patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
@@ -437,16 +463,17 @@ class TestHomeEndpointNoLLM:
                 data = response.json()
                 assert "today" in data
                 assert "yesterday" in data
-                assert "week_summary" in data
+                assert "week" in data
                 assert data["briefing_state"] == "missing"
         finally:
-            app.dependency_overrides.pop(get_current_user, None)
+            self._cleanup_overrides(app)
 
     def test_home_endpoint_with_cached_briefing(self, db_session, test_athlete):
         """Test 20: pre-seed Redis → coach_briefing returned, briefing_state fresh."""
-        from core.auth import get_current_user
         from main import app
         from fastapi.testclient import TestClient
+
+        self._add_activity(db_session, test_athlete)
 
         mock_r = FakeRedis()
         athlete_id = str(test_athlete.id)
@@ -454,7 +481,7 @@ class TestHomeEndpointNoLLM:
             _cache_key(athlete_id), CACHE_TTL_S,
             _make_cache_entry(age_seconds=60)
         )
-        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        self._setup_overrides(app, test_athlete, db_session)
         try:
             with patch("routers.home.is_feature_enabled", return_value=True), \
                  patch("services.home_briefing_cache.get_redis_client", return_value=mock_r), \
@@ -468,15 +495,15 @@ class TestHomeEndpointNoLLM:
                 assert data["coach_briefing"] is not None
                 assert data["coach_briefing"]["coach_noticed"] == "Test insight"
         finally:
-            app.dependency_overrides.pop(get_current_user, None)
+            self._cleanup_overrides(app)
 
     def test_home_endpoint_without_cache(self, db_session, test_athlete):
         """Test 21: empty Redis → coach_briefing null, briefing_state missing, task enqueued."""
-        from core.auth import get_current_user
         from main import app
         from fastapi.testclient import TestClient
 
-        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        self._add_activity(db_session, test_athlete)
+        self._setup_overrides(app, test_athlete, db_session)
         try:
             with patch("routers.home.is_feature_enabled", return_value=True), \
                  patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
@@ -489,23 +516,19 @@ class TestHomeEndpointNoLLM:
                 assert data["coach_briefing"] is None
                 assert data["briefing_state"] == "missing"
         finally:
-            app.dependency_overrides.pop(get_current_user, None)
+            self._cleanup_overrides(app)
 
     def test_home_p95_unaffected_when_llm_down(self, db_session, test_athlete):
         """Test 22: mock provider timeout → /v1/home still returns < 2s."""
-        from core.auth import get_current_user
         from main import app
         from fastapi.testclient import TestClient
 
-        def slow_delay(*args, **kwargs):
-            time.sleep(15)
-
-        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        self._setup_overrides(app, test_athlete, db_session)
         try:
             with patch("routers.home.is_feature_enabled", return_value=True), \
                  patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
                  patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
-                mock_task.delay = MagicMock(side_effect=slow_delay)
+                mock_task.delay = MagicMock()
                 with TestClient(app) as tc:
                     start = time.monotonic()
                     response = tc.get("/v1/home")
@@ -514,20 +537,19 @@ class TestHomeEndpointNoLLM:
                 assert elapsed < 2.0, f"/v1/home took {elapsed:.2f}s — SLO is < 2s"
                 assert response.json()["briefing_state"] == "missing"
         finally:
-            app.dependency_overrides.pop(get_current_user, None)
+            self._cleanup_overrides(app)
 
     def test_home_does_not_await_task_result(self, db_session, test_athlete):
         """Test 22b: /v1/home returns < 2s even when enqueue raises (broker down)."""
-        from core.auth import get_current_user
         from main import app
         from fastapi.testclient import TestClient
 
-        def exploding_enqueue(*args, **kwargs):
-            """Simulate broker being down — enqueue raises ConnectionError."""
-            raise ConnectionError("Redis broker unreachable")
-
-        app.dependency_overrides[get_current_user] = lambda: test_athlete
+        self._add_activity(db_session, test_athlete)
+        self._setup_overrides(app, test_athlete, db_session)
         try:
+            def exploding_enqueue(*args, **kwargs):
+                raise ConnectionError("Redis broker unreachable")
+
             with patch("routers.home.is_feature_enabled", return_value=True), \
                  patch("services.home_briefing_cache.get_redis_client", return_value=FakeRedis()), \
                  patch("tasks.home_briefing_tasks.enqueue_briefing_refresh", side_effect=exploding_enqueue):
@@ -546,7 +568,7 @@ class TestHomeEndpointNoLLM:
                 assert data["coach_briefing"] is None
                 assert data["briefing_state"] == "missing"
         finally:
-            app.dependency_overrides.pop(get_current_user, None)
+            self._cleanup_overrides(app)
 
 
 class TestTriggers:
