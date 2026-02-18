@@ -391,7 +391,71 @@ Before going live, need technical + UX review from Garmin:
 
 ---
 
-## 10. Implementation Notes for StrideIQ
+## 10. Brand Attribution Requirements (from Brand Guidelines v6.30.2025)
+
+Garmin reserves the right to review applications for attribution compliance. Noncompliance may result in suspension or termination of API access.
+
+### Core rule
+Every screen that displays Garmin device-sourced data must show **"Garmin [device model]"** attribution. The `deviceName` field from Activity Summaries/Details provides the model (e.g. "Garmin fenix 8"). If device model is unavailable, use "Garmin" as the data source.
+
+### Title-level / primary displays (home, activity feed, overview cards)
+- Attribution directly beneath or adjacent to the primary title/heading
+- Must be **above the fold**
+- Must be visually associated with the data it supports
+- Never bury in tooltips, footnotes, or expandable containers
+- Can use Garmin tag logo + device model, or plain text "Garmin [device model]"
+
+### Secondary screens (detail views, reports, settings, historical views)
+- Attribution in all expanded views or subscreens
+- For multi-entry displays (activity list): attribution globally in header OR per entry
+- Screenshots, printouts, and reports must retain visible attribution
+
+### Combined / derived data (analytics, AI, ML, blended sources)
+- **This applies to StrideIQ's intelligence pipeline.** When Garmin data feeds into coaching insights, correlation analysis, or AI-generated narratives:
+- Must list Garmin as a distinct or contributing data source
+- Must NOT imply Garmin endorsement of data from other devices
+- Can apply attribution globally (header/footer) or per entry
+
+### Downstream / exported data
+- If data is exported (CSV, PDF) or transmitted (API, webhook): attribution must be included
+- In exports: repeated on each page
+- In API transfers: receiving systems must preserve attribution
+
+### Visual / social media
+- Attribution must be visible in every image that contains Garmin data
+
+### Garmin tag logo rules
+- Do not alter or animate
+- Do not use in avatars, badges, or unrelated imagery
+- Only use where Garmin device-sourced data is present
+
+### Sample acceptable messaging
+- "This chart was created using data provided by Garmin devices."
+- "Insights derived in part from Garmin device-sourced data."
+- "Model incorporates Garmin [device model] data."
+
+### NOT acceptable
+- "Garmin speed model" (implies Garmin owns the model/product)
+
+### Available brand assets (from GCDP Branding Assets v2)
+- Garmin Connect app icon: 1024x1024 PNG, 512/1024 AI, 1000 EPS
+- Garmin Connect badge: digital and print PNG variants
+- Garmin tag logo: black/white, high/low-res, JPG/PNG/AI/EPS/PDF
+
+### StrideIQ implementation plan for attribution
+- Store `deviceName` on each Activity at ingestion (already present in Strava data, same field from Garmin)
+- Store `data_source` enum on Activity model: `STRAVA` | `GARMIN` | `MANUAL`
+- Conditionally render attribution based on `data_source`:
+  - Garmin activities: "Garmin [deviceName]" attribution
+  - Strava activities: Strava attribution (per their branding guidelines)
+- Home page hero (if showing Garmin-sourced last run): attribution below activity title
+- Activity detail page: attribution in header area
+- Coach briefing that references Garmin data: "Insights derived in part from Garmin device-sourced data."
+- Activity list: "Garmin [device model]" per entry OR global header attribution
+
+---
+
+## 11. Implementation Notes for StrideIQ
 
 ### Data StrideIQ should consume (priority order)
 1. **Activity Details (Push)** — per-second HR, pace, cadence, GPS, elevation. Maps to ActivityStream model.
