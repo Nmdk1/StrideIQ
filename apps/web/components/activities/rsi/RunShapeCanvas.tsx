@@ -511,7 +511,7 @@ function SplitsModePanel({
 
   return (
     <div
-      className="mt-3 max-h-[300px] md:max-h-[400px] overflow-y-auto"
+      className="mt-3"
       data-testid="splits-panel"
     >
       <SplitsTable splits={splits} onRowHover={onRowHover} rowRefs={rowRefs} />
@@ -744,7 +744,7 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
     // Clip extreme pace outliers (>900 s/km ≈ standing still / GPS glitch)
     // to prevent a single outlier from compressing the entire visual range.
     const PACE_OUTLIER_CEILING = 900; // s/km (~15 min/km)
-    return rawStream.map((p: StreamPoint) => ({
+    const raw = rawStream.map((p: StreamPoint) => ({
       time: p.time ?? 0,
       hr: p.hr ?? null,
       pace: (p.pace != null && p.pace > 0 && p.pace <= PACE_OUTLIER_CEILING)
@@ -754,7 +754,24 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
       grade: p.grade ?? null,
       cadence: p.cadence ?? null,
       effort: p.effort ?? 0,
+      smoothedPace: null as number | null,
     }));
+
+    // Centered moving average so the line reflects the run's shape, not GPS noise
+    const window = Math.max(3, Math.round(raw.length / 30));
+    const halfW = Math.floor(window / 2);
+    for (let i = 0; i < raw.length; i++) {
+      const lo = Math.max(0, i - halfW);
+      const hi = Math.min(raw.length - 1, i + halfW);
+      let sum = 0;
+      let count = 0;
+      for (let j = lo; j <= hi; j++) {
+        if (raw[j].pace != null) { sum += raw[j].pace!; count++; }
+      }
+      raw[i].smoothedPace = count > 0 ? sum / count : null;
+    }
+
+    return raw;
   }, [rawStream]);
 
   // --- Derived values ---
@@ -780,7 +797,7 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
   // when one outlier skews the range.
   const paceDomain = useMemo<[number, number] | undefined>(() => {
     const paces = chartData
-      .map((p) => p.pace)
+      .map((p) => p.smoothedPace)
       .filter((p): p is number => p != null && p > 0);
     if (paces.length < 4) return undefined; // let Recharts auto-scale
     const sorted = [...paces].sort((a, b) => a - b);
@@ -803,47 +820,64 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
     return `rgb(${r},${g},${b})`;
   }, []);
 
-  // Pace-based gradient stops: slow=blue, fast=red (driven by pace, boosted for visibility)
+  // Effort-based gradient stops: uses absolute effort intensity (HR-zone-derived,
+  // 0.0-1.0) when available. Falls back to pace-relative normalization only when
+  // no effort data exists. This ensures an easy run reads cool/teal and a hard
+  // interval reads hot/crimson regardless of how narrow the pace range is.
   const effortGradientStops = useMemo(() => {
     if (!hasEffortGradient || chartData.length === 0) return [];
 
-    // Find pace range for normalization
-    const paces = chartData.map(p => p.pace).filter((p): p is number => p != null && p > 0);
-    if (paces.length === 0) return [];
-    const paceMin = Math.min(...paces);
-    const paceMax = Math.max(...paces);
-    const paceRange = paceMax - paceMin || 1;
+    const hasEffortData = chartData.some(p => p.effort > 0);
 
-    // Smooth pace for gradient coloring (removes per-second noise)
-    const rawPaces = chartData.map(p => p.pace ?? paceMax);
-    const smoothWindow = Math.max(3, Math.round(rawPaces.length / 30));
-    const smoothedPaces = rawPaces.map((_, i) => {
-      const lo = Math.max(0, i - Math.floor(smoothWindow / 2));
-      const hi = Math.min(rawPaces.length - 1, i + Math.floor(smoothWindow / 2));
+    // Smooth the effort/pace values used for coloring
+    const window = Math.max(3, Math.round(chartData.length / 30));
+    const halfW = Math.floor(window / 2);
+    const smoothed = chartData.map((_, i) => {
+      const lo = Math.max(0, i - halfW);
+      const hi = Math.min(chartData.length - 1, i + halfW);
       let sum = 0;
-      for (let j = lo; j <= hi; j++) sum += rawPaces[j];
-      return sum / (hi - lo + 1);
+      let count = 0;
+      for (let j = lo; j <= hi; j++) {
+        if (hasEffortData) {
+          sum += chartData[j].effort;
+        } else {
+          if (chartData[j].pace != null) { sum += chartData[j].pace!; count++; }
+        }
+      }
+      if (hasEffortData) return sum / (hi - lo + 1);
+      return count > 0 ? sum / count : 0;
     });
+
+    // For pace fallback, compute normalization range
+    let paceMin = 0, paceRange = 1;
+    if (!hasEffortData) {
+      const paces = chartData.map(p => p.pace).filter((p): p is number => p != null && p > 0);
+      if (paces.length === 0) return [];
+      paceMin = Math.min(...paces);
+      const paceMax = Math.max(...paces);
+      paceRange = paceMax - paceMin || 1;
+    }
 
     const maxStops = 60;
     const step = Math.max(1, Math.floor(chartData.length / maxStops));
     const stops: Array<{ offset: string; color: string }> = [];
     for (let i = 0; i < chartData.length; i += step) {
       const offset = (i / (chartData.length - 1)) * 100;
-      const pace = smoothedPaces[i];
-      // Invert: faster (lower s/km) = higher intensity = hotter color
-      const paceIntensity = 1 - (pace - paceMin) / paceRange;
+      const intensity = hasEffortData
+        ? Math.max(0, Math.min(1, smoothed[i]))
+        : 1 - (smoothed[i] - paceMin) / paceRange;
       stops.push({
         offset: `${offset.toFixed(1)}%`,
-        color: boostColor(paceIntensity),
+        color: boostColor(intensity),
       });
     }
     // Ensure last point is included
     const lastIdx = chartData.length - 1;
     const lastOffset = '100%';
     if (stops.length === 0 || stops[stops.length - 1].offset !== lastOffset) {
-      const lastPace = smoothedPaces[lastIdx];
-      const lastIntensity = 1 - (lastPace - paceMin) / paceRange;
+      const lastIntensity = hasEffortData
+        ? Math.max(0, Math.min(1, smoothed[lastIdx]))
+        : 1 - (smoothed[lastIdx] - paceMin) / paceRange;
       stops.push({
         offset: lastOffset,
         color: boostColor(lastIntensity),
@@ -1155,7 +1189,7 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
             <Line
               yAxisId="pace"
               type="monotone"
-              dataKey="pace"
+              dataKey="smoothedPace"
               stroke={paceStroke}
               dot={false}
               strokeWidth={2.5}

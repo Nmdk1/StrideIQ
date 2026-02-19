@@ -138,13 +138,13 @@ describe('Splits Mode: Empty State', () => {
   });
 });
 
-describe('Splits Mode: Scroll Container', () => {
-  test('splits panel has max-height and overflow-y-auto for scroll', () => {
+describe('Splits Mode: Layout', () => {
+  test('splits panel renders without scroll constraint so all splits are visible', () => {
     renderAndSwitchToSplits();
 
     const panel = screen.getByTestId('splits-panel');
-    expect(panel).toHaveClass('max-h-[300px]');
-    expect(panel).toHaveClass('overflow-y-auto');
+    expect(panel).not.toHaveClass('max-h-[300px]');
+    expect(panel).not.toHaveClass('overflow-y-auto');
   });
 });
 

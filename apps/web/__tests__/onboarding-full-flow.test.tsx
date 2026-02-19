@@ -67,6 +67,17 @@ jest.mock('@/lib/hooks/queries/onboarding', () => ({
   }),
 }));
 
+jest.mock('@/lib/context/ConsentContext', () => ({
+  useConsent: () => ({
+    aiConsent: false,
+    grantedAt: null,
+    revokedAt: null,
+    loading: false,
+    grantConsent: jest.fn(async () => {}),
+    revokeConsent: jest.fn(async () => {}),
+  }),
+}));
+
 import OnboardingPage from '@/app/onboarding/page';
 
 describe('Onboarding full flow (skip Strava)', () => {
@@ -99,6 +110,12 @@ describe('Onboarding full flow (skip Strava)', () => {
     expect(await screen.findByText('Interview')).toBeInTheDocument();
     await act(async () => {
       await user.click(screen.getByRole('button', { name: 'Next' }));
+    });
+
+    // Consent AI stage -> skip
+    expect(await screen.findByRole('heading', { name: 'AI Coaching Insights' })).toBeInTheDocument();
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Skip for now' }));
     });
 
     // Connect stage -> continue without connecting
