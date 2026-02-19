@@ -5,6 +5,8 @@ import { QueryProvider } from '@/lib/providers/QueryProvider'
 import { AuthProvider } from '@/lib/context/AuthContext'
 import { UnitsProvider } from '@/lib/context/UnitsContext'
 import { CompareProvider } from '@/lib/context/CompareContext'
+import { ConsentProvider } from '@/lib/context/ConsentContext'
+import { ConsentPrompt } from './components/ConsentPrompt'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ImpersonationBanner } from '@/components/admin/ImpersonationBanner'
@@ -80,13 +82,16 @@ export default function RootLayout({
             <QueryProvider>
               <UnitsProvider>
                 <CompareProvider>
-                  <TooltipProvider>
-                    <Navigation />
-                    <ImpersonationBanner />
-                    <ClientShell>
-                      <main className="pb-[76px] md:pb-0">{children}</main>
-                    </ClientShell>
-                  </TooltipProvider>
+                  <ConsentProvider>
+                    <TooltipProvider>
+                      <Navigation />
+                      <ImpersonationBanner />
+                      <ClientShell>
+                        <ConsentPrompt />
+                        <main className="pb-[76px] md:pb-0">{children}</main>
+                      </ClientShell>
+                    </TooltipProvider>
+                  </ConsentProvider>
                 </CompareProvider>
               </UnitsProvider>
             </QueryProvider>

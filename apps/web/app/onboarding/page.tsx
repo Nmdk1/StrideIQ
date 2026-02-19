@@ -19,8 +19,9 @@ import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { stravaService } from '@/lib/api/services/strava';
 import { onboardingService } from '@/lib/api/services/onboarding';
 import { useBootstrapOnboarding, useOnboardingStatus } from '@/lib/hooks/queries/onboarding';
+import { useConsent } from '@/lib/context/ConsentContext';
 
-type OnboardingStage = 'initial' | 'basic_profile' | 'goals' | 'connect_strava' | 'nutrition_setup' | 'work_setup' | 'complete';
+type OnboardingStage = 'initial' | 'basic_profile' | 'goals' | 'consent_ai' | 'connect_strava' | 'nutrition_setup' | 'work_setup' | 'complete';
 
 interface OnboardingData {
   display_name?: string;
@@ -151,8 +152,16 @@ export default function OnboardingPage() {
           {currentStage === 'goals' && (
             <GoalsStage
               data={data}
-              onNext={(d) => handleNext(d, 'connect_strava')}
+              onNext={(d) => handleNext(d, 'consent_ai')}
+              onSkip={() => handleSkip('consent_ai')}
+            />
+          )}
+
+          {currentStage === 'consent_ai' && (
+            <ConsentAiStage
+              onEnable={() => handleNext({}, 'connect_strava')}
               onSkip={() => handleSkip('connect_strava')}
+              saving={saving}
             />
           )}
 
@@ -1003,3 +1012,66 @@ function WorkSetupStage({ data, onComplete, onSkip }: { data: OnboardingData; on
   );
 }
 
+function ConsentAiStage({
+  onEnable,
+  onSkip,
+  saving,
+}: {
+  onEnable: () => void;
+  onSkip: () => void;
+  saving: boolean;
+}) {
+  const { grantConsent } = useConsent();
+  const [granting, setGranting] = useState(false);
+
+  const handleEnable = async () => {
+    setGranting(true);
+    try {
+      await grantConsent();
+    } catch {
+      // Consent grant failure is non-fatal — proceed to next step regardless.
+    } finally {
+      setGranting(false);
+    }
+    onEnable();
+  };
+
+  return (
+    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
+      <h2 className="text-xl font-semibold mb-2">AI Coaching Insights</h2>
+      <p className="text-slate-400 mb-6 text-sm">Optional — you can change this at any time in Settings.</p>
+
+      <div className="bg-slate-900/60 rounded-lg p-4 mb-6 space-y-3 text-sm text-slate-300">
+        <p>
+          StrideIQ generates personalized coaching insights using AI — morning briefings,
+          activity narratives, and progress analysis.
+        </p>
+        <p>
+          To do this, your training data is sent to Google Gemini and Anthropic Claude.
+          Neither provider trains AI models on your data under current paid API terms.
+        </p>
+        <p className="text-slate-500">
+          All charts, metrics, calendar, and training data work without AI. You can
+          enable or withdraw consent at any time.
+        </p>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={handleEnable}
+          disabled={saving || granting}
+          className="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 rounded text-white font-medium transition-colors"
+        >
+          {granting ? 'Enabling…' : 'Enable AI Insights'}
+        </button>
+        <button
+          onClick={onSkip}
+          disabled={saving || granting}
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded text-slate-300 font-medium"
+        >
+          Skip for now
+        </button>
+      </div>
+    </div>
+  );
+}

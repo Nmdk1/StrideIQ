@@ -19,14 +19,18 @@ import { API_CONFIG } from '@/lib/api/config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight } from 'lucide-react';
+import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight, BrainCircuit } from 'lucide-react';
 import { authService } from '@/lib/api/services/auth';
+import { useConsent } from '@/lib/context/ConsentContext';
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const { units, setUnits } = useUnits();
+  const { aiConsent, loading: consentLoading, grantConsent, revokeConsent } = useConsent();
   const [exporting, setExporting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
+  const [consentSaving, setConsentSaving] = useState(false);
   const [billingLoading, setBillingLoading] = useState<'checkout' | 'portal' | 'trial' | null>(null);
   const [paceProfileStatus, setPaceProfileStatus] = useState<'loading' | 'computed' | 'missing' | 'error'>('loading');
   const [paceProfile, setPaceProfile] = useState<any | null>(null);
@@ -89,6 +93,29 @@ export default function SettingsPage() {
       console.error('Export failed:', err);
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleConsentToggle = async (enable: boolean) => {
+    if (!enable) {
+      setShowRevokeConfirm(true);
+      return;
+    }
+    setConsentSaving(true);
+    try {
+      await grantConsent();
+    } finally {
+      setConsentSaving(false);
+    }
+  };
+
+  const handleRevokeConfirmed = async () => {
+    setShowRevokeConfirm(false);
+    setConsentSaving(true);
+    try {
+      await revokeConsent();
+    } finally {
+      setConsentSaving(false);
     }
   };
 
@@ -361,6 +388,57 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* AI Processing */}
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BrainCircuit className="w-5 h-5 text-orange-500" />
+                  AI Processing
+                </CardTitle>
+                <CardDescription>Control how StrideIQ uses AI to personalise your coaching</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between p-4 bg-slate-700/30 rounded-lg border border-slate-600">
+                  <div className="flex-1 min-w-0 pr-4">
+                    <p className="font-medium">Allow AI-powered insights</p>
+                    <p className="text-sm text-slate-400 mt-0.5">
+                      {aiConsent
+                        ? 'AI coaching is active — briefings, narratives, and progress analysis are enabled.'
+                        : 'AI coaching is off. Charts, metrics, and training data still work fully.'}
+                    </p>
+                  </div>
+                  <div className="flex-shrink-0">
+                    {consentLoading ? (
+                      <div className="w-11 h-6 bg-slate-600 rounded-full animate-pulse" />
+                    ) : (
+                      <button
+                        role="switch"
+                        aria-checked={aiConsent === true}
+                        onClick={() => handleConsentToggle(!(aiConsent === true))}
+                        disabled={consentSaving}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:opacity-50 ${
+                          aiConsent ? 'bg-orange-600' : 'bg-slate-600'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                            aiConsent ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-3">
+                  Your data is sent to Google Gemini and Anthropic Claude for AI processing.
+                  Neither provider trains models on your data.{' '}
+                  <a href="/privacy#ai-powered-insights" className="text-orange-400 hover:text-orange-300 underline">
+                    Privacy policy
+                  </a>
+                </p>
+              </CardContent>
+            </Card>
+
             {/* Data Management */}
             <Card className="bg-slate-800 border-slate-700">
               <CardHeader>
@@ -413,6 +491,46 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Revoke AI Consent Confirmation Modal */}
+          {showRevokeConfirm && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+              <Card className="bg-slate-800 border-slate-700 max-w-md mx-4">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-orange-400">
+                    <BrainCircuit className="w-5 h-5" />
+                    Disable AI Insights?
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-slate-300 mb-2">This will immediately stop all AI processing of your data. The following will stop working:</p>
+                  <ul className="text-sm text-slate-400 list-disc list-inside mb-6 space-y-1">
+                    <li>Morning coach briefing</li>
+                    <li>Activity narratives and moments</li>
+                    <li>Progress headlines and coaching cards</li>
+                    <li>Coach chat</li>
+                  </ul>
+                  <p className="text-sm text-slate-500 mb-6">Charts, metrics, calendar, splits, and training load are unaffected. You can re-enable AI at any time.</p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleRevokeConfirmed}
+                      className="flex-1 bg-orange-600 hover:bg-orange-700"
+                    >
+                      Disable AI Insights
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowRevokeConfirm(false)}
+                      className="border-slate-600 hover:bg-slate-700"
+                    >
+                      <X className="w-4 h-4 mr-1.5" />
+                      Cancel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Delete Confirmation Modal */}
           {showDeleteConfirm && (
