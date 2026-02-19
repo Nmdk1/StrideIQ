@@ -791,21 +791,19 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
     return chartData.some((p) => p.pace != null && p.pace > 0);
   }, [chartData]);
 
-  // Compute explicit pace domain — clip to [p5, p95] with 10% padding so
-  // the line fills the chart height and small pace variations are visible.
-  // Without this, auto-scaling can compress the line into a flat ribbon
-  // when one outlier skews the range.
+  // Compute explicit pace domain from the smoothed data's full min/max range.
+  // Uses the smoothed values (which the line actually renders) so the line
+  // never extends beyond the chart area.
   const paceDomain = useMemo<[number, number] | undefined>(() => {
     const paces = chartData
       .map((p) => p.smoothedPace)
       .filter((p): p is number => p != null && p > 0);
-    if (paces.length < 4) return undefined; // let Recharts auto-scale
-    const sorted = [...paces].sort((a, b) => a - b);
-    const p5 = sorted[Math.floor(sorted.length * 0.05)];
-    const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1];
-    const range = p95 - p5 || 30; // minimum 30 s/km visual spread
+    if (paces.length < 4) return undefined;
+    const pMin = Math.min(...paces);
+    const pMax = Math.max(...paces);
+    const range = pMax - pMin || 30;
     const pad = range * 0.15;
-    return [Math.max(0, p5 - pad), p95 + pad];
+    return [Math.max(0, pMin - pad), pMax + pad];
   }, [chartData]);
 
   // Boost an effortToColor for the pace line — needs to pop over segment bands
@@ -820,64 +818,35 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
     return `rgb(${r},${g},${b})`;
   }, []);
 
-  // Effort-based gradient stops: uses absolute effort intensity (HR-zone-derived,
-  // 0.0-1.0) when available. Falls back to pace-relative normalization only when
-  // no effort data exists. This ensures an easy run reads cool/teal and a hard
-  // interval reads hot/crimson regardless of how narrow the pace range is.
+  // Pace-based gradient: faster = hotter, slower = cooler, using smoothed pace.
   const effortGradientStops = useMemo(() => {
     if (!hasEffortGradient || chartData.length === 0) return [];
 
-    const hasEffortData = chartData.some(p => p.effort > 0);
+    const smoothedPaces = chartData.map(p => p.smoothedPace);
+    const validPaces = smoothedPaces.filter((p): p is number => p != null && p > 0);
+    if (validPaces.length === 0) return [];
 
-    // Smooth the effort/pace values used for coloring
-    const window = Math.max(3, Math.round(chartData.length / 30));
-    const halfW = Math.floor(window / 2);
-    const smoothed = chartData.map((_, i) => {
-      const lo = Math.max(0, i - halfW);
-      const hi = Math.min(chartData.length - 1, i + halfW);
-      let sum = 0;
-      let count = 0;
-      for (let j = lo; j <= hi; j++) {
-        if (hasEffortData) {
-          sum += chartData[j].effort;
-        } else {
-          if (chartData[j].pace != null) { sum += chartData[j].pace!; count++; }
-        }
-      }
-      if (hasEffortData) return sum / (hi - lo + 1);
-      return count > 0 ? sum / count : 0;
-    });
-
-    // For pace fallback, compute normalization range
-    let paceMin = 0, paceRange = 1;
-    if (!hasEffortData) {
-      const paces = chartData.map(p => p.pace).filter((p): p is number => p != null && p > 0);
-      if (paces.length === 0) return [];
-      paceMin = Math.min(...paces);
-      const paceMax = Math.max(...paces);
-      paceRange = paceMax - paceMin || 1;
-    }
+    const paceMin = Math.min(...validPaces);
+    const paceMax = Math.max(...validPaces);
+    const paceRange = paceMax - paceMin || 1;
 
     const maxStops = 60;
     const step = Math.max(1, Math.floor(chartData.length / maxStops));
     const stops: Array<{ offset: string; color: string }> = [];
     for (let i = 0; i < chartData.length; i += step) {
       const offset = (i / (chartData.length - 1)) * 100;
-      const intensity = hasEffortData
-        ? Math.max(0, Math.min(1, smoothed[i]))
-        : 1 - (smoothed[i] - paceMin) / paceRange;
+      const pace = smoothedPaces[i] ?? paceMax;
+      const intensity = 1 - (pace - paceMin) / paceRange;
       stops.push({
         offset: `${offset.toFixed(1)}%`,
         color: boostColor(intensity),
       });
     }
-    // Ensure last point is included
     const lastIdx = chartData.length - 1;
     const lastOffset = '100%';
     if (stops.length === 0 || stops[stops.length - 1].offset !== lastOffset) {
-      const lastIntensity = hasEffortData
-        ? Math.max(0, Math.min(1, smoothed[lastIdx]))
-        : 1 - (smoothed[lastIdx] - paceMin) / paceRange;
+      const lastPace = smoothedPaces[lastIdx] ?? paceMax;
+      const lastIntensity = 1 - (lastPace - paceMin) / paceRange;
       stops.push({
         offset: lastOffset,
         color: boostColor(lastIntensity),
