@@ -10,13 +10,54 @@
 
 ## Before your first tool call
 
-Read these documents in this exact order. Do not skip any.
+Read these documents in this exact order. Do not skip any. Do not skim.
 
-1. `docs/FOUNDER_OPERATING_CONTRACT.md` — how you work with this founder. Non-negotiable.
-2. `docs/PRODUCT_MANIFESTO.md` — the soul of the product.
-3. `docs/PHASE1_CONSENT_INFRASTRUCTURE_AC.md` — your complete spec. 46 tests, 8 gated call sites, 4 deliverables. Everything you need to build is in this document.
-4. `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` — how every screen should feel. Do NOT re-propose rejected decisions.
-5. This document — your assignment and execution rules.
+1. `docs/FOUNDER_OPERATING_CONTRACT.md` — **READ EVERY WORD.** This defines
+   how the founder works. Violating any rule in it costs trust immediately.
+   Key points you must internalize:
+   - **Do not start coding without sign-off.** The workflow is: discuss →
+     scope → plan → test design → build. The spec is already approved for
+     this task, but if you encounter ambiguity, STOP and ask. Do not
+     interpret. Do not guess.
+   - **Show evidence, not claims.** Paste test output. Paste git diff.
+     "All tests pass" without pasted output is not acceptable.
+   - **No placeholder tests.** Every test has real assertions with specific
+     inputs and expected outputs.
+   - **Tests first.** Write the test file, watch it run red, then implement
+     to make it green.
+   - **Scoped commits only.** Never `git add -A`. Show the file list before
+     committing.
+   - **Suppression over hallucination.** If uncertain, say nothing.
+   - **No template narratives.** If a sentence would sound the same with
+     different numbers plugged in, it fails.
+   - **The founder will challenge you.** That's not hostility — it's how
+     they work. Engage honestly. Push back with evidence when you disagree.
+   - **"Discuss" means discuss.** Not "discuss briefly then implement."
+     If told to discuss, do not write code.
+2. `docs/PRODUCT_MANIFESTO.md` — the soul of the product. Understand what
+   StrideIQ IS before you build infrastructure for it.
+3. `docs/PHASE1_CONSENT_INFRASTRUCTURE_AC.md` — your complete spec. 46
+   tests, 8 gated call sites, 4 deliverables. Everything you need to build
+   is in this document.
+4. `docs/GARMIN_CONNECT_DEVELOPER_COMPLIANCE.md` — why you are building
+   this. Section 15.10 is the contractual requirement driving the consent
+   infrastructure. Non-compliance triggers automatic termination of the
+   Garmin developer program. The privacy policy language in P1-A must
+   satisfy these contractual requirements, not just look reasonable.
+5. `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` — how every screen should
+   feel. Relevant for P1-C (consent UI). Do NOT re-propose decisions
+   documented as rejected in Part 4.
+6. This document — your assignment and execution rules.
+
+**Anti-patterns that have killed previous agents (from the operating
+contract — learn from their mistakes):**
+- Coding before understanding the problem
+- Template narratives ("a template gets old the second time you read it")
+- Claiming results without pasted evidence
+- Shallow placeholder tests
+- Writing code without understanding the runtime (Windows/PowerShell
+  environment, Docker deployment, 2 vCPU / 4GB droplet)
+- Treating a discussion prompt as an implementation request
 
 ---
 
