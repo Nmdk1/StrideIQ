@@ -310,6 +310,26 @@ def _call_opus_briefing(
         pool.shutdown(wait=False)
 
 
+def _call_llm_for_briefing(
+    prompt: str,
+    schema_fields: dict,
+    required_fields: list,
+    use_opus: bool = False,
+) -> Optional[dict]:
+    """
+    Single LLM dispatch point for home briefing generation.
+
+    This wrapper exists so consent gating in generate_home_briefing_task
+    can be verified by tests via patching this function.  All actual LLM
+    calls go through _call_opus_briefing or _call_gemini_briefing.
+    """
+    if use_opus:
+        result = _call_opus_briefing(prompt, schema_fields, required_fields)
+        if result is not None:
+            return result
+    return _call_gemini_briefing(prompt, schema_fields, required_fields)
+
+
 @celery_app.task(
     name="tasks.generate_home_briefing",
     bind=True,
@@ -333,6 +353,14 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
     try:
         db = get_db_sync()
 
+        # P1-D: Consent gate — check at task execution time (not enqueue time).
+        # An athlete may revoke consent after a task is enqueued.
+        from uuid import UUID as _UUID
+        from services.consent import has_ai_consent as _has_consent
+        if not _has_consent(athlete_id=_UUID(athlete_id), db=db):
+            logger.info(f"Home briefing task skipped (no consent): {athlete_id}")
+            return {"status": "skipped", "reason": "no_consent"}
+
         fingerprint = _build_data_fingerprint(athlete_id, db)
 
         prompt_result = _build_briefing_prompt(athlete_id, db)
@@ -348,16 +376,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         except Exception:
             pass
 
-        source_model = "gemini-2.5-flash"
-        result = None
-
-        if use_opus:
-            source_model = "claude-opus-4-5"
-            result = _call_opus_briefing(prompt, schema_fields, required_fields)
-
-        if result is None:
-            source_model = "gemini-2.5-flash"
-            result = _call_gemini_briefing(prompt, schema_fields, required_fields)
+        source_model = "claude-opus-4-5" if use_opus else "gemini-2.5-flash"
+        result = _call_llm_for_briefing(prompt, schema_fields, required_fields, use_opus=use_opus)
 
         if result is None:
             record_task_failure(athlete_id)

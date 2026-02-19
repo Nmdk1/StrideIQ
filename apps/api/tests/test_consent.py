@@ -507,13 +507,7 @@ class TestLLMPipelineGating:
     """
     Tests 19-34: Backend enforcement that has_ai_consent gates each of the 8 LLM call sites.
     Uses mocking — no real LLM calls.
-
-    xfail: P1-D gating code not yet implemented. Remove marker when P1-D ships.
     """
-    pytestmark = pytest.mark.xfail(
-        strict=False,
-        reason="P1-D LLM pipeline gating not yet implemented",
-    )
 
     @pytest.fixture(autouse=True)
     def athlete_and_headers(self):
@@ -799,13 +793,7 @@ class TestGracefulDegradation:
     """
     Tests 35-42: End-to-end graceful degradation when ai_consent=False.
     Full page loads return valid JSON, AI fields are null, non-AI fields intact.
-
-    xfail: P1-D gating code not yet implemented. Remove marker when P1-D ships.
     """
-    pytestmark = pytest.mark.xfail(
-        strict=False,
-        reason="P1-D LLM pipeline gating not yet implemented",
-    )
 
     @pytest.fixture(autouse=True)
     def athlete_setup(self):

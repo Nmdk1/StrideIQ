@@ -20,6 +20,12 @@ from database import get_db
 from models import Athlete, Activity, DailyCheckin
 from routers.auth import get_current_user
 
+# Module-level so tests can patch routers.progress.anthropic
+try:
+    import anthropic
+except ImportError:
+    anthropic = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/progress", tags=["progress"])
@@ -486,15 +492,23 @@ async def get_progress_summary(
     except Exception as e:
         logger.warning(f"Progress goal race failed: {e}")
 
+    # P1-D: Consent gate — skip all LLM calls if athlete has not opted in.
+    from services.consent import has_ai_consent as _progress_consent
+    _ai_allowed = _progress_consent(athlete_id=athlete_id, db=db)
+
     # --- LLM Headline (uses FULL athlete brief via ADR-16) ---
-    try:
-        result.headline = _generate_headline(str(athlete_id), db, result, days)
-    except Exception as e:
-        logger.warning(f"Progress headline generation failed: {e}")
+    if _ai_allowed:
+        try:
+            result.headline = _generate_progress_headline(str(athlete_id), db, result, days)
+        except Exception as e:
+            logger.warning(f"Progress headline generation failed: {e}")
 
     # --- LLM Coach Cards (coach-led replacement for raw quick metrics) ---
     try:
-        result.coach_cards = _generate_progress_cards(str(athlete_id), db, result, days)
+        if _ai_allowed:
+            result.coach_cards = _generate_progress_cards(str(athlete_id), db, result, days)
+        else:
+            result.coach_cards = _consent_required_fallback_cards()
     except Exception as e:
         logger.warning(f"Progress coach cards generation failed: {e}")
 
@@ -563,13 +577,31 @@ def get_training_patterns(
     return result
 
 
-def _generate_headline(
-    athlete_id: str,
-    db: Session,
-    summary: ProgressSummary,
-    days: int,
-) -> Optional[ProgressHeadline]:
-    """Generate a coaching progress headline using the full athlete brief."""
+def _generate_progress_headline(
+    athlete_id: str = None,
+    db: Session = None,
+    summary: "ProgressSummary" = None,
+    days: int = 90,
+    athlete: "Athlete" = None,
+    metrics: Dict = None,
+) -> Optional["ProgressHeadline"]:
+    """
+    Generate a coaching progress headline using the full athlete brief.
+
+    Supports two calling conventions:
+      Old (endpoint): _generate_progress_headline(str(athlete_id), db, summary, days)
+      New (consent-gated): _generate_progress_headline(athlete=obj, metrics={}, db=db)
+    """
+    # P1-D: Consent gate — new-style call passes athlete object.
+    if athlete is not None:
+        from services.consent import has_ai_consent as _has_consent
+        if not _has_consent(athlete_id=athlete.id, db=db):
+            return None
+        athlete_id = str(athlete.id)
+
+    # Old-style callers pass athlete_id; no consent check (endpoint gates first).
+    if athlete_id is None:
+        return None
     import hashlib
     import json
 
@@ -776,15 +808,71 @@ def _fallback_progress_cards(
     ]
 
 
+def _consent_required_fallback_cards() -> "List[ProgressCoachCard]":
+    """Deterministic fallback cards shown when AI consent is not granted."""
+    return [
+        ProgressCoachCard(
+            id="fitness_momentum",
+            title="Fitness Momentum",
+            summary="Enable AI insights to see personalized coaching analysis of your fitness trend.",
+            trend_context="Your training data is ready. AI coaching requires your consent to process it.",
+            drivers="",
+            next_step="Go to Settings → AI Processing to enable personalized coaching insights.",
+            ask_coach_query="",
+        ),
+        ProgressCoachCard(
+            id="recovery_readiness",
+            title="Recovery Readiness",
+            summary="Enable AI insights to see how your recovery is tracking.",
+            trend_context="Recovery analysis requires AI processing consent.",
+            drivers="",
+            next_step="Go to Settings → AI Processing to enable personalized coaching insights.",
+            ask_coach_query="",
+        ),
+        ProgressCoachCard(
+            id="volume_trajectory",
+            title="Volume Pattern",
+            summary="Enable AI insights to see your volume trajectory analysis.",
+            trend_context="Volume coaching requires AI processing consent.",
+            drivers="",
+            next_step="Go to Settings → AI Processing to enable personalized coaching insights.",
+            ask_coach_query="",
+        ),
+        ProgressCoachCard(
+            id="consistency_signal",
+            title="Consistency Signal",
+            summary="Enable AI insights to see your consistency coaching signal.",
+            trend_context="Consistency analysis requires AI processing consent.",
+            drivers="",
+            next_step="Go to Settings → AI Processing to enable personalized coaching insights.",
+            ask_coach_query="",
+        ),
+    ]
+
+
 def _generate_progress_cards(
-    athlete_id: str,
-    db: Session,
-    summary: ProgressSummary,
-    days: int,
-) -> List[ProgressCoachCard]:
+    athlete_id: str = None,
+    db: Session = None,
+    summary: "ProgressSummary" = None,
+    days: int = 90,
+    athlete: "Athlete" = None,
+    metrics: Dict = None,
+) -> "List[ProgressCoachCard]":
     """
     Generate coach-led progress cards that replace raw quick metrics.
+
+    Supports two calling conventions:
+      Old (endpoint): _generate_progress_cards(str(athlete_id), db, summary, days)
+      New (consent-gated): _generate_progress_cards(athlete=obj, metrics={}, db=db)
     """
+    # P1-D: Consent gate — new-style call passes athlete object.
+    if athlete is not None:
+        from services.consent import has_ai_consent as _has_consent
+        if not _has_consent(athlete_id=athlete.id, db=db):
+            return _consent_required_fallback_cards()
+        athlete_id = str(athlete.id)
+        if summary is None:
+            return _consent_required_fallback_cards()
     import hashlib
     import json
 

@@ -44,6 +44,9 @@ except ImportError:
     _genai_module = None
     genai_types = None
 
+# Module-level alias so tests can patch services.adaptation_narrator.genai
+genai = _genai_module
+
 logger = logging.getLogger(__name__)
 
 
@@ -402,3 +405,46 @@ class AdaptationNarrator:
             output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
 
         return text, input_tokens, output_tokens, latency_ms
+
+
+    # -----------------------------------------------------------------------
+    # P1-D: Consent-aware public wrapper
+    # -----------------------------------------------------------------------
+
+    def generate_narration(
+        self,
+        athlete_id: Any = None,
+        context: Optional[Dict[str, Any]] = None,
+        db: Any = None,
+    ) -> Optional[NarrationResult]:
+        """
+        Consent-gated narration entry point.
+
+        Returns None immediately when consent is not granted.  When consent
+        is granted, delegates to narrate() using context fields.  Callers
+        that need full narrate() semantics should call narrate() directly
+        after verifying consent via has_ai_consent().
+        """
+        if athlete_id is not None:
+            _db = db
+            _close = False
+            if _db is None:
+                from core.database import SessionLocal
+                _db = SessionLocal()
+                _close = True
+            try:
+                from services.consent import has_ai_consent as _has_consent
+                if not _has_consent(athlete_id=athlete_id, db=_db):
+                    return None
+            finally:
+                if _close:
+                    _db.close()
+
+        ctx = context or {}
+        return self.narrate(
+            rule_id=ctx.get("rule_id", "UNKNOWN"),
+            mode=ctx.get("mode", "inform"),
+            data_cited=ctx.get("data_cited", {}),
+            ground_truth=ctx.get("ground_truth", {}),
+            insight_rule_ids=ctx.get("insight_rule_ids", []),
+        )

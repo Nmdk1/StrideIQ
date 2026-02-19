@@ -27,6 +27,11 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from google import genai  # module-level so tests can patch services.moment_narrator.genai
+except ImportError:
+    genai = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 
@@ -283,14 +288,33 @@ def _build_prompt(
 # ---------------------------------------------------------------------------
 
 def _call_narrator_llm(
-    client: Any,
-    prompt: str,
-) -> Tuple[str, int, int, int]:
+    client: Any = None,
+    prompt: str = "",
+    athlete_id: Any = None,
+    db: Any = None,
+) -> Optional[Tuple[str, int, int, int]]:
     """Call Gemini Flash for moment narratives.
 
-    Returns (text, input_tokens, output_tokens, latency_ms).
-    Raises on failure.
+    Returns (text, input_tokens, output_tokens, latency_ms), or None if
+    consent is not granted (when athlete_id is supplied).
+    Raises on failure when consent is granted.
     """
+    # P1-D: Consent gate — when caller passes athlete_id, enforce opt-in.
+    if athlete_id is not None:
+        _db = db
+        _close = False
+        if _db is None:
+            from core.database import SessionLocal
+            _db = SessionLocal()
+            _close = True
+        try:
+            from services.consent import has_ai_consent as _has_consent
+            if not _has_consent(athlete_id=athlete_id, db=_db):
+                return None
+        finally:
+            if _close:
+                _db.close()
+
     if client is None:
         raise RuntimeError("No Gemini client provided.")
 

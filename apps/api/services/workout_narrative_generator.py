@@ -24,6 +24,11 @@ from uuid import UUID
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+try:
+    from google import genai  # module-level so tests can patch services.workout_narrative_generator.genai
+except ImportError:
+    genai = None  # type: ignore[assignment]
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -455,3 +460,47 @@ def generate_workout_narrative(
         output_tokens=out_tok,
         latency_ms=lat,
     )
+
+
+# ---------------------------------------------------------------------------
+# P1-D: Consent-aware class wrapper
+# ---------------------------------------------------------------------------
+
+class WorkoutNarrativeGenerator:
+    """
+    Consent-aware wrapper for workout narrative LLM calls.
+
+    Provides a stable class-based API so consent gating can be tested
+    and extended without modifying the module-level generate_workout_narrative
+    function used by existing call sites.
+    """
+
+    def _call_llm(
+        self,
+        athlete_id: Any = None,
+        prompt: str = "",
+        db: Any = None,
+        client: Any = None,
+    ) -> Optional[Tuple[str, int, int, int]]:
+        """
+        Check consent then dispatch LLM.
+
+        Returns the _call_llm tuple (text, in_tok, out_tok, lat_ms) or None
+        if consent is not granted.
+        """
+        if athlete_id is not None:
+            _db = db
+            _close = False
+            if _db is None:
+                from core.database import SessionLocal
+                _db = SessionLocal()
+                _close = True
+            try:
+                from services.consent import has_ai_consent as _has_consent
+                if not _has_consent(athlete_id=athlete_id, db=_db):
+                    return None
+            finally:
+                if _close:
+                    _db.close()
+
+        return _call_llm(client, prompt)

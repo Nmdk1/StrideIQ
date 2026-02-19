@@ -1746,7 +1746,14 @@ async def get_home_data(
     # If cache is stale or missing, a Celery task is enqueued (fire-and-forget).
     coach_briefing = None
     briefing_state = "missing"
-    if has_any_activities:
+
+    # P1-D: Consent gate — no AI processing without explicit opt-in.
+    from services.consent import has_ai_consent as _has_consent
+    _ai_allowed = _has_consent(athlete_id=current_user.id, db=db)
+
+    if not _ai_allowed:
+        briefing_state = "consent_required"
+    elif has_any_activities:
         try:
             _use_cache_briefing = is_feature_enabled(
                 "lane_2a_cache_briefing", str(current_user.id), db

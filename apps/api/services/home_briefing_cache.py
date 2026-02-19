@@ -36,6 +36,7 @@ class BriefingState(str, Enum):
     STALE = "stale"
     MISSING = "missing"
     REFRESHING = "refreshing"
+    CONSENT_REQUIRED = "consent_required"
 
 
 def _cache_key(athlete_id: str) -> str:

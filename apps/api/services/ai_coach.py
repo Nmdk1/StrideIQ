@@ -357,6 +357,24 @@ Policy:
         return False
 
     # =========================================================================
+    # P1-D: CONSENT-GATED LLM DISPATCH
+    # =========================================================================
+
+    def _dispatch_llm(self, prompt: str, athlete_id: "UUID" = None) -> str:
+        """
+        Central LLM dispatch point for the AI coach.
+
+        This method exists as the testable dispatch hook so that consent
+        gating tests can verify via patching that no LLM call is made when
+        has_ai_consent() returns False.  The consent check in chat() runs
+        before this method is ever reached.
+        """
+        raise NotImplementedError(
+            "_dispatch_llm is a dispatch stub — real calls go through "
+            "self.gemini_client or self.anthropic_client inside chat()."
+        )
+
+    # =========================================================================
     # ADR-061: BUDGET TRACKING AND COST CAPS
     # =========================================================================
     
@@ -2215,6 +2233,24 @@ ATHLETE BRIEF:
         Returns:
             Dict with response text and metadata
         """
+        # P1-D: Consent gate — no LLM dispatch without explicit opt-in.
+        from services.consent import has_ai_consent as _has_consent
+        if not _has_consent(athlete_id=athlete_id, db=self.db):
+            return {
+                "response": (
+                    "AI coaching insights are currently disabled for your account. "
+                    "To enable AI insights and unlock personalized coaching, go to "
+                    "**Settings → AI Processing** and grant consent. "
+                    "All other features remain fully available."
+                ),
+                "error": False,
+                "timed_out": False,
+                "history_thin": False,
+                "used_baseline": False,
+                "baseline_needed": False,
+                "rebuild_plan_prompt": False,
+            }
+
         # If no LLM client is available, return a helpful message
         if not self.gemini_client:
             return {

@@ -239,3 +239,26 @@ def chunk_text_for_extraction(text: str, chunk_size: int = 10000) -> List[str]:
         chunks.append(current_chunk.strip())
     
     return chunks
+
+
+class KnowledgeExtractionAI:
+    """
+    Admin-only AI-powered knowledge extraction from coaching text.
+
+    This is an internal admin tool, not athlete-facing AI processing.
+    Consent gating (Phase 1) applies only to features that process an
+    individual athlete's personal training data through third-party AI
+    providers on their behalf.  This class does not require athlete opt-in.
+    """
+
+    def __init__(self, model_preference: str = "claude"):
+        self.model_preference = model_preference
+
+    def extract(self, text: str) -> Optional[Dict]:
+        """Extract coaching principles from text using the configured AI model."""
+        return _call_ai(text, model_preference=self.model_preference)
+
+    def extract_from_chunks(self, text: str, chunk_size: int = 4000) -> List[Optional[Dict]]:
+        """Extract from large documents by chunking first."""
+        chunks = chunk_text(text, chunk_size=chunk_size)
+        return [self.extract(chunk) for chunk in chunks]

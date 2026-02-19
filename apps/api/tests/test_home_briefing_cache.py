@@ -382,6 +382,16 @@ class TestHomeEndpointNoLLM:
         """Override auth and DB dependencies to use test fixtures."""
         from core.auth import get_current_user
         from core.database import get_db
+        from services.consent import grant_consent
+        # Grant consent so these tests exercise briefing-cache behavior, not the consent gate.
+        grant_consent(
+            db=db_session,
+            athlete_id=test_athlete.id,
+            ip_address="127.0.0.1",
+            user_agent="test",
+            source="test",
+        )
+        db_session.refresh(test_athlete)
         app.dependency_overrides[get_current_user] = lambda: test_athlete
         app.dependency_overrides[get_db] = lambda: db_session
 
@@ -442,7 +452,7 @@ class TestHomeEndpointNoLLM:
                 assert response.status_code == 200
                 data = response.json()
                 assert "briefing_state" in data
-                assert data["briefing_state"] in ("fresh", "stale", "missing", "refreshing")
+                assert data["briefing_state"] in ("fresh", "stale", "missing", "refreshing", "consent_required")
         finally:
             self._cleanup_overrides(app)
 
@@ -965,6 +975,6 @@ class TestSchemaContract:
 
     def test_briefing_state_enum_values_exhaustive(self):
         """Test 35: only valid enum values exist."""
-        expected = {"fresh", "stale", "missing", "refreshing"}
+        expected = {"fresh", "stale", "missing", "refreshing", "consent_required"}
         actual = {s.value for s in BriefingState}
         assert actual == expected
