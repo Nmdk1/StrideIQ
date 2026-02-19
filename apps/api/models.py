@@ -123,6 +123,13 @@ class Athlete(Base):
     longest_streak_weeks = Column(Integer, default=0)  # All-time best streak
     last_streak_update = Column(DateTime(timezone=True), nullable=True)
 
+    # --- AI CONSENT (Phase 1: Consent Infrastructure) ---
+    # Explicit opt-in required before any LLM dispatch. Default deny.
+    # See docs/PHASE1_CONSENT_INFRASTRUCTURE_AC.md for full spec.
+    ai_consent = Column(Boolean, default=False, nullable=False)
+    ai_consent_granted_at = Column(DateTime(timezone=True), nullable=True)
+    ai_consent_revoked_at = Column(DateTime(timezone=True), nullable=True)
+
     # --- RELATIONSHIPS ---
     # Required for SQLAlchemy unit-of-work to know about the FK dependency
     # from Activity → Athlete. Without this, delete ordering is arbitrary
@@ -1536,6 +1543,29 @@ class FeatureFlag(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class ConsentAuditLog(Base):
+    """
+    Immutable audit trail for AI processing consent actions.
+
+    Every grant or revoke of ai_processing consent writes one row here,
+    even if the action is idempotent (already granted / already revoked).
+    This provides a complete chronological record for compliance purposes.
+
+    consent_type is extensible — currently only 'ai_processing' is used.
+    source tracks where the consent action originated.
+    """
+    __tablename__ = "consent_audit_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    consent_type = Column(Text, nullable=False)   # e.g. "ai_processing"
+    action = Column(Text, nullable=False)          # "granted" or "revoked"
+    ip_address = Column(Text, nullable=True)
+    user_agent = Column(Text, nullable=True)
+    source = Column(Text, nullable=True)           # "onboarding" | "settings" | "consent_prompt" | "admin"
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Purchase(Base):
