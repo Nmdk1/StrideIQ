@@ -921,7 +921,7 @@ def _generate_progress_cards(
     prompt_parts = [
         "You are an elite running coach creating the 4 top cards for an athlete's Progress page.",
         "This must feel like coaching, not a dashboard.",
-        "Return card language that is motivating, specific, and actionable.",
+        "Return card language that is specific, evidence-based, and actionable.",
         "",
         "CRITICAL SAFETY / TONE RULES (non-negotiable):",
         "- State facts first, then implication. Let the data speak — no cheerleading, no praise.",
