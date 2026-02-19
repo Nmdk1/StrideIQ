@@ -233,7 +233,9 @@ class TestConsentDataModel:
 
         # Ensure kill switch exists and is ON
         flag = db_session.query(FeatureFlag).filter_by(key="ai_inference_enabled").first()
-        if not flag:
+        if flag:
+            flag.enabled = True
+        else:
             flag = FeatureFlag(
                 key="ai_inference_enabled",
                 name="AI Inference Kill Switch",
@@ -241,7 +243,7 @@ class TestConsentDataModel:
                 rollout_percentage=100,
             )
             db_session.add(flag)
-            db_session.commit()
+        db_session.commit()
 
         result = has_ai_consent(athlete_id=athlete.id, db=db_session)
         assert result is True
@@ -525,6 +527,11 @@ class TestLLMPipelineGating:
         try:
             db.query(ConsentAuditLog).filter(ConsentAuditLog.athlete_id == athlete.id).delete()
             db.commit()
+            # Reset kill switch to enabled so other tests aren't poisoned
+            flag = db.query(FeatureFlag).filter_by(key="ai_inference_enabled").first()
+            if flag:
+                flag.enabled = True
+                db.commit()
             db.delete(athlete)
             db.commit()
         except Exception:
