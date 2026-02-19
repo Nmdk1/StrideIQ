@@ -10,7 +10,7 @@ export default function PrivacyPolicyPage() {
     <div className="min-h-screen bg-slate-900 text-slate-100 py-16">
       <div className="max-w-4xl mx-auto px-6">
         <h1 className="text-4xl font-bold mb-8">Privacy Policy</h1>
-        <p className="text-slate-400 mb-8">Last updated: January 29, 2026</p>
+        <p className="text-slate-400 mb-8">Last updated: February 19, 2026</p>
         
         <div className="prose prose-invert max-w-none space-y-8">
           <section>
@@ -143,8 +143,7 @@ export default function PrivacyPolicyPage() {
             </p>
             <ul className="list-disc pl-6 text-slate-300 space-y-2">
               <li><strong>Cloud hosting:</strong> For secure data storage and application hosting</li>
-              <li><strong>AI services:</strong> For generating personalized coaching insights (your data is 
-                processed but not retained or used to train models)</li>
+              <li><strong>AI services:</strong> For generating personalized coaching insights. See Section 6 (AI-Powered Insights) for full disclosure of providers, data handling, and your consent rights.</li>
             </ul>
             
             <h3 className="text-xl font-semibold mt-6 mb-3">5.3 Platform Usage Data</h3>
@@ -155,7 +154,82 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">6. Withdrawing Consent & Disconnecting Services</h2>
+            <h2 className="text-2xl font-semibold mb-4">6. AI-Powered Insights</h2>
+            <p className="text-slate-300 mb-4">
+              StrideIQ uses third-party AI services to generate personalized coaching insights, including
+              morning briefings, activity narratives, coaching moments, and progress analysis. This section
+              explains what data is processed, who processes it, and how you control AI use of your data.
+            </p>
+
+            <h3 className="text-xl font-semibold mt-6 mb-3">6.1 What Data Is Sent to AI Services</h3>
+            <p className="text-slate-300 mb-2">
+              To generate personalized coaching insights, we send relevant portions of your training data to
+              AI providers. This includes:
+            </p>
+            <ul className="list-disc pl-6 text-slate-300 space-y-2">
+              <li><strong>Activity metrics:</strong> pace, heart rate, cadence, distance, elevation, training
+                load, splits, and effort data from your runs</li>
+              <li><strong>Health data:</strong> sleep duration and quality, stress scores, HRV status, and
+                body battery (when connected from Garmin)</li>
+              <li><strong>Training context:</strong> recent training history, weekly volume, planned workouts,
+                race goals, and training phase</li>
+            </ul>
+            <p className="text-slate-300 mt-3">
+              Data is sent only to generate insights for you. We do not send your account credentials,
+              payment information, or data from other users.
+            </p>
+
+            <h3 className="text-xl font-semibold mt-6 mb-3">6.2 AI Providers</h3>
+            <p className="text-slate-300 mb-2">
+              StrideIQ uses paid API tiers from the following AI providers:
+            </p>
+            <ul className="list-disc pl-6 text-slate-300 space-y-2">
+              <li>
+                <strong>Google (Gemini)</strong> — used for narrative generation and coaching intelligence.
+                See <a href="https://policies.google.com/privacy" className="text-orange-400 hover:text-orange-300" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>.
+              </li>
+              <li>
+                <strong>Anthropic (Claude)</strong> — used for coaching intelligence and correlational
+                analysis. See <a href="https://www.anthropic.com/privacy" className="text-orange-400 hover:text-orange-300" target="_blank" rel="noopener noreferrer">Anthropic Privacy Policy</a>.
+              </li>
+            </ul>
+
+            <h3 className="text-xl font-semibold mt-6 mb-3">6.3 Model Training</h3>
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+              <p className="text-slate-300 mb-2 font-semibold">StrideIQ does not train AI models on your data.</p>
+              <p className="text-slate-300">
+                Under the current terms of service for both Google&apos;s Gemini API and Anthropic&apos;s
+                Claude API (verified February 2026), neither provider trains their models on data submitted
+                through paid API tiers. We review provider terms quarterly. If a provider&apos;s terms
+                change, we will update this policy immediately and, where required, seek renewed consent.
+              </p>
+            </div>
+
+            <h3 className="text-xl font-semibold mt-6 mb-3">6.4 Your Consent</h3>
+            <p className="text-slate-300 mb-2">
+              AI processing of your training data requires your explicit consent. You are never enrolled
+              silently. You can:
+            </p>
+            <ul className="list-disc pl-6 text-slate-300 space-y-2">
+              <li><strong>Grant consent</strong> during onboarding or when prompted in the app</li>
+              <li>
+                <strong>Withdraw consent at any time</strong> via{' '}
+                <strong>Settings → AI Processing</strong> — withdrawal takes effect immediately, and no
+                new AI requests will be made on your behalf after withdrawal
+              </li>
+            </ul>
+
+            <h3 className="text-xl font-semibold mt-6 mb-3">6.5 What Continues Without Consent</h3>
+            <p className="text-slate-300">
+              All non-AI features remain fully functional if you decline or withdraw AI processing consent.
+              This includes activity data, charts, metrics, training calendar, pace splits, training load
+              analysis, and performance tracking. Only AI-generated coaching text — morning briefings,
+              activity narratives, coach chat, and progress analysis — requires consent.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">7. Withdrawing Consent & Disconnecting Services</h2>
             <p className="text-slate-300 mb-4">
               You can withdraw your consent and disconnect services at any time:
             </p>
@@ -182,7 +256,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">7. Your Rights (GDPR & UK GDPR)</h2>
+            <h2 className="text-2xl font-semibold mb-4">8. Your Rights (GDPR & UK GDPR)</h2>
             <p className="text-slate-300 mb-4">
               Under applicable data protection laws, you have the right to:
             </p>
@@ -204,7 +278,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">8. Data Retention</h2>
+            <h2 className="text-2xl font-semibold mb-4">9. Data Retention</h2>
             <ul className="list-disc pl-6 text-slate-300 space-y-2">
               <li><strong>Active accounts:</strong> Data retained for as long as your account is active</li>
               <li><strong>Account deletion:</strong> All personal data permanently deleted within 30 days</li>
@@ -219,7 +293,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">9. Cookies</h2>
+            <h2 className="text-2xl font-semibold mb-4">10. Cookies</h2>
             <p className="text-slate-300">
               We use essential cookies only for authentication and session management. 
               We do not use tracking cookies, advertising cookies, or third-party analytics cookies.
@@ -227,7 +301,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">10. International Data Transfers</h2>
+            <h2 className="text-2xl font-semibold mb-4">11. International Data Transfers</h2>
             <p className="text-slate-300">
               Your data may be processed in the United States where our servers are located. 
               We ensure appropriate safeguards are in place for international transfers in 
@@ -236,7 +310,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">11. Children&apos;s Privacy</h2>
+            <h2 className="text-2xl font-semibold mb-4">12. Children&apos;s Privacy</h2>
             <p className="text-slate-300">
               StrideIQ is not intended for users under 18 years of age. We do not knowingly 
               collect personal data from children. If you believe we have collected data from 
@@ -245,7 +319,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">12. Contact</h2>
+            <h2 className="text-2xl font-semibold mb-4">13. Contact</h2>
             <p className="text-slate-300 mb-4">
               For privacy-related questions, data requests, or to exercise your rights:
             </p>
@@ -266,7 +340,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">13. Changes to This Policy</h2>
+            <h2 className="text-2xl font-semibold mb-4">14. Changes to This Policy</h2>
             <p className="text-slate-300">
               We may update this policy periodically. Significant changes will be communicated 
               via email or in-app notification. Continued use of StrideIQ after changes 
