@@ -314,11 +314,11 @@ class TestTaskRetryAndTimeout:
         assert entry1["data_fingerprint"] == entry2["data_fingerprint"]
 
     def test_task_runtime_timeout(self):
-        """Test 14: task killed after 15s hard limit."""
-        from tasks.home_briefing_tasks import generate_home_briefing_task, TASK_HARD_TIMEOUT_S
+        """Test 14: task hard limit exceeds provider timeout to allow for DB work headroom."""
+        from tasks.home_briefing_tasks import generate_home_briefing_task, TASK_HARD_TIMEOUT_S, PROVIDER_TIMEOUT_S
 
         assert generate_home_briefing_task.time_limit == TASK_HARD_TIMEOUT_S
-        assert TASK_HARD_TIMEOUT_S == 15
+        assert TASK_HARD_TIMEOUT_S > PROVIDER_TIMEOUT_S  # must always exceed provider timeout
 
 
 class TestTaskSession:
@@ -941,18 +941,18 @@ class TestProviderTimeout:
 class TestTaskHardTimeoutConstant:
     """Test 38: task-level timeout constants match ADR spec."""
 
-    def test_task_hard_timeout_is_15s(self):
-        """Test 38: Celery task hard limit is exactly 15s per ADR-065."""
-        from tasks.home_briefing_tasks import generate_home_briefing_task, TASK_HARD_TIMEOUT_S
+    def test_task_hard_timeout_exceeds_provider_timeout(self):
+        """Test 38: Celery task hard limit must exceed provider timeout (DB work headroom)."""
+        from tasks.home_briefing_tasks import generate_home_briefing_task, TASK_HARD_TIMEOUT_S, PROVIDER_TIMEOUT_S
 
-        assert TASK_HARD_TIMEOUT_S == 15
+        assert TASK_HARD_TIMEOUT_S > PROVIDER_TIMEOUT_S
         assert generate_home_briefing_task.time_limit == TASK_HARD_TIMEOUT_S
 
-    def test_provider_timeout_is_12s(self):
-        """Test 39: provider timeout is exactly 12s per ADR-065."""
+    def test_provider_timeout_sufficient_for_rich_prompt(self):
+        """Test 39: provider timeout must be large enough for rich intelligence prompt generation."""
         from tasks.home_briefing_tasks import PROVIDER_TIMEOUT_S
 
-        assert PROVIDER_TIMEOUT_S == 12
+        assert PROVIDER_TIMEOUT_S >= 30  # rich prompt (5 intelligence sources) needs generation time
 
 
 # ===========================================================================
