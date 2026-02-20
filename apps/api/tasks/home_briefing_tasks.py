@@ -38,8 +38,8 @@ from services.home_briefing_cache import (
 
 logger = logging.getLogger(__name__)
 
-PROVIDER_TIMEOUT_S = 12
-TASK_HARD_TIMEOUT_S = 15
+PROVIDER_TIMEOUT_S = 45   # Rich prompt (5 intelligence sources) needs more generation time
+TASK_HARD_TIMEOUT_S = 55  # Must exceed PROVIDER_TIMEOUT_S + DB work headroom
 
 
 def _build_data_fingerprint(

@@ -649,7 +649,7 @@ def _valid_home_briefing_contract(result: dict, checkin_data: Optional[dict], ra
     return True
 
 
-HOME_BRIEFING_TIMEOUT_S = 15  # hard ceiling — home page must never block on LLM
+HOME_BRIEFING_TIMEOUT_S = 45  # rich prompt (5 intelligence sources) needs more generation time
 
 
 def _call_opus_briefing_sync(
