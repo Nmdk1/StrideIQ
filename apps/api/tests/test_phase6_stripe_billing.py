@@ -62,7 +62,7 @@ def test_checkout_and_portal_endpoints(monkeypatch):
     from services import stripe_service as ss
 
     monkeypatch.setattr(ss, "_get_stripe_config", lambda: _DummyStripeConfig())
-    monkeypatch.setattr(ss.StripeService, "create_checkout_session", lambda self, athlete: "https://stripe.test/checkout")
+    monkeypatch.setattr(ss.StripeService, "create_checkout_session", lambda self, athlete, billing_period="annual": "https://stripe.test/checkout")
     monkeypatch.setattr(ss.StripeService, "create_portal_session", lambda self, athlete: "https://stripe.test/portal")
     monkeypatch.setattr(ss.StripeService, "best_effort_sync_customer_subscription", lambda self, db, athlete: None)
 
