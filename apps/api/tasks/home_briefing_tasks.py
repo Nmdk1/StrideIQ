@@ -314,19 +314,22 @@ def _call_llm_for_briefing(
     prompt: str,
     schema_fields: dict,
     required_fields: list,
-    use_opus: bool = False,
 ) -> Optional[dict]:
     """
     Single LLM dispatch point for home briefing generation.
+
+    Always tries Opus first (if ANTHROPIC_API_KEY is set), falls back to
+    Gemini Flash. Matches the behaviour of _fetch_llm_briefing_sync in
+    home.py. The use_opus feature flag has been retired — the model
+    selection is driven entirely by API key availability.
 
     This wrapper exists so consent gating in generate_home_briefing_task
     can be verified by tests via patching this function.  All actual LLM
     calls go through _call_opus_briefing or _call_gemini_briefing.
     """
-    if use_opus:
-        result = _call_opus_briefing(prompt, schema_fields, required_fields)
-        if result is not None:
-            return result
+    result = _call_opus_briefing(prompt, schema_fields, required_fields)
+    if result is not None:
+        return result
     return _call_gemini_briefing(prompt, schema_fields, required_fields)
 
 
@@ -369,15 +372,9 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
 
         prompt, schema_fields, required_fields, checkin_data, race_data = prompt_result
 
-        use_opus = False
-        try:
-            from core.feature_flags import is_feature_enabled
-            use_opus = is_feature_enabled("home_briefing_use_opus", athlete_id, db)
-        except Exception:
-            pass
-
-        source_model = "claude-opus-4-5" if use_opus else "gemini-2.5-flash"
-        result = _call_llm_for_briefing(prompt, schema_fields, required_fields, use_opus=use_opus)
+        use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
+        source_model = "claude-opus-4-6" if use_opus else "gemini-2.5-flash"
+        result = _call_llm_for_briefing(prompt, schema_fields, required_fields)
 
         if result is None:
             record_task_failure(athlete_id)

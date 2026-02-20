@@ -690,7 +690,7 @@ def _call_opus_briefing_sync(
     try:
         client = Anthropic(api_key=api_key, timeout=HOME_BRIEFING_TIMEOUT_S)
         response = client.messages.create(
-            model="claude-opus-4-5-20251101",
+            model="claude-opus-4-6",
             system=system_prompt,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
@@ -808,7 +808,7 @@ def _fetch_llm_briefing_sync(
     import json as _json
     import os
 
-    # --- Primary: Claude Opus 4.5 ---
+    # --- Primary: Claude Opus 4.6 ---
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     if anthropic_key:
         result = _call_opus_briefing_sync(prompt, schema_fields, required_fields, anthropic_key)
@@ -1000,15 +1000,30 @@ def generate_coach_home_briefing(
             "",
         ])
 
-    if coach_noticed_intel:
+    # FIX 2: Build rich intelligence from five analytical sources and inject
+    # into the prompt. Falls back to the single deterministic signal when all
+    # sources are empty (e.g., athlete has no check-ins or N=1 data yet).
+    rich_context = ""
+    try:
+        rich_context = _build_rich_intelligence_context(athlete_id, db)
+    except Exception as e:
+        logger.warning(f"Rich intelligence context failed (non-blocking): {e}")
+
+    if rich_context:
         parts.extend([
-            "=== DETERMINISTIC INTELLIGENCE (from your analytical tools) ===",
+            rich_context,
+            "",
+            "CRITICAL INSTRUCTION: The DEEP INTELLIGENCE section above contains findings",
+            "the athlete CANNOT derive from looking at their own data. Your morning_voice",
+            "and coach_noticed MUST draw from this section. If you ignore it and produce",
+            "generic observations like weekly mileage totals, your output will be rejected.",
+            "",
+        ])
+    elif coach_noticed_intel:
+        parts.extend([
+            "=== DETERMINISTIC INTELLIGENCE ===",
             f"Source: {coach_noticed_intel.source}",
             coach_noticed_intel.text,
-            "",
-            "Use this intelligence as a PRIMARY input. The morning_voice and coach_noticed",
-            "fields MUST reflect this signal if it is present. Do not ignore it in favor",
-            "of generic observations.",
             "",
         ])
 
@@ -1035,12 +1050,12 @@ def generate_coach_home_briefing(
     prompt = "\n".join(parts)
 
     schema_fields = {
-        "coach_noticed": "The single most important coaching observation. If deterministic intelligence is provided above, incorporate that signal and explain what it MEANS for the athlete — not what the number is, but what it implies. Example of GOOD: 'Your pacing consistency is elite-level right now — less than 0.1% decay over 10 miles means your aerobic engine is dialed in for Tobacco Road.' Example of BAD: 'Strong pacing with -0.1% decay and chronic load of 38.9.' 1-2 sentences. NEVER quote internal metrics (CTL, ATL, TSB, load ratios, form scores).",
+        "coach_noticed": "The single most important coaching observation the athlete doesn't already know. Draw from the DEEP INTELLIGENCE personal patterns section. Surface the finding most relevant to TODAY. If a daily intelligence rule fired, lead with that. The athlete should read this and think 'I didn't know that.' Example of GOOD: 'Your efficiency tends to improve within 2 days of higher sleep — last night's 5.5 hours may blunt tomorrow's gains.' Example of BAD: 'You ran two 10-mile runs this week showing consistent volume.' 1-2 sentences. NEVER quote internal metrics.",
         "today_context": "Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.",
         "week_assessment": "Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.",
         "checkin_reaction": "Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.",
         "race_assessment": "Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.",
-        "morning_voice": "One paragraph that gives your athlete's data a voice. 40-280 characters. Must cite at least one specific number the athlete cares about (pace, distance, HR — NOT internal metrics like CTL, ATL, TSB, load ratios, form scores, or injury risk scores). Speak as the data, not as a coach. No sycophancy. NEVER quote chronic load, acute load, TSB, durability index, recovery half-life, or any value marked INTERNAL in the brief. Translate internal signals into plain coaching language. Example of GOOD: '38 miles through 5 runs this week. Your pacing has been remarkably even — less than 0.1% drift across today\\'s 10 miles. That kind of control 23 days out from Tobacco Road is exactly what you want to see.' Example of BAD: 'Your chronic load is 38.9 and acute load is 48.9, showing continued volume building.'",
+        "morning_voice": "One paragraph that gives your athlete's data a voice. 40-280 characters. PRIORITIZE insights from the DEEP INTELLIGENCE section — these are things the athlete cannot derive from their own runs. A good morning voice connects a personal pattern to today's context. Example of GOOD: '6.8 hours of sleep last night. Your body tends to run easier the day after 7+ hours — today might not get that boost, so keep the effort honest.' Example of BAD: '38.3 miles through 5 runs this week. Your pacing has been consistent.' Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score.",
         "workout_why": "One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
@@ -1140,6 +1155,97 @@ def compute_coach_noticed(
         )
 
     return None
+
+
+def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
+    """
+    Assemble deep intelligence from five sources into a single prompt section.
+
+    Each source runs in its own try/except — any failure is logged and skipped.
+    If all sources return nothing, returns "".
+
+    Sources (in order of insertion into prompt):
+    1. N=1 insights (Bonferroni-corrected personal patterns)
+    2. Daily intelligence rules that fired today
+    3. Wellness trends (28-day check-in aggregation)
+    4. PB patterns (training conditions preceding personal bests)
+    5. This block vs previous block (28-day period comparison)
+    """
+    from uuid import UUID as _UUID
+    athlete_uuid = _UUID(athlete_id)
+
+    sections: list[str] = []
+
+    # 1. N=1 personal patterns — crown jewels
+    try:
+        from services.n1_insight_generator import generate_n1_insights
+        n1_insights = generate_n1_insights(athlete_uuid, db, max_insights=5)
+        if n1_insights:
+            lines = [
+                f"- {ins.text} (confidence: {ins.confidence:.2f})"
+                for ins in n1_insights
+            ]
+            sections.append(
+                "--- Personal Patterns (N=1, statistically validated) ---\n"
+                + "\n".join(lines)
+            )
+    except Exception as e:
+        logger.warning(f"N=1 insights failed for home briefing ({athlete_id}): {e}")
+
+    # 2. Daily intelligence rules that fired today
+    try:
+        from services.daily_intelligence import DailyIntelligenceEngine, InsightMode
+        intel_result = DailyIntelligenceEngine().evaluate(athlete_uuid, date.today(), db)
+        fired = [
+            ins for ins in intel_result.insights
+            if ins.mode != InsightMode.LOG
+        ]
+        if fired:
+            lines = [f"- [{ins.rule_id}] {ins.message}" for ins in fired]
+            sections.append(
+                "--- Today's Intelligence Rules ---\n"
+                + "\n".join(lines)
+            )
+    except Exception as e:
+        logger.debug(f"Daily intelligence rules failed for home briefing ({athlete_id}): {e}")
+
+    # 3. Wellness trends (28 days of check-in data)
+    try:
+        from services.coach_tools import get_wellness_trends
+        wt = get_wellness_trends(db, athlete_uuid, days=28)
+        narrative = wt.get("narrative", "")
+        if narrative and "No wellness data" not in narrative:
+            sections.append("--- Wellness Trends (28 days) ---\n" + narrative)
+    except Exception as e:
+        logger.debug(f"Wellness trends failed for home briefing ({athlete_id}): {e}")
+
+    # 4. PB patterns
+    try:
+        from services.coach_tools import get_pb_patterns
+        pb = get_pb_patterns(db, athlete_uuid)
+        narrative = pb.get("narrative", "")
+        if narrative:
+            sections.append("--- PB Patterns ---\n" + narrative)
+    except Exception as e:
+        logger.debug(f"PB patterns failed for home briefing ({athlete_id}): {e}")
+
+    # 5. This block vs previous block
+    try:
+        from services.coach_tools import compare_training_periods
+        ctp = compare_training_periods(db, athlete_uuid, days=28)
+        narrative = ctp.get("narrative", "")
+        if narrative:
+            sections.append("--- This Block vs Previous ---\n" + narrative)
+    except Exception as e:
+        logger.debug(f"Compare training periods failed for home briefing ({athlete_id}): {e}")
+
+    if not sections:
+        return ""
+
+    return (
+        "=== DEEP INTELLIGENCE (what the athlete CANNOT know from looking at their data) ===\n\n"
+        + "\n\n".join(sections)
+    )
 
 
 def compute_race_countdown(

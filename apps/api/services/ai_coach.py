@@ -265,7 +265,7 @@ Policy:
     # 95% of queries use Gemini 2.5 Flash (cost-efficient, 1M context)
     # 5% high-stakes queries use Claude Opus 4.5 (maximum reasoning quality)
     MODEL_DEFAULT = "gemini-2.5-flash"      # Standard coaching (95%)
-    MODEL_HIGH_STAKES = "claude-opus-4-5-20251101"  # Injury/recovery/load decisions (5%)
+    MODEL_HIGH_STAKES = "claude-opus-4-6"  # Injury/recovery/load decisions (5%)
     
     # Legacy aliases for backward compatibility
     MODEL_LOW = MODEL_DEFAULT
