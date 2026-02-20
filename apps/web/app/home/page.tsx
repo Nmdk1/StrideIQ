@@ -404,12 +404,19 @@ export default function HomePage() {
           {/* 1. Full-bleed hero (last run canvas) */}
           {last_run && <LastRunHero lastRun={last_run} />}
 
-          {/* 2. The Voice — morning_voice as plain text */}
-          {coach_briefing?.morning_voice && (
-            <div data-testid="morning-voice" className="px-1 py-2">
-              <p className="text-base text-slate-300 leading-relaxed">
-                {coach_briefing.morning_voice}
-              </p>
+          {/* 2. The Voice — morning_voice + coach_noticed as plain paragraphs */}
+          {(coach_briefing?.morning_voice || coach_briefing?.coach_noticed) && (
+            <div data-testid="morning-voice" className="px-1 py-2 space-y-2">
+              {coach_briefing.morning_voice && (
+                <p className="text-base text-slate-300 leading-relaxed">
+                  {coach_briefing.morning_voice}
+                </p>
+              )}
+              {coach_briefing.coach_noticed && (
+                <p className="text-sm text-slate-400 leading-relaxed">
+                  {coach_briefing.coach_noticed}
+                </p>
+              )}
             </div>
           )}
 
