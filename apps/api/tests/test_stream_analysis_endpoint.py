@@ -604,9 +604,9 @@ class TestStreamAnalysisEndpoint:
 # the real endpoint output, both backend and frontend suites break.
 # ---------------------------------------------------------------------------
 
-# Locate shared fixture relative to this file:
-# tests/ -> apps/api/ -> apps/ -> StrideIQ/
-CONTRACT_FILE = Path(__file__).resolve().parents[3] / "contracts" / "stream_analysis_response.json"
+# Locate shared fixture — copy lives alongside this test file so it works
+# in both local dev and Docker (where only apps/api/ is in the image).
+CONTRACT_FILE = Path(__file__).resolve().parent / "stream_analysis_response.json"
 
 
 @pytest.fixture(scope="module")
