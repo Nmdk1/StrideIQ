@@ -198,31 +198,6 @@ class CoachMessageResponse(BaseModel):
 # HELPER FUNCTIONS
 # =============================================================================
 
-INTERPRETIVE_WORDS = {
-    "strong",
-    "controlled",
-    "smooth",
-    "solid",
-    "productive",
-    "concerning",
-    "breakthrough",
-    "sharp",
-    "stable",
-    "balanced",
-    "promising",
-    "robust",
-    "fatigued",
-    "stressed",
-}
-
-
-def _has_interpretive_language(text: Optional[str]) -> bool:
-    if not text:
-        return False
-    lower = text.lower()
-    return any(w in lower for w in INTERPRETIVE_WORDS)
-
-
 def _looks_like_action(text: Optional[str]) -> bool:
     if not text:
         return False
@@ -328,8 +303,6 @@ def _valid_day_coach_contract(payload: dict) -> bool:
     implication = payload.get("implication")
     action = payload.get("action")
     if not assessment or not implication or not isinstance(action, list) or len(action) == 0:
-        return False
-    if not _has_interpretive_language(assessment):
         return False
     if not any(_looks_like_action(a) for a in action if isinstance(a, str)):
         return False
@@ -1173,8 +1146,7 @@ async def send_coach_message(
             else:
                 sanitized = _sanitize_day_coach_text(coach_response)
                 if (
-                    not _has_interpretive_language(sanitized)
-                    or not _looks_like_action(sanitized)
+                    not _looks_like_action(sanitized)
                     or "recorded pace vs marathon pace" in sanitized.lower()
                 ):
                     payload = _build_day_coach_contract_from_facts(day_data)

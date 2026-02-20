@@ -2,7 +2,7 @@ from routers.home import _valid_home_briefing_contract
 from routers.progress import ProgressCoachCard, _valid_progress_card_contract
 
 
-def test_home_briefing_contract_requires_interpretive_assessment_and_action():
+def test_home_briefing_contract_requires_required_fields_and_action():
     payload = {
         "coach_noticed": "Strong aerobic control across recent long efforts.",
         "today_context": "Keep tomorrow easy to absorb this load and protect Thursday quality.",
@@ -12,13 +12,15 @@ def test_home_briefing_contract_requires_interpretive_assessment_and_action():
     assert _valid_home_briefing_contract(payload, checkin_data={"status": "ok"}, race_data=None) is True
 
 
-def test_home_briefing_contract_rejects_numeric_only_assessment():
+def test_home_briefing_contract_accepts_factual_assessment_with_valid_structure():
+    """Contract validates structure (required fields + action language), not coaching quality.
+    Coaching quality is the prompt's responsibility, not the contract's."""
     payload = {
         "coach_noticed": "You ran 8:46/mi at 122 bpm over 20 miles.",
         "today_context": "Keep tomorrow easy and recover.",
         "week_assessment": "Week trend is steady.",
     }
-    assert _valid_home_briefing_contract(payload, checkin_data=None, race_data=None) is False
+    assert _valid_home_briefing_contract(payload, checkin_data=None, race_data=None) is True
 
 
 def test_progress_card_contract_accepts_aia_shape():

@@ -63,30 +63,6 @@ class ProgressCoachCard(BaseModel):
     ask_coach_query: str
 
 
-_INTERPRETIVE_WORDS = (
-    "strong",
-    "controlled",
-    "smooth",
-    "solid",
-    "promising",
-    "balanced",
-    "productive",
-    "concerning",
-    "stable",
-    "breakthrough",
-    "sharp",
-    "fatigued",
-    "stressed",
-)
-
-
-def _has_interpretive_language(text: Optional[str]) -> bool:
-    if not text:
-        return False
-    lower = text.lower()
-    return any(w in lower for w in _INTERPRETIVE_WORDS)
-
-
 def _looks_like_action(text: Optional[str]) -> bool:
     if not text:
         return False
@@ -111,8 +87,6 @@ def _looks_like_action(text: Optional[str]) -> bool:
 
 def _valid_progress_card_contract(card: ProgressCoachCard) -> bool:
     if not card.summary or not card.trend_context or not card.next_step:
-        return False
-    if not _has_interpretive_language(card.summary):
         return False
     if not _looks_like_action(card.next_step):
         return False

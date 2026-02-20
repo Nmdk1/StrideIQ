@@ -493,23 +493,6 @@ def generate_yesterday_insight(activity: Activity) -> str:
     return " ".join(insights[:2]) if insights else None
 
 
-_INTERPRETIVE_WORDS = (
-    "strong",
-    "controlled",
-    "smooth",
-    "solid",
-    "promising",
-    "balanced",
-    "productive",
-    "concerning",
-    "stable",
-    "breakthrough",
-    "sharp",
-    "fatigued",
-    "stressed",
-)
-
-
 # ---------------------------------------------------------------------------
 # Post-generation voice validator — fail-closed, no bypass
 # ---------------------------------------------------------------------------
@@ -596,13 +579,6 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
     return {"valid": True}
 
 
-def _has_interpretive_language(text: Optional[str]) -> bool:
-    if not text:
-        return False
-    lower = text.lower()
-    return any(w in lower for w in _INTERPRETIVE_WORDS)
-
-
 def _looks_like_action(text: Optional[str]) -> bool:
     if not text:
         return False
@@ -634,8 +610,6 @@ def _valid_home_briefing_contract(result: dict, checkin_data: Optional[dict], ra
     week_assessment = result.get("week_assessment")
     today_context = result.get("today_context")
     if not coach_noticed or not week_assessment or not today_context:
-        return False
-    if not _has_interpretive_language(coach_noticed):
         return False
     action_sources = [today_context, result.get("checkin_reaction"), result.get("race_assessment")]
     if not any(_looks_like_action(s) for s in action_sources if isinstance(s, str)):
