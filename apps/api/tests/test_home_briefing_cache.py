@@ -831,29 +831,29 @@ class TestCeleryTask:
         assert entry["data_fingerprint"] == "fp123"
         assert entry["payload"]["coach_noticed"] == "Good run"
 
-    def test_celery_task_uses_gemini_by_default(self, fake_redis):
-        """Test 30: with flag off, task calls Gemini and writes gemini model tag."""
-        from tasks.home_briefing_tasks import _call_gemini_briefing
-
+    def test_celery_task_uses_gemini_when_no_anthropic_key(self, fake_redis):
+        """Test 30: without ANTHROPIC_API_KEY, Opus returns None and Gemini is used."""
+        import os
         gemini_result = {"coach_noticed": "Gemini says hi", "morning_voice": "30 miles."}
-        with patch("tasks.home_briefing_tasks._call_gemini_briefing", return_value=gemini_result) as mock_gemini, \
-             patch("tasks.home_briefing_tasks._call_opus_briefing") as mock_opus, \
+        with patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=None) as mock_opus, \
+             patch("tasks.home_briefing_tasks._call_gemini_briefing", return_value=gemini_result) as mock_gemini, \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
              patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
              patch("tasks.home_briefing_tasks.release_task_lock"), \
-             patch("core.feature_flags.is_feature_enabled", return_value=False), \
+             patch.dict(os.environ, {}, clear=False), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("routers.home.validate_voice_output", return_value={"valid": True}):
-            from tasks.home_briefing_tasks import generate_home_briefing_task
-            result = generate_home_briefing_task(athlete_id=str(uuid4()))
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}, clear=False):
+                from tasks.home_briefing_tasks import generate_home_briefing_task
+                result = generate_home_briefing_task(athlete_id=str(uuid4()))
             mock_gemini.assert_called_once()
-            mock_opus.assert_not_called()
             assert result["model"] == "gemini-2.5-flash"
 
-    def test_celery_task_respects_feature_flag_for_opus(self, fake_redis):
-        """Test 31: flag on → task tries Opus first; if it returns result, uses it."""
+    def test_celery_task_uses_opus_when_key_present(self, fake_redis):
+        """Test 31: with ANTHROPIC_API_KEY set, task tries Opus first and uses it on success."""
+        import os
         opus_result = {"coach_noticed": "Opus insight", "morning_voice": "50 miles."}
         with patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=opus_result) as mock_opus, \
              patch("tasks.home_briefing_tasks._call_gemini_briefing") as mock_gemini, \
@@ -862,14 +862,14 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
              patch("tasks.home_briefing_tasks.release_task_lock"), \
-             patch("core.feature_flags.is_feature_enabled", return_value=True), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("routers.home.validate_voice_output", return_value={"valid": True}):
             from tasks.home_briefing_tasks import generate_home_briefing_task
             result = generate_home_briefing_task(athlete_id=str(uuid4()))
             mock_opus.assert_called_once()
             mock_gemini.assert_not_called()
-            assert result["model"] == "claude-opus-4-5"
+            assert result["model"] == "claude-opus-4-6"
 
     def test_celery_task_handles_provider_failure(self, fake_redis):
         """Test 32: on failure: record failure, no cache written."""
