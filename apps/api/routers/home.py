@@ -947,6 +947,7 @@ def generate_coach_home_briefing(
         "- morning_voice MUST contain at least one specific number from the data.",
         "- morning_voice must be 40-280 characters.",
         "- workout_why must be a single sentence explaining why today's workout matters.",
+        "- ABSOLUTE BAN on quoting these to the athlete: CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. These appear in the brief for YOUR reasoning only. If you quote them, the output will be rejected.",
         "",
         "=== ATHLETE BRIEF ===",
         athlete_brief,
@@ -995,12 +996,12 @@ def generate_coach_home_briefing(
     prompt = "\n".join(parts)
 
     schema_fields = {
-        "coach_noticed": "The single most important coaching observation. If deterministic intelligence is provided above, this field MUST incorporate or build on that signal — do not generate a generic observation when a specific one has been computed. 1-2 sentences.",
+        "coach_noticed": "The single most important coaching observation. If deterministic intelligence is provided above, incorporate that signal and explain what it MEANS for the athlete — not what the number is, but what it implies. Example of GOOD: 'Your pacing consistency is elite-level right now — less than 0.1% decay over 10 miles means your aerobic engine is dialed in for Tobacco Road.' Example of BAD: 'Strong pacing with -0.1% decay and chronic load of 38.9.' 1-2 sentences. NEVER quote internal metrics (CTL, ATL, TSB, load ratios, form scores).",
         "today_context": "Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.",
         "week_assessment": "Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.",
         "checkin_reaction": "Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.",
         "race_assessment": "Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.",
-        "morning_voice": "Synthesize ALL available intelligence — the deterministic analysis above, the athlete brief, recent insights, today's context — into one paragraph. This is the voice of the athlete's data. It must reflect the most important signal from any source. 40-280 characters. Must cite at least one specific number. Speak as the data, not as a coach. No sycophancy.",
+        "morning_voice": "One paragraph that gives your athlete's data a voice. 40-280 characters. Must cite at least one specific number the athlete cares about (pace, distance, HR — NOT internal metrics like CTL, ATL, TSB, load ratios, form scores, or injury risk scores). Speak as the data, not as a coach. No sycophancy. NEVER quote chronic load, acute load, TSB, durability index, recovery half-life, or any value marked INTERNAL in the brief. Translate internal signals into plain coaching language. Example of GOOD: '38 miles through 5 runs this week. Your pacing has been remarkably even — less than 0.1% drift across today\\'s 10 miles. That kind of control 23 days out from Tobacco Road is exactly what you want to see.' Example of BAD: 'Your chronic load is 38.9 and acute load is 48.9, showing continued volume building.'",
         "workout_why": "One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
