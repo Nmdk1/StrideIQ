@@ -657,12 +657,19 @@ def _call_opus_briefing_sync(
     schema_fields: dict,
     required_fields: list,
     api_key: str,
+    llm_timeout: Optional[int] = None,
 ) -> Optional[dict]:
     """
-    Synchronous Opus call — meant to be run via asyncio.to_thread().
-    Uses SDK-level timeout so the HTTP request itself is bounded.
+    Synchronous Opus call — meant to be run via asyncio.to_thread() or
+    ThreadPoolExecutor in Celery workers.
+
+    llm_timeout: SDK-level timeout in seconds. Defaults to HOME_BRIEFING_TIMEOUT_S
+    (10s) for the request path. Workers pass PROVIDER_TIMEOUT_S (45s) so the
+    richer prompt has enough generation time without blocking page loads.
     """
     import json as _json
+
+    timeout_s = llm_timeout if llm_timeout is not None else HOME_BRIEFING_TIMEOUT_S
 
     try:
         from anthropic import Anthropic
@@ -688,7 +695,7 @@ def _call_opus_briefing_sync(
     )
 
     try:
-        client = Anthropic(api_key=api_key, timeout=HOME_BRIEFING_TIMEOUT_S)
+        client = Anthropic(api_key=api_key, timeout=timeout_s)
         response = client.messages.create(
             model="claude-opus-4-6",
             system=system_prompt,
@@ -729,12 +736,18 @@ def _call_gemini_briefing_sync(
     schema_fields: dict,
     required_fields: list,
     api_key: str,
+    llm_timeout: Optional[int] = None,
 ) -> Optional[dict]:
     """
     Synchronous Gemini call with SDK-level timeout.
     Called directly or via ThreadPoolExecutor in Celery tasks.
+
+    llm_timeout: SDK-level timeout in seconds. Defaults to HOME_BRIEFING_TIMEOUT_S
+    (10s) for the request path. Workers pass PROVIDER_TIMEOUT_S (45s).
     """
     import json as _json
+
+    timeout_s = llm_timeout if llm_timeout is not None else HOME_BRIEFING_TIMEOUT_S
 
     try:
         from google import genai
@@ -749,7 +762,7 @@ def _call_gemini_briefing_sync(
 
     client = genai.Client(
         api_key=api_key,
-        http_options={"timeout": HOME_BRIEFING_TIMEOUT_S * 1000},
+        http_options={"timeout": timeout_s * 1000},
     )
 
     for attempt in (1, 2):

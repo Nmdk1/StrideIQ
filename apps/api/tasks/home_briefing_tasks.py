@@ -265,7 +265,8 @@ def _call_gemini_briefing(
 
     pool = ThreadPoolExecutor(max_workers=1)
     future = pool.submit(
-        _call_gemini_briefing_sync, prompt, schema_fields, required_fields, google_key
+        _call_gemini_briefing_sync, prompt, schema_fields, required_fields, google_key,
+        PROVIDER_TIMEOUT_S,  # llm_timeout — worker path gets full budget
     )
     try:
         return future.result(timeout=PROVIDER_TIMEOUT_S)
@@ -285,7 +286,7 @@ def _call_opus_briefing(
     schema_fields: dict,
     required_fields: list,
 ) -> Optional[dict]:
-    """Call Opus with PROVIDER_TIMEOUT_S enforced (feature-flagged path)."""
+    """Call Opus with PROVIDER_TIMEOUT_S enforced."""
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
     from routers.home import _call_opus_briefing_sync
 
@@ -295,7 +296,8 @@ def _call_opus_briefing(
 
     pool = ThreadPoolExecutor(max_workers=1)
     future = pool.submit(
-        _call_opus_briefing_sync, prompt, schema_fields, required_fields, anthropic_key
+        _call_opus_briefing_sync, prompt, schema_fields, required_fields, anthropic_key,
+        PROVIDER_TIMEOUT_S,  # llm_timeout — worker path gets full budget
     )
     try:
         return future.result(timeout=PROVIDER_TIMEOUT_S)
