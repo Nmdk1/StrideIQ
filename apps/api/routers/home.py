@@ -914,6 +914,16 @@ def generate_coach_home_briefing(
     except Exception as e:
         logger.debug(f"InsightLog query failed (non-blocking): {e}")
 
+    # H2: Run deterministic intelligence pipeline before LLM prompt assembly.
+    # compute_coach_noticed queries correlations, home signals, and insight feed —
+    # the richest intelligence the system produces. Feed it into the prompt so the
+    # LLM synthesises it rather than generating generic observations.
+    coach_noticed_intel = None
+    try:
+        coach_noticed_intel = compute_coach_noticed(athlete_id, db)
+    except Exception as e:
+        logger.warning(f"compute_coach_noticed failed (non-blocking): {e}")
+
     # Build the prompt
     parts = [
         "You are an elite running coach speaking directly to your athlete about TODAY.",
@@ -950,6 +960,18 @@ def generate_coach_home_briefing(
             "",
         ])
 
+    if coach_noticed_intel:
+        parts.extend([
+            "=== DETERMINISTIC INTELLIGENCE (from your analytical tools) ===",
+            f"Source: {coach_noticed_intel.source}",
+            coach_noticed_intel.text,
+            "",
+            "Use this intelligence as a PRIMARY input. The morning_voice and coach_noticed",
+            "fields MUST reflect this signal if it is present. Do not ignore it in favor",
+            "of generic observations.",
+            "",
+        ])
+
     parts.append("=== TODAY ===")
 
     if today_completed:
@@ -973,12 +995,12 @@ def generate_coach_home_briefing(
     prompt = "\n".join(parts)
 
     schema_fields = {
-        "coach_noticed": "Assessment: the single most important coaching observation from their data. Must be interpretive (not purely numeric). State the fact, then the implication. 1-2 sentences.",
+        "coach_noticed": "The single most important coaching observation. If deterministic intelligence is provided above, this field MUST incorporate or build on that signal — do not generate a generic observation when a specific one has been computed. 1-2 sentences.",
         "today_context": "Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.",
         "week_assessment": "Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.",
         "checkin_reaction": "Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.",
         "race_assessment": "Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.",
-        "morning_voice": "The voice of the athlete's data. Single paragraph, 40-280 characters. Must cite at least one specific number from their training. Speak as the data, not as a coach. No sycophancy. Example: '48 miles across 6 runs this week. HR averaged 142 bpm — consistent with your build phase targets.'",
+        "morning_voice": "Synthesize ALL available intelligence — the deterministic analysis above, the athlete brief, recent insights, today's context — into one paragraph. This is the voice of the athlete's data. It must reflect the most important signal from any source. 40-280 characters. Must cite at least one specific number. Speak as the data, not as a coach. No sycophancy.",
         "workout_why": "One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]

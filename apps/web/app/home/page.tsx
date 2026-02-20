@@ -82,36 +82,6 @@ function getStatusBadge(status: string) {
 }
 
 
-// ── Coach Noticed Card ──────────────────────────────────────────────
-
-function CoachNoticedCard({ text, coachText, askQuery }: { text: string; coachText?: string; askQuery: string }) {
-  // Use LLM coaching narrative if available, otherwise fall back to raw text
-  const displayText = coachText || text;
-  return (
-    <Card className="bg-gradient-to-br from-orange-500/10 via-slate-800/60 to-slate-800/60 border-orange-500/25">
-      <CardContent className="pt-5 pb-4 px-5">
-        <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-orange-500/20 ring-1 ring-orange-500/30 flex-shrink-0 mt-0.5">
-            <Sparkles className="w-4 h-4 text-orange-400" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-orange-400/80 mb-1.5">
-              Coach noticed
-            </p>
-            <p className="text-sm text-slate-200 leading-relaxed">{displayText}</p>
-            <Link
-              href={`/coach?q=${encodeURIComponent(askQuery)}`}
-              className="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors"
-            >
-              Ask Coach <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 
 // ── Quick Check-in ──────────────────────────────────────────────────
 
@@ -399,7 +369,6 @@ export default function HomePage() {
     strava_connected,
     has_any_activities,
     total_activities,
-    coach_noticed,
     race_countdown,
     checkin_needed,
     today_checkin,
@@ -438,7 +407,7 @@ export default function HomePage() {
           {/* 2. The Voice — morning_voice as plain text */}
           {coach_briefing?.morning_voice && (
             <div data-testid="morning-voice" className="px-1 py-2">
-              <p className="text-base text-slate-200 leading-relaxed">
+              <p className="text-base text-slate-300 leading-relaxed">
                 {coach_briefing.morning_voice}
               </p>
             </div>
