@@ -220,7 +220,121 @@ class TestCoachBriefingContract:
 
 
 # ---------------------------------------------------------------------------
-# 5. InsightLog aggregation for LLM context
+# 5. Internal metrics never reach athlete-facing output
+# ---------------------------------------------------------------------------
+
+class TestInternalMetricsBlocked:
+    """
+    Regression suite: internal training-load metrics must be rejected by the
+    post-generation validator before they reach morning_voice or coach_noticed.
+
+    These terms appear in the athlete brief for model reasoning only.
+    Every term in _VOICE_INTERNAL_METRICS must be independently blocked.
+
+    This suite exists because internal metrics leaked to the athlete three times
+    before structural enforcement was added. Any change to the validator that
+    causes these tests to fail is a regression.
+    """
+
+    def _validate(self, text: str, field: str = "morning_voice") -> dict:
+        from routers.home import validate_voice_output
+        return validate_voice_output(text, field=field)
+
+    def _assert_blocked(self, text: str, expected_term: str, field: str = "morning_voice"):
+        result = self._validate(text, field=field)
+        assert result["valid"] is False, (
+            f"Should have blocked {expected_term!r} in: {text!r}"
+        )
+        assert "internal_metric" in result.get("reason", ""), (
+            f"Reason should be internal_metric, got: {result.get('reason')!r}"
+        )
+
+    def test_chronic_load_blocked(self):
+        self._assert_blocked(
+            "38 miles this week. Your chronic load is 38.9 and building.",
+            "chronic load",
+        )
+
+    def test_acute_load_blocked(self):
+        self._assert_blocked(
+            "10.0 miles today. Acute load is 48.9 — watch recovery.",
+            "acute load",
+        )
+
+    def test_ctl_acronym_blocked(self):
+        self._assert_blocked(
+            "10 miles today. Your CTL is sitting at 42, which is solid.",
+            "CTL",
+        )
+
+    def test_atl_acronym_blocked(self):
+        self._assert_blocked(
+            "38 miles this week. ATL is elevated at 51 — easy tomorrow.",
+            "ATL",
+        )
+
+    def test_tsb_acronym_blocked(self):
+        self._assert_blocked(
+            "10 miles at 8:53/mi. TSB of -9 puts you in the training zone.",
+            "TSB",
+        )
+
+    def test_form_score_blocked(self):
+        self._assert_blocked(
+            "10 miles today. Form score of -12 indicates build stress.",
+            "form score",
+        )
+
+    def test_durability_index_blocked(self):
+        self._assert_blocked(
+            "38 miles this week. Durability index at 0.94 — strong.",
+            "durability index",
+        )
+
+    def test_recovery_half_life_blocked(self):
+        self._assert_blocked(
+            "10 miles today. Recovery half-life estimated at 18 hours.",
+            "recovery half-life",
+        )
+
+    def test_injury_risk_score_blocked(self):
+        self._assert_blocked(
+            "38 miles this week. Injury risk score is 0.31 — low.",
+            "injury risk score",
+        )
+
+    def test_internal_metrics_blocked_in_coach_noticed(self):
+        """Internal metrics are also blocked from coach_noticed field."""
+        self._assert_blocked(
+            "Strong pacing. Chronic load of 38.9 shows steady base building.",
+            "chronic load",
+            field="coach_noticed",
+        )
+
+    def test_valid_athlete_language_passes(self):
+        """Athlete-facing language (pace, distance, HR) is not blocked."""
+        from routers.home import validate_voice_output
+        good = (
+            "38 miles through 5 runs this week. "
+            "Less than 0.1% pace drift across today's 10 miles — "
+            "that kind of control 23 days from Tobacco Road is exactly right."
+        )
+        result = validate_voice_output(good, field="morning_voice")
+        assert result["valid"] is True, f"Should have passed: {result}"
+
+    def test_internal_metric_replaced_with_fallback(self):
+        """When morning_voice contains an internal metric, fallback is returned."""
+        from routers.home import validate_voice_output, _VOICE_FALLBACK
+        bad = "Your recent 10.0-mile run. Acute load is 48.9. Chronic load to 38.9."
+        result = validate_voice_output(bad, field="morning_voice")
+        assert result["valid"] is False
+        assert result.get("fallback") == _VOICE_FALLBACK
+        assert "chronic load" not in result["fallback"].lower()
+        assert "acute load" not in result["fallback"].lower()
+
+
+# ---------------------------------------------------------------------------
+# 7. InsightLog aggregation for LLM context
 # ---------------------------------------------------------------------------
 
 class TestInsightLogAggregation:

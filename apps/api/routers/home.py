@@ -508,6 +508,21 @@ _VOICE_CAUSAL_PHRASES = (
     "that's why", "which caused", "which led to",
 )
 
+# Internal metrics that must never reach the athlete-facing output.
+# These values appear in the athlete brief for the model's reasoning only.
+# Any field that surfaces one of these to the athlete is rejected.
+_VOICE_INTERNAL_METRICS = (
+    "chronic load",
+    "acute load",
+    " ctl",   # leading space avoids false-positive inside longer words
+    " atl",
+    " tsb",
+    "form score",
+    "durability index",
+    "recovery half-life",
+    "injury risk score",
+)
+
 _VOICE_FALLBACK = (
     "Your training data is ready. Check your workout below for today's plan."
 )
@@ -552,6 +567,17 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
                 "fallback": _VOICE_FALLBACK,
             }
 
+    # 2b. Internal metrics ban — these values are for model reasoning only and
+    # must never surface in athlete-facing output. Fail-closed: any match rejects.
+    padded = f" {lower} "  # pad so leading-space tokens match at string start/end
+    for term in _VOICE_INTERNAL_METRICS:
+        if term in padded:
+            return {
+                "valid": False,
+                "reason": f"internal_metric:{term.strip()}",
+                "fallback": _VOICE_FALLBACK,
+            }
+
     # 3. Numeric grounding — at least one digit (morning_voice only)
     # workout_why may be conceptual ("Active recovery keeps blood flowing")
     import re
@@ -562,19 +588,21 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
             "fallback": _VOICE_FALLBACK,
         }
 
-    # 4. Length check
-    if len(text) < 40:
-        return {
-            "valid": False,
-            "reason": f"length:too_short({len(text)})",
-            "fallback": _VOICE_FALLBACK,
-        }
-    if len(text) > 280:
-        return {
-            "valid": False,
-            "reason": f"length:too_long({len(text)})",
-            "fallback": _VOICE_FALLBACK,
-        }
+    # 4. Length check — only enforced for fields with strict character limits.
+    # coach_noticed is 1-2 sentences with no fixed character budget.
+    if field in ("morning_voice", "workout_why"):
+        if len(text) < 40:
+            return {
+                "valid": False,
+                "reason": f"length:too_short({len(text)})",
+                "fallback": _VOICE_FALLBACK,
+            }
+        if len(text) > 280:
+            return {
+                "valid": False,
+                "reason": f"length:too_long({len(text)})",
+                "fallback": _VOICE_FALLBACK,
+            }
 
     return {"valid": True}
 
@@ -813,6 +841,17 @@ def _fetch_llm_briefing_sync(
             result["morning_voice"] = voice_check["fallback"]
     else:
         result["morning_voice"] = _VOICE_FALLBACK
+
+    # --- Post-generation validator: coach_noticed ---
+    # Uses the same ban lists (sycophancy, causal, internal metrics).
+    # Numeric grounding and length checks are skipped (coach_noticed is a
+    # different shape — 1-2 sentences, no strict number requirement).
+    raw_noticed = result.get("coach_noticed")
+    if raw_noticed:
+        noticed_check = validate_voice_output(raw_noticed, field="coach_noticed")
+        if not noticed_check["valid"]:
+            logger.warning(f"coach_noticed failed validation ({noticed_check.get('reason')}); clearing field")
+            result["coach_noticed"] = None
 
     # --- Post-generation validator: workout_why ---
     raw_why = result.get("workout_why")
