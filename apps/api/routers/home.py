@@ -649,7 +649,7 @@ def _valid_home_briefing_contract(result: dict, checkin_data: Optional[dict], ra
     return True
 
 
-HOME_BRIEFING_TIMEOUT_S = 45  # rich prompt (5 intelligence sources) needs more generation time
+HOME_BRIEFING_TIMEOUT_S = 10  # hard ceiling on request path — page must never block on LLM; Celery warms cache in background
 
 
 def _call_opus_briefing_sync(
