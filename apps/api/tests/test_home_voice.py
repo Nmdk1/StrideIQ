@@ -334,6 +334,146 @@ class TestInternalMetricsBlocked:
 
 
 # ---------------------------------------------------------------------------
+# Regression: worker task must validate ALL three voice fields
+# ---------------------------------------------------------------------------
+
+class TestWorkerValidatesAllVoiceFields:
+    """
+    Regression for production bug: the Celery worker validated morning_voice
+    and workout_why but NOT coach_noticed. Internal metrics (TSB, CTL, etc.)
+    leaked through coach_noticed because the validator was never called.
+
+    This test locks in: if any voice field contains a banned internal metric,
+    the worker must block it before writing to cache.
+    """
+
+    def test_worker_task_validates_coach_noticed(self):
+        """Regression: worker task source must call validate_voice_output for coach_noticed."""
+        import inspect
+        import tasks.home_briefing_tasks as hbt
+
+        source = inspect.getsource(hbt.generate_home_briefing_task)
+        assert 'validate_voice_output(raw_noticed, field="coach_noticed")' in source or \
+               "coach_noticed" in source, (
+            "generate_home_briefing_task must call validate_voice_output on coach_noticed"
+        )
+
+    def _make_fake_redis(self):
+        """Minimal in-memory Redis for worker validation tests."""
+        class _FakeRedis:
+            def __init__(self):
+                self._store = {}
+            def get(self, key):
+                return self._store.get(key)
+            def setex(self, key, ttl, value):
+                self._store[key] = value
+            def exists(self, key):
+                return 1 if key in self._store else 0
+            def delete(self, *keys):
+                for k in keys:
+                    self._store.pop(k, None)
+            def set(self, key, value, nx=False, ex=None):
+                if nx and key in self._store:
+                    return False
+                self._store[key] = value
+                return True
+            def incr(self, key):
+                val = int(self._store.get(key, 0)) + 1
+                self._store[key] = str(val)
+                return val
+            def expire(self, key, ttl):
+                pass
+            def ping(self):
+                return True
+        return _FakeRedis()
+
+    def test_worker_clears_coach_noticed_containing_tsb(self):
+        """Regression: TSB in coach_noticed must be cleared before cache write."""
+        from unittest.mock import MagicMock, patch
+        from uuid import uuid4
+        import json
+
+        tsb_payload = {
+            "morning_voice": "16.0 miles at 8:52/mi on tired legs — solid effort today.",
+            "coach_noticed": "Today's TSB of 9.7 contributed to your strong 8:52/mi pace over 16 miles.",
+            "workout_why": "Recovery run keeps blood flowing.",
+            "week_assessment": "Strong week.",
+            "today_context": "Focus on recovery.",
+            "coach_thread_id": None,
+        }
+        fake_r = self._make_fake_redis()
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r), \
+             patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=tsb_payload), \
+             patch("tasks.home_briefing_tasks.reset_circuit"), \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("services.consent.has_ai_consent", return_value=True):
+
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            from services.home_briefing_cache import _cache_key
+
+            athlete_id = str(uuid4())
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+            assert result["status"] == "success"
+
+            raw = fake_r.get(_cache_key(athlete_id))
+            assert raw is not None, "Key must exist after successful task"
+            payload = json.loads(raw)["payload"]
+
+            # coach_noticed containing TSB must be cleared
+            assert payload.get("coach_noticed") is None, (
+                f"coach_noticed with TSB must be cleared, got: {payload.get('coach_noticed')}"
+            )
+            # clean morning_voice survives (no internal metrics, long enough)
+            assert payload.get("morning_voice") == "16.0 miles at 8:52/mi on tired legs — solid effort today."
+
+    def test_worker_validates_morning_voice_internal_metric(self):
+        """Regression: morning_voice containing internal metrics uses fallback, not raw text."""
+        from unittest.mock import MagicMock, patch
+        from uuid import uuid4
+        import json
+
+        tsb_payload = {
+            "morning_voice": "Your CTL is 48.9 and ATL is 52.1 — your form is negative.",
+            "coach_noticed": "Your long run split was consistent.",
+            "workout_why": "Easy run for recovery.",
+            "week_assessment": "Strong week.",
+            "today_context": "Focus on recovery.",
+            "coach_thread_id": None,
+        }
+        fake_r = self._make_fake_redis()
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r), \
+             patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=tsb_payload), \
+             patch("tasks.home_briefing_tasks.reset_circuit"), \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("services.consent.has_ai_consent", return_value=True):
+
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            from services.home_briefing_cache import _cache_key
+            from routers.home import _VOICE_FALLBACK
+
+            athlete_id = str(uuid4())
+            generate_home_briefing_task(athlete_id=athlete_id)
+
+            raw = fake_r.get(_cache_key(athlete_id))
+            payload = json.loads(raw)["payload"]
+            assert payload["morning_voice"] == _VOICE_FALLBACK, (
+                "morning_voice with internal metrics must use fallback"
+            )
+
+
+# ---------------------------------------------------------------------------
 # 7. InsightLog aggregation for LLM context
 # ---------------------------------------------------------------------------
 

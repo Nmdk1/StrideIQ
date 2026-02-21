@@ -409,9 +409,23 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if raw_voice:
             voice_check = validate_voice_output(raw_voice, field="morning_voice")
             if not voice_check["valid"]:
+                logger.warning(
+                    f"morning_voice failed validation ({voice_check.get('reason')}) "
+                    f"for {athlete_id}; using fallback"
+                )
                 result["morning_voice"] = voice_check["fallback"]
         else:
             result["morning_voice"] = _VOICE_FALLBACK
+
+        raw_noticed = result.get("coach_noticed")
+        if raw_noticed:
+            noticed_check = validate_voice_output(raw_noticed, field="coach_noticed")
+            if not noticed_check["valid"]:
+                logger.warning(
+                    f"coach_noticed failed validation ({noticed_check.get('reason')}) "
+                    f"for {athlete_id}; clearing field"
+                )
+                result["coach_noticed"] = None
 
         raw_why = result.get("workout_why")
         if raw_why:
