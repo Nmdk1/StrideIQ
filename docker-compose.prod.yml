@@ -85,7 +85,9 @@ services:
     volumes:
       - ./.uploads:/uploads
       - ./books:/books
-    command: celery -A tasks worker --loglevel=info -B
+    command: celery -A tasks worker --loglevel=info -B --pool=solo
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
 
   web:
     build:

@@ -239,14 +239,14 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
 
         if len(prep) == 1:
             # Redis cache hit from the old cache key — use it
-            return None  # Already cached, nothing to do
+            return None  # Sentinel: already cached, normal skip
 
         _, prompt, schema_fields, required_fields, _ = prep
         return prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict
 
     except Exception as e:
-        logger.error(f"Failed to build briefing prompt for {athlete_id}: {e}")
-        return None
+        logger.error(f"Failed to build briefing prompt for {athlete_id}: {e}", exc_info=True)
+        return False  # Sentinel: build failed — caller must record failure, not silently skip
 
 
 def _call_gemini_briefing(
@@ -370,7 +370,13 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
 
         prompt_result = _build_briefing_prompt(athlete_id, db)
         if prompt_result is None:
-            return {"status": "skipped", "reason": "prompt_build_failed_or_cached"}
+            # Normal skip — briefing was already cached under the old cache key
+            return {"status": "skipped", "reason": "already_cached"}
+        if prompt_result is False:
+            # Build failed (import error, DB error, etc.) — record so circuit breaker tracks it
+            record_task_failure(athlete_id)
+            logger.error(f"Prompt build failed for {athlete_id} — circuit breaker notified")
+            return {"status": "error", "reason": "prompt_build_failed"}
 
         prompt, schema_fields, required_fields, checkin_data, race_data = prompt_result
 
