@@ -132,16 +132,41 @@ def write_briefing_cache(
         "data_fingerprint": data_fingerprint,
     }
 
+    key = _cache_key(athlete_id)
+    serialized = json.dumps(entry, default=str)
     try:
-        r.setex(_cache_key(athlete_id), CACHE_TTL_S, json.dumps(entry, default=str))
-        logger.info(
-            f"Home briefing cached for {athlete_id} "
-            f"(model={source_model}, fingerprint={data_fingerprint[:8]})"
-        )
-        return True
+        r.setex(key, CACHE_TTL_S, serialized)
     except Exception as e:
-        logger.warning(f"Redis write error for home briefing {athlete_id}: {e}")
-        return False
+        logger.error(
+            f"Redis setex FAILED for home briefing {athlete_id}: {e}",
+            exc_info=True,
+        )
+        raise RuntimeError(f"Cache write failed for {athlete_id}: {e}") from e
+
+    # Verification read — confirm the key landed in Redis before declaring success.
+    # This catches silent write failures (wrong DB, eviction, replication lag).
+    try:
+        written = r.exists(key)
+    except Exception as e:
+        logger.error(
+            f"Redis verification read FAILED for home briefing {athlete_id}: {e}",
+            exc_info=True,
+        )
+        raise RuntimeError(f"Cache verification failed for {athlete_id}: {e}") from e
+
+    if not written:
+        logger.error(
+            f"Cache write verification FAILED: key {key} does not exist after setex. "
+            f"Possible Redis eviction, wrong DB, or silent failure."
+        )
+        raise RuntimeError(f"Cache write verification failed for {athlete_id}: key absent after setex")
+
+    logger.info(
+        f"Home briefing cached and verified for {athlete_id} "
+        f"(model={source_model}, fingerprint={data_fingerprint[:8]}, "
+        f"bytes={len(serialized)})"
+    )
+    return True
 
 
 def should_enqueue_refresh(athlete_id: str) -> bool:

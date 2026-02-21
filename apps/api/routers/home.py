@@ -894,19 +894,25 @@ def generate_coach_home_briefing(
     planned_workout: Optional[dict] = None,
     checkin_data: Optional[dict] = None,
     race_data: Optional[dict] = None,
+    skip_cache: bool = False,
 ) -> tuple:
     """
     Prepare everything the LLM needs (DB work on request thread), then
     return the args for ``_fetch_llm_briefing_sync`` so the caller can
     run the LLM call in a worker thread via ``asyncio.to_thread``.
 
-    Returns ``(cached_result,)`` if Redis hit, or
+    Returns ``(cached_result,)`` if Redis hit (request path only), or
     ``(None, prompt, schema_fields, required_fields, cache_key)`` if
     the LLM call is needed.
 
-    Primary model: Claude Opus 4.5 (highest reasoning quality).
+    skip_cache=True: the Lane 2A Celery worker always passes this to bypass
+    the legacy ``coach_home_briefing:{athlete_id}:{hash}`` key. Without this,
+    a stale legacy key causes the task to return already_cached and silently
+    skip writing to ``home_briefing:{athlete_id}``.
+
+    Primary model: Claude Opus 4.6 (highest reasoning quality).
     Fallback: Gemini 2.5 Flash (if Opus unavailable).
-    Cached in Redis keyed by athlete + data hash.
+    Cached in Redis keyed by athlete + data hash (request path only).
     """
     import hashlib
     import json as _json
@@ -921,17 +927,21 @@ def generate_coach_home_briefing(
     data_hash = hashlib.md5(cache_input.encode()).hexdigest()[:12]
     cache_key = f"coach_home_briefing:{athlete_id}:{data_hash}"
 
-    # Check Redis cache
-    try:
-        import redis
-        import os
-        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-        r = redis.from_url(redis_url, decode_responses=True)
-        cached = r.get(cache_key)
-        if cached:
-            return (_json.loads(cached),)
-    except Exception:
-        pass
+    # Check legacy Redis cache (request path only).
+    # The Lane 2A worker passes skip_cache=True to always build fresh and
+    # write to home_briefing:{athlete_id}. Without skip_cache, a stale
+    # legacy key silently blocks the Lane 2A write.
+    if not skip_cache:
+        try:
+            import redis
+            import os
+            redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+            r = redis.from_url(redis_url, decode_responses=True)
+            cached = r.get(cache_key)
+            if cached:
+                return (_json.loads(cached),)
+        except Exception:
+            pass
 
     # ADR-16: Get the full athlete brief — same context the coach chat uses
     try:

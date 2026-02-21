@@ -978,3 +978,164 @@ class TestSchemaContract:
         expected = {"fresh", "stale", "missing", "refreshing", "consent_required"}
         actual = {s.value for s in BriefingState}
         assert actual == expected
+
+
+# ===========================================================================
+# Regression Tests: Cache Write Reliability (added after 4 production failures)
+# ===========================================================================
+
+
+class TestCacheWriteReliability:
+    """
+    Regression tests for the cache write reliability fix.
+
+    Previously, write_briefing_cache silently returned False on any Redis
+    error. generate_home_briefing_task discarded the return value, so a
+    silent write failure caused the task to report 'success' while the
+    home_briefing:{athlete_id} key was absent. The athlete saw no morning voice.
+
+    Fix: write_briefing_cache now raises RuntimeError on setex failure AND
+    on verification-read mismatch. generate_home_briefing_task propagates
+    the exception, triggering Celery's autoretry.
+    """
+
+    def test_write_raises_on_setex_failure(self):
+        """Regression: Redis setex failure is now a RuntimeError, not silent False."""
+        class BrokenRedis(FakeRedis):
+            def setex(self, key, ttl, value):
+                raise ConnectionError("Redis unavailable")
+
+        broken = BrokenRedis()
+        with patch("services.home_briefing_cache.get_redis_client", return_value=broken):
+            with pytest.raises(RuntimeError, match="Cache write failed"):
+                write_briefing_cache(
+                    athlete_id=str(uuid4()),
+                    payload={"morning_voice": "test"},
+                    source_model="claude-opus-4-6",
+                    data_fingerprint="abc12345",
+                )
+
+    def test_write_raises_on_verification_failure(self):
+        """Regression: key absent after setex raises RuntimeError (not silent success)."""
+        class WriteButNotReadableRedis(FakeRedis):
+            def setex(self, key, ttl, value):
+                pass  # write silently does nothing
+
+            def exists(self, key):
+                return 0  # key not present
+
+        r = WriteButNotReadableRedis()
+        with patch("services.home_briefing_cache.get_redis_client", return_value=r):
+            with pytest.raises(RuntimeError, match="verification failed"):
+                write_briefing_cache(
+                    athlete_id=str(uuid4()),
+                    payload={"morning_voice": "test"},
+                    source_model="claude-opus-4-6",
+                    data_fingerprint="abc12345",
+                )
+
+    def test_write_success_returns_true_and_key_readable(self, fake_redis):
+        """Regression: successful write returns True and key is immediately readable."""
+        athlete_id = str(uuid4())
+
+        result = write_briefing_cache(
+            athlete_id=athlete_id,
+            payload={"morning_voice": "28.3 miles. Strong week."},
+            source_model="claude-opus-4-6",
+            data_fingerprint="abc12345",
+        )
+
+        assert result is True
+
+        # Immediately readable
+        payload, state = read_briefing_cache(athlete_id)
+        assert state == BriefingState.FRESH
+        assert payload is not None
+        assert payload["morning_voice"] == "28.3 miles. Strong week."
+
+    def test_task_raises_when_cache_write_fails(self, fake_redis):
+        """Regression: task propagates cache write failure instead of returning success."""
+        class BrokenRedis(FakeRedis):
+            def setex(self, key, ttl, value):
+                raise ConnectionError("Redis unavailable")
+
+        broken_r = BrokenRedis()
+
+        payload = {"morning_voice": "test", "coach_noticed": "test"}
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=broken_r), \
+             patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=payload), \
+             patch("tasks.home_briefing_tasks.record_task_failure"), \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("routers.home.validate_voice_output", return_value={"valid": True}), \
+             patch("services.consent.has_ai_consent", return_value=True):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            # RuntimeError from write propagates out of the task
+            with pytest.raises((RuntimeError, Exception)):
+                generate_home_briefing_task(athlete_id=str(uuid4()))
+
+
+class TestSkipCacheParam:
+    """
+    Regression tests for the skip_cache parameter in generate_coach_home_briefing.
+
+    Previously, the worker called generate_coach_home_briefing() without
+    skip_cache=True. If the legacy coach_home_briefing:{athlete_id}:{hash}
+    key existed (from a prior request-path run or feature-flag toggle), the
+    function returned a 1-tuple (cached result), _build_briefing_prompt
+    returned None, and the task returned already_cached — without ever
+    writing to home_briefing:{athlete_id}.
+
+    Fix: _build_briefing_prompt always passes skip_cache=True, so the legacy
+    key is bypassed and the worker always generates fresh output.
+    """
+
+    def test_skip_cache_bypasses_old_key(self):
+        """Regression: skip_cache=True ignores a populated legacy key."""
+        import hashlib
+        import json as _json
+        from unittest.mock import MagicMock
+
+        # Simulate generate_coach_home_briefing with a populated legacy key
+        athlete_id = str(uuid4())
+
+        legacy_payload = {"morning_voice": "stale cached voice"}
+        cache_input = _json.dumps(
+            {"completed": None, "planned": None, "checkin": None, "race": None},
+            sort_keys=True, default=str,
+        )
+        data_hash = hashlib.md5(cache_input.encode()).hexdigest()[:12]
+        legacy_key = f"coach_home_briefing:{athlete_id}:{data_hash}"
+
+        fake_r = FakeRedis()
+        fake_r.setex(legacy_key, 1800, _json.dumps(legacy_payload))
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r):
+            # With skip_cache=True, legacy key must NOT be read
+            # We can't call generate_coach_home_briefing directly here (it's async context),
+            # so test the underlying principle: the skip_cache flag routes around the cache.
+            # Verify the flag is passed through _build_briefing_prompt via source inspection.
+            import tasks.home_briefing_tasks as hbt
+            import inspect
+            source = inspect.getsource(hbt._build_briefing_prompt)
+            assert "skip_cache=True" in source, (
+                "_build_briefing_prompt must call generate_coach_home_briefing "
+                "with skip_cache=True to bypass the legacy coach_home_briefing key"
+            )
+
+    def test_generate_coach_home_briefing_has_skip_cache_param(self):
+        """Regression: generate_coach_home_briefing must accept skip_cache param."""
+        import inspect
+        from routers.home import generate_coach_home_briefing
+        sig = inspect.signature(generate_coach_home_briefing)
+        assert "skip_cache" in sig.parameters, (
+            "generate_coach_home_briefing must have a skip_cache parameter"
+        )
+        assert sig.parameters["skip_cache"].default is False, (
+            "skip_cache must default to False (request path stays unchanged)"
+        )

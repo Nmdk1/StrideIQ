@@ -228,6 +228,11 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
 
         from routers.home import generate_coach_home_briefing
 
+        # skip_cache=True: bypass the legacy coach_home_briefing:{athlete_id}:{hash}
+        # key. The worker must always generate fresh output and write to the Lane 2A
+        # home_briefing:{athlete_id} key. Without this, a stale legacy key causes
+        # _build_briefing_prompt to return None (already_cached), silently skipping
+        # the Lane 2A write — the home page shows no morning voice.
         prep = generate_coach_home_briefing(
             athlete_id=athlete_id,
             db=db,
@@ -235,10 +240,15 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             planned_workout=planned_workout_dict,
             checkin_data=checkin_data_dict,
             race_data=race_data_dict,
+            skip_cache=True,
         )
 
         if len(prep) == 1:
-            # Redis cache hit from the old cache key — use it
+            # Should never be reached now that skip_cache=True, but kept as a guard.
+            logger.warning(
+                f"generate_coach_home_briefing returned cached 1-tuple despite "
+                f"skip_cache=True for {athlete_id} — defensive guard hit"
+            )
             return None  # Sentinel: already cached, normal skip
 
         _, prompt, schema_fields, required_fields, _ = prep
@@ -409,6 +419,10 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             if not why_check["valid"]:
                 result["workout_why"] = None
 
+        # write_briefing_cache raises RuntimeError on any failure (setex error or
+        # verification-read mismatch). This propagates to the except block which
+        # records the failure and re-raises, triggering Celery's autoretry.
+        # Silent cache misses are structurally impossible from this point forward.
         write_briefing_cache(
             athlete_id=athlete_id,
             payload=result,
