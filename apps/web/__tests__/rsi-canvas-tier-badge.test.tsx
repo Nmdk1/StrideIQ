@@ -1,8 +1,9 @@
 /**
- * RSI-Alpha — AC-8: Confidence + Tier Badge Tests
+ * RSI-Alpha — Tier Badge + Tier 4 Caveat Tests
  *
- * Verifies the tier badge renders on every view with correct label,
- * confidence percentage, and Tier 4 caveat visibility.
+ * After the activity detail simplification (tab removal), the TierBadge component
+ * is no longer rendered on the page. The Tier 4 caveat remains because it honestly
+ * communicates that effort colors are relative to this run only, which is useful.
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
@@ -24,8 +25,8 @@ const mockUseStreamAnalysis = useStreamAnalysis as jest.MockedFunction<typeof us
 
 const streamData = generateTestStreamData(500);
 
-describe('AC-8: Confidence + Tier Badge', () => {
-  test('badge renders on every canvas view', () => {
+describe('Tier Badge: Removed', () => {
+  test('tier badge is NOT rendered (removed as misleading)', () => {
     mockUseStreamAnalysis.mockReturnValue({
       data: { ...mockTier1Result, stream: streamData },
       isLoading: false,
@@ -35,26 +36,10 @@ describe('AC-8: Confidence + Tier Badge', () => {
 
     render(<RunShapeCanvas activityId="test-123" />);
 
-    const badge = screen.getByTestId('tier-badge') ||
-                  screen.getByText(/Tier \d/i);
-    expect(badge).toBeInTheDocument();
+    expect(screen.queryByTestId('tier-badge')).not.toBeInTheDocument();
   });
 
-  test('badge shows correct tier label for Tier 1', () => {
-    mockUseStreamAnalysis.mockReturnValue({
-      data: { ...mockTier1Result, stream: streamData },
-      isLoading: false,
-      error: null,
-      refetch: jest.fn(),
-    } as any);
-
-    render(<RunShapeCanvas activityId="test-123" />);
-
-    expect(screen.getByText(/Tier 1/i)).toBeInTheDocument();
-    expect(screen.getByText(/Threshold HR/i)).toBeInTheDocument();
-  });
-
-  test('badge shows correct tier label for Tier 4', () => {
+  test('tier badge absent for Tier 4 result too', () => {
     mockUseStreamAnalysis.mockReturnValue({
       data: { ...mockTier4Result, stream: streamData },
       isLoading: false,
@@ -64,25 +49,12 @@ describe('AC-8: Confidence + Tier Badge', () => {
 
     render(<RunShapeCanvas activityId="test-123" />);
 
-    expect(screen.getByText(/Tier 4/i)).toBeInTheDocument();
-    expect(screen.getByText(/Relative to this run/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('tier-badge')).not.toBeInTheDocument();
   });
+});
 
-  test('badge shows confidence as percentage', () => {
-    mockUseStreamAnalysis.mockReturnValue({
-      data: { ...mockTier1Result, stream: streamData },
-      isLoading: false,
-      error: null,
-      refetch: jest.fn(),
-    } as any);
-
-    render(<RunShapeCanvas activityId="test-123" />);
-
-    // confidence=0.88 → "88%"
-    expect(screen.getByText(/88%/)).toBeInTheDocument();
-  });
-
-  test('Tier 4 caveat subtitle is always visible, not tooltip-gated', () => {
+describe('Tier 4 Caveat: Still Visible', () => {
+  test('Tier 4 caveat is always visible and not tooltip-gated', () => {
     mockUseStreamAnalysis.mockReturnValue({
       data: { ...mockTier4Result, stream: streamData },
       isLoading: false,
@@ -92,11 +64,21 @@ describe('AC-8: Confidence + Tier Badge', () => {
 
     render(<RunShapeCanvas activityId="test-123" />);
 
-    // Caveat text should be in the document directly (not inside a tooltip)
     const caveatText = screen.getByText(/Effort colors show the shape of this run/i);
     expect(caveatText).toBeInTheDocument();
-
-    // Verify it's not hidden in a tooltip (visible without hover)
     expect(caveatText).toBeVisible();
+  });
+
+  test('Tier 4 caveat absent for Tier 1 result (no misleading message)', () => {
+    mockUseStreamAnalysis.mockReturnValue({
+      data: { ...mockTier1Result, stream: streamData },
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+    } as any);
+
+    render(<RunShapeCanvas activityId="test-123" />);
+
+    expect(screen.queryByTestId('tier4-caveat')).not.toBeInTheDocument();
   });
 });

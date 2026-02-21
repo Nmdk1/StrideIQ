@@ -68,9 +68,10 @@ describe('AC-3: Unified Crosshair', () => {
     const overlay = screen.getByTestId('chart-overlay');
     hoverAtFraction(overlay, 0.5);
 
-    // Default visible: HR and pace (imperial units)
-    expect(screen.getByText(/bpm/i)).toBeInTheDocument();
-    expect(screen.getByText(/\/mi/i)).toBeInTheDocument();
+    // Scope to the tooltip to avoid collision with inline drift metrics
+    const tooltip = screen.getByTestId('crosshair-tooltip');
+    expect(tooltip).toHaveTextContent(/bpm/i);
+    expect(tooltip).toHaveTextContent(/\/mi/i);
   });
 
   test('crosshair shows values for toggled-on secondary channels', () => {
@@ -84,8 +85,9 @@ describe('AC-3: Unified Crosshair', () => {
     const overlay = screen.getByTestId('chart-overlay');
     hoverAtFraction(overlay, 0.5);
 
-    // Cadence should appear
-    expect(screen.getByText(/spm/i)).toBeInTheDocument();
+    // Cadence should appear in the tooltip (not just in drift metrics)
+    const tooltip = screen.getByTestId('crosshair-tooltip');
+    expect(tooltip).toHaveTextContent(/spm/i);
   });
 
   test('crosshair hides values for toggled-off channels', () => {
@@ -95,25 +97,22 @@ describe('AC-3: Unified Crosshair', () => {
     const overlay = screen.getByTestId('chart-overlay');
     hoverAtFraction(overlay, 0.5);
 
-    // Cadence should NOT appear (default off)
-    expect(screen.queryByText(/spm/i)).not.toBeInTheDocument();
+    // Cadence should NOT appear in the tooltip (default off)
+    const tooltip = screen.getByTestId('crosshair-tooltip');
+    expect(tooltip).not.toHaveTextContent(/\d+ spm/i);
   });
 
-  test('crosshair position syncs between Story and Lab views', () => {
+  test('crosshair line persists while hovering (no view switching needed)', () => {
     render(<RunShapeCanvas activityId="test-123" />);
 
-    // Hover in Story mode
     const overlay = screen.getByTestId('chart-overlay');
     hoverAtFraction(overlay, 0.5);
 
-    // Crosshair line should exist
+    // Crosshair line exists
     expect(screen.getByTestId('crosshair-line')).toBeInTheDocument();
 
-    // Switch to Lab mode
-    const labToggle = screen.getByRole('button', { name: /lab/i });
-    fireEvent.click(labToggle);
-
-    // Crosshair should still be visible (state shared, not reset)
+    // Move to another position — line stays visible
+    hoverAtFraction(overlay, 0.8);
     expect(screen.getByTestId('crosshair-line')).toBeInTheDocument();
   });
 });

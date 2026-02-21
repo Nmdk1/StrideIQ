@@ -83,14 +83,6 @@ interface ChartPoint {
   [key: string]: number | null;
 }
 
-type ViewMode = 'story' | 'splits' | 'lab';
-
-/** Tab definitions — extensible array, not hardcoded buttons */
-const VIEW_TABS: Array<{ id: ViewMode; label: string }> = [
-  { id: 'story', label: 'Story' },
-  { id: 'splits', label: 'Splits' },
-  { id: 'lab', label: 'Lab' },
-];
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -489,6 +481,37 @@ function PlanComparisonCard({
 }
 
 // ---------------------------------------------------------------------------
+// DriftMetrics — always-visible inline drift stats below the chart
+// ---------------------------------------------------------------------------
+
+function DriftMetrics({ drift }: { drift: DriftAnalysis }) {
+  const { distanceUnitShort } = useUnits();
+
+  return (
+    <div data-testid="drift-metrics" className="mt-2 space-y-1">
+      {drift.cardiac_pct != null && (
+        <div className="flex justify-between text-xs text-slate-300 bg-slate-800/30 rounded px-2 py-1">
+          <span>Cardiac Drift</span>
+          <span>{drift.cardiac_pct.toFixed(1)}%</span>
+        </div>
+      )}
+      {drift.pace_pct != null && (
+        <div className="flex justify-between text-xs text-slate-300 bg-slate-800/30 rounded px-2 py-1">
+          <span>Pace Drift</span>
+          <span>{drift.pace_pct.toFixed(1)}%</span>
+        </div>
+      )}
+      {drift.cadence_trend_bpm_per_km != null && (
+        <div className="flex justify-between text-xs text-slate-300 bg-slate-800/30 rounded px-2 py-1">
+          <span>Cadence Trend</span>
+          <span>{drift.cadence_trend_bpm_per_km.toFixed(1)} spm/{distanceUnitShort}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SplitsModePanel — Splits tab panel (reuses SplitsTable with scroll container)
 // ---------------------------------------------------------------------------
 
@@ -662,11 +685,10 @@ function LabModePanel({
 export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
   const { data, isLoading, error, refetch } = useStreamAnalysis(activityId);
 
-  // Toggle state (AC-4): survives resize and view switch by design (useState)
+  // Toggle state (AC-4): survives resize by design (useState)
   const [showHR, setShowHR] = useState(true);
   const [showCadence, setShowCadence] = useState(false);
   const [showGrade, setShowGrade] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('story');
 
   // A2: Default HR off when unreliable — init once when first analysis arrives.
   // Uses ref to avoid clobbering user's manual toggle on refetch.
@@ -680,9 +702,6 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
   // Two-way hover: Chart → Row (ref-driven, 60fps, no re-renders)
   const splitRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
   const prevHighlightedSplitRef = useRef<number | null>(null);
-  // Lab segment refs (same pattern)
-  const segmentRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
-  const prevHighlightedSegmentRef = useRef<number | null>(null);
 
   // Container sizing
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -864,7 +883,7 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
     const time = chartData[index]?.time ?? 0;
 
     // Chart → Splits row: find which split contains this time point
-    if (viewMode === 'splits' && chartData.length > 0 && splitBoundaries.length > 0) {
+    if (chartData.length > 0 && splitBoundaries.length > 0) {
       let splitIdx: number | null = null;
       for (let i = 0; i < splitBoundaries.length; i++) {
         if (time >= splitBoundaries[i].startTime && time < splitBoundaries[i].endTime) {
@@ -879,39 +898,14 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
         prevHighlightedSplitRef.current = splitIdx;
       }
     }
-
-    // Chart → Lab segment row: find which segment contains this time point
-    if (viewMode === 'lab' && analysis && analysis.segments.length > 0) {
-      let segIdx: number | null = null;
-      for (let i = 0; i < analysis.segments.length; i++) {
-        const seg = analysis.segments[i];
-        if (time >= seg.start_time_s && time < seg.end_time_s) {
-          segIdx = i;
-          break;
-        }
-      }
-      const prev = prevHighlightedSegmentRef.current;
-      if (prev !== segIdx) {
-        if (prev != null) segmentRowRefs.current.get(prev)?.classList.remove(ROW_HIGHLIGHT_CLASS);
-        if (segIdx != null) segmentRowRefs.current.get(segIdx)?.classList.add(ROW_HIGHLIGHT_CLASS);
-        prevHighlightedSegmentRef.current = segIdx;
-      }
-    }
-  }, [viewMode, chartData, splitBoundaries, analysis]);
+  }, [chartData, splitBoundaries]);
 
   const handleLeave = useCallback(() => {
     setHoveredIndex(null);
-    // Clear split row highlight
     const prevSplit = prevHighlightedSplitRef.current;
     if (prevSplit != null) {
       splitRowRefs.current.get(prevSplit)?.classList.remove(ROW_HIGHLIGHT_CLASS);
       prevHighlightedSplitRef.current = null;
-    }
-    // Clear segment row highlight
-    const prevSeg = prevHighlightedSegmentRef.current;
-    if (prevSeg != null) {
-      segmentRowRefs.current.get(prevSeg)?.classList.remove(ROW_HIGHLIGHT_CLASS);
-      prevHighlightedSegmentRef.current = null;
     }
   }, []);
 
@@ -923,16 +917,6 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
     }
     setHighlightRange(splitBoundaries[index]);
   }, [splitBoundaries]);
-
-  // Row → Chart: when hovering a segment row, highlight the corresponding time range
-  const handleSegmentRowHover = useCallback((index: number | null) => {
-    if (index == null || !analysis || index < 0 || index >= analysis.segments.length) {
-      setHighlightRange(null);
-      return;
-    }
-    const seg = analysis.segments[index];
-    setHighlightRange({ startTime: seg.start_time_s, endTime: seg.end_time_s });
-  }, [analysis]);
 
   // --- ADR-063 lifecycle state handling (AC-10) ---
   // The hook may return a lifecycle response ({ status: 'pending' | 'unavailable' })
@@ -1011,28 +995,8 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
         </div>
       )}
 
-      {/* Tier badge (AC-8: always visible) */}
-      <div className="mb-2">
-        <TierBadge tierUsed={analysis.tier_used} confidence={analysis.confidence} />
-      </div>
-
-      {/* View mode + toggle controls */}
+      {/* Chart trace toggles (AC-4) */}
       <div className="flex items-center gap-2 mb-2" data-testid="canvas-controls">
-        {VIEW_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            className={`text-xs px-2 py-1 rounded ${
-              viewMode === tab.id ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'
-            }`}
-            onClick={() => setViewMode(tab.id)}
-            aria-label={`${tab.label} view`}
-            data-testid={`tab-${tab.id}`}
-          >
-            {tab.label}
-          </button>
-        ))}
-
-        {/* Story-layer toggles (AC-4) */}
         <div className="ml-auto flex gap-1">
           <button
             className={`text-xs px-2 py-1 rounded ${
@@ -1240,21 +1204,17 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
         </div>
       )}
 
-      {/* Splits panel: shown only when Splits tab is active */}
-      {viewMode === 'splits' && splits && (
+      {/* Drift metrics — always visible below chart */}
+      {(analysis.drift.cardiac_pct != null || analysis.drift.pace_pct != null || analysis.drift.cadence_trend_bpm_per_km != null) && (
+        <DriftMetrics drift={analysis.drift} />
+      )}
+
+      {/* Splits — always visible when splits data exists */}
+      {splits && (
         <SplitsModePanel
           splits={splits}
           onRowHover={handleSplitRowHover}
           rowRefs={splitRowRefs}
-        />
-      )}
-
-      {/* Lab mode panel (AC-9: shown only when Lab is active) */}
-      {viewMode === 'lab' && (
-        <LabModePanel
-          analysis={analysis}
-          onRowHover={handleSegmentRowHover}
-          rowRefs={segmentRowRefs}
         />
       )}
 

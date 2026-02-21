@@ -1,11 +1,12 @@
 /**
- * RSI-Alpha — AC-9: Lab Mode Tests
+ * RSI-Alpha — Drift Metrics Tests
  *
- * Verifies Lab toggle shows raw data mode with full-precision traces,
- * athlete-specific zone overlays, segment table, and drift metrics.
+ * After the activity detail simplification, Lab mode is removed. The segment
+ * table and HR Zones card are gone. Drift metrics are now always rendered
+ * inline below the chart — no tab click needed. AC-12 (no coach surface) still applies.
  */
 import React from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, mockTier4Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
 
@@ -25,7 +26,7 @@ const mockUseStreamAnalysis = useStreamAnalysis as jest.MockedFunction<typeof us
 
 const streamData = generateTestStreamData(500);
 
-function renderAndSwitchToLab(analysisResult = mockTier1Result) {
+function renderCanvas(analysisResult = mockTier1Result) {
   mockUseStreamAnalysis.mockReturnValue({
     data: { ...analysisResult, stream: streamData },
     isLoading: false,
@@ -33,67 +34,43 @@ function renderAndSwitchToLab(analysisResult = mockTier1Result) {
     refetch: jest.fn(),
   } as any);
 
-  render(<RunShapeCanvas activityId="test-123" />);
-
-  // Switch to Lab mode
-  const labToggle = screen.getByRole('button', { name: /lab/i });
-  fireEvent.click(labToggle);
+  return render(<RunShapeCanvas activityId="test-123" />);
 }
 
-describe('AC-9: Lab Mode', () => {
-  test('Lab toggle switches to raw data mode', () => {
-    renderAndSwitchToLab();
+describe('Lab Mode: Removed', () => {
+  test('lab mode panel is not rendered', () => {
+    renderCanvas();
 
-    // Lab mode should show full-precision data elements
-    const labContainer = screen.getByTestId('lab-mode') ||
-                         document.querySelector('[data-testid="lab-mode"]');
-    expect(labContainer).toBeInTheDocument();
+    expect(screen.queryByTestId('lab-mode')).not.toBeInTheDocument();
   });
 
-  test('zone overlays use athlete physiological data', () => {
-    // Tier 1 result (has threshold_hr, max_hr, resting_hr)
-    renderAndSwitchToLab(mockTier1Result);
+  test('segment table is not rendered', () => {
+    renderCanvas();
 
-    // Zone overlay should reference athlete's own threshold (165 bpm)
-    const zoneOverlay = document.querySelector('[data-testid="zone-overlay"]') ||
-                        screen.queryByText(/165/);
-    expect(zoneOverlay).toBeInTheDocument();
+    expect(screen.queryByTestId('segment-table')).not.toBeInTheDocument();
   });
 
-  test('zone overlays hidden when no physiological data exists', () => {
-    // Tier 4 result (no physiological data)
-    renderAndSwitchToLab(mockTier4Result);
+  test('zone overlay card is not rendered', () => {
+    renderCanvas();
 
-    // NO zone overlay should render — not population defaults
-    const zoneOverlay = document.querySelector('[data-testid="zone-overlay"]');
-    expect(zoneOverlay).not.toBeInTheDocument();
+    expect(screen.queryByTestId('zone-overlay')).not.toBeInTheDocument();
+  });
+});
+
+describe('Drift Metrics: Always Visible', () => {
+  test('drift metrics render without any tab interaction', () => {
+    renderCanvas();
+
+    expect(screen.getByTestId('drift-metrics')).toBeInTheDocument();
   });
 
-  test('segment table shows required columns', () => {
-    renderAndSwitchToLab();
+  test('cardiac drift is displayed with neutral language', () => {
+    renderCanvas();
 
-    // Segment table should have columns: type, duration, avg pace, avg HR
-    // Scoped to within the table to avoid collisions with drift metrics
-    // and tier badge text (e.g., "Pace Drift", "Threshold HR").
-    const table = screen.getByRole('table');
-    expect(table).toBeInTheDocument();
-
-    // Check column headers within the table
-    const tableScope = within(table);
-    expect(tableScope.getByText(/Type/i)).toBeInTheDocument();
-    expect(tableScope.getByText(/Duration/i)).toBeInTheDocument();
-    expect(tableScope.getByText(/Avg Pace|Pace/i)).toBeInTheDocument();
-    expect(tableScope.getByText(/Avg HR|HR/i)).toBeInTheDocument();
-  });
-
-  test('drift metrics are displayed with neutral language', () => {
-    renderAndSwitchToLab();
-
-    // Cardiac drift should be shown
     expect(screen.getByText(/cardiac drift/i)).toBeInTheDocument();
     expect(screen.getByText(/4\.2%|4\.2/)).toBeInTheDocument();
 
-    // Trust contract: ambiguous metrics must NOT use directional language
+    // Trust contract: must not use directional coaching language
     const driftSection = screen.getByText(/cardiac drift/i).closest('div');
     if (driftSection) {
       const text = driftSection.textContent || '';
@@ -101,10 +78,15 @@ describe('AC-9: Lab Mode', () => {
     }
   });
 
-  test('Lab mode does not render coach interaction elements', () => {
-    renderAndSwitchToLab();
+  test('pace drift is displayed', () => {
+    renderCanvas();
 
-    // AC-12 enforcement: no coach surface in RSI-Alpha
+    expect(screen.getByText(/pace drift/i)).toBeInTheDocument();
+  });
+
+  test('AC-12 enforcement: no coach interaction elements anywhere on the page', () => {
+    renderCanvas();
+
     expect(screen.queryByText(/ask coach/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/tell me about/i)).not.toBeInTheDocument();
     expect(screen.queryByTestId('moment-marker')).not.toBeInTheDocument();
