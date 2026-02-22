@@ -5,7 +5,13 @@ Single point of translation between raw Garmin API payloads and internal
 model field names. If Garmin renames a field, only this file changes.
 
 CONTRACT (enforced by tests):
-  - Garmin field names appear ONLY in this file in the adapter-to-model path.
+  - In the adapter-to-model/dedup path, Garmin field names (camelCase API
+    names such as startTimeInSeconds, distanceInMeters) appear ONLY in this
+    file. No other file in that path should translate raw Garmin field names.
+  - This contract is scoped to the webhook/API ingestion path. The separate
+    DI (takeout file import) path in services/provider_import/garmin_di_connect.py
+    also uses Garmin field names — that is a distinct, compliant path and is
+    not subject to this constraint.
   - All output dicts use exclusively internal field names.
   - activity_deduplication.py must never receive a raw Garmin payload.
     Call chain: raw payload → adapt_*() → internal dict → deduplication.

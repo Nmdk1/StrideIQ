@@ -4,8 +4,13 @@ Prevents accidental introduction of new standalone migration roots
 (down_revision = None) that cause non-deterministic ordering, FK failures,
 and "overlaps" errors in CI and production.
 
-Expected state (after Phase 2 merge):
-  Single head: 0d82917b8305  (merges main chain + activity_stream branch)
+Expected state (after Phase 2 Garmin integration merge):
+  Single linear chain ending at: garmin_004
+    consent_001
+    └── garmin_001 (Athlete OAuth fields)
+    └── garmin_002 (Activity new columns)
+    └── garmin_003 (GarminDay model)
+    └── garmin_004 (Activity official schema fields — D3)  ← HEAD
 
 If a new migration is added, it MUST chain off the existing head — not introduce
 a new root.  If this check fails, the fix is to set down_revision to the
@@ -26,7 +31,7 @@ sys.path.insert(0, str(api_root))
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-EXPECTED_HEADS = {"consent_001"}
+EXPECTED_HEADS = {"garmin_004"}
 MAX_ROOTS = 2  # main chain root + phase chain root (readiness_score_001)
 
 

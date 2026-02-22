@@ -37,12 +37,16 @@ from services.garmin_adapter import (
 
 class TestAdapterSourceContract:
     """
-    Garmin field names must appear ONLY in garmin_adapter.py in the
-    adapter-to-model path. No other service file should reference raw Garmin
-    camelCase field names for data translation.
+    In the adapter-to-model/dedup path, Garmin field names (camelCase API
+    names) must appear ONLY in garmin_adapter.py. No other file in that path
+    should translate raw Garmin field names.
+
+    Scope: webhook/API ingestion path only. The separate DI takeout import
+    path (services/provider_import/garmin_di_connect.py) is excluded from
+    this contract — it handles a different ingestion surface and is compliant.
 
     Tests enforce the D0/D3.3 contract by inspecting source of neighbouring
-    services.
+    services in the ingestion path.
     """
 
     def test_dedup_service_contains_no_garmin_field_names(self):

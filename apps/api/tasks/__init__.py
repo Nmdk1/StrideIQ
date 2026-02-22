@@ -33,10 +33,9 @@ from . import best_effort_tasks  # noqa: E402
 from . import import_tasks  # noqa: E402
 from . import intelligence_tasks  # noqa: E402
 from . import home_briefing_tasks  # noqa: E402
-try:
-    from . import garmin_tasks  # noqa: E402
-except ImportError:
-    pass  # Garmin tasks not available if library not installed
+# garmin_tasks.py was retired in Phase 2 (Feb 2026). Garmin data arrives via
+# push webhooks dispatched to process_garmin_activity_task (D5) and
+# process_garmin_health_task (D6), defined in their respective task modules.
 
 __all__ = ["celery_app"]
 
