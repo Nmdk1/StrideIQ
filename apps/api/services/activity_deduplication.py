@@ -2,174 +2,163 @@
 Activity Deduplication Service
 
 Handles deduplication between Garmin and Strava activities.
-Garmin is primary source; Strava is fallback.
+Garmin is primary source; Strava is secondary.
 
-ARCHITECTURE:
-- Match activities by date + time + distance + avg HR
-- Keep Garmin version as golden record
-- Mark or discard Strava duplicates
+ARCHITECTURE CONTRACT (enforced by tests):
+- This service operates EXCLUSIVELY on internal field names.
+- Callers MUST pass already-adapted dicts using internal field names:
+    start_time  (datetime or ISO string)
+    distance_m  (float, meters)
+    avg_hr      (int, bpm — optional)
+- Provider-specific field names must NEVER appear in this file. If you find
+  yourself passing a raw Garmin or Strava API payload directly to this service,
+  run it through the appropriate adapter first.
 """
 
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Deduplication thresholds for live sync (webhook / API push).
+# The takeout/file-import path (garmin_di_connect.py) uses tighter
+# thresholds (120s / 1.5%) — that is intentional. See AC §D5.2.
+TIME_WINDOW_S = 3600   # 1 hour
+DISTANCE_TOLERANCE = 0.05   # 5%
+HR_TOLERANCE_BPM = 5
+
 
 def match_activities(
-    garmin_activity: Dict,
-    strava_activity: Dict
+    activity_a: Dict,
+    activity_b: Dict,
 ) -> bool:
     """
-    Check if Garmin and Strava activities match (same workout).
-    
-    Matching criteria:
-    - Date: Same day (within 24 hours)
-    - Time: Start time within 1 hour
-    - Distance: Within 5% difference
-    - Avg HR: Within 5 bpm (if both have HR)
-    
-    Args:
-        garmin_activity: Garmin activity dictionary
-        strava_activity: Strava activity dictionary
-        
-    Returns:
-        True if activities match, False otherwise
+    Check whether two activities represent the same workout.
+
+    Both arguments must use internal field names only:
+        start_time  — datetime or ISO-8601 string
+        distance_m  — float (meters)
+        avg_hr      — int (bpm), optional
+
+    Returns True if activities match within all applicable thresholds.
     """
     try:
-        # Extract dates
-        garmin_date = _parse_activity_date(garmin_activity)
-        strava_date = _parse_activity_date(strava_activity)
-        
-        if not garmin_date or not strava_date:
+        date_a = _parse_start_time(activity_a)
+        date_b = _parse_start_time(activity_b)
+
+        if not date_a or not date_b:
             return False
-        
-        # Check date match (within 24 hours)
-        date_diff = abs((garmin_date - strava_date).total_seconds())
-        if date_diff > 86400:  # More than 24 hours
+
+        if abs((date_a - date_b).total_seconds()) > TIME_WINDOW_S:
             return False
-        
-        # Extract distances
-        garmin_distance = _extract_distance(garmin_activity)
-        strava_distance = _extract_distance(strava_activity)
-        
-        if not garmin_distance or not strava_distance:
+
+        dist_a = _extract_distance_m(activity_a)
+        dist_b = _extract_distance_m(activity_b)
+
+        if not dist_a or not dist_b:
             return False
-        
-        # Check distance match (within 5%)
-        distance_diff_pct = abs(garmin_distance - strava_distance) / max(garmin_distance, strava_distance)
-        if distance_diff_pct > 0.05:
+
+        distance_diff_pct = abs(dist_a - dist_b) / max(dist_a, dist_b)
+        if distance_diff_pct > DISTANCE_TOLERANCE:
             return False
-        
-        # Extract avg HR if available
-        garmin_hr = _extract_avg_hr(garmin_activity)
-        strava_hr = _extract_avg_hr(strava_activity)
-        
-        # If both have HR, check match (within 5 bpm)
-        if garmin_hr and strava_hr:
-            hr_diff = abs(garmin_hr - strava_hr)
-            if hr_diff > 5:
+
+        hr_a = _extract_avg_hr(activity_a)
+        hr_b = _extract_avg_hr(activity_b)
+
+        if hr_a and hr_b:
+            if abs(hr_a - hr_b) > HR_TOLERANCE_BPM:
                 return False
-        
-        # Extract start times
-        garmin_time = _extract_start_time(garmin_activity)
-        strava_time = _extract_start_time(strava_activity)
-        
-        # Check time match (within 1 hour)
-        if garmin_time and strava_time:
-            time_diff = abs((garmin_time - strava_time).total_seconds())
-            if time_diff > 3600:  # More than 1 hour
-                return False
-        
+
         return True
-        
+
     except Exception as e:
         logger.error(f"Error matching activities: {e}")
         return False
 
 
-def _parse_activity_date(activity: Dict) -> Optional[datetime]:
-    """Parse activity date from various formats."""
+def deduplicate_activities(
+    primary_activities: List[Dict],
+    secondary_activities: List[Dict],
+) -> Tuple[List[Dict], List[Dict]]:
+    """
+    Deduplicate activities from two providers.
+
+    primary_activities are kept as-is. secondary_activities that match
+    a primary activity are dropped. Returns (primary, unique_secondary).
+
+    Both lists must use internal field names (see module docstring).
+    """
+    unique_secondary = []
+
+    for secondary in secondary_activities:
+        is_duplicate = any(
+            match_activities(primary, secondary)
+            for primary in primary_activities
+        )
+        if not is_duplicate:
+            unique_secondary.append(secondary)
+        else:
+            logger.debug(
+                f"Dedup: secondary activity at {secondary.get('start_time')} "
+                f"({secondary.get('distance_m')}m) matches primary — dropping secondary"
+            )
+
+    return primary_activities, unique_secondary
+
+
+def _parse_start_time(activity: Dict) -> Optional[datetime]:
+    """
+    Parse start_time from an internal-field-name activity dict.
+
+    Accepts a datetime directly or an ISO-8601 string. Never reads
+    provider-specific field names.
+    """
     try:
-        # Try different date fields
-        date_str = activity.get("startTimeLocal") or activity.get("startTime") or activity.get("start_date_local")
-        if date_str:
-            # Parse ISO format or other formats
-            if isinstance(date_str, str):
-                # Try ISO format first
-                try:
-                    return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                except:
-                    # Try other formats
-                    for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"]:
-                        try:
-                            return datetime.strptime(date_str, fmt)
-                        except:
-                            continue
+        value = activity.get("start_time")
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                    try:
+                        return datetime.strptime(value, fmt)
+                    except ValueError:
+                        continue
         return None
-    except:
+    except Exception:
         return None
 
 
-def _extract_distance(activity: Dict) -> Optional[float]:
-    """Extract distance in meters."""
+def _extract_distance_m(activity: Dict) -> Optional[float]:
+    """
+    Extract distance in meters from an internal-field-name activity dict.
+
+    Only reads distance_m. Never reads provider-specific field names.
+    """
     try:
-        # Try different distance fields
-        distance = activity.get("distance") or activity.get("distanceInMeters") or activity.get("distance_m")
-        if distance:
-            return float(distance)
-        return None
-    except:
+        value = activity.get("distance_m")
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
         return None
 
 
 def _extract_avg_hr(activity: Dict) -> Optional[int]:
-    """Extract average heart rate."""
+    """
+    Extract average heart rate from an internal-field-name activity dict.
+
+    Only reads avg_hr. Never reads provider-specific field names.
+    """
     try:
-        hr = activity.get("averageHeartRate") or activity.get("avgHeartRate") or activity.get("avg_hr")
-        if hr:
-            return int(hr)
+        value = activity.get("avg_hr")
+        if value is None:
+            return None
+        return int(value)
+    except Exception:
         return None
-    except:
-        return None
-
-
-def _extract_start_time(activity: Dict) -> Optional[datetime]:
-    """Extract start time."""
-    return _parse_activity_date(activity)
-
-
-def deduplicate_activities(
-    garmin_activities: List[Dict],
-    strava_activities: List[Dict]
-) -> Tuple[List[Dict], List[Dict]]:
-    """
-    Deduplicate activities between Garmin and Strava.
-    
-    Args:
-        garmin_activities: List of Garmin activities
-        strava_activities: List of Strava activities
-        
-    Returns:
-        Tuple of (unique_garmin_activities, unique_strava_activities)
-        Garmin activities are kept as-is (primary source)
-        Strava activities are filtered to remove duplicates
-    """
-    unique_garmin = garmin_activities.copy()
-    unique_strava = []
-    
-    for strava_activity in strava_activities:
-        is_duplicate = False
-        
-        for garmin_activity in garmin_activities:
-            if match_activities(garmin_activity, strava_activity):
-                is_duplicate = True
-                logger.debug(f"Found duplicate: Strava activity {strava_activity.get('id')} matches Garmin {garmin_activity.get('activityId')}")
-                break
-        
-        if not is_duplicate:
-            unique_strava.append(strava_activity)
-    
-    return unique_garmin, unique_strava
-
