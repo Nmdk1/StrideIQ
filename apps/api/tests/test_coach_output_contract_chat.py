@@ -162,10 +162,8 @@ def test_chat_gemini_success_normalizes_response():
     assert "authoritative fact capsule" not in saved_text
 
 
-def test_chat_gemini_failure_returns_fail_closed_no_fallback():
-    """When Gemini returns an error, chat() must return a safe fail-closed
-    message with no attempt to fall back to OpenAI or any other backend.
-    """
+def test_chat_gemini_failure_returns_fail_closed_when_no_opus_available():
+    """When Gemini fails and Anthropic is unavailable, chat() must fail closed."""
     coach = _build_chat_coach()
 
     # Simulate Gemini returning an error
@@ -182,9 +180,59 @@ def test_chat_gemini_failure_returns_fail_closed_no_fallback():
 
     assert result.get("error") is True
     assert "unavailable" in result["response"].lower() or "error" in result["response"].lower()
-    # Must NOT contain any OpenAI fallback signals
-    assert "fallback_to_assistants" not in str(result)
-    # Must NOT have attempted to save chat messages on error
+    coach._save_chat_messages.assert_not_called()
+
+
+def test_chat_gemini_failure_falls_back_to_opus_when_available():
+    """When Gemini fails and Anthropic is configured, chat() should retry via Opus."""
+    coach = _build_chat_coach()
+    coach.anthropic_client = MagicMock()  # enable Opus fallback branch
+
+    coach.query_gemini = AsyncMock(return_value={
+        "response": "Coach is temporarily unavailable. Please try again in a moment.",
+        "error": True,
+        "error_detail": "Gemini transient provider error",
+    })
+    coach.query_opus = AsyncMock(return_value={
+        "response": "You're carrying manageable fatigue but trend is stable. Keep tomorrow easy.",
+        "error": False,
+        "model": AICoach.MODEL_HIGH_STAKES,
+    })
+    coach._build_athlete_state_for_opus = MagicMock(return_value="mock-athlete-state")
+
+    result = asyncio.get_event_loop().run_until_complete(
+        coach.chat(athlete_id=uuid4(), message="How is my training going?")
+    )
+
+    assert result.get("error") is False
+    assert "manageable fatigue" in result.get("response", "").lower()
+    coach.query_opus.assert_called_once()
+    coach._save_chat_messages.assert_called_once()
+
+
+def test_chat_gemini_and_opus_failure_returns_error_without_saving_chat():
+    """If both providers fail, return error and do not persist assistant message."""
+    coach = _build_chat_coach()
+    coach.anthropic_client = MagicMock()  # enable Opus fallback branch
+
+    coach.query_gemini = AsyncMock(return_value={
+        "response": "Coach is temporarily unavailable. Please try again in a moment.",
+        "error": True,
+        "error_detail": "Gemini provider error",
+    })
+    coach.query_opus = AsyncMock(return_value={
+        "response": "I encountered an error processing your request. Please try again.",
+        "error": True,
+        "error_detail": "Opus provider error",
+    })
+    coach._build_athlete_state_for_opus = MagicMock(return_value="mock-athlete-state")
+
+    result = asyncio.get_event_loop().run_until_complete(
+        coach.chat(athlete_id=uuid4(), message="How is my training going?")
+    )
+
+    assert result.get("error") is True
+    coach.query_opus.assert_called_once()
     coach._save_chat_messages.assert_not_called()
 
 
