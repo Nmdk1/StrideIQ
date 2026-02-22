@@ -41,8 +41,7 @@ export function GarminConnectButton({
         border: '1px solid',
         minHeight: '48px',
         minWidth: '193px',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ['--tw-ring-color' as any]: '#007CC3',
+        ['--tw-ring-color' as string]: '#007CC3',
       }}
     >
       <GarminWordmark />
