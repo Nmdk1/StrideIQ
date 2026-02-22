@@ -434,14 +434,19 @@ try:
 except ImportError:
     pass  # Public tools router not available yet
 
-# Garmin router (if available)
-# TEMPORARILY DISABLED: Garmin username/password auth blocked by Garmin (Jan 2026)
-# Will re-enable when official OAuth flow is implemented post-launch
-# if GARMIN_AVAILABLE:
-#     try:
-#         app.include_router(garmin.router)
-#     except Exception as e:
-#         logger.warning(f"Could not include Garmin router: {e}")
+# Garmin OAuth router (D2: auth-url, callback, status, disconnect)
+if GARMIN_AVAILABLE:
+    try:
+        app.include_router(garmin.router)
+    except Exception as e:
+        logger.warning(f"Could not include Garmin OAuth router: {e}")
+
+# Garmin webhook router (D4: per-type push webhook endpoints)
+try:
+    from routers import garmin_webhooks
+    app.include_router(garmin_webhooks.router)
+except ImportError as e:
+    logger.warning(f"Could not include Garmin webhook router: {e}")
 
 # RPI Calculator (free tool)
 try:

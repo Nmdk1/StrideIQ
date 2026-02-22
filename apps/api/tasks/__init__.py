@@ -64,9 +64,9 @@ except ImportError as e:
     )
     raise SystemExit(1)
 
-# garmin_tasks.py was retired in Phase 2 (Feb 2026). Garmin data arrives via
-# push webhooks dispatched to process_garmin_activity_task (D5) and
-# process_garmin_health_task (D6), defined in their respective task modules.
+# garmin_tasks.py was retired in Phase 2 (Feb 2026). Replaced by
+# garmin_webhook_tasks.py (webhook-push driven) and D5/D6 task modules.
+from . import garmin_webhook_tasks  # noqa: E402  # D4: Celery task stubs
 
 __all__ = ["celery_app"]
 
