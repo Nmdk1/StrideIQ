@@ -87,9 +87,12 @@ class Athlete(Base):
     last_strava_sync = Column(DateTime(timezone=True), nullable=True)
     timezone = Column(Text, nullable=True)  # IANA timezone from Strava (e.g. "America/New_York")
     
-    # Garmin Connect Integration
-    garmin_username = Column(Text, nullable=True)  # For login (not encrypted - username only)
-    garmin_password_encrypted = Column(Text, nullable=True)  # Encrypted password (for python-garminconnect)
+    # Garmin Connect Integration — OAuth 2.0 (official API)
+    # Tokens encrypted at rest using the same pattern as Strava tokens.
+    garmin_oauth_access_token = Column(Text, nullable=True)   # Encrypted
+    garmin_oauth_refresh_token = Column(Text, nullable=True)  # Encrypted
+    garmin_oauth_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+    garmin_user_id = Column(Text, nullable=True)              # Garmin's stable user identifier
     garmin_connected = Column(Boolean, default=False, nullable=False)
     last_garmin_sync = Column(DateTime(timezone=True), nullable=True)
     garmin_sync_enabled = Column(Boolean, default=True, nullable=False)
@@ -136,6 +139,7 @@ class Athlete(Base):
     # and can cause ForeignKeyViolation when both are deleted in one flush.
     # lazy="dynamic" prevents auto-loading (returns query, no perf impact).
     activities = relationship("Activity", back_populates="athlete", lazy="dynamic")
+    garmin_days = relationship("GarminDay", back_populates="athlete", lazy="dynamic")
 
 
 class InviteAllowlist(Base):
@@ -408,6 +412,46 @@ class Activity(Base):
     stream_fetch_error = Column(Text, nullable=True)
     stream_fetch_retry_count = Column(Integer, nullable=False, default=0, server_default="0")
     stream_fetch_deferred_until = Column(DateTime(timezone=True), nullable=True)
+
+    # --- GARMIN RUNNING DYNAMICS (D1.2) ---
+    avg_cadence = Column(Integer, nullable=True)
+    max_cadence = Column(Integer, nullable=True)
+    avg_stride_length_m = Column(Float, nullable=True)
+    avg_ground_contact_ms = Column(Float, nullable=True)
+    avg_ground_contact_balance_pct = Column(Float, nullable=True)
+    avg_vertical_oscillation_cm = Column(Float, nullable=True)
+    avg_vertical_ratio_pct = Column(Float, nullable=True)
+
+    # --- GARMIN POWER ---
+    avg_power_w = Column(Integer, nullable=True)
+    max_power_w = Column(Integer, nullable=True)
+
+    # --- GARMIN EFFORT / GRADE ---
+    avg_gap_min_per_mile = Column(Float, nullable=True)
+    total_descent_m = Column(Float, nullable=True)
+
+    # --- GARMIN TRAINING EFFECT ---
+    # INFORMATIONAL ONLY — never use in training load calculations.
+    # These are Garmin's proprietary model outputs. StrideIQ uses its own
+    # load model. Storing for display only.
+    garmin_aerobic_te = Column(Float, nullable=True)
+    garmin_anaerobic_te = Column(Float, nullable=True)
+    garmin_te_label = Column(Text, nullable=True)
+
+    # --- GARMIN SELF-EVALUATION (low-fidelity — [L3]) ---
+    # Athletes frequently click through post-activity ratings without genuine
+    # engagement. Import if present; display with caveat; never use in
+    # load or readiness calculations.
+    garmin_feel = Column(Text, nullable=True)
+    garmin_perceived_effort = Column(Integer, nullable=True)
+
+    # --- GARMIN WELLNESS CROSSOVER ---
+    garmin_body_battery_impact = Column(Integer, nullable=True)
+
+    # --- TIMING / ENERGY ---
+    moving_time_s = Column(Integer, nullable=True)
+    max_speed = Column(Float, nullable=True)
+    active_kcal = Column(Integer, nullable=True)
 
     # --- THE ARMOR: Unique Constraint prevents duplicates at the DB level ---
     __table_args__ = (
@@ -2310,4 +2354,80 @@ class CorrelationFinding(Base):
             unique=True,
         ),
         Index("ix_corr_finding_active", "athlete_id", "is_active"),
+    )
+
+
+class GarminDay(Base):
+    """
+    Unified daily wellness row. One row per (athlete_id, calendar_date).
+
+    Architecture decision 3D: all Garmin daily data lives here — no
+    separate GarminSleep or GarminHRV tables.
+
+    CALENDAR DATE RULE (L1): calendar_date is the WAKEUP DAY (morning),
+    not the night before. A run on Saturday that follows Friday night sleep
+    will have calendar_date = Saturday. All correlation queries must join
+    on garmin_day.calendar_date = activity.start_time::date.
+
+    Upsert pattern: INSERT ... ON CONFLICT (athlete_id, calendar_date) DO UPDATE
+    """
+    __tablename__ = "garmin_day"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id", ondelete="CASCADE"), nullable=False)
+    calendar_date = Column(Date, nullable=False)
+
+    # --- Daily Summary ---
+    resting_hr = Column(Integer, nullable=True)
+    avg_stress = Column(Integer, nullable=True)              # -1 = insufficient data
+    max_stress = Column(Integer, nullable=True)
+    stress_qualifier = Column(Text, nullable=True)           # calm/balanced/stressful/very_stressful
+    steps = Column(Integer, nullable=True)
+    active_time_s = Column(Integer, nullable=True)
+    active_kcal = Column(Integer, nullable=True)
+    moderate_intensity_s = Column(Integer, nullable=True)
+    vigorous_intensity_s = Column(Integer, nullable=True)
+    min_hr = Column(Integer, nullable=True)
+    max_hr = Column(Integer, nullable=True)
+
+    # --- Sleep Summary ---
+    sleep_total_s = Column(Integer, nullable=True)
+    sleep_deep_s = Column(Integer, nullable=True)
+    sleep_light_s = Column(Integer, nullable=True)
+    sleep_rem_s = Column(Integer, nullable=True)
+    sleep_awake_s = Column(Integer, nullable=True)
+    sleep_score = Column(Integer, nullable=True)             # 0–100
+    sleep_score_qualifier = Column(Text, nullable=True)      # EXCELLENT/GOOD/FAIR/POOR
+    sleep_validation = Column(Text, nullable=True)
+
+    # --- HRV Summary ---
+    hrv_overnight_avg = Column(Integer, nullable=True)       # ms
+    hrv_5min_high = Column(Integer, nullable=True)           # ms
+
+    # --- User Metrics ---
+    vo2max = Column(Float, nullable=True)                    # updates infrequently
+
+    # --- Body Battery (from Stress Detail) ---
+    body_battery_end = Column(Integer, nullable=True)        # end-of-day value
+
+    # --- Raw JSONB (Tier 2 computed fields deferred) ---
+    stress_samples = Column(JSONB, nullable=True)            # TimeOffsetStressLevelValues
+    body_battery_samples = Column(JSONB, nullable=True)      # TimeOffsetBodyBatteryValues
+
+    # --- Deduplication ---
+    garmin_daily_summary_id = Column(Text, nullable=True)
+    garmin_sleep_summary_id = Column(Text, nullable=True)
+    garmin_hrv_summary_id = Column(Text, nullable=True)
+
+    # --- Audit ---
+    inserted_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    # --- Relationships ---
+    athlete = relationship("Athlete", back_populates="garmin_days")
+
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "calendar_date", name="uq_garmin_day_athlete_date"),
+        Index("ix_garmin_day_athlete_id", "athlete_id"),
+        Index("ix_garmin_day_calendar_date", "calendar_date"),
     )
