@@ -1,7 +1,7 @@
 """
 Garmin Initial Backfill Service (D7)
 
-Requests 90-day historical data from Garmin's backfill API endpoints.
+Requests historical data from Garmin's backfill API endpoints.
 
 HOW IT WORKS:
   Garmin backfill is asynchronous. Calling a backfill endpoint returns 202 Accepted
@@ -10,7 +10,7 @@ HOW IT WORKS:
   This means D4/D5/D6 webhook handlers process backfill data identically to live
   webhook pushes. No special handling is needed on our end.
 
-BACKFILL SCOPE (Tier 1 — 90 days):
+BACKFILL SCOPE (Tier 1):
   - activities
   - activityDetails
   - sleeps
@@ -18,6 +18,10 @@ BACKFILL SCOPE (Tier 1 — 90 days):
   - stressDetails
   - dailies
   - userMetrics
+
+Garmin range limits:
+  - activities/activityDetails: max 30 days
+  - health endpoints: max 90 days
 
 RATE LIMITING:
   A 1-second delay is observed between requests as a courtesy to Garmin's API.
@@ -55,14 +59,16 @@ logger = logging.getLogger(__name__)
 
 _GARMIN_WELLNESS_BASE = "https://apis.garmin.com/wellness-api"
 
-# 90-day backfill window matches the correlation engine's analysis window [M4].
-_BACKFILL_DEPTH_DAYS = 90
+# Garmin backfill limits by endpoint type.
+_BACKFILL_DEPTH_DAYS_ACTIVITY = 30
+_BACKFILL_DEPTH_DAYS_HEALTH = 90
 
 # Short courtesy delay between sequential backfill requests.
 _INTER_REQUEST_DELAY_S = 1
 
 # Extended back-off when Garmin returns 429 Too Many Requests.
 _RATE_LIMIT_BACKOFF_S = 30
+_MAX_429_RETRIES = 2
 
 # Request timeout for each backfill call.
 _TIMEOUT_S = 15
@@ -79,14 +85,33 @@ _BACKFILL_ENDPOINTS = [
     "/rest/backfill/userMetrics",
 ]
 
+_ACTIVITY_BACKFILL_ENDPOINTS = {
+    "/rest/backfill/activities",
+    "/rest/backfill/activityDetails",
+}
+
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
+def _params_for_endpoint(endpoint: str, now: datetime) -> Dict[str, int]:
+    """Build endpoint-specific backfill time range params."""
+    depth_days = (
+        _BACKFILL_DEPTH_DAYS_ACTIVITY
+        if endpoint in _ACTIVITY_BACKFILL_ENDPOINTS
+        else _BACKFILL_DEPTH_DAYS_HEALTH
+    )
+    start = now - timedelta(days=depth_days)
+    return {
+        "summaryStartTimeInSeconds": int(start.timestamp()),
+        "summaryEndTimeInSeconds": int(now.timestamp()),
+    }
+
+
 def request_garmin_backfill(athlete: Any, db: Any) -> Dict[str, Any]:
     """
-    Request a 90-day backfill for all Tier 1 Garmin data types.
+    Request a Garmin backfill for all Tier 1 data types.
 
     Called once after a successful OAuth connect. Each endpoint call returns
     202 Accepted — Garmin pushes the historical data to the D4 webhook endpoints
@@ -112,11 +137,6 @@ def request_garmin_backfill(athlete: Any, db: Any) -> Dict[str, Any]:
         return {"status": "aborted", "reason": "no_token", "requested": 0, "failed": 0}
 
     now = datetime.now(timezone.utc)
-    start = now - timedelta(days=_BACKFILL_DEPTH_DAYS)
-    params = {
-        "summaryStartTimeInSeconds": int(start.timestamp()),
-        "summaryEndTimeInSeconds": int(now.timestamp()),
-    }
     headers = {"Authorization": f"Bearer {access_token}"}
 
     requested = 0
@@ -124,31 +144,64 @@ def request_garmin_backfill(athlete: Any, db: Any) -> Dict[str, Any]:
 
     for idx, endpoint in enumerate(_BACKFILL_ENDPOINTS):
         url = f"{_GARMIN_WELLNESS_BASE}{endpoint}"
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=_TIMEOUT_S)
-        except Exception as exc:
-            logger.exception("Garmin backfill request failed for %s: %s", endpoint, exc)
-            failed += 1
-            if idx < len(_BACKFILL_ENDPOINTS) - 1:
-                time.sleep(_INTER_REQUEST_DELAY_S)
-            continue
+        params = _params_for_endpoint(endpoint, now)
 
-        if resp.status_code == 202:
-            logger.info("Garmin backfill requested: %s → 202 Accepted", endpoint)
-            requested += 1
-        elif resp.status_code == 429:
+        endpoint_ok = False
+        attempt = 0
+        max_attempts = 1 + _MAX_429_RETRIES
+
+        while attempt < max_attempts and not endpoint_ok:
+            attempt += 1
+            try:
+                resp = requests.get(url, headers=headers, params=params, timeout=_TIMEOUT_S)
+            except Exception as exc:
+                logger.exception(
+                    "Garmin backfill request failed for %s (attempt %d/%d): %s",
+                    endpoint,
+                    attempt,
+                    max_attempts,
+                    exc,
+                )
+                break
+
+            if resp.status_code == 202:
+                logger.info(
+                    "Garmin backfill requested: %s → 202 Accepted (attempt %d/%d)",
+                    endpoint,
+                    attempt,
+                    max_attempts,
+                )
+                requested += 1
+                endpoint_ok = True
+                break
+
+            body_preview = (resp.text or "").strip()
+            if len(body_preview) > 300:
+                body_preview = f"{body_preview[:300]}..."
+
+            if resp.status_code == 429 and attempt < max_attempts:
+                logger.warning(
+                    "Garmin backfill rate limited: %s → 429 (attempt %d/%d, backing off %ds, body=%r)",
+                    endpoint,
+                    attempt,
+                    max_attempts,
+                    _RATE_LIMIT_BACKOFF_S,
+                    body_preview,
+                )
+                time.sleep(_RATE_LIMIT_BACKOFF_S)
+                continue
+
             logger.warning(
-                "Garmin backfill rate limited: %s → 429 (backing off %ds)",
+                "Garmin backfill unexpected status: %s → %d (attempt %d/%d, body=%r)",
                 endpoint,
-                _RATE_LIMIT_BACKOFF_S,
+                resp.status_code,
+                attempt,
+                max_attempts,
+                body_preview,
             )
-            failed += 1
-            time.sleep(_RATE_LIMIT_BACKOFF_S)
-            continue
-        else:
-            logger.warning(
-                "Garmin backfill unexpected status: %s → %d", endpoint, resp.status_code
-            )
+            break
+
+        if not endpoint_ok:
             failed += 1
 
         if idx < len(_BACKFILL_ENDPOINTS) - 1:

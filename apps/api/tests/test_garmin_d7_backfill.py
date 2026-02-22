@@ -114,11 +114,12 @@ class TestBackfillService:
                 f"Authorization header missing or wrong: {headers}"
             )
 
-    def test_time_range_is_90_days(self):
-        """Query params must cover now-90 days to now as Unix timestamps."""
+    def test_time_range_is_endpoint_specific(self):
+        """Activities/details use 30d, health endpoints use 90d."""
         result, mock_get, _ = self._run()
         now = datetime.now(timezone.utc)
         for c in mock_get.call_args_list:
+            url = c.args[0]
             params = c.kwargs.get("params") or {}
             start_ts = params.get("summaryStartTimeInSeconds")
             end_ts = params.get("summaryEndTimeInSeconds")
@@ -129,10 +130,13 @@ class TestBackfillService:
             assert abs(end_ts - int(now.timestamp())) < 60, (
                 f"summaryEndTimeInSeconds {end_ts} is not approximately now {int(now.timestamp())}"
             )
-            # Duration should be approximately 90 days
+            # Duration should match endpoint limit
             duration_days = (end_ts - start_ts) / 86400
-            assert abs(duration_days - 90) < 1, (
-                f"Backfill range is {duration_days:.1f} days, expected ~90"
+            expected_days = 30 if (
+                "backfill/activities" in url and "activityDetails" not in url
+            ) or ("backfill/activityDetails" in url) else 90
+            assert abs(duration_days - expected_days) < 1, (
+                f"Backfill range for {url} is {duration_days:.1f} days, expected ~{expected_days}"
             )
 
     def test_202_counted_as_requested(self):
@@ -186,16 +190,28 @@ class TestBackfillService:
         assert result["reason"] == "no_token"
         mock_get.assert_not_called()
 
-    def test_429_counted_as_failed_with_extended_sleep(self):
-        """A 429 response is treated as a failure and triggers a longer back-off sleep."""
-        responses = [_non_202_response(429)] + [_202_response()] * 6
+    def test_429_retries_same_endpoint_with_extended_sleep(self):
+        """A 429 should back off and retry same endpoint (up to max retries)."""
+        responses = [_non_202_response(429)] + [_202_response()] * 7
         result, _, mock_sleep = self._run(mock_responses=responses)
-        assert result["failed"] == 1
-        assert result["requested"] == 6
+        assert result["failed"] == 0
+        assert result["requested"] == 7
         # There must be at least one sleep call longer than the normal inter-request delay
         sleep_args = [c.args[0] for c in mock_sleep.call_args_list]
         max_sleep = max(sleep_args) if sleep_args else 0
         assert max_sleep > 1, f"Expected an extended sleep on 429 (got max={max_sleep}s)"
+
+    def test_429_after_max_retries_counts_as_failed(self):
+        """If endpoint keeps returning 429, count one failed endpoint and continue."""
+        responses = (
+            [_non_202_response(429), _non_202_response(429), _non_202_response(429)]
+            + [_202_response()] * 6
+        )
+        result, mock_get, _ = self._run(mock_responses=responses)
+        assert result["failed"] == 1
+        assert result["requested"] == 6
+        # 3 attempts for first endpoint + 6 successful single-attempt endpoints
+        assert mock_get.call_count == 9
 
     def test_status_ok_on_all_success(self):
         result, _, _ = self._run()
