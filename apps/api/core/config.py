@@ -98,9 +98,12 @@ class Settings(BaseSettings):
                     "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
     )
     
-    # Garmin Configuration (for future official API)
+    # Garmin Configuration — OAuth 2.0 PKCE (official Connect API)
     GARMIN_CLIENT_ID: Optional[str] = Field(default=None)
     GARMIN_CLIENT_SECRET: Optional[str] = Field(default=None)
+    # The redirect_uri registered in the Garmin developer portal.
+    # Must exactly match what is configured there.
+    GARMIN_REDIRECT_URI: Optional[str] = Field(default=None)
     
     # API Configuration
     API_HOST: str = Field(default="0.0.0.0")

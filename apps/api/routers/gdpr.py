@@ -17,6 +17,8 @@ from models import (
     Athlete,
     Activity,
     ActivitySplit,
+    ActivityStream,
+    GarminDay,
     NutritionEntry,
     BodyComposition,
     WorkPattern,
@@ -312,11 +314,24 @@ def delete_account(
     # --- Subscription ---
     db.query(Subscription).filter(Subscription.athlete_id == athlete_id).delete()
     
-    # --- Activity & Splits ---
-    activities = db.query(Activity).filter(Activity.athlete_id == athlete_id).all()
-    for activity in activities:
-        db.query(ActivitySplit).filter(ActivitySplit.activity_id == activity.id).delete()
-    db.query(Activity).filter(Activity.athlete_id == athlete_id).delete()
+    # --- Garmin Wellness Data [G5-H5 Phase 2 addition] ---
+    db.query(GarminDay).filter(GarminDay.athlete_id == athlete_id).delete(synchronize_session=False)
+
+    # --- Activity Streams, Splits, and Activities ---
+    # ActivityStream must be deleted before Activity (FK constraint).
+    # [G5-H5] ActivityStream deletion is a pre-existing gap — fixed here.
+    activity_ids = [
+        row.id
+        for row in db.query(Activity.id).filter(Activity.athlete_id == athlete_id).all()
+    ]
+    if activity_ids:
+        db.query(ActivityStream).filter(
+            ActivityStream.activity_id.in_(activity_ids)
+        ).delete(synchronize_session=False)
+        db.query(ActivitySplit).filter(
+            ActivitySplit.activity_id.in_(activity_ids)
+        ).delete(synchronize_session=False)
+    db.query(Activity).filter(Activity.athlete_id == athlete_id).delete(synchronize_session=False)
     
     # --- Finally, delete the athlete record ---
     db.delete(current_user)
