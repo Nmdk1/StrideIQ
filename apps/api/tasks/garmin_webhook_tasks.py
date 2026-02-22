@@ -30,11 +30,16 @@ from typing import Any, Dict, List, Optional
 
 from tasks import celery_app
 from core.database import get_db_sync
-from models import Activity, ActivityStream, Athlete
+from models import Activity, ActivityStream, Athlete, GarminDay
 from services.garmin_adapter import (
     adapt_activity_summary,
     adapt_activity_detail_envelope,
     adapt_activity_detail_samples,
+    adapt_sleep_summary,
+    adapt_hrv_summary,
+    adapt_stress_detail,
+    adapt_daily_summary,
+    adapt_user_metrics,
 )
 from services.activity_deduplication import match_activities, TIME_WINDOW_S
 
@@ -149,6 +154,117 @@ def _create_activity_from_adapted(adapted: Dict[str, Any], athlete_id) -> Activi
         start_lng=adapted.get("start_lng"),
         is_race_candidate=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# D6 helpers — GarminDay upsert
+# ---------------------------------------------------------------------------
+
+# Maps the webhook data_type string to the adapter function NAME (not the
+# function object directly). Resolved via globals() at call time so that
+# test patches on "tasks.garmin_webhook_tasks.adapt_*" are honoured correctly.
+# Only Tier 1 data types are handled; unknown types are logged and skipped.
+_HEALTH_ADAPTER_MAP: Dict[str, str] = {
+    "sleeps": "adapt_sleep_summary",
+    "hrv": "adapt_hrv_summary",
+    "stress": "adapt_stress_detail",
+    "dailies": "adapt_daily_summary",
+    "user-metrics": "adapt_user_metrics",
+}
+
+
+def _parse_calendar_date(value):
+    """
+    Convert a calendar_date string ("YYYY-MM-DD") to a datetime.date object.
+
+    Returns None if value is absent or unparseable.
+    """
+    if not value:
+        return None
+    try:
+        from datetime import date as _date
+        return _date.fromisoformat(str(value))
+    except (ValueError, TypeError):
+        return None
+
+
+def _upsert_garmin_day(athlete_id: str, calendar_date, adapted: Dict[str, Any], db) -> None:
+    """
+    Upsert a GarminDay row for (athlete_id, calendar_date).
+
+    If a row already exists for that date, update only the non-None fields
+    from the adapted dict (additive — fields from other data types are preserved).
+    If no row exists, create one.
+
+    The calendar_date field is the row key and is not written via setattr.
+    """
+    existing = (
+        db.query(GarminDay)
+        .filter(
+            GarminDay.athlete_id == athlete_id,
+            GarminDay.calendar_date == calendar_date,
+        )
+        .first()
+    )
+
+    if existing is not None:
+        for key, value in adapted.items():
+            if key == "calendar_date":
+                continue
+            if value is not None:
+                setattr(existing, key, value)
+    else:
+        new_row = GarminDay(
+            athlete_id=athlete_id,
+            calendar_date=calendar_date,
+        )
+        for key, value in adapted.items():
+            if key == "calendar_date":
+                continue
+            if value is not None:
+                setattr(new_row, key, value)
+        db.add(new_row)
+
+
+def _ingest_health_item(
+    raw_item: Dict[str, Any],
+    data_type: str,
+    athlete_id: str,
+    db,
+) -> bool:
+    """
+    Process a single Garmin health/wellness payload dict.
+
+    Steps:
+      1. Look up adapter function by data_type (unknown type → skip)
+      2. Call adapter → internal-field-name dict (source contract)
+      3. Extract and parse calendar_date (missing → skip)
+      4. Upsert GarminDay row for (athlete_id, calendar_date)
+
+    Returns True if processed, False if skipped.
+    """
+    fn_name = _HEALTH_ADAPTER_MAP.get(data_type)
+    if fn_name is None:
+        logger.warning(
+            "_ingest_health_item: unknown data_type=%s — skipping (Tier 2 or unsupported)",
+            data_type,
+        )
+        return False
+
+    # Resolve via globals() so test patches on module-level names are honoured
+    adapter_fn = globals()[fn_name]
+    adapted = adapter_fn(raw_item)
+
+    calendar_date = _parse_calendar_date(adapted.get("calendar_date"))
+    if calendar_date is None:
+        logger.warning(
+            "_ingest_health_item: data_type=%s payload missing calendar_date — skipping",
+            data_type,
+        )
+        return False
+
+    _upsert_garmin_day(athlete_id, calendar_date, adapted, db)
+    return True
 
 
 def _ingest_activity_item(
@@ -486,25 +602,67 @@ def process_garmin_health_task(
     payload: Dict[str, Any],
 ) -> None:
     """
-    Upsert a Garmin health/wellness payload into GarminDay.
+    Upsert Garmin health/wellness payload(s) into GarminDay.
 
-    D6 implements this:
-      - data_type: "sleeps" | "hrv" | "stress" | "dailies" | "user-metrics"
-      - Calls the appropriate adapt_*() function from garmin_adapter
-      - Upserts into GarminDay on (athlete_id, calendar_date)
-      - Stress samples stored as-is JSONB; negatives stored, filtered at query time
+    Handles both single-dict and list payload shapes defensively [D4.3 pending].
+
+    Supported data_type values (Tier 1):
+      "sleeps"       → adapt_sleep_summary()  → sleep duration, score, stages
+      "hrv"          → adapt_hrv_summary()    → overnight avg, 5-min high
+      "stress"       → adapt_stress_detail()  → avg/max stress, JSONB samples
+      "dailies"      → adapt_daily_summary()  → steps, resting HR, active kcal
+      "user-metrics" → adapt_user_metrics()   → vo2max
+
+    Upsert contract: INSERT on (athlete_id, calendar_date) if no row exists;
+    UPDATE only non-None fields from the adapter output if row exists (additive).
+    Stress values are stored as-is including negatives; filter at query time.
+
+    Calendar date rule (L1): sleep calendar_date is the wakeup morning (Saturday
+    for Friday-night sleep). Adapter preserves this; task stores it directly.
 
     Args:
-        athlete_id: Internal athlete UUID.
+        athlete_id: Internal athlete UUID string.
         data_type: Webhook data type string matching the route path segment.
-        payload: Raw Garmin health payload dict.
+        payload: Raw Garmin health payload — dict or list of dicts.
+
+    Returns:
+        {"status": "ok", "processed": int, "skipped": int}
     """
-    logger.info(
-        "[D5 STUB] process_garmin_health_task — D6 not yet implemented: "
-        "athlete=%s data_type=%s",
-        athlete_id,
-        data_type,
-    )
+    db = get_db_sync()
+    try:
+        # Normalize payload shape — Garmin may send dict or list [D4.3 pending]
+        items: List[Dict[str, Any]] = payload if isinstance(payload, list) else [payload]
+
+        processed = 0
+        skipped = 0
+
+        for raw_item in items:
+            if _ingest_health_item(raw_item, data_type, athlete_id, db):
+                processed += 1
+                db.commit()
+            else:
+                skipped += 1
+
+        logger.info(
+            "process_garmin_health_task: athlete=%s data_type=%s processed=%d skipped=%d",
+            athlete_id,
+            data_type,
+            processed,
+            skipped,
+        )
+        return {"status": "ok", "processed": processed, "skipped": skipped}
+
+    except Exception as exc:
+        db.rollback()
+        logger.exception(
+            "process_garmin_health_task failed for athlete %s data_type %s: %s",
+            athlete_id,
+            data_type,
+            exc,
+        )
+        raise self.retry(exc=exc)
+    finally:
+        db.close()
 
 
 @celery_app.task(
