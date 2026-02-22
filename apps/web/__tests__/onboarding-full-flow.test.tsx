@@ -55,6 +55,20 @@ jest.mock('@/lib/api/services/onboarding', () => ({
   },
 }));
 
+jest.mock('@/lib/api/services/garmin', () => ({
+  garminService: {
+    getAuthUrl: jest.fn(async () => ({ auth_url: 'https://garmin.test/auth' })),
+  },
+}));
+
+jest.mock('@/lib/hooks/queries/garmin', () => ({
+  useGarminStatus: () => ({
+    data: { connected: false, garmin_user_id: null, last_sync: null },
+    isLoading: false,
+    refetch: jest.fn(),
+  }),
+}));
+
 jest.mock('@/lib/hooks/queries/onboarding', () => ({
   useOnboardingStatus: () => ({
     data: { strava_connected: false, ingestion_state: null, last_sync: null },
@@ -119,7 +133,7 @@ describe('Onboarding full flow (skip Strava)', () => {
     });
 
     // Connect stage -> continue without connecting
-    expect(await screen.findByRole('heading', { name: 'Connect Strava' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Connect Your Watch' })).toBeInTheDocument();
     // Trust contract: explicit "no paces yet" if no recent race/time trial was provided
     expect(await screen.findByText(/No prescriptive paces yet/i)).toBeInTheDocument();
     await act(async () => {

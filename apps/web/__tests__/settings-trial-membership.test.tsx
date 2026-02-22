@@ -11,6 +11,10 @@ jest.mock('@/components/integrations/StravaConnection', () => ({
   StravaConnection: () => <div>StravaConnection</div>,
 }));
 
+jest.mock('@/components/integrations/GarminConnection', () => ({
+  GarminConnection: () => <div>GarminConnection</div>,
+}));
+
 jest.mock('@/lib/context/UnitsContext', () => ({
   useUnits: () => ({ units: 'imperial', setUnits: jest.fn() }),
 }));

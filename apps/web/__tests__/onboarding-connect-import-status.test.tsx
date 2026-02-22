@@ -37,6 +37,20 @@ jest.mock('@/lib/api/services/strava', () => ({
   },
 }));
 
+jest.mock('@/lib/api/services/garmin', () => ({
+  garminService: {
+    getAuthUrl: jest.fn(async () => ({ auth_url: 'https://garmin.test/auth' })),
+  },
+}));
+
+jest.mock('@/lib/hooks/queries/garmin', () => ({
+  useGarminStatus: () => ({
+    data: { connected: false, garmin_user_id: null, last_sync: null },
+    isLoading: false,
+    refetch: jest.fn(),
+  }),
+}));
+
 jest.mock('@/lib/hooks/queries/onboarding', () => ({
   useOnboardingStatus: () => ({
     data: {
@@ -58,8 +72,8 @@ describe('Onboarding connect stage status', () => {
   it('shows Import in progress when Strava connected and ingestion running', async () => {
     render(<OnboardingPage />);
 
-    expect(await screen.findByRole('heading', { name: 'Connect Strava' })).toBeInTheDocument();
-    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Connect Your Watch' })).toBeInTheDocument();
+    expect(await screen.findByText('✓ Connected')).toBeInTheDocument();
     expect(await screen.findByText(/Import in progress/i)).toBeInTheDocument();
     // Connected users get a Continue button (not "Continue Without Connecting").
     expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
