@@ -33,6 +33,37 @@ from . import best_effort_tasks  # noqa: E402
 from . import import_tasks  # noqa: E402
 from . import intelligence_tasks  # noqa: E402
 from . import home_briefing_tasks  # noqa: E402
+
+# SEV-1 guardrail: fail worker startup if home briefing imports are broken.
+try:
+    from routers.home import (
+        _VOICE_FALLBACK,
+        _call_gemini_briefing_sync,
+        _call_opus_briefing_sync,
+        _valid_home_briefing_contract,
+        generate_coach_home_briefing,
+        validate_voice_output,
+    )  # noqa: F401,E402
+
+    # Validate symbol shape at startup so worker refuses to boot if the import
+    # contract drifts.
+    if not all([
+        callable(generate_coach_home_briefing),
+        callable(_call_gemini_briefing_sync),
+        callable(_call_opus_briefing_sync),
+        callable(_valid_home_briefing_contract),
+        callable(validate_voice_output),
+        isinstance(_VOICE_FALLBACK, str),
+    ]):
+        raise ImportError("routers.home briefing symbol contract invalid")
+except ImportError as e:
+    import logging
+    logging.getLogger(__name__).critical(
+        "FATAL: Worker cannot import briefing generator: %s. "
+        "Home briefings will fail for all users.", e
+    )
+    raise SystemExit(1)
+
 # garmin_tasks.py was retired in Phase 2 (Feb 2026). Garmin data arrives via
 # push webhooks dispatched to process_garmin_activity_task (D5) and
 # process_garmin_health_task (D6), defined in their respective task modules.
