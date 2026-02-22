@@ -235,6 +235,12 @@ def _valid_headers(client_id: str = "test-client-id") -> dict:
 
 
 def _minimal_payload(user_id: str = "garmin-user-xyz") -> dict:
+    """Garmin push envelope: array of records keyed by data type."""
+    return {"activities": [{"userId": user_id, "summaryId": "abc-001"}]}
+
+
+def _minimal_record(user_id: str = "garmin-user-xyz") -> dict:
+    """Single record inside the array."""
     return {"userId": user_id, "summaryId": "abc-001"}
 
 
@@ -257,24 +263,27 @@ class TestWebhookAuthViaEndpoints:
         assert resp.status_code == 401
 
     def test_malformed_payload_returns_400(self, client_with_garmin_id):
-        """Non-dict or missing userId → 400."""
+        """Genuinely invalid JSON -> 400."""
         resp = client_with_garmin_id.post(
             "/v1/garmin/webhook/activities",
             headers=_valid_headers(),
             content="not-json",
         )
-        assert resp.status_code in (400, 422)  # FastAPI 422 for parse failure
+        assert resp.status_code in (400, 422)
 
-    def test_missing_user_id_returns_400(self, client_with_garmin_id):
-        resp = client_with_garmin_id.post(
-            "/v1/garmin/webhook/activities",
-            headers=_valid_headers(),
-            json={"summaryId": "no-user-id"},
-        )
-        assert resp.status_code == 400
+    def test_missing_data_key_returns_200(self, client_with_garmin_id):
+        """Unrecognized envelope -> 200 (no retry storm), no task enqueued."""
+        with patch("routers.garmin_webhooks.process_garmin_activity_task") as mock_task:
+            resp = client_with_garmin_id.post(
+                "/v1/garmin/webhook/activities",
+                headers=_valid_headers(),
+                json={"somethingElse": []},
+            )
+        assert resp.status_code == 200
+        mock_task.delay.assert_not_called()
 
     def test_unknown_user_id_returns_200_and_skips(self, client_with_garmin_id):
-        """Unknown userId → 200 (no retry storm), no task enqueued."""
+        """Unknown userId -> 200 (no retry storm), no task enqueued."""
         with patch("routers.garmin_webhooks.process_garmin_activity_task") as mock_task:
             resp = client_with_garmin_id.post(
                 "/v1/garmin/webhook/activities",
@@ -285,7 +294,7 @@ class TestWebhookAuthViaEndpoints:
         mock_task.delay.assert_not_called()
 
     def test_valid_request_returns_200(self, client_with_garmin_id):
-        """Valid header + known userId → 200."""
+        """Valid header + known userId -> 200."""
         mock_athlete = MagicMock()
         mock_athlete.id = "athlete-uuid-123"
         with patch(
@@ -316,6 +325,46 @@ class TestWebhookAuthViaEndpoints:
                     headers=_valid_headers(),
                     json=_minimal_payload(user_id="known-garmin-user"),
                 )
+        mock_task.delay.assert_called_once()
+
+    def test_multiple_records_dispatch_multiple_tasks(self, client_with_garmin_id):
+        """Multiple records in the array -> one task per record."""
+        mock_athlete = MagicMock()
+        mock_athlete.id = "athlete-uuid-123"
+        with patch(
+            "routers.garmin_webhooks._find_athlete_by_garmin_user_id",
+            return_value=mock_athlete,
+        ):
+            with patch(
+                "routers.garmin_webhooks.process_garmin_activity_task"
+            ) as mock_task:
+                client_with_garmin_id.post(
+                    "/v1/garmin/webhook/activities",
+                    headers=_valid_headers(),
+                    json={"activities": [
+                        {"userId": "u1", "summaryId": "s1"},
+                        {"userId": "u1", "summaryId": "s2"},
+                    ]},
+                )
+        assert mock_task.delay.call_count == 2
+
+    def test_flat_payload_fallback_still_works(self, client_with_garmin_id):
+        """Flat dict with userId (legacy/unexpected) is still handled."""
+        mock_athlete = MagicMock()
+        mock_athlete.id = "athlete-uuid-123"
+        with patch(
+            "routers.garmin_webhooks._find_athlete_by_garmin_user_id",
+            return_value=mock_athlete,
+        ):
+            with patch(
+                "routers.garmin_webhooks.process_garmin_activity_task"
+            ) as mock_task:
+                resp = client_with_garmin_id.post(
+                    "/v1/garmin/webhook/activities",
+                    headers=_valid_headers(),
+                    json={"userId": "known-garmin-user", "summaryId": "abc-001"},
+                )
+        assert resp.status_code == 200
         mock_task.delay.assert_called_once()
 
 
@@ -354,7 +403,7 @@ class TestAllTier1Routes:
 
     def test_all_routes_exist_and_reject_unauthenticated(self, client):
         for route in self.TIER1_ROUTES:
-            resp = client.post(route, json={"userId": "x"})
+            resp = client.post(route, json={"test": [{"userId": "x"}]})
             assert resp.status_code == 401, (
                 f"{route} should return 401 for missing auth, got {resp.status_code}"
             )

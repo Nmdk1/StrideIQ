@@ -50,7 +50,7 @@ Tier 2 routes (defined but returning 501 until enabled):
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -69,6 +69,19 @@ from tasks.garmin_webhook_tasks import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/garmin", tags=["garmin-webhooks"])
+
+# Garmin push payloads wrap records in an array keyed by data type.
+# e.g. {"stressDetails": [{"userId": "...", ...}, ...]}
+# This map translates route names to the expected top-level key.
+_ROUTE_TO_DATA_KEY: Dict[str, str] = {
+    "/webhook/activities": "activities",
+    "/webhook/activity-details": "activityDetails",
+    "/webhook/sleeps": "sleeps",
+    "/webhook/hrv": "hrv",
+    "/webhook/stress": "stressDetails",
+    "/webhook/dailies": "dailies",
+    "/webhook/user-metrics": "userMetrics",
+}
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -94,20 +107,22 @@ def _find_athlete_by_garmin_user_id(
 async def _parse_and_validate_push_payload(
     request: Request,
     route: str,
-) -> Dict[str, Any]:
+    data_key: str,
+) -> List[Dict[str, Any]]:
     """
-    Layer 2: Parse JSON body and validate it is a dict with a userId field.
+    Layer 2: Parse JSON body and unwrap the Garmin array envelope.
 
-    Combines JSON parse (returns 400 on invalid JSON) and schema validation.
+    Garmin push payloads use the format:
+        {"dataTypeKey": [{"userId": "...", ...}, {"userId": "...", ...}]}
 
-    NOTE (D4.3): The actual Garmin envelope shape is unconfirmed until the
-    first live webhook capture. This validation assumes a flat dict with
-    `userId` at the top level, matching the REST API schemas in
-    docs/garmin-portal/HEALTH_API.md. If the live payload uses an array or
-    nested envelope, update this function and tests before marking D4 DONE.
+    Each route knows its data_key (e.g. "stressDetails", "dailies").
+    Returns the list of individual records.
+
+    Always returns 200 for unrecognized structures to prevent Garmin
+    retry storms (7-day exponential backoff on non-200).
 
     Raises:
-        HTTPException(400): Body is not valid JSON, not a dict, or missing userId.
+        HTTPException(400): Only for genuinely invalid JSON.
     """
     try:
         payload = await request.json()
@@ -118,40 +133,78 @@ async def _parse_and_validate_push_payload(
         )
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
+    # D4.3 live capture: log raw envelope keys for documentation
+    logger.info(
+        "Garmin webhook envelope",
+        extra={
+            "route": route,
+            "payload_type": type(payload).__name__,
+            "payload_keys": list(payload.keys()) if isinstance(payload, dict) else None,
+            "data_key": data_key,
+        },
+    )
+
     if not isinstance(payload, dict):
         logger.warning(
-            "Garmin webhook: non-dict payload",
+            "Garmin webhook: non-dict payload — accepting to avoid retry storm",
             extra={"route": route, "payload_type": type(payload).__name__},
         )
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid payload: expected JSON object",
-        )
-    if "userId" not in payload:
+        return []
+
+    records = payload.get(data_key)
+
+    if records is None:
+        # Try to find any array value as fallback
+        for key, val in payload.items():
+            if isinstance(val, list) and val:
+                logger.warning(
+                    "Garmin webhook: expected key '%s' not found, using '%s' instead",
+                    data_key,
+                    key,
+                    extra={"route": route, "payload_keys": list(payload.keys())},
+                )
+                records = val
+                break
+
+    if records is None:
+        # Flat dict with userId at top level (legacy assumption / fallback)
+        if "userId" in payload:
+            logger.info(
+                "Garmin webhook: flat payload with userId (no array envelope)",
+                extra={"route": route},
+            )
+            return [payload]
+
         logger.warning(
-            "Garmin webhook: missing userId in payload",
-            extra={"route": route},
+            "Garmin webhook: no records found — accepting to avoid retry storm",
+            extra={"route": route, "payload_keys": list(payload.keys())},
         )
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid payload: missing required field 'userId'",
+        return []
+
+    if not isinstance(records, list):
+        logger.warning(
+            "Garmin webhook: data_key '%s' is not a list — accepting to avoid retry storm",
+            data_key,
+            extra={"route": route, "type": type(records).__name__},
         )
-    return payload
+        return []
+
+    return records
 
 
 def _resolve_athlete(
-    payload: Dict[str, Any],
+    record: Dict[str, Any],
     db: Session,
     route: str,
 ) -> Optional[Athlete]:
     """
-    Layer 3: Resolve athlete from payload userId.
+    Layer 3: Resolve athlete from record userId.
 
-    Unknown userId → log + return None (caller returns 200, no processing).
+    Unknown userId -> log + return None (caller skips, returns 200).
     This prevents Garmin retry storms for users who haven't connected yet
     or have since disconnected.
     """
-    garmin_user_id = payload.get("userId")
+    garmin_user_id = record.get("userId")
     athlete = _find_athlete_by_garmin_user_id(garmin_user_id, db)
     if not athlete:
         logger.warning(
@@ -181,20 +234,22 @@ async def webhook_activities(
     Dispatch: process_garmin_activity_task (D5)
     Delivery mode: push
     """
-    payload = await _parse_and_validate_push_payload(request, route="/webhook/activities")
-
-    athlete = _resolve_athlete(payload, db, route="/webhook/activities")
-    if not athlete:
-        return {"status": "ok"}
-
-    process_garmin_activity_task.delay(str(athlete.id), payload)
-    logger.info(
-        "Garmin webhook: activity queued",
-        extra={
-            "athlete_id": str(athlete.id),
-            "summary_id": payload.get("summaryId"),
-        },
+    records = await _parse_and_validate_push_payload(
+        request, route="/webhook/activities", data_key="activities",
     )
+
+    for record in records:
+        athlete = _resolve_athlete(record, db, route="/webhook/activities")
+        if not athlete:
+            continue
+        process_garmin_activity_task.delay(str(athlete.id), record)
+        logger.info(
+            "Garmin webhook: activity queued",
+            extra={
+                "athlete_id": str(athlete.id),
+                "summary_id": record.get("summaryId"),
+            },
+        )
     return {"status": "ok"}
 
 
@@ -214,13 +269,15 @@ async def webhook_activity_details(
     Dispatch: process_garmin_activity_detail_task (D5)
     Delivery mode: push
     """
-    payload = await _parse_and_validate_push_payload(request, route="/webhook/activity-details")
+    records = await _parse_and_validate_push_payload(
+        request, route="/webhook/activity-details", data_key="activityDetails",
+    )
 
-    athlete = _resolve_athlete(payload, db, route="/webhook/activity-details")
-    if not athlete:
-        return {"status": "ok"}
-
-    process_garmin_activity_detail_task.delay(str(athlete.id), payload)
+    for record in records:
+        athlete = _resolve_athlete(record, db, route="/webhook/activity-details")
+        if not athlete:
+            continue
+        process_garmin_activity_detail_task.delay(str(athlete.id), record)
     return {"status": "ok"}
 
 
@@ -245,13 +302,15 @@ async def webhook_sleeps(
     Delivery mode: push
     CalendarDate rule: calendarDate is the wakeup morning, not prior night (L1).
     """
-    payload = await _parse_and_validate_push_payload(request, route="/webhook/sleeps")
+    records = await _parse_and_validate_push_payload(
+        request, route="/webhook/sleeps", data_key="sleeps",
+    )
 
-    athlete = _resolve_athlete(payload, db, route="/webhook/sleeps")
-    if not athlete:
-        return {"status": "ok"}
-
-    process_garmin_health_task.delay(str(athlete.id), "sleeps", payload)
+    for record in records:
+        athlete = _resolve_athlete(record, db, route="/webhook/sleeps")
+        if not athlete:
+            continue
+        process_garmin_health_task.delay(str(athlete.id), "sleeps", record)
     return {"status": "ok"}
 
 
@@ -271,13 +330,15 @@ async def webhook_hrv(
     Dispatch: process_garmin_health_task (D6) with data_type="hrv"
     Delivery mode: push
     """
-    payload = await _parse_and_validate_push_payload(request, route="/webhook/hrv")
+    records = await _parse_and_validate_push_payload(
+        request, route="/webhook/hrv", data_key="hrv",
+    )
 
-    athlete = _resolve_athlete(payload, db, route="/webhook/hrv")
-    if not athlete:
-        return {"status": "ok"}
-
-    process_garmin_health_task.delay(str(athlete.id), "hrv", payload)
+    for record in records:
+        athlete = _resolve_athlete(record, db, route="/webhook/hrv")
+        if not athlete:
+            continue
+        process_garmin_health_task.delay(str(athlete.id), "hrv", record)
     return {"status": "ok"}
 
 
@@ -296,16 +357,16 @@ async def webhook_stress(
 
     Dispatch: process_garmin_health_task (D6) with data_type="stress"
     Delivery mode: push
-    Note: negative stress values (-1 to -5) indicate data quality issues.
-    Store as-is; filter at query time (WHERE avg_stress > 0).
     """
-    payload = await _parse_and_validate_push_payload(request, route="/webhook/stress")
+    records = await _parse_and_validate_push_payload(
+        request, route="/webhook/stress", data_key="stressDetails",
+    )
 
-    athlete = _resolve_athlete(payload, db, route="/webhook/stress")
-    if not athlete:
-        return {"status": "ok"}
-
-    process_garmin_health_task.delay(str(athlete.id), "stress", payload)
+    for record in records:
+        athlete = _resolve_athlete(record, db, route="/webhook/stress")
+        if not athlete:
+            continue
+        process_garmin_health_task.delay(str(athlete.id), "stress", record)
     return {"status": "ok"}
 
 
@@ -325,13 +386,15 @@ async def webhook_dailies(
     Dispatch: process_garmin_health_task (D6) with data_type="dailies"
     Delivery mode: push
     """
-    payload = await _parse_and_validate_push_payload(request, route="/webhook/dailies")
+    records = await _parse_and_validate_push_payload(
+        request, route="/webhook/dailies", data_key="dailies",
+    )
 
-    athlete = _resolve_athlete(payload, db, route="/webhook/dailies")
-    if not athlete:
-        return {"status": "ok"}
-
-    process_garmin_health_task.delay(str(athlete.id), "dailies", payload)
+    for record in records:
+        athlete = _resolve_athlete(record, db, route="/webhook/dailies")
+        if not athlete:
+            continue
+        process_garmin_health_task.delay(str(athlete.id), "dailies", record)
     return {"status": "ok"}
 
 
@@ -350,16 +413,16 @@ async def webhook_user_metrics(
 
     Dispatch: process_garmin_health_task (D6) with data_type="user-metrics"
     Delivery mode: push
-    Note: only vo2Max is captured in Tier 1. vo2MaxCycling and fitnessAge
-    are deferred per [PV-6].
     """
-    payload = await _parse_and_validate_push_payload(request, route="/webhook/user-metrics")
+    records = await _parse_and_validate_push_payload(
+        request, route="/webhook/user-metrics", data_key="userMetrics",
+    )
 
-    athlete = _resolve_athlete(payload, db, route="/webhook/user-metrics")
-    if not athlete:
-        return {"status": "ok"}
-
-    process_garmin_health_task.delay(str(athlete.id), "user-metrics", payload)
+    for record in records:
+        athlete = _resolve_athlete(record, db, route="/webhook/user-metrics")
+        if not athlete:
+            continue
+        process_garmin_health_task.delay(str(athlete.id), "user-metrics", record)
     return {"status": "ok"}
 
 
