@@ -60,6 +60,13 @@ function formatRelativeTime(isoString: string): string {
   return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+function formatDeviceName(raw: string): string {
+  return raw
+    .replace(/([a-z])(\d)/g, '$1 $2')
+    .replace(/(\d)([a-z])/g, '$1 $2')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 // ---------------------------------------------------------------------------
 // MiniEffortCanvas — compact effort gradient for the hero
 // ---------------------------------------------------------------------------
@@ -171,6 +178,12 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
                 {Math.round(lastRun.average_hr)} bpm
               </>
             )}
+            {lastRun.provider === 'garmin' && lastRun.device_name && (
+              <>
+                <span className="mx-1.5 text-slate-600">&middot;</span>
+                <span className="text-slate-500">{formatDeviceName(lastRun.device_name)}</span>
+              </>
+            )}
           </p>
           <ArrowRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
         </div>
@@ -202,6 +215,12 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
             <MetricsPill label="Avg HR" value={`${Math.round(lastRun.average_hr)} bpm`} />
           )}
         </div>
+
+        {lastRun.provider === 'garmin' && lastRun.device_name && (
+          <p className="text-xs text-slate-500">
+            {formatDeviceName(lastRun.device_name)} via Garmin Connect
+          </p>
+        )}
 
         {/* View Run link */}
         <div className="flex justify-end pt-1">

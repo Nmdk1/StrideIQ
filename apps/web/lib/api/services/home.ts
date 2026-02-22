@@ -111,6 +111,8 @@ export interface LastRun {
   confidence?: number | null;
   segments?: LastRunSegment[] | null;
   pace_per_km?: number | null;  // Derived from distance/time (s/km)
+  provider?: string | null;  // 'strava' | 'garmin' | 'manual'
+  device_name?: string | null;  // Garmin device name, e.g. 'forerunner965'
 }
 
 export interface HomeData {
@@ -119,6 +121,7 @@ export interface HomeData {
   week: WeekProgress;
   hero_narrative?: string;  // ADR-033: Personalized hero sentence
   strava_connected: boolean;
+  garmin_connected: boolean;
   has_any_activities: boolean;
   total_activities: number;
   last_sync?: string;

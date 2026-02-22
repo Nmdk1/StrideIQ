@@ -50,6 +50,8 @@ interface Activity {
   average_temp_c: number | null;
   temperature_f: number | null;
   strava_activity_id: string | null;
+  provider: string | null;
+  device_name: string | null;
   
   // Workout classification
   workout_type: string | null;
@@ -310,6 +312,12 @@ export default function ActivityDetailPage() {
               <MetricPill label="Workout" value={activity.workout_type?.replace(/_/g, ' ') || '--'} secondary />
             </div>
           )}
+          {/* Device attribution — shown when available */}
+          {activity.provider === 'garmin' && activity.device_name && (
+            <p className="text-xs text-slate-500 mt-2">
+              Recorded on {formatDeviceName(activity.device_name)} via Garmin Connect
+            </p>
+          )}
         </div>
 
         {/* ── A6: Collapsible details (Plan Comparison through Narrative Context) ── */}
@@ -402,6 +410,15 @@ export default function ActivityDetailPage() {
       </div>
     </div>
   );
+}
+
+// ============ Helpers ============
+
+function formatDeviceName(raw: string): string {
+  return raw
+    .replace(/([a-z])(\d)/g, '$1 $2')
+    .replace(/(\d)([a-z])/g, '$1 $2')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ============ Sub-Components ============

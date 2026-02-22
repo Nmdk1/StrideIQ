@@ -344,7 +344,9 @@ def get_activity(
         "average_cadence": derived_avg_cadence,
         "total_elevation_gain_m": float(activity.total_elevation_gain) if activity.total_elevation_gain else None,
         "average_temp_c": float(activity.temperature_f - 32) * 5/9 if activity.temperature_f else None,
+        "provider": activity.provider,
         "strava_activity_id": activity.external_activity_id if activity.provider == "strava" else None,
+        "device_name": activity.device_name,
         
         # Workout classification
         "workout_type": activity.workout_type,

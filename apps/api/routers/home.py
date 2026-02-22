@@ -167,6 +167,8 @@ class LastRun(BaseModel):
     confidence: Optional[float] = None
     segments: Optional[List[LastRunSegment]] = None  # For segment band overlay
     pace_per_km: Optional[float] = None  # Derived from distance/time (s/km)
+    provider: Optional[str] = None  # 'strava' | 'garmin' | 'manual'
+    device_name: Optional[str] = None  # Garmin device name, e.g. 'forerunner965'
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -178,6 +180,7 @@ class HomeResponse(BaseModel):
     week: WeekProgress
     hero_narrative: Optional[str] = None  # Hero sentence for first-3-seconds impact (ADR-033)
     strava_connected: bool = False  # Whether user has connected Strava
+    garmin_connected: bool = False  # Whether user has connected Garmin Connect
     has_any_activities: bool = False  # Whether user has any synced activities
     total_activities: int = 0  # Total number of activities
     last_sync: Optional[str] = None  # When Strava was last synced
@@ -1445,6 +1448,8 @@ def compute_last_run(
         average_hr=latest.avg_hr,
         stream_status=stream_status,
         pace_per_km=pace_per_km,
+        provider=getattr(latest, "provider", None),
+        device_name=getattr(latest, "device_name", None),
     )
 
     # Enrich with stream analysis data when available — serve from cache
@@ -1761,8 +1766,9 @@ async def get_home_data(
         load_trend=load_trend
     )
 
-    # Check Strava connection and activity count
+    # Check Strava and Garmin connection status
     strava_connected = bool(current_user.strava_access_token)
+    garmin_connected = bool(current_user.garmin_connected and current_user.garmin_oauth_access_token)
 
     # Get total activity count
     total_activities = db.query(Activity).filter(
@@ -2044,6 +2050,7 @@ async def get_home_data(
         week=week_progress,
         hero_narrative=hero_narrative,
         strava_connected=strava_connected,
+        garmin_connected=garmin_connected,
         has_any_activities=has_any_activities,
         total_activities=total_activities,
         last_sync=last_sync,

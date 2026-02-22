@@ -249,6 +249,7 @@ def get_garmin_status(
 
     return {
         "connected": bool(current_user.garmin_connected),
+        "garmin_user_id": current_user.garmin_user_id,
         "last_sync": last_sync,
     }
 

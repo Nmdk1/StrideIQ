@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { StravaConnection } from '@/components/integrations/StravaConnection';
-import { GarminFileImport } from '@/components/integrations/GarminFileImport';
+import { GarminConnection } from '@/components/integrations/GarminConnection';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -217,7 +217,7 @@ export default function SettingsPage() {
               <CardContent className="space-y-4">
                 <StravaConnection />
 
-                <GarminFileImport />
+                <GarminConnection />
               </CardContent>
             </Card>
 
