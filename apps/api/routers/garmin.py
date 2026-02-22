@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from core.auth import get_current_user
 from core.config import settings
 from core.database import get_db
+from core.feature_flags import is_feature_enabled
 from models import Activity, ActivityStream, Athlete, ConsentAuditLog, GarminDay
 from services.garmin_oauth import (
     build_auth_url,
@@ -84,6 +85,7 @@ def _web_redirect(request: Request, path: str) -> str:
 def get_auth_url(
     return_to: str = Query(default="/settings", description="Frontend path to redirect to after connect"),
     current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Return the Garmin OAuth 2.0 PKCE authorization URL.
@@ -93,7 +95,15 @@ def get_auth_url(
 
     The code_verifier is embedded in the signed state token so it survives
     the browser round-trip without server-side session storage.
+
+    Access is gated by the `garmin_connect_enabled` feature flag.
     """
+    if not is_feature_enabled("garmin_connect_enabled", str(current_user.id), db):
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "garmin_not_available", "message": "Garmin Connect is not available for your account."},
+        )
+
     if not settings.GARMIN_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Garmin integration not configured")
 
@@ -159,6 +169,16 @@ def garmin_callback(
     athlete = db.query(Athlete).filter(Athlete.id == athlete_id_str).first()
     if not athlete:
         return RedirectResponse(url="/settings?garmin=error&reason=athlete_not_found", status_code=302)
+
+    # --- Feature flag gate (defense in depth) ---
+    # Prevents token storage and backfill for non-allowlisted athletes even if
+    # they somehow reach the callback (e.g., reused URL after flag change).
+    if not is_feature_enabled("garmin_connect_enabled", str(athlete.id), db):
+        logger.warning(
+            "Garmin callback blocked by feature flag for athlete %s", athlete_id_str
+        )
+        redirect_url = _web_redirect(request, f"{return_to}?garmin=error&reason=not_available")
+        return RedirectResponse(url=redirect_url, status_code=302)
 
     # --- Token exchange ---
     try:
@@ -237,11 +257,16 @@ def garmin_callback(
 @router.get("/status")
 def get_garmin_status(
     current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Return the athlete's Garmin connection status.
 
-    Response: {connected: bool, last_sync: ISO-8601 string or null}
+    Response:
+        connected: bool
+        garmin_user_id: str | null
+        last_sync: ISO-8601 string | null
+        garmin_connect_available: bool  — whether the athlete can initiate new connects
     """
     last_sync = None
     if current_user.last_garmin_sync:
@@ -251,6 +276,9 @@ def get_garmin_status(
         "connected": bool(current_user.garmin_connected),
         "garmin_user_id": current_user.garmin_user_id,
         "last_sync": last_sync,
+        "garmin_connect_available": is_feature_enabled(
+            "garmin_connect_enabled", str(current_user.id), db
+        ),
     }
 
 

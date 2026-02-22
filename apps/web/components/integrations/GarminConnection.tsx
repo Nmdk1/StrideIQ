@@ -77,6 +77,13 @@ export function GarminConnection() {
   }
 
   const isConnected = status?.connected ?? false;
+  const canConnect = status?.garmin_connect_available ?? false;
+
+  // If the flag is off and the athlete is not connected, render nothing.
+  // Connected athletes always see their connected state + disconnect option.
+  if (!isConnected && !canConnect && status !== undefined) {
+    return null;
+  }
 
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">

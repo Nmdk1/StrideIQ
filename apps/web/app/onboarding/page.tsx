@@ -840,6 +840,7 @@ function ConnectStravaStage({
   const bootstrap = useBootstrapOnboarding();
   const isStravaConnected = !!status?.strava_connected;
   const isGarminConnected = !!garminStatus?.connected;
+  const garminAvailable = !!garminStatus?.garmin_connect_available;
   const isAnyConnected = isStravaConnected || isGarminConnected;
   const lastIndexStatus = status?.ingestion_state?.last_index_status || null;
 
@@ -975,31 +976,33 @@ function ConnectStravaStage({
           )}
         </div>
 
-        {/* Garmin Connect */}
-        <div className="bg-slate-900 rounded p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <svg className="w-8 h-8" viewBox="0 0 24 24" fill="#007CC3">
-              <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 1.8a8.2 8.2 0 110 16.4A8.2 8.2 0 0112 3.8zm.9 3.5h-2.3v5.7h5.7v-2.3h-3.4V7.3z" />
-            </svg>
-            <div>
-              <p className="font-medium text-white">Garmin Connect</p>
-              <p className="text-sm text-slate-400">Activities, sleep, HRV, daily wellness</p>
+        {/* Garmin Connect — only shown when flag is on OR already connected */}
+        {(garminAvailable || isGarminConnected) && (
+          <div className="bg-slate-900 rounded p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <svg className="w-8 h-8" viewBox="0 0 24 24" fill="#007CC3">
+                <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 1.8a8.2 8.2 0 110 16.4A8.2 8.2 0 0112 3.8zm.9 3.5h-2.3v5.7h5.7v-2.3h-3.4V7.3z" />
+              </svg>
+              <div>
+                <p className="font-medium text-white">Garmin Connect</p>
+                <p className="text-sm text-slate-400">Activities, sleep, HRV, daily wellness</p>
+              </div>
             </div>
+            <button
+              onClick={handleConnectGarmin}
+              disabled={isGarminConnected}
+              className="w-full px-4 py-2 rounded text-white font-medium transition-colors disabled:bg-slate-700 disabled:text-green-400"
+              style={isGarminConnected ? {} : { backgroundColor: '#007CC3' }}
+            >
+              {isGarminConnected ? '✓ Connected' : 'Connect Garmin'}
+            </button>
+            {isGarminConnected && (
+              <div className="mt-3 text-xs text-slate-400">
+                Connected. A 90-day backfill is running in the background.
+              </div>
+            )}
           </div>
-          <button
-            onClick={handleConnectGarmin}
-            disabled={isGarminConnected}
-            className="w-full px-4 py-2 rounded text-white font-medium transition-colors disabled:bg-slate-700 disabled:text-green-400"
-            style={isGarminConnected ? {} : { backgroundColor: '#007CC3' }}
-          >
-            {isGarminConnected ? '✓ Connected' : 'Connect Garmin'}
-          </button>
-          {isGarminConnected && (
-            <div className="mt-3 text-xs text-slate-400">
-              Connected. A 90-day backfill is running in the background.
-            </div>
-          )}
-        </div>
+        )}
 
         <p className="text-xs text-slate-500">
           You can connect or disconnect anytime from Settings.

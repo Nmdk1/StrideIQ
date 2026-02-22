@@ -8,6 +8,8 @@ export interface GarminStatus {
   connected: boolean;
   garmin_user_id?: string | null;
   last_sync?: string | null;
+  /** Whether this athlete can initiate a new Garmin Connect (feature flag). */
+  garmin_connect_available?: boolean;
 }
 
 export interface GarminAuthUrl {
