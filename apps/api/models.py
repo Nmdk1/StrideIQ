@@ -413,7 +413,22 @@ class Activity(Base):
     stream_fetch_retry_count = Column(Integer, nullable=False, default=0, server_default="0")
     stream_fetch_deferred_until = Column(DateTime(timezone=True), nullable=True)
 
+    # --- GARMIN ACTIVITY OFFICIAL FIELDS (D3 / garmin_004) ---
+    # From the official ClientActivity JSON schema (portal verified Feb 2026).
+    # garmin_activity_id is Garmin's native int64 — different from summaryId
+    # stored in external_activity_id. Used to link summary → detail payloads.
+    garmin_activity_id = Column(BigInteger, nullable=True)
+    avg_pace_min_per_km = Column(Float, nullable=True)
+    max_pace_min_per_km = Column(Float, nullable=True)
+    steps = Column(Integer, nullable=True)          # per-activity step count
+    device_name = Column(Text, nullable=True)
+    start_lat = Column(Float, nullable=True)
+    start_lng = Column(Float, nullable=True)
+
     # --- GARMIN RUNNING DYNAMICS (D1.2) ---
+    # Columns present in DB (nullable) but NOT populated by Tier 1 adapter.
+    # Running dynamics exist only in FIT files, not in the JSON Activity API.
+    # The D4.3 live webhook capture will confirm if any appear in push payloads.
     avg_cadence = Column(Integer, nullable=True)
     max_cadence = Column(Integer, nullable=True)
     avg_stride_length_m = Column(Float, nullable=True)
