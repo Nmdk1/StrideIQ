@@ -300,9 +300,10 @@ Following the Strava pattern in `routers/strava.py`. All endpoints in `routers/g
 
 **[PORTAL VERIFY]** Confirm OAuth version (2.0 vs 1.0a) in eval environment before implementing D2.
 
-**Consent audit log [G5-M8]:** Garmin connect is a material change to what data enters AI pipelines. Log to `consent_audit_log`:
-- On successful connect: `event_type="garmin_connected"`, `action="connect"`, `athlete_id`, `ip_address`, `source="settings"`
+**Consent audit log [G5-M8]:** Garmin connect is a material change to what data enters AI pipelines. Log to `consent_audit_log` using the existing schema — no migration needed:
+- On successful connect: `consent_type="integration"`, `action="garmin_connected"`, `source="settings"`, `athlete_id`, `ip_address`
 - This is an informational audit entry — not an AI consent grant. The AI consent gate (`has_ai_consent()`) is separate and already in place.
+- `consent_type="integration"` is a new value alongside the existing `"ai_processing"` type. The model docstring notes that `consent_type` is extensible.
 
 **AC:**
 - `GET /v1/garmin/auth-url` returns 200 with `{auth_url: "https://connect.garmin.com/oauthConfirm?..."}` for authenticated athlete
@@ -311,7 +312,7 @@ Following the Strava pattern in `routers/strava.py`. All endpoints in `routers/g
 - `GET /v1/garmin/status` returns `{connected: true, last_sync: "..."}` for connected athlete
 - OAuth state parameter verified on callback (CSRF protection)
 - Tokens stored encrypted — `garmin_oauth_access_token` and `garmin_oauth_refresh_token` are never stored in plaintext
-- Successful connect creates a `consent_audit_log` entry with `event_type="garmin_connected"`
+- Successful connect creates a `consent_audit_log` entry with `consent_type="integration"`, `action="garmin_connected"`, `source="settings"`
 
 #### D2.2: Token refresh [M3]
 
@@ -345,7 +346,7 @@ Mirror `ensure_fresh_token` pattern from Strava.
 3. Reset `AthleteIngestionState` for Garmin sync (if the model tracks Garmin sync state separately from Strava). [G5-L4]
 4. Delete all `GarminDay` rows for this athlete (wellness data is sourced entirely from Garmin — no other provider)
 5. Delete Activities with `provider="garmin"` **on explicit disconnect only**. On token expiry/auth failure (soft disconnect), retain activities — they still represent real training data. On explicit athlete-initiated disconnect, delete.
-6. Log to `consent_audit_log`: `event_type="garmin_disconnected"`, `action="disconnect"`, `athlete_id`, `ip_address`, `source="settings"` [G5-M8]
+6. Log to `consent_audit_log`: `consent_type="integration"`, `action="garmin_disconnected"`, `source="settings"`, `athlete_id`, `ip_address` [G5-M8]
 
 **Soft disconnect (token failure, not user-initiated):** Sets `garmin_connected=False`, clears tokens, does NOT delete `GarminDay` or activities. The athlete's historical data is preserved. They reconnect to resume sync.
 
@@ -363,7 +364,7 @@ Both deletions must happen before the parent `Activity` rows are deleted (FK con
 - After disconnect: `GarminDay` rows for the athlete are absent from the database
 - After disconnect: Activities with `provider="garmin"` are absent for the athlete
 - After disconnect: calling disconnect again returns 200 (idempotent)
-- Disconnect creates a `consent_audit_log` entry with `event_type="garmin_disconnected"`
+- Disconnect creates a `consent_audit_log` entry with `consent_type="integration"`, `action="garmin_disconnected"`, `source="settings"`
 - `DELETE /v1/gdpr/delete-account` includes `GarminDay`, `ActivityStream`, and Garmin-provider activities in purge scope
 - Integration test: connect athlete → create `GarminDay` rows → explicit disconnect → verify `GarminDay` rows absent → verify Garmin activities absent → disconnect again → verify 200
 - Integration test: GDPR delete for athlete with Garmin data → `GarminDay` rows absent AND `ActivityStream` rows absent
@@ -663,7 +664,7 @@ These tests must exist and pass before Phase 2 is implementation-complete.
 | Test | Scenario | Expected |
 |---|---|---|
 | `test_garmin_wins_over_strava_on_dedup` | Existing Strava activity. Garmin activity arrives with matching time/distance. | Single Activity row, `provider="garmin"` |
-| `test_no_duplicate_created_on_garmin_strava_overlap` | Same as above. | `Activity.objects.count()` unchanged after Garmin ingest |
+| `test_no_duplicate_created_on_garmin_strava_overlap` | Same as above. | Single Activity row exists — row count unchanged after Garmin ingest |
 | `test_strava_kept_when_garmin_not_match` | Existing Strava activity. Garmin activity with different time/distance. | Two separate Activity rows — different runs |
 | `test_garmin_only_athlete` | Athlete with no Strava. Garmin activity arrives. | Activity row created with `provider="garmin"` |
 
@@ -697,11 +698,11 @@ These tests must exist and pass before Phase 2 is implementation-complete.
 ### Category 2: Integration Tests
 
 - `test_garmin_oauth_connect_flow` — full OAuth: auth-url → callback → status connected
-- `test_garmin_connect_logs_audit_entry` — connect → `consent_audit_log` row with `event_type="garmin_connected"` [G5-M8]
+- `test_garmin_connect_logs_audit_entry` — connect → `consent_audit_log` row with `consent_type="integration"`, `action="garmin_connected"` [G5-M8]
 - `test_garmin_disconnect_clears_tokens` — disconnect → tokens null, `garmin_connected=False`
 - `test_garmin_disconnect_purges_garmin_day_rows` — disconnect → `GarminDay` rows absent
 - `test_garmin_disconnect_purges_provider_garmin_activities` — explicit disconnect → Garmin activities absent
-- `test_garmin_disconnect_logs_audit_entry` — disconnect → `consent_audit_log` row with `event_type="garmin_disconnected"` [G5-M8]
+- `test_garmin_disconnect_logs_audit_entry` — disconnect → `consent_audit_log` row with `consent_type="integration"`, `action="garmin_disconnected"` [G5-M8]
 - `test_garmin_disconnect_idempotent` — disconnect twice → 200 both times
 - `test_gdpr_delete_includes_garmin_day_and_activity_stream` — GDPR delete → `GarminDay` rows absent AND `ActivityStream` rows absent [G5-H5]
 - `test_garmin_day_upsert` — insert daily summary → insert sleep for same date → single row with merged fields
