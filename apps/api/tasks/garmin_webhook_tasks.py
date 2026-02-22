@@ -42,6 +42,7 @@ from services.garmin_adapter import (
     adapt_user_metrics,
 )
 from services.activity_deduplication import match_activities, TIME_WINDOW_S
+from services.garmin_backfill import request_garmin_backfill
 
 logger = logging.getLogger(__name__)
 
@@ -586,7 +587,60 @@ def process_garmin_activity_detail_task(
 
 
 # ---------------------------------------------------------------------------
-# D6 stubs — implemented in D6
+# D7: Initial backfill task
+# ---------------------------------------------------------------------------
+
+@celery_app.task(
+    name="request_garmin_backfill_task",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=300,  # 5-minute retry on transient failures
+)
+def request_garmin_backfill_task(self, athlete_id: str) -> Dict[str, Any]:
+    """
+    Request a 90-day Garmin backfill for a newly connected athlete.
+
+    Triggered automatically after a successful OAuth callback (D7.2).
+    Calls each Tier 1 backfill endpoint sequentially — Garmin returns 202
+    Accepted immediately and pushes historical data to the D4 webhook endpoints
+    asynchronously. The D5/D6 handlers process arriving data identically to
+    live webhook pushes.
+
+    Does NOT block the OAuth callback or wait for any data to arrive.
+
+    Args:
+        athlete_id: Internal athlete UUID string.
+
+    Returns:
+        {"status": "ok"|"skipped"|"aborted", "requested": int, "failed": int}
+    """
+    db = get_db_sync()
+    try:
+        athlete = _find_athlete_in_db(athlete_id, db)
+        if athlete is None:
+            logger.warning(
+                "request_garmin_backfill_task: athlete %s not found", athlete_id
+            )
+            return {"status": "skipped", "reason": "athlete_not_found"}
+
+        result = request_garmin_backfill(athlete, db)
+        logger.info(
+            "request_garmin_backfill_task: athlete=%s result=%s", athlete_id, result
+        )
+        return result
+
+    except Exception as exc:
+        db.rollback()
+        logger.exception(
+            "request_garmin_backfill_task failed for athlete %s: %s", athlete_id, exc
+        )
+        raise self.retry(exc=exc)
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# D6: health tasks — implemented in D6
 # ---------------------------------------------------------------------------
 
 @celery_app.task(

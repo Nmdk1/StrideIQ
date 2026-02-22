@@ -42,6 +42,7 @@ from services.garmin_oauth import (
 )
 from services.oauth_state import create_oauth_state, verify_oauth_state
 from services.token_encryption import decrypt_token
+from tasks.garmin_webhook_tasks import request_garmin_backfill_task
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +211,19 @@ def garmin_callback(
         db.commit()
     except Exception as exc:
         logger.error(f"Failed to write Garmin connect audit log for athlete {athlete_id_str}: {exc}")
+
+    # --- Trigger 90-day initial backfill (D7) — fire-and-forget ---
+    # Backfill is async: Garmin returns 202 per endpoint and pushes historical
+    # data to the D4 webhook endpoints. The callback does not wait for backfill.
+    try:
+        request_garmin_backfill_task.delay(athlete_id_str)
+        logger.info("Garmin backfill task enqueued for athlete %s", athlete_id_str)
+    except Exception as exc:
+        logger.warning(
+            "Could not enqueue Garmin backfill task for athlete %s: %s",
+            athlete_id_str,
+            exc,
+        )
 
     sep = "&" if "?" in return_to else "?"
     redirect_url = _web_redirect(request, f"{return_to}{sep}garmin=connected")
