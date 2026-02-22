@@ -2642,8 +2642,8 @@ ATHLETE BRIEF:
                     athlete_state=athlete_state,
                     conversation_context=conversation_context,
                 )
-                
-                # Gemini returned a result (success or error)
+
+                # Gemini returned success.
                 if not gemini_result.get("error"):
                     # Normalize for UI + trust contract (Coach Output Contract v1):
                     # - strip internal labels (fact capsule, response contract, etc.)
@@ -2661,7 +2661,42 @@ ATHLETE BRIEF:
 
                     # Save to PostgreSQL (CoachChat) for conversation continuity
                     self._save_chat_messages(athlete_id, message, gemini_result.get("response", ""))
-                
+
+                    gemini_result["thread_id"] = thread_id
+                    return gemini_result
+
+                # Reliability hardening:
+                # If Gemini fails but Anthropic is configured, attempt Opus fallback
+                # before surfacing "temporarily unavailable" to the athlete.
+                if self.anthropic_client:
+                    logger.warning(
+                        "Gemini query failed for %s; attempting Opus fallback. "
+                        "error_detail=%s",
+                        athlete_id,
+                        gemini_result.get("error_detail"),
+                    )
+                    opus_result = await self.query_opus(
+                        athlete_id=athlete_id,
+                        message=message,
+                        athlete_state=self._build_athlete_state_for_opus(athlete_id),
+                        conversation_context=conversation_context,
+                    )
+                    if not opus_result.get("error"):
+                        raw_response = opus_result.get("response", "")
+                        try:
+                            normalized = self._normalize_response_for_ui(
+                                user_message=message,
+                                assistant_message=raw_response,
+                            )
+                            opus_result["response"] = normalized
+                        except Exception as e:
+                            logger.warning(f"Coach response normalization failed: {e}")
+                        self._save_chat_messages(athlete_id, message, opus_result.get("response", ""))
+
+                    opus_result["thread_id"] = thread_id
+                    return opus_result
+
+                # No Anthropic fallback available; return Gemini failure as-is.
                 gemini_result["thread_id"] = thread_id
                 return gemini_result
 
