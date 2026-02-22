@@ -1,7 +1,8 @@
 # Phase 2: Garmin Connect Integration — Acceptance Criteria
 
 **Date:** February 22, 2026
-**Status:** DRAFT — awaiting Gate 5 advisor review and Gate 6 founder approval
+**Revised:** February 22, 2026 — Gate 5 must-fix items applied (both advisors)
+**Status:** REVISED — ready for Gate 6 founder approval
 **Branch:** `feature/garmin-oauth` (all implementation work — never `main`)
 **Input documents:**
 - `docs/GARMIN_API_DISCOVERY.md` (field mappings, architecture decisions)
@@ -9,34 +10,53 @@
 - `docs/ADVISOR_HANDOFF_GARMIN_REVIEW.md` (10 must-fix items from Gate 2)
 - `docs/SESSION_HANDOFF_2026-02-19_GARMIN_BUILDER_NOTE.md`
 
-**Must-fix items addressed:** All 10 from Gate 2 review. Traceability markers: [H1]–[H4], [M1]–[M5], [L1]–[L3], [F1]–[F2].
+**Gate 2 must-fix items addressed:** All 10. Traceability markers: [H1]–[H4], [M1]–[M5], [L1]–[L3], [F1]–[F2].
+**Gate 5 must-fix items addressed:** All 10 (5 from Advisor 1, 5 from Advisor 2). Traceability markers: [G5-H5], [G5-H6], [G5-M1]–[G5-M3], [G5-M6]–[G5-M8].
 
 ---
 
-## 0. Pre-Build Gates (non-negotiable — all must clear before first commit)
+## 0. Pre-Build Gates
 
-### Gate 0A: 30-Day Display Format Notice [M5]
+### Gate 0A: 30-Day Display Format Notice [M5] — MERGE GATE ONLY [G5-H1]
 
-**Hard rollout gate. Not a checklist item — a calendar dependency.**
+**Hard rollout gate. Not a blocker on implementation commits — a blocker on merging to `main`.**
+
+Implementation and testing on `feature/garmin-oauth` may proceed before this gate clears. Merging to `main` and deploying to production are blocked until this gate is verified.
 
 The Garmin developer agreement requires 30 days notice to `connect-support@developer.garmin.com` before any screen displaying Garmin-sourced data goes live. This notice must include mockups of:
 - Any activity display screen where `provider="garmin"` data is shown
 - Any wellness/health data display (sleep, HRV, stress, body battery)
 - Any attribution placement for Garmin-sourced data
 
-**Gate cleared when:** Garmin acknowledges receipt of notice AND 30 calendar days have elapsed. The `feature/garmin-oauth` branch may be built and tested on feature branch only until this gate clears. Merging to `main` is blocked until this gate is verified.
+**Gate cleared when:** Garmin acknowledges receipt of notice AND 30 calendar days have elapsed.
 
 Responsibility: Founder sends notice. Builder provides mockups for notice package during Phase 2 build.
 
-### Gate 0B: AI Consent Infrastructure Verified
+### Gate 0B: AI Consent Infrastructure Verified — BEFORE FIRST COMMIT
 
-Phase 1 shipped. `has_ai_consent()` gates all 8 LLM call sites. Before any Garmin-sourced data enters an LLM pipeline, verify that `has_ai_consent()` is evaluated against the same athlete record that owns the Garmin connection. No Garmin data reaches an LLM for athletes who have not granted consent.
+Phase 1 shipped. `has_ai_consent()` gates all 8 LLM call sites. Before writing any Garmin sync task code, verify that `has_ai_consent()` is evaluated against the same athlete record that owns the Garmin connection. No Garmin data may reach an LLM for athletes who have not granted consent.
 
 **Gate cleared when:** Builder confirms `has_ai_consent()` is called before any Garmin-triggered LLM processing. No new code required — confirm existing gating covers the new Garmin task path.
 
-### Gate 0C: Feature Branch Isolation
+### Gate 0C: Feature Branch Isolation — BEFORE FIRST COMMIT
 
 All Garmin code lives on `feature/garmin-oauth`. No commits to `main`. CI runs on `main` and `develop` — Garmin work must not trigger CI failures on those branches during development.
+
+### Gate 0D: [PORTAL VERIFY] Dependency Resolution — BEFORE AFFECTED DELIVERABLE [G5-M2]
+
+Several deliverables depend on facts only discoverable in the eval environment. Each `[PORTAL VERIFY]` item is a hard stop for the deliverable that depends on it. The builder must not implement a deliverable until its dependencies are verified.
+
+| [PORTAL VERIFY] item | Blocks deliverable | Verification method |
+|---|---|---|
+| OAuth flow version (2.0 or 1.0a?) and exact callback parameters | D2 | Initiate auth flow in eval env, observe redirect URL and callback |
+| OAuth scope names | D2 | OAuth authorization screen in eval env |
+| OAuth token refresh behavior (standard grant / rotation) | D2.2 | Attempt refresh in eval env |
+| Webhook auth mechanism (HMAC / shared secret / none) | D4.1 | Developer portal webhook configuration page |
+| Webhook payload format and envelope structure | D4.2 | Receive a test webhook in eval env |
+| Activity Details JSON contains running dynamics fields | D5.3 | Fetch a real Activity Details response in eval env |
+| Garmin deregistration endpoint URL and payload | D2.3 | Developer portal documentation |
+
+Each verified item must be documented in a brief eval verification note before the affected deliverable's implementation begins. If a verified fact contradicts an assumption in this AC, the AC must be updated before proceeding.
 
 ---
 
@@ -46,6 +66,7 @@ All Garmin code lives on `feature/garmin-oauth`. No commits to `main`. CI runs o
 
 | Deliverable | What it ships |
 |---|---|
+| D0 | Deduplication service refactor (internal field names only — prerequisite for all sync) |
 | D1 | Data model changes (Athlete OAuth fields + `GarminDay` + Activity new columns) |
 | D2 | OAuth 2.0 flow (connect, callback, token refresh, disconnect + data purge) |
 | D3 | Adapter layer (`garmin_adapter.py` — all field translations) |
@@ -90,6 +111,33 @@ The `garmin_username` and `garmin_password_encrypted` fields on the Athlete mode
 
 ---
 
+### D0: Deduplication Service Refactor [G5-H6]
+
+**Prerequisite for all sync deliverables. Must pass before D3 adapter work begins.**
+
+`apps/api/services/activity_deduplication.py` currently uses a mix of provider-specific field names from different ingestion paths:
+
+- `startTimeLocal`, `startTime`, `start_date_local` (Strava field names + unofficial Garmin library names)
+- `distance`, `distanceInMeters` (unofficial Garmin field name)
+- `averageHeartRate`, `avgHeartRate` (unofficial Garmin field names)
+
+These must be removed. The deduplication service must operate exclusively on internal field names (`start_time`, `distance_m`, `avg_hr`). All callers must pass already-adapted dicts. This is not a new constraint — it is cleaning up existing violations before Phase 2 adds a new caller that would depend on the broken contract.
+
+**Required changes to `activity_deduplication.py`:**
+- Replace all `activity.get("startTimeLocal") or activity.get("startTime") or activity.get("start_date_local")` → `activity.get("start_time")`
+- Replace all `activity.get("distance") or activity.get("distanceInMeters") or activity.get("distance_m")` → `activity.get("distance_m")`
+- Replace all `activity.get("averageHeartRate") or activity.get("avgHeartRate") or activity.get("avg_hr")` → `activity.get("avg_hr")`
+
+**Caller audit:** Find all callers of deduplication service. Confirm each passes an already-adapted dict with internal field names. Fix any callers that pass raw provider payloads directly.
+
+**AC:**
+- `activity_deduplication.py` contains no strings: `startTimeLocal`, `startTime`, `start_date_local`, `distanceInMeters`, `averageHeartRate`, `avgHeartRate` (verified by test — see contract tests)
+- All existing callers pass internal field names
+- Existing deduplication tests still pass after refactor (no behavior change — only field name cleanup)
+- Runtime integration test: create an activity via Strava adapter → pass to deduplication → confirm match found correctly (not a grep test — actual execution)
+
+---
+
 ### D1: Data Model Changes
 
 #### D1.1: Athlete model — OAuth token fields
@@ -111,12 +159,14 @@ The `garmin_username` and `garmin_password_encrypted` fields on the Athlete mode
 
 **[PORTAL VERIFY]** Confirm exact field names returned in OAuth token response before migration is written.
 
+**Alembic `EXPECTED_HEADS` strategy [G5-M1]:** Phase 2 introduces three migrations (D1.1, D1.2, D1.3) that must be committed in sequence. The CI head-check must be updated once — after all three migrations are committed — not after each one. During development, disable or bypass the head-check on `feature/garmin-oauth` for intermediate commits. The final pre-merge commit sets `EXPECTED_HEADS = {"garmin_003_garmin_day"}` (the last migration in the chain). The CI head-check is a linear chain check: `garmin_001 → garmin_002 → garmin_003`.
+
 **AC:**
 - Migration `garmin_001_oauth_fields.py` applies cleanly on a fresh schema
 - Migration downgrades cleanly
 - `garmin_username` and `garmin_password_encrypted` absent after upgrade
 - OAuth token fields present and nullable after upgrade
-- `EXPECTED_HEADS` in `.github/scripts/ci_alembic_heads_check.py` updated to `{"garmin_001_oauth_fields"}`
+- `EXPECTED_HEADS` updated to `{"garmin_003_garmin_day"}` in the final pre-merge commit (not after D1.1 alone)
 
 #### D1.2: Activity model — new columns [H1]
 
@@ -246,6 +296,14 @@ Following the Strava pattern in `routers/strava.py`. All endpoints in `routers/g
 | `/v1/garmin/callback` | GET | None (Garmin callback) | Exchanges code for tokens, stores encrypted |
 | `/v1/garmin/status` | GET | Athlete | Returns `{connected: bool, last_sync: datetime|null}` |
 
+**OAuth version contingency [G5-M7]:** This AC assumes OAuth 2.0 (authorization code grant, `?code=X&state=Y` callback parameters). The eval environment must verify this before implementing D2. If Garmin uses OAuth 1.0a instead (historically used by some Garmin APIs), the callback parameters will be `oauth_token` and `oauth_verifier` instead. This does not affect the adapter, data model, or sync logic — only the auth flow handler. If OAuth 1.0a is confirmed, update `routers/garmin.py` accordingly and document the finding.
+
+**[PORTAL VERIFY]** Confirm OAuth version (2.0 vs 1.0a) in eval environment before implementing D2.
+
+**Consent audit log [G5-M8]:** Garmin connect is a material change to what data enters AI pipelines. Log to `consent_audit_log`:
+- On successful connect: `event_type="garmin_connected"`, `action="connect"`, `athlete_id`, `ip_address`, `source="settings"`
+- This is an informational audit entry — not an AI consent grant. The AI consent gate (`has_ai_consent()`) is separate and already in place.
+
 **AC:**
 - `GET /v1/garmin/auth-url` returns 200 with `{auth_url: "https://connect.garmin.com/oauthConfirm?..."}` for authenticated athlete
 - `GET /v1/garmin/callback?code=X&state=Y` exchanges code, stores encrypted tokens, sets `garmin_connected=True`, returns redirect to frontend
@@ -253,6 +311,7 @@ Following the Strava pattern in `routers/strava.py`. All endpoints in `routers/g
 - `GET /v1/garmin/status` returns `{connected: true, last_sync: "..."}` for connected athlete
 - OAuth state parameter verified on callback (CSRF protection)
 - Tokens stored encrypted — `garmin_oauth_access_token` and `garmin_oauth_refresh_token` are never stored in plaintext
+- Successful connect creates a `consent_audit_log` entry with `event_type="garmin_connected"`
 
 #### D2.2: Token refresh [M3]
 
@@ -281,13 +340,22 @@ Mirror `ensure_fresh_token` pattern from Strava.
 
 **Disconnect behavior (ordered):**
 
-1. Call Garmin deregistration endpoint to notify Garmin to stop sending data for this user. **[PORTAL VERIFY]** exact endpoint URL and payload during eval environment work.
+1. Call Garmin deregistration endpoint to notify Garmin to stop sending data for this user. **[PORTAL VERIFY]** exact endpoint URL and payload during eval environment work (Gate 0D).
 2. Clear OAuth tokens immediately: `garmin_oauth_access_token=None`, `garmin_oauth_refresh_token=None`, `garmin_oauth_token_expires_at=None`, `garmin_user_id=None`, `garmin_connected=False`
-3. Delete all `GarminDay` rows for this athlete (wellness data is sourced entirely from Garmin — no other provider)
-4. Delete Activities with `provider="garmin"` **on explicit disconnect only**. On token expiry/auth failure (soft disconnect), retain activities — they still represent real training data. On explicit athlete-initiated disconnect, delete.
-5. The existing GDPR deletion route (`DELETE /v1/gdpr/delete`) must be extended to include `GarminDay` deletion and Garmin-provider activity deletion for the targeted athlete.
+3. Reset `AthleteIngestionState` for Garmin sync (if the model tracks Garmin sync state separately from Strava). [G5-L4]
+4. Delete all `GarminDay` rows for this athlete (wellness data is sourced entirely from Garmin — no other provider)
+5. Delete Activities with `provider="garmin"` **on explicit disconnect only**. On token expiry/auth failure (soft disconnect), retain activities — they still represent real training data. On explicit athlete-initiated disconnect, delete.
+6. Log to `consent_audit_log`: `event_type="garmin_disconnected"`, `action="disconnect"`, `athlete_id`, `ip_address`, `source="settings"` [G5-M8]
+
+**Soft disconnect (token failure, not user-initiated):** Sets `garmin_connected=False`, clears tokens, does NOT delete `GarminDay` or activities. The athlete's historical data is preserved. They reconnect to resume sync.
 
 **Idempotency:** Calling disconnect multiple times is safe. If tokens are already null, skip the deregistration call. If `GarminDay` rows don't exist, skip. Return 200 in all cases.
+
+**GDPR deletion scope [G5-H5, G5-M6]:** `DELETE /v1/gdpr/delete-account` (note: actual endpoint is `/delete-account`, not `/delete`) must be extended with two additions:
+1. `db.query(GarminDay).filter(GarminDay.athlete_id == athlete_id).delete()` — new addition for Phase 2
+2. `db.query(ActivityStream).filter(ActivityStream.activity_id.in_(activity_ids)).delete()` — pre-existing gap, fix now
+
+Both deletions must happen before the parent `Activity` rows are deleted (FK constraint order). Import `GarminDay` into `routers/gdpr.py` alongside existing model imports.
 
 **AC:**
 - `POST /v1/garmin/disconnect` returns 200
@@ -295,8 +363,10 @@ Mirror `ensure_fresh_token` pattern from Strava.
 - After disconnect: `GarminDay` rows for the athlete are absent from the database
 - After disconnect: Activities with `provider="garmin"` are absent for the athlete
 - After disconnect: calling disconnect again returns 200 (idempotent)
-- `DELETE /v1/gdpr/delete` includes `GarminDay` and Garmin-provider activities in purge scope
-- Test: connect athlete → create `GarminDay` rows → disconnect → verify rows absent → disconnect again → verify 200
+- Disconnect creates a `consent_audit_log` entry with `event_type="garmin_disconnected"`
+- `DELETE /v1/gdpr/delete-account` includes `GarminDay`, `ActivityStream`, and Garmin-provider activities in purge scope
+- Integration test: connect athlete → create `GarminDay` rows → explicit disconnect → verify `GarminDay` rows absent → verify Garmin activities absent → disconnect again → verify 200
+- Integration test: GDPR delete for athlete with Garmin data → `GarminDay` rows absent AND `ActivityStream` rows absent
 
 ---
 
@@ -382,6 +452,14 @@ raw Garmin payload → garmin_adapter.adapt_activity_summary() → internal dict
 ---
 
 ### D4: Webhook Endpoint [H4]
+
+**Webhook topology decision [G5-H2]:** This AC specifies a single multiplexed endpoint `POST /v1/garmin/webhook` that receives all subscribed event types (activity, sleep, daily health, HRV, etc.) distinguished by a payload type discriminator field.
+
+**Binding rationale:** Garmin's push architecture sends all subscribed event types to a single registered callback URL per application — there is no per-type URL registration (unlike some webhook platforms). The payload envelope contains a type identifier that the handler uses to route to the appropriate processing task.
+
+**[PORTAL VERIFY]** Confirm in eval environment: (a) Garmin requires a single callback URL per application, (b) the payload discriminator field name and value set (e.g., `eventType: "ACTIVITY"` vs `eventType: "HEALTH_DAILY"`). Document the exact discriminator contract before implementing D4.2.
+
+If eval environment reveals Garmin requires per-type URL registration, create separate endpoints (`/v1/garmin/webhook/activity`, `/v1/garmin/webhook/health`, etc.) and update this AC before implementing.
 
 `POST /v1/garmin/webhook` — receives push notifications from Garmin.
 
@@ -619,28 +697,38 @@ These tests must exist and pass before Phase 2 is implementation-complete.
 ### Category 2: Integration Tests
 
 - `test_garmin_oauth_connect_flow` — full OAuth: auth-url → callback → status connected
+- `test_garmin_connect_logs_audit_entry` — connect → `consent_audit_log` row with `event_type="garmin_connected"` [G5-M8]
 - `test_garmin_disconnect_clears_tokens` — disconnect → tokens null, `garmin_connected=False`
 - `test_garmin_disconnect_purges_garmin_day_rows` — disconnect → `GarminDay` rows absent
 - `test_garmin_disconnect_purges_provider_garmin_activities` — explicit disconnect → Garmin activities absent
+- `test_garmin_disconnect_logs_audit_entry` — disconnect → `consent_audit_log` row with `event_type="garmin_disconnected"` [G5-M8]
 - `test_garmin_disconnect_idempotent` — disconnect twice → 200 both times
-- `test_gdpr_delete_includes_garmin_day` — GDPR delete → `GarminDay` rows absent
+- `test_gdpr_delete_includes_garmin_day_and_activity_stream` — GDPR delete → `GarminDay` rows absent AND `ActivityStream` rows absent [G5-H5]
 - `test_garmin_day_upsert` — insert daily summary → insert sleep for same date → single row with merged fields
 - `test_garmin_day_unique_constraint` — cannot insert two rows for same (athlete_id, calendar_date)
 - `test_sleep_calendar_date_join_wakeup_day` — sleep on Friday night (`calendar_date=Saturday`) joins correctly to Saturday activity [L1]
 - `test_backfill_idempotent` — run twice → same row count [D7]
 - `test_dedup_two_thresholds_live_vs_takeout` — takeout import then live webhook for same activity → single row [M1]
+- `test_dedup_runtime_uses_internal_field_names` — runtime integration test: create Strava activity via adapter → pass to deduplication → confirm match found correctly (not a grep test — actual execution against test DB) [G5-M3, D0]
 
 ### Category 3: Provider Precedence Tests [F2]
 
-All 7 tests listed in Section 4.
+All 7 tests listed in Section 4. Note: the read-time tests (`test_home_endpoint_uses_garmin_activity`, `test_activity_list_deduped`, `test_garmin_fields_visible_in_strava_activity_slot`) are runtime integration tests that hit the actual endpoints and query results from a test database — not source inspection. [G5-M3]
 
-### Category 4: Contract Tests (regression locks)
+### Category 4: Contract Tests (regression locks) [G5-M3]
 
-- `test_garmin_adapter_is_only_file_with_garmin_field_names` — source inspection: Garmin field names (`StartTimeInSeconds`, `SummaryId`, etc.) appear ONLY in `garmin_adapter.py`, nowhere else in the codebase
-- `test_activity_dedup_has_no_garmin_field_names` — source inspection of `activity_deduplication.py` [H2]
-- `test_garmin_day_model_exists_no_garmin_sleep_or_hrv` — `GarminDay` model exists; no `GarminSleep`, `GarminHRV` models [H3]
-- `test_training_api_never_called` — no import of Training API client anywhere in codebase
-- `test_webhook_secret_not_hardcoded` — `GARMIN_WEBHOOK_SECRET` read from env, never hardcoded
+Each contract area has both a grep/source inspection test AND a runtime integration test. Grep tests detect the violation fast; runtime tests verify actual behavior.
+
+**Grep/source inspection tests:**
+- `test_garmin_adapter_is_only_file_with_garmin_field_names` — Garmin API field names (`StartTimeInSeconds`, `SummaryId`, etc.) appear ONLY in `garmin_adapter.py`, nowhere else
+- `test_activity_dedup_has_no_provider_field_names` — `activity_deduplication.py` contains none of: `startTimeLocal`, `startTime`, `start_date_local`, `distanceInMeters`, `averageHeartRate`, `avgHeartRate` [D0, G5-H6]
+- `test_garmin_day_model_exists_no_garmin_sleep_or_hrv` — `GarminDay` model exists; `GarminSleep`, `GarminHRV` do not
+- `test_training_api_never_called` — no Training API client import anywhere in codebase
+- `test_webhook_secret_not_hardcoded` — `GARMIN_WEBHOOK_SECRET` read from env, never in source
+
+**Runtime integration tests (behavior, not source inspection):**
+- `test_dedup_accepts_only_internal_field_names_runtime` — call dedup service with a dict using internal field names → match found; call with Garmin API field names → no match (field name sensitivity test)
+- `test_provider_precedence_at_read_time_runtime` — insert Strava activity + Garmin activity for same run in test DB → query home endpoint → response contains Garmin-sourced data [G5-M3]
 
 ---
 
@@ -659,10 +747,10 @@ All commits to this branch until Gate 6 and Gate 0A clear.
 Build in deliverable order. Each deliverable must have its tests passing before starting the next.
 
 ```
-D1 → D2 → D3 → D4 → D5 → D6 → D7 → D8
+D0 → D1 → D2 → D3 → D4 → D5 → D6 → D7 → D8
 ```
 
-Rationale: D1 (models) unblocks everything. D2 (OAuth) unblocks sync. D3 (adapter) unblocks D4+D5+D6. D7 (backfill) depends on D5+D6. D8 (attribution) can run in parallel with D7.
+Rationale: D0 (dedup refactor) is a prerequisite for all sync deliverables — clean it up first. D1 (models) unblocks everything else. D2 (OAuth) unblocks sync. D3 (adapter) unblocks D4+D5+D6. D7 (backfill) depends on D5+D6. D8 (attribution) can run in parallel with D7.
 
 ### Step 3: Eval environment verification
 
@@ -681,34 +769,56 @@ Founder sends display format notice to `connect-support@developer.garmin.com`. B
 
 ### Step 5: Merge gate
 
-`feature/garmin-oauth` may only merge to `main` when:
+`feature/garmin-oauth` may only merge to `main` when ALL of the following are true:
 
 - [ ] All tests pass (full backend suite, no new failures)
-- [ ] 30-day notice period elapsed and acknowledged [M5]
-- [ ] Eval environment verification complete [M2]
+- [ ] 30-day notice period elapsed and acknowledged [M5] [Gate 0A]
+- [ ] All `[PORTAL VERIFY]` items resolved — every item in Gate 0D table verified and documented [G5-L5]
+- [ ] Eval environment verification complete (running dynamics JSON confirmed or deferred) [M2]
+- [ ] Webhook topology confirmed (single URL or per-type) + payload discriminator documented [G5-H2]
+- [ ] OAuth version confirmed (2.0 or 1.0a) + callback handler updated if needed [G5-M7]
 - [ ] Attribution component reviewed against Garmin brand guidelines [D8]
 - [ ] No references to `garmin_service.py` remain in codebase (retired)
 - [ ] `garmin_username` and `garmin_password_encrypted` columns absent from production schema
 - [ ] Garmin deregistration endpoint integrated and tested [F1]
+- [ ] `EXPECTED_HEADS` updated to `{"garmin_003_garmin_day"}` in CI check [G5-M1]
+- [ ] GDPR deletion covers `GarminDay` AND `ActivityStream` [G5-H5]
 - [ ] Production containers healthy on `feature/garmin-oauth` test deploy
 
 ---
 
-## 7. Must-Fix Traceability (Gate 2 → AC)
+## 7. Must-Fix Traceability
+
+### Gate 2 → AC (10 items)
 
 | # | Gate 2 Item | Addressed In |
 |---|---|---|
 | 1 | Use `GarminDay` consistently [H3] | D1.3 — `GarminDay` is the sole model; no `GarminSleep`/`GarminHRV` |
 | 2 | Separate existing vs new Activity columns [H1] | D1.2 — explicit table with "existing" vs "new" columns and migration name |
-| 3 | Dedup post-adapter on internal field names [H2] | D3.3 — adapter contract + contract tests |
+| 3 | Dedup post-adapter on internal field names [H2] | D0 + D3.3 — refactor deliverable + adapter contract + runtime integration tests |
 | 4 | Webhook security [H4] | D4.1 — HMAC preferred, IP allowlist fallback, fail-closed |
 | 5 | Backfill depth 90 days [M4] | D7 — 90 days specified with rationale |
-| 6 | 30-day notice as hard rollout gate [M5] | Gate 0A — calendar dependency, merge blocked until cleared |
-| 7 | Running dynamics JSON verification [M2] | D5.3 — eval environment verification step required |
+| 6 | 30-day notice as hard rollout gate [M5] | Gate 0A — merge-only gate, build on branch allowed |
+| 7 | Running dynamics JSON verification [M2] | D5.3 — eval checkpoint with defer path |
 | 8 | Sleep CalendarDate wakeup-day join test [L1] | D6.2 — explicit test scenario specified |
-| 9 | Disconnect endpoint + idempotent purge [F1] | D2.3 — disconnect behavior specified, idempotency required |
-| 10 | Provider precedence contract tests [F2] | Section 4 — 7 named tests at dedup-time and read-time |
+| 9 | Disconnect endpoint + idempotent purge [F1] | D2.3 — ordered steps, idempotency required, deregistration endpoint |
+| 10 | Provider precedence contract tests [F2] | Section 4 — 7 named tests; read-time tests are runtime, not grep |
+
+### Gate 5 → AC (10 items)
+
+| # | Gate 5 Item | Addressed In |
+|---|---|---|
+| G5-H5 | GDPR: add `GarminDay` AND `ActivityStream` deletion | D2.3 — both deletions specified with FK ordering; test added |
+| G5-H6 | Dedup refactor: explicit deliverable for field name cleanup | D0 — new deliverable added; prerequisite for all sync work |
+| G5-M6 | GDPR endpoint path: `/delete` → `/delete-account` | D2.3 — corrected |
+| G5-M7 | OAuth 1.0a contingency note | D2.1 — contingency note + [PORTAL VERIFY] before implementing D2 |
+| G5-M8 | `consent_audit_log` for connect/disconnect | D2.1 + D2.3 — log entries specified; tests added |
+| G5-H1 | Gate 0A contradiction resolved | Section 0 — build on branch allowed; merge blocked; wording unified |
+| G5-H2 | Webhook topology: binding decision + portal proof required | D4 — single-URL decision documented with rationale and contingency |
+| G5-M1 | Alembic EXPECTED_HEADS across D1.1–D1.3 | D1.1 — staged commit strategy; final head is `garmin_003_garmin_day` |
+| G5-M2 | [PORTAL VERIFY] dependencies as hard stop-gates per deliverable | Gate 0D — table of dependencies, blocks affected deliverable |
+| G5-M3 | Runtime tests alongside grep tests for key contracts | Category 3 + Category 4 — runtime integration tests specified for dedup and read-time precedence |
 
 ---
 
-*This document is the input to Gate 5 advisor review. No code is written until Gate 5 and Gate 6 clear.*
+*Gate 5 must-fix items applied. This document is ready for Gate 6 founder approval. No implementation begins until Gate 6 clears.*
