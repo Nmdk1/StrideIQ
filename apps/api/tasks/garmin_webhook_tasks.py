@@ -1,30 +1,323 @@
 """
-Garmin Webhook Celery Tasks (D4 stubs — implemented in D5/D6)
-
-These task stubs are registered with Celery so that webhook route handlers
-can dispatch them immediately (fire-and-forget) and return 200 to Garmin.
+Garmin Webhook Celery Tasks (D5 implemented; D6 stubs remain)
 
 Implementation status:
-  process_garmin_activity_task      — stub (D5 implements ingestion logic)
-  process_garmin_activity_detail_task — stub (D5 implements stream ingestion)
-  process_garmin_health_task        — stub (D6 implements GarminDay upsert)
-  process_garmin_deregistration_task — stub (calls existing disconnect logic)
-  process_garmin_permissions_task   — stub (handles permission change events)
+  process_garmin_activity_task        — D5.1 IMPLEMENTED (activity summary ingestion)
+  process_garmin_activity_detail_task — D5.2 IMPLEMENTED (stream sample ingestion)
+  process_garmin_health_task          — stub (D6 implements GarminDay upsert)
+  process_garmin_deregistration_task  — stub (calls existing disconnect logic)
+  process_garmin_permissions_task     — stub (handles permission change events)
 
-When D5/D6 are implemented, the stubs below are replaced with real logic.
-The task names and signatures must NOT change — they are keyed in by the
-webhook router and any queued tasks must be processable after a deploy.
+Task names and signatures are FROZEN — webhook router and queued tasks depend on them.
+Do not rename tasks; change internal logic only.
+
+Payload shape contract [D4.3 pending live capture]:
+  Garmin push payloads may arrive as a single dict OR a list of dicts.
+  Both shapes are handled defensively. D4.3 live capture will confirm the actual
+  envelope; D4 _parse_and_validate_push_payload will then be updated to match.
+
+Source contract (D0/D3.3):
+  This file must NOT contain raw Garmin API field names (camelCase API names).
+  All Garmin→internal translation happens exclusively in services/garmin_adapter.py.
 
 See docs/PHASE2_GARMIN_INTEGRATION_AC.md §D5, §D6
 """
 
 import logging
-from typing import Any, Dict
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from tasks import celery_app
+from core.database import get_db_sync
+from models import Activity, ActivityStream, Athlete
+from services.garmin_adapter import (
+    adapt_activity_summary,
+    adapt_activity_detail_envelope,
+    adapt_activity_detail_samples,
+)
+from services.activity_deduplication import match_activities, TIME_WINDOW_S
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _find_athlete_in_db(athlete_id: str, db) -> Optional[Athlete]:
+    """Look up an Athlete by UUID string. Returns None if not found."""
+    try:
+        return (
+            db.query(Athlete)
+            .filter(Athlete.id == athlete_id)
+            .first()
+        )
+    except Exception:
+        return None
+
+
+def _activity_to_dedup_dict(activity: Activity) -> Dict[str, Any]:
+    """
+    Convert an Activity ORM row to the internal-field-name dict that
+    activity_deduplication.match_activities() expects.
+
+    Only the three dedup keys are populated; all others are irrelevant.
+    """
+    return {
+        "start_time": activity.start_time,
+        "distance_m": float(activity.distance_m) if activity.distance_m is not None else None,
+        "avg_hr": activity.avg_hr,
+    }
+
+
+def _apply_garmin_fields_to_activity(existing: Activity, adapted: Dict[str, Any]) -> None:
+    """
+    Override an existing Activity with Garmin data (provider precedence).
+
+    Garmin is primary, Strava is secondary [F2]. When deduplication finds a
+    match between a new Garmin activity and an existing Strava activity, the
+    Garmin row wins: provider is set to "garmin" and Garmin-sourced fields
+    populate the existing row. No second row is created.
+    """
+    existing.provider = "garmin"
+    existing.external_activity_id = adapted.get("external_activity_id")
+    existing.garmin_activity_id = adapted.get("garmin_activity_id")
+    existing.source = adapted.get("source") or "garmin"
+
+    _set_if_not_none(existing, "name", adapted.get("name"))
+    _set_if_not_none(existing, "duration_s", adapted.get("duration_s"))
+    _set_if_not_none(existing, "avg_hr", adapted.get("avg_hr"))
+    _set_if_not_none(existing, "max_hr", adapted.get("max_hr"))
+    _set_if_not_none(existing, "total_elevation_gain", adapted.get("total_elevation_gain"))
+    _set_if_not_none(existing, "average_speed", adapted.get("average_speed"))
+    _set_if_not_none(existing, "max_speed", adapted.get("max_speed"))
+    _set_if_not_none(existing, "avg_cadence", adapted.get("avg_cadence"))
+    _set_if_not_none(existing, "max_cadence", adapted.get("max_cadence"))
+    _set_if_not_none(existing, "avg_pace_min_per_km", adapted.get("avg_pace_min_per_km"))
+    _set_if_not_none(existing, "max_pace_min_per_km", adapted.get("max_pace_min_per_km"))
+    _set_if_not_none(existing, "active_kcal", adapted.get("active_kcal"))
+    _set_if_not_none(existing, "steps", adapted.get("steps"))
+    _set_if_not_none(existing, "device_name", adapted.get("device_name"))
+    _set_if_not_none(existing, "start_lat", adapted.get("start_lat"))
+    _set_if_not_none(existing, "start_lng", adapted.get("start_lng"))
+    _set_if_not_none(existing, "total_descent_m", adapted.get("total_descent_m"))
+
+    # distance_m column is Integer; adapt_activity_summary returns float
+    raw_dist = adapted.get("distance_m")
+    if raw_dist is not None:
+        existing.distance_m = int(round(raw_dist))
+
+
+def _set_if_not_none(obj, attr: str, value: Any) -> None:
+    if value is not None:
+        setattr(obj, attr, value)
+
+
+def _create_activity_from_adapted(adapted: Dict[str, Any], athlete_id) -> Activity:
+    """
+    Construct a new Activity ORM instance from an adapt_activity_summary() output dict.
+
+    distance_m is stored as Integer (rounded from the float the adapter returns).
+    """
+    raw_dist = adapted.get("distance_m")
+    return Activity(
+        athlete_id=athlete_id,
+        provider=adapted.get("provider", "garmin"),
+        external_activity_id=adapted.get("external_activity_id"),
+        garmin_activity_id=adapted.get("garmin_activity_id"),
+        source=adapted.get("source") or "garmin",
+        sport=adapted.get("sport", "run"),
+        name=adapted.get("name"),
+        start_time=adapted["start_time"],
+        duration_s=adapted.get("duration_s"),
+        distance_m=int(round(raw_dist)) if raw_dist is not None else None,
+        avg_hr=adapted.get("avg_hr"),
+        max_hr=adapted.get("max_hr"),
+        total_elevation_gain=adapted.get("total_elevation_gain"),
+        total_descent_m=adapted.get("total_descent_m"),
+        average_speed=adapted.get("average_speed"),
+        max_speed=adapted.get("max_speed"),
+        avg_pace_min_per_km=adapted.get("avg_pace_min_per_km"),
+        max_pace_min_per_km=adapted.get("max_pace_min_per_km"),
+        avg_cadence=adapted.get("avg_cadence"),
+        max_cadence=adapted.get("max_cadence"),
+        active_kcal=adapted.get("active_kcal"),
+        steps=adapted.get("steps"),
+        device_name=adapted.get("device_name"),
+        start_lat=adapted.get("start_lat"),
+        start_lng=adapted.get("start_lng"),
+        is_race_candidate=False,
+    )
+
+
+def _ingest_activity_item(
+    raw_item: Dict[str, Any],
+    athlete: Athlete,
+    db,
+) -> str:
+    """
+    Process a single Garmin activity summary dict.
+
+    Returns one of: "created", "updated", "skipped".
+
+    Steps:
+      1. adapt_activity_summary() → internal dict (adapter contract)
+      2. Filter: sport must be "run"
+      3. Idempotency: skip if already synced as Garmin activity (same external_activity_id)
+      4. Time-window dedup against existing activities (for Strava precedence)
+      5. Garmin wins if Strava duplicate found: update existing row, provider→"garmin"
+      6. Otherwise: create new Activity row
+    """
+    adapted = adapt_activity_summary(raw_item)
+
+    if adapted.get("sport") != "run":
+        logger.debug(
+            "Skipping non-run activity (sport=%s, external_id=%s)",
+            adapted.get("sport"),
+            adapted.get("external_activity_id"),
+        )
+        return "skipped"
+
+    external_id = adapted.get("external_activity_id")
+    if not external_id:
+        logger.warning("Activity missing external_activity_id — skipping")
+        return "skipped"
+
+    start_time = adapted.get("start_time")
+    if start_time is None:
+        logger.warning("Activity %s missing start_time — skipping", external_id)
+        return "skipped"
+
+    # --- Idempotency: already ingested as a Garmin activity ---
+    existing_garmin = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete.id,
+            Activity.provider == "garmin",
+            Activity.external_activity_id == external_id,
+        )
+        .first()
+    )
+    if existing_garmin is not None:
+        logger.debug("Garmin activity %s already ingested — skipping", external_id)
+        return "skipped"
+
+    # --- Time-window dedup: find any existing activity within ±1 hour ---
+    from datetime import timedelta
+    window_start = start_time - timedelta(seconds=TIME_WINDOW_S)
+    window_end = start_time + timedelta(seconds=TIME_WINDOW_S)
+
+    candidates = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete.id,
+            Activity.start_time >= window_start,
+            Activity.start_time <= window_end,
+        )
+        .all()
+    )
+
+    for candidate in candidates:
+        candidate_dict = _activity_to_dedup_dict(candidate)
+        if match_activities(adapted, candidate_dict):
+            # Match found — Garmin is primary, update existing row regardless of provider
+            logger.info(
+                "Garmin activity %s matches existing %s activity (id=%s) — Garmin wins",
+                external_id,
+                candidate.provider,
+                candidate.id,
+            )
+            _apply_garmin_fields_to_activity(candidate, adapted)
+            return "updated"
+
+    # --- No match: create new Activity row ---
+    new_activity = _create_activity_from_adapted(adapted, athlete.id)
+    db.add(new_activity)
+    return "created"
+
+
+def _ingest_activity_detail_item(
+    raw_item: Dict[str, Any],
+    athlete_id: str,
+    db,
+) -> bool:
+    """
+    Process a single Garmin ClientActivityDetail dict: extract samples,
+    build ActivityStream row, link to parent Activity via garmin_activity_id.
+
+    Returns True if processed, False if skipped.
+    """
+    # All Garmin→internal field name translation delegated to adapter (source contract)
+    envelope = adapt_activity_detail_envelope(raw_item)
+    garmin_activity_id_int = envelope.get("garmin_activity_id")
+
+    if garmin_activity_id_int is None:
+        logger.warning("Activity detail missing or invalid garmin_activity_id — skipping")
+        return False
+
+    # Find parent Activity by garmin_activity_id
+    activity = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.garmin_activity_id == garmin_activity_id_int,
+        )
+        .first()
+    )
+    if activity is None:
+        logger.warning(
+            "Activity detail for unknown garmin_activity_id=%s (athlete=%s) — skipping",
+            garmin_activity_id_int,
+            athlete_id,
+        )
+        return False
+
+    samples = envelope.get("samples") or []
+    if not samples:
+        logger.debug(
+            "Activity detail garmin_activity_id=%s has no samples",
+            garmin_activity_id_int,
+        )
+        activity.stream_fetch_status = "unavailable"
+        return True
+
+    # All Garmin→internal channel translation delegated to adapter (source contract)
+    activity_start_unix = (
+        activity.start_time.timestamp() if activity.start_time else 0.0
+    )
+    stream_data = adapt_activity_detail_samples(samples, activity_start_unix)
+    channels = list(stream_data.keys())
+    point_count = max((len(v) for v in stream_data.values()), default=0)
+
+    # Upsert ActivityStream (one row per activity)
+    existing_stream = (
+        db.query(ActivityStream)
+        .filter(ActivityStream.activity_id == activity.id)
+        .first()
+    )
+    if existing_stream is not None:
+        existing_stream.stream_data = stream_data
+        existing_stream.channels_available = channels
+        existing_stream.point_count = point_count
+        existing_stream.source = "garmin"
+    else:
+        new_stream = ActivityStream(
+            activity_id=activity.id,
+            stream_data=stream_data,
+            channels_available=channels,
+            point_count=point_count,
+            source="garmin",
+        )
+        db.add(new_stream)
+
+    activity.stream_fetch_status = "success"
+    return True
+
+
+# ---------------------------------------------------------------------------
+# D5.1: Activity summary ingestion task
+# ---------------------------------------------------------------------------
 
 @celery_app.task(
     name="process_garmin_activity_task",
@@ -35,28 +328,82 @@ logger = logging.getLogger(__name__)
 def process_garmin_activity_task(
     self,
     athlete_id: str,
-    payload: Dict[str, Any],
-) -> None:
+    payload: Any,
+) -> Dict[str, Any]:
     """
-    Ingest a Garmin activity summary from a push webhook.
+    Ingest Garmin activity summary/summaries from a push webhook.
 
-    D5 implements this fully:
-      1. ensure_fresh_garmin_token
-      2. adapt_activity_summary (via garmin_adapter)
-      3. Filter: sport="run" only
-      4. Deduplication against existing Strava/Garmin activities
-      5. Create/update Activity row with provider="garmin"
-      6. Enqueue activity detail task if details available
+    Handles both single-dict and list payload shapes defensively [D4.3 pending].
+
+    Steps per activity item:
+      1. adapt_activity_summary() — Garmin→internal field translation
+      2. Filter: sport="run" only (RUNNING, TRAIL_RUNNING, TREADMILL_RUNNING, etc.)
+      3. Idempotency: skip if already synced as Garmin (same external_activity_id)
+      4. Deduplication: time-window check against existing activities
+      5. Garmin wins on dedup match: update existing row, provider→"garmin"
+      6. No match: create new Activity row
+      7. Update athlete.last_garmin_sync
+
+    Token refresh: not required for webhook payload processing.
+    Payloads arrive pre-authenticated via the webhook.
 
     Args:
-        athlete_id: Internal athlete UUID.
-        payload: Raw Garmin push webhook payload dict.
-    """
-    logger.info(
-        "[D4 STUB] process_garmin_activity_task — D5 not yet implemented",
-        extra={"athlete_id": athlete_id, "summary_id": payload.get("summaryId")},
-    )
+        athlete_id: Internal athlete UUID string.
+        payload: Raw Garmin push webhook payload — dict or list of dicts.
 
+    Returns:
+        {"status": "ok", "created": int, "updated": int, "skipped": int}
+    """
+    db = get_db_sync()
+    try:
+        athlete = _find_athlete_in_db(athlete_id, db)
+        if athlete is None:
+            logger.warning(
+                "process_garmin_activity_task: athlete %s not found", athlete_id
+            )
+            return {"status": "skipped", "reason": "athlete_not_found"}
+
+        # Normalize payload shape — Garmin may send dict or list [D4.3 pending]
+        items: List[Dict[str, Any]] = payload if isinstance(payload, list) else [payload]
+
+        created = 0
+        updated = 0
+        skipped = 0
+
+        for raw_item in items:
+            result = _ingest_activity_item(raw_item, athlete, db)
+            if result == "created":
+                created += 1
+            elif result == "updated":
+                updated += 1
+            else:
+                skipped += 1
+
+        athlete.last_garmin_sync = datetime.now(tz=timezone.utc)
+        db.commit()
+
+        logger.info(
+            "process_garmin_activity_task: athlete=%s created=%d updated=%d skipped=%d",
+            athlete_id,
+            created,
+            updated,
+            skipped,
+        )
+        return {"status": "ok", "created": created, "updated": updated, "skipped": skipped}
+
+    except Exception as exc:
+        db.rollback()
+        logger.exception(
+            "process_garmin_activity_task failed for athlete %s: %s", athlete_id, exc
+        )
+        raise self.retry(exc=exc)
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# D5.2: Activity detail / stream ingestion task
+# ---------------------------------------------------------------------------
 
 @celery_app.task(
     name="process_garmin_activity_detail_task",
@@ -67,23 +414,64 @@ def process_garmin_activity_task(
 def process_garmin_activity_detail_task(
     self,
     athlete_id: str,
-    payload: Dict[str, Any],
-) -> None:
+    payload: Any,
+) -> Dict[str, Any]:
     """
-    Ingest a Garmin activity detail (GPS samples, laps) from a push webhook.
+    Ingest Garmin activity detail samples from a push webhook.
 
-    D5 implements this: parses stream samples, extracts powerInWatts,
-    stores in ActivityStream table.
+    Handles both single-dict and list payload shapes defensively [D4.3 pending].
+
+    Steps per detail item:
+      1. Find parent Activity by garmin_activity_id
+      2. Extract sample channels via adapt_activity_detail_samples() (adapter contract)
+         Channels: time (relative), heartrate, watts, latlng, altitude,
+                   velocity_smooth, cadence
+      3. Upsert ActivityStream row (source="garmin")
+      4. Set activity.stream_fetch_status = "success"
+
+    Running dynamics (stride length, GCT, vertical oscillation, ratio) are
+    FIT-file-only and NOT present in JSON API samples — not mapped [D5.3 resolved].
 
     Args:
-        athlete_id: Internal athlete UUID.
-        payload: Raw Garmin ClientActivityDetail payload dict.
-    """
-    logger.info(
-        "[D4 STUB] process_garmin_activity_detail_task — D5 not yet implemented",
-        extra={"athlete_id": athlete_id, "summary_id": payload.get("summaryId")},
-    )
+        athlete_id: Internal athlete UUID string.
+        payload: Raw Garmin ClientActivityDetail payload — dict or list of dicts.
 
+    Returns:
+        {"status": "ok", "processed": int}
+    """
+    db = get_db_sync()
+    try:
+        # Normalize payload shape
+        items: List[Dict[str, Any]] = payload if isinstance(payload, list) else [payload]
+
+        processed = 0
+        for raw_item in items:
+            if _ingest_activity_detail_item(raw_item, athlete_id, db):
+                processed += 1
+                db.commit()
+
+        logger.info(
+            "process_garmin_activity_detail_task: athlete=%s processed=%d",
+            athlete_id,
+            processed,
+        )
+        return {"status": "ok", "processed": processed}
+
+    except Exception as exc:
+        db.rollback()
+        logger.exception(
+            "process_garmin_activity_detail_task failed for athlete %s: %s",
+            athlete_id,
+            exc,
+        )
+        raise self.retry(exc=exc)
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# D6 stubs — implemented in D6
+# ---------------------------------------------------------------------------
 
 @celery_app.task(
     name="process_garmin_health_task",
@@ -112,12 +500,10 @@ def process_garmin_health_task(
         payload: Raw Garmin health payload dict.
     """
     logger.info(
-        "[D4 STUB] process_garmin_health_task — D6 not yet implemented",
-        extra={
-            "athlete_id": athlete_id,
-            "data_type": data_type,
-            "summary_id": payload.get("summaryId"),
-        },
+        "[D5 STUB] process_garmin_health_task — D6 not yet implemented: "
+        "athlete=%s data_type=%s",
+        athlete_id,
+        data_type,
     )
 
 
@@ -146,7 +532,7 @@ def process_garmin_deregistration_task(
       - Do NOT delete GarminDay or activities (soft disconnect)
     """
     logger.info(
-        "[D4 STUB] process_garmin_deregistration_task",
+        "[D5 STUB] process_garmin_deregistration_task",
         extra={"athlete_id": athlete_id},
     )
 
@@ -175,6 +561,6 @@ def process_garmin_permissions_task(
       - Write a note to the athlete's account (non-blocking)
     """
     logger.info(
-        "[D4 STUB] process_garmin_permissions_task",
+        "[D5 STUB] process_garmin_permissions_task",
         extra={"athlete_id": athlete_id},
     )

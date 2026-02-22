@@ -251,6 +251,120 @@ def adapt_stress_detail(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def adapt_activity_detail_envelope(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Extract top-level fields from a raw Garmin ClientActivityDetail payload.
+
+    Separates the envelope fields (identifiers) from the samples array so that
+    the ingest task can use internal field names without touching raw Garmin keys.
+
+    Args:
+        raw: Raw ClientActivityDetail dict.
+
+    Returns:
+        {
+            "garmin_activity_id": int | None,
+            "external_activity_id": str | None,
+            "samples": list,
+        }
+    """
+    return {
+        "garmin_activity_id": _int_or_none(raw.get("activityId")),
+        "external_activity_id": _str_or_none(raw.get("summaryId")),
+        "samples": raw.get("samples") or [],
+    }
+
+
+def adapt_activity_detail_samples(
+    samples: list,
+    activity_start_unix: float = 0.0,
+) -> Dict[str, Any]:
+    """
+    Extract per-channel arrays from a Garmin ClientActivityDetail samples list.
+
+    Returns a stream_data dict compatible with ActivityStream.stream_data JSONB:
+        {
+            "time": [relative_seconds, ...],   # seconds since activity start
+            "heartrate": [bpm_int, ...],
+            "watts": [float, ...],
+            "latlng": [[lat, lng], ...],        # None where either coord absent
+            "altitude": [meters_float, ...],
+            "velocity_smooth": [m/s_float, ...],
+            "cadence": [steps_per_min_int, ...],
+        }
+
+    Arrays are aligned to sample index. Where a field is absent from a sample
+    the value is None (preserves alignment with the time axis). Channels with
+    zero non-None values across all samples are excluded from the output.
+
+    Fields intentionally NOT mapped (absent from official Sample schema):
+      - strideLength, groundContactTime, verticalOscillation, verticalRatio
+      - Running dynamics are FIT-file-only (see docs/garmin-portal/HEALTH_API.md §M2)
+
+    Args:
+        samples: List of raw Garmin sample dicts from ClientActivityDetail.
+        activity_start_unix: Unix timestamp (seconds) of the parent activity.
+                             Used to compute relative time offsets.
+
+    Returns:
+        Dict of channel_name → aligned value list. Empty dict if samples is empty.
+
+    See docs/PHASE2_GARMIN_INTEGRATION_AC.md §D5.2
+    See docs/garmin-portal/HEALTH_API.md §activityDetails Sample schema
+    """
+    if not samples:
+        return {}
+
+    time_vals: list = []
+    heartrate_vals: list = []
+    watts_vals: list = []
+    latlng_vals: list = []
+    altitude_vals: list = []
+    velocity_vals: list = []
+    cadence_vals: list = []
+
+    activity_start_unix_int = int(activity_start_unix)
+
+    for sample in samples:
+        # Time — relative seconds from activity start
+        sample_ts = sample.get("startTimeInSeconds")
+        time_vals.append(
+            int(sample_ts) - activity_start_unix_int if sample_ts is not None else None
+        )
+
+        heartrate_vals.append(_int_or_none(sample.get("heartRate")))
+        watts_vals.append(_float_or_none(sample.get("powerInWatts")))
+
+        lat = _float_or_none(sample.get("latitudeInDegree"))
+        lng = _float_or_none(sample.get("longitudeInDegree"))
+        latlng_vals.append([lat, lng] if lat is not None and lng is not None else None)
+
+        altitude_vals.append(_float_or_none(sample.get("elevationInMeters")))
+        velocity_vals.append(_float_or_none(sample.get("speedMetersPerSecond")))
+        cadence_vals.append(_int_or_none(sample.get("stepsPerMinute")))
+
+    def _keep(vals: list) -> bool:
+        return any(v is not None for v in vals)
+
+    channels: Dict[str, Any] = {}
+    if _keep(time_vals):
+        channels["time"] = time_vals
+    if _keep(heartrate_vals):
+        channels["heartrate"] = heartrate_vals
+    if _keep(watts_vals):
+        channels["watts"] = watts_vals
+    if _keep(latlng_vals):
+        channels["latlng"] = latlng_vals
+    if _keep(altitude_vals):
+        channels["altitude"] = altitude_vals
+    if _keep(velocity_vals):
+        channels["velocity_smooth"] = velocity_vals
+    if _keep(cadence_vals):
+        channels["cadence"] = cadence_vals
+
+    return channels
+
+
 def adapt_user_metrics(raw: Dict[str, Any]) -> Dict[str, Any]:
     """
     Map a raw Garmin User Metrics payload to GarminDay user metrics fields.
