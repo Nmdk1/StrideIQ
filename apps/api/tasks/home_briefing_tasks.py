@@ -18,6 +18,7 @@ import hashlib
 import json
 import logging
 import os
+import sys
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Optional
 from uuid import UUID
@@ -37,6 +38,13 @@ from services.home_briefing_cache import (
 )
 
 logger = logging.getLogger(__name__)
+
+# SEV-1 hardening: Celery worker import path can differ from uvicorn runtime.
+# Ensure the app root (apps/api) is present so deferred imports like
+# `from routers.home import ...` are always resolvable in worker processes.
+_app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _app_root not in sys.path:
+    sys.path.insert(0, _app_root)
 
 PROVIDER_TIMEOUT_S = 45   # Rich prompt (5 intelligence sources) needs more generation time
 TASK_HARD_TIMEOUT_S = 55  # Must exceed PROVIDER_TIMEOUT_S + DB work headroom
