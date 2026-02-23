@@ -1649,26 +1649,35 @@ async def get_home_data(
     current_week_number = None
     current_phase = None
 
+    # Batch fetch all planned workouts and activities for the week (2 queries instead of 14)
+    _week_planned: dict = {}
+    if active_plan:
+        _week_workouts = db.query(PlannedWorkout).filter(
+            PlannedWorkout.plan_id == active_plan.id,
+            PlannedWorkout.scheduled_date >= monday,
+            PlannedWorkout.scheduled_date <= sunday,
+        ).all()
+        _week_planned = {w.scheduled_date: w for w in _week_workouts}
+
+    _week_actuals_raw = db.query(Activity).filter(
+        Activity.athlete_id == current_user.id,
+        Activity.start_time >= monday,
+        Activity.start_time < sunday + timedelta(days=1),
+    ).all()
+    _week_actuals: dict = {}
+    for _a in _week_actuals_raw:
+        _day = _a.start_time.date()
+        if _day not in _week_actuals:
+            _week_actuals[_day] = _a  # keep first per day
+
     for i in range(7):
         day_date = monday + timedelta(days=i)
         day_abbrev = ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i]
         is_past = day_date < today
         is_today_or_future = day_date >= today
 
-        # Get planned workout for this day
-        planned_workout = None
-        if active_plan:
-            planned_workout = db.query(PlannedWorkout).filter(
-                PlannedWorkout.plan_id == active_plan.id,
-                PlannedWorkout.scheduled_date == day_date
-            ).first()
-
-        # Get actual activity for this day
-        actual = db.query(Activity).filter(
-            Activity.athlete_id == current_user.id,
-            Activity.start_time >= day_date,
-            Activity.start_time < day_date + timedelta(days=1)
-        ).first()
+        planned_workout = _week_planned.get(day_date)
+        actual = _week_actuals.get(day_date)
 
         workout_type = None
         distance_mi = None

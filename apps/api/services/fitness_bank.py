@@ -214,6 +214,106 @@ def rpi_equivalent_time(rpi: float, distance_m: float) -> int:
 
 
 # =============================================================================
+# CACHE ROUND-TRIP HELPERS
+# =============================================================================
+
+def _fitness_bank_to_dict(bank: "FitnessBank") -> dict:
+    """Serialize FitnessBank to a JSON-safe dict for Redis caching."""
+    def _race(r: "RacePerformance") -> dict:
+        return {
+            "date": r.date.isoformat() if r.date else None,
+            "distance": r.distance,
+            "distance_m": r.distance_m,
+            "finish_time_seconds": r.finish_time_seconds,
+            "pace_per_mile": r.pace_per_mile,
+            "rpi": r.rpi,
+            "conditions": r.conditions,
+            "confidence": r.confidence,
+            "name": r.name,
+        }
+
+    return {
+        "athlete_id": bank.athlete_id,
+        "peak_weekly_miles": bank.peak_weekly_miles,
+        "peak_monthly_miles": bank.peak_monthly_miles,
+        "peak_long_run_miles": bank.peak_long_run_miles,
+        "peak_mp_long_run_miles": bank.peak_mp_long_run_miles,
+        "peak_threshold_miles": bank.peak_threshold_miles,
+        "peak_ctl": bank.peak_ctl,
+        "race_performances": [_race(r) for r in bank.race_performances],
+        "best_rpi": bank.best_rpi,
+        "best_race": _race(bank.best_race) if bank.best_race else None,
+        "current_weekly_miles": bank.current_weekly_miles,
+        "current_ctl": bank.current_ctl,
+        "current_atl": bank.current_atl,
+        "weeks_since_peak": bank.weeks_since_peak,
+        "current_long_run_miles": bank.current_long_run_miles,
+        "average_long_run_miles": bank.average_long_run_miles,
+        "tau1": bank.tau1,
+        "tau2": bank.tau2,
+        "experience_level": bank.experience_level.value,
+        "constraint_type": bank.constraint_type.value,
+        "constraint_details": bank.constraint_details,
+        "is_returning_from_break": bank.is_returning_from_break,
+        "typical_long_run_day": bank.typical_long_run_day,
+        "typical_quality_day": bank.typical_quality_day,
+        "typical_rest_days": bank.typical_rest_days,
+        "weeks_to_80pct_ctl": bank.weeks_to_80pct_ctl,
+        "weeks_to_race_ready": bank.weeks_to_race_ready,
+        "sustainable_peak_weekly": bank.sustainable_peak_weekly,
+    }
+
+
+def _fitness_bank_from_dict(d: dict) -> "FitnessBank":
+    """Reconstruct FitnessBank from a cached dict."""
+    def _race(r: dict) -> "RacePerformance":
+        raw_date = r.get("date")
+        race_date = date.fromisoformat(raw_date) if raw_date else date.today()
+        return RacePerformance(
+            date=race_date,
+            distance=r.get("distance", ""),
+            distance_m=float(r.get("distance_m", 0)),
+            finish_time_seconds=int(r.get("finish_time_seconds", 0)),
+            pace_per_mile=float(r.get("pace_per_mile", 0)),
+            rpi=float(r.get("rpi", 0)),
+            conditions=r.get("conditions"),
+            confidence=float(r.get("confidence", 1.0)),
+            name=r.get("name"),
+        )
+
+    return FitnessBank(
+        athlete_id=d["athlete_id"],
+        peak_weekly_miles=float(d["peak_weekly_miles"]),
+        peak_monthly_miles=float(d["peak_monthly_miles"]),
+        peak_long_run_miles=float(d["peak_long_run_miles"]),
+        peak_mp_long_run_miles=float(d["peak_mp_long_run_miles"]),
+        peak_threshold_miles=float(d["peak_threshold_miles"]),
+        peak_ctl=float(d["peak_ctl"]),
+        race_performances=[_race(r) for r in d.get("race_performances", [])],
+        best_rpi=float(d["best_rpi"]),
+        best_race=_race(d["best_race"]) if d.get("best_race") else None,
+        current_weekly_miles=float(d["current_weekly_miles"]),
+        current_ctl=float(d["current_ctl"]),
+        current_atl=float(d["current_atl"]),
+        weeks_since_peak=int(d["weeks_since_peak"]),
+        current_long_run_miles=float(d["current_long_run_miles"]),
+        average_long_run_miles=float(d["average_long_run_miles"]),
+        tau1=float(d["tau1"]),
+        tau2=float(d["tau2"]),
+        experience_level=ExperienceLevel(d["experience_level"]),
+        constraint_type=ConstraintType(d["constraint_type"]),
+        constraint_details=d.get("constraint_details"),
+        is_returning_from_break=bool(d["is_returning_from_break"]),
+        typical_long_run_day=d.get("typical_long_run_day"),
+        typical_quality_day=d.get("typical_quality_day"),
+        typical_rest_days=d.get("typical_rest_days", []),
+        weeks_to_80pct_ctl=int(d["weeks_to_80pct_ctl"]),
+        weeks_to_race_ready=int(d["weeks_to_race_ready"]),
+        sustainable_peak_weekly=float(d["sustainable_peak_weekly"]),
+    )
+
+
+# =============================================================================
 # FITNESS BANK CALCULATOR
 # =============================================================================
 
@@ -244,7 +344,17 @@ class FitnessBankCalculator:
     def calculate(self, athlete_id: UUID) -> FitnessBank:
         """
         Build complete fitness bank from athlete history.
+        Cached in Redis for 15 minutes. Invalidated on activity write.
         """
+        from core.cache import get_cache, set_cache
+        _cache_key = f"fitness_bank:{athlete_id}"
+        _cached = get_cache(_cache_key)
+        if _cached is not None:
+            try:
+                return _fitness_bank_from_dict(_cached)
+            except Exception:
+                pass  # Cache corruption — recompute
+
         from models import Activity
         from services.individual_performance_model import get_or_calibrate_model
         from services.training_load import TrainingLoadCalculator
@@ -326,7 +436,7 @@ class FitnessBankCalculator:
         # Calculate current and average long run (ADR-038: N=1 long run progression)
         current_long, average_long = self._calculate_current_long_run(activities)
         
-        return FitnessBank(
+        result = FitnessBank(
             athlete_id=str(athlete_id),
             peak_weekly_miles=peaks["peak_weekly"],
             peak_monthly_miles=peaks["peak_monthly"],
@@ -356,6 +466,11 @@ class FitnessBankCalculator:
             weeks_to_race_ready=weeks_to_race,
             sustainable_peak_weekly=sustainable
         )
+        try:
+            set_cache(_cache_key, _fitness_bank_to_dict(result), ttl=900)
+        except Exception:
+            pass  # Non-critical — cache write failure must not break the response
+        return result
     
     def _calculate_peak_capabilities(self, activities: List) -> Dict:
         """Calculate peak capabilities from all activities."""

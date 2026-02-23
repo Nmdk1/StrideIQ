@@ -1092,9 +1092,16 @@ def analyze_correlations(
     Main correlation analysis function.
     
     Analyzes all inputs vs efficiency outputs and returns discovered correlations.
+    Cached in Redis for 15 minutes (key includes days + output_metric).
+    Invalidated via invalidate_athlete_cache on activity write.
     """
     if not db:
         raise ValueError("Database session required")
+    from core.cache import get_cache, set_cache
+    _cache_key = f"correlations:{athlete_id}:{days}:{output_metric}"
+    _cached = get_cache(_cache_key)
+    if _cached is not None:
+        return _cached
     
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
@@ -1206,6 +1213,10 @@ def analyze_correlations(
     except Exception as e:
         logger.warning(f"Correlation persistence failed for {athlete_id}: {e}")
 
+    try:
+        set_cache(_cache_key, result, ttl=900)  # 15 min
+    except Exception:
+        pass
     return result
 
 
