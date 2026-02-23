@@ -297,6 +297,12 @@ def login(
         data={"sub": str(user.id), "email": user.email, "role": user.role}
     )
     
+    try:
+        from tasks.progress_prewarm_tasks import enqueue_progress_prewarm
+        enqueue_progress_prewarm(str(user.id))
+    except Exception as e:
+        logger.warning("progress prewarm enqueue failed (non-blocking): %s", e)
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
