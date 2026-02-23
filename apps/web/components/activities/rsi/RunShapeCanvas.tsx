@@ -70,6 +70,8 @@ export interface RunShapeCanvasProps {
   activityId: string;
   /** Optional splits data for the Splits tab panel */
   splits?: Split[] | null;
+  /** Data source: 'garmin' | 'strava' | null */
+  provider?: string | null;
 }
 
 interface ChartPoint {
@@ -517,10 +519,12 @@ function DriftMetrics({ drift }: { drift: DriftAnalysis }) {
 
 function SplitsModePanel({
   splits,
+  provider,
   onRowHover,
   rowRefs,
 }: {
   splits: Split[];
+  provider?: string | null;
   onRowHover?: (index: number | null) => void;
   rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
 }) {
@@ -537,7 +541,7 @@ function SplitsModePanel({
       className="mt-3"
       data-testid="splits-panel"
     >
-      <SplitsTable splits={splits} onRowHover={onRowHover} rowRefs={rowRefs} />
+      <SplitsTable splits={splits} provider={provider} onRowHover={onRowHover} rowRefs={rowRefs} />
     </div>
   );
 }
@@ -682,7 +686,7 @@ function LabModePanel({
 // RunShapeCanvas (main export)
 // ---------------------------------------------------------------------------
 
-export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
+export function RunShapeCanvas({ activityId, splits, provider }: RunShapeCanvasProps) {
   const { data, isLoading, error, refetch } = useStreamAnalysis(activityId);
 
   // Toggle state (AC-4): survives resize by design (useState)
@@ -1213,6 +1217,7 @@ export function RunShapeCanvas({ activityId, splits }: RunShapeCanvasProps) {
       {splits && (
         <SplitsModePanel
           splits={splits}
+          provider={provider}
           onRowHover={handleSplitRowHover}
           rowRefs={splitRowRefs}
         />

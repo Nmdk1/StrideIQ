@@ -24,9 +24,9 @@ export default function HowItWorks() {
             <div className="w-20 h-20 bg-orange-600 rounded-full flex items-center justify-center text-3xl font-bold mb-6 mx-auto">
               1
             </div>
-            <h3 className="text-2xl font-bold mb-4">Connect Strava</h3>
+            <h3 className="text-2xl font-bold mb-4">Connect Your Watch</h3>
             <p className="text-slate-400 text-lg">
-              Securely sync your activity data from Strava. We pull your runs, splits, heart rate, and power metrics automatically.
+              Securely sync your activity data from Garmin Connect or Strava. We pull your runs, splits, heart rate, and power metrics automatically.
             </p>
           </div>
 

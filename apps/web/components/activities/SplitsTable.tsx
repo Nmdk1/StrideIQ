@@ -36,13 +36,15 @@ function gapSecondsPerKmFromPerMile(gapSecondsPerMile: number | null | undefined
 
 export interface SplitsTableProps {
   splits: Split[];
+  /** Data source: 'garmin' | 'strava' | null */
+  provider?: string | null;
   /** Optional: callback when mouse enters a split row (index into splits array) */
   onRowHover?: (index: number | null) => void;
   /** Optional: ref map for direct DOM manipulation of row highlights */
   rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
 }
 
-export function SplitsTable({ splits, onRowHover, rowRefs }: SplitsTableProps) {
+export function SplitsTable({ splits, provider, onRowHover, rowRefs }: SplitsTableProps) {
   const { formatDistance, formatPace } = useUnits();
 
   if (!splits?.length) return null;
@@ -115,7 +117,9 @@ export function SplitsTable({ splits, onRowHover, rowRefs }: SplitsTableProps) {
         </table>
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        Splits are sourced from Strava laps (auto-laps or manual laps/intervals). Pace is computed from split distance/time.
+        {provider === 'garmin'
+          ? 'Splits are sourced from Garmin Connect. Pace is computed from split distance/time.'
+          : 'Splits are sourced from Strava laps (auto-laps or manual laps/intervals). Pace is computed from split distance/time.'}
       </p>
     </div>
   );
