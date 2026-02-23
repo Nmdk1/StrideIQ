@@ -465,9 +465,16 @@ class TrainingLoadCalculator:
     ) -> LoadSummary:
         """
         Calculate current training load metrics for an athlete.
+        Cached in Redis for 5 minutes (key includes target_date).
         """
+        from core.cache import get_cache, set_cache
+        from dataclasses import asdict
         if target_date is None:
             target_date = date.today()
+        _cache_key = f"training_load:{athlete_id}:{target_date.isoformat()}"
+        _cached = get_cache(_cache_key)
+        if _cached is not None:
+            return LoadSummary(**_cached)
         
         # Get athlete
         athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
@@ -538,7 +545,7 @@ class TrainingLoadCalculator:
             current_atl, current_ctl, current_tsb, training_phase
         )
         
-        return LoadSummary(
+        result = LoadSummary(
             current_atl=round(current_atl, 1),
             current_ctl=round(current_ctl, 1),
             current_tsb=round(current_tsb, 1),
@@ -548,6 +555,8 @@ class TrainingLoadCalculator:
             training_phase=training_phase,
             recommendation=recommendation
         )
+        set_cache(_cache_key, asdict(result), ttl=300)  # 5 min
+        return result
     
     def get_load_history(
         self,

@@ -470,21 +470,39 @@ async def get_progress_summary(
     from services.consent import has_ai_consent as _progress_consent
     _ai_allowed = _progress_consent(athlete_id=athlete_id, db=db)
 
-    # --- LLM Headline (uses FULL athlete brief via ADR-16) ---
     if _ai_allowed:
+        import asyncio
+        # DB-prefetch phase — single thread, shared session (thread-safe)
         try:
-            result.headline = _generate_progress_headline(str(athlete_id), db, result, days)
-        except Exception as e:
-            logger.warning(f"Progress headline generation failed: {e}")
+            from services.coach_tools import build_athlete_brief as _build_brief
+            _prefetched_brief = _build_brief(db, athlete_id)  # cached 15 min
+        except Exception:
+            _prefetched_brief = None
+        _prefetched_checkin = _latest_checkin_context(db, str(athlete_id))
 
-    # --- LLM Coach Cards (coach-led replacement for raw quick metrics) ---
-    try:
-        if _ai_allowed:
-            result.coach_cards = _generate_progress_cards(str(athlete_id), db, result, days)
-        else:
-            result.coach_cards = _consent_required_fallback_cards()
-    except Exception as e:
-        logger.warning(f"Progress coach cards generation failed: {e}")
+        # Parallel LLM phase — no DB access when pre-fetched data is provided
+        try:
+            _headline, _cards = await asyncio.gather(
+                asyncio.to_thread(
+                    _generate_progress_headline,
+                    str(athlete_id), None, result, days,
+                    prefetched_brief=_prefetched_brief,
+                ),
+                asyncio.to_thread(
+                    _generate_progress_cards,
+                    str(athlete_id), None, result, days,
+                    prefetched_brief=_prefetched_brief,
+                    prefetched_checkin=_prefetched_checkin,
+                ),
+            )
+        except Exception as e:
+            logger.warning(f"Progress LLM parallel gather failed: {e}")
+            _headline, _cards = None, None
+
+        result.headline = _headline
+        result.coach_cards = _cards or _consent_required_fallback_cards()
+    else:
+        result.coach_cards = _consent_required_fallback_cards()
 
     return result
 
@@ -558,6 +576,7 @@ def _generate_progress_headline(
     days: int = 90,
     athlete: "Athlete" = None,
     metrics: Dict = None,
+    prefetched_brief: Optional[str] = None,
 ) -> Optional["ProgressHeadline"]:
     """
     Generate a coaching progress headline using the full athlete brief.
@@ -593,26 +612,21 @@ def _generate_progress_headline(
     cache_key = f"progress_headline:{athlete_id}:{data_hash}"
 
     # Check Redis cache
-    r = None
-    try:
-        import redis
-        import os
-        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-        r = redis.from_url(redis_url, decode_responses=True)
-        cached = r.get(cache_key)
-        if cached:
-            data = json.loads(cached)
-            return ProgressHeadline(**data)
-    except Exception:
-        r = None
+    from core.cache import get_cache, set_cache as _set_cache
+    _cached_headline = get_cache(cache_key)
+    if _cached_headline is not None:
+        return ProgressHeadline(**_cached_headline)
 
-    # ADR-16: Get the full athlete brief
-    try:
-        from services.coach_tools import build_athlete_brief
-        athlete_brief = build_athlete_brief(db, UUID(athlete_id))
-    except Exception as e:
-        logger.warning(f"Failed to build athlete brief for progress headline: {e}")
-        athlete_brief = "(Brief unavailable)"
+    # ADR-16: Use pre-fetched brief if provided (thread-safe path); else fetch via db.
+    if prefetched_brief is not None:
+        athlete_brief = prefetched_brief
+    else:
+        try:
+            from services.coach_tools import build_athlete_brief
+            athlete_brief = build_athlete_brief(db, UUID(athlete_id))
+        except Exception as e:
+            logger.warning(f"Failed to build athlete brief for progress headline: {e}")
+            athlete_brief = "(Brief unavailable)"
 
     prompt = (
         "You are an elite running coach. Based on this athlete's full profile, "
@@ -662,13 +676,7 @@ def _generate_progress_headline(
 
         data = json.loads(response.text)
         headline = ProgressHeadline(**data)
-
-        if r:
-            try:
-                r.setex(cache_key, 1800, json.dumps(data))
-            except Exception:
-                pass
-
+        _set_cache(cache_key, data, ttl=1800)
         return headline
 
     except Exception as e:
@@ -831,6 +839,8 @@ def _generate_progress_cards(
     days: int = 90,
     athlete: "Athlete" = None,
     metrics: Dict = None,
+    prefetched_brief: Optional[str] = None,
+    prefetched_checkin: Optional[Dict] = None,
 ) -> "List[ProgressCoachCard]":
     """
     Generate coach-led progress cards that replace raw quick metrics.
@@ -850,7 +860,7 @@ def _generate_progress_cards(
     import hashlib
     import json
 
-    checkin_context = _latest_checkin_context(db, athlete_id)
+    checkin_context = prefetched_checkin if prefetched_checkin is not None else _latest_checkin_context(db, athlete_id)
     cache_input = json.dumps(
         {
             "days": days,
@@ -870,27 +880,21 @@ def _generate_progress_cards(
     data_hash = hashlib.md5(cache_input.encode()).hexdigest()[:12]
     cache_key = f"progress_coach_cards:{athlete_id}:{data_hash}"
 
-    r = None
-    try:
-        import os
-        import redis
+    from core.cache import get_cache as _get_cache_cards, set_cache as _set_cache_cards
+    _cached_cards = _get_cache_cards(cache_key)
+    if _cached_cards is not None:
+        return [ProgressCoachCard(**card) for card in _cached_cards.get("cards", [])]
 
-        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-        r = redis.from_url(redis_url, decode_responses=True)
-        cached = r.get(cache_key)
-        if cached:
-            data = json.loads(cached)
-            return [ProgressCoachCard(**card) for card in data.get("cards", [])]
-    except Exception:
-        r = None
-
-    try:
-        from services.coach_tools import build_athlete_brief
-
-        athlete_brief = build_athlete_brief(db, UUID(athlete_id))
-    except Exception as e:
-        logger.warning(f"Failed to build athlete brief for progress cards: {e}")
-        athlete_brief = "(Brief unavailable)"
+    # Use pre-fetched brief if provided (thread-safe path); else fetch via db.
+    if prefetched_brief is not None:
+        athlete_brief = prefetched_brief
+    else:
+        try:
+            from services.coach_tools import build_athlete_brief
+            athlete_brief = build_athlete_brief(db, UUID(athlete_id))
+        except Exception as e:
+            logger.warning(f"Failed to build athlete brief for progress cards: {e}")
+            athlete_brief = "(Brief unavailable)"
 
     prompt_parts = [
         "You are an elite running coach creating the 4 top cards for an athlete's Progress page.",
@@ -1003,12 +1007,7 @@ def _generate_progress_cards(
             logger.warning("Progress coach cards failed A->I->A contract validation; using fallback cards.")
             return _fallback_progress_cards(summary, checkin_context, days)
 
-        if r:
-            try:
-                r.setex(cache_key, 1800, json.dumps({"cards": [c.model_dump() for c in cards]}))
-            except Exception:
-                pass
-
+        _set_cache_cards(cache_key, {"cards": [c.model_dump() for c in cards]}, ttl=1800)
         return cards
     except Exception as e:
         logger.warning(f"Progress coach cards LLM failed: {type(e).__name__}: {e}")

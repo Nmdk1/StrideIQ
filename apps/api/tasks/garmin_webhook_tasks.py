@@ -499,6 +499,8 @@ def process_garmin_activity_task(
 
         athlete.last_garmin_sync = datetime.now(tz=timezone.utc)
         db.commit()
+        from core.cache import invalidate_athlete_cache
+        invalidate_athlete_cache(str(athlete_id))
 
         logger.info(
             "process_garmin_activity_task: athlete=%s created=%d updated=%d skipped=%d",

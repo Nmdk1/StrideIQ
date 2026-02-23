@@ -342,6 +342,8 @@ def create_activity(
     db.add(db_activity)
     db.commit()
     db.refresh(db_activity)
+    from core.cache import invalidate_athlete_cache
+    invalidate_athlete_cache(str(current_user.id))
     activity_name = db_activity.name or f"{db_activity.sport.title()} Activity"
     activity_dict = {
         "id": str(db_activity.id),

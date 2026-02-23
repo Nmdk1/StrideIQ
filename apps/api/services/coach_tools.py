@@ -3321,7 +3321,14 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
     reads this and coaches from it.
 
     Returns a human-readable multi-section string (~3000-4000 tokens).
+    Cached in Redis for 15 minutes. Invalidated on activity write.
     """
+    from core.cache import get_cache, set_cache
+    _cache_key = f"athlete_brief:{athlete_id}"
+    _cached = get_cache(_cache_key)
+    if _cached is not None:
+        return _cached
+
     today = date.today()
     sections: List[str] = []
 
@@ -3622,7 +3629,9 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
     if not sections:
         return "(No athlete data available)"
 
-    return "\n\n".join(sections)
+    brief = "\n\n".join(sections)
+    set_cache(_cache_key, brief, ttl=900)  # 15 min
+    return brief
 
 
 def compute_running_math(

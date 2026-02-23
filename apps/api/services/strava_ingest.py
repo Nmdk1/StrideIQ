@@ -89,6 +89,8 @@ def ingest_strava_activity_by_id(
         db.add(act)
         db.commit()
         db.refresh(act)
+        from core.cache import invalidate_athlete_cache
+        invalidate_athlete_cache(str(athlete.id))
         created = True
     else:
         # Opportunistic field refresh for missing data (do not override user edits)
@@ -101,6 +103,8 @@ def ingest_strava_activity_by_id(
         if act.average_speed is None and avg_speed is not None:
             act.average_speed = avg_speed
         db.commit()
+        from core.cache import invalidate_athlete_cache
+        invalidate_athlete_cache(str(athlete.id))
 
     if mark_as_race is True:
         act.user_verified_race = True
