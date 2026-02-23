@@ -783,6 +783,32 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
 
                 continue
 
+            # --- Cross-provider dedup: skip if Garmin already owns this run ---
+            from datetime import timedelta as td
+            window_start = start_time - td(seconds=3600)
+            window_end = start_time + td(seconds=3600)
+            garmin_match = (
+                db.query(Activity)
+                .filter(
+                    Activity.athlete_id == athlete.id,
+                    Activity.provider == 'garmin',
+                    Activity.start_time >= window_start,
+                    Activity.start_time <= window_end,
+                )
+                .first()
+            )
+            if garmin_match:
+                dist_strava = a.get("distance") or 0
+                dist_garmin = garmin_match.distance_m or 0
+                if dist_garmin > 0 and dist_strava > 0:
+                    diff_pct = abs(dist_strava - dist_garmin) / max(dist_strava, dist_garmin)
+                    if diff_pct <= 0.05:
+                        logger.info(
+                            "Strava dedup: skipping %s — Garmin activity %s already exists (dist diff %.1f%%)",
+                            external_activity_id, garmin_match.id, diff_pct * 100
+                        )
+                        continue
+
             # Create new activity
             print(f"DEBUG: Creating new activity {strava_activity_id} - {a.get('name')}")
             # Convert Celsius to Fahrenheit if temperature available
