@@ -219,27 +219,26 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 async def health():
     """
-    Simple health check for load balancers and uptime monitors.
-    
-    Returns:
-        - 200: Core systems operational
-        - 503: Critical dependency unavailable
+    Readiness probe — confirms API can serve requests (DB + Redis reachable).
+    Returns 200 with degraded status on partial failures; 503 on total failure.
     """
-    db_healthy = check_db_connection()
-    
-    if not db_healthy:
+    from core.cache import get_redis_client as _get_redis
+    try:
+        db_ok = check_db_connection()
+        redis_client = _get_redis()
+        redis_ok = False
+        if redis_client is not None:
+            try:
+                redis_ok = bool(redis_client.ping())
+            except Exception:
+                redis_ok = False
+        overall = "ok" if (db_ok and redis_ok) else "degraded"
+        return {"status": overall, "db": db_ok, "redis": redis_ok}
+    except Exception:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "status": "unhealthy",
-                "database": "unavailable",
-            }
+            content={"status": "unhealthy"},
         )
-    
-    return {
-        "status": "healthy",
-        "timestamp": time.time(),
-    }
 
 
 @app.get("/health/detailed")
@@ -297,10 +296,10 @@ async def health_detailed():
 @app.get("/ping")
 async def ping():
     """
-    Minimal ping endpoint for uptime monitors.
-    No dependencies checked - just confirms the API is responding.
+    Liveness probe — confirms API process is alive.
+    No DB, no auth, no rate limit. Used for Docker healthcheck restarts.
     """
-    return {"pong": True}
+    return {"status": "alive"}
 
 
 @app.get("/debug")

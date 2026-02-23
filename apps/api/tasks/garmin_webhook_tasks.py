@@ -441,6 +441,7 @@ def _ingest_activity_detail_item(
     bind=True,
     max_retries=3,
     default_retry_delay=60,
+    rate_limit='6/m',
 )
 def process_garmin_activity_task(
     self,
@@ -648,6 +649,7 @@ def request_garmin_backfill_task(self, athlete_id: str) -> Dict[str, Any]:
     bind=True,
     max_retries=3,
     default_retry_delay=60,
+    rate_limit='10/m',
 )
 def process_garmin_health_task(
     self,
