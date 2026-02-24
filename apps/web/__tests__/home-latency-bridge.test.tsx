@@ -26,6 +26,7 @@ jest.mock('@/lib/hooks/queries/home', () => ({
     },
   }),
   useQuickCheckin: () => ({ mutate: jest.fn(), isPending: false }),
+  useInvalidateHome: () => jest.fn(),
 }));
 
 jest.mock('@/lib/hooks/queries/insights', () => ({

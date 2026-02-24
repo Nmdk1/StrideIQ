@@ -260,6 +260,25 @@ def reset_circuit(athlete_id: str) -> None:
         pass
 
 
+def mark_briefing_dirty(athlete_id: str) -> None:
+    """
+    Evict the cached briefing payload for an athlete so the next /v1/home
+    read returns 'missing' or 'refreshing' instead of the stale pre-check-in
+    content.
+
+    Only deletes the payload key — does NOT touch lock, cooldown, or circuit
+    keys. Non-blocking: swallows all Redis exceptions with a warning log.
+    """
+    r = get_redis_client()
+    if not r:
+        return
+    try:
+        r.delete(_cache_key(athlete_id))
+        logger.debug("Home briefing marked dirty (cache evicted) for %s", athlete_id)
+    except Exception as e:
+        logger.warning("mark_briefing_dirty failed for %s: %s", athlete_id, e)
+
+
 def _lock_exists(r, athlete_id: str) -> bool:
     try:
         return bool(r.exists(_lock_key(athlete_id)))

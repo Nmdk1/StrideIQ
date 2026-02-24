@@ -5,6 +5,8 @@ Ultra-fast daily check-in endpoint.
 Must be lightning fast - this is the data that feeds the correlation engine.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
@@ -17,7 +19,27 @@ from core.database import get_db
 from core.auth import get_current_user
 from models import Athlete, DailyCheckin
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/v1/daily-checkin", tags=["Daily Check-in"])
+
+
+def _trigger_briefing_refresh(athlete_id: str) -> None:
+    """
+    Non-blocking: mark cached briefing dirty and enqueue a refresh task.
+    Called after any successful check-in save. Never raises.
+    """
+    try:
+        from services.home_briefing_cache import mark_briefing_dirty
+        mark_briefing_dirty(athlete_id)
+    except Exception as e:
+        logger.warning("mark_briefing_dirty failed (non-blocking): %s", e)
+
+    try:
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        enqueue_briefing_refresh(athlete_id)
+    except Exception as e:
+        logger.warning("enqueue_briefing_refresh failed (non-blocking): %s", e)
 
 
 class DailyCheckinCreate(BaseModel):
@@ -85,6 +107,7 @@ async def create_or_update_checkin(
                 setattr(existing, field, value)
         db.commit()
         db.refresh(existing)
+        _trigger_briefing_refresh(str(current_user.id))
         return existing
     else:
         # Create new
@@ -95,6 +118,7 @@ async def create_or_update_checkin(
         db.add(db_checkin)
         db.commit()
         db.refresh(db_checkin)
+        _trigger_briefing_refresh(str(current_user.id))
         return db_checkin
 
 

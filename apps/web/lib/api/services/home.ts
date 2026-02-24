@@ -115,6 +115,8 @@ export interface LastRun {
   device_name?: string | null;  // Garmin device name, e.g. 'forerunner965'
 }
 
+export type BriefingState = 'fresh' | 'stale' | 'missing' | 'refreshing' | 'consent_required';
+
 export interface HomeData {
   today: TodayWorkout;
   yesterday: YesterdayInsight;
@@ -149,6 +151,8 @@ export interface HomeData {
   } | null;
   // RSI Layer 1
   last_run?: LastRun | null;
+  // Async briefing state machine — drives polling and pending UI
+  briefing_state?: BriefingState | null;
 }
 
 // --- API Functions ---

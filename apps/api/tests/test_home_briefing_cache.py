@@ -1139,3 +1139,71 @@ class TestSkipCacheParam:
         assert sig.parameters["skip_cache"].default is False, (
             "skip_cache must default to False (request path stays unchanged)"
         )
+
+
+# ===========================================================================
+# Tests for mark_briefing_dirty (added by builder note 2026-02-24)
+# ===========================================================================
+
+class TestMarkBriefingDirty:
+    """Tests 36-40: mark_briefing_dirty helper contract."""
+
+    def test_removes_payload_key_when_present(self, fake_redis):
+        """Test 36: deletes home_briefing:<id> when cache exists."""
+        from services.home_briefing_cache import mark_briefing_dirty, _cache_key
+
+        athlete_id = str(uuid4())
+        fake_redis.setex(_cache_key(athlete_id), 3600, '{"payload": "stale"}')
+        assert fake_redis.exists(_cache_key(athlete_id))
+
+        mark_briefing_dirty(athlete_id)
+
+        assert not fake_redis.exists(_cache_key(athlete_id)), \
+            "mark_briefing_dirty must evict the payload cache key"
+
+    def test_safe_when_payload_key_absent(self, fake_redis):
+        """Test 37: no-op when key doesn't exist — no exception."""
+        from services.home_briefing_cache import mark_briefing_dirty, _cache_key
+
+        athlete_id = str(uuid4())
+        assert not fake_redis.exists(_cache_key(athlete_id))
+
+        mark_briefing_dirty(athlete_id)  # Must not raise
+
+    def test_does_not_touch_lock_cooldown_circuit(self, fake_redis):
+        """Test 38: non-payload keys survive mark_briefing_dirty."""
+        from services.home_briefing_cache import (
+            mark_briefing_dirty, _cache_key, _lock_key, _cooldown_key, _circuit_key,
+        )
+
+        athlete_id = str(uuid4())
+        fake_redis._store[_cache_key(athlete_id)] = '{"payload": "old"}'
+        fake_redis._store[_lock_key(athlete_id)] = "1"
+        fake_redis._store[_cooldown_key(athlete_id)] = "1"
+        fake_redis._store[_circuit_key(athlete_id)] = "2"
+
+        mark_briefing_dirty(athlete_id)
+
+        assert not fake_redis.exists(_cache_key(athlete_id)), "payload key must be deleted"
+        assert fake_redis.exists(_lock_key(athlete_id)), "lock must survive"
+        assert fake_redis.exists(_cooldown_key(athlete_id)), "cooldown must survive"
+        assert fake_redis.exists(_circuit_key(athlete_id)), "circuit must survive"
+
+    def test_swallows_redis_delete_error(self):
+        """Test 39: Redis exception during delete is caught; function returns cleanly."""
+        from services.home_briefing_cache import mark_briefing_dirty
+
+        athlete_id = str(uuid4())
+        broken = MagicMock()
+        broken.delete.side_effect = ConnectionError("Redis down")
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=broken):
+            mark_briefing_dirty(athlete_id)  # Must not raise
+
+    def test_no_ops_when_redis_unavailable(self):
+        """Test 40: returns cleanly when get_redis_client() returns None."""
+        from services.home_briefing_cache import mark_briefing_dirty
+
+        athlete_id = str(uuid4())
+        with patch("services.home_briefing_cache.get_redis_client", return_value=None):
+            mark_briefing_dirty(athlete_id)  # Must not raise

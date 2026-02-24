@@ -2,10 +2,12 @@
  * Home Page Queries
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
 import { getHomeData, type HomeData } from '@/lib/api/services/home';
 import { apiClient } from '@/lib/api/client';
 import { toast } from 'sonner';
+
+const BRIEFING_PENDING_STATES = new Set(['stale', 'missing', 'refreshing']);
 
 export function useHomeData() {
   return useQuery({
@@ -13,7 +15,17 @@ export function useHomeData() {
     queryFn: getHomeData,
     staleTime: 1000 * 60 * 5, // 5 minutes
     refetchOnWindowFocus: true,
+    refetchInterval: (query) => {
+      const state = query.state.data?.briefing_state;
+      return state && BRIEFING_PENDING_STATES.has(state) ? 2000 : false;
+    },
   });
+}
+
+/** Return a stable callback that invalidates the ['home'] query. */
+export function useInvalidateHome(): () => void {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: ['home'] });
 }
 
 /** Quick check-in payload */
@@ -40,11 +52,14 @@ export function useQuickCheckin() {
       // Optimistically update the home cache so the UI switches from
       // QuickCheckin → CheckinSummary instantly, without waiting for
       // the slow /v1/home refetch (coach briefing, LLM, etc.).
+      // Also mark briefing_state as 'refreshing' so the polling loop
+      // starts immediately and the pending UI appears.
       queryClient.setQueryData<HomeData | undefined>(['home'], (old) => {
         if (!old) return old;
         return {
           ...old,
           checkin_needed: false,
+          briefing_state: 'refreshing',
           today_checkin: {
             motivation_label: MOTIVATION_LABELS[variables.motivation_1_5 ?? -1] ?? null,
             sleep_label: SLEEP_QUALITY_LABELS[variables.sleep_quality_1_5 ?? -1] ?? null,

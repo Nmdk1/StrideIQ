@@ -33,6 +33,7 @@ jest.mock('@/lib/hooks/queries/home', () => ({
     data: homeData,
   }),
   useQuickCheckin: () => ({ mutate: jest.fn(), isPending: false }),
+  useInvalidateHome: () => jest.fn(),
 }));
 
 import HomePage from '@/app/home/page';

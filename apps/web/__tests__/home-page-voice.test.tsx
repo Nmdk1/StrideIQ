@@ -111,6 +111,7 @@ const mockHomeData = {
 jest.mock('@/lib/hooks/queries/home', () => ({
   useHomeData: () => ({ data: mockHomeData, isLoading: false, error: null }),
   useQuickCheckin: () => ({ mutate: jest.fn(), isPending: false }),
+  useInvalidateHome: () => jest.fn(),
 }));
 
 // Mock ProtectedRoute to just render children

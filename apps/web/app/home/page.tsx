@@ -9,10 +9,10 @@
  * Removed: Quick Access, Yesterday, Hero Narrative, Welcome card, Import Progress
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { useHomeData, useQuickCheckin } from '@/lib/hooks/queries/home';
+import { useHomeData, useQuickCheckin, useInvalidateHome } from '@/lib/hooks/queries/home';
 import { LastRunHero } from '@/components/home/LastRunHero';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -332,10 +332,83 @@ function RaceCountdownCard({
 }
 
 
+// ── Briefing Pending Placeholder ────────────────────────────────────
+
+const BRIEFING_TIMEOUT_MS = 30_000;
+
+function BriefingPendingPlaceholder({
+  onRetry,
+  timedOut,
+}: {
+  onRetry: () => void;
+  timedOut: boolean;
+}) {
+  if (timedOut) {
+    return (
+      <div
+        data-testid="briefing-timeout-fallback"
+        className="px-1 py-2 flex items-start gap-2"
+      >
+        <Sparkles className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <p className="text-sm text-slate-500 leading-relaxed">
+            Your coach is taking a moment — check back shortly.
+          </p>
+          <button
+            onClick={onRetry}
+            className="text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors"
+          >
+            Retry now
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid="briefing-thinking"
+      className="px-1 py-2 flex items-center gap-2"
+    >
+      <Sparkles className="w-4 h-4 text-slate-500 animate-pulse flex-shrink-0" />
+      <p className="text-sm text-slate-500 italic">Coach is thinking...</p>
+    </div>
+  );
+}
+
+
 // ── Main Page ───────────────────────────────────────────────────────
 
 export default function HomePage() {
+  const invalidateHome = useInvalidateHome();
   const { data, isLoading, error } = useHomeData();
+
+  // Briefing pending state + 30s timeout fallback
+  const briefingState = data?.briefing_state;
+  const isBriefingPending =
+    briefingState === 'stale' ||
+    briefingState === 'missing' ||
+    briefingState === 'refreshing';
+
+  const [briefingTimedOut, setBriefingTimedOut] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isBriefingPending && !briefingTimedOut) {
+      timeoutRef.current = setTimeout(() => setBriefingTimedOut(true), BRIEFING_TIMEOUT_MS);
+    } else if (!isBriefingPending) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      setBriefingTimedOut(false);
+    }
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [isBriefingPending, briefingTimedOut]);
+
+  const handleBriefingRetry = () => {
+    setBriefingTimedOut(false);
+    invalidateHome();
+  };
 
   if (isLoading) {
     return (
@@ -404,8 +477,8 @@ export default function HomePage() {
           {/* 1. Full-bleed hero (last run canvas) */}
           {last_run && <LastRunHero lastRun={last_run} />}
 
-          {/* 2. The Voice — morning_voice + coach_noticed as plain paragraphs */}
-          {(coach_briefing?.morning_voice || coach_briefing?.coach_noticed) && (
+          {/* 2. The Voice — morning_voice + coach_noticed, or pending placeholder */}
+          {(coach_briefing?.morning_voice || coach_briefing?.coach_noticed) ? (
             <div data-testid="morning-voice" className="px-1 py-2 space-y-2">
               {coach_briefing.morning_voice && (
                 <p className="text-base text-slate-300 leading-relaxed">
@@ -418,7 +491,12 @@ export default function HomePage() {
                 </p>
               )}
             </div>
-          )}
+          ) : isBriefingPending ? (
+            <BriefingPendingPlaceholder
+              onRetry={handleBriefingRetry}
+              timedOut={briefingTimedOut}
+            />
+          ) : null}
 
           {/* 3. Today's workout — plain text, no card chrome */}
           {today.has_workout ? (
