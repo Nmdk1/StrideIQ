@@ -1,5 +1,6 @@
 """
 Tests for check-in -> briefing refresh contract (builder note 2026-02-24).
+Hotfix tests added 2026-02-24: force-enqueue bypass of cooldown.
 
 Required coverage:
   1. _trigger_briefing_refresh calls mark_briefing_dirty + enqueue_briefing_refresh (unit)
@@ -7,8 +8,11 @@ Required coverage:
   3. If dirty/enqueue helpers throw, _trigger_briefing_refresh never raises (unit)
   4. mark_briefing_dirty removes payload key (unit, see also TestMarkBriefingDirtyUnit)
   5. mark_briefing_dirty no-ops when Redis unavailable/errors (unit)
+  6. force=False + cooldown => skip (hotfix)
+  7. force=True + cooldown + closed circuit => enqueue (hotfix)
+  8. force=True + open circuit => block (hotfix)
 
-Tests 1-3 and 4-5 are pure-unit (no DB required).
+Tests 1-5 and 6-8 are pure-unit (no DB required).
 Tests ending in _with_db require a real PostgreSQL session via conftest fixtures.
 """
 import os
@@ -30,16 +34,38 @@ pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
 class FakeRedis:
     def __init__(self):
         self._store: dict = {}
+        self._ttls: dict = {}
+
+    def get(self, key):
+        return self._store.get(key)
+
+    def set(self, key, value, nx=False, ex=None):
+        if nx and key in self._store:
+            return False
+        self._store[key] = value
+        if ex:
+            self._ttls[key] = ex
+        return True
 
     def setex(self, key, ttl, value):
         self._store[key] = value
+        self._ttls[key] = ttl
+
+    def exists(self, key):
+        return key in self._store
 
     def delete(self, *keys):
         for k in keys:
             self._store.pop(k, None)
+            self._ttls.pop(k, None)
 
-    def exists(self, key):
-        return key in self._store
+    def incr(self, key):
+        val = int(self._store.get(key, 0)) + 1
+        self._store[key] = str(val)
+        return val
+
+    def expire(self, key, ttl):
+        self._ttls[key] = ttl
 
     def ping(self):
         return True
@@ -76,7 +102,21 @@ class TestTriggerBriefingRefreshUnit:
              patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
             _trigger_briefing_refresh(athlete_id)
 
-        mock_enq.assert_called_once_with(athlete_id)
+        mock_enq.assert_called_once_with(athlete_id, force=True)
+
+    def test_calls_enqueue_with_force_true(self):
+        """Test 1d: _trigger_briefing_refresh always passes force=True."""
+        from routers.daily_checkin import _trigger_briefing_refresh
+
+        athlete_id = str(uuid4())
+        with patch("services.home_briefing_cache.mark_briefing_dirty"), \
+             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
+            _trigger_briefing_refresh(athlete_id)
+
+        args, kwargs = mock_enq.call_args
+        force_value = kwargs.get("force", args[1] if len(args) > 1 else None)
+        assert force_value is True, \
+            f"_trigger_briefing_refresh must pass force=True, got force={force_value}"
 
     def test_calls_dirty_before_enqueue(self):
         """Test 1c: mark_briefing_dirty is called before enqueue_briefing_refresh."""
@@ -88,7 +128,7 @@ class TestTriggerBriefingRefreshUnit:
         with patch("services.home_briefing_cache.mark_briefing_dirty",
                    side_effect=lambda _: call_order.append("dirty")), \
              patch("tasks.home_briefing_tasks.enqueue_briefing_refresh",
-                   side_effect=lambda _: call_order.append("enqueue")):
+                   side_effect=lambda *a, **kw: call_order.append("enqueue")):
             _trigger_briefing_refresh(athlete_id)
 
         assert call_order == ["dirty", "enqueue"], \
@@ -112,8 +152,7 @@ class TestTriggerBriefingRefreshNonBlocking:
              patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
             _trigger_briefing_refresh(athlete_id)  # Must not raise
 
-        # enqueue must still be attempted even when dirty raised
-        mock_enq.assert_called_once_with(athlete_id)
+        mock_enq.assert_called_once_with(athlete_id, force=True)
 
     def test_enqueue_raising_does_not_propagate(self):
         """Test 3b: exception in enqueue_briefing_refresh is caught; function returns cleanly."""
@@ -178,7 +217,7 @@ class TestMarkBriefingDirtyUnit:
 
         athlete_id = str(uuid4())
         fake_r = FakeRedis()
-        fake_r._store[_cache_key(athlete_id)] = '{"payload": "stale"}'
+        fake_r._store[_cache_key(athlete_id)] = '{"payload": "old"}'
         fake_r._store[_lock_key(athlete_id)] = "1"
         fake_r._store[_cooldown_key(athlete_id)] = "1"
         fake_r._store[_circuit_key(athlete_id)] = "2"
@@ -186,18 +225,18 @@ class TestMarkBriefingDirtyUnit:
         with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r):
             mark_briefing_dirty(athlete_id)
 
-        assert not fake_r.exists(_cache_key(athlete_id)), "payload key must be gone"
-        assert fake_r.exists(_lock_key(athlete_id)), "lock key must survive"
-        assert fake_r.exists(_cooldown_key(athlete_id)), "cooldown key must survive"
-        assert fake_r.exists(_circuit_key(athlete_id)), "circuit key must survive"
+        assert not fake_r.exists(_cache_key(athlete_id)), "payload key must be deleted"
+        assert fake_r.exists(_lock_key(athlete_id)), "lock must survive"
+        assert fake_r.exists(_cooldown_key(athlete_id)), "cooldown must survive"
+        assert fake_r.exists(_circuit_key(athlete_id)), "circuit must survive"
 
     def test_swallows_redis_exception(self):
-        """Test 5: Redis error during delete is caught; no exception raised."""
+        """Test 5: Redis exception during delete is caught; function returns cleanly."""
         from services.home_briefing_cache import mark_briefing_dirty
 
         athlete_id = str(uuid4())
         broken = MagicMock()
-        broken.delete.side_effect = ConnectionError("Redis unreachable")
+        broken.delete.side_effect = ConnectionError("Redis down")
 
         with patch("services.home_briefing_cache.get_redis_client", return_value=broken):
             mark_briefing_dirty(athlete_id)  # Must not raise
@@ -289,3 +328,106 @@ class TestEndpointWiringWithDB:
         finally:
             app.dependency_overrides.pop(get_current_user, None)
             app.dependency_overrides.pop(get_db, None)
+
+
+# ===========================================================================
+# Tests 6-8: Force-enqueue behavior (hotfix 2026-02-24)
+# ===========================================================================
+
+class TestForceEnqueueBehavior:
+    """
+    Tests 6-8: force path behavior in enqueue_briefing_refresh.
+
+    6. force=False + cooldown present => enqueue skipped
+    7. force=True + cooldown present + circuit closed => enqueue allowed
+    8. force=True + circuit open => enqueue blocked
+    """
+
+    def test_force_false_with_cooldown_skips(self):
+        """Test 6: normal call is blocked when cooldown key exists."""
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        from services.home_briefing_cache import _cooldown_key
+
+        athlete_id = str(uuid4())
+        fake_r = FakeRedis()
+        fake_r.setex(_cooldown_key(athlete_id), 60, "1")  # cooldown active
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r), \
+             patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+            result = enqueue_briefing_refresh(athlete_id, force=False)
+
+        assert result is False, "force=False + cooldown must skip enqueue"
+        mock_task.delay.assert_not_called()
+
+    def test_force_true_with_cooldown_enqueues(self):
+        """Test 7: force=True bypasses cooldown when circuit is closed."""
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        from services.home_briefing_cache import _cooldown_key
+
+        athlete_id = str(uuid4())
+        fake_r = FakeRedis()
+        fake_r.setex(_cooldown_key(athlete_id), 60, "1")  # cooldown active; circuit closed
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r), \
+             patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+            result = enqueue_briefing_refresh(athlete_id, force=True)
+
+        assert result is True, "force=True + closed circuit must allow enqueue"
+        mock_task.delay.assert_called_once_with(athlete_id)
+
+    def test_force_true_with_open_circuit_blocks(self):
+        """Test 8: force=True is still blocked when circuit is open."""
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        from services.home_briefing_cache import _circuit_key, CIRCUIT_FAILURE_THRESHOLD
+
+        athlete_id = str(uuid4())
+        fake_r = FakeRedis()
+        # Open the circuit: write failure count >= threshold
+        fake_r._store[_circuit_key(athlete_id)] = str(CIRCUIT_FAILURE_THRESHOLD)
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r), \
+             patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+            result = enqueue_briefing_refresh(athlete_id, force=True)
+
+        assert result is False, "force=True + open circuit must still block enqueue"
+        mock_task.delay.assert_not_called()
+
+    def test_force_true_sets_cooldown_after_enqueue(self):
+        """Test 7b: force path sets cooldown after enqueuing (prevents burst)."""
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        from services.home_briefing_cache import _cooldown_key
+
+        athlete_id = str(uuid4())
+        fake_r = FakeRedis()
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r), \
+             patch("tasks.home_briefing_tasks.generate_home_briefing_task"):
+            enqueue_briefing_refresh(athlete_id, force=True)
+
+        assert fake_r.exists(_cooldown_key(athlete_id)), \
+            "force enqueue must set cooldown to prevent immediate re-trigger"
+
+    def test_is_circuit_open_returns_false_when_circuit_closed(self):
+        """Test: is_circuit_open helper returns False when no failures recorded."""
+        from services.home_briefing_cache import is_circuit_open
+
+        athlete_id = str(uuid4())
+        fake_r = FakeRedis()
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r):
+            result = is_circuit_open(athlete_id)
+
+        assert result is False
+
+    def test_is_circuit_open_returns_true_when_circuit_open(self):
+        """Test: is_circuit_open helper returns True when failure threshold is met."""
+        from services.home_briefing_cache import is_circuit_open, _circuit_key, CIRCUIT_FAILURE_THRESHOLD
+
+        athlete_id = str(uuid4())
+        fake_r = FakeRedis()
+        fake_r._store[_circuit_key(athlete_id)] = str(CIRCUIT_FAILURE_THRESHOLD)
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r):
+            result = is_circuit_open(athlete_id)
+
+        assert result is True

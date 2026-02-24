@@ -37,7 +37,7 @@ def _trigger_briefing_refresh(athlete_id: str) -> None:
 
     try:
         from tasks.home_briefing_tasks import enqueue_briefing_refresh
-        enqueue_briefing_refresh(athlete_id)
+        enqueue_briefing_refresh(athlete_id, force=True)
     except Exception as e:
         logger.warning("enqueue_briefing_refresh failed (non-blocking): %s", e)
 

@@ -505,20 +505,37 @@ def refresh_active_home_briefings(self: Task) -> Dict:
             db.close()
 
 
-def enqueue_briefing_refresh(athlete_id: str) -> bool:
+def enqueue_briefing_refresh(athlete_id: str, force: bool = False) -> bool:
     """
     Fire-and-forget enqueue for home briefing refresh.
-    Respects cooldown and circuit breaker.
+
+    force=False (default): respects cooldown + circuit breaker (existing behavior).
+    force=True: bypasses cooldown, still honors circuit breaker + task lock.
+                Use only for high-priority triggers (check-in) where the athlete
+                explicitly submitted new data and must see a fresh briefing.
 
     Called by triggers (check-in, activity sync, plan change, etc.)
     and by the /v1/home endpoint when cache is stale/missing.
     """
-    from services.home_briefing_cache import should_enqueue_refresh, set_enqueue_cooldown
+    from services.home_briefing_cache import (
+        should_enqueue_refresh,
+        set_enqueue_cooldown,
+        is_circuit_open,
+    )
 
-    if not should_enqueue_refresh(athlete_id):
-        return False
+    if force:
+        # Bypass cooldown, but still block on open circuit
+        if is_circuit_open(athlete_id):
+            logger.debug("Home briefing force-enqueue blocked (circuit open): %s", athlete_id)
+            return False
+    else:
+        if not should_enqueue_refresh(athlete_id):
+            return False
 
     set_enqueue_cooldown(athlete_id)
     generate_home_briefing_task.delay(athlete_id)
-    logger.info(f"Home briefing refresh enqueued for {athlete_id}")
+    logger.info(
+        "Home briefing refresh enqueued for %s (force=%s)",
+        athlete_id, force,
+    )
     return True

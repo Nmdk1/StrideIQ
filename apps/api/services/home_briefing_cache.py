@@ -279,6 +279,22 @@ def mark_briefing_dirty(athlete_id: str) -> None:
         logger.warning("mark_briefing_dirty failed for %s: %s", athlete_id, e)
 
 
+def is_circuit_open(athlete_id: str) -> bool:
+    """
+    Public read on the circuit breaker state for an athlete.
+    Returns True if the circuit is open (too many recent failures — do not enqueue).
+    Safe to call from outside this module (e.g., task layer force-enqueue path).
+    """
+    r = get_redis_client()
+    if not r:
+        return False  # fail open: no Redis → assume circuit closed
+    try:
+        return _circuit_is_open(r, athlete_id)
+    except Exception as e:
+        logger.warning("is_circuit_open check error for %s: %s", athlete_id, e)
+        return False  # fail open
+
+
 def _lock_exists(r, athlete_id: str) -> bool:
     try:
         return bool(r.exists(_lock_key(athlete_id)))
