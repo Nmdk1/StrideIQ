@@ -30,7 +30,7 @@ from core.auth import get_current_user
 from core.config import settings
 from core.database import get_db
 from core.feature_flags import is_feature_enabled
-from models import Activity, ActivityStream, Athlete, ConsentAuditLog, GarminDay
+from models import Activity, ActivitySplit, ActivityStream, Athlete, ConsentAuditLog, GarminDay
 from services.garmin_oauth import (
     build_auth_url,
     deregister_user,
@@ -363,6 +363,9 @@ def disconnect_garmin(
     if garmin_activity_ids:
         db.query(ActivityStream).filter(
             ActivityStream.activity_id.in_(garmin_activity_ids)
+        ).delete(synchronize_session=False)
+        db.query(ActivitySplit).filter(
+            ActivitySplit.activity_id.in_(garmin_activity_ids)
         ).delete(synchronize_session=False)
         db.query(Activity).filter(
             Activity.id.in_(garmin_activity_ids)
