@@ -197,7 +197,7 @@ describe('Test 7: refetchInterval activates for non-fresh states', () => {
     const freshStates = ['fresh', 'consent_required', null, undefined];
 
     // The refetchInterval fn: state in pending → 2000, else false
-    const refetchInterval = (query: { state: { data?: { briefing_state?: string } } }) => {
+    const refetchInterval = (query: { state: { data?: { briefing_state?: string | null } } }) => {
       const state = query.state.data?.briefing_state;
       const BRIEFING_PENDING_STATES = new Set(['stale', 'missing', 'refreshing']);
       return state && BRIEFING_PENDING_STATES.has(state) ? 2000 : false;
