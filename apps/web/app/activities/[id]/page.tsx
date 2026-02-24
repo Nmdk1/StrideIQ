@@ -238,6 +238,11 @@ export default function ActivityDetailPage() {
           <p className="text-slate-400 text-sm">
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
           </p>
+          {activity.provider === 'garmin' && activity.device_name && (
+            <p className="text-xs text-slate-500 mt-1">
+              {formatDeviceName(activity.device_name)} via Garmin Connect
+            </p>
+          )}
         </div>
 
         {/* ── 2. Run Shape Canvas (Hero) ── */}
