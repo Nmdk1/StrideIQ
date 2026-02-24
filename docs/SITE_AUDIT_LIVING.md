@@ -1,8 +1,8 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Single source of truth for every new builder session. Updated every session.
-**Last updated:** February 17, 2026
-**Last updated by:** Builder session that shipped SEV-1 LLM timeout/concurrency hotfix
+**Last updated:** February 24, 2026
+**Last updated by:** Builder session that set up Stripe in production and fixed Garmin disconnect bug
 
 ---
 
@@ -259,7 +259,7 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 | Phase 3B (Workout Narratives) | CODE COMPLETE — gate accruing | 65+ passing, 24 xfail |
 | Phase 3C (N=1 Insights) | CODE COMPLETE — gate accruing | 65+ passing, 26 xfail |
 | Phase 4 (50K Ultra) | CONTRACT ONLY | 37 xfail |
-| Monetization Tiers | CONTRACT ONLY | 29 xfail |
+| Monetization Tiers | CONTRACT ONLY — Stripe infrastructure LIVE | 29 xfail |
 
 **Build priority order:**
 1. Monetization tier mapping (revenue unlock)
@@ -278,6 +278,8 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 ## 8. Known Issues & Technical Debt
 
 ### Active Issues
+- **Garmin backfill failing** — `request_garmin_backfill_task` returns 400/429 for all endpoints. Fix needed in `apps/api/services/garmin_backfill.py`: add `resp.text` logging, use 30-day range for activities/activityDetails (not 90), add 429 retry logic. See `docs/SESSION_HANDOFF_2026-02-22_GARMIN_LIVE.md` for full diagnosis.
+- **Garmin partner review in progress** — Elena Kononova (Garmin Connect Partner Services) reviewing authorization flow. Screenshots sent 2026-02-24. Awaiting response.
 - **GitHub Actions billing:** CI runs failing due to payment issue — not a code problem, needs billing fix in GitHub Settings > Billing & plans
 - **Insights feed noise:** `/insights` Active Insights section has duplicate volume alerts and low-quality achievement cards — needs deduplication and quality filter
 - **Activity detail moments:** Key Moments show raw numbers ("Grade Adjusted Anomaly: 4.7") — need narrative translation
@@ -289,10 +291,11 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - Timezone-aware vs naive datetime comparisons in `ensure_fresh_token` (observed during Danny's Strava debug)
 - Sleep weight = 0.00 in readiness score — excluded until correlation engine proves individual relationship
 
-### Resolved Issues (Feb 17, 2026)
-- **SEV-1: Coach stream hanging on "Thinking..."** — fixed with 120s hard timeout + try/except + SSE error event in `ai_coach.py`
-- **SEV-1: Home page LLM blocking all requests** — fixed by splitting `generate_coach_home_briefing` into two phases: DB on request thread, LLM on worker thread via `asyncio.to_thread` + 15s `asyncio.wait_for`
-- **SEV-1: `--workers 3` OOM** — reverted; 1 vCPU / 2GB droplet cannot run multiple uvicorn workers
+### Resolved Issues
+- **Garmin disconnect 500 (Feb 24, 2026)** — `POST /v1/garmin/disconnect` crashed with `ForeignKeyViolation` on `activity_split`. Fixed by deleting `ActivitySplit` rows before `Activity` rows in the disconnect handler. Commit `9b11504`.
+- **SEV-1: Coach stream hanging on "Thinking..." (Feb 17, 2026)** — fixed with 120s hard timeout + try/except + SSE error event in `ai_coach.py`
+- **SEV-1: Home page LLM blocking all requests (Feb 17, 2026)** — fixed by splitting `generate_coach_home_briefing` into two phases: DB on request thread, LLM on worker thread via `asyncio.to_thread` + 15s `asyncio.wait_for`
+- **SEV-1: `--workers 3` OOM (Feb 17, 2026)** — reverted; 1 vCPU / 2GB droplet cannot run multiple uvicorn workers
 
 ### Demo Account Safety
 - `is_demo` flag on Athlete model (migration: `demo_guard_001`)
@@ -328,7 +331,30 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 
 ---
 
-## 10. Celery Background Tasks
+## 10. Stripe Integration (Live as of Feb 24, 2026)
+
+| Item | Value |
+|---|---|
+| Account | `acct_1T4SGOLRj4KBJxHa` |
+| Product | `prod_U2XZC71b1B6nxX` — "StrideIQ Pro" |
+| Monthly price | `price_1T4SUtLRj4KBJxHa4sq8e35A` — $14.99/mo |
+| Annual price | `price_1T4SUuLRj4KBJxHat0sHVdrw` — $149.00/yr |
+| Webhook endpoint | `https://strideiq.run/v1/billing/webhooks/stripe` |
+| Webhook events | `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` |
+| Customer Portal | Configured (live mode) |
+
+**Key files:**
+- `apps/api/services/stripe_service.py` — checkout, portal, webhook processing, idempotency
+- `apps/api/routers/billing.py` — `/v1/billing/checkout`, `/v1/billing/portal`, `/v1/billing/webhooks/stripe`, `/v1/billing/trial/start`
+- `apps/api/tests/test_phase6_stripe_billing.py` — billing test suite
+
+**Subscription flow:** Stripe webhook → `Subscription` table mirror → `athlete.subscription_tier = "pro"`
+
+**ADR:** `docs/adr/ADR-055-stripe-mvp-hosted-checkout-portal-and-webhooks.md`
+
+---
+
+## 11. Celery Background Tasks
 
 | Module | Purpose |
 |--------|---------|
@@ -341,7 +367,7 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 
 ---
 
-## 11. Alembic Migration Chain
+## 12. Alembic Migration Chain
 
 Current head: `corr_persist_001` (chains off `demo_guard_001` ← `sleep_quality_001` ← `rsi_cache_001` ← ...)
 
@@ -352,7 +378,7 @@ When adding a new migration: **must chain off the current head** — update `dow
 
 ---
 
-## 12. Session Handoff Protocol
+## 13. Session Handoff Protocol
 
 **Every session must:**
 1. Read this document first to understand current state
