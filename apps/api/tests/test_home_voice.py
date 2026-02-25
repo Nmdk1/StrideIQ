@@ -408,7 +408,7 @@ class TestWorkerValidatesAllVoiceFields:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=tsb_payload), \
              patch("tasks.home_briefing_tasks.reset_circuit"), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
@@ -453,7 +453,7 @@ class TestWorkerValidatesAllVoiceFields:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=tsb_payload), \
              patch("tasks.home_briefing_tasks.reset_circuit"), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
