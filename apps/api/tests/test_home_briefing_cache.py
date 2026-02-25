@@ -838,13 +838,14 @@ class TestCeleryTask:
         with patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=None) as mock_opus, \
              patch("tasks.home_briefing_tasks._call_gemini_briefing", return_value=gemini_result) as mock_gemini, \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch.dict(os.environ, {}, clear=False), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
-             patch("routers.home.validate_voice_output", return_value={"valid": True}):
+             patch("routers.home.validate_voice_output", return_value={"valid": True}), \
+             patch("routers.home.validate_sleep_claims", return_value={"valid": True}):
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}, clear=False):
                 from tasks.home_briefing_tasks import generate_home_briefing_task
                 result = generate_home_briefing_task(athlete_id=str(uuid4()))
@@ -858,13 +859,14 @@ class TestCeleryTask:
         with patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=opus_result) as mock_opus, \
              patch("tasks.home_briefing_tasks._call_gemini_briefing") as mock_gemini, \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
-             patch("routers.home.validate_voice_output", return_value={"valid": True}):
+             patch("routers.home.validate_voice_output", return_value={"valid": True}), \
+             patch("routers.home.validate_sleep_claims", return_value={"valid": True}):
             from tasks.home_briefing_tasks import generate_home_briefing_task
             result = generate_home_briefing_task(athlete_id=str(uuid4()))
             mock_opus.assert_called_once()

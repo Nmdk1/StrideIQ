@@ -207,32 +207,8 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             .first()
         )
         if existing_checkin:
-            motivation_map = {5: "Great", 4: "Fine", 2: "Tired", 1: "Rough"}
-            sleep_quality_map = {5: "Great", 4: "Good", 3: "OK", 2: "Poor", 1: "Awful"}
-            sleep_legacy_map = {8: "Great", 7: "OK", 5: "Poor"}
-            soreness_map = {1: "None", 2: "Mild", 4: "Yes"}
-
-            sleep_quality_val = getattr(existing_checkin, "sleep_quality_1_5", None)
-            if sleep_quality_val is not None:
-                sleep_label = sleep_quality_map.get(int(sleep_quality_val))
-            elif existing_checkin.sleep_h is not None:
-                sleep_label = sleep_legacy_map.get(int(existing_checkin.sleep_h))
-            else:
-                sleep_label = None
-
-            checkin_data_dict = {
-                "motivation_label": motivation_map.get(
-                    int(existing_checkin.motivation_1_5)
-                    if existing_checkin.motivation_1_5 is not None
-                    else -1
-                ),
-                "sleep_label": sleep_label,
-                "soreness_label": soreness_map.get(
-                    int(existing_checkin.soreness_1_5)
-                    if existing_checkin.soreness_1_5 is not None
-                    else -1
-                ),
-            }
+            from routers.home import _build_checkin_data_dict
+            checkin_data_dict = _build_checkin_data_dict(existing_checkin)
 
         from routers.home import generate_coach_home_briefing
 
@@ -259,8 +235,12 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             )
             return None  # Sentinel: already cached, normal skip
 
-        _, prompt, schema_fields, required_fields, _ = prep
-        return prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict
+        _, prompt, schema_fields, required_fields, _, garmin_sleep_h = prep
+        if garmin_sleep_h is not None:
+            if checkin_data_dict is None:
+                checkin_data_dict = {}
+            checkin_data_dict["garmin_sleep_h"] = garmin_sleep_h
+        return prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h
 
     except Exception as e:
         logger.error(f"Failed to build briefing prompt for {athlete_id}: {e}", exc_info=True)
@@ -396,7 +376,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             logger.error(f"Prompt build failed for {athlete_id} — circuit breaker notified")
             return {"status": "error", "reason": "prompt_build_failed"}
 
-        prompt, schema_fields, required_fields, checkin_data, race_data = prompt_result
+        prompt, schema_fields, required_fields, checkin_data, race_data, garmin_sleep_h = prompt_result
 
         use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
         source_model = "claude-opus-4-6" if use_opus else "gemini-2.5-flash"
@@ -406,7 +386,12 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             record_task_failure(athlete_id)
             raise RuntimeError(f"All LLM providers failed for {athlete_id}")
 
-        from routers.home import _valid_home_briefing_contract, validate_voice_output, _VOICE_FALLBACK
+        from routers.home import (
+            _valid_home_briefing_contract,
+            validate_voice_output,
+            validate_sleep_claims,
+            _VOICE_FALLBACK,
+        )
 
         if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
             logger.warning(f"Home briefing failed A->I->A contract for {athlete_id}")
@@ -424,6 +409,19 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                 result["morning_voice"] = voice_check["fallback"]
         else:
             result["morning_voice"] = _VOICE_FALLBACK
+
+        # Sleep claim grounding validator
+        _garmin_h = checkin_data.get("garmin_sleep_h") if checkin_data else None
+        _checkin_h = checkin_data.get("sleep_h") if checkin_data else None
+        final_voice = result.get("morning_voice", "")
+        if final_voice and final_voice != _VOICE_FALLBACK:
+            sleep_check = validate_sleep_claims(final_voice, _garmin_h, _checkin_h)
+            if not sleep_check["valid"]:
+                logger.warning(
+                    "morning_voice sleep claim ungrounded (%s) for %s; suppressing to fallback",
+                    sleep_check.get("reason"), athlete_id,
+                )
+                result["morning_voice"] = _VOICE_FALLBACK
 
         raw_noticed = result.get("coach_noticed")
         if raw_noticed:

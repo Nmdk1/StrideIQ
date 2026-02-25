@@ -2264,7 +2264,26 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
             })
 
         # --- Narrative ---
-        wt_parts: List[str] = [f"Wellness over {days} days ({len(checkins)} check-ins):"]
+        # Lead with most recent entry for temporal anchoring — prevents LLM from
+        # misattributing aggregate averages as "last night" facts.
+        most_recent = checkins[0]
+        recent_parts: List[str] = [f"Most recent entry ({most_recent.date.isoformat()}):"]
+        if most_recent.sleep_h is not None:
+            recent_parts.append(f"sleep={float(most_recent.sleep_h):.1f}h")
+        if most_recent.stress_1_5 is not None:
+            recent_parts.append(f"stress={most_recent.stress_1_5}/5")
+        if most_recent.soreness_1_5 is not None:
+            recent_parts.append(f"soreness={most_recent.soreness_1_5}/5")
+        if most_recent.hrv_rmssd is not None:
+            recent_parts.append(f"HRV={float(most_recent.hrv_rmssd):.0f}ms")
+        if most_recent.resting_hr is not None:
+            recent_parts.append(f"RHR={most_recent.resting_hr}bpm")
+        most_recent_line = " | ".join(recent_parts) if len(recent_parts) > 1 else f"Most recent entry ({most_recent.date.isoformat()}): no numeric data."
+
+        wt_parts: List[str] = [
+            most_recent_line,
+            f"Wellness over {days} days ({len(checkins)} check-ins):",
+        ]
         if sleep_values:
             wt_parts.append(f"Sleep avg {avg(sleep_values):.1f}h (trend: {trend(sleep_values) or 'N/A'}).")
         if stress_values:

@@ -129,6 +129,7 @@ class TodayCheckin(BaseModel):
     """Today's check-in summary (shown after athlete checks in)."""
     motivation_label: Optional[str] = None
     sleep_label: Optional[str] = None
+    sleep_h: Optional[float] = None  # Numeric sleep hours for LLM grounding
     soreness_label: Optional[str] = None
     coach_reaction: Optional[str] = None  # Coach's response to check-in state
 
@@ -530,6 +531,161 @@ _VOICE_FALLBACK = (
     "Your training data is ready. Check your workout below for today's plan."
 )
 
+# ---------------------------------------------------------------------------
+# Sleep source contract helpers
+# ---------------------------------------------------------------------------
+
+# "hour" and "rest" are intentionally excluded: too broad (triggers on workout durations,
+# rest days, 3-hour marathon goals). "sleep"/"slept"/"overnight"/"last night" are
+# sleep-specific enough to scope the validator correctly.
+_SLEEP_CONTEXT_KEYWORDS = {"sleep", "slept", "overnight", "last night"}
+_SLEEP_MAX_H = 14.0   # upper bound for a plausible sleep value (vs workout minutes)
+_SLEEP_TOLERANCE_H = 0.5  # slider rounding + sync lag allowance
+
+
+def _build_checkin_data_dict(checkin) -> dict:
+    """
+    Build the checkin_data dict from a DailyCheckin ORM row.
+    Centralised so request path and worker path stay in sync.
+    Includes numeric sleep_h for LLM grounding (not just the label).
+    """
+    motivation_map = {5: "Great", 4: "Fine", 2: "Tired", 1: "Rough"}
+    sleep_quality_map = {5: "Great", 4: "Good", 3: "OK", 2: "Poor", 1: "Awful"}
+    sleep_legacy_map = {8: "Great", 7: "OK", 5: "Poor"}
+    soreness_map = {1: "None", 2: "Mild", 4: "Yes"}
+
+    sleep_quality_val = getattr(checkin, "sleep_quality_1_5", None)
+    if sleep_quality_val is not None:
+        sleep_label = sleep_quality_map.get(int(sleep_quality_val))
+    elif checkin.sleep_h is not None:
+        sleep_label = sleep_legacy_map.get(int(checkin.sleep_h))
+    else:
+        sleep_label = None
+
+    sleep_h_val = float(checkin.sleep_h) if checkin.sleep_h is not None else None
+
+    return {
+        "motivation_label": motivation_map.get(
+            int(checkin.motivation_1_5) if checkin.motivation_1_5 is not None else -1
+        ),
+        "sleep_label": sleep_label,
+        "sleep_h": sleep_h_val,
+        "soreness_label": soreness_map.get(
+            int(checkin.soreness_1_5) if checkin.soreness_1_5 is not None else -1
+        ),
+    }
+
+
+def _get_garmin_sleep_h_for_last_night(
+    athlete_id: str, db
+) -> tuple:
+    """
+    Query GarminDay for last night's sleep using athlete-local date.
+
+    Returns (sleep_h_float, local_date_str) or (None, local_date_str).
+
+    Date resolution (wakeup-day semantics per L1 CalendarDate Rule):
+      1. local_today   — sync usually arrives within minutes of wakeup
+      2. local_today - 1 day — fallback for delayed sync
+
+    Timezone fallback policy (explicit, no silent default):
+      If athlete.timezone is None or invalid → use UTC date.
+    """
+    from datetime import datetime, timedelta, timezone as _tz
+    from models import Athlete, GarminDay
+
+    try:
+        try:
+            import zoneinfo
+        except ImportError:
+            import backports.zoneinfo as zoneinfo  # type: ignore
+
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        tz_name = getattr(athlete, "timezone", None) if athlete else None
+
+        if tz_name:
+            try:
+                tz = zoneinfo.ZoneInfo(tz_name)
+                local_today = datetime.now(_tz.utc).astimezone(tz).date()
+            except Exception:
+                local_today = datetime.now(_tz.utc).date()
+        else:
+            # Explicit fallback: UTC when athlete has no timezone configured
+            local_today = datetime.now(_tz.utc).date()
+
+        for candidate_date in [local_today, local_today - timedelta(days=1)]:
+            row = (
+                db.query(GarminDay)
+                .filter(
+                    GarminDay.athlete_id == athlete_id,
+                    GarminDay.calendar_date == candidate_date,
+                    GarminDay.sleep_total_s.isnot(None),
+                )
+                .first()
+            )
+            if row and row.sleep_total_s:
+                sleep_h = round(row.sleep_total_s / 3600, 2)
+                logger.debug(
+                    "Garmin sleep grounding: athlete=%s date=%s sleep_h=%.2f",
+                    athlete_id, candidate_date, sleep_h,
+                )
+                return sleep_h, str(candidate_date)
+
+        return None, str(local_today)
+    except Exception as e:
+        logger.warning("_get_garmin_sleep_h_for_last_night failed (non-blocking): %s", e)
+        return None, "unknown"
+
+
+def validate_sleep_claims(
+    text: str,
+    garmin_sleep_h: Optional[float],
+    checkin_sleep_h: Optional[float],
+) -> dict:
+    """
+    Validate that any numeric sleep claim in generated text is grounded
+    to a known source within _SLEEP_TOLERANCE_H.
+
+    Scope: only sentences containing sleep-context keywords are checked.
+    Workout durations (e.g. "60-minute tempo", "3 hours 45 minutes marathon pace")
+    are excluded because they either lack sleep keywords or exceed _SLEEP_MAX_H.
+
+    Returns:
+        {"valid": True}  — all claims are grounded (or no claims present)
+        {"valid": False, "reason": str, "claim": float}  — ungrounded claim found
+    """
+    import re
+
+    known_sources = [s for s in [garmin_sleep_h, checkin_sleep_h] if s is not None]
+    # Match numeric values like 7, 7.5, 6.75 followed by h/hour/hours
+    sleep_num_re = re.compile(r"(\d+(?:\.\d+)?)\s*(?:h\b|hours?)", re.IGNORECASE)
+
+    # Split on sentence-ending punctuation only when NOT between digits (avoids
+    # splitting "7.5 hours" into ["7", "5 hours"] at the decimal point).
+    sentences = re.split(r"(?<!\d)[.!?](?!\d)", text)
+    for sentence in sentences:
+        lower = sentence.lower()
+        if not any(k in lower for k in _SLEEP_CONTEXT_KEYWORDS):
+            continue
+        for m in sleep_num_re.finditer(sentence):
+            val = float(m.group(1))
+            if val > _SLEEP_MAX_H:
+                continue  # Not a plausible sleep value (e.g. 90-minute run = 1.5h handled above)
+            if not known_sources:
+                return {
+                    "valid": False,
+                    "reason": f"sleep_claim_no_source:{val}h",
+                    "claim": val,
+                }
+            if not any(abs(val - s) <= _SLEEP_TOLERANCE_H for s in known_sources):
+                return {
+                    "valid": False,
+                    "reason": f"sleep_claim_ungrounded:{val}h (sources:{known_sources})",
+                    "claim": val,
+                }
+
+    return {"valid": True}
+
 
 def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
     """
@@ -858,6 +1014,20 @@ def _fetch_llm_briefing_sync(
     else:
         result["morning_voice"] = _VOICE_FALLBACK
 
+    # --- Post-generation validator: sleep claim grounding ---
+    # Runs on the final morning_voice (after ban-list/causal pass above).
+    _garmin_sleep_h = checkin_data.get("garmin_sleep_h") if checkin_data else None
+    _checkin_sleep_h = checkin_data.get("sleep_h") if checkin_data else None
+    final_voice = result.get("morning_voice", "")
+    if final_voice and final_voice != _VOICE_FALLBACK:
+        sleep_check = validate_sleep_claims(final_voice, _garmin_sleep_h, _checkin_sleep_h)
+        if not sleep_check["valid"]:
+            logger.warning(
+                "morning_voice sleep claim ungrounded (%s); suppressing to fallback",
+                sleep_check.get("reason"),
+            )
+            result["morning_voice"] = _VOICE_FALLBACK
+
     # --- Post-generation validator: coach_noticed ---
     # Uses the same ban lists (sycophancy, causal, internal metrics).
     # Numeric grounding and length checks are skipped (coach_noticed is a
@@ -1073,6 +1243,38 @@ def generate_coach_home_briefing(
     if checkin_data:
         parts.append(f"Check-in: Feeling {checkin_data.get('motivation_label', '?')}, Sleep {checkin_data.get('sleep_label', '?')}, Soreness {checkin_data.get('soreness_label', '?')}")
 
+    # --- Sleep source grounding (source contract — prevents hallucinated sleep values) ---
+    # Query Garmin device sleep for last night using athlete-local date.
+    garmin_sleep_h, garmin_date_used = _get_garmin_sleep_h_for_last_night(athlete_id, db)
+    checkin_sleep_h = checkin_data.get("sleep_h") if checkin_data else None
+
+    sleep_parts: list = ["=== SLEEP SOURCE CONTRACT ==="]
+    if garmin_sleep_h is not None:
+        sleep_parts.append(
+            f"GARMIN_LAST_NIGHT_SLEEP_HOURS: {garmin_sleep_h:.2f}h "
+            f"(device-measured, date={garmin_date_used}, source=garmin_device)"
+        )
+    if checkin_sleep_h is not None:
+        sleep_parts.append(
+            f"TODAY_CHECKIN_SLEEP_HOURS: {checkin_sleep_h:.1f}h "
+            f"(athlete self-report, source=manual_checkin)"
+        )
+    if garmin_sleep_h is None and checkin_sleep_h is None:
+        sleep_parts.append("NO_NUMERIC_SLEEP_SOURCE: Do NOT make any numeric sleep claim.")
+    else:
+        sleep_parts.extend([
+            "SLEEP_SOURCE_PRIORITY: Garmin device > manual check-in > label only.",
+            "CONFLICT_RULE: If both sources present and they differ, cite each source separately with its label.",
+            "SYNTHESIS_BAN: Do NOT synthesize, average, or invent a third sleep value.",
+            "GROUNDING_RULE: Any numeric sleep claim in your output MUST match one of the sources above within 30 minutes.",
+        ])
+    parts.extend(sleep_parts + [""])
+
+    logger.debug(
+        "Sleep grounding: athlete=%s garmin_sleep_h=%s checkin_sleep_h=%s",
+        athlete_id, garmin_sleep_h, checkin_sleep_h,
+    )
+
     prompt = "\n".join(parts)
 
     schema_fields = {
@@ -1090,7 +1292,7 @@ def generate_coach_home_briefing(
     if race_data:
         required_fields.append("race_assessment")
 
-    return (None, prompt, schema_fields, required_fields, cache_key)
+    return (None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h)
 
 
 def compute_coach_noticed(
@@ -1885,30 +2087,12 @@ async def get_home_data(
         ).first()
         checkin_needed = existing_checkin is None
         if existing_checkin is not None:
-            # Build human-readable labels from stored values
-            motivation_map = {5: 'Great', 4: 'Fine', 2: 'Tired', 1: 'Rough'}
-            sleep_quality_map = {5: 'Great', 4: 'Good', 3: 'OK', 2: 'Poor', 1: 'Awful'}
-            # Legacy fallback: old rows stored quality as fake hours in sleep_h
-            sleep_legacy_map = {8: 'Great', 7: 'OK', 5: 'Poor'}
-            soreness_map = {1: 'None', 2: 'Mild', 4: 'Yes'}
-
-            # Prefer sleep_quality_1_5; fall back to legacy sleep_h mapping for old rows
-            sleep_quality_val = getattr(existing_checkin, 'sleep_quality_1_5', None)
-            if sleep_quality_val is not None:
-                sleep_label = sleep_quality_map.get(int(sleep_quality_val))
-            elif existing_checkin.sleep_h is not None:
-                sleep_label = sleep_legacy_map.get(int(existing_checkin.sleep_h))
-            else:
-                sleep_label = None
-
+            _cd = _build_checkin_data_dict(existing_checkin)
             today_checkin = TodayCheckin(
-                motivation_label=motivation_map.get(
-                    int(existing_checkin.motivation_1_5) if existing_checkin.motivation_1_5 is not None else -1
-                ),
-                sleep_label=sleep_label,
-                soreness_label=soreness_map.get(
-                    int(existing_checkin.soreness_1_5) if existing_checkin.soreness_1_5 is not None else -1
-                ),
+                motivation_label=_cd["motivation_label"],
+                sleep_label=_cd["sleep_label"],
+                sleep_h=_cd["sleep_h"],
+                soreness_label=_cd["soreness_label"],
             )
     except Exception as e:
         logger.warning(f"Check-in query failed: {e}")
@@ -2006,6 +2190,7 @@ async def get_home_data(
                     checkin_data_dict = {
                         "motivation_label": today_checkin.motivation_label,
                         "sleep_label": today_checkin.sleep_label,
+                        "sleep_h": today_checkin.sleep_h,
                         "soreness_label": today_checkin.soreness_label,
                     }
 
@@ -2021,7 +2206,11 @@ async def get_home_data(
                 if len(prep) == 1:
                     coach_briefing = prep[0]
                 else:
-                    _, prompt, schema_fields, required_fields, cache_key = prep
+                    _, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h = prep
+                    if garmin_sleep_h is not None:
+                        if checkin_data_dict is None:
+                            checkin_data_dict = {}
+                        checkin_data_dict["garmin_sleep_h"] = garmin_sleep_h
                     try:
                         coach_briefing = await asyncio.wait_for(
                             asyncio.to_thread(
