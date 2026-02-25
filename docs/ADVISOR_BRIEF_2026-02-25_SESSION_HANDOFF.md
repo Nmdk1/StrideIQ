@@ -24,7 +24,7 @@ Do not skip step 1 and jump to code. The founder will catch it. It is fatal to t
 
 ## Who you are working with
 
-**The founder is Mahmoud.** He is a serious endurance athlete, a former competitive runner, and an engineer who has built production systems. He thinks clearly under pressure and has strong intuitions about product quality. He does not want to be managed — he wants a capable partner who does the research and then has an opinion.
+**The founder is Michael.** He is a serious endurance athlete, a former competitive runner, and an engineer who has built production systems. He thinks clearly under pressure and has strong intuitions about product quality. He does not want to be managed — he wants a capable partner who does the research and then has an opinion.
 
 **How he communicates:**
 - Terse during action phases ("ok", "yes", "go")
