@@ -30,10 +30,11 @@ from typing import Any, Dict, List, Optional
 
 from tasks import celery_app
 from core.database import get_db_sync
-from models import Activity, ActivityStream, Athlete, GarminDay
+from models import Activity, ActivitySplit, ActivityStream, Athlete, GarminDay
 from services.garmin_adapter import (
     adapt_activity_summary,
     adapt_activity_detail_envelope,
+    adapt_activity_detail_laps,
     adapt_activity_detail_samples,
     adapt_sleep_summary,
     adapt_hrv_summary,
@@ -391,44 +392,74 @@ def _ingest_activity_detail_item(
         return False
 
     samples = envelope.get("samples") or []
-    if not samples:
+
+    # Determine early whether laps exist — both samples and laps are optional,
+    # but at least one must be present to do useful work.
+    lap_splits = adapt_activity_detail_laps(raw_item, samples)
+
+    if not samples and not lap_splits:
         logger.debug(
-            "Activity detail garmin_activity_id=%s has no samples",
+            "Activity detail garmin_activity_id=%s has no samples or laps",
             garmin_activity_id_int,
         )
         activity.stream_fetch_status = "unavailable"
         return True
 
     # All Garmin→internal channel translation delegated to adapter (source contract)
-    activity_start_unix = (
-        activity.start_time.timestamp() if activity.start_time else 0.0
-    )
-    stream_data = adapt_activity_detail_samples(samples, activity_start_unix)
-    channels = list(stream_data.keys())
-    point_count = max((len(v) for v in stream_data.values()), default=0)
-
-    # Upsert ActivityStream (one row per activity)
-    existing_stream = (
-        db.query(ActivityStream)
-        .filter(ActivityStream.activity_id == activity.id)
-        .first()
-    )
-    if existing_stream is not None:
-        existing_stream.stream_data = stream_data
-        existing_stream.channels_available = channels
-        existing_stream.point_count = point_count
-        existing_stream.source = "garmin"
-    else:
-        new_stream = ActivityStream(
-            activity_id=activity.id,
-            stream_data=stream_data,
-            channels_available=channels,
-            point_count=point_count,
-            source="garmin",
+    if samples:
+        activity_start_unix = (
+            activity.start_time.timestamp() if activity.start_time else 0.0
         )
-        db.add(new_stream)
+        stream_data = adapt_activity_detail_samples(samples, activity_start_unix)
+        channels = list(stream_data.keys())
+        point_count = max((len(v) for v in stream_data.values()), default=0)
+
+        # Upsert ActivityStream (one row per activity)
+        existing_stream = (
+            db.query(ActivityStream)
+            .filter(ActivityStream.activity_id == activity.id)
+            .first()
+        )
+        if existing_stream is not None:
+            existing_stream.stream_data = stream_data
+            existing_stream.channels_available = channels
+            existing_stream.point_count = point_count
+            existing_stream.source = "garmin"
+        else:
+            new_stream = ActivityStream(
+                activity_id=activity.id,
+                stream_data=stream_data,
+                channels_available=channels,
+                point_count=point_count,
+                source="garmin",
+            )
+            db.add(new_stream)
 
     activity.stream_fetch_status = "success"
+
+    # --- Lap splits (idempotent: delete-then-create) ---
+    # lap_splits was computed before the samples block to allow early-return logic above.
+    if lap_splits:
+        db.query(ActivitySplit).filter(
+            ActivitySplit.activity_id == activity.id
+        ).delete(synchronize_session=False)
+        for lap in lap_splits:
+            db.add(ActivitySplit(
+                activity_id=activity.id,
+                split_number=lap["split_number"],
+                distance=lap["distance"],
+                elapsed_time=lap["elapsed_time"],
+                moving_time=lap["moving_time"],
+                average_heartrate=lap["average_heartrate"],
+                max_heartrate=lap["max_heartrate"],
+                average_cadence=lap["average_cadence"],
+                gap_seconds_per_mile=lap["gap_seconds_per_mile"],
+            ))
+        logger.info(
+            "Created %d splits for garmin_activity_id=%s",
+            len(lap_splits), garmin_activity_id_int,
+        )
+
     return True
 
 

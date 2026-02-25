@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -363,6 +363,109 @@ def adapt_activity_detail_samples(
         channels["cadence"] = cadence_vals
 
     return channels
+
+
+def adapt_activity_detail_laps(
+    raw_detail: Dict[str, Any],
+    samples: list,
+) -> List[Dict[str, Any]]:
+    """
+    Extract per-lap split data from a raw Garmin ClientActivityDetail payload.
+
+    Uses startTimeInSeconds lap boundaries to slice sample-level data into
+    per-lap windows and compute aggregate metrics. Per-lap aggregate fields
+    (when present) take precedence over sample-computed values.
+
+    Source contract: all raw Garmin field names are contained to this function.
+    The caller receives only internal ActivitySplit field names.
+
+    Args:
+        raw_detail: Raw Garmin ClientActivityDetail dict (contains "laps" key).
+        samples:    List of raw Garmin sample dicts (same as envelope["samples"]).
+                    Used to compute per-lap HR/cadence when lap-level aggregates
+                    are absent from the payload.
+
+    Returns:
+        List of dicts with internal ActivitySplit field names, one per lap,
+        sorted by lap start time (1-indexed split_number). Empty list when
+        no laps key is present or the array is empty.
+
+    Note on field availability: Garmin portal docs only guarantee
+    startTimeInSeconds per lap. Per-lap aggregate fields (distance, duration,
+    HR, cadence) may or may not be present depending on device/firmware.
+    The function degrades gracefully — missing aggregates are computed from
+    samples; missing samples produce None values (not errors).
+
+    gap_seconds_per_mile is always None — GAP/NGP is not available in the
+    Garmin JSON API (FIT-file only).
+    """
+    laps_raw = raw_detail.get("laps")
+    if not laps_raw:
+        return []
+
+    # Keep only laps with a valid start time; sort ascending
+    laps_sorted = sorted(
+        (lap for lap in laps_raw if lap.get("startTimeInSeconds") is not None),
+        key=lambda x: x["startTimeInSeconds"],
+    )
+    if not laps_sorted:
+        return []
+
+    result: List[Dict[str, Any]] = []
+    for i, lap in enumerate(laps_sorted):
+        lap_start = lap["startTimeInSeconds"]
+        lap_end = (
+            laps_sorted[i + 1]["startTimeInSeconds"]
+            if i + 1 < len(laps_sorted)
+            else None
+        )
+
+        # Slice samples that fall within this lap's time window
+        lap_samples = [
+            s for s in samples
+            if s.get("startTimeInSeconds") is not None
+            and s["startTimeInSeconds"] >= lap_start
+            and (lap_end is None or s["startTimeInSeconds"] < lap_end)
+        ]
+
+        # --- Distance ---
+        # Prefer per-lap field; no reliable sample-derived fallback without GPS delta.
+        distance_m = _float_or_none(lap.get("totalDistanceInMeters"))
+
+        # --- Duration ---
+        elapsed_time = _int_or_none(lap.get("clockDurationInSeconds"))
+        moving_time = _int_or_none(lap.get("timerDurationInSeconds"))
+
+        # --- Average heart rate ---
+        avg_hr = _int_or_none(lap.get("averageHeartRateInBeatsPerMinute"))
+        if avg_hr is None:
+            hr_vals = [s["heartRate"] for s in lap_samples if s.get("heartRate") is not None]
+            avg_hr = round(sum(hr_vals) / len(hr_vals)) if hr_vals else None
+
+        # --- Max heart rate ---
+        max_hr = _int_or_none(lap.get("maxHeartRateInBeatsPerMinute"))
+        if max_hr is None:
+            hr_all = [s["heartRate"] for s in lap_samples if s.get("heartRate") is not None]
+            max_hr = max(hr_all) if hr_all else None
+
+        # --- Average cadence ---
+        avg_cadence = _float_or_none(lap.get("averageRunCadenceInStepsPerMinute"))
+        if avg_cadence is None:
+            cad_vals = [s["stepsPerMinute"] for s in lap_samples if s.get("stepsPerMinute") is not None]
+            avg_cadence = round(sum(cad_vals) / len(cad_vals), 1) if cad_vals else None
+
+        result.append({
+            "split_number": i + 1,        # 1-indexed to match Strava convention
+            "distance": distance_m,
+            "elapsed_time": elapsed_time,
+            "moving_time": moving_time,
+            "average_heartrate": avg_hr,
+            "max_heartrate": max_hr,
+            "average_cadence": avg_cadence,
+            "gap_seconds_per_mile": None,  # Grade adjusted pace — FIT-file only
+        })
+
+    return result
 
 
 def adapt_user_metrics(raw: Dict[str, Any]) -> Dict[str, Any]:
