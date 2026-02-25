@@ -2,7 +2,7 @@
 
 **Purpose:** Single source of truth for every new builder session. Updated every session.
 **Last updated:** February 25, 2026
-**Last updated by:** Builder session — Stripe live, Garmin disconnect fixed, sleep prompt grounding fixed (commit 494b9e9)
+**Last updated by:** Advisor session — Migrated production from DigitalOcean (1 vCPU, 2GB) to Hostinger KVM 8 (8 vCPU, 32GB)
 
 ---
 
@@ -17,7 +17,7 @@
 | **Cache/Queue** | Redis 7 Alpine | Celery broker + response cache |
 | **Proxy** | Caddy 2 | Auto-TLS, reverse proxy |
 | **CI** | GitHub Actions | `.github/workflows/` |
-| **Production** | DigitalOcean Droplet (1 vCPU, 2GB) | `104.248.212.71` |
+| **Production** | Hostinger KVM 8 (8 vCPU, 32GB RAM, 400GB NVMe) | `187.124.67.153` |
 | **Domain** | `strideiq.run` / `www.strideiq.run` / `api.strideiq.run` | Caddy routes |
 | **Repo** | `github.com/Nmdk1/StrideIQ` | Single `main` branch |
 
@@ -324,9 +324,10 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - Workers on 429 mark as deferred (not error) with `deferred_until`
 
 ### Infrastructure Constraints (HARD RULES)
-- **Droplet: 1 vCPU, 2GB RAM.** Do NOT increase uvicorn workers above 1. Multiple workers OOM and take the entire API down. Learned the hard way on Feb 17, 2026.
-- **Deploys cause ~30s-5min downtime.** `docker compose up -d --build` rebuilds images. During this window the API returns 502. The web frontend shows a loading spinner. This is expected — do not panic, but do not deploy during demo calls.
-- **LLM calls MUST have hard timeouts.** Every external LLM call (Anthropic, Gemini) must have both an SDK-level timeout AND a callsite-level `asyncio.wait_for` timeout. A single hung LLM call blocks the only uvicorn worker and takes down the entire API.
+- **Server: Hostinger KVM 8 — 8 vCPU, 32GB RAM, 400GB NVMe.** Migrated from DigitalOcean (1 vCPU, 2GB) on Feb 25, 2026. Old droplet `104.248.212.71` kept as 24-48h safety net.
+- **Uvicorn workers:** Currently 1. Safe to increase to 3-4 with 32GB RAM (each worker uses ~600MB). Increase requires founder sign-off.
+- **Deploys are faster on 8 vCPU** but still cause brief downtime during `docker compose up -d --build`. Do not deploy during demo calls.
+- **LLM calls MUST have hard timeouts.** Every external LLM call (Anthropic, Gemini) must have both an SDK-level timeout AND a callsite-level `asyncio.wait_for` timeout. Best practice regardless of worker count.
 - **Never pass a request-scoped SQLAlchemy `db` session to `asyncio.to_thread`.** Sessions are not thread-safe. Do DB work on the request thread, pass pure data to the worker thread.
 - **Home page (`/v1/home`) must never block on LLM.** If LLM times out, return `coach_briefing=None` and let deterministic data render. The page must load in <5s worst case.
 
