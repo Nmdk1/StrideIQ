@@ -77,7 +77,7 @@ The Garmin Connect Developer Program provides five APIs, grouped by direction:
 | `AerobicTrainingEffect` | Float | `garmin_aerobic_te` | Store informational only — never used in StrideIQ load calculations. Garmin TE is poorly calibrated for individual athletes. StrideIQ computes its own training effect. |
 | `AnaerobicTrainingEffect` | Float | `garmin_anaerobic_te` | Same — informational only |
 | `TrainingEffectLabel` | String | `garmin_te_label` | Same — informational only |
-| `AverageGradeAdjustedPaceInMinutesPerMile` | Float | — | **New field** — GAP |
+| `AverageGradeAdjustedPaceInMinutesPerMile` | Float | — | **NOT PRESENT in live payload** (verified Feb 25, 2026). GAP computed internally from elevation + pace via `calculate_ngp_from_split()`. |
 | `MovingTimeInSeconds` | Integer | `duration_s` candidate | Separate from elapsed time |
 | `TotalDescentInMeters` | Float | — | **New field** |
 | `MinElevationInMeters` | Float | — | **New field** |

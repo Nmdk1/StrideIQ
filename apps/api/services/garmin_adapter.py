@@ -19,8 +19,11 @@ CONTRACT (enforced by tests):
 
 Portal verification (February 2026):
   - Official schema uses camelCase, e.g. `distanceInMeters` (not PascalCase).
-  - Running dynamics (stride length, GCT, vertical oscillation, ratio, GAP)
-    are FIT-file-only — absent from the JSON Activity API.
+  - Running dynamics (stride length, GCT, vertical oscillation, ratio) are
+    FIT-file-only — absent from the JSON Activity API.
+  - GAP (Grade Adjusted Pace) is NOT in the JSON API (verified via live
+    payload capture Feb 25, 2026). Computed internally from elevation +
+    pace using calculate_ngp_from_split().
   - Power is available per-sample in activityDetails, not at summary level.
   - Training Effect, self-evaluation, body battery impact are undocumented
     and deferred until the D4.3 live webhook capture provides evidence.
@@ -34,6 +37,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
+from services.pace_normalization import calculate_ngp_from_split
 
 logger = logging.getLogger(__name__)
 
@@ -365,6 +370,23 @@ def adapt_activity_detail_samples(
     return channels
 
 
+def _compute_elevation_gain(samples: list) -> Optional[float]:
+    """Sum positive elevation deltas from consecutive sample elevations."""
+    elevations = [
+        s["elevationInMeters"]
+        for s in samples
+        if s.get("elevationInMeters") is not None
+    ]
+    if len(elevations) < 2:
+        return None
+    gain = 0.0
+    for i in range(1, len(elevations)):
+        delta = elevations[i] - elevations[i - 1]
+        if delta > 0:
+            gain += delta
+    return round(gain, 2) if gain > 0 else 0.0
+
+
 def adapt_activity_detail_laps(
     raw_detail: Dict[str, Any],
     samples: list,
@@ -400,8 +422,9 @@ def adapt_activity_detail_laps(
     The function degrades gracefully — missing aggregates are computed from
     samples; missing samples produce None values (not errors).
 
-    gap_seconds_per_mile is always None — GAP/NGP is not available in the
-    Garmin JSON API (FIT-file only).
+    GAP is NOT available in the Garmin JSON API (verified via live payload
+    capture Feb 25, 2026). Computed internally from per-lap elevation gain
+    (derived from sample elevationInMeters) using calculate_ngp_from_split().
     """
     laps_raw = raw_detail.get("laps")
     if not laps_raw:
@@ -433,7 +456,6 @@ def adapt_activity_detail_laps(
         ]
 
         # --- Distance ---
-        # Prefer per-lap field; no reliable sample-derived fallback without GPS delta.
         distance_m = _float_or_none(lap.get("totalDistanceInMeters"))
 
         # --- Duration ---
@@ -458,15 +480,26 @@ def adapt_activity_detail_laps(
             cad_vals = [s["stepsPerMinute"] for s in lap_samples if s.get("stepsPerMinute") is not None]
             avg_cadence = round(sum(cad_vals) / len(cad_vals), 1) if cad_vals else None
 
+        # --- GAP (Grade Adjusted Pace) ---
+        elevation_gain_m = _compute_elevation_gain(lap_samples)
+        gap = None
+        use_time = moving_time if moving_time else elapsed_time
+        if distance_m and use_time and distance_m > 0 and use_time > 0:
+            gap = calculate_ngp_from_split(
+                distance_m=distance_m,
+                moving_time_s=use_time,
+                elevation_gain_m=elevation_gain_m,
+            )
+
         result.append({
-            "split_number": i + 1,        # 1-indexed to match Strava convention
+            "split_number": i + 1,
             "distance": distance_m,
             "elapsed_time": elapsed_time,
             "moving_time": moving_time,
             "average_heartrate": avg_hr,
             "max_heartrate": max_hr,
             "average_cadence": avg_cadence,
-            "gap_seconds_per_mile": None,  # Grade adjusted pace — FIT-file only
+            "gap_seconds_per_mile": gap,
         })
 
     return result
@@ -534,6 +567,12 @@ def _derive_splits_from_samples(samples: list) -> List[Dict[str, Any]]:
             split_distance_m = next_boundary_m - split_start_dist_m
             elapsed_s = max(1, int(round(boundary_ts - split_start_ts)))
             avg_hr, max_hr, avg_cad = _aggregate_split_window(samples, split_start_ts, boundary_ts)
+            elev_gain = _elevation_gain_for_window(samples, split_start_ts, boundary_ts)
+            gap = calculate_ngp_from_split(
+                distance_m=round(split_distance_m, 2),
+                moving_time_s=elapsed_s,
+                elevation_gain_m=elev_gain,
+            )
 
             result.append({
                 "split_number": split_number,
@@ -543,7 +582,7 @@ def _derive_splits_from_samples(samples: list) -> List[Dict[str, Any]]:
                 "average_heartrate": avg_hr,
                 "max_heartrate": max_hr,
                 "average_cadence": avg_cad,
-                "gap_seconds_per_mile": None,
+                "gap_seconds_per_mile": gap,
             })
             split_number += 1
             split_start_ts = boundary_ts
@@ -558,6 +597,12 @@ def _derive_splits_from_samples(samples: list) -> List[Dict[str, Any]]:
     if remainder_m >= 50.0 and end_ts > split_start_ts:
         elapsed_s = max(1, int(round(end_ts - split_start_ts)))
         avg_hr, max_hr, avg_cad = _aggregate_split_window(samples, split_start_ts, end_ts)
+        elev_gain = _elevation_gain_for_window(samples, split_start_ts, end_ts)
+        gap = calculate_ngp_from_split(
+            distance_m=round(remainder_m, 2),
+            moving_time_s=elapsed_s,
+            elevation_gain_m=elev_gain,
+        )
         result.append({
             "split_number": split_number,
             "distance": round(remainder_m, 2),
@@ -566,10 +611,34 @@ def _derive_splits_from_samples(samples: list) -> List[Dict[str, Any]]:
             "average_heartrate": avg_hr,
             "max_heartrate": max_hr,
             "average_cadence": avg_cad,
-            "gap_seconds_per_mile": None,
+            "gap_seconds_per_mile": gap,
         })
 
     return result
+
+
+def _elevation_gain_for_window(
+    samples: list,
+    start_ts: float,
+    end_ts: float,
+) -> Optional[float]:
+    """Sum positive elevation deltas within a time window [start_ts, end_ts)."""
+    elevations = [
+        s["elevationInMeters"]
+        for s in samples
+        if s.get("elevationInMeters") is not None
+        and s.get("startTimeInSeconds") is not None
+        and float(s["startTimeInSeconds"]) >= start_ts
+        and float(s["startTimeInSeconds"]) < end_ts
+    ]
+    if len(elevations) < 2:
+        return None
+    gain = 0.0
+    for i in range(1, len(elevations)):
+        delta = elevations[i] - elevations[i - 1]
+        if delta > 0:
+            gain += delta
+    return round(gain, 2) if gain > 0 else 0.0
 
 
 def _aggregate_split_window(
