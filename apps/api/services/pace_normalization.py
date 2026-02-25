@@ -28,57 +28,51 @@ def calculate_grade_percent(elevation_gain_m: float, distance_m: float) -> Optio
     return grade_percent
 
 
+def _minetti_cost(grade_decimal: float) -> float:
+    """
+    Metabolic cost of running at a given grade per Minetti et al. (2002).
+
+    C(i) = 155.4i^5 - 30.4i^4 - 43.3i^3 + 46.3i^2 + 19.5i + 3.6
+    where i = grade as a decimal fraction (0.05 = 5% grade).
+
+    Returns cost in J/(kg·m). Clamped to a minimum of 1.0 to avoid
+    division-by-zero or negative cost at extreme downhill grades.
+    """
+    i = grade_decimal
+    cost = 155.4*i**5 - 30.4*i**4 - 43.3*i**3 + 46.3*i**2 + 19.5*i + 3.6
+    return max(cost, 1.0)
+
+
+_FLAT_COST = _minetti_cost(0.0)  # 3.6 J/(kg·m)
+
+
 def calculate_normalized_grade_pace(
     raw_pace_seconds_per_mile: float,
     grade_percent: float
 ) -> Optional[float]:
     """
-    Calculate Normalized Grade Pace (NGP) using Minetti's equation.
-    
-    Minetti's equation accounts for the metabolic cost of running uphill/downhill.
-    This normalizes pace to flat-ground equivalent, enabling accurate efficiency comparisons.
-    
-    Formula based on Minetti et al. (2002):
-    NGP = raw_pace * (1 + k * grade^2)
-    where k ≈ 0.033 for running
-    
-    For negative grades (downhill), the equation accounts for braking forces.
-    
+    Calculate Normalized Grade Pace (NGP) using the full Minetti polynomial.
+
+    GAP = raw_pace * C_flat / C_grade
+
+    Running uphill costs more energy per meter, so GAP is faster than actual
+    pace (you would have gone faster on flat with the same effort). Downhill
+    is cheaper, so GAP is slower than actual pace.
+
     Args:
         raw_pace_seconds_per_mile: Raw pace in seconds per mile
         grade_percent: Grade percentage (positive = uphill, negative = downhill)
-    
+
     Returns:
         Normalized Grade Pace in seconds per mile (flat-ground equivalent)
     """
     if raw_pace_seconds_per_mile <= 0:
         return None
-    
-    # Convert grade percentage to decimal (5% = 0.05)
+
     grade_decimal = grade_percent / 100.0
-    
-    # Minetti's coefficient for running (from research literature)
-    # This accounts for the metabolic cost of vertical work
-    k = 0.033
-    
-    # Minetti's equation: NGP = raw_pace * (1 + k * grade^2)
-    # For uphill (positive grade), this increases pace (slower)
-    # For downhill (negative grade), this decreases pace (faster)
-    # The square ensures symmetry (uphill and downhill have different costs)
-    
-    # For steep downhills, we need to account for braking forces
-    # Research suggests a modified coefficient for negative grades
-    if grade_decimal < 0:
-        # Downhill: braking forces reduce efficiency gains
-        # Use a smaller coefficient for negative grades
-        k_downhill = 0.020  # Less efficient than pure physics suggests
-        normalized_factor = 1 + k_downhill * (grade_decimal ** 2)
-    else:
-        # Uphill: standard Minetti coefficient
-        normalized_factor = 1 + k * (grade_decimal ** 2)
-    
-    ngp = raw_pace_seconds_per_mile * normalized_factor
-    
+    grade_cost = _minetti_cost(grade_decimal)
+    ngp = raw_pace_seconds_per_mile * _FLAT_COST / grade_cost
+
     return round(ngp, 2)
 
 
