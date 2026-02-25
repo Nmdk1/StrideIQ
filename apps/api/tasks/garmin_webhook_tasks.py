@@ -366,6 +366,19 @@ def _ingest_activity_detail_item(
 
     Returns True if processed, False if skipped.
     """
+    # TEMPORARY: capture raw payload keys for GAP/dynamics field discovery
+    import json as _json
+    logger.info(f"GARMIN_RAW_DETAIL_KEYS: {sorted(raw_item.keys())}")
+    _summary_keys = sorted(raw_item.get('summary', {}).keys()) if isinstance(raw_item.get('summary'), dict) else []
+    if _summary_keys:
+        logger.info(f"GARMIN_RAW_DETAIL_SUMMARY_KEYS: {_summary_keys}")
+    _lap_sample = raw_item.get('laps', [None])[0] if raw_item.get('laps') else None
+    if _lap_sample:
+        logger.info(f"GARMIN_RAW_LAP_KEYS: {sorted(_lap_sample.keys())}")
+    _gap_fields = {k: raw_item.get('summary', {}).get(k) for k in (raw_item.get('summary') or {}) if 'grade' in k.lower() or 'gap' in k.lower() or 'adjusted' in k.lower()}
+    if _gap_fields:
+        logger.info(f"GARMIN_GAP_FIELDS: {_gap_fields}")
+
     # All Garmin→internal field name translation delegated to adapter (source contract)
     envelope = adapt_activity_detail_envelope(raw_item)
     garmin_activity_id_int = envelope.get("garmin_activity_id")
