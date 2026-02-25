@@ -387,8 +387,12 @@ def adapt_activity_detail_laps(
 
     Returns:
         List of dicts with internal ActivitySplit field names, one per lap,
-        sorted by lap start time (1-indexed split_number). Empty list when
-        no laps key is present or the array is empty.
+        sorted by lap start time (1-indexed split_number).
+
+        Primary path: use raw_detail["laps"] (when present).
+        Fallback path: if laps are missing/empty but samples exist, derive
+        distance-based splits from sample timestamps + speedMetersPerSecond.
+        This prevents "no splits" on devices/payloads that omit lap metadata.
 
     Note on field availability: Garmin portal docs only guarantee
     startTimeInSeconds per lap. Per-lap aggregate fields (distance, duration,
@@ -401,7 +405,7 @@ def adapt_activity_detail_laps(
     """
     laps_raw = raw_detail.get("laps")
     if not laps_raw:
-        return []
+        return _derive_splits_from_samples(samples)
 
     # Keep only laps with a valid start time; sort ascending
     laps_sorted = sorted(
@@ -466,6 +470,136 @@ def adapt_activity_detail_laps(
         })
 
     return result
+
+
+def _derive_splits_from_samples(samples: list) -> List[Dict[str, Any]]:
+    """
+    Build synthetic splits from sample-level speed/time when lap metadata is absent.
+
+    Strategy:
+      - Integrate distance from speedMetersPerSecond over timestamp deltas.
+      - Emit one split per mile (1609.344m).
+      - Emit final partial split when remainder is meaningful.
+      - Compute HR/cadence aggregates from samples in each split window.
+
+    Returns [] if samples are insufficient to estimate distance.
+    """
+    if not samples:
+        return []
+
+    # Keep only samples with timestamp; sort ascending and de-duplicate timestamp.
+    by_ts: Dict[int, Dict[str, Any]] = {}
+    for s in samples:
+        ts = _int_or_none(s.get("startTimeInSeconds"))
+        if ts is not None:
+            by_ts[ts] = s
+    if len(by_ts) < 2:
+        return []
+
+    ordered = [by_ts[k] for k in sorted(by_ts.keys())]
+    mile_m = 1609.344
+    next_boundary_m = mile_m
+    cumulative_m = 0.0
+
+    split_number = 1
+    split_start_ts = float(_int_or_none(ordered[0].get("startTimeInSeconds")) or 0)
+    split_start_dist_m = 0.0
+    result: List[Dict[str, Any]] = []
+
+    for i in range(len(ordered) - 1):
+        cur = ordered[i]
+        nxt = ordered[i + 1]
+        cur_ts = _int_or_none(cur.get("startTimeInSeconds"))
+        nxt_ts = _int_or_none(nxt.get("startTimeInSeconds"))
+        if cur_ts is None or nxt_ts is None or nxt_ts <= cur_ts:
+            continue
+
+        dt = float(nxt_ts - cur_ts)
+        speed = _float_or_none(cur.get("speedMetersPerSecond"))
+        if speed is None or speed <= 0:
+            speed = _float_or_none(nxt.get("speedMetersPerSecond"))
+        if speed is None or speed <= 0:
+            continue
+
+        seg_dist_m = speed * dt
+        seg_start_m = cumulative_m
+        seg_end_m = cumulative_m + seg_dist_m
+
+        while seg_end_m >= next_boundary_m:
+            # Fraction of this segment where the mile boundary is crossed.
+            frac = (next_boundary_m - seg_start_m) / seg_dist_m if seg_dist_m > 0 else 0.0
+            frac = min(max(frac, 0.0), 1.0)
+            boundary_ts = float(cur_ts) + dt * frac
+
+            split_distance_m = next_boundary_m - split_start_dist_m
+            elapsed_s = max(1, int(round(boundary_ts - split_start_ts)))
+            avg_hr, max_hr, avg_cad = _aggregate_split_window(samples, split_start_ts, boundary_ts)
+
+            result.append({
+                "split_number": split_number,
+                "distance": round(split_distance_m, 2),
+                "elapsed_time": elapsed_s,
+                "moving_time": elapsed_s,
+                "average_heartrate": avg_hr,
+                "max_heartrate": max_hr,
+                "average_cadence": avg_cad,
+                "gap_seconds_per_mile": None,
+            })
+            split_number += 1
+            split_start_ts = boundary_ts
+            split_start_dist_m = next_boundary_m
+            next_boundary_m += mile_m
+
+        cumulative_m = seg_end_m
+
+    # Final partial split (e.g., last 0.4mi) — include if meaningful.
+    end_ts = float(_int_or_none(ordered[-1].get("startTimeInSeconds")) or split_start_ts)
+    remainder_m = cumulative_m - split_start_dist_m
+    if remainder_m >= 50.0 and end_ts > split_start_ts:
+        elapsed_s = max(1, int(round(end_ts - split_start_ts)))
+        avg_hr, max_hr, avg_cad = _aggregate_split_window(samples, split_start_ts, end_ts)
+        result.append({
+            "split_number": split_number,
+            "distance": round(remainder_m, 2),
+            "elapsed_time": elapsed_s,
+            "moving_time": elapsed_s,
+            "average_heartrate": avg_hr,
+            "max_heartrate": max_hr,
+            "average_cadence": avg_cad,
+            "gap_seconds_per_mile": None,
+        })
+
+    return result
+
+
+def _aggregate_split_window(
+    samples: list,
+    start_ts: float,
+    end_ts: float,
+) -> tuple:
+    """
+    Aggregate HR and cadence for a split time window [start_ts, end_ts).
+    """
+    hr_vals: list = []
+    cad_vals: list = []
+    for s in samples:
+        ts = _int_or_none(s.get("startTimeInSeconds"))
+        if ts is None:
+            continue
+        ts_f = float(ts)
+        if ts_f < start_ts or ts_f >= end_ts:
+            continue
+        hr = _int_or_none(s.get("heartRate"))
+        cad = _float_or_none(s.get("stepsPerMinute"))
+        if hr is not None:
+            hr_vals.append(hr)
+        if cad is not None:
+            cad_vals.append(cad)
+
+    avg_hr = round(sum(hr_vals) / len(hr_vals)) if hr_vals else None
+    max_hr = max(hr_vals) if hr_vals else None
+    avg_cad = round(sum(cad_vals) / len(cad_vals), 1) if cad_vals else None
+    return avg_hr, max_hr, avg_cad
 
 
 def adapt_user_metrics(raw: Dict[str, Any]) -> Dict[str, Any]:

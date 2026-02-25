@@ -1,14 +1,14 @@
 """
 Tests for Garmin ActivitySplit creation (builder note: BUILDER_NOTE_2026-02-25_GARMIN_SPLITS_GAP.md)
 
-8 required contracts:
+9 required contracts:
   1. adapt_activity_detail_laps returns correct split count
   2. adapt_activity_detail_laps computes avg HR from samples (when no per-lap aggregate)
-  3. adapt_activity_detail_laps returns [] when no laps key
-  4. adapt_activity_detail_laps returns [] when laps is empty array
+  3. adapt_activity_detail_laps falls back to sample-derived splits when laps missing
+  4. adapt_activity_detail_laps returns [] when laps is missing and samples insufficient
   5. _ingest_activity_detail_item creates ActivitySplit rows
   6. _ingest_activity_detail_item is idempotent (re-ingest replaces splits, not appends)
-  7. _ingest_activity_detail_item skips splits cleanly when no laps in payload
+  7. _ingest_activity_detail_item creates splits from samples when no laps in payload
   8. Source contract: no raw Garmin field names in garmin_webhook_tasks.py
 """
 
@@ -207,12 +207,52 @@ class TestAdaptLapsHRFromSamples:
 
 
 # ===========================================================================
-# Test 3 — empty when no laps key
+# Test 3 — fallback when laps missing
 # ===========================================================================
-class TestAdaptLapsEmptyWhenNoLapsKey:
+class TestAdaptLapsFallbackWhenNoLaps:
+
+    def test_derives_splits_from_samples_when_laps_key_absent(self):
+        """No laps + rich samples -> derive distance-based splits."""
+        from services.garmin_adapter import adapt_activity_detail_laps
+
+        # 4 x 600s at 3.0 m/s = 7200m total (~4.47mi): expect >= 4 splits.
+        samples = [
+            {"startTimeInSeconds": 1000, "speedMetersPerSecond": 3.0, "heartRate": 140, "stepsPerMinute": 165},
+            {"startTimeInSeconds": 1600, "speedMetersPerSecond": 3.0, "heartRate": 142, "stepsPerMinute": 166},
+            {"startTimeInSeconds": 2200, "speedMetersPerSecond": 3.0, "heartRate": 145, "stepsPerMinute": 167},
+            {"startTimeInSeconds": 2800, "speedMetersPerSecond": 3.0, "heartRate": 148, "stepsPerMinute": 168},
+            {"startTimeInSeconds": 3400, "speedMetersPerSecond": 3.0, "heartRate": 150, "stepsPerMinute": 169},
+        ]
+        raw_detail = {"activityId": 123, "samples": samples}  # no laps key
+        result = adapt_activity_detail_laps(raw_detail, samples)
+
+        assert len(result) >= 4
+        assert result[0]["split_number"] == 1
+        assert result[0]["distance"] == pytest.approx(1609.34, abs=5.0)
+        assert result[0]["gap_seconds_per_mile"] is None
+
+    def test_derives_splits_when_laps_is_none(self):
+        """laps=None + rich samples -> derive distance-based splits."""
+        from services.garmin_adapter import adapt_activity_detail_laps
+
+        samples = _make_samples([1000, 1300, 1600, 1900, 2200, 2500])
+        # Ensure speed exists for integration
+        for s in samples:
+            s["speedMetersPerSecond"] = s.get("speedMetersPerSecond", 3.2)
+        raw_detail = _make_raw_detail(laps=None, samples=samples)
+        result = adapt_activity_detail_laps(raw_detail, samples)
+
+        assert len(result) >= 1
+        assert all(split["split_number"] >= 1 for split in result)
+
+
+# ===========================================================================
+# Test 4 — empty when laps missing and samples insufficient
+# ===========================================================================
+class TestAdaptLapsEmptyWhenInsufficientSamples:
 
     def test_returns_empty_list_when_laps_key_absent(self):
-        """No 'laps' key in raw_detail → returns []."""
+        """No laps and no samples -> returns []."""
         from services.garmin_adapter import adapt_activity_detail_laps
 
         raw_detail = {"activityId": 123, "samples": []}
@@ -221,7 +261,7 @@ class TestAdaptLapsEmptyWhenNoLapsKey:
         assert result == []
 
     def test_returns_empty_list_when_laps_is_none(self):
-        """laps=None → returns []."""
+        """laps=None and no samples -> returns []."""
         from services.garmin_adapter import adapt_activity_detail_laps
 
         raw_detail = _make_raw_detail(laps=None)
@@ -230,13 +270,8 @@ class TestAdaptLapsEmptyWhenNoLapsKey:
         assert result == []
 
 
-# ===========================================================================
-# Test 4 — empty when laps is empty array
-# ===========================================================================
-class TestAdaptLapsEmptyWhenEmptyArray:
-
     def test_returns_empty_list_when_laps_empty(self):
-        """laps=[] → returns []."""
+        """laps=[] and no samples -> returns []."""
         from services.garmin_adapter import adapt_activity_detail_laps
 
         raw_detail = _make_raw_detail(laps=[])
@@ -350,12 +385,12 @@ class TestIngestActivityDetailIdempotentSplits:
 
 
 # ===========================================================================
-# Test 7 — no splits when no laps
+# Test 7 — sample fallback when no laps
 # ===========================================================================
-class TestIngestActivityDetailNoSplitsWhenNoLaps:
+class TestIngestActivityDetailSampleFallbackWhenNoLaps:
 
-    def test_no_splits_created_when_payload_has_no_laps(self):
-        """When payload has no laps, no ActivitySplit rows are created."""
+    def test_splits_created_from_samples_when_payload_has_no_laps(self):
+        """When payload has no laps but has samples, ActivitySplit rows are created."""
         from tasks.garmin_webhook_tasks import _ingest_activity_detail_item
         from models import ActivitySplit
 
@@ -373,18 +408,28 @@ class TestIngestActivityDetailNoSplitsWhenNoLaps:
                 q.filter.return_value.first.return_value = mock_activity
             elif model is __import__('models', fromlist=['ActivityStream']).ActivityStream:
                 q.filter.return_value.first.return_value = None
+            elif model is ActivitySplit:
+                q.filter.return_value.delete.return_value = 0
             return q
 
         mock_db.query.side_effect = query_side
 
-        raw_item = _make_raw_detail(laps=None, samples=[])  # no laps
+        samples = [
+            {"startTimeInSeconds": 1000, "speedMetersPerSecond": 3.0, "heartRate": 140, "stepsPerMinute": 165},
+            {"startTimeInSeconds": 1600, "speedMetersPerSecond": 3.0, "heartRate": 142, "stepsPerMinute": 166},
+            {"startTimeInSeconds": 2200, "speedMetersPerSecond": 3.0, "heartRate": 145, "stepsPerMinute": 167},
+            {"startTimeInSeconds": 2800, "speedMetersPerSecond": 3.0, "heartRate": 148, "stepsPerMinute": 168},
+            {"startTimeInSeconds": 3400, "speedMetersPerSecond": 3.0, "heartRate": 150, "stepsPerMinute": 169},
+        ]
+        raw_item = _make_raw_detail(laps=None, samples=samples)  # no laps, but rich samples
         added_objects = []
         mock_db.add.side_effect = added_objects.append
 
         result = _ingest_activity_detail_item(raw_item, "athlete-id", mock_db)
 
         split_adds = [o for o in added_objects if isinstance(o, ActivitySplit)]
-        assert split_adds == []
+        assert result is True
+        assert len(split_adds) >= 1
 
     def test_no_error_raised_when_laps_absent(self):
         """No exception raised when 'laps' key is absent from payload."""
