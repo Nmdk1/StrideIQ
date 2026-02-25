@@ -45,7 +45,7 @@ See docs/garmin-portal/HEALTH_API.md §Backfill Endpoints
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import requests
 
@@ -92,7 +92,7 @@ _ACTIVITY_BACKFILL_ENDPOINTS = {
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _params_for_endpoint(endpoint: str, now: datetime) -> Dict[str, int]:
@@ -108,6 +108,64 @@ def _params_for_endpoint(endpoint: str, now: datetime) -> Dict[str, int]:
         "summaryEndTimeInSeconds": int(now.timestamp()),
     }
 
+
+def _request_single_backfill(
+    endpoint: str,
+    headers: Dict[str, str],
+    params: Dict[str, int],
+) -> Dict[str, Any]:
+    """
+    Make a single backfill request with 429 retry logic.
+
+    Returns {"status": "ok"|"failed"|"duplicate"|"rate_limited", "code": int}
+    """
+    url = f"{_GARMIN_WELLNESS_BASE}{endpoint}"
+    attempt = 0
+    max_attempts = 1 + _MAX_429_RETRIES
+
+    while attempt < max_attempts:
+        attempt += 1
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=_TIMEOUT_S)
+        except Exception as exc:
+            logger.exception(
+                "Backfill request failed for %s (attempt %d/%d): %s",
+                endpoint, attempt, max_attempts, exc,
+            )
+            return {"status": "failed", "code": 0, "error": str(exc)}
+
+        body_preview = (resp.text or "").strip()
+        if len(body_preview) > 300:
+            body_preview = f"{body_preview[:300]}..."
+
+        if resp.status_code == 202:
+            logger.info("Backfill accepted: %s → 202", endpoint)
+            return {"status": "ok", "code": 202}
+
+        if resp.status_code == 409:
+            logger.info("Backfill duplicate (already processed): %s → 409 body=%r", endpoint, body_preview)
+            return {"status": "duplicate", "code": 409}
+
+        if resp.status_code == 429 and attempt < max_attempts:
+            logger.warning(
+                "Backfill rate limited: %s → 429 (attempt %d/%d, backing off %ds, body=%r)",
+                endpoint, attempt, max_attempts, _RATE_LIMIT_BACKOFF_S, body_preview,
+            )
+            time.sleep(_RATE_LIMIT_BACKOFF_S)
+            continue
+
+        logger.warning(
+            "Backfill unexpected: %s → %d (attempt %d/%d, body=%r)",
+            endpoint, resp.status_code, attempt, max_attempts, body_preview,
+        )
+        return {"status": "failed", "code": resp.status_code, "body": body_preview}
+
+    return {"status": "rate_limited", "code": 429}
+
+
+# ---------------------------------------------------------------------------
+# Standard backfill (30-day / 90-day)
+# ---------------------------------------------------------------------------
 
 def request_garmin_backfill(athlete: Any, db: Any) -> Dict[str, Any]:
     """
@@ -143,65 +201,14 @@ def request_garmin_backfill(athlete: Any, db: Any) -> Dict[str, Any]:
     failed = 0
 
     for idx, endpoint in enumerate(_BACKFILL_ENDPOINTS):
-        url = f"{_GARMIN_WELLNESS_BASE}{endpoint}"
         params = _params_for_endpoint(endpoint, now)
+        result = _request_single_backfill(endpoint, headers, params)
 
-        endpoint_ok = False
-        attempt = 0
-        max_attempts = 1 + _MAX_429_RETRIES
-
-        while attempt < max_attempts and not endpoint_ok:
-            attempt += 1
-            try:
-                resp = requests.get(url, headers=headers, params=params, timeout=_TIMEOUT_S)
-            except Exception as exc:
-                logger.exception(
-                    "Garmin backfill request failed for %s (attempt %d/%d): %s",
-                    endpoint,
-                    attempt,
-                    max_attempts,
-                    exc,
-                )
-                break
-
-            if resp.status_code == 202:
-                logger.info(
-                    "Garmin backfill requested: %s → 202 Accepted (attempt %d/%d)",
-                    endpoint,
-                    attempt,
-                    max_attempts,
-                )
-                requested += 1
-                endpoint_ok = True
-                break
-
-            body_preview = (resp.text or "").strip()
-            if len(body_preview) > 300:
-                body_preview = f"{body_preview[:300]}..."
-
-            if resp.status_code == 429 and attempt < max_attempts:
-                logger.warning(
-                    "Garmin backfill rate limited: %s → 429 (attempt %d/%d, backing off %ds, body=%r)",
-                    endpoint,
-                    attempt,
-                    max_attempts,
-                    _RATE_LIMIT_BACKOFF_S,
-                    body_preview,
-                )
-                time.sleep(_RATE_LIMIT_BACKOFF_S)
-                continue
-
-            logger.warning(
-                "Garmin backfill unexpected status: %s → %d (attempt %d/%d, body=%r)",
-                endpoint,
-                resp.status_code,
-                attempt,
-                max_attempts,
-                body_preview,
-            )
-            break
-
-        if not endpoint_ok:
+        if result["status"] == "ok":
+            requested += 1
+        elif result["status"] == "duplicate":
+            pass  # already processed, not a failure
+        else:
             failed += 1
 
         if idx < len(_BACKFILL_ENDPOINTS) - 1:
@@ -209,8 +216,135 @@ def request_garmin_backfill(athlete: Any, db: Any) -> Dict[str, Any]:
 
     logger.info(
         "Garmin backfill complete for athlete %s: requested=%d failed=%d",
-        athlete.id,
-        requested,
-        failed,
+        athlete.id, requested, failed,
     )
     return {"status": "ok", "requested": requested, "failed": failed}
+
+
+# ---------------------------------------------------------------------------
+# Deep backfill (multi-window, goes back months/years)
+# ---------------------------------------------------------------------------
+
+def request_deep_garmin_backfill(
+    athlete: Any,
+    db: Any,
+    target_start: datetime,
+    inter_window_delay_s: float = 3.0,
+) -> Dict[str, Any]:
+    """
+    Request a deep Garmin backfill spanning multiple 30/90-day windows.
+
+    Walks backward from now to target_start, issuing one backfill request
+    per window per endpoint. Activities are requested first (30-day windows),
+    then activityDetails, then health endpoints (90-day windows).
+
+    409 (duplicate) responses are skipped gracefully — they mean Garmin
+    already processed that window.
+
+    Args:
+        athlete: SQLAlchemy Athlete ORM instance.
+        db: Active SQLAlchemy session.
+        target_start: How far back to backfill (UTC datetime).
+        inter_window_delay_s: Delay between window requests (default 3s).
+
+    Returns:
+        {
+            "status": "ok" | "aborted",
+            "accepted": int,
+            "duplicates": int,
+            "failed": int,
+            "details": list of per-request results,
+        }
+    """
+    access_token = ensure_fresh_garmin_token(athlete, db)
+    if not access_token:
+        logger.warning("Deep backfill aborted: no valid token for athlete %s", athlete.id)
+        return {"status": "aborted", "reason": "no_token",
+                "accepted": 0, "duplicates": 0, "failed": 0, "details": []}
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+    now = datetime.now(timezone.utc)
+
+    # Phase 1: Activity endpoints (30-day windows) — activities first, then details
+    activity_endpoints = ["/rest/backfill/activities", "/rest/backfill/activityDetails"]
+    # Phase 2: Health endpoints (90-day windows)
+    health_endpoints = [
+        "/rest/backfill/sleeps",
+        "/rest/backfill/hrv",
+        "/rest/backfill/stressDetails",
+        "/rest/backfill/dailies",
+        "/rest/backfill/userMetrics",
+    ]
+
+    accepted = 0
+    duplicates = 0
+    failed = 0
+    details: List[Dict[str, Any]] = []
+
+    def _backfill_endpoint_windows(endpoint: str, window_days: int):
+        nonlocal accepted, duplicates, failed, access_token
+
+        cursor = now
+        window_num = 0
+        while cursor > target_start:
+            window_num += 1
+            window_end = cursor
+            window_start = max(cursor - timedelta(days=window_days), target_start)
+
+            params = {
+                "summaryStartTimeInSeconds": int(window_start.timestamp()),
+                "summaryEndTimeInSeconds": int(window_end.timestamp()),
+            }
+
+            logger.info(
+                "Deep backfill: %s window %d [%s → %s]",
+                endpoint, window_num,
+                window_start.strftime("%Y-%m-%d"),
+                window_end.strftime("%Y-%m-%d"),
+            )
+
+            result = _request_single_backfill(endpoint, headers, params)
+            result["endpoint"] = endpoint
+            result["window"] = f"{window_start.strftime('%Y-%m-%d')} → {window_end.strftime('%Y-%m-%d')}"
+            details.append(result)
+
+            if result["status"] == "ok":
+                accepted += 1
+            elif result["status"] == "duplicate":
+                duplicates += 1
+            else:
+                failed += 1
+                if result.get("code") == 429:
+                    logger.warning("Rate limited after retries — stopping %s", endpoint)
+                    break
+
+            cursor = window_start
+            if cursor > target_start:
+                time.sleep(inter_window_delay_s)
+
+    # Phase 1: Activities (30-day windows)
+    for ep in activity_endpoints:
+        _backfill_endpoint_windows(ep, _BACKFILL_DEPTH_DAYS_ACTIVITY)
+        time.sleep(inter_window_delay_s)
+
+    # Refresh token if needed (deep backfill can take minutes)
+    access_token = ensure_fresh_garmin_token(athlete, db)
+    if access_token:
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Phase 2: Health (90-day windows)
+    for ep in health_endpoints:
+        _backfill_endpoint_windows(ep, _BACKFILL_DEPTH_DAYS_HEALTH)
+        time.sleep(inter_window_delay_s)
+
+    logger.info(
+        "Deep backfill complete for athlete %s: accepted=%d duplicates=%d failed=%d",
+        athlete.id, accepted, duplicates, failed,
+    )
+    return {
+        "status": "ok",
+        "accepted": accepted,
+        "duplicates": duplicates,
+        "failed": failed,
+        "details": details,
+    }
