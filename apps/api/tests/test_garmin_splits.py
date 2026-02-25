@@ -203,7 +203,7 @@ class TestAdaptLapsHRFromSamples:
         assert split["average_heartrate"] == 145
         assert split["max_heartrate"] == 165
         assert split["average_cadence"] == 168.0
-        assert split["gap_seconds_per_mile"] is None  # Not in Garmin JSON API
+        assert split["gap_seconds_per_mile"] == pytest.approx(418.0, abs=1.0)  # No elevation data → GAP equals raw pace
 
 
 # ===========================================================================
@@ -229,7 +229,7 @@ class TestAdaptLapsFallbackWhenNoLaps:
         assert len(result) >= 4
         assert result[0]["split_number"] == 1
         assert result[0]["distance"] == pytest.approx(1609.34, abs=5.0)
-        assert result[0]["gap_seconds_per_mile"] is None
+        assert result[0]["gap_seconds_per_mile"] == pytest.approx(536.0, abs=2.0)  # No elevation data → GAP equals raw pace
 
     def test_derives_splits_when_laps_is_none(self):
         """laps=None + rich samples -> derive distance-based splits."""
