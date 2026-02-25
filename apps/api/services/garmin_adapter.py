@@ -457,10 +457,25 @@ def adapt_activity_detail_laps(
 
         # --- Distance ---
         distance_m = _float_or_none(lap.get("totalDistanceInMeters"))
+        if distance_m is None and lap_samples:
+            dist_vals = [
+                s["totalDistanceInMeters"] for s in lap_samples
+                if s.get("totalDistanceInMeters") is not None
+            ]
+            if len(dist_vals) >= 2:
+                distance_m = round(dist_vals[-1] - dist_vals[0], 2)
 
         # --- Duration ---
         elapsed_time = _int_or_none(lap.get("clockDurationInSeconds"))
         moving_time = _int_or_none(lap.get("timerDurationInSeconds"))
+        if elapsed_time is None and lap_end is not None:
+            elapsed_time = lap_end - lap_start
+        elif elapsed_time is None and lap_samples:
+            ts_vals = [s["startTimeInSeconds"] for s in lap_samples if s.get("startTimeInSeconds") is not None]
+            if len(ts_vals) >= 2:
+                elapsed_time = ts_vals[-1] - ts_vals[0]
+        if moving_time is None:
+            moving_time = elapsed_time
 
         # --- Average heart rate ---
         avg_hr = _int_or_none(lap.get("averageHeartRateInBeatsPerMinute"))
