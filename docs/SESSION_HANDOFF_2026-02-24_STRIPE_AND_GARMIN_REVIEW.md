@@ -1,8 +1,8 @@
 # Session Handoff — Stripe Setup & Garmin Partner Review
 
-**Date:** February 24, 2026
-**Status:** Stripe live in production. Garmin disconnect bug fixed. Garmin partner review in progress.
-**Branch:** `main` (commit `9b11504`)
+**Date:** February 24–25, 2026
+**Status:** Stripe live. Garmin disconnect fixed. Sleep prompt grounding fixed. Garmin partner review in progress.
+**Branch:** `main` (latest commit `494b9e9`)
 **Prior handoff:** `docs/SESSION_HANDOFF_2026-02-22_GARMIN_LIVE.md`
 
 ---
@@ -98,16 +98,42 @@ db.query(Activity).filter(...).delete()
 
 ### 4. Garmin partner review — Elena Kononova
 
-Elena Kononova (Garmin Connect Partner Services) requested a screenshot of the authorization page.
+Elena Kononova (Garmin Connect Partner Services) requested screenshots of the authorization flow.
 
 - Founder disconnected temporarily to expose the connect button
-- Screenshots sent: pre-connection (connect button visible) + post-connection (connected state)
-- Email reply sent with screenshots and URL (`https://strideiq.run/settings`)
-- Garmin review status: **awaiting response**
+- Screenshots sent (pre-connection + post-connection state, URL `https://strideiq.run/settings`)
+- Elena replied requesting screenshots again — she may not have received the first send or wanted inline vs attachment
+- Screenshots re-sent with both states embedded inline
+- Garmin review status: **awaiting response** (Elena confirmed Dec 23:00 GMT+1, resend on Feb 24)
 
 ---
 
-### 5. Host migration deferred
+### 5. Sleep prompt grounding fix (commit `494b9e9`)
+
+**Problem:** Home morning briefing cited "7.5h sleep last night" when:
+- Garmin device measured 6h45 last night
+- Athlete manually entered 7.0h on the check-in slider
+
+This was a prompt construction failure — not corrupted data.
+
+**Root causes (three layered):**
+1. `checkin_data_dict` had `sleep_label` ("Great") but not `sleep_h` numeric — LLM had no hours to cite, borrowed historical
+2. `get_wellness_trends` narrative lacked date attribution — historical 7.2h avg was indistinguishable from "last night"
+3. `GarminDay.sleep_total_s` (device measurement, highest fidelity) was never queried for the briefing
+
+**What shipped:**
+- `_build_checkin_data_dict()` helper — now includes `sleep_h` numeric, shared between request path + Celery task
+- `_get_garmin_sleep_h_for_last_night()` — queries `GarminDay` for wakeup-day (today or yesterday fallback)
+- `get_wellness_trends` recency prefix — `"Most recent entry (YYYY-MM-DD): sleep=X.Xh | stress=…"`
+- SLEEP SOURCE CONTRACT in prompt — explicit source attribution, blocks averaging/synthesizing, blocks historical-as-last-night
+- `validate_sleep_claims()` — suppresses `morning_voice` to fallback if cited sleep deviates > 0.5h from both device + manual
+- 22 new tests in `apps/api/tests/test_sleep_prompt_grounding.py` — all passing
+
+**See:** `docs/BUILDER_NOTE_2026-02-24_SLEEP_PROMPT_GROUNDING.md` for full details.
+
+---
+
+### 6. Host migration deferred
 
 Decision: do not migrate to larger droplet yet.
 
@@ -124,11 +150,12 @@ Reasons:
 
 | Item | Status |
 |---|---|
-| Droplet | `main` at `9b11504` |
+| Droplet | `main` at `494b9e9` |
 | Stripe | Live — product, prices, webhook, portal all configured |
 | Garmin | Founder reconnected, webhooks flowing, backfill running |
 | Feature flag `garmin_connect_enabled` | rollout 0%, allowlist: founder + father |
 | Home briefing p95 | 1.98s (SLO: < 2s) ✅ |
+| Sleep prompt grounding | Fixed — validator live, 22 tests green |
 
 ---
 
@@ -160,6 +187,18 @@ Reasons:
 
 - Do not change Stripe price IDs or product without founder sign-off
 - Do not modify feature flag allowlist without founder instruction
-- Do not touch Strava sync, home briefing, or AI coach code
+- Do not touch Strava sync without founder instruction
+- Do not change sleep validator tolerance without founder sign-off — it is intentionally lenient (0.5h)
 - Do not re-propose anything in `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` rejected decisions
 - Scoped commits only — never `git add -A`
+
+---
+
+## Session commits (this session)
+
+| Commit | Description |
+|---|---|
+| `9b11504` | fix: delete ActivitySplit before Activity in Garmin disconnect handler |
+| `9bd7aa1` | docs: session handoff, SITE_AUDIT_LIVING update |
+| `494b9e9` | fix: sleep prompt grounding — Garmin sleep, checkin numeric, SLEEP SOURCE CONTRACT, validator, 22 tests |
+| (this commit) | docs: final session wrap-up documentation |

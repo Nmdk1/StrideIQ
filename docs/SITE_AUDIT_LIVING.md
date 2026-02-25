@@ -1,8 +1,8 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Single source of truth for every new builder session. Updated every session.
-**Last updated:** February 24, 2026
-**Last updated by:** Builder session that set up Stripe in production and fixed Garmin disconnect bug
+**Last updated:** February 25, 2026
+**Last updated by:** Builder session — Stripe live, Garmin disconnect fixed, sleep prompt grounding fixed (commit 494b9e9)
 
 ---
 
@@ -292,6 +292,7 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - Sleep weight = 0.00 in readiness score — excluded until correlation engine proves individual relationship
 
 ### Resolved Issues
+- **Sleep prompt grounding (Feb 24, 2026)** — Home morning briefing cited wrong sleep hours (7.5h vs 6h45 Garmin / 7.0h manual). Fixed with: `_build_checkin_data_dict()` (sleep_h numeric now in prompt), `_get_garmin_sleep_h_for_last_night()` (device sleep as ground truth), SLEEP SOURCE CONTRACT in prompt, `validate_sleep_claims()` validator (0.5h tolerance), wellness trends recency prefix. 22 new regression tests. Commit `494b9e9`.
 - **Garmin disconnect 500 (Feb 24, 2026)** — `POST /v1/garmin/disconnect` crashed with `ForeignKeyViolation` on `activity_split`. Fixed by deleting `ActivitySplit` rows before `Activity` rows in the disconnect handler. Commit `9b11504`.
 - **SEV-1: Coach stream hanging on "Thinking..." (Feb 17, 2026)** — fixed with 120s hard timeout + try/except + SSE error event in `ai_coach.py`
 - **SEV-1: Home page LLM blocking all requests (Feb 17, 2026)** — fixed by splitting `generate_coach_home_briefing` into two phases: DB on request thread, LLM on worker thread via `asyncio.to_thread` + 15s `asyncio.wait_for`
