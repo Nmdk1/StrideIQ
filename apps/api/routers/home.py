@@ -1075,8 +1075,8 @@ def generate_coach_home_briefing(
     run the LLM call in a worker thread via ``asyncio.to_thread``.
 
     Returns ``(cached_result,)`` if Redis hit (request path only), or
-    ``(None, prompt, schema_fields, required_fields, cache_key)`` if
-    the LLM call is needed.
+    ``(None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h)``
+    if the LLM call is needed.
 
     skip_cache=True: the Lane 2A Celery worker always passes this to bypass
     the legacy ``coach_home_briefing:{athlete_id}:{hash}`` key. Without this,

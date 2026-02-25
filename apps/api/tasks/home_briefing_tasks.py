@@ -109,7 +109,9 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
     Build the LLM prompt from DB data. Reuses the existing
     generate_coach_home_briefing() prompt builder.
 
-    Returns (prompt, schema_fields, required_fields) or None on error.
+    Returns
+      (prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h)
+    on success, ``None`` when legacy cache short-circuits, and ``False`` on hard failure.
     """
     from models import Activity, DailyCheckin, PlannedWorkout, TrainingPlan
 
