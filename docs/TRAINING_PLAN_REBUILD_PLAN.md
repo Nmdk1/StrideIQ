@@ -67,7 +67,8 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 
 These are decided. No revisiting during the build.
 
-1. **Standard tier pace injection:** YES — show paces on free plans if the athlete has RPI from signup or Strava. Paces are expected, not a differentiator. N=1 intelligence and daily adaptation are the paid differentiators.
+1. **Standard tier pace injection:** ~~YES — show paces on free plans if the athlete has RPI from signup or Strava. Paces are expected, not a differentiator. N=1 intelligence and daily adaptation are the paid differentiators.~~
+   **SUPERSEDED by Monetization Decision (2026-02-26):** Paces are gated behind the $5 one-time purchase (or Guided/Premium subscription). Free plans return full plan structure (phases, weeks, workout types, distances, effort descriptions) with pace target fields set to `null`. The "$5 to unlock" CTA on blurred paces is the primary free→paid conversion moment. See Monetization Mapping below.
 
 2. **50K timeline:** Deferred until after 5K is complete (Phase 1 scope ends at 5K). 50K requires new primitives (back-to-back long runs, time-on-feet, RPE, nutrition, strength) that shouldn't block the core distances.
 
@@ -616,12 +617,24 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 
 ## Monetization Mapping — CONTRACT TESTS ONLY (29 xfail)
 
-| Tier | What They Get | Plan Features | Adaptation |
-|------|--------------|---------------|------------|
-| **Free** | RPI calculator, basic plan outline | Phase structure, effort descriptions, general guidance | None |
-| **One-time ($5)** | Complete race plan | Calculated paces, proper periodization, workout structure | None (static) |
-| **Guided Self-Coaching ($15/mo)** | The coached experience | N=1 plan parameters, daily adaptation, readiness score, completion tracking, intelligence bank | Full daily adaptation |
-| **Premium ($25/mo)** | Everything + conversational coach | All above + contextual narratives, coach advisory mode, multi-race planning, recovery integration, pre-race fingerprinting, Intelligence Bank dashboard | Adaptation + coach proposals |
+**Gating architecture (decided 2026-02-26):** Hybrid model.
+- **Plan endpoints** (`/v2/plans`): Always return plan structure. If athlete is free with no `PlanPurchase` record for this plan, set pace target fields to `null` in the response. Frontend blurs and shows "$5 to unlock" CTA.
+- **Adaptation/intelligence endpoints**: Endpoint gate — 403 for below-guided tier.
+- **Narratives/advisory/premium-only**: Endpoint gate — 403 for below-premium tier.
+
+| Tier | What They Get | Plan Paces | Adaptation | Intelligence |
+|------|--------------|------------|------------|--------------|
+| **Free** | RPI calculator, plan structure (phases, weeks, workout types, distances, effort descriptions) | **null** — blurred in UI, "$5 to unlock" CTA | None — 403 on all adaptation endpoints | None — 403 on intelligence endpoints |
+| **One-time ($5)** | Complete race plan with calculated paces | **Full paces** — unlocked per `PlanPurchase` record tied to `plan_snapshot_id` | None (static plan, no daily adaptation) | None |
+| **Guided Self-Coaching ($15/mo)** | The coached experience | **Full paces** — tier satisfies | Full daily adaptation (readiness, intelligence bank, replan) | Intelligence bank (`/v1/insights/intelligence`) |
+| **Premium ($25/mo)** | Everything + conversational coach | **Full paces** — tier satisfies | All above + coach proposals | All above + contextual narratives, advisory mode, workout narratives, dashboard |
+
+**Pace fields nulled for unauthorized tiers:**
+- `target_pace_per_km_seconds` (integer)
+- `target_pace_per_km_seconds_max` (integer)
+- `pace_description` (string)
+
+**`PlanTier` enum (standard/semi_custom/custom/model_driven) is a generation-quality axis — NOT a monetization tier. Do not conflate.**
 
 ---
 

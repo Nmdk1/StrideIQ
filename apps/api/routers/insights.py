@@ -21,7 +21,7 @@ from datetime import date, timedelta
 from pydantic import BaseModel, ConfigDict
 
 from core.database import get_db
-from core.auth import get_current_user
+from core.auth import get_current_user, require_tier
 from models import Athlete, CalendarInsight
 from services.insight_aggregator import (
     InsightAggregator,
@@ -284,27 +284,16 @@ def get_build_status(
 
 @router.get("/intelligence", response_model=AthleteIntelligenceResponse)
 def get_athlete_intelligence(
-    current_user: Athlete = Depends(get_current_user),
+    current_user: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
     Get athlete intelligence bank.
 
-    Returns banked learnings: what works, what doesn't, patterns, injury history.
-    Guided + Premium tiers get N=1 personalized insights (Phase 3C) when
-    eligibility gates are met.  Elite tier retains full access for backward compat.
+    Requires Guided or above tier.  Returns banked learnings: what works,
+    what doesn't, patterns, injury history.  Guided + Premium tiers get N=1
+    personalized insights (Phase 3C) when eligibility gates are met.
     """
-    # Tier check: guided, premium, elite, pro all qualify
-    qualifying_tiers = {"guided", "premium", "elite", "pro"}
-    has_access = (
-        getattr(current_user, "has_active_subscription", False)
-        or current_user.subscription_tier in qualifying_tiers
-    )
-    if not has_access:
-        raise HTTPException(
-            status_code=403,
-            detail="Athlete Intelligence requires Guided or Premium tier.",
-        )
 
     aggregator = InsightAggregator(db, current_user)
     intelligence = aggregator.get_athlete_intelligence()

@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from core.database import get_db
-from core.auth import get_current_user
+from core.auth import get_current_user, require_tier
 from models import Athlete, InsightLog, DailyReadiness, NarrationLog
 
 import logging
@@ -102,15 +102,15 @@ class ComputeResponse(BaseModel):
 
 @router.get("/today", response_model=DailyIntelligenceResponse)
 def get_today_intelligence(
-    current_user: Athlete = Depends(get_current_user),
+    current_user: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
     Get today's intelligence insights for the authenticated athlete.
 
-    Returns pre-computed insights from the morning intelligence task.
-    If no insights exist yet (task hasn't run), returns empty.
-    The calendar card uses this to display daily intelligence.
+    Requires Guided or above tier.  Returns pre-computed insights from the
+    morning intelligence task.  If no insights exist yet (task hasn't run),
+    returns empty.  The calendar card uses this to display daily intelligence.
     """
     return _get_intelligence_for_date(current_user.id, date.today(), db)
 
@@ -118,13 +118,14 @@ def get_today_intelligence(
 @router.get("/{target_date}", response_model=DailyIntelligenceResponse)
 def get_intelligence_for_date(
     target_date: date,
-    current_user: Athlete = Depends(get_current_user),
+    current_user: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
     Get intelligence insights for a specific date.
 
-    Useful for reviewing past days' insights in the calendar view.
+    Requires Guided or above tier.  Useful for reviewing past days' insights
+    in the calendar view.
     """
     # Don't allow future dates
     if target_date > date.today():
@@ -135,7 +136,7 @@ def get_intelligence_for_date(
 
 @router.post("/compute", response_model=ComputeResponse)
 def compute_intelligence_now(
-    current_user: Athlete = Depends(get_current_user),
+    current_user: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -191,13 +192,14 @@ def compute_intelligence_now(
 @router.get("/history/recent", response_model=List[DailyIntelligenceResponse])
 def get_recent_intelligence(
     days: int = Query(default=7, ge=1, le=30),
-    current_user: Athlete = Depends(get_current_user),
+    current_user: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
     Get intelligence insights for the last N days.
 
-    Useful for the weekly view / trend analysis on the frontend.
+    Requires Guided or above tier.  Useful for the weekly view / trend
+    analysis on the frontend.
     """
     results = []
     today = date.today()
@@ -211,13 +213,13 @@ def get_recent_intelligence(
 @router.get("/narration/quality", response_model=NarrationQualityResponse)
 def get_narration_quality(
     days: int = Query(default=7, ge=1, le=28),
-    current_user: Athlete = Depends(get_current_user),
+    current_user: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
     Get narration quality metrics for the last N days.
 
-    Used for:
+    Requires Guided or above tier.  Used for:
     - Admin monitoring of narration quality
     - Phase 3B gate check (90% for 4 weeks)
     - Identifying which criterion is weakest
@@ -362,7 +364,7 @@ class WorkoutNarrativeResponse(BaseModel):
 )
 def get_workout_narrative(
     target_date: date,
-    current_user: Athlete = Depends(get_current_user),
+    current_user: Athlete = Depends(require_tier(["premium"])),
     db: Session = Depends(get_db),
 ):
     """

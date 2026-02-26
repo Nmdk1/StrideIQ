@@ -290,35 +290,43 @@ class FeatureFlagService:
         return bucket < percentage
     
     def _tier_satisfies(self, athlete_tier: str, required_tier: str) -> bool:
-        """Check if athlete's tier satisfies requirement."""
-        # Phase 6: converge to Free vs Pro. Keep legacy aliases for backward compatibility.
-        normalized_athlete_tier = (athlete_tier or "free").lower()
-        normalized_required_tier = (required_tier or "free").lower()
+        """Check if athlete's tier satisfies requirement.
 
-        legacy_paid = {"elite", "pro", "premium", "guided", "subscription"}
-        if normalized_athlete_tier in legacy_paid:
-            normalized_athlete_tier = "pro"
-        if normalized_required_tier in legacy_paid:
-            normalized_required_tier = "pro"
+        Delegates to core.tier_utils — single source of truth for the
+        canonical free < guided < premium hierarchy.
+        """
+        from core.tier_utils import tier_satisfies
+        return tier_satisfies(athlete_tier, required_tier)
 
-        tier_hierarchy = {
-            "free": 0,
-            "pro": 1,
-        }
-        
-        athlete_level = tier_hierarchy.get(normalized_athlete_tier, 0)
-        required_level = tier_hierarchy.get(normalized_required_tier, 0)
-        
-        return athlete_level >= required_level
-    
     def _has_purchased(self, athlete_id: UUID, flag_key: str) -> bool:
-        """Check if athlete has purchased a one-time feature."""
-        from models import Purchase
-        
-        purchase = self.db.query(Purchase).filter_by(
-            athlete_id=athlete_id,
-            product_key=flag_key,
-            status="completed"
-        ).first()
-        
-        return purchase is not None
+        """Check if athlete has purchased a one-time feature.
+
+        Checks PlanPurchase (new model, plan_snapshot_id) first.
+        Falls back to the legacy Purchase model (product_key) for backward
+        compatibility with any older feature flags that predate the
+        PlanPurchase model.
+        """
+        from models import PlanPurchase
+
+        new_purchase = (
+            self.db.query(PlanPurchase)
+            .filter(
+                PlanPurchase.athlete_id == athlete_id,
+                PlanPurchase.plan_snapshot_id == str(flag_key),
+            )
+            .first()
+        )
+        if new_purchase is not None:
+            return True
+
+        # Legacy fallback: old Purchase model keyed by product_key
+        try:
+            from models import Purchase
+            legacy = self.db.query(Purchase).filter_by(
+                athlete_id=athlete_id,
+                product_key=flag_key,
+                status="completed",
+            ).first()
+            return legacy is not None
+        except Exception:
+            return False

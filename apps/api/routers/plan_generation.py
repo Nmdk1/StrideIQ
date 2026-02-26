@@ -230,13 +230,14 @@ async def classify_volume_tier(
 @router.post("/standard/preview", response_model=PlanPreview)
 async def preview_standard_plan(
     request: StandardPlanRequest,
+    athlete: Optional[Athlete] = Depends(get_current_athlete_optional),
     db: Session = Depends(get_db),
 ):
     """
     Generate a preview of a standard plan.
-    
-    This is a public endpoint - no auth required.
-    Returns full plan structure for review.
+
+    Public endpoint — no auth required.  Paces are blurred for unauthenticated
+    users and free-tier athletes.  Guided/Premium athletes see full paces.
     """
     # Validate inputs
     try:
@@ -256,6 +257,7 @@ async def preview_standard_plan(
         )
     
     # Generate plan
+    from core.tier_utils import tier_satisfies as _ts
     generator = PlanGenerator(db)
     plan = generator.generate_standard(
         distance=request.distance,
@@ -264,8 +266,16 @@ async def preview_standard_plan(
         days_per_week=request.days_per_week,
         start_date=request.start_date,
     )
-    
-    return _plan_to_preview(plan)
+
+    show_paces = (
+        athlete is not None
+        and (
+            getattr(athlete, "role", None) in ("admin", "owner")
+            or getattr(athlete, "has_active_subscription", False)
+            or _ts(getattr(athlete, "subscription_tier", None), "guided")
+        )
+    )
+    return _plan_to_preview(plan, show_paces=show_paces)
 
 
 @router.post("/standard", response_model=Dict[str, Any])
@@ -305,10 +315,13 @@ async def preview_semi_custom_plan(
 ):
     """
     Generate a preview of a semi-custom plan.
-    
+
     Includes personalized paces if race time provided.
-    Authentication optional for preview.
+    Authentication optional. Paces shown only for Guided/Premium athletes;
+    blurred for free/unauthenticated users.
     """
+    from core.tier_utils import tier_satisfies as _ts
+
     # Calculate duration from race date
     today = date.today()
     if request.race_date <= today:
@@ -329,8 +342,16 @@ async def preview_semi_custom_plan(
         recent_race_time_seconds=request.recent_race_time_seconds,
         athlete_id=athlete.id if athlete else None,
     )
-    
-    return _plan_to_preview(plan)
+
+    show_paces = (
+        athlete is not None
+        and (
+            getattr(athlete, "role", None) in ("admin", "owner")
+            or getattr(athlete, "has_active_subscription", False)
+            or _ts(getattr(athlete, "subscription_tier", None), "guided")
+        )
+    )
+    return _plan_to_preview(plan, show_paces=show_paces)
 
 
 @router.post("/semi-custom", response_model=Dict[str, Any])
@@ -485,8 +506,13 @@ async def get_plan_options():
 
 # ============ Helper Functions ============
 
-def _plan_to_preview(plan: GeneratedPlan) -> PlanPreview:
-    """Convert GeneratedPlan to preview response."""
+def _plan_to_preview(plan: GeneratedPlan, show_paces: bool = False) -> PlanPreview:
+    """Convert GeneratedPlan to preview response.
+
+    ``show_paces`` controls whether pace_description is included in workout
+    dicts.  Defaults to False (blurred) — callers must explicitly opt in by
+    checking the athlete's tier or purchase status.
+    """
     return PlanPreview(
         plan_tier=plan.plan_tier.value,
         distance=plan.distance,
@@ -519,7 +545,7 @@ def _plan_to_preview(plan: GeneratedPlan) -> PlanPreview:
                 "phase_name": w.phase_name,
                 "distance_miles": w.distance_miles,
                 "duration_minutes": w.duration_minutes,
-                "pace_description": w.pace_description,
+                "pace_description": w.pace_description if show_paces else None,
                 "segments": w.segments,
                 "option": w.option,
                 "has_option_b": w.option_b is not None,
@@ -985,9 +1011,14 @@ async def get_plan(
 ):
     """
     Get full plan details.
-    
-    Returns the plan with all weeks and workouts.
+
+    Returns the plan with all weeks and workouts.  Pace target fields
+    (coach_notes) are nulled for free athletes who have not purchased this
+    plan.  Plan structure (workout type, title, description, distance) is
+    always returned.
     """
+    from core.pace_access import can_access_plan_paces
+
     plan = db.query(TrainingPlan).filter(
         TrainingPlan.id == plan_id,
         TrainingPlan.athlete_id == athlete.id,
@@ -995,6 +1026,8 @@ async def get_plan(
     
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
+
+    show_paces = can_access_plan_paces(athlete, plan_id, db)
     
     # Get all workouts grouped by week
     workouts = db.query(PlannedWorkout).filter(
@@ -1019,7 +1052,7 @@ async def get_plan(
             "phase": w.phase,
             "target_distance_km": w.target_distance_km,
             "target_duration_minutes": w.target_duration_minutes,
-            "coach_notes": w.coach_notes,
+            "coach_notes": w.coach_notes if show_paces else None,
             "completed": w.completed,
             "skipped": w.skipped,
         })
@@ -1034,6 +1067,7 @@ async def get_plan(
         "start_date": plan.plan_start_date.isoformat() if plan.plan_start_date else None,
         "end_date": plan.plan_end_date.isoformat() if plan.plan_end_date else None,
         "baseline_rpi": plan.baseline_rpi,
+        "paces_locked": not show_paces,
         "weeks": weeks,
     }
 
@@ -1297,10 +1331,14 @@ async def get_week_workouts(
     if not workouts:
         raise HTTPException(status_code=404, detail=f"Week {week_number} not found")
     
+    from core.pace_access import can_access_plan_paces
+    show_paces = can_access_plan_paces(athlete, plan_id, db)
+
     return {
         "plan_id": str(plan_id),
         "week_number": week_number,
         "phase": workouts[0].phase if workouts else None,
+        "paces_locked": not show_paces,
         "workouts": [
             {
                 "id": str(w.id),
@@ -1312,7 +1350,7 @@ async def get_week_workouts(
                 "description": w.description,
                 "target_distance_km": w.target_distance_km,
                 "target_duration_minutes": w.target_duration_minutes,
-                "coach_notes": w.coach_notes,
+                "coach_notes": w.coach_notes if show_paces else None,
                 "completed": w.completed,
                 "skipped": w.skipped,
             }

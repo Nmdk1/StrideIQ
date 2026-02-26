@@ -295,8 +295,16 @@ def require_tier(allowed_tiers: list[str]):
             return current_user
 
         actual_level = tier_level(current_user.subscription_tier)
-        # Active trial grants premium-level entitlement
-        if getattr(current_user, "has_active_subscription", False):
+
+        # Trial elevation: free-tier athletes with an active subscription (trial)
+        # receive premium-level access.  Paid subscribers (guided, premium) already
+        # have their tier set correctly via subscription_tier — do NOT override it.
+        # This prevents guided subscribers ($15/mo) from accidentally accessing
+        # premium-only ($25/mo) features.
+        athlete_tier_is_free = tier_level(
+            getattr(current_user, "subscription_tier", "free")
+        ) == 0
+        if athlete_tier_is_free and getattr(current_user, "has_active_subscription", False):
             actual_level = max(actual_level, tier_level("premium"))
 
         if actual_level < min_level:
