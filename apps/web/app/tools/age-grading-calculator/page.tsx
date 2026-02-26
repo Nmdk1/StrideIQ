@@ -16,6 +16,21 @@ export const metadata: Metadata = {
   },
 }
 
+const FAQ_ITEMS = [
+  {
+    q: 'What is a good age-graded percentage for runners?',
+    a: '90%+ is world-class (national/world record territory for your age). 80–89% is elite masters performance. 70–79% is highly competitive. 60–69% is solid recreational running. Below 60% represents developing fitness. Most recreational runners score 40–65%.',
+  },
+  {
+    q: 'What are the WMA age-grading tables based on?',
+    a: 'WMA (World Masters Athletics) tables are built from world-record performances by age group across all standard distances. They are periodically updated as masters athletes set new age-group world records. The tables provide age-specific world-best benchmarks for men and women separately.',
+  },
+  {
+    q: 'Can I use age-grading to compare my 5K to my marathon performance?',
+    a: 'Yes — that\'s one of age-grading\'s most useful applications. If your 5K age-grades at 72% but your marathon grades at 65%, you have more aerobic endurance to develop relative to your speed. The gap tells you where to focus training.',
+  },
+]
+
 const toolJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
@@ -46,21 +61,6 @@ const faqJsonLd = {
     acceptedAnswer: { '@type': 'Answer', text: item.a },
   })),
 }
-
-const FAQ_ITEMS = [
-  {
-    q: 'What is a good age-graded percentage for runners?',
-    a: '90%+ is world-class (national/world record territory for your age). 80–89% is elite masters performance. 70–79% is highly competitive. 60–69% is solid recreational running. Below 60% represents developing fitness. Most recreational runners score 40–65%.',
-  },
-  {
-    q: 'What are the WMA age-grading tables based on?',
-    a: 'WMA (World Masters Athletics) tables are built from world-record performances by age group across all standard distances. They are periodically updated as masters athletes set new age-group world records. The tables provide age-specific world-best benchmarks for men and women separately.',
-  },
-  {
-    q: 'Can I use age-grading to compare my 5K to my marathon performance?',
-    a: 'Yes — that\'s one of age-grading\'s most useful applications. If your 5K age-grades at 72% but your marathon grades at 65%, you have more aerobic endurance to develop relative to your speed. The gap tells you where to focus training.',
-  },
-]
 
 export default function AgeGradingCalculatorPage() {
   return (

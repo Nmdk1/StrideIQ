@@ -16,6 +16,21 @@ export const metadata: Metadata = {
   },
 }
 
+const FAQ_ITEMS = [
+  {
+    q: 'What race distance should I use for the training pace calculator?',
+    a: 'Use your most recent race result from the past 3–6 months. A 5K or 10K gives the most accurate current fitness picture. Older or longer races may underestimate your current fitness if you\'ve been training consistently.',
+  },
+  {
+    q: 'What are Easy, Threshold, and Interval training paces?',
+    a: 'Easy pace (60–79% effort) builds aerobic base with minimal fatigue. Threshold pace (83–88% effort) is your comfortably hard tempo run pace — sustainable for 20–40 minutes. Interval pace (95–100% effort) builds VO2max in short, hard repeats with rest between.',
+  },
+  {
+    q: 'How often should I recalculate my training paces?',
+    a: 'After each significant race or time trial that reflects your current fitness — typically every 4–12 weeks of consistent training. Don\'t update based on a bad race day; wait for a performance that feels representative of your current shape.',
+  },
+]
+
 const toolJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
@@ -46,21 +61,6 @@ const faqJsonLd = {
     acceptedAnswer: { '@type': 'Answer', text: item.a },
   })),
 }
-
-const FAQ_ITEMS = [
-  {
-    q: 'What race distance should I use for the training pace calculator?',
-    a: 'Use your most recent race result from the past 3–6 months. A 5K or 10K gives the most accurate current fitness picture. Older or longer races may underestimate your current fitness if you\'ve been training consistently.',
-  },
-  {
-    q: 'What are Easy, Threshold, and Interval training paces?',
-    a: 'Easy pace (60–79% effort) builds aerobic base with minimal fatigue. Threshold pace (83–88% effort) is your comfortably hard tempo run pace — sustainable for 20–40 minutes. Interval pace (95–100% effort) builds VO2max in short, hard repeats with rest between.',
-  },
-  {
-    q: 'How often should I recalculate my training paces?',
-    a: 'After each significant race or time trial that reflects your current fitness — typically every 4–12 weeks of consistent training. Don\'t update based on a bad race day; wait for a performance that feels representative of your current shape.',
-  },
-]
 
 export default function TrainingPaceCalculatorPage() {
   return (

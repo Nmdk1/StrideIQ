@@ -16,6 +16,21 @@ export const metadata: Metadata = {
   },
 }
 
+const FAQ_ITEMS = [
+  {
+    q: 'At what temperature does heat start slowing running pace?',
+    a: 'Heat effects on running pace begin around 55–60°F (13–15°C) and become significant above 70°F (21°C). At 80°F (27°C) with moderate humidity, most runners need to slow 15–30 seconds per mile to maintain the same physiological effort as their normal training paces.',
+  },
+  {
+    q: 'Does humidity matter as much as temperature for running pace?',
+    a: 'Yes — humidity can matter more than air temperature. High humidity prevents sweat from evaporating, reducing your body\'s ability to cool itself. The dew point is the most useful single measure: above 60°F dew point, cooling becomes impaired; above 70°F dew point, all runners are significantly affected.',
+  },
+  {
+    q: 'Should I use my heat-adjusted pace for races in hot weather?',
+    a: 'Yes, for effort-based racing. In hot conditions, running your normal goal pace means significantly higher physiological stress and higher race failure risk. Adjust your goal pace based on conditions — the heat-adjusted pace reflects an equivalent physiological effort to your cool-weather race pace.',
+  },
+]
+
 const toolJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
@@ -46,21 +61,6 @@ const faqJsonLd = {
     acceptedAnswer: { '@type': 'Answer', text: item.a },
   })),
 }
-
-const FAQ_ITEMS = [
-  {
-    q: 'At what temperature does heat start slowing running pace?',
-    a: 'Heat effects on running pace begin around 55–60°F (13–15°C) and become significant above 70°F (21°C). At 80°F (27°C) with moderate humidity, most runners need to slow 15–30 seconds per mile to maintain the same physiological effort as their normal training paces.',
-  },
-  {
-    q: 'Does humidity matter as much as temperature for running pace?',
-    a: 'Yes — humidity can matter more than air temperature. High humidity prevents sweat from evaporating, reducing your body\'s ability to cool itself. The dew point is the most useful single measure: above 60°F dew point, cooling becomes impaired; above 70°F dew point, all runners are significantly affected.',
-  },
-  {
-    q: 'Should I use my heat-adjusted pace for races in hot weather?',
-    a: 'Yes, for effort-based racing. In hot conditions, running your normal goal pace means significantly higher physiological stress and higher race failure risk. Adjust your goal pace based on conditions — the heat-adjusted pace reflects an equivalent physiological effort to your cool-weather race pace.',
-  },
-]
 
 export default function HeatAdjustedPacePage() {
   return (
