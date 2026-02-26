@@ -1,0 +1,1646 @@
+{
+  "5k": {
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "rows": [
+      {
+        "raceTime": "15:00",
+        "raceTimeSeconds": 900,
+        "rpi": 69.6,
+        "paces": {
+          "easy": {
+            "mi": "6:37",
+            "km": "4:06"
+          },
+          "marathon": {
+            "mi": "5:44",
+            "km": "3:33"
+          },
+          "threshold": {
+            "mi": "5:24",
+            "km": "3:21"
+          },
+          "interval": {
+            "mi": "4:47",
+            "km": "2:58"
+          },
+          "repetition": {
+            "mi": "4:28",
+            "km": "2:46"
+          }
+        }
+      },
+      {
+        "raceTime": "17:00",
+        "raceTimeSeconds": 1020,
+        "rpi": 60.2,
+        "paces": {
+          "easy": {
+            "mi": "7:26",
+            "km": "4:37"
+          },
+          "marathon": {
+            "mi": "6:24",
+            "km": "3:58"
+          },
+          "threshold": {
+            "mi": "6:04",
+            "km": "3:46"
+          },
+          "interval": {
+            "mi": "5:20",
+            "km": "3:18"
+          },
+          "repetition": {
+            "mi": "4:58",
+            "km": "3:05"
+          }
+        }
+      },
+      {
+        "raceTime": "18:00",
+        "raceTimeSeconds": 1080,
+        "rpi": 56.3,
+        "paces": {
+          "easy": {
+            "mi": "7:47",
+            "km": "4:50"
+          },
+          "marathon": {
+            "mi": "6:42",
+            "km": "4:09"
+          },
+          "threshold": {
+            "mi": "6:19",
+            "km": "3:55"
+          },
+          "interval": {
+            "mi": "5:34",
+            "km": "3:27"
+          },
+          "repetition": {
+            "mi": "5:11",
+            "km": "3:13"
+          }
+        }
+      },
+      {
+        "raceTime": "19:00",
+        "raceTimeSeconds": 1140,
+        "rpi": 52.9,
+        "paces": {
+          "easy": {
+            "mi": "8:08",
+            "km": "5:03"
+          },
+          "marathon": {
+            "mi": "6:59",
+            "km": "4:20"
+          },
+          "threshold": {
+            "mi": "6:34",
+            "km": "4:04"
+          },
+          "interval": {
+            "mi": "5:46",
+            "km": "3:34"
+          },
+          "repetition": {
+            "mi": "5:22",
+            "km": "3:20"
+          }
+        }
+      },
+      {
+        "raceTime": "20:00",
+        "raceTimeSeconds": 1200,
+        "rpi": 49.8,
+        "paces": {
+          "easy": {
+            "mi": "8:29",
+            "km": "5:16"
+          },
+          "marathon": {
+            "mi": "7:16",
+            "km": "4:30"
+          },
+          "threshold": {
+            "mi": "6:49",
+            "km": "4:14"
+          },
+          "interval": {
+            "mi": "5:58",
+            "km": "3:42"
+          },
+          "repetition": {
+            "mi": "5:32",
+            "km": "3:26"
+          }
+        }
+      },
+      {
+        "raceTime": "21:00",
+        "raceTimeSeconds": 1260,
+        "rpi": 47,
+        "paces": {
+          "easy": {
+            "mi": "8:49",
+            "km": "5:28"
+          },
+          "marathon": {
+            "mi": "7:30",
+            "km": "4:39"
+          },
+          "threshold": {
+            "mi": "7:04",
+            "km": "4:23"
+          },
+          "interval": {
+            "mi": "6:11",
+            "km": "3:50"
+          },
+          "repetition": {
+            "mi": "5:44",
+            "km": "3:33"
+          }
+        }
+      },
+      {
+        "raceTime": "22:00",
+        "raceTimeSeconds": 1320,
+        "rpi": 44.5,
+        "paces": {
+          "easy": {
+            "mi": "9:09",
+            "km": "5:41"
+          },
+          "marathon": {
+            "mi": "7:44",
+            "km": "4:48"
+          },
+          "threshold": {
+            "mi": "7:18",
+            "km": "4:32"
+          },
+          "interval": {
+            "mi": "6:23",
+            "km": "3:57"
+          },
+          "repetition": {
+            "mi": "5:55",
+            "km": "3:40"
+          }
+        }
+      },
+      {
+        "raceTime": "23:00",
+        "raceTimeSeconds": 1380,
+        "rpi": 42.3,
+        "paces": {
+          "easy": {
+            "mi": "9:30",
+            "km": "5:54"
+          },
+          "marathon": {
+            "mi": "7:58",
+            "km": "4:57"
+          },
+          "threshold": {
+            "mi": "7:31",
+            "km": "4:40"
+          },
+          "interval": {
+            "mi": "6:35",
+            "km": "4:05"
+          },
+          "repetition": {
+            "mi": "6:05",
+            "km": "3:46"
+          }
+        }
+      },
+      {
+        "raceTime": "24:00",
+        "raceTimeSeconds": 1440,
+        "rpi": 40.2,
+        "paces": {
+          "easy": {
+            "mi": "9:52",
+            "km": "6:07"
+          },
+          "marathon": {
+            "mi": "8:13",
+            "km": "5:06"
+          },
+          "threshold": {
+            "mi": "7:46",
+            "km": "4:49"
+          },
+          "interval": {
+            "mi": "6:47",
+            "km": "4:12"
+          },
+          "repetition": {
+            "mi": "6:15",
+            "km": "3:53"
+          }
+        }
+      },
+      {
+        "raceTime": "25:00",
+        "raceTimeSeconds": 1500,
+        "rpi": 38.3,
+        "paces": {
+          "easy": {
+            "mi": "10:15",
+            "km": "6:22"
+          },
+          "marathon": {
+            "mi": "8:31",
+            "km": "5:17"
+          },
+          "threshold": {
+            "mi": "8:02",
+            "km": "4:59"
+          },
+          "interval": {
+            "mi": "7:00",
+            "km": "4:20"
+          },
+          "repetition": {
+            "mi": "6:27",
+            "km": "4:00"
+          }
+        }
+      },
+      {
+        "raceTime": "26:00",
+        "raceTimeSeconds": 1560,
+        "rpi": 36.6,
+        "paces": {
+          "easy": {
+            "mi": "10:37",
+            "km": "6:35"
+          },
+          "marathon": {
+            "mi": "8:48",
+            "km": "5:28"
+          },
+          "threshold": {
+            "mi": "8:18",
+            "km": "5:09"
+          },
+          "interval": {
+            "mi": "7:13",
+            "km": "4:29"
+          },
+          "repetition": {
+            "mi": "6:38",
+            "km": "4:07"
+          }
+        }
+      },
+      {
+        "raceTime": "27:00",
+        "raceTimeSeconds": 1620,
+        "rpi": 35,
+        "paces": {
+          "easy": {
+            "mi": "11:00",
+            "km": "6:50"
+          },
+          "marathon": {
+            "mi": "9:05",
+            "km": "5:38"
+          },
+          "threshold": {
+            "mi": "8:34",
+            "km": "5:19"
+          },
+          "interval": {
+            "mi": "7:26",
+            "km": "4:37"
+          },
+          "repetition": {
+            "mi": "6:50",
+            "km": "4:14"
+          }
+        }
+      },
+      {
+        "raceTime": "28:00",
+        "raceTimeSeconds": 1680,
+        "rpi": 33.5,
+        "paces": {
+          "easy": {
+            "mi": "11:32",
+            "km": "7:09"
+          },
+          "marathon": {
+            "mi": "9:28",
+            "km": "5:52"
+          },
+          "threshold": {
+            "mi": "8:56",
+            "km": "5:33"
+          },
+          "interval": {
+            "mi": "7:44",
+            "km": "4:48"
+          },
+          "repetition": {
+            "mi": "7:06",
+            "km": "4:24"
+          }
+        }
+      },
+      {
+        "raceTime": "30:00",
+        "raceTimeSeconds": 1800,
+        "rpi": 30.8,
+        "paces": {
+          "easy": {
+            "mi": "12:35",
+            "km": "7:49"
+          },
+          "marathon": {
+            "mi": "10:16",
+            "km": "6:22"
+          },
+          "threshold": {
+            "mi": "9:41",
+            "km": "6:01"
+          },
+          "interval": {
+            "mi": "8:21",
+            "km": "5:11"
+          },
+          "repetition": {
+            "mi": "7:38",
+            "km": "4:44"
+          }
+        }
+      },
+      {
+        "raceTime": "32:00",
+        "raceTimeSeconds": 1920,
+        "rpi": 28.5,
+        "paces": {
+          "easy": {
+            "mi": "13:27",
+            "km": "8:21"
+          },
+          "marathon": {
+            "mi": "10:57",
+            "km": "6:48"
+          },
+          "threshold": {
+            "mi": "10:20",
+            "km": "6:25"
+          },
+          "interval": {
+            "mi": "8:54",
+            "km": "5:31"
+          },
+          "repetition": {
+            "mi": "8:09",
+            "km": "5:03"
+          }
+        }
+      },
+      {
+        "raceTime": "35:00",
+        "raceTimeSeconds": 2100,
+        "rpi": 25.6,
+        "paces": {
+          "easy": {
+            "mi": "14:34",
+            "km": "9:03"
+          },
+          "marathon": {
+            "mi": "11:54",
+            "km": "7:23"
+          },
+          "threshold": {
+            "mi": "11:14",
+            "km": "6:58"
+          },
+          "interval": {
+            "mi": "9:42",
+            "km": "6:01"
+          },
+          "repetition": {
+            "mi": "8:53",
+            "km": "5:31"
+          }
+        }
+      }
+    ]
+  },
+  "10k": {
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "rows": [
+      {
+        "raceTime": "32:00",
+        "raceTimeSeconds": 1920,
+        "rpi": 67.5,
+        "paces": {
+          "easy": {
+            "mi": "6:47",
+            "km": "4:12"
+          },
+          "marathon": {
+            "mi": "5:52",
+            "km": "3:38"
+          },
+          "threshold": {
+            "mi": "5:31",
+            "km": "3:25"
+          },
+          "interval": {
+            "mi": "4:53",
+            "km": "3:02"
+          },
+          "repetition": {
+            "mi": "4:33",
+            "km": "2:49"
+          }
+        }
+      },
+      {
+        "raceTime": "35:00",
+        "raceTimeSeconds": 2100,
+        "rpi": 60.7,
+        "paces": {
+          "easy": {
+            "mi": "7:23",
+            "km": "4:35"
+          },
+          "marathon": {
+            "mi": "6:22",
+            "km": "3:57"
+          },
+          "threshold": {
+            "mi": "6:01",
+            "km": "3:44"
+          },
+          "interval": {
+            "mi": "5:18",
+            "km": "3:17"
+          },
+          "repetition": {
+            "mi": "4:56",
+            "km": "3:03"
+          }
+        }
+      },
+      {
+        "raceTime": "38:00",
+        "raceTimeSeconds": 2280,
+        "rpi": 55.2,
+        "paces": {
+          "easy": {
+            "mi": "7:53",
+            "km": "4:53"
+          },
+          "marathon": {
+            "mi": "6:47",
+            "km": "4:12"
+          },
+          "threshold": {
+            "mi": "6:24",
+            "km": "3:58"
+          },
+          "interval": {
+            "mi": "5:38",
+            "km": "3:30"
+          },
+          "repetition": {
+            "mi": "5:15",
+            "km": "3:15"
+          }
+        }
+      },
+      {
+        "raceTime": "40:00",
+        "raceTimeSeconds": 2400,
+        "rpi": 51.9,
+        "paces": {
+          "easy": {
+            "mi": "8:14",
+            "km": "5:06"
+          },
+          "marathon": {
+            "mi": "7:04",
+            "km": "4:23"
+          },
+          "threshold": {
+            "mi": "6:39",
+            "km": "4:07"
+          },
+          "interval": {
+            "mi": "5:50",
+            "km": "3:37"
+          },
+          "repetition": {
+            "mi": "5:25",
+            "km": "3:21"
+          }
+        }
+      },
+      {
+        "raceTime": "42:00",
+        "raceTimeSeconds": 2520,
+        "rpi": 49.1,
+        "paces": {
+          "easy": {
+            "mi": "8:34",
+            "km": "5:19"
+          },
+          "marathon": {
+            "mi": "7:19",
+            "km": "4:32"
+          },
+          "threshold": {
+            "mi": "6:52",
+            "km": "4:16"
+          },
+          "interval": {
+            "mi": "6:01",
+            "km": "3:44"
+          },
+          "repetition": {
+            "mi": "5:35",
+            "km": "3:28"
+          }
+        }
+      },
+      {
+        "raceTime": "44:00",
+        "raceTimeSeconds": 2640,
+        "rpi": 46.5,
+        "paces": {
+          "easy": {
+            "mi": "8:52",
+            "km": "5:30"
+          },
+          "marathon": {
+            "mi": "7:33",
+            "km": "4:41"
+          },
+          "threshold": {
+            "mi": "7:06",
+            "km": "4:24"
+          },
+          "interval": {
+            "mi": "6:13",
+            "km": "3:51"
+          },
+          "repetition": {
+            "mi": "5:46",
+            "km": "3:34"
+          }
+        }
+      },
+      {
+        "raceTime": "45:00",
+        "raceTimeSeconds": 2700,
+        "rpi": 45.3,
+        "paces": {
+          "easy": {
+            "mi": "9:02",
+            "km": "5:36"
+          },
+          "marathon": {
+            "mi": "7:39",
+            "km": "4:45"
+          },
+          "threshold": {
+            "mi": "7:13",
+            "km": "4:29"
+          },
+          "interval": {
+            "mi": "6:19",
+            "km": "3:55"
+          },
+          "repetition": {
+            "mi": "5:52",
+            "km": "3:38"
+          }
+        }
+      },
+      {
+        "raceTime": "48:00",
+        "raceTimeSeconds": 2880,
+        "rpi": 42,
+        "paces": {
+          "easy": {
+            "mi": "9:33",
+            "km": "5:56"
+          },
+          "marathon": {
+            "mi": "8:00",
+            "km": "4:58"
+          },
+          "threshold": {
+            "mi": "7:33",
+            "km": "4:41"
+          },
+          "interval": {
+            "mi": "6:36",
+            "km": "4:06"
+          },
+          "repetition": {
+            "mi": "6:06",
+            "km": "3:47"
+          }
+        }
+      },
+      {
+        "raceTime": "50:00",
+        "raceTimeSeconds": 3000,
+        "rpi": 40,
+        "paces": {
+          "easy": {
+            "mi": "9:54",
+            "km": "6:09"
+          },
+          "marathon": {
+            "mi": "8:15",
+            "km": "5:07"
+          },
+          "threshold": {
+            "mi": "7:47",
+            "km": "4:50"
+          },
+          "interval": {
+            "mi": "6:48",
+            "km": "4:13"
+          },
+          "repetition": {
+            "mi": "6:16",
+            "km": "3:53"
+          }
+        }
+      },
+      {
+        "raceTime": "52:00",
+        "raceTimeSeconds": 3120,
+        "rpi": 38.2,
+        "paces": {
+          "easy": {
+            "mi": "10:16",
+            "km": "6:22"
+          },
+          "marathon": {
+            "mi": "8:32",
+            "km": "5:18"
+          },
+          "threshold": {
+            "mi": "8:03",
+            "km": "5:00"
+          },
+          "interval": {
+            "mi": "7:01",
+            "km": "4:21"
+          },
+          "repetition": {
+            "mi": "6:27",
+            "km": "4:00"
+          }
+        }
+      },
+      {
+        "raceTime": "55:00",
+        "raceTimeSeconds": 3300,
+        "rpi": 35.8,
+        "paces": {
+          "easy": {
+            "mi": "10:48",
+            "km": "6:42"
+          },
+          "marathon": {
+            "mi": "8:56",
+            "km": "5:33"
+          },
+          "threshold": {
+            "mi": "8:26",
+            "km": "5:14"
+          },
+          "interval": {
+            "mi": "7:19",
+            "km": "4:32"
+          },
+          "repetition": {
+            "mi": "6:44",
+            "km": "4:11"
+          }
+        }
+      },
+      {
+        "raceTime": "58:00",
+        "raceTimeSeconds": 3480,
+        "rpi": 33.6,
+        "paces": {
+          "easy": {
+            "mi": "11:29",
+            "km": "7:08"
+          },
+          "marathon": {
+            "mi": "9:27",
+            "km": "5:52"
+          },
+          "threshold": {
+            "mi": "8:55",
+            "km": "5:32"
+          },
+          "interval": {
+            "mi": "7:43",
+            "km": "4:47"
+          },
+          "repetition": {
+            "mi": "7:05",
+            "km": "4:24"
+          }
+        }
+      },
+      {
+        "raceTime": "1:00:00",
+        "raceTimeSeconds": 3600,
+        "rpi": 32.3,
+        "paces": {
+          "easy": {
+            "mi": "11:59",
+            "km": "7:26"
+          },
+          "marathon": {
+            "mi": "9:49",
+            "km": "6:05"
+          },
+          "threshold": {
+            "mi": "9:15",
+            "km": "5:44"
+          },
+          "interval": {
+            "mi": "8:00",
+            "km": "4:58"
+          },
+          "repetition": {
+            "mi": "7:20",
+            "km": "4:33"
+          }
+        }
+      },
+      {
+        "raceTime": "1:05:00",
+        "raceTimeSeconds": 3900,
+        "rpi": 29.3,
+        "paces": {
+          "easy": {
+            "mi": "13:10",
+            "km": "8:10"
+          },
+          "marathon": {
+            "mi": "10:43",
+            "km": "6:39"
+          },
+          "threshold": {
+            "mi": "10:06",
+            "km": "6:16"
+          },
+          "interval": {
+            "mi": "8:43",
+            "km": "5:24"
+          },
+          "repetition": {
+            "mi": "7:58",
+            "km": "4:57"
+          }
+        }
+      }
+    ]
+  },
+  "half": {
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "rows": [
+      {
+        "raceTime": "1:15:00",
+        "raceTimeSeconds": 4500,
+        "rpi": 62.9,
+        "paces": {
+          "easy": {
+            "mi": "7:11",
+            "km": "4:27"
+          },
+          "marathon": {
+            "mi": "6:11",
+            "km": "3:50"
+          },
+          "threshold": {
+            "mi": "5:50",
+            "km": "3:37"
+          },
+          "interval": {
+            "mi": "5:09",
+            "km": "3:12"
+          },
+          "repetition": {
+            "mi": "4:48",
+            "km": "2:58"
+          }
+        }
+      },
+      {
+        "raceTime": "1:20:00",
+        "raceTimeSeconds": 4800,
+        "rpi": 58.4,
+        "paces": {
+          "easy": {
+            "mi": "7:35",
+            "km": "4:42"
+          },
+          "marathon": {
+            "mi": "6:32",
+            "km": "4:03"
+          },
+          "threshold": {
+            "mi": "6:11",
+            "km": "3:50"
+          },
+          "interval": {
+            "mi": "5:26",
+            "km": "3:22"
+          },
+          "repetition": {
+            "mi": "5:04",
+            "km": "3:08"
+          }
+        }
+      },
+      {
+        "raceTime": "1:25:00",
+        "raceTimeSeconds": 5100,
+        "rpi": 54.5,
+        "paces": {
+          "easy": {
+            "mi": "7:57",
+            "km": "4:56"
+          },
+          "marathon": {
+            "mi": "6:50",
+            "km": "4:14"
+          },
+          "threshold": {
+            "mi": "6:27",
+            "km": "4:00"
+          },
+          "interval": {
+            "mi": "5:41",
+            "km": "3:31"
+          },
+          "repetition": {
+            "mi": "5:17",
+            "km": "3:16"
+          }
+        }
+      },
+      {
+        "raceTime": "1:30:00",
+        "raceTimeSeconds": 5400,
+        "rpi": 51,
+        "paces": {
+          "easy": {
+            "mi": "8:21",
+            "km": "5:11"
+          },
+          "marathon": {
+            "mi": "7:09",
+            "km": "4:26"
+          },
+          "threshold": {
+            "mi": "6:43",
+            "km": "4:10"
+          },
+          "interval": {
+            "mi": "5:53",
+            "km": "3:39"
+          },
+          "repetition": {
+            "mi": "5:28",
+            "km": "3:23"
+          }
+        }
+      },
+      {
+        "raceTime": "1:35:00",
+        "raceTimeSeconds": 5700,
+        "rpi": 47.9,
+        "paces": {
+          "easy": {
+            "mi": "8:42",
+            "km": "5:24"
+          },
+          "marathon": {
+            "mi": "7:25",
+            "km": "4:36"
+          },
+          "threshold": {
+            "mi": "6:59",
+            "km": "4:20"
+          },
+          "interval": {
+            "mi": "6:06",
+            "km": "3:47"
+          },
+          "repetition": {
+            "mi": "5:40",
+            "km": "3:31"
+          }
+        }
+      },
+      {
+        "raceTime": "1:40:00",
+        "raceTimeSeconds": 6000,
+        "rpi": 45.1,
+        "paces": {
+          "easy": {
+            "mi": "9:03",
+            "km": "5:37"
+          },
+          "marathon": {
+            "mi": "7:40",
+            "km": "4:45"
+          },
+          "threshold": {
+            "mi": "7:14",
+            "km": "4:29"
+          },
+          "interval": {
+            "mi": "6:20",
+            "km": "3:56"
+          },
+          "repetition": {
+            "mi": "5:53",
+            "km": "3:39"
+          }
+        }
+      },
+      {
+        "raceTime": "1:45:00",
+        "raceTimeSeconds": 6300,
+        "rpi": 42.6,
+        "paces": {
+          "easy": {
+            "mi": "9:27",
+            "km": "5:52"
+          },
+          "marathon": {
+            "mi": "7:56",
+            "km": "4:55"
+          },
+          "threshold": {
+            "mi": "7:29",
+            "km": "4:38"
+          },
+          "interval": {
+            "mi": "6:33",
+            "km": "4:04"
+          },
+          "repetition": {
+            "mi": "6:03",
+            "km": "3:45"
+          }
+        }
+      },
+      {
+        "raceTime": "1:50:00",
+        "raceTimeSeconds": 6600,
+        "rpi": 40.4,
+        "paces": {
+          "easy": {
+            "mi": "9:50",
+            "km": "6:06"
+          },
+          "marathon": {
+            "mi": "8:12",
+            "km": "5:05"
+          },
+          "threshold": {
+            "mi": "7:44",
+            "km": "4:48"
+          },
+          "interval": {
+            "mi": "6:46",
+            "km": "4:12"
+          },
+          "repetition": {
+            "mi": "6:14",
+            "km": "3:52"
+          }
+        }
+      },
+      {
+        "raceTime": "1:55:00",
+        "raceTimeSeconds": 6900,
+        "rpi": 38.3,
+        "paces": {
+          "easy": {
+            "mi": "10:15",
+            "km": "6:22"
+          },
+          "marathon": {
+            "mi": "8:31",
+            "km": "5:17"
+          },
+          "threshold": {
+            "mi": "8:02",
+            "km": "4:59"
+          },
+          "interval": {
+            "mi": "7:00",
+            "km": "4:20"
+          },
+          "repetition": {
+            "mi": "6:27",
+            "km": "4:00"
+          }
+        }
+      },
+      {
+        "raceTime": "2:00:00",
+        "raceTimeSeconds": 7200,
+        "rpi": 36.5,
+        "paces": {
+          "easy": {
+            "mi": "10:39",
+            "km": "6:37"
+          },
+          "marathon": {
+            "mi": "8:49",
+            "km": "5:28"
+          },
+          "threshold": {
+            "mi": "8:19",
+            "km": "5:10"
+          },
+          "interval": {
+            "mi": "7:14",
+            "km": "4:29"
+          },
+          "repetition": {
+            "mi": "6:39",
+            "km": "4:07"
+          }
+        }
+      },
+      {
+        "raceTime": "2:05:00",
+        "raceTimeSeconds": 7500,
+        "rpi": 34.7,
+        "paces": {
+          "easy": {
+            "mi": "11:06",
+            "km": "6:53"
+          },
+          "marathon": {
+            "mi": "9:10",
+            "km": "5:41"
+          },
+          "threshold": {
+            "mi": "8:38",
+            "km": "5:21"
+          },
+          "interval": {
+            "mi": "7:30",
+            "km": "4:39"
+          },
+          "repetition": {
+            "mi": "6:53",
+            "km": "4:16"
+          }
+        }
+      },
+      {
+        "raceTime": "2:10:00",
+        "raceTimeSeconds": 7800,
+        "rpi": 33.2,
+        "paces": {
+          "easy": {
+            "mi": "11:38",
+            "km": "7:13"
+          },
+          "marathon": {
+            "mi": "9:33",
+            "km": "5:56"
+          },
+          "threshold": {
+            "mi": "9:01",
+            "km": "5:36"
+          },
+          "interval": {
+            "mi": "7:48",
+            "km": "4:50"
+          },
+          "repetition": {
+            "mi": "7:09",
+            "km": "4:26"
+          }
+        }
+      },
+      {
+        "raceTime": "2:15:00",
+        "raceTimeSeconds": 8100,
+        "rpi": 31.7,
+        "paces": {
+          "easy": {
+            "mi": "12:13",
+            "km": "7:35"
+          },
+          "marathon": {
+            "mi": "9:59",
+            "km": "6:12"
+          },
+          "threshold": {
+            "mi": "9:25",
+            "km": "5:51"
+          },
+          "interval": {
+            "mi": "8:08",
+            "km": "5:03"
+          },
+          "repetition": {
+            "mi": "7:27",
+            "km": "4:37"
+          }
+        }
+      },
+      {
+        "raceTime": "2:20:00",
+        "raceTimeSeconds": 8400,
+        "rpi": 30.3,
+        "paces": {
+          "easy": {
+            "mi": "12:48",
+            "km": "7:57"
+          },
+          "marathon": {
+            "mi": "10:25",
+            "km": "6:28"
+          },
+          "threshold": {
+            "mi": "9:49",
+            "km": "6:05"
+          },
+          "interval": {
+            "mi": "8:28",
+            "km": "5:15"
+          },
+          "repetition": {
+            "mi": "7:45",
+            "km": "4:48"
+          }
+        }
+      },
+      {
+        "raceTime": "2:30:00",
+        "raceTimeSeconds": 9000,
+        "rpi": 27.9,
+        "paces": {
+          "easy": {
+            "mi": "13:40",
+            "km": "8:29"
+          },
+          "marathon": {
+            "mi": "11:08",
+            "km": "6:55"
+          },
+          "threshold": {
+            "mi": "10:30",
+            "km": "6:31"
+          },
+          "interval": {
+            "mi": "9:04",
+            "km": "5:38"
+          },
+          "repetition": {
+            "mi": "8:17",
+            "km": "5:08"
+          }
+        }
+      }
+    ]
+  },
+  "marathon": {
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "rows": [
+      {
+        "raceTime": "2:30:00",
+        "raceTimeSeconds": 9000,
+        "rpi": 66.3,
+        "paces": {
+          "easy": {
+            "mi": "6:53",
+            "km": "4:16"
+          },
+          "marathon": {
+            "mi": "5:57",
+            "km": "3:41"
+          },
+          "threshold": {
+            "mi": "5:35",
+            "km": "3:28"
+          },
+          "interval": {
+            "mi": "4:57",
+            "km": "3:04"
+          },
+          "repetition": {
+            "mi": "4:36",
+            "km": "2:51"
+          }
+        }
+      },
+      {
+        "raceTime": "2:40:00",
+        "raceTimeSeconds": 9600,
+        "rpi": 61.5,
+        "paces": {
+          "easy": {
+            "mi": "7:18",
+            "km": "4:32"
+          },
+          "marathon": {
+            "mi": "6:18",
+            "km": "3:54"
+          },
+          "threshold": {
+            "mi": "5:57",
+            "km": "3:41"
+          },
+          "interval": {
+            "mi": "5:15",
+            "km": "3:15"
+          },
+          "repetition": {
+            "mi": "4:53",
+            "km": "3:02"
+          }
+        }
+      },
+      {
+        "raceTime": "2:50:00",
+        "raceTimeSeconds": 10200,
+        "rpi": 57.3,
+        "paces": {
+          "easy": {
+            "mi": "7:41",
+            "km": "4:46"
+          },
+          "marathon": {
+            "mi": "6:37",
+            "km": "4:06"
+          },
+          "threshold": {
+            "mi": "6:15",
+            "km": "3:53"
+          },
+          "interval": {
+            "mi": "5:30",
+            "km": "3:25"
+          },
+          "repetition": {
+            "mi": "5:08",
+            "km": "3:11"
+          }
+        }
+      },
+      {
+        "raceTime": "3:00:00",
+        "raceTimeSeconds": 10800,
+        "rpi": 53.5,
+        "paces": {
+          "easy": {
+            "mi": "8:04",
+            "km": "5:00"
+          },
+          "marathon": {
+            "mi": "6:56",
+            "km": "4:18"
+          },
+          "threshold": {
+            "mi": "6:31",
+            "km": "4:02"
+          },
+          "interval": {
+            "mi": "5:44",
+            "km": "3:33"
+          },
+          "repetition": {
+            "mi": "5:20",
+            "km": "3:18"
+          }
+        }
+      },
+      {
+        "raceTime": "3:10:00",
+        "raceTimeSeconds": 11400,
+        "rpi": 50.2,
+        "paces": {
+          "easy": {
+            "mi": "8:27",
+            "km": "5:15"
+          },
+          "marathon": {
+            "mi": "7:14",
+            "km": "4:29"
+          },
+          "threshold": {
+            "mi": "6:47",
+            "km": "4:12"
+          },
+          "interval": {
+            "mi": "5:56",
+            "km": "3:41"
+          },
+          "repetition": {
+            "mi": "5:30",
+            "km": "3:25"
+          }
+        }
+      },
+      {
+        "raceTime": "3:15:00",
+        "raceTimeSeconds": 11700,
+        "rpi": 48.7,
+        "paces": {
+          "easy": {
+            "mi": "8:37",
+            "km": "5:21"
+          },
+          "marathon": {
+            "mi": "7:21",
+            "km": "4:34"
+          },
+          "threshold": {
+            "mi": "6:54",
+            "km": "4:17"
+          },
+          "interval": {
+            "mi": "6:03",
+            "km": "3:45"
+          },
+          "repetition": {
+            "mi": "5:36",
+            "km": "3:28"
+          }
+        }
+      },
+      {
+        "raceTime": "3:20:00",
+        "raceTimeSeconds": 12000,
+        "rpi": 47.2,
+        "paces": {
+          "easy": {
+            "mi": "8:47",
+            "km": "5:27"
+          },
+          "marathon": {
+            "mi": "7:29",
+            "km": "4:38"
+          },
+          "threshold": {
+            "mi": "7:02",
+            "km": "4:22"
+          },
+          "interval": {
+            "mi": "6:10",
+            "km": "3:49"
+          },
+          "repetition": {
+            "mi": "5:43",
+            "km": "3:33"
+          }
+        }
+      },
+      {
+        "raceTime": "3:30:00",
+        "raceTimeSeconds": 12600,
+        "rpi": 44.6,
+        "paces": {
+          "easy": {
+            "mi": "9:08",
+            "km": "5:40"
+          },
+          "marathon": {
+            "mi": "7:43",
+            "km": "4:47"
+          },
+          "threshold": {
+            "mi": "7:17",
+            "km": "4:31"
+          },
+          "interval": {
+            "mi": "6:23",
+            "km": "3:57"
+          },
+          "repetition": {
+            "mi": "5:55",
+            "km": "3:40"
+          }
+        }
+      },
+      {
+        "raceTime": "3:40:00",
+        "raceTimeSeconds": 13200,
+        "rpi": 42.1,
+        "paces": {
+          "easy": {
+            "mi": "9:32",
+            "km": "5:55"
+          },
+          "marathon": {
+            "mi": "8:00",
+            "km": "4:58"
+          },
+          "threshold": {
+            "mi": "7:33",
+            "km": "4:41"
+          },
+          "interval": {
+            "mi": "6:36",
+            "km": "4:06"
+          },
+          "repetition": {
+            "mi": "6:06",
+            "km": "3:47"
+          }
+        }
+      },
+      {
+        "raceTime": "3:45:00",
+        "raceTimeSeconds": 13500,
+        "rpi": 41,
+        "paces": {
+          "easy": {
+            "mi": "9:43",
+            "km": "6:02"
+          },
+          "marathon": {
+            "mi": "8:08",
+            "km": "5:03"
+          },
+          "threshold": {
+            "mi": "7:40",
+            "km": "4:45"
+          },
+          "interval": {
+            "mi": "6:42",
+            "km": "4:09"
+          },
+          "repetition": {
+            "mi": "6:11",
+            "km": "3:50"
+          }
+        }
+      },
+      {
+        "raceTime": "4:00:00",
+        "raceTimeSeconds": 14400,
+        "rpi": 37.9,
+        "paces": {
+          "easy": {
+            "mi": "10:20",
+            "km": "6:25"
+          },
+          "marathon": {
+            "mi": "8:35",
+            "km": "5:20"
+          },
+          "threshold": {
+            "mi": "8:05",
+            "km": "5:01"
+          },
+          "interval": {
+            "mi": "7:03",
+            "km": "4:22"
+          },
+          "repetition": {
+            "mi": "6:29",
+            "km": "4:01"
+          }
+        }
+      },
+      {
+        "raceTime": "4:15:00",
+        "raceTimeSeconds": 15300,
+        "rpi": 35.2,
+        "paces": {
+          "easy": {
+            "mi": "10:57",
+            "km": "6:48"
+          },
+          "marathon": {
+            "mi": "9:03",
+            "km": "5:37"
+          },
+          "threshold": {
+            "mi": "8:32",
+            "km": "5:18"
+          },
+          "interval": {
+            "mi": "7:24",
+            "km": "4:35"
+          },
+          "repetition": {
+            "mi": "6:48",
+            "km": "4:13"
+          }
+        }
+      },
+      {
+        "raceTime": "4:30:00",
+        "raceTimeSeconds": 16200,
+        "rpi": 32.8,
+        "paces": {
+          "easy": {
+            "mi": "11:47",
+            "km": "7:19"
+          },
+          "marathon": {
+            "mi": "9:40",
+            "km": "6:00"
+          },
+          "threshold": {
+            "mi": "9:07",
+            "km": "5:39"
+          },
+          "interval": {
+            "mi": "7:53",
+            "km": "4:53"
+          },
+          "repetition": {
+            "mi": "7:14",
+            "km": "4:29"
+          }
+        }
+      },
+      {
+        "raceTime": "4:45:00",
+        "raceTimeSeconds": 17100,
+        "rpi": 30.6,
+        "paces": {
+          "easy": {
+            "mi": "12:40",
+            "km": "7:52"
+          },
+          "marathon": {
+            "mi": "10:19",
+            "km": "6:24"
+          },
+          "threshold": {
+            "mi": "9:44",
+            "km": "6:02"
+          },
+          "interval": {
+            "mi": "8:24",
+            "km": "5:13"
+          },
+          "repetition": {
+            "mi": "7:41",
+            "km": "4:46"
+          }
+        }
+      },
+      {
+        "raceTime": "5:00:00",
+        "raceTimeSeconds": 18000,
+        "rpi": 28.7,
+        "paces": {
+          "easy": {
+            "mi": "13:22",
+            "km": "8:18"
+          },
+          "marathon": {
+            "mi": "10:53",
+            "km": "6:45"
+          },
+          "threshold": {
+            "mi": "10:16",
+            "km": "6:22"
+          },
+          "interval": {
+            "mi": "8:52",
+            "km": "5:30"
+          },
+          "repetition": {
+            "mi": "8:06",
+            "km": "5:01"
+          }
+        }
+      }
+    ]
+  }
+}

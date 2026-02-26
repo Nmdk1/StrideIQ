@@ -113,6 +113,18 @@ export default function TrainingPaceCalculatorPage() {
           </div>
         </section>
 
+        {/* Guide pages */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-4">Training pace tables by distance</h2>
+          <p className="text-slate-400 mb-4">See complete pace tables for common race times at each distance — no calculator needed.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Link href="/tools/training-pace-calculator/5k-training-paces" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">5K Training Paces →</Link>
+            <Link href="/tools/training-pace-calculator/10k-training-paces" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">10K Training Paces →</Link>
+            <Link href="/tools/training-pace-calculator/half-marathon-training-paces" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">Half Marathon Training Paces →</Link>
+            <Link href="/tools/training-pace-calculator/marathon-training-paces" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">Marathon Training Paces →</Link>
+          </div>
+        </section>
+
         {/* Related FAQs */}
         <section className="mb-12">
           <h2 className="text-2xl font-bold mb-6">Common questions</h2>

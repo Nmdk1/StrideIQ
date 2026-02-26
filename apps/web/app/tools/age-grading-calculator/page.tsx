@@ -113,6 +113,18 @@ export default function AgeGradingCalculatorPage() {
           </div>
         </section>
 
+        {/* Guide pages */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-4">Good times by age and distance</h2>
+          <p className="text-slate-400 mb-4">See WMA age-graded benchmarks for specific distances — what counts as recreational, competitive, and elite at every age.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Link href="/tools/age-grading-calculator/good-5k-times-by-age" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">Good 5K Times by Age →</Link>
+            <Link href="/tools/age-grading-calculator/good-10k-times-by-age" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">Good 10K Times by Age →</Link>
+            <Link href="/tools/age-grading-calculator/good-half-marathon-times-by-age" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">Good Half Marathon Times by Age →</Link>
+            <Link href="/tools/age-grading-calculator/good-marathon-times-by-age" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">Good Marathon Times by Age →</Link>
+          </div>
+        </section>
+
         {/* Related FAQs */}
         <section className="mb-12">
           <h2 className="text-2xl font-bold mb-6">Common questions</h2>
