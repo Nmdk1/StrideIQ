@@ -175,10 +175,24 @@ class Settings(BaseSettings):
     # Stripe (Phase 6: hosted checkout/portal)
     STRIPE_SECRET_KEY: Optional[str] = Field(default=None)
     STRIPE_WEBHOOK_SECRET: Optional[str] = Field(default=None)
-    STRIPE_PRICE_PRO_MONTHLY_ID: Optional[str] = Field(default=None)
     STRIPE_CHECKOUT_SUCCESS_URL: Optional[str] = Field(default=None)
     STRIPE_CHECKOUT_CANCEL_URL: Optional[str] = Field(default=None)
     STRIPE_PORTAL_RETURN_URL: Optional[str] = Field(default=None)
+
+    # Stripe — 4-tier price IDs (monetization phase).
+    # All are Optional. Checkout flows fail closed if the required ID is absent.
+    # One-time race-plan unlock ($5)
+    STRIPE_PRICE_PLAN_ONETIME_ID: Optional[str] = Field(default=None)
+    # Guided Self-Coaching ($15/mo, $150/yr)
+    STRIPE_PRICE_GUIDED_MONTHLY_ID: Optional[str] = Field(default=None)
+    STRIPE_PRICE_GUIDED_ANNUAL_ID: Optional[str] = Field(default=None)
+    # Premium ($25/mo, $250/yr)
+    STRIPE_PRICE_PREMIUM_MONTHLY_ID: Optional[str] = Field(default=None)
+    STRIPE_PRICE_PREMIUM_ANNUAL_ID: Optional[str] = Field(default=None)
+
+    # Legacy price ID kept for backward-compat subscription matching only.
+    # New checkouts do NOT use this; existing subscribers still reconcile against it.
+    STRIPE_PRICE_PRO_MONTHLY_ID: Optional[str] = Field(default=None)
     
     # Sentry Error Tracking
     SENTRY_DSN: Optional[str] = Field(default=None)

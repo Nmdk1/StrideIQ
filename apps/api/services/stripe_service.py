@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import os
 from typing import Any, Optional
 from uuid import UUID
 
@@ -11,72 +11,129 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from core.config import settings
+from core.tier_utils import normalize_tier
 from models import Athlete, Subscription, StripeEvent
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class StripeConfig:
     secret_key: str
     webhook_secret: Optional[str]
-    pro_monthly_price_id: str
-    pro_annual_price_id: Optional[str]
     checkout_success_url: str
     checkout_cancel_url: str
     portal_return_url: str
+    # 4-tier price IDs (all Optional; flows fail closed if required ID is absent)
+    price_plan_onetime_id: Optional[str]
+    price_guided_monthly_id: Optional[str]
+    price_guided_annual_id: Optional[str]
+    price_premium_monthly_id: Optional[str]
+    price_premium_annual_id: Optional[str]
+    # Legacy price IDs — existing subscribers only; new checkouts do not use these
+    price_legacy_pro_monthly_id: Optional[str]
 
 
 def _get_stripe_config() -> StripeConfig:
-    """
-    Load Stripe config from environment via Settings.
+    """Load Stripe config from environment via Settings.
 
-    Fail closed: if configuration is missing, billing endpoints should not proceed.
+    Only STRIPE_SECRET_KEY is required for initialization. Individual price IDs
+    are validated at checkout time so the service can initialize without all IDs
+    (e.g., before new Stripe products are created in a fresh environment).
     """
-    # Support both "STRIPE_SECRET_KEY" and convenience local names (test/prod).
     secret_key = (
         getattr(settings, "STRIPE_SECRET_KEY", None)
-        or os.getenv("STRIPE_SECRET_TEST_KEY")
-        or os.getenv("STRIPE_SECRET_LIVE_KEY")
+        or __import__("os").getenv("STRIPE_SECRET_TEST_KEY")
+        or __import__("os").getenv("STRIPE_SECRET_LIVE_KEY")
+    )
+    if not secret_key:
+        raise RuntimeError("Stripe not configured (missing: STRIPE_SECRET_KEY)")
+
+    webhook_secret = (
+        getattr(settings, "STRIPE_WEBHOOK_SECRET", None)
+        or __import__("os").getenv("STRIPE_WEBHOOK_TEST_SECRET")
+        or __import__("os").getenv("STRIPE_WEBHOOK_LIVE_SECRET")
     )
 
-    # Webhook secret is only required for the webhook endpoint; allow checkout/portal
-    # to work without it for local development before Stripe CLI is configured.
-    webhook_secret = getattr(settings, "STRIPE_WEBHOOK_SECRET", None) or os.getenv("STRIPE_WEBHOOK_TEST_SECRET") or os.getenv("STRIPE_WEBHOOK_LIVE_SECRET")
-
-    price_id = getattr(settings, "STRIPE_PRICE_PRO_MONTHLY_ID", None)
-    annual_price_id = getattr(settings, "STRIPE_PRICE_PRO_ANNUAL_ID", None)
-
-    # Default redirect/return URLs to WEB_APP_BASE_URL so local dev can proceed
-    # without forcing extra env config.
     base = getattr(settings, "WEB_APP_BASE_URL", "http://localhost:3000").rstrip("/")
     success_url = getattr(settings, "STRIPE_CHECKOUT_SUCCESS_URL", None) or f"{base}/settings?stripe=success"
     cancel_url = getattr(settings, "STRIPE_CHECKOUT_CANCEL_URL", None) or f"{base}/settings?stripe=cancel"
     portal_return_url = getattr(settings, "STRIPE_PORTAL_RETURN_URL", None) or f"{base}/settings"
 
-    missing = [name for name, val in [("STRIPE_SECRET_KEY", secret_key), ("STRIPE_PRICE_PRO_MONTHLY_ID", price_id)] if not val]
-    if missing:
-        raise RuntimeError(f"Stripe not configured (missing: {', '.join(missing)})")
-
     return StripeConfig(
         secret_key=str(secret_key),
         webhook_secret=str(webhook_secret) if webhook_secret else None,
-        pro_monthly_price_id=str(price_id),
-        pro_annual_price_id=str(annual_price_id) if annual_price_id else None,
         checkout_success_url=str(success_url),
         checkout_cancel_url=str(cancel_url),
         portal_return_url=str(portal_return_url),
+        price_plan_onetime_id=getattr(settings, "STRIPE_PRICE_PLAN_ONETIME_ID", None) or None,
+        price_guided_monthly_id=getattr(settings, "STRIPE_PRICE_GUIDED_MONTHLY_ID", None) or None,
+        price_guided_annual_id=getattr(settings, "STRIPE_PRICE_GUIDED_ANNUAL_ID", None) or None,
+        price_premium_monthly_id=getattr(settings, "STRIPE_PRICE_PREMIUM_MONTHLY_ID", None) or None,
+        price_premium_annual_id=getattr(settings, "STRIPE_PRICE_PREMIUM_ANNUAL_ID", None) or None,
+        price_legacy_pro_monthly_id=getattr(settings, "STRIPE_PRICE_PRO_MONTHLY_ID", None) or None,
     )
 
 
-def _entitlement_tier_for_subscription_status(status: Optional[str]) -> str:
-    """
-    Map Stripe subscription status -> StrideIQ paid tier.
+def build_price_to_tier(cfg: StripeConfig) -> dict[str, str]:
+    """Build price_id → canonical tier mapping from config.
 
-    MVP policy: only active/trialing are paid.
+    Only subscription prices are mapped here (guided / premium).
+    One-time prices are NOT in this map — they follow a separate entitlement path.
+    Unknown price IDs will never appear in this dict, enforcing fail-closed behavior:
+    any price_id not present here grants no entitlement.
+    """
+    mapping: dict[str, str] = {}
+    pairs: list[tuple[Optional[str], str]] = [
+        (cfg.price_guided_monthly_id, "guided"),
+        (cfg.price_guided_annual_id, "guided"),
+        (cfg.price_premium_monthly_id, "premium"),
+        (cfg.price_premium_annual_id, "premium"),
+        # Legacy pro price maps to premium (existing subscribers retain access)
+        (cfg.price_legacy_pro_monthly_id, "premium"),
+    ]
+    for price_id, tier in pairs:
+        if price_id:
+            mapping[price_id] = tier
+    return mapping
+
+
+def tier_for_price_and_status(
+    price_id: Optional[str],
+    status: Optional[str],
+    price_to_tier: dict[str, str],
+) -> str:
+    """Derive canonical entitlement tier from a subscription's price ID and status.
+
+    Fail-closed contract:
+    - Non active/trialing status → "free"
+    - Missing price_id → "free" (logged as warning)
+    - Unknown price_id → "free" (logged as warning — flag for ops follow-up)
+
+    This function is the ONLY place where Stripe subscription state translates
+    to a StrideIQ tier. It must never auto-promote.
     """
     s = (status or "").lower()
-    if s in ("active", "trialing"):
-        return "pro"
-    return "free"
+    if s not in ("active", "trialing"):
+        return "free"
+
+    if not price_id:
+        log.warning(
+            "stripe: active/trialing subscription has no price_id — granting free (fail closed)"
+        )
+        return "free"
+
+    tier = price_to_tier.get(price_id)
+    if tier is None:
+        log.warning(
+            "stripe: unknown price_id=%s on %s subscription — granting free (fail closed); "
+            "add to PRICE_TO_TIER or investigate",
+            price_id,
+            s,
+        )
+        return "free"
+
+    return tier
 
 
 class StripeService:
@@ -84,22 +141,34 @@ class StripeService:
         cfg = _get_stripe_config()
         stripe.api_key = cfg.secret_key
         self.cfg = cfg
+        self._price_to_tier = build_price_to_tier(cfg)
 
-    def create_checkout_session(self, *, athlete: Athlete, billing_period: str = "annual") -> str:
-        """
-        Create a Stripe Checkout session.
-        
+    def create_checkout_session(
+        self,
+        *,
+        athlete: Athlete,
+        tier: str = "premium",
+        billing_period: str = "annual",
+    ) -> str:
+        """Create a Stripe Checkout session for a subscription tier.
+
         Args:
-            athlete: The athlete to create checkout for
-            billing_period: "annual" ($149/yr) or "monthly" ($14.99/mo). Default is annual.
+            athlete: The athlete subscribing.
+            tier: "guided" or "premium". Defaults to "premium" for backward compat.
+            billing_period: "monthly" or "annual". Defaults to "annual".
+
+        Raises:
+            RuntimeError: If the required price ID is not configured.
+            ValueError: If tier or billing_period is invalid.
         """
-        # Select price based on billing period (annual is primary offer)
-        if billing_period == "annual" and self.cfg.pro_annual_price_id:
-            price_id = self.cfg.pro_annual_price_id
-        else:
-            price_id = self.cfg.pro_monthly_price_id
-        
-        # Prefer explicit customer if we already have it.
+        canonical = normalize_tier(tier)
+        if canonical not in ("guided", "premium"):
+            raise ValueError(f"Subscription tier must be 'guided' or 'premium', got: {tier!r}")
+        if billing_period not in ("monthly", "annual"):
+            raise ValueError(f"billing_period must be 'monthly' or 'annual', got: {billing_period!r}")
+
+        price_id = self._resolve_subscription_price(canonical, billing_period)
+
         customer_id = getattr(athlete, "stripe_customer_id", None)
         params: dict[str, Any] = {
             "mode": "subscription",
@@ -107,7 +176,11 @@ class StripeService:
             "cancel_url": self.cfg.checkout_cancel_url,
             "line_items": [{"price": price_id, "quantity": 1}],
             "client_reference_id": str(athlete.id),
-            "metadata": {"athlete_id": str(athlete.id), "billing_period": billing_period},
+            "metadata": {
+                "athlete_id": str(athlete.id),
+                "tier": canonical,
+                "billing_period": billing_period,
+            },
         }
         if customer_id:
             params["customer"] = customer_id
@@ -116,6 +189,71 @@ class StripeService:
 
         session = stripe.checkout.Session.create(**params)
         return str(session.url)
+
+    def create_one_time_checkout_session(
+        self,
+        *,
+        athlete: Athlete,
+        plan_snapshot_id: str,
+    ) -> str:
+        """Create a Stripe Checkout session for a one-time race-plan unlock ($5).
+
+        Args:
+            athlete: The athlete purchasing the unlock.
+            plan_snapshot_id: Stable, immutable identifier for the plan artifact.
+                Must be bound to this athlete; verified by the caller before invocation.
+
+        Raises:
+            RuntimeError: If STRIPE_PRICE_PLAN_ONETIME_ID is not configured.
+        """
+        if not self.cfg.price_plan_onetime_id:
+            raise RuntimeError(
+                "One-time plan checkout not configured (missing: STRIPE_PRICE_PLAN_ONETIME_ID)"
+            )
+
+        customer_id = getattr(athlete, "stripe_customer_id", None)
+        params: dict[str, Any] = {
+            "mode": "payment",
+            "success_url": self.cfg.checkout_success_url,
+            "cancel_url": self.cfg.checkout_cancel_url,
+            "line_items": [{"price": self.cfg.price_plan_onetime_id, "quantity": 1}],
+            "client_reference_id": str(athlete.id),
+            "metadata": {
+                "athlete_id": str(athlete.id),
+                "plan_snapshot_id": plan_snapshot_id,
+                "purchase_type": "plan_onetime",
+            },
+        }
+        if customer_id:
+            params["customer"] = customer_id
+        elif athlete.email:
+            params["customer_email"] = athlete.email
+
+        session = stripe.checkout.Session.create(**params)
+        return str(session.url)
+
+    def _resolve_subscription_price(self, canonical_tier: str, billing_period: str) -> str:
+        """Look up the configured price ID for a subscription tier + period.
+
+        Fails closed: raises RuntimeError if the required price is not configured.
+        This ensures the service never silently falls back to an unrelated price.
+        """
+        lookup: dict[tuple[str, str], Optional[str]] = {
+            ("guided", "monthly"): self.cfg.price_guided_monthly_id,
+            ("guided", "annual"): self.cfg.price_guided_annual_id,
+            ("premium", "monthly"): self.cfg.price_premium_monthly_id,
+            ("premium", "annual"): self.cfg.price_premium_annual_id,
+        }
+        price_id = lookup.get((canonical_tier, billing_period))
+        if not price_id:
+            env_name = (
+                f"STRIPE_PRICE_{canonical_tier.upper()}_{billing_period.upper()}_ID"
+            )
+            raise RuntimeError(
+                f"Stripe price not configured for {canonical_tier}/{billing_period} "
+                f"(missing: {env_name})"
+            )
+        return price_id
 
     def create_portal_session(self, *, athlete: Athlete) -> str:
         customer_id = getattr(athlete, "stripe_customer_id", None)
@@ -137,26 +275,21 @@ class StripeService:
         )
 
     def best_effort_sync_customer_subscription(self, db: Session, *, athlete: Athlete) -> None:
-        """
-        Failsafe reconciliation:
-        Webhooks are the primary integration path, but in practice deliveries can be
-        delayed/missed in local dev or during outages. This performs a best-effort
-        pull of the customer's current subscription and mirrors it to our DB.
+        """Failsafe reconciliation: mirror latest Stripe subscription state to DB.
 
-        This MUST NOT block portal access; failures are swallowed.
+        Webhooks are primary; this is a safety net for missed deliveries.
+        Failures are swallowed — must NOT block portal access.
         """
         try:
             customer_id = getattr(athlete, "stripe_customer_id", None)
             if not customer_id:
                 return
 
-            # Stripe returns the newest subscription first by default.
             resp = stripe.Subscription.list(customer=str(customer_id), status="all", limit=10)
             subs = list(getattr(resp, "data", None) or [])
             if not subs:
                 return
 
-            # Prefer active/trialing if present; otherwise fall back to newest.
             def _rank(s: Any) -> int:
                 st = str(getattr(s, "status", "") or "").lower()
                 if st == "active":
@@ -165,8 +298,7 @@ class StripeService:
                     return 1
                 return 2
 
-            subs_sorted = sorted(subs, key=_rank)
-            s = subs_sorted[0]
+            s = sorted(subs, key=_rank)[0]
 
             sub_row = _ensure_subscription_row(db, athlete_id=athlete.id)
             sub_row.stripe_customer_id = str(customer_id)
@@ -178,9 +310,10 @@ class StripeService:
             if current_period_end_ts is None and cancel_at_ts is not None:
                 current_period_end_ts = cancel_at_ts
             sub_row.current_period_end = _maybe_parse_period_end(current_period_end_ts)
-            sub_row.cancel_at_period_end = _derive_cancel_at_period_end(s, current_period_end_ts=current_period_end_ts)
+            sub_row.cancel_at_period_end = _derive_cancel_at_period_end(
+                s, current_period_end_ts=current_period_end_ts
+            )
 
-            # Best-effort price id from first subscription item.
             try:
                 items = getattr(s, "items", None)
                 data = getattr(items, "data", None) if items else None
@@ -190,10 +323,11 @@ class StripeService:
                 if price_id:
                     sub_row.stripe_price_id = str(price_id)
             except Exception:
-                pass
+                price_id = None
 
-            # Mirror entitlement on athlete (keep "pro" through end-of-period).
-            athlete.subscription_tier = _entitlement_tier_for_subscription_status(sub_row.status)
+            athlete.subscription_tier = tier_for_price_and_status(
+                price_id, sub_row.status, self._price_to_tier
+            )
             db.add(athlete)
             db.add(sub_row)
             db.commit()
@@ -202,8 +336,11 @@ class StripeService:
                 db.rollback()
             except Exception:
                 pass
-            return
 
+
+# ---------------------------------------------------------------------------
+# Module-level helpers (also used by process_stripe_event)
+# ---------------------------------------------------------------------------
 
 def _ensure_subscription_row(db: Session, *, athlete_id: UUID) -> Subscription:
     sub = db.query(Subscription).filter(Subscription.athlete_id == athlete_id).first()
@@ -225,11 +362,7 @@ def _maybe_parse_period_end(ts: Any) -> Optional[datetime]:
 
 
 def _extract_current_period_end_ts(obj: Any) -> Optional[int]:
-    """
-    Stripe API compatibility:
-    - Older API versions: `subscription.current_period_end` (top-level)
-    - Newer API versions: billing period fields live on `subscription.items.data[*].current_period_end`
-    """
+    """Stripe API compatibility: period end may be top-level or nested in items."""
     try:
         ts = getattr(obj, "current_period_end", None)
         if ts is not None:
@@ -245,10 +378,7 @@ def _extract_current_period_end_ts(obj: Any) -> Optional[int]:
 
         ends: list[int] = []
         for it in (data or []):
-            if isinstance(it, dict):
-                it_end = it.get("current_period_end")
-            else:
-                it_end = getattr(it, "current_period_end", None)
+            it_end = it.get("current_period_end") if isinstance(it, dict) else getattr(it, "current_period_end", None)
             if it_end is not None:
                 ends.append(int(it_end))
         if ends:
@@ -270,7 +400,6 @@ def _extract_cancel_at_ts(obj: Any) -> Optional[int]:
 
 
 def _derive_cancel_at_period_end(obj: Any, *, current_period_end_ts: Optional[int]) -> bool:
-    # Legacy behavior (still present in some versions/paths)
     try:
         if bool(getattr(obj, "cancel_at_period_end", False)):
             return True
@@ -279,7 +408,6 @@ def _derive_cancel_at_period_end(obj: Any, *, current_period_end_ts: Optional[in
     if isinstance(obj, dict) and bool(obj.get("cancel_at_period_end", False)):
         return True
 
-    # Newer Stripe API uses `cancel_at` timestamps for scheduled cancellation.
     cancel_at = _extract_cancel_at_ts(obj)
     if cancel_at is None:
         return False
@@ -289,8 +417,12 @@ def _derive_cancel_at_period_end(obj: Any, *, current_period_end_ts: Optional[in
 
 
 def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
-    """
-    Idempotently process Stripe webhook event and update the subscription mirror + athlete tier.
+    """Idempotently process Stripe webhook event.
+
+    Updates the subscription mirror and athlete tier. Signature verification
+    must be performed by the caller before invoking this function.
+
+    Replay safety: duplicate event_id → immediate no-op (idempotent insert guard).
     """
     event_id = str(getattr(event, "id", "") or "")
     event_type = str(getattr(event, "type", "") or "")
@@ -299,8 +431,12 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
     if not event_id:
         return {"processed": False, "reason": "missing_event_id"}
 
-    # Idempotency: if event already processed, do nothing.
-    db.add(StripeEvent(event_id=event_id, event_type=event_type or "unknown", stripe_created=int(stripe_created) if stripe_created else None))
+    # Idempotency guard: unique constraint on event_id; duplicate → no-op.
+    db.add(StripeEvent(
+        event_id=event_id,
+        event_type=event_type or "unknown",
+        stripe_created=int(stripe_created) if stripe_created else None,
+    ))
     try:
         db.flush()
     except IntegrityError:
@@ -309,12 +445,17 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
 
     obj = None
     try:
-        obj = event.data.object  # stripe.Event supports attribute access
+        obj = event.data.object
     except Exception:
         obj = (event.get("data") or {}).get("object") if isinstance(event, dict) else None
 
-    # Helper to locate athlete by reference id or stripe customer id.
-    athlete: Optional[Athlete] = None
+    # Build price→tier map once per event using current config.
+    # This keeps event processing decoupled from a StripeService instance.
+    try:
+        cfg = _get_stripe_config()
+        price_to_tier = build_price_to_tier(cfg)
+    except RuntimeError:
+        price_to_tier = {}
 
     def _find_athlete_by_reference_id(ref: Optional[str]) -> Optional[Athlete]:
         if not ref:
@@ -329,20 +470,58 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
             return None
         return db.query(Athlete).filter(Athlete.stripe_customer_id == cust_id).first()
 
+    athlete: Optional[Athlete] = None
+
+    # ------------------------------------------------------------------
+    # checkout.session.completed
+    # Handles both subscription (mode=subscription) and one-time (mode=payment).
+    # ------------------------------------------------------------------
     if event_type == "checkout.session.completed":
         customer_id = str(getattr(obj, "customer", None) or "")
         subscription_id = str(getattr(obj, "subscription", None) or "")
-        ref_id = str(getattr(obj, "client_reference_id", None) or "") or str((getattr(obj, "metadata", {}) or {}).get("athlete_id") or "")
+        payment_intent_id = str(getattr(obj, "payment_intent", None) or "")
+        mode = str(getattr(obj, "mode", None) or "")
+        metadata = dict(getattr(obj, "metadata", None) or {})
+        ref_id = str(getattr(obj, "client_reference_id", None) or "") or str(
+            metadata.get("athlete_id") or ""
+        )
 
         athlete = _find_athlete_by_reference_id(ref_id) or _find_athlete_by_customer_id(customer_id)
         if not athlete:
             db.commit()
-            return {"processed": True, "event_id": event_id, "event_type": event_type, "matched_athlete": False}
+            return {
+                "processed": True,
+                "event_id": event_id,
+                "event_type": event_type,
+                "matched_athlete": False,
+            }
 
         if customer_id and not athlete.stripe_customer_id:
             athlete.stripe_customer_id = customer_id
         db.add(athlete)
 
+        if mode == "payment":
+            # One-time plan unlock: record purchase artifact, do NOT change subscription_tier.
+            plan_snapshot_id = metadata.get("plan_snapshot_id") or ""
+            if plan_snapshot_id and payment_intent_id:
+                _record_plan_purchase(
+                    db,
+                    athlete_id=athlete.id,
+                    plan_snapshot_id=plan_snapshot_id,
+                    stripe_session_id=event_id,
+                    stripe_payment_intent_id=payment_intent_id,
+                )
+            db.commit()
+            return {
+                "processed": True,
+                "event_id": event_id,
+                "event_type": event_type,
+                "mode": "payment",
+                "athlete_id": str(athlete.id),
+                "plan_snapshot_id": plan_snapshot_id,
+            }
+
+        # Subscription checkout: mirror tier using price→tier map.
         sub = _ensure_subscription_row(db, athlete_id=athlete.id)
         if customer_id:
             sub.stripe_customer_id = customer_id
@@ -350,14 +529,30 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
             sub.stripe_subscription_id = subscription_id
         sub.status = "active"
         sub.cancel_at_period_end = False
-        db.add(sub)
 
-        athlete.subscription_tier = "pro"
+        # Derive tier from the price on the session (prefer metadata tier if present).
+        price_id = metadata.get("price_id") or _extract_price_id_from_session(obj)
+        granted_tier = tier_for_price_and_status(price_id, "active", price_to_tier)
+        # Fallback: if metadata explicitly carries canonical tier, use it.
+        if granted_tier == "free" and metadata.get("tier") in ("guided", "premium"):
+            granted_tier = metadata["tier"]
+
+        athlete.subscription_tier = granted_tier
         db.add(athlete)
-
+        db.add(sub)
         db.commit()
-        return {"processed": True, "event_id": event_id, "event_type": event_type, "athlete_id": str(athlete.id)}
+        return {
+            "processed": True,
+            "event_id": event_id,
+            "event_type": event_type,
+            "mode": "subscription",
+            "athlete_id": str(athlete.id),
+            "granted_tier": granted_tier,
+        }
 
+    # ------------------------------------------------------------------
+    # customer.subscription.updated / customer.subscription.deleted
+    # ------------------------------------------------------------------
     if event_type in ("customer.subscription.updated", "customer.subscription.deleted"):
         customer_id = str(getattr(obj, "customer", None) or "")
         subscription_id = str(getattr(obj, "id", None) or "")
@@ -365,21 +560,26 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
         current_period_end_ts = _extract_current_period_end_ts(obj)
         cancel_at_ts = _extract_cancel_at_ts(obj)
         if current_period_end_ts is None and cancel_at_ts is not None:
-            # Some objects may omit period fields but include cancellation timestamp.
             current_period_end_ts = cancel_at_ts
         current_period_end = _maybe_parse_period_end(current_period_end_ts)
         cancel_at_period_end = _derive_cancel_at_period_end(obj, current_period_end_ts=current_period_end_ts)
 
         athlete = _find_athlete_by_customer_id(customer_id)
         if not athlete and subscription_id:
-            # Fallback match: find Subscription row by subscription id, then athlete.
-            existing = db.query(Subscription).filter(Subscription.stripe_subscription_id == subscription_id).first()
+            existing = db.query(Subscription).filter(
+                Subscription.stripe_subscription_id == subscription_id
+            ).first()
             if existing:
                 athlete = db.query(Athlete).filter(Athlete.id == existing.athlete_id).first()
 
         if not athlete:
             db.commit()
-            return {"processed": True, "event_id": event_id, "event_type": event_type, "matched_athlete": False}
+            return {
+                "processed": True,
+                "event_id": event_id,
+                "event_type": event_type,
+                "matched_athlete": False,
+            }
 
         if customer_id and not athlete.stripe_customer_id:
             athlete.stripe_customer_id = customer_id
@@ -394,7 +594,7 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
         sub.current_period_end = current_period_end
         sub.cancel_at_period_end = cancel_at_period_end
 
-        # Try to capture the price id (best-effort).
+        price_id: Optional[str] = None
         try:
             items = getattr(obj, "items", None)
             data = getattr(items, "data", None) if items else None
@@ -408,14 +608,72 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
 
         db.add(sub)
 
-        # Entitlement mirror on athlete
-        athlete.subscription_tier = _entitlement_tier_for_subscription_status(status)
+        # Derive tier via price→tier map (fail closed on unknown price).
+        athlete.subscription_tier = tier_for_price_and_status(price_id, status, price_to_tier)
         db.add(athlete)
-
         db.commit()
-        return {"processed": True, "event_id": event_id, "event_type": event_type, "athlete_id": str(athlete.id), "status": status}
+        return {
+            "processed": True,
+            "event_id": event_id,
+            "event_type": event_type,
+            "athlete_id": str(athlete.id),
+            "status": status,
+            "granted_tier": athlete.subscription_tier,
+        }
 
-    # Unknown/unhandled event: accept but no-op (still idempotently recorded).
+    # Unknown/unhandled event: accept and record, no state change.
     db.commit()
     return {"processed": True, "event_id": event_id, "event_type": event_type, "handled": False}
 
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _extract_price_id_from_session(obj: Any) -> Optional[str]:
+    """Best-effort extraction of price_id from a checkout.session object."""
+    try:
+        line_items = getattr(obj, "line_items", None)
+        if line_items:
+            data = getattr(line_items, "data", None) or []
+            first = data[0] if data else None
+            price = getattr(first, "price", None) if first else None
+            return getattr(price, "id", None) if price else None
+    except Exception:
+        pass
+    return None
+
+
+def _record_plan_purchase(
+    db: Session,
+    *,
+    athlete_id: UUID,
+    plan_snapshot_id: str,
+    stripe_session_id: str,
+    stripe_payment_intent_id: str,
+) -> None:
+    """Insert a PlanPurchase row for a completed one-time payment.
+
+    Idempotent: if the payment_intent already exists, the unique constraint
+    prevents a duplicate row and the exception is suppressed.
+    """
+    try:
+        from models import PlanPurchase
+        purchase = PlanPurchase(
+            athlete_id=athlete_id,
+            plan_snapshot_id=plan_snapshot_id,
+            stripe_session_id=stripe_session_id,
+            stripe_payment_intent_id=stripe_payment_intent_id,
+            purchased_at=datetime.now(timezone.utc),
+        )
+        db.add(purchase)
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        log.info(
+            "plan_purchase: duplicate payment_intent=%s — already recorded (idempotent)",
+            stripe_payment_intent_id,
+        )
+    except Exception as exc:
+        log.warning("plan_purchase: failed to record purchase: %s", exc)
+        db.rollback()
