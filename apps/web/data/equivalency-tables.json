@@ -1,13 +1,13 @@
 {
   "_meta": {
-    "generated": "2026-02-26T18:42:03.758Z",
+    "generated": "2026-02-26T21:57:13.587Z",
     "schemaVersion": "1.0",
     "formula": "Daniels/Gilbert 1979 binary search (rpi-formula.mjs)",
     "note": "Equivalent times computed via RPI round-trip. Fully deterministic."
   },
   "5k-to-marathon": {
     "slug": "5k-to-marathon",
-    "label": "5K → Marathon Equivalency",
+    "label": "5K → Marathon",
     "inputDistance": "5K",
     "inputDistanceMeters": 5000,
     "outputDistance": "Marathon",
@@ -125,7 +125,7 @@
   },
   "10k-to-half-marathon": {
     "slug": "10k-to-half-marathon",
-    "label": "10K → Half Marathon Equivalency",
+    "label": "10K → Half Marathon",
     "inputDistance": "10K",
     "inputDistanceMeters": 10000,
     "outputDistance": "Half Marathon",
@@ -238,6 +238,1540 @@
         "outputSeconds": 9301,
         "outputPaceMi": "11:49",
         "outputPaceKm": "7:21"
+      }
+    ]
+  },
+  "mile-to-5k": {
+    "slug": "mile-to-5k",
+    "label": "Mile → 5K",
+    "inputDistance": "Mile",
+    "inputDistanceMeters": 1609.34,
+    "outputDistance": "5K",
+    "outputDistanceMeters": 5000,
+    "rows": [
+      {
+        "inputTime": "4:00",
+        "inputSeconds": 240,
+        "rpi": 76.5,
+        "outputTime": "13:49",
+        "outputSeconds": 829,
+        "outputPaceMi": "4:27",
+        "outputPaceKm": "2:46"
+      },
+      {
+        "inputTime": "4:15",
+        "inputSeconds": 255,
+        "rpi": 71.4,
+        "outputTime": "14:40",
+        "outputSeconds": 880,
+        "outputPaceMi": "4:43",
+        "outputPaceKm": "2:56"
+      },
+      {
+        "inputTime": "4:30",
+        "inputSeconds": 270,
+        "rpi": 66.9,
+        "outputTime": "15:31",
+        "outputSeconds": 931,
+        "outputPaceMi": "5:00",
+        "outputPaceKm": "3:06"
+      },
+      {
+        "inputTime": "4:45",
+        "inputSeconds": 285,
+        "rpi": 62.9,
+        "outputTime": "16:22",
+        "outputSeconds": 982,
+        "outputPaceMi": "5:16",
+        "outputPaceKm": "3:16"
+      },
+      {
+        "inputTime": "5:00",
+        "inputSeconds": 300,
+        "rpi": 59.4,
+        "outputTime": "17:12",
+        "outputSeconds": 1032,
+        "outputPaceMi": "5:32",
+        "outputPaceKm": "3:26"
+      },
+      {
+        "inputTime": "5:15",
+        "inputSeconds": 315,
+        "rpi": 56.2,
+        "outputTime": "18:02",
+        "outputSeconds": 1082,
+        "outputPaceMi": "5:48",
+        "outputPaceKm": "3:36"
+      },
+      {
+        "inputTime": "5:30",
+        "inputSeconds": 330,
+        "rpi": 53.4,
+        "outputTime": "18:51",
+        "outputSeconds": 1131,
+        "outputPaceMi": "6:04",
+        "outputPaceKm": "3:46"
+      },
+      {
+        "inputTime": "5:45",
+        "inputSeconds": 345,
+        "rpi": 50.8,
+        "outputTime": "19:40",
+        "outputSeconds": 1180,
+        "outputPaceMi": "6:20",
+        "outputPaceKm": "3:56"
+      },
+      {
+        "inputTime": "6:00",
+        "inputSeconds": 360,
+        "rpi": 48.4,
+        "outputTime": "20:30",
+        "outputSeconds": 1230,
+        "outputPaceMi": "6:36",
+        "outputPaceKm": "4:06"
+      },
+      {
+        "inputTime": "6:30",
+        "inputSeconds": 390,
+        "rpi": 44.3,
+        "outputTime": "22:06",
+        "outputSeconds": 1326,
+        "outputPaceMi": "7:07",
+        "outputPaceKm": "4:25"
+      },
+      {
+        "inputTime": "7:00",
+        "inputSeconds": 420,
+        "rpi": 40.7,
+        "outputTime": "23:45",
+        "outputSeconds": 1425,
+        "outputPaceMi": "7:39",
+        "outputPaceKm": "4:45"
+      },
+      {
+        "inputTime": "8:00",
+        "inputSeconds": 480,
+        "rpi": 35.1,
+        "outputTime": "26:55",
+        "outputSeconds": 1615,
+        "outputPaceMi": "8:40",
+        "outputPaceKm": "5:23"
+      }
+    ]
+  },
+  "mile-to-10k": {
+    "slug": "mile-to-10k",
+    "label": "Mile → 10K",
+    "inputDistance": "Mile",
+    "inputDistanceMeters": 1609.34,
+    "outputDistance": "10K",
+    "outputDistanceMeters": 10000,
+    "rows": [
+      {
+        "inputTime": "4:00",
+        "inputSeconds": 240,
+        "rpi": 76.5,
+        "outputTime": "28:46",
+        "outputSeconds": 1726,
+        "outputPaceMi": "4:38",
+        "outputPaceKm": "2:53"
+      },
+      {
+        "inputTime": "4:15",
+        "inputSeconds": 255,
+        "rpi": 71.4,
+        "outputTime": "30:30",
+        "outputSeconds": 1830,
+        "outputPaceMi": "4:55",
+        "outputPaceKm": "3:03"
+      },
+      {
+        "inputTime": "4:30",
+        "inputSeconds": 270,
+        "rpi": 66.9,
+        "outputTime": "32:14",
+        "outputSeconds": 1934,
+        "outputPaceMi": "5:11",
+        "outputPaceKm": "3:13"
+      },
+      {
+        "inputTime": "4:45",
+        "inputSeconds": 285,
+        "rpi": 62.9,
+        "outputTime": "33:58",
+        "outputSeconds": 2038,
+        "outputPaceMi": "5:28",
+        "outputPaceKm": "3:24"
+      },
+      {
+        "inputTime": "5:00",
+        "inputSeconds": 300,
+        "rpi": 59.4,
+        "outputTime": "35:40",
+        "outputSeconds": 2140,
+        "outputPaceMi": "5:44",
+        "outputPaceKm": "3:34"
+      },
+      {
+        "inputTime": "5:15",
+        "inputSeconds": 315,
+        "rpi": 56.2,
+        "outputTime": "37:24",
+        "outputSeconds": 2244,
+        "outputPaceMi": "6:01",
+        "outputPaceKm": "3:44"
+      },
+      {
+        "inputTime": "5:30",
+        "inputSeconds": 330,
+        "rpi": 53.4,
+        "outputTime": "39:04",
+        "outputSeconds": 2344,
+        "outputPaceMi": "6:17",
+        "outputPaceKm": "3:54"
+      },
+      {
+        "inputTime": "5:45",
+        "inputSeconds": 345,
+        "rpi": 50.8,
+        "outputTime": "40:46",
+        "outputSeconds": 2446,
+        "outputPaceMi": "6:34",
+        "outputPaceKm": "4:05"
+      },
+      {
+        "inputTime": "6:00",
+        "inputSeconds": 360,
+        "rpi": 48.4,
+        "outputTime": "42:29",
+        "outputSeconds": 2549,
+        "outputPaceMi": "6:50",
+        "outputPaceKm": "4:15"
+      },
+      {
+        "inputTime": "6:30",
+        "inputSeconds": 390,
+        "rpi": 44.3,
+        "outputTime": "45:50",
+        "outputSeconds": 2750,
+        "outputPaceMi": "7:23",
+        "outputPaceKm": "4:35"
+      },
+      {
+        "inputTime": "7:00",
+        "inputSeconds": 420,
+        "rpi": 40.7,
+        "outputTime": "49:17",
+        "outputSeconds": 2957,
+        "outputPaceMi": "7:56",
+        "outputPaceKm": "4:56"
+      },
+      {
+        "inputTime": "8:00",
+        "inputSeconds": 480,
+        "rpi": 35.1,
+        "outputTime": "55:54",
+        "outputSeconds": 3354,
+        "outputPaceMi": "9:00",
+        "outputPaceKm": "5:36"
+      }
+    ]
+  },
+  "mile-to-half-marathon": {
+    "slug": "mile-to-half-marathon",
+    "label": "Mile → Half Marathon",
+    "inputDistance": "Mile",
+    "inputDistanceMeters": 1609.34,
+    "outputDistance": "Half Marathon",
+    "outputDistanceMeters": 21097.5,
+    "rows": [
+      {
+        "inputTime": "4:00",
+        "inputSeconds": 240,
+        "rpi": 76.5,
+        "outputTime": "1:03:20",
+        "outputSeconds": 3800,
+        "outputPaceMi": "4:50",
+        "outputPaceKm": "3:00"
+      },
+      {
+        "inputTime": "4:15",
+        "inputSeconds": 255,
+        "rpi": 71.4,
+        "outputTime": "1:07:13",
+        "outputSeconds": 4033,
+        "outputPaceMi": "5:08",
+        "outputPaceKm": "3:11"
+      },
+      {
+        "inputTime": "4:30",
+        "inputSeconds": 270,
+        "rpi": 66.9,
+        "outputTime": "1:11:07",
+        "outputSeconds": 4267,
+        "outputPaceMi": "5:25",
+        "outputPaceKm": "3:22"
+      },
+      {
+        "inputTime": "4:45",
+        "inputSeconds": 285,
+        "rpi": 62.9,
+        "outputTime": "1:15:00",
+        "outputSeconds": 4500,
+        "outputPaceMi": "5:43",
+        "outputPaceKm": "3:33"
+      },
+      {
+        "inputTime": "5:00",
+        "inputSeconds": 300,
+        "rpi": 59.4,
+        "outputTime": "1:18:49",
+        "outputSeconds": 4729,
+        "outputPaceMi": "6:01",
+        "outputPaceKm": "3:44"
+      },
+      {
+        "inputTime": "5:15",
+        "inputSeconds": 315,
+        "rpi": 56.2,
+        "outputTime": "1:22:43",
+        "outputSeconds": 4963,
+        "outputPaceMi": "6:19",
+        "outputPaceKm": "3:56"
+      },
+      {
+        "inputTime": "5:30",
+        "inputSeconds": 330,
+        "rpi": 53.4,
+        "outputTime": "1:26:27",
+        "outputSeconds": 5187,
+        "outputPaceMi": "6:36",
+        "outputPaceKm": "4:06"
+      },
+      {
+        "inputTime": "5:45",
+        "inputSeconds": 345,
+        "rpi": 50.8,
+        "outputTime": "1:30:16",
+        "outputSeconds": 5416,
+        "outputPaceMi": "6:53",
+        "outputPaceKm": "4:17"
+      },
+      {
+        "inputTime": "6:00",
+        "inputSeconds": 360,
+        "rpi": 48.4,
+        "outputTime": "1:34:08",
+        "outputSeconds": 5648,
+        "outputPaceMi": "7:11",
+        "outputPaceKm": "4:28"
+      },
+      {
+        "inputTime": "6:30",
+        "inputSeconds": 390,
+        "rpi": 44.3,
+        "outputTime": "1:41:36",
+        "outputSeconds": 6096,
+        "outputPaceMi": "7:45",
+        "outputPaceKm": "4:49"
+      },
+      {
+        "inputTime": "7:00",
+        "inputSeconds": 420,
+        "rpi": 40.7,
+        "outputTime": "1:49:16",
+        "outputSeconds": 6556,
+        "outputPaceMi": "8:20",
+        "outputPaceKm": "5:11"
+      },
+      {
+        "inputTime": "8:00",
+        "inputSeconds": 480,
+        "rpi": 35.1,
+        "outputTime": "2:03:53",
+        "outputSeconds": 7433,
+        "outputPaceMi": "9:27",
+        "outputPaceKm": "5:52"
+      }
+    ]
+  },
+  "mile-to-marathon": {
+    "slug": "mile-to-marathon",
+    "label": "Mile → Marathon",
+    "inputDistance": "Mile",
+    "inputDistanceMeters": 1609.34,
+    "outputDistance": "Marathon",
+    "outputDistanceMeters": 42195,
+    "rows": [
+      {
+        "inputTime": "4:00",
+        "inputSeconds": 240,
+        "rpi": 76.5,
+        "outputTime": "2:12:43",
+        "outputSeconds": 7963,
+        "outputPaceMi": "5:04",
+        "outputPaceKm": "3:09"
+      },
+      {
+        "inputTime": "4:15",
+        "inputSeconds": 255,
+        "rpi": 71.4,
+        "outputTime": "2:20:49",
+        "outputSeconds": 8449,
+        "outputPaceMi": "5:22",
+        "outputPaceKm": "3:20"
+      },
+      {
+        "inputTime": "4:30",
+        "inputSeconds": 270,
+        "rpi": 66.9,
+        "outputTime": "2:28:53",
+        "outputSeconds": 8933,
+        "outputPaceMi": "5:41",
+        "outputPaceKm": "3:32"
+      },
+      {
+        "inputTime": "4:45",
+        "inputSeconds": 285,
+        "rpi": 62.9,
+        "outputTime": "2:36:55",
+        "outputSeconds": 9415,
+        "outputPaceMi": "5:59",
+        "outputPaceKm": "3:43"
+      },
+      {
+        "inputTime": "5:00",
+        "inputSeconds": 300,
+        "rpi": 59.4,
+        "outputTime": "2:44:48",
+        "outputSeconds": 9888,
+        "outputPaceMi": "6:17",
+        "outputPaceKm": "3:54"
+      },
+      {
+        "inputTime": "5:15",
+        "inputSeconds": 315,
+        "rpi": 56.2,
+        "outputTime": "2:52:43",
+        "outputSeconds": 10363,
+        "outputPaceMi": "6:35",
+        "outputPaceKm": "4:05"
+      },
+      {
+        "inputTime": "5:30",
+        "inputSeconds": 330,
+        "rpi": 53.4,
+        "outputTime": "3:00:21",
+        "outputSeconds": 10821,
+        "outputPaceMi": "6:53",
+        "outputPaceKm": "4:17"
+      },
+      {
+        "inputTime": "5:45",
+        "inputSeconds": 345,
+        "rpi": 50.8,
+        "outputTime": "3:08:08",
+        "outputSeconds": 11288,
+        "outputPaceMi": "7:11",
+        "outputPaceKm": "4:28"
+      },
+      {
+        "inputTime": "6:00",
+        "inputSeconds": 360,
+        "rpi": 48.4,
+        "outputTime": "3:15:55",
+        "outputSeconds": 11755,
+        "outputPaceMi": "7:28",
+        "outputPaceKm": "4:38"
+      },
+      {
+        "inputTime": "6:30",
+        "inputSeconds": 390,
+        "rpi": 44.3,
+        "outputTime": "3:30:59",
+        "outputSeconds": 12659,
+        "outputPaceMi": "8:03",
+        "outputPaceKm": "5:00"
+      },
+      {
+        "inputTime": "7:00",
+        "inputSeconds": 420,
+        "rpi": 40.7,
+        "outputTime": "3:46:21",
+        "outputSeconds": 13581,
+        "outputPaceMi": "8:38",
+        "outputPaceKm": "5:22"
+      },
+      {
+        "inputTime": "8:00",
+        "inputSeconds": 480,
+        "rpi": 35.1,
+        "outputTime": "4:15:31",
+        "outputSeconds": 15331,
+        "outputPaceMi": "9:45",
+        "outputPaceKm": "6:04"
+      }
+    ]
+  },
+  "5k-to-10k": {
+    "slug": "5k-to-10k",
+    "label": "5K → 10K",
+    "inputDistance": "5K",
+    "inputDistanceMeters": 5000,
+    "outputDistance": "10K",
+    "outputDistanceMeters": 10000,
+    "rows": [
+      {
+        "inputTime": "16:00",
+        "inputSeconds": 960,
+        "rpi": 64.6,
+        "outputTime": "33:13",
+        "outputSeconds": 1993,
+        "outputPaceMi": "5:21",
+        "outputPaceKm": "3:19"
+      },
+      {
+        "inputTime": "17:00",
+        "inputSeconds": 1020,
+        "rpi": 60.2,
+        "outputTime": "35:16",
+        "outputSeconds": 2116,
+        "outputPaceMi": "5:41",
+        "outputPaceKm": "3:32"
+      },
+      {
+        "inputTime": "18:00",
+        "inputSeconds": 1080,
+        "rpi": 56.3,
+        "outputTime": "37:20",
+        "outputSeconds": 2240,
+        "outputPaceMi": "6:00",
+        "outputPaceKm": "3:44"
+      },
+      {
+        "inputTime": "19:00",
+        "inputSeconds": 1140,
+        "rpi": 52.9,
+        "outputTime": "39:23",
+        "outputSeconds": 2363,
+        "outputPaceMi": "6:20",
+        "outputPaceKm": "3:56"
+      },
+      {
+        "inputTime": "20:00",
+        "inputSeconds": 1200,
+        "rpi": 49.8,
+        "outputTime": "41:28",
+        "outputSeconds": 2488,
+        "outputPaceMi": "6:40",
+        "outputPaceKm": "4:09"
+      },
+      {
+        "inputTime": "21:00",
+        "inputSeconds": 1260,
+        "rpi": 47,
+        "outputTime": "43:35",
+        "outputSeconds": 2615,
+        "outputPaceMi": "7:01",
+        "outputPaceKm": "4:22"
+      },
+      {
+        "inputTime": "22:00",
+        "inputSeconds": 1320,
+        "rpi": 44.5,
+        "outputTime": "45:40",
+        "outputSeconds": 2740,
+        "outputPaceMi": "7:21",
+        "outputPaceKm": "4:34"
+      },
+      {
+        "inputTime": "24:00",
+        "inputSeconds": 1440,
+        "rpi": 40.2,
+        "outputTime": "49:48",
+        "outputSeconds": 2988,
+        "outputPaceMi": "8:01",
+        "outputPaceKm": "4:59"
+      },
+      {
+        "inputTime": "26:00",
+        "inputSeconds": 1560,
+        "rpi": 36.6,
+        "outputTime": "53:57",
+        "outputSeconds": 3237,
+        "outputPaceMi": "8:41",
+        "outputPaceKm": "5:24"
+      },
+      {
+        "inputTime": "28:00",
+        "inputSeconds": 1680,
+        "rpi": 33.5,
+        "outputTime": "58:09",
+        "outputSeconds": 3489,
+        "outputPaceMi": "9:21",
+        "outputPaceKm": "5:49"
+      },
+      {
+        "inputTime": "30:00",
+        "inputSeconds": 1800,
+        "rpi": 30.8,
+        "outputTime": "1:02:26",
+        "outputSeconds": 3746,
+        "outputPaceMi": "10:03",
+        "outputPaceKm": "6:15"
+      },
+      {
+        "inputTime": "35:00",
+        "inputSeconds": 2100,
+        "rpi": 25.6,
+        "outputTime": "1:12:49",
+        "outputSeconds": 4369,
+        "outputPaceMi": "11:43",
+        "outputPaceKm": "7:17"
+      }
+    ]
+  },
+  "5k-to-half-marathon": {
+    "slug": "5k-to-half-marathon",
+    "label": "5K → Half Marathon",
+    "inputDistance": "5K",
+    "inputDistanceMeters": 5000,
+    "outputDistance": "Half Marathon",
+    "outputDistanceMeters": 21097.5,
+    "rows": [
+      {
+        "inputTime": "16:00",
+        "inputSeconds": 960,
+        "rpi": 64.6,
+        "outputTime": "1:13:18",
+        "outputSeconds": 4398,
+        "outputPaceMi": "5:35",
+        "outputPaceKm": "3:28"
+      },
+      {
+        "inputTime": "17:00",
+        "inputSeconds": 1020,
+        "rpi": 60.2,
+        "outputTime": "1:17:55",
+        "outputSeconds": 4675,
+        "outputPaceMi": "5:57",
+        "outputPaceKm": "3:42"
+      },
+      {
+        "inputTime": "18:00",
+        "inputSeconds": 1080,
+        "rpi": 56.3,
+        "outputTime": "1:22:34",
+        "outputSeconds": 4954,
+        "outputPaceMi": "6:18",
+        "outputPaceKm": "3:55"
+      },
+      {
+        "inputTime": "19:00",
+        "inputSeconds": 1140,
+        "rpi": 52.9,
+        "outputTime": "1:27:10",
+        "outputSeconds": 5230,
+        "outputPaceMi": "6:39",
+        "outputPaceKm": "4:08"
+      },
+      {
+        "inputTime": "20:00",
+        "inputSeconds": 1200,
+        "rpi": 49.8,
+        "outputTime": "1:31:50",
+        "outputSeconds": 5510,
+        "outputPaceMi": "7:00",
+        "outputPaceKm": "4:21"
+      },
+      {
+        "inputTime": "21:00",
+        "inputSeconds": 1260,
+        "rpi": 47,
+        "outputTime": "1:36:32",
+        "outputSeconds": 5792,
+        "outputPaceMi": "7:22",
+        "outputPaceKm": "4:35"
+      },
+      {
+        "inputTime": "22:00",
+        "inputSeconds": 1320,
+        "rpi": 44.5,
+        "outputTime": "1:41:11",
+        "outputSeconds": 6071,
+        "outputPaceMi": "7:43",
+        "outputPaceKm": "4:48"
+      },
+      {
+        "inputTime": "24:00",
+        "inputSeconds": 1440,
+        "rpi": 40.2,
+        "outputTime": "1:50:26",
+        "outputSeconds": 6626,
+        "outputPaceMi": "8:25",
+        "outputPaceKm": "5:14"
+      },
+      {
+        "inputTime": "26:00",
+        "inputSeconds": 1560,
+        "rpi": 36.6,
+        "outputTime": "1:59:35",
+        "outputSeconds": 7175,
+        "outputPaceMi": "9:07",
+        "outputPaceKm": "5:40"
+      },
+      {
+        "inputTime": "28:00",
+        "inputSeconds": 1680,
+        "rpi": 33.5,
+        "outputTime": "2:08:53",
+        "outputSeconds": 7733,
+        "outputPaceMi": "9:50",
+        "outputPaceKm": "6:07"
+      },
+      {
+        "inputTime": "30:00",
+        "inputSeconds": 1800,
+        "rpi": 30.8,
+        "outputTime": "2:18:17",
+        "outputSeconds": 8297,
+        "outputPaceMi": "10:33",
+        "outputPaceKm": "6:33"
+      },
+      {
+        "inputTime": "35:00",
+        "inputSeconds": 2100,
+        "rpi": 25.6,
+        "outputTime": "2:40:47",
+        "outputSeconds": 9647,
+        "outputPaceMi": "12:16",
+        "outputPaceKm": "7:37"
+      }
+    ]
+  },
+  "10k-to-marathon": {
+    "slug": "10k-to-marathon",
+    "label": "10K → Marathon",
+    "inputDistance": "10K",
+    "inputDistanceMeters": 10000,
+    "outputDistance": "Marathon",
+    "outputDistanceMeters": 42195,
+    "rows": [
+      {
+        "inputTime": "32:00",
+        "inputSeconds": 1920,
+        "rpi": 67.5,
+        "outputTime": "2:27:44",
+        "outputSeconds": 8864,
+        "outputPaceMi": "5:38",
+        "outputPaceKm": "3:30"
+      },
+      {
+        "inputTime": "35:00",
+        "inputSeconds": 2100,
+        "rpi": 60.7,
+        "outputTime": "2:41:46",
+        "outputSeconds": 9706,
+        "outputPaceMi": "6:10",
+        "outputPaceKm": "3:50"
+      },
+      {
+        "inputTime": "38:00",
+        "inputSeconds": 2280,
+        "rpi": 55.2,
+        "outputTime": "2:55:22",
+        "outputSeconds": 10522,
+        "outputPaceMi": "6:41",
+        "outputPaceKm": "4:09"
+      },
+      {
+        "inputTime": "40:00",
+        "inputSeconds": 2400,
+        "rpi": 51.9,
+        "outputTime": "3:04:45",
+        "outputSeconds": 11085,
+        "outputPaceMi": "7:03",
+        "outputPaceKm": "4:23"
+      },
+      {
+        "inputTime": "42:00",
+        "inputSeconds": 2520,
+        "rpi": 49.1,
+        "outputTime": "3:13:34",
+        "outputSeconds": 11614,
+        "outputPaceMi": "7:23",
+        "outputPaceKm": "4:35"
+      },
+      {
+        "inputTime": "45:00",
+        "inputSeconds": 2700,
+        "rpi": 45.3,
+        "outputTime": "3:27:07",
+        "outputSeconds": 12427,
+        "outputPaceMi": "7:54",
+        "outputPaceKm": "4:55"
+      },
+      {
+        "inputTime": "48:00",
+        "inputSeconds": 2880,
+        "rpi": 42,
+        "outputTime": "3:40:35",
+        "outputSeconds": 13235,
+        "outputPaceMi": "8:25",
+        "outputPaceKm": "5:14"
+      },
+      {
+        "inputTime": "50:00",
+        "inputSeconds": 3000,
+        "rpi": 40,
+        "outputTime": "3:49:35",
+        "outputSeconds": 13775,
+        "outputPaceMi": "8:45",
+        "outputPaceKm": "5:26"
+      },
+      {
+        "inputTime": "55:00",
+        "inputSeconds": 3300,
+        "rpi": 35.8,
+        "outputTime": "4:11:30",
+        "outputSeconds": 15090,
+        "outputPaceMi": "9:36",
+        "outputPaceKm": "5:58"
+      },
+      {
+        "inputTime": "60:00",
+        "inputSeconds": 3600,
+        "rpi": 32.3,
+        "outputTime": "4:33:14",
+        "outputSeconds": 16394,
+        "outputPaceMi": "10:25",
+        "outputPaceKm": "6:28"
+      },
+      {
+        "inputTime": "65:00",
+        "inputSeconds": 3900,
+        "rpi": 29.3,
+        "outputTime": "4:55:21",
+        "outputSeconds": 17721,
+        "outputPaceMi": "11:16",
+        "outputPaceKm": "7:00"
+      },
+      {
+        "inputTime": "70:00",
+        "inputSeconds": 4200,
+        "rpi": 26.8,
+        "outputTime": "5:16:41",
+        "outputSeconds": 19001,
+        "outputPaceMi": "12:05",
+        "outputPaceKm": "7:30"
+      }
+    ]
+  },
+  "half-marathon-to-marathon": {
+    "slug": "half-marathon-to-marathon",
+    "label": "Half Marathon → Marathon",
+    "inputDistance": "Half Marathon",
+    "inputDistanceMeters": 21097.5,
+    "outputDistance": "Marathon",
+    "outputDistanceMeters": 42195,
+    "rows": [
+      {
+        "inputTime": "1:15:00",
+        "inputSeconds": 4500,
+        "rpi": 62.9,
+        "outputTime": "2:36:55",
+        "outputSeconds": 9415,
+        "outputPaceMi": "5:59",
+        "outputPaceKm": "3:43"
+      },
+      {
+        "inputTime": "1:20:00",
+        "inputSeconds": 4800,
+        "rpi": 58.4,
+        "outputTime": "2:47:11",
+        "outputSeconds": 10031,
+        "outputPaceMi": "6:23",
+        "outputPaceKm": "3:58"
+      },
+      {
+        "inputTime": "1:25:00",
+        "inputSeconds": 5100,
+        "rpi": 54.5,
+        "outputTime": "2:57:16",
+        "outputSeconds": 10636,
+        "outputPaceMi": "6:46",
+        "outputPaceKm": "4:12"
+      },
+      {
+        "inputTime": "1:30:00",
+        "inputSeconds": 5400,
+        "rpi": 51,
+        "outputTime": "3:07:30",
+        "outputSeconds": 11250,
+        "outputPaceMi": "7:09",
+        "outputPaceKm": "4:27"
+      },
+      {
+        "inputTime": "1:35:00",
+        "inputSeconds": 5700,
+        "rpi": 47.9,
+        "outputTime": "3:17:41",
+        "outputSeconds": 11861,
+        "outputPaceMi": "7:32",
+        "outputPaceKm": "4:41"
+      },
+      {
+        "inputTime": "1:40:00",
+        "inputSeconds": 6000,
+        "rpi": 45.1,
+        "outputTime": "3:27:51",
+        "outputSeconds": 12471,
+        "outputPaceMi": "7:56",
+        "outputPaceKm": "4:56"
+      },
+      {
+        "inputTime": "1:45:00",
+        "inputSeconds": 6300,
+        "rpi": 42.6,
+        "outputTime": "3:37:56",
+        "outputSeconds": 13076,
+        "outputPaceMi": "8:19",
+        "outputPaceKm": "5:10"
+      },
+      {
+        "inputTime": "1:55:00",
+        "inputSeconds": 6900,
+        "rpi": 38.3,
+        "outputTime": "3:58:00",
+        "outputSeconds": 14280,
+        "outputPaceMi": "9:05",
+        "outputPaceKm": "5:39"
+      },
+      {
+        "inputTime": "2:00:00",
+        "inputSeconds": 7200,
+        "rpi": 36.5,
+        "outputTime": "4:07:29",
+        "outputSeconds": 14849,
+        "outputPaceMi": "9:26",
+        "outputPaceKm": "5:52"
+      },
+      {
+        "inputTime": "2:10:00",
+        "inputSeconds": 7800,
+        "rpi": 33.2,
+        "outputTime": "4:27:15",
+        "outputSeconds": 16035,
+        "outputPaceMi": "10:12",
+        "outputPaceKm": "6:20"
+      },
+      {
+        "inputTime": "2:20:00",
+        "inputSeconds": 8400,
+        "rpi": 30.3,
+        "outputTime": "4:47:31",
+        "outputSeconds": 17251,
+        "outputPaceMi": "10:58",
+        "outputPaceKm": "6:49"
+      },
+      {
+        "inputTime": "2:30:00",
+        "inputSeconds": 9000,
+        "rpi": 27.9,
+        "outputTime": "5:06:54",
+        "outputSeconds": 18414,
+        "outputPaceMi": "11:42",
+        "outputPaceKm": "7:16"
+      }
+    ]
+  },
+  "marathon-to-5k": {
+    "slug": "marathon-to-5k",
+    "label": "Marathon → 5K",
+    "inputDistance": "Marathon",
+    "inputDistanceMeters": 42195,
+    "outputDistance": "5K",
+    "outputDistanceMeters": 5000,
+    "rows": [
+      {
+        "inputTime": "2:30:00",
+        "inputSeconds": 9000,
+        "rpi": 66.3,
+        "outputTime": "15:39",
+        "outputSeconds": 939,
+        "outputPaceMi": "5:02",
+        "outputPaceKm": "3:08"
+      },
+      {
+        "inputTime": "2:45:00",
+        "inputSeconds": 9900,
+        "rpi": 59.3,
+        "outputTime": "17:13",
+        "outputSeconds": 1033,
+        "outputPaceMi": "5:32",
+        "outputPaceKm": "3:26"
+      },
+      {
+        "inputTime": "3:00:00",
+        "inputSeconds": 10800,
+        "rpi": 53.5,
+        "outputTime": "18:49",
+        "outputSeconds": 1129,
+        "outputPaceMi": "6:03",
+        "outputPaceKm": "3:46"
+      },
+      {
+        "inputTime": "3:15:00",
+        "inputSeconds": 11700,
+        "rpi": 48.7,
+        "outputTime": "20:23",
+        "outputSeconds": 1223,
+        "outputPaceMi": "6:34",
+        "outputPaceKm": "4:05"
+      },
+      {
+        "inputTime": "3:30:00",
+        "inputSeconds": 12600,
+        "rpi": 44.6,
+        "outputTime": "21:58",
+        "outputSeconds": 1318,
+        "outputPaceMi": "7:04",
+        "outputPaceKm": "4:23"
+      },
+      {
+        "inputTime": "3:45:00",
+        "inputSeconds": 13500,
+        "rpi": 41,
+        "outputTime": "23:36",
+        "outputSeconds": 1416,
+        "outputPaceMi": "7:36",
+        "outputPaceKm": "4:43"
+      },
+      {
+        "inputTime": "4:00:00",
+        "inputSeconds": 14400,
+        "rpi": 37.9,
+        "outputTime": "25:14",
+        "outputSeconds": 1514,
+        "outputPaceMi": "8:07",
+        "outputPaceKm": "5:03"
+      },
+      {
+        "inputTime": "4:15:00",
+        "inputSeconds": 15300,
+        "rpi": 35.2,
+        "outputTime": "26:51",
+        "outputSeconds": 1611,
+        "outputPaceMi": "8:39",
+        "outputPaceKm": "5:22"
+      },
+      {
+        "inputTime": "4:30:00",
+        "inputSeconds": 16200,
+        "rpi": 32.8,
+        "outputTime": "28:29",
+        "outputSeconds": 1709,
+        "outputPaceMi": "9:10",
+        "outputPaceKm": "5:42"
+      },
+      {
+        "inputTime": "4:45:00",
+        "inputSeconds": 17100,
+        "rpi": 30.6,
+        "outputTime": "30:10",
+        "outputSeconds": 1810,
+        "outputPaceMi": "9:43",
+        "outputPaceKm": "6:02"
+      },
+      {
+        "inputTime": "5:00:00",
+        "inputSeconds": 18000,
+        "rpi": 28.7,
+        "outputTime": "31:49",
+        "outputSeconds": 1909,
+        "outputPaceMi": "10:14",
+        "outputPaceKm": "6:22"
+      },
+      {
+        "inputTime": "5:30:00",
+        "inputSeconds": 19800,
+        "rpi": 25.4,
+        "outputTime": "35:11",
+        "outputSeconds": 2111,
+        "outputPaceMi": "11:19",
+        "outputPaceKm": "7:02"
+      }
+    ]
+  },
+  "marathon-to-10k": {
+    "slug": "marathon-to-10k",
+    "label": "Marathon → 10K",
+    "inputDistance": "Marathon",
+    "inputDistanceMeters": 42195,
+    "outputDistance": "10K",
+    "outputDistanceMeters": 10000,
+    "rows": [
+      {
+        "inputTime": "2:30:00",
+        "inputSeconds": 9000,
+        "rpi": 66.3,
+        "outputTime": "32:29",
+        "outputSeconds": 1949,
+        "outputPaceMi": "5:14",
+        "outputPaceKm": "3:15"
+      },
+      {
+        "inputTime": "2:45:00",
+        "inputSeconds": 9900,
+        "rpi": 59.3,
+        "outputTime": "35:43",
+        "outputSeconds": 2143,
+        "outputPaceMi": "5:45",
+        "outputPaceKm": "3:34"
+      },
+      {
+        "inputTime": "3:00:00",
+        "inputSeconds": 10800,
+        "rpi": 53.5,
+        "outputTime": "39:01",
+        "outputSeconds": 2341,
+        "outputPaceMi": "6:17",
+        "outputPaceKm": "3:54"
+      },
+      {
+        "inputTime": "3:15:00",
+        "inputSeconds": 11700,
+        "rpi": 48.7,
+        "outputTime": "42:16",
+        "outputSeconds": 2536,
+        "outputPaceMi": "6:48",
+        "outputPaceKm": "4:14"
+      },
+      {
+        "inputTime": "3:30:00",
+        "inputSeconds": 12600,
+        "rpi": 44.6,
+        "outputTime": "45:34",
+        "outputSeconds": 2734,
+        "outputPaceMi": "7:20",
+        "outputPaceKm": "4:33"
+      },
+      {
+        "inputTime": "3:45:00",
+        "inputSeconds": 13500,
+        "rpi": 41,
+        "outputTime": "48:58",
+        "outputSeconds": 2938,
+        "outputPaceMi": "7:53",
+        "outputPaceKm": "4:54"
+      },
+      {
+        "inputTime": "4:00:00",
+        "inputSeconds": 14400,
+        "rpi": 37.9,
+        "outputTime": "52:22",
+        "outputSeconds": 3142,
+        "outputPaceMi": "8:26",
+        "outputPaceKm": "5:14"
+      },
+      {
+        "inputTime": "4:15:00",
+        "inputSeconds": 15300,
+        "rpi": 35.2,
+        "outputTime": "55:45",
+        "outputSeconds": 3345,
+        "outputPaceMi": "8:58",
+        "outputPaceKm": "5:34"
+      },
+      {
+        "inputTime": "4:30:00",
+        "inputSeconds": 16200,
+        "rpi": 32.8,
+        "outputTime": "59:11",
+        "outputSeconds": 3551,
+        "outputPaceMi": "9:31",
+        "outputPaceKm": "5:55"
+      },
+      {
+        "inputTime": "4:45:00",
+        "inputSeconds": 17100,
+        "rpi": 30.6,
+        "outputTime": "1:02:46",
+        "outputSeconds": 3766,
+        "outputPaceMi": "10:06",
+        "outputPaceKm": "6:17"
+      },
+      {
+        "inputTime": "5:00:00",
+        "inputSeconds": 18000,
+        "rpi": 28.7,
+        "outputTime": "1:06:14",
+        "outputSeconds": 3974,
+        "outputPaceMi": "10:40",
+        "outputPaceKm": "6:38"
+      },
+      {
+        "inputTime": "5:30:00",
+        "inputSeconds": 19800,
+        "rpi": 25.4,
+        "outputTime": "1:13:17",
+        "outputSeconds": 4397,
+        "outputPaceMi": "11:48",
+        "outputPaceKm": "7:20"
+      }
+    ]
+  },
+  "marathon-to-half-marathon": {
+    "slug": "marathon-to-half-marathon",
+    "label": "Marathon → Half Marathon",
+    "inputDistance": "Marathon",
+    "inputDistanceMeters": 42195,
+    "outputDistance": "Half Marathon",
+    "outputDistanceMeters": 21097.5,
+    "rows": [
+      {
+        "inputTime": "2:30:00",
+        "inputSeconds": 9000,
+        "rpi": 66.3,
+        "outputTime": "1:11:40",
+        "outputSeconds": 4300,
+        "outputPaceMi": "5:28",
+        "outputPaceKm": "3:24"
+      },
+      {
+        "inputTime": "2:45:00",
+        "inputSeconds": 9900,
+        "rpi": 59.3,
+        "outputTime": "1:18:57",
+        "outputSeconds": 4737,
+        "outputPaceMi": "6:01",
+        "outputPaceKm": "3:44"
+      },
+      {
+        "inputTime": "3:00:00",
+        "inputSeconds": 10800,
+        "rpi": 53.5,
+        "outputTime": "1:26:19",
+        "outputSeconds": 5179,
+        "outputPaceMi": "6:35",
+        "outputPaceKm": "4:05"
+      },
+      {
+        "inputTime": "3:15:00",
+        "inputSeconds": 11700,
+        "rpi": 48.7,
+        "outputTime": "1:33:38",
+        "outputSeconds": 5618,
+        "outputPaceMi": "7:09",
+        "outputPaceKm": "4:27"
+      },
+      {
+        "inputTime": "3:30:00",
+        "inputSeconds": 12600,
+        "rpi": 44.6,
+        "outputTime": "1:41:01",
+        "outputSeconds": 6061,
+        "outputPaceMi": "7:42",
+        "outputPaceKm": "4:47"
+      },
+      {
+        "inputTime": "3:45:00",
+        "inputSeconds": 13500,
+        "rpi": 41,
+        "outputTime": "1:48:35",
+        "outputSeconds": 6515,
+        "outputPaceMi": "8:17",
+        "outputPaceKm": "5:09"
+      },
+      {
+        "inputTime": "4:00:00",
+        "inputSeconds": 14400,
+        "rpi": 37.9,
+        "outputTime": "1:56:07",
+        "outputSeconds": 6967,
+        "outputPaceMi": "8:51",
+        "outputPaceKm": "5:30"
+      },
+      {
+        "inputTime": "4:15:00",
+        "inputSeconds": 15300,
+        "rpi": 35.2,
+        "outputTime": "2:03:36",
+        "outputSeconds": 7416,
+        "outputPaceMi": "9:26",
+        "outputPaceKm": "5:52"
+      },
+      {
+        "inputTime": "4:30:00",
+        "inputSeconds": 16200,
+        "rpi": 32.8,
+        "outputTime": "2:11:11",
+        "outputSeconds": 7871,
+        "outputPaceMi": "10:00",
+        "outputPaceKm": "6:13"
+      },
+      {
+        "inputTime": "4:45:00",
+        "inputSeconds": 17100,
+        "rpi": 30.6,
+        "outputTime": "2:18:58",
+        "outputSeconds": 8338,
+        "outputPaceMi": "10:36",
+        "outputPaceKm": "6:35"
+      },
+      {
+        "inputTime": "5:00:00",
+        "inputSeconds": 18000,
+        "rpi": 28.7,
+        "outputTime": "2:26:30",
+        "outputSeconds": 8790,
+        "outputPaceMi": "11:11",
+        "outputPaceKm": "6:57"
+      },
+      {
+        "inputTime": "5:30:00",
+        "inputSeconds": 19800,
+        "rpi": 25.4,
+        "outputTime": "2:41:52",
+        "outputSeconds": 9712,
+        "outputPaceMi": "12:21",
+        "outputPaceKm": "7:40"
+      }
+    ]
+  },
+  "800m-to-mile": {
+    "slug": "800m-to-mile",
+    "label": "800m → Mile",
+    "inputDistance": "800m",
+    "inputDistanceMeters": 800,
+    "outputDistance": "Mile",
+    "outputDistanceMeters": 1609.34,
+    "rows": [
+      {
+        "inputTime": "1:50",
+        "inputSeconds": 110,
+        "rpi": 79.3,
+        "outputTime": "4:01",
+        "outputSeconds": 241,
+        "outputPaceMi": "4:01",
+        "outputPaceKm": "2:30"
+      },
+      {
+        "inputTime": "2:00",
+        "inputSeconds": 120,
+        "rpi": 71.5,
+        "outputTime": "4:15",
+        "outputSeconds": 255,
+        "outputPaceMi": "4:15",
+        "outputPaceKm": "2:38"
+      },
+      {
+        "inputTime": "2:05",
+        "inputSeconds": 125,
+        "rpi": 68.2,
+        "outputTime": "4:25",
+        "outputSeconds": 265,
+        "outputPaceMi": "4:25",
+        "outputPaceKm": "2:45"
+      },
+      {
+        "inputTime": "2:10",
+        "inputSeconds": 130,
+        "rpi": 65.1,
+        "outputTime": "4:37",
+        "outputSeconds": 277,
+        "outputPaceMi": "4:37",
+        "outputPaceKm": "2:52"
+      },
+      {
+        "inputTime": "2:15",
+        "inputSeconds": 135,
+        "rpi": 62.3,
+        "outputTime": "4:48",
+        "outputSeconds": 288,
+        "outputPaceMi": "4:48",
+        "outputPaceKm": "2:59"
+      },
+      {
+        "inputTime": "2:20",
+        "inputSeconds": 140,
+        "rpi": 59.7,
+        "outputTime": "4:59",
+        "outputSeconds": 299,
+        "outputPaceMi": "4:59",
+        "outputPaceKm": "3:06"
+      },
+      {
+        "inputTime": "2:30",
+        "inputSeconds": 150,
+        "rpi": 55.1,
+        "outputTime": "5:21",
+        "outputSeconds": 321,
+        "outputPaceMi": "5:21",
+        "outputPaceKm": "3:19"
+      },
+      {
+        "inputTime": "2:40",
+        "inputSeconds": 160,
+        "rpi": 51.2,
+        "outputTime": "5:43",
+        "outputSeconds": 343,
+        "outputPaceMi": "5:43",
+        "outputPaceKm": "3:33"
+      },
+      {
+        "inputTime": "2:50",
+        "inputSeconds": 170,
+        "rpi": 47.7,
+        "outputTime": "6:05",
+        "outputSeconds": 365,
+        "outputPaceMi": "6:05",
+        "outputPaceKm": "3:47"
+      },
+      {
+        "inputTime": "3:00",
+        "inputSeconds": 180,
+        "rpi": 44.7,
+        "outputTime": "6:27",
+        "outputSeconds": 387,
+        "outputPaceMi": "6:27",
+        "outputPaceKm": "4:00"
+      },
+      {
+        "inputTime": "3:10",
+        "inputSeconds": 190,
+        "rpi": 42,
+        "outputTime": "6:49",
+        "outputSeconds": 409,
+        "outputPaceMi": "6:49",
+        "outputPaceKm": "4:14"
+      },
+      {
+        "inputTime": "3:30",
+        "inputSeconds": 210,
+        "rpi": 37.5,
+        "outputTime": "7:32",
+        "outputSeconds": 452,
+        "outputPaceMi": "7:32",
+        "outputPaceKm": "4:41"
+      }
+    ]
+  },
+  "800m-to-5k": {
+    "slug": "800m-to-5k",
+    "label": "800m → 5K",
+    "inputDistance": "800m",
+    "inputDistanceMeters": 800,
+    "outputDistance": "5K",
+    "outputDistanceMeters": 5000,
+    "rows": [
+      {
+        "inputTime": "1:50",
+        "inputSeconds": 110,
+        "rpi": 79.3,
+        "outputTime": "13:24",
+        "outputSeconds": 804,
+        "outputPaceMi": "4:19",
+        "outputPaceKm": "2:41"
+      },
+      {
+        "inputTime": "2:00",
+        "inputSeconds": 120,
+        "rpi": 71.5,
+        "outputTime": "14:39",
+        "outputSeconds": 879,
+        "outputPaceMi": "4:43",
+        "outputPaceKm": "2:56"
+      },
+      {
+        "inputTime": "2:05",
+        "inputSeconds": 125,
+        "rpi": 68.2,
+        "outputTime": "15:16",
+        "outputSeconds": 916,
+        "outputPaceMi": "4:55",
+        "outputPaceKm": "3:03"
+      },
+      {
+        "inputTime": "2:10",
+        "inputSeconds": 130,
+        "rpi": 65.1,
+        "outputTime": "15:53",
+        "outputSeconds": 953,
+        "outputPaceMi": "5:07",
+        "outputPaceKm": "3:11"
+      },
+      {
+        "inputTime": "2:15",
+        "inputSeconds": 135,
+        "rpi": 62.3,
+        "outputTime": "16:30",
+        "outputSeconds": 990,
+        "outputPaceMi": "5:19",
+        "outputPaceKm": "3:18"
+      },
+      {
+        "inputTime": "2:20",
+        "inputSeconds": 140,
+        "rpi": 59.7,
+        "outputTime": "17:07",
+        "outputSeconds": 1027,
+        "outputPaceMi": "5:31",
+        "outputPaceKm": "3:26"
+      },
+      {
+        "inputTime": "2:30",
+        "inputSeconds": 150,
+        "rpi": 55.1,
+        "outputTime": "18:20",
+        "outputSeconds": 1100,
+        "outputPaceMi": "5:54",
+        "outputPaceKm": "3:40"
+      },
+      {
+        "inputTime": "2:40",
+        "inputSeconds": 160,
+        "rpi": 51.2,
+        "outputTime": "19:32",
+        "outputSeconds": 1172,
+        "outputPaceMi": "6:17",
+        "outputPaceKm": "3:54"
+      },
+      {
+        "inputTime": "2:50",
+        "inputSeconds": 170,
+        "rpi": 47.7,
+        "outputTime": "20:45",
+        "outputSeconds": 1245,
+        "outputPaceMi": "6:41",
+        "outputPaceKm": "4:09"
+      },
+      {
+        "inputTime": "3:00",
+        "inputSeconds": 180,
+        "rpi": 44.7,
+        "outputTime": "21:56",
+        "outputSeconds": 1316,
+        "outputPaceMi": "7:04",
+        "outputPaceKm": "4:23"
+      },
+      {
+        "inputTime": "3:10",
+        "inputSeconds": 190,
+        "rpi": 42,
+        "outputTime": "23:07",
+        "outputSeconds": 1387,
+        "outputPaceMi": "7:26",
+        "outputPaceKm": "4:37"
+      },
+      {
+        "inputTime": "3:30",
+        "inputSeconds": 210,
+        "rpi": 37.5,
+        "outputTime": "25:27",
+        "outputSeconds": 1527,
+        "outputPaceMi": "8:11",
+        "outputPaceKm": "5:05"
       }
     ]
   }

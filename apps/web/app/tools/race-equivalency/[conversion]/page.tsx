@@ -88,26 +88,241 @@ const CONVERSION_PAGE_CONFIG: Record<
     buildFaq: (data) => {
       const row45 = data.rows.find(r => r.inputTime === '45:00')
       const row40 = data.rows.find(r => r.inputTime === '40:00')
-      const row60 = data.rows.find(r => r.inputTime === '60:00')
       return [
         {
           q: 'How accurate is the 10K to half marathon equivalency?',
-          a: `Very accurate — this is the most reliable cross-distance pair in running equivalency. The 10K and half marathon both require sustained effort near lactate threshold, so the aerobic capacity measured by the 10K closely predicts half marathon performance. Most consistently trained runners fall within three to five minutes of their prediction. The gap widens for runners who have done much more 10K-specific training than half marathon preparation.`,
+          a: `Very accurate — this is the most reliable cross-distance pair in running equivalency. The 10K and half marathon both require sustained effort near lactate threshold, so the aerobic capacity measured by the 10K closely predicts half marathon performance. Most consistently trained runners fall within three to five minutes of their prediction.`,
         },
         {
           q: row45 ? `What half marathon time does a 45:00 10K predict?` : `How do I use this table?`,
           a: row45
-            ? `A 45:00 10K gives an RPI of ${row45.rpi}. The equivalent half marathon is ${row45.outputTime} at ${row45.outputPaceMi}/mi. This assumes comparable half marathon preparation. If you have only raced 10Ks and not half marathons, add 3–5 minutes for unfamiliarity with the longer distance until you have race-specific experience.`
-            : `Find your 10K time in the left column and read across to the predicted half marathon time. Use this as a goal-setting tool when you have a recent 10K result but are targeting your first or next half marathon.`,
+            ? `A 45:00 10K gives an RPI of ${row45.rpi}. The equivalent half marathon is ${row45.outputTime} at ${row45.outputPaceMi}/mi. This assumes comparable half marathon preparation.`
+            : `Find your 10K time in the left column and read across to the predicted half marathon time.`,
         },
         {
-          q: row40
-            ? `If I can run ${row40.inputTime} for 10K, what half marathon time is realistic?`
-            : `What is the relationship between 10K and half marathon pace?`,
+          q: row40 ? `If I can run ${row40.inputTime} for 10K, what half marathon is realistic?` : `What is the relationship between 10K and half marathon pace?`,
           a: row40
-            ? `A ${row40.inputTime} 10K runner (RPI ${row40.rpi}) has the aerobic capacity for a ${row40.outputTime} half marathon. Half marathon race pace (${row40.outputPaceMi}/mi) runs about 10–15 seconds per mile slower than 10K race pace — which is exactly what the lactate threshold demands of running 13.1 miles versus 6.2 miles. Train at threshold pace and your half marathon time will naturally drop toward its equivalent.`
-            : `Half marathon pace runs approximately 10–15 seconds per mile slower than 10K pace for most runners. This is the lactate threshold at work: the longer the sustained effort, the slightly lower the sustainable intensity. The Daniels formula captures this relationship precisely.`,
+            ? `A ${row40.inputTime} 10K runner (RPI ${row40.rpi}) has the aerobic capacity for a ${row40.outputTime} half marathon at ${row40.outputPaceMi}/mi. Half marathon pace runs about 10–15 seconds per mile slower than 10K race pace.`
+            : `Half marathon pace runs approximately 10–15 seconds per mile slower than 10K pace. The Daniels formula captures this relationship precisely.`,
         },
+      ]
+    },
+  },
+
+  // ============================================================================
+  // BATCH 2D: 13 new equivalency configs
+  // ============================================================================
+
+  'mile-to-5k': {
+    title: 'Mile to 5K Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your mile time, find your equivalent 5K potential. Computed via the Daniels/Gilbert oxygen cost equation.',
+    h1: 'Mile to 5K Race Equivalency',
+    openingParagraph: 'Your mile time is a precise measure of aerobic capacity and raw speed. This table shows what that capacity predicts for the 5K — the equivalent time a runner with the same fitness would run, assuming 5K-specific preparation. The formula is the Daniels/Gilbert oxygen cost equation.',
+    accuracyNote: 'The mile → 5K prediction is highly accurate for runners who train for both distances. Mile specialists may underperform their 5K equivalent slightly (pure speed training without the threshold stamina the 5K demands); 5K specialists may slightly outperform their mile equivalent. Most consistently trained runners land within 30–60 seconds of the prediction.',
+    buildFaq: (data) => {
+      const row5 = data.rows.find(r => r.inputTime === '5:00')
+      const row4 = data.rows.find(r => r.inputTime === '4:30')
+      return [
+        { q: 'How accurate is the mile to 5K equivalency?', a: `The mile and 5K are physiologically similar — both demand high aerobic output for 4–20 minutes. The equivalency is reliable for runners who train for both distances. The primary divergence: pure mile specialists who lack 5K-specific threshold training may underperform by 30–60 seconds.` },
+        { q: row5 ? `What 5K does a 5:00 mile predict?` : `How do I use this table?`, a: row5 ? `A 5:00 mile (RPI ${row5.rpi}) projects to a ${row5.outputTime} 5K at ${row5.outputPaceMi}/mi. This assumes 5K-specific threshold and interval training — not just mile-race fitness.` : `Find your mile time and read across to the predicted 5K equivalent.` },
+        { q: row4 ? `What 5K does a ${row4.inputTime} mile predict?` : `What is the relationship between mile and 5K pace?`, a: row4 ? `A ${row4.inputTime} mile (RPI ${row4.rpi}) projects to ${row4.outputTime} 5K fitness at ${row4.outputPaceMi}/mi.` : `5K race pace runs roughly 20–30 seconds per mile slower than mile race pace for most runners — the longer distance requires a lower sustainable intensity.` },
+      ]
+    },
+  },
+
+  'mile-to-10k': {
+    title: 'Mile to 10K Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your mile time, find your equivalent 10K potential. Daniels/Gilbert oxygen cost equation.',
+    h1: 'Mile to 10K Race Equivalency',
+    openingParagraph: 'This table shows what your mile time predicts for the 10K — the equivalent time that the same aerobic capacity would support at 6.2 miles, assuming threshold-specific preparation. The 10K demands substantially more threshold stamina than the mile; raw speed transfers differently than aerobic capacity.',
+    accuracyNote: 'Mile → 10K predictions have more divergence than shorter-to-longer predictions because the 10K demands prolonged threshold running that mile specialists often lack. Runners who specifically train threshold work (20–30 minute tempo runs) tend to match their mile-to-10K equivalency closely. Mile specialists who lack threshold training may underperform by 2–5 minutes.',
+    buildFaq: (data) => {
+      const row5 = data.rows.find(r => r.inputTime === '5:00')
+      return [
+        { q: 'How accurate is mile to 10K prediction?', a: `Less accurate than mile-to-5K because the 10K demands sustained threshold effort for 32–60+ minutes — a quality that mile training does not fully develop. Runners who add regular tempo runs to their mile training close most of this gap.` },
+        { q: row5 ? `What 10K does a 5:00 mile predict?` : `How do I use this table?`, a: row5 ? `A 5:00 mile (RPI ${row5.rpi}) projects to a ${row5.outputTime} 10K at ${row5.outputPaceMi}/mi. This assumes threshold-specific training beyond mile preparation.` : `Find your mile time and read across to the predicted 10K equivalent.` },
+        { q: 'Why does the 10K demand different training than the mile?', a: `The mile is run at near-maximum aerobic output for 4–8 minutes. The 10K is run near the lactate threshold for 32–65+ minutes — a fundamentally different energy system demand. Converting mile fitness to 10K performance requires adding sustained threshold work (tempo runs) that mile training alone does not develop.` },
+      ]
+    },
+  },
+
+  'mile-to-half-marathon': {
+    title: 'Mile to Half Marathon Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your mile time, find your equivalent half marathon potential. Daniels/Gilbert oxygen cost equation.',
+    h1: 'Mile to Half Marathon Race Equivalency',
+    openingParagraph: 'Your mile time reflects your aerobic ceiling. This table shows what that ceiling predicts for the half marathon — 13.1 miles of sustained threshold-level effort. The physiological distance between a mile and a half marathon is significant; raw speed converts to half marathon fitness only with distance-specific training.',
+    accuracyNote: 'Mile → half marathon predictions have substantial divergence for runners who lack half marathon-specific training. The equivalency reflects aerobic potential, not fitness developed for sustained 90-minute effort. Runners who add threshold training and long runs (12–15 miles) typically close to within 5 minutes of their prediction.',
+    buildFaq: (data) => {
+      const row5 = data.rows.find(r => r.inputTime === '5:00')
+      return [
+        { q: 'How accurate is mile to half marathon equivalency?', a: `This has the most divergence among the short-to-long predictions. The half marathon demands sustained threshold stamina for 70–120 minutes — a quality that mile training alone does not develop. Runners who add long runs and tempo work to their mile training typically land within 5–8 minutes of the equivalency.` },
+        { q: row5 ? `What half marathon does a 5:00 mile predict?` : `How do I use this table?`, a: row5 ? `A 5:00 mile (RPI ${row5.rpi}) projects to ${row5.outputTime} half marathon potential at ${row5.outputPaceMi}/mi. Reaching this requires threshold-specific training and long runs to 12–15 miles.` : `Find your mile time and read across to the predicted half marathon equivalent.` },
+        { q: 'What training is needed to convert mile fitness to half marathon fitness?', a: `Add weekly threshold tempo runs (20–35 minutes at threshold pace) and build long runs to 12–15 miles. These two additions develop the specific aerobic endurance and lactate stamina that convert raw mile speed into half marathon performance.` },
+      ]
+    },
+  },
+
+  'mile-to-marathon': {
+    title: 'Mile to Marathon Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your mile time, find your equivalent marathon potential. Daniels/Gilbert oxygen cost equation.',
+    h1: 'Mile to Marathon Race Equivalency',
+    openingParagraph: 'This table shows what your mile time predicts for the marathon — a projection that reflects aerobic potential, not marathon readiness. The marathon demands glycogen economy, long-run adaptation, and pacing experience that a mile performance cannot measure. Use this as a ceiling, not a guarantee.',
+    accuracyNote: 'Mile → marathon predictions have the largest divergence of any distance pair. Without 20-mile long runs, marathon-pace work, and sustained high-volume training, most mile specialists underperform their marathon equivalent by 30–60+ minutes. This table shows aerobic potential — realizing it requires complete marathon-specific preparation over 18–24+ weeks.',
+    buildFaq: (data) => {
+      const row5 = data.rows.find(r => r.inputTime === '5:00')
+      return [
+        { q: 'How reliable is mile to marathon equivalency?', a: `Use this as a potential ceiling, not a race prediction. The marathon demands distance-specific adaptations — glycogen economy, long-run fitness, pacing experience, heat management — that a mile performance cannot reflect. Runners with full marathon training typically perform 10–30 minutes over their mile equivalency without this preparation.` },
+        { q: row5 ? `What marathon does a 5:00 mile predict?` : `How do I use this table?`, a: row5 ? `A 5:00 mile (RPI ${row5.rpi}) projects to ${row5.outputTime} marathon potential. This is an aerobic ceiling that requires 20-mile long runs and sustained marathon-pace work to realize.` : `Find your mile time and read across to see what your aerobic capacity could produce in the marathon with proper preparation.` },
+        { q: 'What marathon training does a miler need?', a: `A complete marathon build: 18–20 week program, long runs building to 20–22 miles, weekly threshold work, marathon-pace segments in long runs (final 4–6 miles at goal pace), and weekly mileage of 50–80+ miles. The aerobic engine from mile training is excellent; the specific endurance requires dedicated marathon preparation.` },
+      ]
+    },
+  },
+
+  '5k-to-10k': {
+    title: '5K to 10K Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your 5K time, find your equivalent 10K potential. Daniels/Gilbert oxygen cost equation.',
+    h1: '5K to 10K Race Equivalency',
+    openingParagraph: 'Your 5K time measures aerobic capacity and VO2max-level performance. This table shows what that capacity predicts for the 10K — a distance that demands more sustained threshold stamina but shares the same aerobic engine. Use this for goal-setting when you have a recent 5K result and are targeting a 10K.',
+    accuracyNote: 'The 5K → 10K prediction is reliable for runners who train for both distances with threshold work. The primary divergence: runners whose training emphasizes interval work (5K-specific) over tempo runs (10K-specific) may underperform their 10K equivalent by 1–3 minutes. Adding weekly threshold sessions closes this gap.',
+    buildFaq: (data) => {
+      const row20 = data.rows.find(r => r.inputTime === '20:00')
+      const row25 = data.rows.find(r => r.inputTime === '25:00')
+      return [
+        { q: 'How accurate is 5K to 10K prediction?', a: `Accurate for runners who train both quality types (interval + threshold). The 5K and 10K share similar aerobic demands, but the 10K requires more sustained threshold stamina. Most consistently trained runners land within 2 minutes of the prediction.` },
+        { q: row20 ? `What 10K does a 20:00 5K predict?` : `How do I use this table?`, a: row20 ? `A 20:00 5K (RPI ${row20.rpi}) projects to a ${row20.outputTime} 10K at ${row20.outputPaceMi}/mi. Adding threshold work to your training bridges any gap between your 5K and 10K fitness.` : `Find your 5K time and read across to the predicted 10K equivalent.` },
+        { q: row25 ? `What 10K does a 25:00 5K predict?` : `What training develops 10K fitness from 5K fitness?`, a: row25 ? `A 25:00 5K (RPI ${row25.rpi}) projects to ${row25.outputTime} 10K at ${row25.outputPaceMi}/mi.` : `Add weekly threshold tempo runs (20–30 minutes at threshold pace) to 5K-focused interval training. This converts raw aerobic capacity into the sustained threshold stamina the 10K demands.` },
+      ]
+    },
+  },
+
+  '5k-to-half-marathon': {
+    title: '5K to Half Marathon Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your 5K time, find your equivalent half marathon potential. Daniels/Gilbert oxygen cost equation.',
+    h1: '5K to Half Marathon Race Equivalency',
+    openingParagraph: 'Your 5K time is a reliable measure of aerobic capacity. This table shows what that capacity predicts for the half marathon — assuming threshold-specific training and half marathon-appropriate long runs. The physiological distance is bridgeable with the right training additions.',
+    accuracyNote: 'The 5K → half marathon prediction is accurate when half marathon-specific training is in place: long runs of 12–15 miles and threshold tempo runs (25–35 minutes). Without these, most 5K-trained runners underperform their half marathon equivalent by 5–10 minutes. With them, the typical gap closes to 2–4 minutes.',
+    buildFaq: (data) => {
+      const row20 = data.rows.find(r => r.inputTime === '20:00')
+      return [
+        { q: 'What training converts 5K fitness to half marathon fitness?', a: `Add two key elements to 5K training: weekly threshold tempo runs (25–35 minutes at threshold pace) and long runs building to 12–15 miles at easy pace. These develop the sustained effort and aerobic endurance that 5K training alone does not.` },
+        { q: row20 ? `What half marathon does a 20:00 5K predict?` : `How do I use this table?`, a: row20 ? `A 20:00 5K (RPI ${row20.rpi}) projects to ${row20.outputTime} half marathon fitness at ${row20.outputPaceMi}/mi. This assumes half-marathon specific preparation is in place.` : `Find your 5K time in the left column and read across to the predicted half marathon equivalent.` },
+        { q: 'Is the 5K to half marathon equivalency reliable?', a: `Reliable when half-specific training exists. The 5K measures aerobic capacity that the half marathon uses — but the half demands sustained effort for 70–120 minutes, which requires specific endurance development beyond what 5K training produces.` },
+      ]
+    },
+  },
+
+  '10k-to-marathon': {
+    title: '10K to Marathon Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your 10K time, find your equivalent marathon potential. Daniels/Gilbert oxygen cost equation.',
+    h1: '10K to Marathon Race Equivalency',
+    openingParagraph: 'Your 10K time reveals your aerobic capacity and threshold fitness. This table shows what that fitness predicts for the marathon — the equivalent time that the same aerobic engine could support, assuming full marathon-specific preparation. The caveat is always marathon preparation: long runs, glycogen economy, and pacing experience matter enormously.',
+    accuracyNote: 'The 10K → marathon prediction is accurate for runners with complete marathon training (20-mile long runs, marathon-pace work, 50+ miles/week). Without this preparation, most 10K-trained runners underperform by 15–30 minutes. The 10K is a better aerobic benchmark for marathon than shorter distances — but specific marathon training is the non-negotiable variable.',
+    buildFaq: (data) => {
+      const row40 = data.rows.find(r => r.inputTime === '40:00')
+      const row50 = data.rows.find(r => r.inputTime === '50:00')
+      return [
+        { q: 'How accurate is 10K to marathon prediction?', a: `Accurate for runners with proper marathon preparation. The 10K measures aerobic and threshold fitness that the marathon uses — but the marathon demands glycogen economy and sustained pacing that only long-run training develops. Runners with 20-mile long runs and marathon-pace work typically land within 5–10 minutes of their prediction.` },
+        { q: row40 ? `What marathon does a 40:00 10K predict?` : `How do I use this table?`, a: row40 ? `A 40:00 10K (RPI ${row40.rpi}) projects to a ${row40.outputTime} marathon at ${row40.outputPaceMi}/mi. This is the aerobic potential — reaching it requires 20-mile long runs and a full marathon build.` : `Find your 10K time and read across to the predicted marathon equivalent.` },
+        { q: row50 ? `What marathon does a 50:00 10K predict?` : `What marathon training is needed after building 10K fitness?`, a: row50 ? `A 50:00 10K (RPI ${row50.rpi}) projects to ${row50.outputTime} marathon potential at ${row50.outputPaceMi}/mi.` : `Long runs to 20+ miles, marathon-pace segments in long runs (final 4–6 miles at goal pace), and weekly mileage of 45–65+ miles are the key additions to 10K training for full marathon preparation.` },
+      ]
+    },
+  },
+
+  'half-marathon-to-marathon': {
+    title: 'Half Marathon to Marathon Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your half marathon time, find your marathon equivalent. The most reliable long-distance cross-prediction. Daniels/Gilbert oxygen cost equation.',
+    h1: 'Half Marathon to Marathon Race Equivalency',
+    openingParagraph: 'Your half marathon time is the best single predictor of marathon fitness available short of racing a marathon. Both distances demand aerobic and threshold endurance — the half marathon measures these qualities directly. This table shows what your half time predicts for the full 26.2, assuming full marathon preparation.',
+    accuracyNote: 'Half marathon → marathon is the most reliable long-distance prediction. Both distances tax similar energy systems, and runners who have built comparable training for each distance typically run within 5–10 minutes of their equivalency. The main divergence: runners who have trained specifically for the half but lack 20-mile long runs underperform their marathon equivalent by 10–20 minutes. Long-run endurance is the variable the half cannot measure.',
+    buildFaq: (data) => {
+      const row130 = data.rows.find(r => r.inputTime === '1:30:00')
+      const row145 = data.rows.find(r => r.inputTime === '1:45:00')
+      return [
+        { q: 'Is half marathon to marathon the most reliable equivalency?', a: `Yes — the half marathon is the best single non-marathon predictor of marathon fitness. Both distances require sustained aerobic and threshold endurance for 70–210+ minutes. The primary gap: the marathon demands specific long-run adaptation (20-mile long runs) that the half marathon does not test.` },
+        { q: row130 ? `What marathon does a 1:30:00 half predict?` : `How do I use this table?`, a: row130 ? `A 1:30:00 half marathon (RPI ${row130.rpi}) projects to a ${row130.outputTime} marathon at ${row130.outputPaceMi}/mi. This assumes full marathon preparation including 20-mile long runs.` : `Find your half marathon time and read across to the predicted marathon equivalent.` },
+        { q: row145 ? `What marathon does a 1:45:00 half predict?` : `What training is needed to convert half fitness to marathon fitness?`, a: row145 ? `A 1:45:00 half marathon (RPI ${row145.rpi}) projects to ${row145.outputTime} marathon at ${row145.outputPaceMi}/mi.` : `Long runs to 20 miles, marathon-pace work in long runs (final 4–6 miles at goal pace), and sustained weekly mileage of 40–60+ miles are the key additions to half marathon training for full marathon preparation.` },
+      ]
+    },
+  },
+
+  'marathon-to-5k': {
+    title: 'Marathon to 5K Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your marathon time, find your equivalent 5K potential. Daniels/Gilbert oxygen cost equation.',
+    h1: 'Marathon to 5K Race Equivalency',
+    openingParagraph: 'Your marathon time reflects deep aerobic fitness built from high mileage and sustained endurance training. This table shows what that aerobic capacity predicts for the 5K — a very different kind of race. The 5K demands raw speed and VO2max output that marathon training may not fully develop.',
+    accuracyNote: 'Marathon → 5K predictions often show that marathon-trained runners underperform their 5K equivalent. Marathon training builds endurance and fat metabolism; the 5K demands high-intensity VO2max output that requires specific interval training. Most marathon runners find their actual 5K runs 30–90 seconds per mile slower than race pace implies — their aerobic engine is there but the high-speed neuromuscular and metabolic systems need 5K-specific training.',
+    buildFaq: (data) => {
+      const row3 = data.rows.find(r => r.inputTime === '3:00:00')
+      const row4 = data.rows.find(r => r.inputTime === '4:00:00')
+      return [
+        { q: 'Why do marathon runners often underperform their 5K equivalent?', a: `Marathon training develops aerobic endurance and fat-based fuel economy. The 5K requires running at near-maximum aerobic output for 15–35 minutes — a VO2max-demanding effort that marathon training does not specifically develop. Adding interval training (800m–1200m repeats at interval pace) bridges this gap for marathon runners wanting to run fast 5Ks.` },
+        { q: row3 ? `What 5K does a 3:00:00 marathon predict?` : `How do I use this table?`, a: row3 ? `A 3:00:00 marathon (RPI ${row3.rpi}) projects to ${row3.outputTime} 5K fitness at ${row3.outputPaceMi}/mi. Marathon runners may need 6–12 weeks of 5K-specific interval training to realize this potential.` : `Find your marathon time and read across to the predicted 5K equivalent.` },
+        { q: row4 ? `What 5K does a 4:00:00 marathon predict?` : `What 5K training does a marathon runner need?`, a: row4 ? `A 4:00:00 marathon (RPI ${row4.rpi}) projects to ${row4.outputTime} 5K fitness.` : `Add weekly interval sessions (800m–1200m repeats at interval pace) to your marathon easy-running base. Six to twelve weeks of interval work typically converts marathon aerobic capacity into competitive 5K performance.` },
+      ]
+    },
+  },
+
+  'marathon-to-10k': {
+    title: 'Marathon to 10K Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your marathon time, find your equivalent 10K potential. Daniels/Gilbert oxygen cost equation.',
+    h1: 'Marathon to 10K Race Equivalency',
+    openingParagraph: 'Your marathon time is a measure of your aerobic and threshold capacity. The 10K uses similar energy systems — this table shows what your marathon fitness predicts for the 10K. Marathon runners often perform closer to their 10K equivalency than their 5K equivalency because both require sustained threshold effort.',
+    accuracyNote: 'Marathon runners typically run closer to their 10K equivalent than to their 5K equivalent. The 10K requires threshold stamina that marathon training develops. The primary gap: the 10K also demands higher-intensity interval-pace fitness. Runners who add occasional interval sessions to marathon training often match their 10K prediction within 1–2 minutes.',
+    buildFaq: (data) => {
+      const row3 = data.rows.find(r => r.inputTime === '3:00:00')
+      return [
+        { q: 'How accurate is marathon to 10K equivalency?', a: `More accurate than marathon-to-5K because the 10K relies more heavily on threshold fitness that marathon training develops. Most marathon runners fall within 2–4 minutes of their 10K equivalent — closer when they include some threshold work in training.` },
+        { q: row3 ? `What 10K does a 3:00:00 marathon predict?` : `How do I use this table?`, a: row3 ? `A 3:00:00 marathon (RPI ${row3.rpi}) projects to ${row3.outputTime} 10K fitness at ${row3.outputPaceMi}/mi.` : `Find your marathon time and read across to the predicted 10K equivalent.` },
+        { q: 'What training converts marathon fitness to 10K performance?', a: `Add threshold tempo runs (20–30 minutes at threshold pace) and occasional interval sessions to your marathon base. Two to three months of this targeted work typically converts marathon aerobic capacity into competitive 10K performance.` },
+      ]
+    },
+  },
+
+  'marathon-to-half-marathon': {
+    title: 'Marathon to Half Marathon Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your marathon time, find your equivalent half marathon potential. Daniels/Gilbert oxygen cost equation.',
+    h1: 'Marathon to Half Marathon Race Equivalency',
+    openingParagraph: 'The half marathon and marathon share similar physiological demands — both require sustained aerobic and threshold endurance. This table shows what your marathon fitness predicts for the half marathon. For runners transitioning from marathon to half-marathon focus, the equivalency is often achievable or exceeded within a few weeks.',
+    accuracyNote: 'Marathon → half marathon is among the more reliable reverse-direction predictions. Both distances tax similar energy systems. Marathon-trained runners often slightly outperform their half marathon equivalent because the high-threshold intensity of the half marathon is easier to sustain than marathon pace over 13.1 miles with full marathon training. Typical accuracy: within 2–4 minutes.',
+    buildFaq: (data) => {
+      const row3 = data.rows.find(r => r.inputTime === '3:00:00')
+      const row4 = data.rows.find(r => r.inputTime === '4:00:00')
+      return [
+        { q: 'Will marathon training help my half marathon time?', a: `Yes — marathon training builds the aerobic base and threshold stamina that the half marathon demands. Marathon runners transitioning to the half often find their performance exceeds the prediction because the shorter distance demands less endurance but similar aerobic and threshold capacity.` },
+        { q: row3 ? `What half marathon does a 3:00:00 marathon predict?` : `How do I use this table?`, a: row3 ? `A 3:00:00 marathon (RPI ${row3.rpi}) projects to ${row3.outputTime} half marathon fitness at ${row3.outputPaceMi}/mi.` : `Find your marathon time and read across to the predicted half marathon equivalent.` },
+        { q: row4 ? `What half marathon does a 4:00:00 marathon predict?` : `What changes when switching from marathon to half marathon focus?`, a: row4 ? `A 4:00:00 marathon (RPI ${row4.rpi}) projects to ${row4.outputTime} half marathon potential.` : `Add threshold work (20–30 minute tempo runs) to your marathon base. Reduce long runs to 12–15 miles and add more intensity. Within 6–10 weeks of half-specific training, most marathon runners approach or exceed their half marathon equivalency.` },
+      ]
+    },
+  },
+
+  '800m-to-mile': {
+    title: '800m to Mile Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your 800m time, find your equivalent mile potential. Daniels/Gilbert oxygen cost equation.',
+    h1: '800m to Mile Race Equivalency',
+    openingParagraph: 'The 800m and mile share high-intensity aerobic demands with a significant anaerobic component. This table shows what your 800m time predicts for the mile — assuming mile-specific endurance development. Pure 800m speed transfers closely to the mile for runners with strong aerobic training.',
+    accuracyNote: 'The 800m → mile prediction is accurate for runners who train both distances. The primary divergence: runners with very high anaerobic capacity relative to aerobic capacity (pure 800m specialists) may underperform their mile equivalent slightly. Aerobic training — easy running volume and threshold work — bridges this gap. Most track athletes find the prediction accurate within 5–10 seconds.',
+    buildFaq: (data) => {
+      const row2 = data.rows.find(r => r.inputTime === '2:00')
+      return [
+        { q: 'How accurate is 800m to mile equivalency?', a: `Accurate for runners with strong aerobic development. The 800m and mile both require high-intensity output — the formula predicts the mile time that the same aerobic capacity supports. Purely anaerobic runners may underperform; aerobically trained middle-distance runners typically match the prediction within 5–10 seconds.` },
+        { q: row2 ? `What mile does a 2:00 800m predict?` : `How do I use this table?`, a: row2 ? `A 2:00 800m (RPI ${row2.rpi}) projects to ${row2.outputTime} mile fitness at ${row2.outputPaceMi}/mi.` : `Find your 800m time and read across to the predicted mile equivalent.` },
+        { q: 'What training converts 800m speed to mile fitness?', a: `Add easy aerobic volume (easy running at easy pace for 30–50+ miles/week) and threshold training (1600m–3200m tempo runs) to 800m-specific interval work. The aerobic base that mile racing demands is the primary addition for 800m runners transitioning to the mile.` },
+      ]
+    },
+  },
+
+  '800m-to-5k': {
+    title: '800m to 5K Equivalency Table — Daniels/Gilbert Formula',
+    description: 'Given your 800m time, find your equivalent 5K potential. Daniels/Gilbert oxygen cost equation.',
+    h1: '800m to 5K Race Equivalency',
+    openingParagraph: 'Your 800m time measures raw speed and aerobic capacity at high intensity. This table shows what that capacity predicts for the 5K — a distance that demands sustained aerobic output for 15–35 minutes. The conversion requires specific aerobic development beyond what 800m training produces.',
+    accuracyNote: 'The 800m → 5K prediction has substantial divergence for 800m specialists who lack 5K-specific endurance training. The aerobic ceiling measured by the 800m is real, but converting it to 5K performance requires threshold training and adequate easy-run volume that pure 800m training may not develop. Runners with 5–10 weeks of 5K-specific preparation typically close to within 30–60 seconds of the prediction.',
+    buildFaq: (data) => {
+      const row2 = data.rows.find(r => r.inputTime === '2:00')
+      return [
+        { q: 'Why do 800m runners often struggle in the 5K?', a: `The 800m is run at near-VO2max intensity for 1:45–3:00 — demanding anaerobic capacity and raw speed. The 5K requires sustaining effort near (but below) VO2max for 15–35 minutes — a fundamentally different stamina demand. Without threshold training and easy aerobic volume, 800m speed does not convert directly to 5K performance.` },
+        { q: row2 ? `What 5K does a 2:00 800m predict?` : `How do I use this table?`, a: row2 ? `A 2:00 800m (RPI ${row2.rpi}) projects to ${row2.outputTime} 5K fitness at ${row2.outputPaceMi}/mi. This assumes 5K-specific training: threshold work and easy volume.` : `Find your 800m time and read across to the predicted 5K equivalent.` },
+        { q: 'What training does an 800m runner need to develop 5K fitness?', a: `Add threshold tempo runs (15–25 minutes at threshold pace) and increase easy running volume to 35–50+ miles per week. Six to twelve weeks of this aerobic base development converts 800m speed into competitive 5K performance. The aerobic ceiling from 800m training is high — it just needs the endurance layer to support 5K duration.` },
       ]
     },
   },

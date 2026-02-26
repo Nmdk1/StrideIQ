@@ -1,0 +1,1416 @@
+{
+  "_meta": {
+    "generated": "2026-02-26T21:57:13.570Z",
+    "schemaVersion": "1.0",
+    "source": "BAA Boston Marathon Qualifying Standards 2026 (verified 2026-02-26)",
+    "note": "BQ times are fixed BAA standards. RPI, paces, and equivalents are computed via rpi-formula.mjs."
+  },
+  "boston-qualifying-time-men-18-34": {
+    "slug": "boston-qualifying-time-men-18-34",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "18–34",
+    "midAge": 30,
+    "bqTime": "2:55:00",
+    "bqSeconds": 10500,
+    "rpi": 55.3,
+    "wmaGradePct": 68.9,
+    "paces": {
+      "easy": {
+        "mi": "7:52",
+        "km": "4:53",
+        "secPerMile": 472
+      },
+      "marathon": {
+        "mi": "6:47",
+        "km": "4:13",
+        "secPerMile": 407
+      },
+      "threshold": {
+        "mi": "6:24",
+        "km": "3:59",
+        "secPerMile": 384
+      },
+      "interval": {
+        "mi": "5:38",
+        "km": "3:30",
+        "secPerMile": 338
+      },
+      "repetition": {
+        "mi": "5:15",
+        "km": "3:16",
+        "secPerMile": 315
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1097,
+        "timeFormatted": "18:17",
+        "paceMi": "5:53",
+        "paceKm": "3:39"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2275,
+        "timeFormatted": "37:55",
+        "paceMi": "6:06",
+        "paceKm": "3:47"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5032,
+        "timeFormatted": "1:23:52",
+        "paceMi": "6:24",
+        "paceKm": "3:59"
+      }
+    }
+  },
+  "boston-qualifying-time-men-35-39": {
+    "slug": "boston-qualifying-time-men-35-39",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "35–39",
+    "midAge": 37,
+    "bqTime": "3:00:00",
+    "bqSeconds": 10800,
+    "rpi": 53.5,
+    "wmaGradePct": 67.1,
+    "paces": {
+      "easy": {
+        "mi": "8:04",
+        "km": "5:01",
+        "secPerMile": 484
+      },
+      "marathon": {
+        "mi": "6:56",
+        "km": "4:18",
+        "secPerMile": 416
+      },
+      "threshold": {
+        "mi": "6:31",
+        "km": "4:03",
+        "secPerMile": 391
+      },
+      "interval": {
+        "mi": "5:44",
+        "km": "3:34",
+        "secPerMile": 344
+      },
+      "repetition": {
+        "mi": "5:20",
+        "km": "3:19",
+        "secPerMile": 320
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1129,
+        "timeFormatted": "18:49",
+        "paceMi": "6:03",
+        "paceKm": "3:46"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2341,
+        "timeFormatted": "39:01",
+        "paceMi": "6:17",
+        "paceKm": "3:54"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5179,
+        "timeFormatted": "1:26:19",
+        "paceMi": "6:35",
+        "paceKm": "4:05"
+      }
+    }
+  },
+  "boston-qualifying-time-men-40-44": {
+    "slug": "boston-qualifying-time-men-40-44",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "40–44",
+    "midAge": 42,
+    "bqTime": "3:05:00",
+    "bqSeconds": 11100,
+    "rpi": 51.8,
+    "wmaGradePct": 67.8,
+    "paces": {
+      "easy": {
+        "mi": "8:15",
+        "km": "5:08",
+        "secPerMile": 495
+      },
+      "marathon": {
+        "mi": "7:05",
+        "km": "4:24",
+        "secPerMile": 425
+      },
+      "threshold": {
+        "mi": "6:39",
+        "km": "4:08",
+        "secPerMile": 399
+      },
+      "interval": {
+        "mi": "5:50",
+        "km": "3:37",
+        "secPerMile": 350
+      },
+      "repetition": {
+        "mi": "5:25",
+        "km": "3:22",
+        "secPerMile": 325
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1161,
+        "timeFormatted": "19:21",
+        "paceMi": "6:14",
+        "paceKm": "3:52"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2406,
+        "timeFormatted": "40:06",
+        "paceMi": "6:27",
+        "paceKm": "4:00"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5325,
+        "timeFormatted": "1:28:45",
+        "paceMi": "6:46",
+        "paceKm": "4:12"
+      }
+    }
+  },
+  "boston-qualifying-time-men-45-49": {
+    "slug": "boston-qualifying-time-men-45-49",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "45–49",
+    "midAge": 47,
+    "bqTime": "3:15:00",
+    "bqSeconds": 11700,
+    "rpi": 48.7,
+    "wmaGradePct": 67.1,
+    "paces": {
+      "easy": {
+        "mi": "8:37",
+        "km": "5:21",
+        "secPerMile": 517
+      },
+      "marathon": {
+        "mi": "7:21",
+        "km": "4:34",
+        "secPerMile": 441
+      },
+      "threshold": {
+        "mi": "6:54",
+        "km": "4:17",
+        "secPerMile": 414
+      },
+      "interval": {
+        "mi": "6:03",
+        "km": "3:46",
+        "secPerMile": 363
+      },
+      "repetition": {
+        "mi": "5:36",
+        "km": "3:29",
+        "secPerMile": 336
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1223,
+        "timeFormatted": "20:23",
+        "paceMi": "6:34",
+        "paceKm": "4:05"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2536,
+        "timeFormatted": "42:16",
+        "paceMi": "6:48",
+        "paceKm": "4:14"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5618,
+        "timeFormatted": "1:33:38",
+        "paceMi": "7:09",
+        "paceKm": "4:27"
+      }
+    }
+  },
+  "boston-qualifying-time-men-50-54": {
+    "slug": "boston-qualifying-time-men-50-54",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "50–54",
+    "midAge": 52,
+    "bqTime": "3:20:00",
+    "bqSeconds": 12000,
+    "rpi": 47.2,
+    "wmaGradePct": 68.5,
+    "paces": {
+      "easy": {
+        "mi": "8:47",
+        "km": "5:27",
+        "secPerMile": 527
+      },
+      "marathon": {
+        "mi": "7:29",
+        "km": "4:39",
+        "secPerMile": 449
+      },
+      "threshold": {
+        "mi": "7:02",
+        "km": "4:22",
+        "secPerMile": 422
+      },
+      "interval": {
+        "mi": "6:10",
+        "km": "3:50",
+        "secPerMile": 370
+      },
+      "repetition": {
+        "mi": "5:43",
+        "km": "3:33",
+        "secPerMile": 343
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1257,
+        "timeFormatted": "20:57",
+        "paceMi": "6:45",
+        "paceKm": "4:12"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2605,
+        "timeFormatted": "43:25",
+        "paceMi": "6:59",
+        "paceKm": "4:20"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5772,
+        "timeFormatted": "1:36:12",
+        "paceMi": "7:20",
+        "paceKm": "4:33"
+      }
+    }
+  },
+  "boston-qualifying-time-men-55-59": {
+    "slug": "boston-qualifying-time-men-55-59",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "55–59",
+    "midAge": 57,
+    "bqTime": "3:30:00",
+    "bqSeconds": 12600,
+    "rpi": 44.6,
+    "wmaGradePct": 68.4,
+    "paces": {
+      "easy": {
+        "mi": "9:08",
+        "km": "5:41",
+        "secPerMile": 548
+      },
+      "marathon": {
+        "mi": "7:43",
+        "km": "4:48",
+        "secPerMile": 463
+      },
+      "threshold": {
+        "mi": "7:17",
+        "km": "4:32",
+        "secPerMile": 437
+      },
+      "interval": {
+        "mi": "6:23",
+        "km": "3:58",
+        "secPerMile": 383
+      },
+      "repetition": {
+        "mi": "5:55",
+        "km": "3:41",
+        "secPerMile": 355
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1318,
+        "timeFormatted": "21:58",
+        "paceMi": "7:04",
+        "paceKm": "4:23"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2734,
+        "timeFormatted": "45:34",
+        "paceMi": "7:20",
+        "paceKm": "4:33"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6061,
+        "timeFormatted": "1:41:01",
+        "paceMi": "7:42",
+        "paceKm": "4:47"
+      }
+    }
+  },
+  "boston-qualifying-time-men-60-64": {
+    "slug": "boston-qualifying-time-men-60-64",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "60–64",
+    "midAge": 62,
+    "bqTime": "3:50:00",
+    "bqSeconds": 13800,
+    "rpi": 39.9,
+    "wmaGradePct": 65.7,
+    "paces": {
+      "easy": {
+        "mi": "9:55",
+        "km": "6:10",
+        "secPerMile": 595
+      },
+      "marathon": {
+        "mi": "8:16",
+        "km": "5:08",
+        "secPerMile": 496
+      },
+      "threshold": {
+        "mi": "7:48",
+        "km": "4:51",
+        "secPerMile": 468
+      },
+      "interval": {
+        "mi": "6:49",
+        "km": "4:14",
+        "secPerMile": 409
+      },
+      "repetition": {
+        "mi": "6:17",
+        "km": "3:54",
+        "secPerMile": 377
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1449,
+        "timeFormatted": "24:09",
+        "paceMi": "7:46",
+        "paceKm": "4:50"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3007,
+        "timeFormatted": "50:07",
+        "paceMi": "8:04",
+        "paceKm": "5:01"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6667,
+        "timeFormatted": "1:51:07",
+        "paceMi": "8:29",
+        "paceKm": "5:16"
+      }
+    }
+  },
+  "boston-qualifying-time-men-65-69": {
+    "slug": "boston-qualifying-time-men-65-69",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "65–69",
+    "midAge": 67,
+    "bqTime": "4:05:00",
+    "bqSeconds": 14700,
+    "rpi": 37,
+    "wmaGradePct": 65,
+    "paces": {
+      "easy": {
+        "mi": "10:32",
+        "km": "6:33",
+        "secPerMile": 632
+      },
+      "marathon": {
+        "mi": "8:44",
+        "km": "5:26",
+        "secPerMile": 524
+      },
+      "threshold": {
+        "mi": "8:14",
+        "km": "5:07",
+        "secPerMile": 494
+      },
+      "interval": {
+        "mi": "7:10",
+        "km": "4:27",
+        "secPerMile": 430
+      },
+      "repetition": {
+        "mi": "6:35",
+        "km": "4:05",
+        "secPerMile": 395
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1545,
+        "timeFormatted": "25:45",
+        "paceMi": "8:17",
+        "paceKm": "5:09"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3207,
+        "timeFormatted": "53:27",
+        "paceMi": "8:36",
+        "paceKm": "5:21"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 7111,
+        "timeFormatted": "1:58:31",
+        "paceMi": "9:02",
+        "paceKm": "5:37"
+      }
+    }
+  },
+  "boston-qualifying-time-men-70-74": {
+    "slug": "boston-qualifying-time-men-70-74",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "70–74",
+    "midAge": 72,
+    "bqTime": "4:20:00",
+    "bqSeconds": 15600,
+    "rpi": 34.4,
+    "wmaGradePct": 64.8,
+    "paces": {
+      "easy": {
+        "mi": "11:12",
+        "km": "6:58",
+        "secPerMile": 672
+      },
+      "marathon": {
+        "mi": "9:14",
+        "km": "5:44",
+        "secPerMile": 554
+      },
+      "threshold": {
+        "mi": "8:43",
+        "km": "5:25",
+        "secPerMile": 523
+      },
+      "interval": {
+        "mi": "7:33",
+        "km": "4:41",
+        "secPerMile": 453
+      },
+      "repetition": {
+        "mi": "6:56",
+        "km": "4:18",
+        "secPerMile": 416
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1642,
+        "timeFormatted": "27:22",
+        "paceMi": "8:49",
+        "paceKm": "5:29"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3412,
+        "timeFormatted": "56:52",
+        "paceMi": "9:09",
+        "paceKm": "5:41"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 7563,
+        "timeFormatted": "2:06:03",
+        "paceMi": "9:37",
+        "paceKm": "5:59"
+      }
+    }
+  },
+  "boston-qualifying-time-men-75-79": {
+    "slug": "boston-qualifying-time-men-75-79",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "75–79",
+    "midAge": 77,
+    "bqTime": "4:35:00",
+    "bqSeconds": 16500,
+    "rpi": 32,
+    "wmaGradePct": 66.2,
+    "paces": {
+      "easy": {
+        "mi": "12:06",
+        "km": "7:31",
+        "secPerMile": 726
+      },
+      "marathon": {
+        "mi": "9:54",
+        "km": "6:09",
+        "secPerMile": 594
+      },
+      "threshold": {
+        "mi": "9:20",
+        "km": "5:48",
+        "secPerMile": 560
+      },
+      "interval": {
+        "mi": "8:04",
+        "km": "5:01",
+        "secPerMile": 484
+      },
+      "repetition": {
+        "mi": "7:23",
+        "km": "4:35",
+        "secPerMile": 443
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1745,
+        "timeFormatted": "29:05",
+        "paceMi": "9:22",
+        "paceKm": "5:49"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3626,
+        "timeFormatted": "1:00:26",
+        "paceMi": "9:44",
+        "paceKm": "6:03"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 8035,
+        "timeFormatted": "2:13:55",
+        "paceMi": "10:13",
+        "paceKm": "6:21"
+      }
+    }
+  },
+  "boston-qualifying-time-men-80-plus": {
+    "slug": "boston-qualifying-time-men-80-plus",
+    "gender": "male",
+    "genderLabel": "Men",
+    "ageGroup": "80+",
+    "midAge": 80,
+    "bqTime": "4:50:00",
+    "bqSeconds": 17400,
+    "rpi": 30,
+    "wmaGradePct": 66.9,
+    "paces": {
+      "easy": {
+        "mi": "12:56",
+        "km": "8:02",
+        "secPerMile": 776
+      },
+      "marathon": {
+        "mi": "10:31",
+        "km": "6:32",
+        "secPerMile": 631
+      },
+      "threshold": {
+        "mi": "9:55",
+        "km": "6:10",
+        "secPerMile": 595
+      },
+      "interval": {
+        "mi": "8:33",
+        "km": "5:19",
+        "secPerMile": 513
+      },
+      "repetition": {
+        "mi": "7:49",
+        "km": "4:51",
+        "secPerMile": 469
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1841,
+        "timeFormatted": "30:41",
+        "paceMi": "9:53",
+        "paceKm": "6:08"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3830,
+        "timeFormatted": "1:03:50",
+        "paceMi": "10:16",
+        "paceKm": "6:23"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 8479,
+        "timeFormatted": "2:21:19",
+        "paceMi": "10:47",
+        "paceKm": "6:42"
+      }
+    }
+  },
+  "boston-qualifying-time-women-18-34": {
+    "slug": "boston-qualifying-time-women-18-34",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "18–34",
+    "midAge": 30,
+    "bqTime": "3:25:00",
+    "bqSeconds": 12300,
+    "rpi": 45.9,
+    "wmaGradePct": 63.5,
+    "paces": {
+      "easy": {
+        "mi": "8:57",
+        "km": "5:34",
+        "secPerMile": 537
+      },
+      "marathon": {
+        "mi": "7:36",
+        "km": "4:43",
+        "secPerMile": 456
+      },
+      "threshold": {
+        "mi": "7:10",
+        "km": "4:27",
+        "secPerMile": 430
+      },
+      "interval": {
+        "mi": "6:16",
+        "km": "3:54",
+        "secPerMile": 376
+      },
+      "repetition": {
+        "mi": "5:49",
+        "km": "3:37",
+        "secPerMile": 349
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1286,
+        "timeFormatted": "21:26",
+        "paceMi": "6:54",
+        "paceKm": "4:17"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2668,
+        "timeFormatted": "44:28",
+        "paceMi": "7:09",
+        "paceKm": "4:27"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5913,
+        "timeFormatted": "1:38:33",
+        "paceMi": "7:31",
+        "paceKm": "4:40"
+      }
+    }
+  },
+  "boston-qualifying-time-women-35-39": {
+    "slug": "boston-qualifying-time-women-35-39",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "35–39",
+    "midAge": 37,
+    "bqTime": "3:30:00",
+    "bqSeconds": 12600,
+    "rpi": 44.6,
+    "wmaGradePct": 63.1,
+    "paces": {
+      "easy": {
+        "mi": "9:08",
+        "km": "5:41",
+        "secPerMile": 548
+      },
+      "marathon": {
+        "mi": "7:43",
+        "km": "4:48",
+        "secPerMile": 463
+      },
+      "threshold": {
+        "mi": "7:17",
+        "km": "4:32",
+        "secPerMile": 437
+      },
+      "interval": {
+        "mi": "6:23",
+        "km": "3:58",
+        "secPerMile": 383
+      },
+      "repetition": {
+        "mi": "5:55",
+        "km": "3:41",
+        "secPerMile": 355
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1318,
+        "timeFormatted": "21:58",
+        "paceMi": "7:04",
+        "paceKm": "4:23"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2734,
+        "timeFormatted": "45:34",
+        "paceMi": "7:20",
+        "paceKm": "4:33"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6061,
+        "timeFormatted": "1:41:01",
+        "paceMi": "7:42",
+        "paceKm": "4:47"
+      }
+    }
+  },
+  "boston-qualifying-time-women-40-44": {
+    "slug": "boston-qualifying-time-women-40-44",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "40–44",
+    "midAge": 42,
+    "bqTime": "3:35:00",
+    "bqSeconds": 12900,
+    "rpi": 43.3,
+    "wmaGradePct": 63.1,
+    "paces": {
+      "easy": {
+        "mi": "9:20",
+        "km": "5:48",
+        "secPerMile": 560
+      },
+      "marathon": {
+        "mi": "7:52",
+        "km": "4:53",
+        "secPerMile": 472
+      },
+      "threshold": {
+        "mi": "7:25",
+        "km": "4:37",
+        "secPerMile": 445
+      },
+      "interval": {
+        "mi": "6:29",
+        "km": "4:02",
+        "secPerMile": 389
+      },
+      "repetition": {
+        "mi": "6:00",
+        "km": "3:44",
+        "secPerMile": 360
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1352,
+        "timeFormatted": "22:32",
+        "paceMi": "7:15",
+        "paceKm": "4:30"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2804,
+        "timeFormatted": "46:44",
+        "paceMi": "7:31",
+        "paceKm": "4:40"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6218,
+        "timeFormatted": "1:43:38",
+        "paceMi": "7:54",
+        "paceKm": "4:55"
+      }
+    }
+  },
+  "boston-qualifying-time-women-45-49": {
+    "slug": "boston-qualifying-time-women-45-49",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "45–49",
+    "midAge": 47,
+    "bqTime": "3:45:00",
+    "bqSeconds": 13500,
+    "rpi": 41,
+    "wmaGradePct": 62.5,
+    "paces": {
+      "easy": {
+        "mi": "9:43",
+        "km": "6:02",
+        "secPerMile": 583
+      },
+      "marathon": {
+        "mi": "8:08",
+        "km": "5:03",
+        "secPerMile": 488
+      },
+      "threshold": {
+        "mi": "7:40",
+        "km": "4:46",
+        "secPerMile": 460
+      },
+      "interval": {
+        "mi": "6:42",
+        "km": "4:10",
+        "secPerMile": 402
+      },
+      "repetition": {
+        "mi": "6:11",
+        "km": "3:51",
+        "secPerMile": 371
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1416,
+        "timeFormatted": "23:36",
+        "paceMi": "7:36",
+        "paceKm": "4:43"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2938,
+        "timeFormatted": "48:58",
+        "paceMi": "7:53",
+        "paceKm": "4:54"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6515,
+        "timeFormatted": "1:48:35",
+        "paceMi": "8:17",
+        "paceKm": "5:09"
+      }
+    }
+  },
+  "boston-qualifying-time-women-50-54": {
+    "slug": "boston-qualifying-time-women-50-54",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "50–54",
+    "midAge": 52,
+    "bqTime": "3:50:00",
+    "bqSeconds": 13800,
+    "rpi": 39.9,
+    "wmaGradePct": 64.1,
+    "paces": {
+      "easy": {
+        "mi": "9:55",
+        "km": "6:10",
+        "secPerMile": 595
+      },
+      "marathon": {
+        "mi": "8:16",
+        "km": "5:08",
+        "secPerMile": 496
+      },
+      "threshold": {
+        "mi": "7:48",
+        "km": "4:51",
+        "secPerMile": 468
+      },
+      "interval": {
+        "mi": "6:49",
+        "km": "4:14",
+        "secPerMile": 409
+      },
+      "repetition": {
+        "mi": "6:17",
+        "km": "3:54",
+        "secPerMile": 377
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1449,
+        "timeFormatted": "24:09",
+        "paceMi": "7:46",
+        "paceKm": "4:50"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3007,
+        "timeFormatted": "50:07",
+        "paceMi": "8:04",
+        "paceKm": "5:01"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6667,
+        "timeFormatted": "1:51:07",
+        "paceMi": "8:29",
+        "paceKm": "5:16"
+      }
+    }
+  },
+  "boston-qualifying-time-women-55-59": {
+    "slug": "boston-qualifying-time-women-55-59",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "55–59",
+    "midAge": 57,
+    "bqTime": "4:00:00",
+    "bqSeconds": 14400,
+    "rpi": 37.9,
+    "wmaGradePct": 65.3,
+    "paces": {
+      "easy": {
+        "mi": "10:20",
+        "km": "6:25",
+        "secPerMile": 620
+      },
+      "marathon": {
+        "mi": "8:35",
+        "km": "5:20",
+        "secPerMile": 515
+      },
+      "threshold": {
+        "mi": "8:05",
+        "km": "5:01",
+        "secPerMile": 485
+      },
+      "interval": {
+        "mi": "7:03",
+        "km": "4:23",
+        "secPerMile": 423
+      },
+      "repetition": {
+        "mi": "6:29",
+        "km": "4:02",
+        "secPerMile": 389
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1514,
+        "timeFormatted": "25:14",
+        "paceMi": "8:07",
+        "paceKm": "5:03"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3142,
+        "timeFormatted": "52:22",
+        "paceMi": "8:26",
+        "paceKm": "5:14"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6967,
+        "timeFormatted": "1:56:07",
+        "paceMi": "8:51",
+        "paceKm": "5:30"
+      }
+    }
+  },
+  "boston-qualifying-time-women-60-64": {
+    "slug": "boston-qualifying-time-women-60-64",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "60–64",
+    "midAge": 62,
+    "bqTime": "4:20:00",
+    "bqSeconds": 15600,
+    "rpi": 34.4,
+    "wmaGradePct": 64.5,
+    "paces": {
+      "easy": {
+        "mi": "11:12",
+        "km": "6:58",
+        "secPerMile": 672
+      },
+      "marathon": {
+        "mi": "9:14",
+        "km": "5:44",
+        "secPerMile": 554
+      },
+      "threshold": {
+        "mi": "8:43",
+        "km": "5:25",
+        "secPerMile": 523
+      },
+      "interval": {
+        "mi": "7:33",
+        "km": "4:41",
+        "secPerMile": 453
+      },
+      "repetition": {
+        "mi": "6:56",
+        "km": "4:18",
+        "secPerMile": 416
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1642,
+        "timeFormatted": "27:22",
+        "paceMi": "8:49",
+        "paceKm": "5:29"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3412,
+        "timeFormatted": "56:52",
+        "paceMi": "9:09",
+        "paceKm": "5:41"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 7563,
+        "timeFormatted": "2:06:03",
+        "paceMi": "9:37",
+        "paceKm": "5:59"
+      }
+    }
+  },
+  "boston-qualifying-time-women-65-69": {
+    "slug": "boston-qualifying-time-women-65-69",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "65–69",
+    "midAge": 67,
+    "bqTime": "4:35:00",
+    "bqSeconds": 16500,
+    "rpi": 32,
+    "wmaGradePct": 65.7,
+    "paces": {
+      "easy": {
+        "mi": "12:06",
+        "km": "7:31",
+        "secPerMile": 726
+      },
+      "marathon": {
+        "mi": "9:54",
+        "km": "6:09",
+        "secPerMile": 594
+      },
+      "threshold": {
+        "mi": "9:20",
+        "km": "5:48",
+        "secPerMile": 560
+      },
+      "interval": {
+        "mi": "8:04",
+        "km": "5:01",
+        "secPerMile": 484
+      },
+      "repetition": {
+        "mi": "7:23",
+        "km": "4:35",
+        "secPerMile": 443
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1745,
+        "timeFormatted": "29:05",
+        "paceMi": "9:22",
+        "paceKm": "5:49"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3626,
+        "timeFormatted": "1:00:26",
+        "paceMi": "9:44",
+        "paceKm": "6:03"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 8035,
+        "timeFormatted": "2:13:55",
+        "paceMi": "10:13",
+        "paceKm": "6:21"
+      }
+    }
+  },
+  "boston-qualifying-time-women-70-74": {
+    "slug": "boston-qualifying-time-women-70-74",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "70–74",
+    "midAge": 72,
+    "bqTime": "4:50:00",
+    "bqSeconds": 17400,
+    "rpi": 30,
+    "wmaGradePct": 67.5,
+    "paces": {
+      "easy": {
+        "mi": "12:56",
+        "km": "8:02",
+        "secPerMile": 776
+      },
+      "marathon": {
+        "mi": "10:31",
+        "km": "6:32",
+        "secPerMile": 631
+      },
+      "threshold": {
+        "mi": "9:55",
+        "km": "6:10",
+        "secPerMile": 595
+      },
+      "interval": {
+        "mi": "8:33",
+        "km": "5:19",
+        "secPerMile": 513
+      },
+      "repetition": {
+        "mi": "7:49",
+        "km": "4:51",
+        "secPerMile": 469
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1841,
+        "timeFormatted": "30:41",
+        "paceMi": "9:53",
+        "paceKm": "6:08"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3830,
+        "timeFormatted": "1:03:50",
+        "paceMi": "10:16",
+        "paceKm": "6:23"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 8479,
+        "timeFormatted": "2:21:19",
+        "paceMi": "10:47",
+        "paceKm": "6:42"
+      }
+    }
+  },
+  "boston-qualifying-time-women-75-79": {
+    "slug": "boston-qualifying-time-women-75-79",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "75–79",
+    "midAge": 77,
+    "bqTime": "5:05:00",
+    "bqSeconds": 18300,
+    "rpi": 28.1,
+    "wmaGradePct": 70.8,
+    "paces": {
+      "easy": {
+        "mi": "13:35",
+        "km": "8:26",
+        "secPerMile": 815
+      },
+      "marathon": {
+        "mi": "11:04",
+        "km": "6:53",
+        "secPerMile": 664
+      },
+      "threshold": {
+        "mi": "10:26",
+        "km": "6:29",
+        "secPerMile": 626
+      },
+      "interval": {
+        "mi": "9:01",
+        "km": "5:36",
+        "secPerMile": 541
+      },
+      "repetition": {
+        "mi": "8:14",
+        "km": "5:07",
+        "secPerMile": 494
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1943,
+        "timeFormatted": "32:23",
+        "paceMi": "10:25",
+        "paceKm": "6:28"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 4044,
+        "timeFormatted": "1:07:24",
+        "paceMi": "10:51",
+        "paceKm": "6:45"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 8948,
+        "timeFormatted": "2:29:08",
+        "paceMi": "11:23",
+        "paceKm": "7:04"
+      }
+    }
+  },
+  "boston-qualifying-time-women-80-plus": {
+    "slug": "boston-qualifying-time-women-80-plus",
+    "gender": "female",
+    "genderLabel": "Women",
+    "ageGroup": "80+",
+    "midAge": 80,
+    "bqTime": "5:20:00",
+    "bqSeconds": 19200,
+    "rpi": 26.4,
+    "wmaGradePct": 73.1,
+    "paces": {
+      "easy": {
+        "mi": "14:14",
+        "km": "8:51",
+        "secPerMile": 854
+      },
+      "marathon": {
+        "mi": "11:37",
+        "km": "7:13",
+        "secPerMile": 697
+      },
+      "threshold": {
+        "mi": "10:58",
+        "km": "6:49",
+        "secPerMile": 658
+      },
+      "interval": {
+        "mi": "9:28",
+        "km": "5:53",
+        "secPerMile": 568
+      },
+      "repetition": {
+        "mi": "8:40",
+        "km": "5:23",
+        "secPerMile": 520
+      }
+    },
+    "equivalents": {
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 2046,
+        "timeFormatted": "34:06",
+        "paceMi": "10:59",
+        "paceKm": "6:49"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 4258,
+        "timeFormatted": "1:10:58",
+        "paceMi": "11:25",
+        "paceKm": "7:06"
+      },
+      "half": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 9412,
+        "timeFormatted": "2:36:52",
+        "paceMi": "11:58",
+        "paceKm": "7:26"
+      }
+    }
+  }
+}

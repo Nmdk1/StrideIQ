@@ -49,17 +49,38 @@ type DemoEntry = {
 // Only coaching philosophy and non-numeric context are hardcoded here.
 // ============================================================================
 
-const DEMO_PAGE_CONFIG: Record<
-  string,
-  {
-    title: string
-    description: string
-    h1: string
-    openingParagraph: string
-    trainingContext: string
-    buildFaq: (data: DemoEntry) => { q: string; a: string }[]
+type DemoPageEntry = {
+  title: string
+  description: string
+  h1: string
+  openingParagraph: string
+  trainingContext: string
+  buildFaq: (data: DemoEntry) => { q: string; a: string }[]
+}
+
+function makeDistGenderFaq(distLabel: string, _paceZone?: string) {
+  return (data: DemoEntry): { q: string; a: string }[] => {
+    const r0 = data.rows[0]
+    const l70 = r0?.levels[70]
+    const l60 = r0?.levels[60]
+    return [
+      {
+        q: `What is a good ${distLabel} time for ${data.genderLabel.toLowerCase()} in their ${data.ageDecade}?`,
+        a: `Using WMA age-grading standards, a ${r0?.age}-year-old ${data.genderLabel === 'Men' ? 'man' : 'woman'} running ${l60?.timeFormatted} scores 60% ("Local Class"). A 70% "Regional Class" performance at that age is ${l70?.timeFormatted}. These benchmarks are derived from world-record data for each age group, not population averages.`,
+      },
+      {
+        q: `What training paces should ${data.genderLabel.toLowerCase()} in their ${data.ageDecade} use for ${distLabel} training?`,
+        a: `The right training paces depend on your current fitness. At 70% age-grade (${l70?.timeFormatted} for a ${r0?.age}-year-old), your training zones are: Easy ${l70?.trainingPaces?.easy.mi}/mi, Threshold ${l70?.trainingPaces?.threshold.mi}/mi, Interval ${l70?.trainingPaces?.interval.mi}/mi. At 60% age-grade (${l60?.timeFormatted}): Easy ${l60?.trainingPaces?.easy.mi}/mi, Threshold ${l60?.trainingPaces?.threshold.mi}/mi. Use the calculator below to find your exact paces.`,
+      },
+      {
+        q: `How does ${distLabel} performance change through the ${data.ageDecade}?`,
+        a: `WMA data shows a gradual performance decline with each decade — typically two to five percent per five years for most distances. The age factors in the table above account for this and allow fair comparison across ages. Consistent training often offsets age-related decline significantly. Many runners in their ${data.ageDecade} who train with structure outperform their unstructured earlier years on an age-adjusted basis.`,
+      },
+    ]
   }
-> = {
+}
+
+const DEMO_PAGE_CONFIG: Record<string, DemoPageEntry> = {
   '5k-times-women-age-40s': {
     title: "Good 5K Times for Women in Their 40s — WMA Benchmarks and Training Paces",
     description:
@@ -239,6 +260,429 @@ const DEMO_PAGE_CONFIG: Record<
       ]
     },
   },
+
+  // ============================================================================
+  // BATCH 2C: 50 new demographic configs
+  // Organized by: 5K Men, 5K Women, 10K Men, 10K Women, HM Men, HM Women, Mara Men, Mara Women
+  // All buildFaq functions pull numbers from data — no hardcoded values.
+  // ============================================================================
+
+
+    // ---- 5K MEN ----
+    '5k-times-men-age-20s': {
+      title: "Good 5K Times for Men in Their 20s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for men 20–29, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Men in Their 20s",
+      openingParagraph: "Men in their 20s are at peak physiological capacity — VO2max is near its highest, recovery is fastest, and aerobic adaptation is rapid. The WMA benchmarks for this decade reflect what consistently trained competitive runners achieve. For many, this is the decade where structured training first produces dramatic improvement.",
+      trainingContext: "5K training for men in their 20s benefits most from a combination of interval work (raising the aerobic ceiling) and threshold training (building sustained-effort stamina). Recovery between hard sessions is fast at this age — two quality sessions per week are sustainable. The main bottleneck is often training consistency and running easy days genuinely easy, which allows the quality sessions to generate real adaptation.",
+      buildFaq: makeDistGenderFaq('5K', 'interval'),
+    },
+    '5k-times-men-age-30s': {
+      title: "Good 5K Times for Men in Their 30s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for men 30–39, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Men in Their 30s",
+      openingParagraph: "Men in their 30s often run their fastest career 5Ks — experience, training consistency, and disciplined pacing combine with still-high aerobic capacity. The WMA standards for this decade show what competitive running at 30–39 looks like relative to world-record benchmarks.",
+      trainingContext: "5K training for men in their 30s follows the same principles as in the 20s, with slightly more attention to recovery between hard sessions. Two quality sessions per week (one interval, one threshold) remain productive. Easy volume at genuine easy pace continues to be the foundation. Runners in their mid-30s often find that training consistency — showing up every week — produces their strongest performances.",
+      buildFaq: makeDistGenderFaq('5K', 'interval'),
+    },
+    '5k-times-men-age-40s': {
+      title: "Good 5K Times for Men in Their 40s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for men 40–49, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Men in Their 40s",
+      openingParagraph: "Men in their 40s competing in the 5K are well into masters territory — and many are running faster than they did at 30 on an age-adjusted basis. The WMA standards reflect the competitive depth of this age group, which is substantial at most road races.",
+      trainingContext: "5K training for men in their 40s is similar to earlier decades but with recovery as a more important variable. Spacing quality sessions 5–6 days apart rather than 4 maintains the productivity of threshold and interval work. Easy pace must be genuinely easy. Most men in their 40s who run under 20 minutes for the 5K have been training consistently for 5+ years.",
+      buildFaq: makeDistGenderFaq('5K', 'interval'),
+    },
+    '5k-times-men-age-50s': {
+      title: "Good 5K Times for Men in Their 50s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for men 50–59, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Men in Their 50s",
+      openingParagraph: "Men racing the 5K in their 50s are in one of the most active masters age groups on the road racing circuit. WMA age-grading reveals the competitive standards at this age — and many men are achieving better age-adjusted scores than they did in their 30s.",
+      trainingContext: "5K training for men in their 50s requires more deliberate recovery management. One interval session and one threshold session per week remain effective, but 6 full easy days between them — not 4 — is often more productive. Easy running at genuinely easy pace (the kind that feels too slow) accumulates the aerobic base that quality sessions draw on.",
+      buildFaq: makeDistGenderFaq('5K', 'interval'),
+    },
+    '5k-times-men-age-60s': {
+      title: "Good 5K Times for Men in Their 60s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for men 60–69, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Men in Their 60s",
+      openingParagraph: "Men racing the 5K in their 60s demonstrate remarkable maintained fitness. Age-grading reveals that a 65-year-old running a competitive 5K on WMA standards is achieving something physiologically impressive by any measure — not just for the age group.",
+      trainingContext: "5K training for men in their 60s centers on one quality session per week (alternating interval and threshold across weeks) and adequate easy running between sessions. The aerobic adaptation response remains — the adjustment is in session frequency, not session content. One hard session every 7–10 days with all other running genuinely easy is typically the productive rhythm.",
+      buildFaq: makeDistGenderFaq('5K', 'interval'),
+    },
+    '5k-times-men-age-70s': {
+      title: "Good 5K Times for Men in Their 70s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for men 70–79, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Men in Their 70s",
+      openingParagraph: "Men competing in the 5K in their 70s are a committed, high-performing group. WMA standards reveal just how demanding their absolute times are — the age factors for this decade are substantial, meaning even modest absolute times represent serious age-adjusted performance.",
+      trainingContext: "5K training for men in their 70s requires careful recovery management above all else. One quality session per 10–14 days, with all other running genuinely easy, is the productive rhythm. Long intervals are replaced by shorter, more frequent easy runs. The aerobic system still responds to stimulus — patience with adaptation timelines is the primary mental adjustment.",
+      buildFaq: makeDistGenderFaq('5K', 'interval'),
+    },
+    '5k-times-men-age-80s': {
+      title: "Good 5K Times for Men in Their 80s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for men 80+, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Men Age 80+",
+      openingParagraph: "Men competing in the 5K at 80+ are among the most remarkable endurance athletes in road racing. The WMA standards for this age group reflect world-record caliber performance relative to octogenarian runners — achieving any competitive result here is extraordinary.",
+      trainingContext: "5K training for men 80+ is centered entirely around recovery. One quality effort every 10–14 days — whether a threshold session or a fartlek — is the upper limit for most. All other running is genuinely easy. The aerobic base from decades of running is deep; the primary training variable is protecting recovery to allow the next quality effort to be productive.",
+      buildFaq: makeDistGenderFaq('5K', 'interval'),
+    },
+
+    // ---- 5K WOMEN ----
+    '5k-times-women-age-20s': {
+      title: "Good 5K Times for Women in Their 20s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for women 20–29, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Women in Their 20s",
+      openingParagraph: "Women in their 20s are at physiological peak — VO2max is near its highest, recovery is fastest, and adaptation to training is rapid. This decade often produces the fastest absolute 5K times for women who train consistently. The WMA benchmarks here show what competitive performance at this age looks like.",
+      trainingContext: "5K training for women in their 20s benefits from high-quality interval work and threshold training. Two quality sessions per week (one interval, one threshold) are sustainable with adequate easy volume. Running easy days genuinely easy — at the paces in the table below — allows the quality sessions to produce real adaptation. The most common mistake at this age: running every run at moderate effort and missing both the genuine easy recovery and genuine hard quality.",
+      buildFaq: makeDistGenderFaq('5K', 'interval'),
+    },
+    '5k-times-women-age-30s': {
+      title: "Good 5K Times for Women in Their 30s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for women 30–39, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Women in Their 30s",
+      openingParagraph: "Women in their 30s often achieve their strongest 5K performances — training consistency, pacing discipline, and body awareness combine with still-high aerobic capacity. Many women set personal records in their mid-30s. The WMA standards here reflect serious competitive depth in this decade.",
+      trainingContext: "5K training for women in their 30s follows the same principles as the 20s but with slightly more attention to recovery spacing. Two quality sessions per week remain effective for most. Easy running at genuinely easy pace is the foundation — running this pace feels slow but allows the quality sessions to generate the adaptation that drives improvement.",
+      buildFaq: makeDistGenderFaq('5K', 'interval'),
+    },
+    '5k-times-women-age-60s': {
+      title: "Good 5K Times for Women in Their 60s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for women 60–69, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Women in Their 60s",
+      openingParagraph: "Women racing the 5K in their 60s are among the most competitive masters age groups in road racing. WMA standards reveal that achieving competitive results at 60–69 requires genuinely impressive fitness relative to world-record benchmarks. The depth in this group at major road races is real.",
+      trainingContext: "5K training for women in their 60s requires one quality session per week with full easy recovery days between. Threshold training (comfortably hard for 15–20 minutes) is the most effective quality session for this age group and distance. Running easy days at genuinely easy pace — often slower than runners expect — allows the weekly threshold session to produce real adaptation.",
+      buildFaq: makeDistGenderFaq('5K', 'threshold'),
+    },
+    '5k-times-women-age-70s': {
+      title: "Good 5K Times for Women in Their 70s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for women 70–79, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Women in Their 70s",
+      openingParagraph: "Women competing in the 5K at 70–79 represent lifelong fitness maintained at a high level. WMA standards show how demanding the benchmarks are relative to world records for this age group — even the 60% mark requires sustained aerobic training.",
+      trainingContext: "5K training for women in their 70s centers on consistent easy running with one quality effort per 10–14 days. The aerobic system still adapts to training stimulus. Recovery management is the primary discipline — ensuring sufficient easy days between quality sessions prevents the fatigue accumulation that limits improvement at this age.",
+      buildFaq: makeDistGenderFaq('5K', 'threshold'),
+    },
+    '5k-times-women-age-80s': {
+      title: "Good 5K Times for Women in Their 80s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 5K benchmarks for women 80+, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "5K Benchmarks for Women Age 80+",
+      openingParagraph: "Women competing in the 5K at 80+ are demonstrating extraordinary athletic longevity. The WMA standards for this age group reflect world-record-caliber relative performance — any result at this age in a road race is a significant achievement.",
+      trainingContext: "5K training for women 80+ is organized entirely around recovery. Easy running as the foundation, with one quality effort per two weeks. The aerobic base from decades of training is deep and requires maintenance more than development. Every training decision is filtered through: 'Will I recover from this in time for the next quality session?'",
+      buildFaq: makeDistGenderFaq('5K', 'threshold'),
+    },
+
+    // ---- 10K MEN ----
+    '10k-times-men-age-20s': {
+      title: "Good 10K Times for Men in Their 20s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for men 20–29, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Men in Their 20s",
+      openingParagraph: "Men in their 20s competing in the 10K have peak aerobic capacity and fast recovery — the ideal combination for high-quality endurance training. WMA benchmarks for this decade reflect genuine competitive performance measured against world records.",
+      trainingContext: "10K training for men in their 20s benefits from threshold training as the primary quality session, supplemented by intervals. The 10K demands sustained effort near the lactate threshold for 28–50+ minutes. Threshold tempo runs (25–35 minutes at threshold pace) build the specific metabolic quality that 10K racing requires. Two quality sessions per week with adequate easy volume produces consistent improvement.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-men-age-30s': {
+      title: "Good 10K Times for Men in Their 30s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for men 30–39, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Men in Their 30s",
+      openingParagraph: "Men in their 30s often achieve their peak 10K performances — the balance of aerobic capacity, threshold stamina, and training experience is optimal. Many men set 10K personal records in their early to mid-30s. WMA standards reflect the competitive depth at this age.",
+      trainingContext: "10K training for men in their 30s combines threshold work (the primary 10K-specific quality) with interval sessions. Threshold runs at threshold pace for 25–35 minutes directly build the lactate stamina the 10K demands. Easy volume at genuinely easy pace supports the quality sessions. Recovery between hard sessions is still efficient in this decade.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-men-age-40s': {
+      title: "Good 10K Times for Men in Their 40s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for men 40–49, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Men in Their 40s",
+      openingParagraph: "Men racing the 10K in their 40s are well into masters territory — and the competitive depth in this age group at major road races is substantial. WMA standards show what each performance level represents relative to world records for men 40–49.",
+      trainingContext: "10K training for men in their 40s requires slightly more recovery spacing between hard sessions. One threshold session and one interval session per week, spaced 5–6 days apart, remains productive. Easy pace at genuinely easy pace is the foundation. The most important training adjustment in this decade: not adding more hard sessions, but ensuring each hard session is truly hard and each recovery day is truly easy.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-men-age-50s': {
+      title: "Good 10K Times for Men in Their 50s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for men 50–59, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Men in Their 50s",
+      openingParagraph: "Men competing in the 10K in their 50s are in one of the most active masters age groups in road racing. Age-grading reveals impressive competitive depth — runners who have maintained consistent training through their 50s achieve WMA grades that rival their earlier racing years.",
+      trainingContext: "10K training for men in their 50s centers on one threshold session per week (20–30 minutes at threshold pace) and easy volume. Interval training can be added every other week as a replacement session. Recovery between hard efforts takes 6–7 full days at this age — planning quality sessions 7+ days apart prevents the chronic fatigue that undermines performance.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-men-age-70s': {
+      title: "Good 10K Times for Men in Their 70s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for men 70–79, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Men in Their 70s",
+      openingParagraph: "Men racing the 10K at 70–79 are remarkable competitive runners. WMA standards account for the significant physiological changes of this decade — achieving any competitive result here requires sustained fitness that most people at this age do not maintain.",
+      trainingContext: "10K training for men in their 70s requires one quality session per 10–14 days with all other running at genuinely easy pace. Threshold work (15–20 minutes) is more appropriate than intensive intervals at this age. The aerobic system still adapts to training — the key is spacing hard efforts far enough apart to recover fully before the next stimulus.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-men-age-80s': {
+      title: "Good 10K Times for Men in Their 80s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for men 80+, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Men Age 80+",
+      openingParagraph: "Men racing the 10K at 80+ represent extraordinary athletic longevity. WMA standards at this age reflect world-record-caliber relative performance — finishing any competitive 10K at 80+ is an achievement.",
+      trainingContext: "10K training for men 80+ is managed entirely around recovery. One easy threshold effort per two weeks, with all other days genuinely easy or rest. The cardiovascular system still responds to training; tissue recovery is the limiting factor. Every hard session is an investment that requires 10–14 days of easy running to yield its adaptation.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+
+    // ---- 10K WOMEN ----
+    '10k-times-women-age-20s': {
+      title: "Good 10K Times for Women in Their 20s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for women 20–29, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Women in Their 20s",
+      openingParagraph: "Women in their 20s competing in the 10K are at physiological peak — VO2max near its highest, recovery fastest, and adaptation to training most rapid. This decade produces some of the strongest absolute 10K times for women who train with structure.",
+      trainingContext: "10K training for women in their 20s benefits from threshold training as the primary quality session. The 10K demands sustained threshold-level effort for 32–65 minutes. Threshold tempo runs (20–30 minutes at threshold pace) build the lactate stamina this requires. Two quality sessions per week with easy volume is sustainable and produces strong improvement.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-women-age-30s': {
+      title: "Good 10K Times for Women in Their 30s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for women 30–39, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Women in Their 30s",
+      openingParagraph: "Women in their 30s often run their fastest 10Ks — training consistency and pacing experience combine with high aerobic capacity. Many women discover road racing seriously in this decade and see rapid early improvement that continues for years.",
+      trainingContext: "10K training for women in their 30s follows the same structure as for women in their 20s, with slightly more recovery awareness. Threshold sessions are the primary quality work. Two quality sessions per week with easy volume is the productive structure, with recovery days running genuinely easy.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-women-age-40s': {
+      title: "Good 10K Times for Women in Their 40s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for women 40–49, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Women in Their 40s",
+      openingParagraph: "Women competing in the 10K in their 40s are in a fast-growing and highly competitive masters segment. Many women run their fastest age-adjusted 10Ks in this decade — training wisdom, consistent volume, and disciplined racing produce strong results.",
+      trainingContext: "10K training for women in their 40s requires one threshold session and one interval session per week, spaced adequately for recovery. The aerobic system adapts well. Recovery between sessions becomes more important — planning quality sessions 5–6 days apart rather than 4 maintains training quality.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-women-age-50s': {
+      title: "Good 10K Times for Women in Their 50s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for women 50–59, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Women in Their 50s",
+      openingParagraph: "Women racing the 10K in their 50s are in one of the most competitive masters groups at most road races. WMA standards reveal the depth — consistently trained women in this decade often run better age-adjusted times than they did in their 30s.",
+      trainingContext: "10K training for women in their 50s centers on one threshold session per week (20–25 minutes) and adequate easy volume. Recovery between quality sessions takes 6–7 days at this age. Easy days at genuinely easy pace allow the weekly threshold session to produce full adaptation.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-women-age-60s': {
+      title: "Good 10K Times for Women in Their 60s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for women 60–69, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Women in Their 60s",
+      openingParagraph: "Women racing the 10K in their 60s demonstrate maintained fitness that most people at this age never develop. WMA age-grading shows that achieving even the 60% benchmark requires genuine aerobic conditioning relative to world-record standards.",
+      trainingContext: "10K training for women in their 60s works best with one quality session per week — threshold running (15–20 minutes) is most appropriate and effective. All other days are genuinely easy runs. Recovery management is the central training discipline: protecting 6–7 days of easy running between each quality session.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-women-age-70s': {
+      title: "Good 10K Times for Women in Their 70s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for women 70–79, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Women in Their 70s",
+      openingParagraph: "Women competing in the 10K at 70–79 represent lifelong aerobic fitness maintained through decades of consistent training. WMA standards at this age are demanding relative to world records — any competitive result is genuinely impressive.",
+      trainingContext: "10K training for women in their 70s requires one quality effort per 10–14 days with all other running genuinely easy. Threshold work (12–18 minutes at threshold pace) is the most appropriate quality session. The aerobic system still adapts — recovery time between hard efforts is the limiting variable.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+    '10k-times-women-age-80s': {
+      title: "Good 10K Times for Women in Their 80s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded 10K benchmarks for women 80+, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "10K Benchmarks for Women Age 80+",
+      openingParagraph: "Women racing the 10K at 80+ are among the most remarkable athletes in road racing. The WMA standards at this age account for the physiological reality of octogenarian running — finishing a competitive 10K at 80+ is an extraordinary achievement.",
+      trainingContext: "10K training for women 80+ is centered on recovery and consistency. One quality effort per two weeks, with all other days genuinely easy. The primary training discipline is not adding hard sessions — it is protecting full recovery between each quality effort so that each one generates adaptation.",
+      buildFaq: makeDistGenderFaq('10K', 'threshold'),
+    },
+
+    // ---- HALF MARATHON MEN ----
+    'half-marathon-times-men-age-20s': {
+      title: "Good Half Marathon Times for Men in Their 20s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for men 20–29, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Men in Their 20s",
+      openingParagraph: "Men in their 20s competing in the half marathon combine peak VO2max with a growing aerobic base. This is an excellent decade for half marathon development — the aerobic system is highly adaptable and recovery from hard training is fast.",
+      trainingContext: "Half marathon training for men in their 20s combines threshold work (the most race-specific quality) with long runs at easy pace (the most endurance-building session). Threshold tempo runs (25–35 minutes) develop the lactate stamina the half demands. Long runs building to 14–16 miles at easy pace develop the endurance base. Two quality sessions per week with adequate easy volume is sustainable.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-men-age-30s': {
+      title: "Good Half Marathon Times for Men in Their 30s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for men 30–39, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Men in Their 30s",
+      openingParagraph: "Men in their 30s often run their fastest half marathons — training experience, race-day maturity, and still-high aerobic capacity combine effectively. The WMA standards here show what competitive half marathon performance looks like at this age.",
+      trainingContext: "Half marathon training for men in their 30s centers on threshold work and long runs. Threshold tempo runs (25–40 minutes) develop the sustained lactate-clearance capacity that half marathon racing demands. Long runs to 14–16 miles at easy pace provide the endurance base. Two quality sessions per week with easy volume is the effective structure.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-men-age-40s': {
+      title: "Good Half Marathon Times for Men in Their 40s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for men 40–49, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Men in Their 40s",
+      openingParagraph: "Men competing in the half marathon in their 40s are among the most experienced and disciplined road racers. Many run their best age-adjusted half marathons in this decade. WMA standards show the competitive depth at 40–49.",
+      trainingContext: "Half marathon training for men in their 40s requires one threshold session per week (25–35 minutes) and long runs to 14 miles, with recovery days strictly easy. Spacing quality sessions 5–6 days apart maintains training quality. The aerobic adaptation remains strong; the key adjustment is not adding more quality but ensuring each quality session is fully productive.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-men-age-50s': {
+      title: "Good Half Marathon Times for Men in Their 50s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for men 50–59, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Men in Their 50s",
+      openingParagraph: "Half marathon racing for men 50–59 is where many find their best age-adjusted performances. The endurance component ages well, and training consistency often produces strong WMA scores for men who have been running seriously for a decade or more.",
+      trainingContext: "Half marathon training for men in their 50s works best with one threshold session per week (20–30 minutes) and a weekly long run building to 12–14 miles. Recovery between quality sessions takes 6 days — planning accordingly. Easy days at genuinely easy pace allow both the threshold session and the long run to generate full adaptation.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-men-age-60s': {
+      title: "Good Half Marathon Times for Men in Their 60s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for men 60–69, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Men in Their 60s",
+      openingParagraph: "Men racing the half marathon in their 60s represent sustained endurance fitness that most people at this age do not maintain. WMA standards show how demanding the benchmarks are — achieving competitive results here is genuinely impressive.",
+      trainingContext: "Half marathon training for men in their 60s centers on one quality session per week (threshold work, 20–25 minutes) and a weekly long run (10–13 miles at easy pace). Recovery between hard efforts takes 6–7 full days. All other running at genuinely easy pace protects the quality of each session.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-men-age-70s': {
+      title: "Good Half Marathon Times for Men in Their 70s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for men 70–79, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Men in Their 70s",
+      openingParagraph: "Men competing in the half marathon at 70–79 are demonstrating extraordinary athletic longevity. WMA standards at this age account for substantial age factors — even the 60% mark requires maintained aerobic conditioning through years of consistent training.",
+      trainingContext: "Half marathon training for men in their 70s requires one quality session per 10–14 days with all other running genuinely easy. Long runs at easy pace (8–12 miles) are the most important session for half marathon endurance. Threshold work every other week maintains the aerobic ceiling. Recovery management is the central training discipline.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-men-age-80s': {
+      title: "Good Half Marathon Times for Men in Their 80s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for men 80+, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Men Age 80+",
+      openingParagraph: "Men competing in the half marathon at 80+ are among the most remarkable athletes in road racing. Completing 13.1 miles at any pace at this age is a significant achievement; racing it competitively is extraordinary.",
+      trainingContext: "Half marathon training for men 80+ is managed entirely around recovery. Long easy runs as the foundation, with one quality effort (easy threshold, 12–15 minutes) per two weeks. The primary training principle: protecting enough recovery between efforts to allow each session to produce positive adaptation.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+
+    // ---- HALF MARATHON WOMEN ----
+    'half-marathon-times-women-age-20s': {
+      title: "Good Half Marathon Times for Women in Their 20s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for women 20–29, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Women in Their 20s",
+      openingParagraph: "Women in their 20s competing in the half marathon combine peak aerobic capacity with an increasingly developed aerobic base. This decade produces strong half marathon development — the adaptation response is fast and training can be absorbed well.",
+      trainingContext: "Half marathon training for women in their 20s benefits from threshold work as the primary quality session. Threshold tempo runs (20–35 minutes) develop the lactate stamina the half marathon requires. Long runs building to 13–16 miles at easy pace develop the endurance base. Two quality sessions per week with genuine easy recovery produces strong adaptation.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-women-age-30s': {
+      title: "Good Half Marathon Times for Women in Their 30s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for women 30–39, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Women in Their 30s",
+      openingParagraph: "Women in their 30s often achieve their strongest half marathon performances — training consistency, race experience, and still-high aerobic capacity combine effectively. Many women set half marathon personal records in their early to mid-30s.",
+      trainingContext: "Half marathon training for women in their 30s centers on threshold work (25–35 minutes at threshold pace) and long runs to 13–15 miles at easy pace. Two quality sessions per week — one threshold, one interval — with adequate easy volume is the effective structure. Recovery days must be genuinely easy to allow adaptation.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-women-age-40s': {
+      title: "Good Half Marathon Times for Women in Their 40s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for women 40–49, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Women in Their 40s",
+      openingParagraph: "Women in their 40s are often at their peak half marathon performance on an age-adjusted basis. This is a highly competitive masters group, and the WMA standards show how serious the benchmarks are relative to world records for this age group.",
+      trainingContext: "Half marathon training for women in their 40s works best with one threshold session and one long run per week, spaced with full easy days between. Threshold sessions (22–30 minutes at threshold pace) are the race-specific quality. Long runs to 13–14 miles at easy pace build the endurance base. Recovery management is more important than adding sessions.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-women-age-50s': {
+      title: "Good Half Marathon Times for Women in Their 50s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for women 50–59, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Women in Their 50s",
+      openingParagraph: "Women racing the half marathon in their 50s are among the most competitive masters athletes in road racing. Many women achieve their best age-adjusted half marathon performances in this decade — the combination of training experience and accumulated aerobic base is powerful.",
+      trainingContext: "Half marathon training for women in their 50s centers on one threshold session per week (20–28 minutes) and a weekly long run to 12–14 miles. Quality sessions are spaced 6 full days apart. Easy days at genuinely easy pace are the recovery foundation that allows each quality session to produce adaptation.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-women-age-60s': {
+      title: "Good Half Marathon Times for Women in Their 60s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for women 60–69, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Women in Their 60s",
+      openingParagraph: "Women racing the half marathon in their 60s demonstrate real athletic commitment. WMA standards at this age account for meaningful physiological change — achieving competitive results requires maintained training over years, not just months.",
+      trainingContext: "Half marathon training for women in their 60s works best with one quality session per week (threshold work, 18–25 minutes) and a weekly long run (9–12 miles). Full easy recovery between sessions is the central discipline. Three structured runs per week — long run, threshold, and easy-plus fartlek — with genuinely easy days in between is a proven pattern.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-women-age-70s': {
+      title: "Good Half Marathon Times for Women in Their 70s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for women 70–79, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Women in Their 70s",
+      openingParagraph: "Women competing in the half marathon at 70–79 are showing athletic longevity that most people in this decade do not maintain. The WMA benchmarks account for significant age factors — achieving competitive results here is a genuine accomplishment.",
+      trainingContext: "Half marathon training for women in their 70s requires one quality effort per 10–14 days with easy running as the foundation. Long runs at easy pace (8–11 miles) are the most important session for half marathon endurance. Recovery is the primary training variable — every hard effort needs full recovery before the next.",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+    'half-marathon-times-women-age-80s': {
+      title: "Good Half Marathon Times for Women in Their 80s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded half marathon benchmarks for women 80+, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Half Marathon Benchmarks for Women Age 80+",
+      openingParagraph: "Women competing in the half marathon at 80+ are among the most remarkable endurance athletes in road racing. Completing 13.1 miles at any competitive pace at this age is an extraordinary achievement.",
+      trainingContext: "Half marathon training for women 80+ is managed entirely around recovery and consistency. Easy running as the primary session, long runs to 8–10 miles at easy pace for endurance, with one quality effort per two weeks. Every training decision is filtered through recovery: can the body absorb this and be ready for the next effort?",
+      buildFaq: makeDistGenderFaq('Half Marathon', 'threshold'),
+    },
+
+    // ---- MARATHON MEN ----
+    'marathon-times-men-age-20s': {
+      title: "Good Marathon Times for Men in Their 20s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for men 20–29, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Men in Their 20s",
+      openingParagraph: "Men in their 20s have peak aerobic capacity but often lack the marathon-specific base that produces optimal marathon performance. The aerobic engine is there — the race-specific development of long-run endurance and glycogen economy takes years to fully develop.",
+      trainingContext: "Marathon training for men in their 20s benefits from high volume, long runs building to 20+ miles at easy pace, and one threshold session per week. The endurance component of marathon training is build over years — runners in their 20s who commit to high mileage now are establishing the base that produces their best marathons in their 30s.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
+    'marathon-times-men-age-30s': {
+      title: "Good Marathon Times for Men in Their 30s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for men 30–39, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Men in Their 30s",
+      openingParagraph: "Men in their 30s are in their prime marathon years. Endurance develops late — runners who have been building consistently through their 20s often achieve their best marathon performances in their early to mid-30s. WMA standards reflect the deep competitive field at this age.",
+      trainingContext: "Marathon training for men in their 30s: high easy volume (50–70+ miles/week), long runs to 20 miles, one threshold session per week (25–40 minutes), and marathon-pace miles in long run finishes. This is the age when runners can absorb the highest marathon-training volume without requiring excessive recovery. These training investments yield compound returns.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
+    'marathon-times-men-age-40s': {
+      title: "Good Marathon Times for Men in Their 40s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for men 40–49, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Men in Their 40s",
+      openingParagraph: "Men racing marathons in their 40s represent some of the most dedicated endurance athletes in road racing. Many achieve age-adjusted personal bests in this decade — the combination of training maturity and maintained aerobic capacity is powerful.",
+      trainingContext: "Marathon training for men in their 40s requires one threshold session per week, long runs to 20 miles, and adequate recovery between hard sessions (5–6 days). Easy pace must be genuinely easy. Most men in their 40s who are training toward BQ times are running 45–60 miles per week — the volume is manageable with good recovery management.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
+    'marathon-times-men-age-70s': {
+      title: "Good Marathon Times for Men in Their 70s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for men 70–79, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Men in Their 70s",
+      openingParagraph: "Men racing marathons in their 70s are among the most committed endurance athletes in the field. Marathon endurance ages more gradually than speed, and men who have maintained high mileage into their 70s can achieve impressive absolute times while scoring well on WMA age-grading.",
+      trainingContext: "Marathon training for men in their 70s is centered on long runs at easy pace (to 16–18 miles) and one threshold session per week. Recovery between quality sessions takes 7–10 days. Three structured runs per week — long run, threshold, and easy-plus session — with genuinely easy days in between is the pattern most men in this age group find sustainable.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
+    'marathon-times-men-age-80s': {
+      title: "Good Marathon Times for Men in Their 80s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for men 80+, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Men Age 80+",
+      openingParagraph: "Men completing a marathon at 80+ are among the most extraordinary endurance athletes in any age group. The WMA standards at this age reflect world-record caliber relative performance — finishing 26.2 miles competitively at 80+ is remarkable.",
+      trainingContext: "Marathon training for men 80+ is managed entirely around recovery. Long easy runs as the foundation, building as far as the body recovers from. One threshold or quality session per two weeks. Recovery is the primary training variable — protecting enough easy days between hard efforts is what allows training to produce positive adaptation rather than accumulated fatigue.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
+
+    // ---- MARATHON WOMEN ----
+    'marathon-times-women-age-20s': {
+      title: "Good Marathon Times for Women in Their 20s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for women 20–29, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Women in Their 20s",
+      openingParagraph: "Women in their 20s have peak physiological capacity but often are still building the long-run base and glycogen economy that produce optimal marathon performance. This is the decade when marathon endurance training pays the largest compound dividends — the training now builds the base for the fastest times in the 30s.",
+      trainingContext: "Marathon training for women in their 20s: high easy volume, long runs building toward 20 miles, one threshold session per week, and marathon-pace miles added to long run finishes. The fast recovery of this decade allows higher training loads — building a strong aerobic base now creates the foundation for peak marathon performance in the next decade.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
+    'marathon-times-women-age-30s': {
+      title: "Good Marathon Times for Women in Their 30s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for women 30–39, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Women in Their 30s",
+      openingParagraph: "Women in their 30s often achieve their peak marathon performances — training consistency, race experience, and mature pacing combine with the endurance base built in the 20s. The 30s are when many women discover their strongest marathon results.",
+      trainingContext: "Marathon training for women in their 30s centers on high easy volume, long runs to 20 miles at easy pace, and one threshold session per week. Marathon-pace miles in long run finishes are the most race-specific quality work. Two hard sessions per week (threshold + long run) with the rest at easy pace is the effective structure.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
+    'marathon-times-women-age-40s': {
+      title: "Good Marathon Times for Women in Their 40s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for women 40–49, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Women in Their 40s",
+      openingParagraph: "Women racing marathons in their 40s are in a competitive and growing segment of road racing. Many women achieve their best age-adjusted marathon scores in this decade — discipline, patience, and training maturity produce results that raw aerobic capacity alone cannot.",
+      trainingContext: "Marathon training for women in their 40s requires one threshold session per week, long runs to 18–20 miles, and adequate recovery between quality sessions (5–6 days). Easy days at genuinely easy pace allow both the threshold session and the long run to generate full adaptation. This decade rewards training intelligence over training volume.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
+    'marathon-times-women-age-60s': {
+      title: "Good Marathon Times for Women in Their 60s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for women 60–69, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Women in Their 60s",
+      openingParagraph: "Women racing marathons in their 60s demonstrate sustained aerobic commitment that produces genuinely impressive results. Marathon endurance ages gradually — women who have maintained consistent long-run training can keep strong WMA age grades through this decade.",
+      trainingContext: "Marathon training for women in their 60s centers on long runs at easy pace (to 16–18 miles), one threshold session per week (20–25 minutes), and full recovery between quality efforts. Three to four structured runs per week with genuinely easy recovery days is the sustainable pattern. Recovery management — protecting enough easy days between hard efforts — is the central training discipline.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
+    'marathon-times-women-age-70s': {
+      title: "Good Marathon Times for Women in Their 70s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for women 70–79, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Women in Their 70s",
+      openingParagraph: "Women competing in the marathon at 70–79 are extraordinary endurance athletes. WMA standards at this age show how demanding even modest absolute marathon times are relative to world records for this decade — maintaining the fitness to finish 26.2 miles competitively is an achievement.",
+      trainingContext: "Marathon training for women in their 70s is organized around recovery and long runs. Long easy runs (to 14–16 miles) are the primary marathon-specific session. One threshold or quality session per 10–14 days. All other running at genuinely easy pace. Recovery is the single most important training variable — protecting enough easy days between hard efforts is what allows each session to generate positive adaptation.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
+    'marathon-times-women-age-80s': {
+      title: "Good Marathon Times for Women in Their 80s — WMA Benchmarks and Training Paces",
+      description: "WMA age-graded marathon benchmarks for women 80+, with training paces for each performance level. Alan Jones 2025 WMA standards.",
+      h1: "Marathon Benchmarks for Women Age 80+",
+      openingParagraph: "Women competing in the marathon at 80+ are among the most remarkable athletes in any endurance sport. The WMA standards account for the significant physiological changes of this age — finishing 26.2 miles competitively at 80+ is an extraordinary lifetime achievement.",
+      trainingContext: "Marathon training for women 80+ is managed entirely around recovery. Long easy runs as the foundation — as far as the body recovers from. One quality effort (easy threshold, 12–15 minutes) per two weeks at most. The training principle is simple: protect recovery above all else, and the aerobic base accumulated over decades will support continued performance.",
+      buildFaq: makeDistGenderFaq('Marathon', 'threshold'),
+    },
 }
 
 // ============================================================================

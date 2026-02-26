@@ -398,91 +398,61 @@ async function generateTrainingPaceData() {
 // Convention: goal time uses target - 1s ("sub-threshold seconds")
 // ============================================================================
 
+// Shorthand helpers for equivalentDistances arrays
+const EQUIV_5K_UP    = [{ key: 'marathon', label: 'Marathon', meters: 42195 }, { key: 'halfMarathon', label: 'Half Marathon', meters: 21097.5 }, { key: '10k', label: '10K', meters: 10000 }];
+const EQUIV_10K_UP   = [{ key: 'marathon', label: 'Marathon', meters: 42195 }, { key: 'halfMarathon', label: 'Half Marathon', meters: 21097.5 }, { key: '5k', label: '5K', meters: 5000 }];
+const EQUIV_HALF_UP  = [{ key: 'marathon', label: 'Marathon', meters: 42195 }, { key: '10k', label: '10K', meters: 10000 }, { key: '5k', label: '5K', meters: 5000 }];
+const EQUIV_MARA_UP  = [{ key: 'halfMarathon', label: 'Half Marathon', meters: 21097.5 }, { key: '10k', label: '10K', meters: 10000 }, { key: '5k', label: '5K', meters: 5000 }];
+
 const GOAL_CONFIGS = [
-  {
-    slug: 'sub-20-minute-5k',
-    label: 'Sub-20 Minute 5K',
-    goalLabel: 'Sub-20:00',
-    distance: '5K',
-    distanceMeters: 5000,
-    goalTimeLabel: '19:59',
-    goalTimeSeconds: 1199,
-    equivalentDistances: [
-      { key: 'marathon',     label: 'Marathon',      meters: 42195 },
-      { key: 'halfMarathon', label: 'Half Marathon',  meters: 21097.5 },
-      { key: '10k',          label: '10K',            meters: 10000 },
-    ],
-  },
-  {
-    slug: 'sub-25-minute-5k',
-    label: 'Sub-25 Minute 5K',
-    goalLabel: 'Sub-25:00',
-    distance: '5K',
-    distanceMeters: 5000,
-    goalTimeLabel: '24:59',
-    goalTimeSeconds: 1499,
-    equivalentDistances: [
-      { key: 'marathon',     label: 'Marathon',      meters: 42195 },
-      { key: 'halfMarathon', label: 'Half Marathon',  meters: 21097.5 },
-      { key: '10k',          label: '10K',            meters: 10000 },
-    ],
-  },
-  {
-    slug: 'sub-40-minute-10k',
-    label: 'Sub-40 Minute 10K',
-    goalLabel: 'Sub-40:00',
-    distance: '10K',
-    distanceMeters: 10000,
-    goalTimeLabel: '39:59',
-    goalTimeSeconds: 2399,
-    equivalentDistances: [
-      { key: 'marathon',     label: 'Marathon',      meters: 42195 },
-      { key: 'halfMarathon', label: 'Half Marathon',  meters: 21097.5 },
-      { key: '5k',           label: '5K',             meters: 5000 },
-    ],
-  },
-  {
-    slug: 'sub-50-minute-10k',
-    label: 'Sub-50 Minute 10K',
-    goalLabel: 'Sub-50:00',
-    distance: '10K',
-    distanceMeters: 10000,
-    goalTimeLabel: '49:59',
-    goalTimeSeconds: 2999,
-    equivalentDistances: [
-      { key: 'marathon',     label: 'Marathon',      meters: 42195 },
-      { key: 'halfMarathon', label: 'Half Marathon',  meters: 21097.5 },
-      { key: '5k',           label: '5K',             meters: 5000 },
-    ],
-  },
-  {
-    slug: 'sub-2-hour-half-marathon',
-    label: 'Sub-2 Hour Half Marathon',
-    goalLabel: 'Sub-2:00:00',
-    distance: 'Half Marathon',
-    distanceMeters: 21097.5,
-    goalTimeLabel: '1:59:59',
-    goalTimeSeconds: 7199,
-    equivalentDistances: [
-      { key: 'marathon',     label: 'Marathon',      meters: 42195 },
-      { key: '10k',          label: '10K',            meters: 10000 },
-      { key: '5k',           label: '5K',             meters: 5000 },
-    ],
-  },
-  {
-    slug: 'sub-4-hour-marathon',
-    label: 'Sub-4 Hour Marathon',
-    goalLabel: 'Sub-4:00:00',
-    distance: 'Marathon',
-    distanceMeters: 42195,
-    goalTimeLabel: '3:59:59',
-    goalTimeSeconds: 14399,
-    equivalentDistances: [
-      { key: 'halfMarathon', label: 'Half Marathon',  meters: 21097.5 },
-      { key: '10k',          label: '10K',            meters: 10000 },
-      { key: '5k',           label: '5K',             meters: 5000 },
-    ],
-  },
+  // ---- 5K goals ----
+  { slug: 'sub-17-minute-5k',           label: 'Sub-17 Minute 5K',           goalLabel: 'Sub-17:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '16:59',    goalTimeSeconds: 1019,  equivalentDistances: EQUIV_5K_UP },
+  { slug: 'sub-18-minute-5k',           label: 'Sub-18 Minute 5K',           goalLabel: 'Sub-18:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '17:59',    goalTimeSeconds: 1079,  equivalentDistances: EQUIV_5K_UP },
+  { slug: 'sub-19-minute-5k',           label: 'Sub-19 Minute 5K',           goalLabel: 'Sub-19:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '18:59',    goalTimeSeconds: 1139,  equivalentDistances: EQUIV_5K_UP },
+  { slug: 'sub-20-minute-5k',           label: 'Sub-20 Minute 5K',           goalLabel: 'Sub-20:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '19:59',    goalTimeSeconds: 1199,  equivalentDistances: EQUIV_5K_UP },
+  { slug: 'sub-21-minute-5k',           label: 'Sub-21 Minute 5K',           goalLabel: 'Sub-21:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '20:59',    goalTimeSeconds: 1259,  equivalentDistances: EQUIV_5K_UP },
+  { slug: 'sub-22-minute-5k',           label: 'Sub-22 Minute 5K',           goalLabel: 'Sub-22:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '21:59',    goalTimeSeconds: 1319,  equivalentDistances: EQUIV_5K_UP },
+  { slug: 'sub-23-minute-5k',           label: 'Sub-23 Minute 5K',           goalLabel: 'Sub-23:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '22:59',    goalTimeSeconds: 1379,  equivalentDistances: EQUIV_5K_UP },
+  { slug: 'sub-24-minute-5k',           label: 'Sub-24 Minute 5K',           goalLabel: 'Sub-24:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '23:59',    goalTimeSeconds: 1439,  equivalentDistances: EQUIV_5K_UP },
+  { slug: 'sub-25-minute-5k',           label: 'Sub-25 Minute 5K',           goalLabel: 'Sub-25:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '24:59',    goalTimeSeconds: 1499,  equivalentDistances: EQUIV_5K_UP },
+  { slug: 'sub-27-minute-5k',           label: 'Sub-27 Minute 5K',           goalLabel: 'Sub-27:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '26:59',    goalTimeSeconds: 1619,  equivalentDistances: EQUIV_5K_UP },
+  { slug: 'sub-30-minute-5k',           label: 'Sub-30 Minute 5K',           goalLabel: 'Sub-30:00',   distance: '5K',           distanceMeters: 5000,    goalTimeLabel: '29:59',    goalTimeSeconds: 1799,  equivalentDistances: EQUIV_5K_UP },
+  // ---- 10K goals ----
+  { slug: 'sub-35-minute-10k',          label: 'Sub-35 Minute 10K',          goalLabel: 'Sub-35:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '34:59',    goalTimeSeconds: 2099,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-36-minute-10k',          label: 'Sub-36 Minute 10K',          goalLabel: 'Sub-36:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '35:59',    goalTimeSeconds: 2159,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-37-minute-10k',          label: 'Sub-37 Minute 10K',          goalLabel: 'Sub-37:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '36:59',    goalTimeSeconds: 2219,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-38-minute-10k',          label: 'Sub-38 Minute 10K',          goalLabel: 'Sub-38:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '37:59',    goalTimeSeconds: 2279,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-39-minute-10k',          label: 'Sub-39 Minute 10K',          goalLabel: 'Sub-39:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '38:59',    goalTimeSeconds: 2339,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-40-minute-10k',          label: 'Sub-40 Minute 10K',          goalLabel: 'Sub-40:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '39:59',    goalTimeSeconds: 2399,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-42-minute-10k',          label: 'Sub-42 Minute 10K',          goalLabel: 'Sub-42:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '41:59',    goalTimeSeconds: 2519,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-45-minute-10k',          label: 'Sub-45 Minute 10K',          goalLabel: 'Sub-45:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '44:59',    goalTimeSeconds: 2699,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-48-minute-10k',          label: 'Sub-48 Minute 10K',          goalLabel: 'Sub-48:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '47:59',    goalTimeSeconds: 2879,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-50-minute-10k',          label: 'Sub-50 Minute 10K',          goalLabel: 'Sub-50:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '49:59',    goalTimeSeconds: 2999,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-55-minute-10k',          label: 'Sub-55 Minute 10K',          goalLabel: 'Sub-55:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '54:59',    goalTimeSeconds: 3299,  equivalentDistances: EQUIV_10K_UP },
+  { slug: 'sub-60-minute-10k',          label: 'Sub-60 Minute 10K',          goalLabel: 'Sub-60:00',   distance: '10K',          distanceMeters: 10000,   goalTimeLabel: '59:59',    goalTimeSeconds: 3599,  equivalentDistances: EQUIV_10K_UP },
+  // ---- Half Marathon goals ----
+  { slug: 'sub-1-15-half-marathon',     label: 'Sub-1:15 Half Marathon',     goalLabel: 'Sub-1:15:00', distance: 'Half Marathon', distanceMeters: 21097.5, goalTimeLabel: '1:14:59', goalTimeSeconds: 4499,  equivalentDistances: EQUIV_HALF_UP },
+  { slug: 'sub-1-20-half-marathon',     label: 'Sub-1:20 Half Marathon',     goalLabel: 'Sub-1:20:00', distance: 'Half Marathon', distanceMeters: 21097.5, goalTimeLabel: '1:19:59', goalTimeSeconds: 4799,  equivalentDistances: EQUIV_HALF_UP },
+  { slug: 'sub-1-25-half-marathon',     label: 'Sub-1:25 Half Marathon',     goalLabel: 'Sub-1:25:00', distance: 'Half Marathon', distanceMeters: 21097.5, goalTimeLabel: '1:24:59', goalTimeSeconds: 5099,  equivalentDistances: EQUIV_HALF_UP },
+  { slug: 'sub-1-30-half-marathon',     label: 'Sub-1:30 Half Marathon',     goalLabel: 'Sub-1:30:00', distance: 'Half Marathon', distanceMeters: 21097.5, goalTimeLabel: '1:29:59', goalTimeSeconds: 5399,  equivalentDistances: EQUIV_HALF_UP },
+  { slug: 'sub-1-35-half-marathon',     label: 'Sub-1:35 Half Marathon',     goalLabel: 'Sub-1:35:00', distance: 'Half Marathon', distanceMeters: 21097.5, goalTimeLabel: '1:34:59', goalTimeSeconds: 5699,  equivalentDistances: EQUIV_HALF_UP },
+  { slug: 'sub-1-40-half-marathon',     label: 'Sub-1:40 Half Marathon',     goalLabel: 'Sub-1:40:00', distance: 'Half Marathon', distanceMeters: 21097.5, goalTimeLabel: '1:39:59', goalTimeSeconds: 5999,  equivalentDistances: EQUIV_HALF_UP },
+  { slug: 'sub-1-45-half-marathon',     label: 'Sub-1:45 Half Marathon',     goalLabel: 'Sub-1:45:00', distance: 'Half Marathon', distanceMeters: 21097.5, goalTimeLabel: '1:44:59', goalTimeSeconds: 6299,  equivalentDistances: EQUIV_HALF_UP },
+  { slug: 'sub-1-50-half-marathon',     label: 'Sub-1:50 Half Marathon',     goalLabel: 'Sub-1:50:00', distance: 'Half Marathon', distanceMeters: 21097.5, goalTimeLabel: '1:49:59', goalTimeSeconds: 6599,  equivalentDistances: EQUIV_HALF_UP },
+  { slug: 'sub-2-hour-half-marathon',   label: 'Sub-2 Hour Half Marathon',   goalLabel: 'Sub-2:00:00', distance: 'Half Marathon', distanceMeters: 21097.5, goalTimeLabel: '1:59:59', goalTimeSeconds: 7199,  equivalentDistances: EQUIV_HALF_UP },
+  // ---- Marathon goals ----
+  { slug: 'sub-2-30-marathon',          label: 'Sub-2:30 Marathon',          goalLabel: 'Sub-2:30:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '2:29:59', goalTimeSeconds: 8999,  equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-2-45-marathon',          label: 'Sub-2:45 Marathon',          goalLabel: 'Sub-2:45:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '2:44:59', goalTimeSeconds: 9899,  equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-3-hour-marathon',        label: 'Sub-3 Hour Marathon',        goalLabel: 'Sub-3:00:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '2:59:59', goalTimeSeconds: 10799, equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-3-05-marathon',          label: 'Sub-3:05 Marathon',          goalLabel: 'Sub-3:05:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '3:04:59', goalTimeSeconds: 11099, equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-3-10-marathon',          label: 'Sub-3:10 Marathon',          goalLabel: 'Sub-3:10:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '3:09:59', goalTimeSeconds: 11399, equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-3-15-marathon',          label: 'Sub-3:15 Marathon',          goalLabel: 'Sub-3:15:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '3:14:59', goalTimeSeconds: 11699, equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-3-20-marathon',          label: 'Sub-3:20 Marathon',          goalLabel: 'Sub-3:20:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '3:19:59', goalTimeSeconds: 11999, equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-3-30-marathon',          label: 'Sub-3:30 Marathon',          goalLabel: 'Sub-3:30:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '3:29:59', goalTimeSeconds: 12599, equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-3-45-marathon',          label: 'Sub-3:45 Marathon',          goalLabel: 'Sub-3:45:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '3:44:59', goalTimeSeconds: 13499, equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-4-hour-marathon',        label: 'Sub-4 Hour Marathon',        goalLabel: 'Sub-4:00:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '3:59:59', goalTimeSeconds: 14399, equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-4-30-marathon',          label: 'Sub-4:30 Marathon',          goalLabel: 'Sub-4:30:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '4:29:59', goalTimeSeconds: 16199, equivalentDistances: EQUIV_MARA_UP },
+  { slug: 'sub-5-hour-marathon',        label: 'Sub-5 Hour Marathon',        goalLabel: 'Sub-5:00:00', distance: 'Marathon',      distanceMeters: 42195,   goalTimeLabel: '4:59:59', goalTimeSeconds: 17999, equivalentDistances: EQUIV_MARA_UP },
 ];
 
 function generateGoalPaceData() {
@@ -542,74 +512,44 @@ function generateGoalPaceData() {
 // with training paces derived from each benchmark time.
 // ============================================================================
 
-const DEMOGRAPHIC_CONFIGS = [
-  {
-    slug:          '5k-times-women-age-40s',
-    gender:        'female',
-    genderLabel:   'Women',
-    distance:      '5K',
-    distanceMeters: 5000,
-    distKey:       '5k',
-    ageDecade:     '40s',
-    ageRange:      '40–49',
-    ages:          [40, 45],
-  },
-  {
-    slug:          '5k-times-women-age-50s',
-    gender:        'female',
-    genderLabel:   'Women',
-    distance:      '5K',
-    distanceMeters: 5000,
-    distKey:       '5k',
-    ageDecade:     '50s',
-    ageRange:      '50–59',
-    ages:          [50, 55],
-  },
-  {
-    slug:          'marathon-times-men-age-50s',
-    gender:        'male',
-    genderLabel:   'Men',
-    distance:      'Marathon',
-    distanceMeters: 42195,
-    distKey:       'marathon',
-    ageDecade:     '50s',
-    ageRange:      '50–59',
-    ages:          [50, 55],
-  },
-  {
-    slug:          'marathon-times-women-age-50s',
-    gender:        'female',
-    genderLabel:   'Women',
-    distance:      'Marathon',
-    distanceMeters: 42195,
-    distKey:       'marathon',
-    ageDecade:     '50s',
-    ageRange:      '50–59',
-    ages:          [50, 55],
-  },
-  {
-    slug:          '10k-times-men-age-60s',
-    gender:        'male',
-    genderLabel:   'Men',
-    distance:      '10K',
-    distanceMeters: 10000,
-    distKey:       '10k',
-    ageDecade:     '60s',
-    ageRange:      '60–69',
-    ages:          [60, 65],
-  },
-  {
-    slug:          'marathon-times-men-age-60s',
-    gender:        'male',
-    genderLabel:   'Men',
-    distance:      'Marathon',
-    distanceMeters: 42195,
-    distKey:       'marathon',
-    ageDecade:     '60s',
-    ageRange:      '60–69',
-    ages:          [60, 65],
-  },
+// Programmatic demographic config generation — 4 distances × 2 genders × 7 decades = 56 total
+const DEMO_DIST_MATRIX = [
+  { distSlug: '5k',            distKey: '5k',       label: '5K',            meters: 5000 },
+  { distSlug: '10k',           distKey: '10k',      label: '10K',           meters: 10000 },
+  { distSlug: 'half-marathon', distKey: 'half',     label: 'Half Marathon', meters: 21097.5 },
+  { distSlug: 'marathon',      distKey: 'marathon', label: 'Marathon',      meters: 42195 },
 ];
+
+const DEMO_DECADE_MATRIX = [
+  { decade: '20s', ages: [25, 29], ageRange: '20–29' },
+  { decade: '30s', ages: [30, 35], ageRange: '30–39' },
+  { decade: '40s', ages: [40, 45], ageRange: '40–49' },
+  { decade: '50s', ages: [50, 55], ageRange: '50–59' },
+  { decade: '60s', ages: [60, 65], ageRange: '60–69' },
+  { decade: '70s', ages: [70, 75], ageRange: '70–79' },
+  { decade: '80s', ages: [80],     ageRange: '80+' },
+];
+
+const DEMOGRAPHIC_CONFIGS = [];
+for (const dist of DEMO_DIST_MATRIX) {
+  for (const gender of ['male', 'female']) {
+    const genderLabel = gender === 'male' ? 'Men' : 'Women';
+    const genderSlug  = gender === 'male' ? 'men' : 'women';
+    for (const dec of DEMO_DECADE_MATRIX) {
+      DEMOGRAPHIC_CONFIGS.push({
+        slug:           `${dist.distSlug}-times-${genderSlug}-age-${dec.decade}`,
+        gender,
+        genderLabel,
+        distance:       dist.label,
+        distanceMeters: dist.meters,
+        distKey:        dist.distKey,
+        ageDecade:      dec.decade,
+        ageRange:       dec.ageRange,
+        ages:           dec.ages,
+      });
+    }
+  }
+}
 
 const DEMO_PERF_LEVELS = [
   { pct: 50, label: 'Recreational' },
@@ -640,9 +580,13 @@ function generateAgeDemographicData() {
     const rows = [];
 
     for (const age of cfg.ages) {
-      const factor = AGE_FACTORS[cfg.gender][dmKey]?.[age];
+      // For ages outside the WMA table range (30–80), clamp to the nearest available age.
+      // Ages < 30: use age 30 (open class — factor ≈ 1.0 for young runners).
+      // Ages > 80: use age 80 (oldest available standard).
+      const lookupAge = Math.min(80, Math.max(30, age));
+      const factor = AGE_FACTORS[cfg.gender][dmKey]?.[lookupAge];
       if (!factor) {
-        console.error(`  ERROR: no age factor for ${cfg.gender} ${dmKey}m age ${age}`);
+        console.error(`  ERROR: no age factor for ${cfg.gender} ${dmKey}m age ${lookupAge}`);
         continue;
       }
 
@@ -701,51 +645,37 @@ function generateAgeDemographicData() {
 // Given input race time, compute equivalent time in target distance.
 // ============================================================================
 
+// Reusable input-time sets
+const MILE_TIMES  = [{ label:'4:00',seconds:240},{ label:'4:15',seconds:255},{ label:'4:30',seconds:270},{ label:'4:45',seconds:285},{ label:'5:00',seconds:300},{ label:'5:15',seconds:315},{ label:'5:30',seconds:330},{ label:'5:45',seconds:345},{ label:'6:00',seconds:360},{ label:'6:30',seconds:390},{ label:'7:00',seconds:420},{ label:'8:00',seconds:480}];
+const M800_TIMES  = [{ label:'1:50',seconds:110},{ label:'2:00',seconds:120},{ label:'2:05',seconds:125},{ label:'2:10',seconds:130},{ label:'2:15',seconds:135},{ label:'2:20',seconds:140},{ label:'2:30',seconds:150},{ label:'2:40',seconds:160},{ label:'2:50',seconds:170},{ label:'3:00',seconds:180},{ label:'3:10',seconds:190},{ label:'3:30',seconds:210}];
+const FK5_TIMES   = [{ label:'16:00',seconds:960},{ label:'17:00',seconds:1020},{ label:'18:00',seconds:1080},{ label:'19:00',seconds:1140},{ label:'20:00',seconds:1200},{ label:'21:00',seconds:1260},{ label:'22:00',seconds:1320},{ label:'24:00',seconds:1440},{ label:'26:00',seconds:1560},{ label:'28:00',seconds:1680},{ label:'30:00',seconds:1800},{ label:'35:00',seconds:2100}];
+const FK10_TIMES  = [{ label:'32:00',seconds:1920},{ label:'35:00',seconds:2100},{ label:'38:00',seconds:2280},{ label:'40:00',seconds:2400},{ label:'42:00',seconds:2520},{ label:'45:00',seconds:2700},{ label:'48:00',seconds:2880},{ label:'50:00',seconds:3000},{ label:'55:00',seconds:3300},{ label:'60:00',seconds:3600},{ label:'65:00',seconds:3900},{ label:'70:00',seconds:4200}];
+const HALF_TIMES  = [{ label:'1:15:00',seconds:4500},{ label:'1:20:00',seconds:4800},{ label:'1:25:00',seconds:5100},{ label:'1:30:00',seconds:5400},{ label:'1:35:00',seconds:5700},{ label:'1:40:00',seconds:6000},{ label:'1:45:00',seconds:6300},{ label:'1:55:00',seconds:6900},{ label:'2:00:00',seconds:7200},{ label:'2:10:00',seconds:7800},{ label:'2:20:00',seconds:8400},{ label:'2:30:00',seconds:9000}];
+const MARA_TIMES  = [{ label:'2:30:00',seconds:9000},{ label:'2:45:00',seconds:9900},{ label:'3:00:00',seconds:10800},{ label:'3:15:00',seconds:11700},{ label:'3:30:00',seconds:12600},{ label:'3:45:00',seconds:13500},{ label:'4:00:00',seconds:14400},{ label:'4:15:00',seconds:15300},{ label:'4:30:00',seconds:16200},{ label:'4:45:00',seconds:17100},{ label:'5:00:00',seconds:18000},{ label:'5:30:00',seconds:19800}];
+
 const EQUIVALENCY_CONFIGS = [
-  {
-    slug:                '5k-to-marathon',
-    label:               '5K → Marathon Equivalency',
-    inputDistance:       '5K',
-    inputDistanceMeters: 5000,
-    outputDistance:      'Marathon',
-    outputDistanceMeters: 42195,
-    inputTimes: [
-      { label: '16:00', seconds: 960 },
-      { label: '17:00', seconds: 1020 },
-      { label: '18:00', seconds: 1080 },
-      { label: '19:00', seconds: 1140 },
-      { label: '20:00', seconds: 1200 },
-      { label: '21:00', seconds: 1260 },
-      { label: '22:00', seconds: 1320 },
-      { label: '24:00', seconds: 1440 },
-      { label: '26:00', seconds: 1560 },
-      { label: '28:00', seconds: 1680 },
-      { label: '30:00', seconds: 1800 },
-      { label: '35:00', seconds: 2100 },
-    ],
-  },
-  {
-    slug:                '10k-to-half-marathon',
-    label:               '10K → Half Marathon Equivalency',
-    inputDistance:       '10K',
-    inputDistanceMeters: 10000,
-    outputDistance:      'Half Marathon',
-    outputDistanceMeters: 21097.5,
-    inputTimes: [
-      { label: '32:00', seconds: 1920 },
-      { label: '35:00', seconds: 2100 },
-      { label: '38:00', seconds: 2280 },
-      { label: '40:00', seconds: 2400 },
-      { label: '42:00', seconds: 2520 },
-      { label: '45:00', seconds: 2700 },
-      { label: '48:00', seconds: 2880 },
-      { label: '50:00', seconds: 3000 },
-      { label: '55:00', seconds: 3300 },
-      { label: '60:00', seconds: 3600 },
-      { label: '65:00', seconds: 3900 },
-      { label: '70:00', seconds: 4200 },
-    ],
-  },
+  // ---- Existing ----
+  { slug:'5k-to-marathon',           label:'5K → Marathon',           inputDistance:'5K',            inputDistanceMeters:5000,    outputDistance:'Marathon',      outputDistanceMeters:42195,   inputTimes: FK5_TIMES  },
+  { slug:'10k-to-half-marathon',     label:'10K → Half Marathon',     inputDistance:'10K',           inputDistanceMeters:10000,   outputDistance:'Half Marathon', outputDistanceMeters:21097.5, inputTimes: FK10_TIMES },
+  // ---- Mile conversions ----
+  { slug:'mile-to-5k',               label:'Mile → 5K',               inputDistance:'Mile',          inputDistanceMeters:1609.34, outputDistance:'5K',            outputDistanceMeters:5000,    inputTimes: MILE_TIMES },
+  { slug:'mile-to-10k',              label:'Mile → 10K',              inputDistance:'Mile',          inputDistanceMeters:1609.34, outputDistance:'10K',           outputDistanceMeters:10000,   inputTimes: MILE_TIMES },
+  { slug:'mile-to-half-marathon',    label:'Mile → Half Marathon',    inputDistance:'Mile',          inputDistanceMeters:1609.34, outputDistance:'Half Marathon', outputDistanceMeters:21097.5, inputTimes: MILE_TIMES },
+  { slug:'mile-to-marathon',         label:'Mile → Marathon',         inputDistance:'Mile',          inputDistanceMeters:1609.34, outputDistance:'Marathon',      outputDistanceMeters:42195,   inputTimes: MILE_TIMES },
+  // ---- 5K conversions ----
+  { slug:'5k-to-10k',                label:'5K → 10K',                inputDistance:'5K',            inputDistanceMeters:5000,    outputDistance:'10K',           outputDistanceMeters:10000,   inputTimes: FK5_TIMES  },
+  { slug:'5k-to-half-marathon',      label:'5K → Half Marathon',      inputDistance:'5K',            inputDistanceMeters:5000,    outputDistance:'Half Marathon', outputDistanceMeters:21097.5, inputTimes: FK5_TIMES  },
+  // ---- 10K conversions ----
+  { slug:'10k-to-marathon',          label:'10K → Marathon',          inputDistance:'10K',           inputDistanceMeters:10000,   outputDistance:'Marathon',      outputDistanceMeters:42195,   inputTimes: FK10_TIMES },
+  // ---- Half marathon conversions ----
+  { slug:'half-marathon-to-marathon',label:'Half Marathon → Marathon', inputDistance:'Half Marathon', inputDistanceMeters:21097.5, outputDistance:'Marathon',      outputDistanceMeters:42195,   inputTimes: HALF_TIMES },
+  // ---- Reverse (marathon back to shorter) ----
+  { slug:'marathon-to-5k',           label:'Marathon → 5K',           inputDistance:'Marathon',      inputDistanceMeters:42195,   outputDistance:'5K',            outputDistanceMeters:5000,    inputTimes: MARA_TIMES },
+  { slug:'marathon-to-10k',          label:'Marathon → 10K',          inputDistance:'Marathon',      inputDistanceMeters:42195,   outputDistance:'10K',           outputDistanceMeters:10000,   inputTimes: MARA_TIMES },
+  { slug:'marathon-to-half-marathon',label:'Marathon → Half Marathon', inputDistance:'Marathon',      inputDistanceMeters:42195,   outputDistance:'Half Marathon', outputDistanceMeters:21097.5, inputTimes: MARA_TIMES },
+  // ---- 800m conversions ----
+  { slug:'800m-to-mile',             label:'800m → Mile',             inputDistance:'800m',          inputDistanceMeters:800,     outputDistance:'Mile',          outputDistanceMeters:1609.34, inputTimes: M800_TIMES },
+  { slug:'800m-to-5k',               label:'800m → 5K',               inputDistance:'800m',          inputDistanceMeters:800,     outputDistance:'5K',            outputDistanceMeters:5000,    inputTimes: M800_TIMES },
 ];
 
 function generateEquivalencyData() {
@@ -800,6 +730,99 @@ function generateEquivalencyData() {
 }
 
 // ============================================================================
+// BOSTON QUALIFYING DATA GENERATION (deterministic)
+// Pages: /tools/boston-qualifying/[slug]
+// BQ standards: 2026 BAA (verified 2026-02-26 from baa.org)
+// ============================================================================
+
+const BQ_CONFIGS = [
+  // Men
+  { slug:'boston-qualifying-time-men-18-34',    gender:'male',   genderLabel:'Men',   ageGroup:'18–34', midAge:30, bqTime:'2:55:00', bqSeconds:10500 },
+  { slug:'boston-qualifying-time-men-35-39',    gender:'male',   genderLabel:'Men',   ageGroup:'35–39', midAge:37, bqTime:'3:00:00', bqSeconds:10800 },
+  { slug:'boston-qualifying-time-men-40-44',    gender:'male',   genderLabel:'Men',   ageGroup:'40–44', midAge:42, bqTime:'3:05:00', bqSeconds:11100 },
+  { slug:'boston-qualifying-time-men-45-49',    gender:'male',   genderLabel:'Men',   ageGroup:'45–49', midAge:47, bqTime:'3:15:00', bqSeconds:11700 },
+  { slug:'boston-qualifying-time-men-50-54',    gender:'male',   genderLabel:'Men',   ageGroup:'50–54', midAge:52, bqTime:'3:20:00', bqSeconds:12000 },
+  { slug:'boston-qualifying-time-men-55-59',    gender:'male',   genderLabel:'Men',   ageGroup:'55–59', midAge:57, bqTime:'3:30:00', bqSeconds:12600 },
+  { slug:'boston-qualifying-time-men-60-64',    gender:'male',   genderLabel:'Men',   ageGroup:'60–64', midAge:62, bqTime:'3:50:00', bqSeconds:13800 },
+  { slug:'boston-qualifying-time-men-65-69',    gender:'male',   genderLabel:'Men',   ageGroup:'65–69', midAge:67, bqTime:'4:05:00', bqSeconds:14700 },
+  { slug:'boston-qualifying-time-men-70-74',    gender:'male',   genderLabel:'Men',   ageGroup:'70–74', midAge:72, bqTime:'4:20:00', bqSeconds:15600 },
+  { slug:'boston-qualifying-time-men-75-79',    gender:'male',   genderLabel:'Men',   ageGroup:'75–79', midAge:77, bqTime:'4:35:00', bqSeconds:16500 },
+  { slug:'boston-qualifying-time-men-80-plus',  gender:'male',   genderLabel:'Men',   ageGroup:'80+',   midAge:80, bqTime:'4:50:00', bqSeconds:17400 },
+  // Women & Non-Binary
+  { slug:'boston-qualifying-time-women-18-34',  gender:'female', genderLabel:'Women', ageGroup:'18–34', midAge:30, bqTime:'3:25:00', bqSeconds:12300 },
+  { slug:'boston-qualifying-time-women-35-39',  gender:'female', genderLabel:'Women', ageGroup:'35–39', midAge:37, bqTime:'3:30:00', bqSeconds:12600 },
+  { slug:'boston-qualifying-time-women-40-44',  gender:'female', genderLabel:'Women', ageGroup:'40–44', midAge:42, bqTime:'3:35:00', bqSeconds:12900 },
+  { slug:'boston-qualifying-time-women-45-49',  gender:'female', genderLabel:'Women', ageGroup:'45–49', midAge:47, bqTime:'3:45:00', bqSeconds:13500 },
+  { slug:'boston-qualifying-time-women-50-54',  gender:'female', genderLabel:'Women', ageGroup:'50–54', midAge:52, bqTime:'3:50:00', bqSeconds:13800 },
+  { slug:'boston-qualifying-time-women-55-59',  gender:'female', genderLabel:'Women', ageGroup:'55–59', midAge:57, bqTime:'4:00:00', bqSeconds:14400 },
+  { slug:'boston-qualifying-time-women-60-64',  gender:'female', genderLabel:'Women', ageGroup:'60–64', midAge:62, bqTime:'4:20:00', bqSeconds:15600 },
+  { slug:'boston-qualifying-time-women-65-69',  gender:'female', genderLabel:'Women', ageGroup:'65–69', midAge:67, bqTime:'4:35:00', bqSeconds:16500 },
+  { slug:'boston-qualifying-time-women-70-74',  gender:'female', genderLabel:'Women', ageGroup:'70–74', midAge:72, bqTime:'4:50:00', bqSeconds:17400 },
+  { slug:'boston-qualifying-time-women-75-79',  gender:'female', genderLabel:'Women', ageGroup:'75–79', midAge:77, bqTime:'5:05:00', bqSeconds:18300 },
+  { slug:'boston-qualifying-time-women-80-plus',gender:'female', genderLabel:'Women', ageGroup:'80+',   midAge:80, bqTime:'5:20:00', bqSeconds:19200 },
+];
+
+function generateBQData() {
+  const result = {
+    _meta: {
+      generated: new Date().toISOString(),
+      schemaVersion: '1.0',
+      source: 'BAA Boston Marathon Qualifying Standards 2026 (verified 2026-02-26)',
+      note: 'BQ times are fixed BAA standards. RPI, paces, and equivalents are computed via rpi-formula.mjs.',
+    },
+  };
+
+  const MARATHON_DM = 42195;
+
+  for (const cfg of BQ_CONFIGS) {
+    const rpi = calculateRpi(MARATHON_DM, cfg.bqSeconds);
+    if (!rpi) {
+      console.error(`  ERROR: could not compute RPI for ${cfg.slug}`);
+      continue;
+    }
+
+    const paces = calculateTrainingPaces(rpi);
+
+    // WMA age-graded percentage: openStandard × ageFactor / bqSeconds
+    const openStd = OPEN_STANDARDS[cfg.gender][MARATHON_DM];
+    const lookupAge = Math.min(80, Math.max(30, cfg.midAge));
+    const ageFactor = AGE_FACTORS[cfg.gender][MARATHON_DM]?.[lookupAge] ?? 1.0;
+    const wmaGradePct = Math.round((openStd * ageFactor / cfg.bqSeconds) * 1000) / 10;
+
+    // Equivalent times at shorter distances
+    const equiv5k   = calculateEquivalentRaceTime(rpi, 5000);
+    const equiv10k  = calculateEquivalentRaceTime(rpi, 10000);
+    const equivHalf = calculateEquivalentRaceTime(rpi, 21097.5);
+
+    result[cfg.slug] = {
+      slug:         cfg.slug,
+      gender:       cfg.gender,
+      genderLabel:  cfg.genderLabel,
+      ageGroup:     cfg.ageGroup,
+      midAge:       cfg.midAge,
+      bqTime:       cfg.bqTime,
+      bqSeconds:    cfg.bqSeconds,
+      rpi,
+      wmaGradePct,
+      paces: {
+        easy:       { mi: paces.easy.mi,       km: paces.easy.km,       secPerMile: paces.easy.secPerMile },
+        marathon:   { mi: paces.marathon.mi,   km: paces.marathon.km,   secPerMile: paces.marathon.secPerMile },
+        threshold:  { mi: paces.threshold.mi,  km: paces.threshold.km,  secPerMile: paces.threshold.secPerMile },
+        interval:   { mi: paces.interval.mi,   km: paces.interval.km,   secPerMile: paces.interval.secPerMile },
+        repetition: { mi: paces.repetition.mi, km: paces.repetition.km, secPerMile: paces.repetition.secPerMile },
+      },
+      equivalents: {
+        '5k':   equiv5k   ? { label:'5K',            distanceMeters:5000,    ...equiv5k   } : null,
+        '10k':  equiv10k  ? { label:'10K',           distanceMeters:10000,   ...equiv10k  } : null,
+        'half': equivHalf ? { label:'Half Marathon',  distanceMeters:21097.5, ...equivHalf } : null,
+      },
+    };
+  }
+
+  return result;
+}
+
+// ============================================================================
 // MAIN
 // ============================================================================
 
@@ -834,6 +857,20 @@ async function main() {
     for (const d of Object.values(trainingPaces)) totalPaceRows += d.rows.length;
   } else {
     console.log('(--new-only mode: skipping age-grading and API training-pace regeneration)');
+  }
+
+  // --- BQ tables ---
+  console.log('\nGenerating BQ tables (deterministic)...');
+  const bqData = generateBQData();
+  const bqFile = join(DATA_DIR, 'bq-tables.json');
+  writeFileSync(bqFile, JSON.stringify(bqData, null, 2));
+  console.log(`  Written to ${bqFile}`);
+  const bqSlugs = Object.keys(bqData).filter(k => k !== '_meta');
+  console.log(`  BQ entries: ${bqSlugs.length}`);
+  // Sample spot-check
+  const bqSample = bqData['boston-qualifying-time-men-40-44'];
+  if (bqSample) {
+    console.log(`  Sample M40-44: BQ=${bqSample.bqTime}, RPI=${bqSample.rpi}, WMA=${bqSample.wmaGradePct}%, easy=${bqSample.paces.easy.mi}, equiv 5K=${bqSample.equivalents['5k']?.timeFormatted}`);
   }
 
   // --- New tables (deterministic, no API) ---
@@ -883,12 +920,14 @@ async function main() {
 
   // --- Summary ---
   const equivCount = Object.keys(equivData).filter(k => k !== '_meta').length;
+  const bqCount    = Object.keys(bqData).filter(k => k !== '_meta').length;
   console.log(`\n${'='.repeat(60)}`);
   console.log(`DONE.`);
   if (!newOnly) {
     console.log(`  age-grading-tables.json   (regenerated)`);
     console.log(`  training-pace-tables.json ${totalPaceRows} rows (API-fetched)`);
   }
+  console.log(`  bq-tables.json            ${bqCount} BQ age-group entries`);
   console.log(`  goal-pace-tables.json     ${goalSlugs.length} goals`);
   console.log(`  age-gender-tables.json    ${demoSlugs.length} demographics`);
   console.log(`  equivalency-tables.json   ${equivCount} conversions`);
