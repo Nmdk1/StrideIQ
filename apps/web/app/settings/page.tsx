@@ -729,9 +729,5 @@ function SettingsPageContent() {
 }
 
 export default function SettingsPage() {
-  return (
-    <Suspense fallback={null}>
-      <SettingsPageContent />
-    </Suspense>
-  );
+  return <SettingsPageContent />;
 }
