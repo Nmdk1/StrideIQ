@@ -2,13 +2,13 @@
 
 /**
  * Plan Overview Page
- * 
+ *
  * Full view of a training plan showing:
  * - All weeks at a glance
  * - Phase progression
  * - Volume chart
  * - Workout details per week
- * 
+ *
  * DESIGN: Users need to see their entire plan to understand the journey
  */
 
@@ -19,6 +19,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { API_CONFIG } from '@/lib/api/config';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+
+/** Workout types that carry pace targets and should show the locked-pace UI. */
+const QUALITY_TYPES = new Set(['threshold', 'tempo', 'intervals', 'long_mp']);
 
 interface PlannedWorkout {
   id: string;
@@ -45,6 +48,7 @@ interface PlanDetail {
   start_date: string | null;
   end_date: string | null;
   baseline_rpi: number | null;
+  paces_locked: boolean;
   weeks: Record<string, PlannedWorkout[]>;
 }
 
@@ -74,7 +78,35 @@ export default function PlanOverviewPage() {
   const planId = params.id as string;
   
   const [expandedWeek, setExpandedWeek] = useState<number | null>(null);
-  
+  const [unlocking, setUnlocking] = useState(false);
+
+  /** Initiate the $5 one-time plan unlock via Stripe Checkout. */
+  const unlockPaces = async () => {
+    if (!plan || !token || unlocking) return;
+    setUnlocking(true);
+    try {
+      const res = await fetch(`${API_CONFIG.baseURL}/v1/billing/checkout/plan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ plan_snapshot_id: plan.id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail ?? 'Could not start checkout. Please try again.');
+        return;
+      }
+      const { url } = await res.json();
+      window.location.href = url;
+    } catch {
+      alert('Network error. Please check your connection and try again.');
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
   const { data: plan, isLoading, error } = useQuery<PlanDetail>({
     queryKey: ['plan', planId],
     queryFn: async () => {
@@ -93,6 +125,18 @@ export default function PlanOverviewPage() {
       router.push('/login');
     }
   }, [authLoading, isAuthenticated, router]);
+
+  // Post-unlock success: clean URL and show confirmation
+  const [unlockSuccess, setUnlockSuccess] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('unlocked') === '1') {
+      setUnlockSuccess(true);
+      // Remove the query param without adding a history entry
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
   
   // Calculate week volume
   const getWeekVolume = (workouts: PlannedWorkout[]): number => {
@@ -177,6 +221,37 @@ export default function PlanOverviewPage() {
           
           {plan && (
             <>
+              {/* Post-unlock success confirmation */}
+              {unlockSuccess && (
+                <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-700/40 bg-emerald-900/20 px-5 py-3">
+                  <svg className="w-5 h-5 text-emerald-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-sm text-emerald-300">
+                    Paces unlocked — your full training prescriptions are now visible.
+                  </span>
+                </div>
+              )}
+
+              {/* Locked-pace banner — only shown when paces are gated */}
+              {plan.paces_locked && (
+                <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-orange-700/40 bg-gradient-to-r from-orange-900/20 to-slate-800 px-5 py-4">
+                  <div>
+                    <p className="text-sm font-semibold text-orange-300">Paces locked</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Unlock calculated training paces for this plan — one-time, $5.
+                    </p>
+                  </div>
+                  <button
+                    onClick={unlockPaces}
+                    disabled={unlocking}
+                    className="shrink-0 rounded-lg bg-gradient-to-r from-orange-500 to-pink-600 px-4 py-2 text-sm font-semibold text-white shadow hover:from-orange-600 hover:to-pink-700 disabled:opacity-60 transition-all"
+                  >
+                    {unlocking ? 'Redirecting…' : 'Unlock — $5'}
+                  </button>
+                </div>
+              )}
+
               {/* Week Overview Grid */}
               <div className="space-y-4">
                 {Object.entries(plan.weeks)
@@ -294,11 +369,23 @@ export default function PlanOverviewPage() {
                                             {(dayWorkout.target_distance_km * 0.621371).toFixed(1)} mi
                                           </div>
                                         )}
-                                        {dayWorkout.coach_notes && (
+                                        {dayWorkout.coach_notes ? (
                                           <div className="text-xs text-slate-500 mt-1 truncate" title={dayWorkout.coach_notes}>
                                             {dayWorkout.coach_notes}
                                           </div>
-                                        )}
+                                        ) : plan.paces_locked && QUALITY_TYPES.has(dayWorkout.workout_type) ? (
+                                          <button
+                                            onClick={unlockPaces}
+                                            disabled={unlocking}
+                                            className="mt-1 flex items-center gap-1 rounded bg-orange-900/30 px-1.5 py-0.5 text-xs text-orange-400 hover:bg-orange-900/50 transition-colors disabled:opacity-60"
+                                            title="Unlock calculated paces — $5"
+                                          >
+                                            <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                                              <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                                            </svg>
+                                            {unlocking ? '…' : 'Unlock paces'}
+                                          </button>
+                                        ) : null}
                                         {dayWorkout.completed && (
                                           <div className="text-xs text-emerald-400 mt-1">✓ Completed</div>
                                         )}

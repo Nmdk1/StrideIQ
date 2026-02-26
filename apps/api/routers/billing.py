@@ -146,10 +146,20 @@ def create_plan_checkout(
     # Ownership validation: verify the plan artifact belongs to this athlete.
     _verify_plan_ownership(db, athlete_id=current_user.id, plan_snapshot_id=plan_snapshot_id)
 
+    # Build plan-specific success URL so the athlete lands back on their plan
+    # page (not the generic settings page) after completing the $5 unlock.
+    try:
+        from core.config import get_settings as _get_settings
+        _base = getattr(_get_settings(), "WEB_APP_BASE_URL", "https://strideiq.run").rstrip("/")
+    except Exception:
+        _base = "https://strideiq.run"
+    plan_success_url = f"{_base}/plans/{plan_snapshot_id}?unlocked=1"
+
     try:
         url = StripeService().create_one_time_checkout_session(
             athlete=current_user,
             plan_snapshot_id=plan_snapshot_id,
+            success_url=plan_success_url,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))

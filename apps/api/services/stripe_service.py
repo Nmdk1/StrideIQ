@@ -195,6 +195,7 @@ class StripeService:
         *,
         athlete: Athlete,
         plan_snapshot_id: str,
+        success_url: Optional[str] = None,
     ) -> str:
         """Create a Stripe Checkout session for a one-time race-plan unlock ($5).
 
@@ -202,6 +203,11 @@ class StripeService:
             athlete: The athlete purchasing the unlock.
             plan_snapshot_id: Stable, immutable identifier for the plan artifact.
                 Must be bound to this athlete; verified by the caller before invocation.
+            success_url: Override the default success redirect URL.  When supplied,
+                the athlete is sent here after a successful payment instead of the
+                global STRIPE_CHECKOUT_SUCCESS_URL.  Callers should pass a plan-
+                specific URL (e.g. /plans/{id}?unlocked=1) so the athlete lands
+                back on their plan page.
 
         Raises:
             RuntimeError: If STRIPE_PRICE_PLAN_ONETIME_ID is not configured.
@@ -214,7 +220,7 @@ class StripeService:
         customer_id = getattr(athlete, "stripe_customer_id", None)
         params: dict[str, Any] = {
             "mode": "payment",
-            "success_url": self.cfg.checkout_success_url,
+            "success_url": success_url or self.cfg.checkout_success_url,
             "cancel_url": self.cfg.checkout_cancel_url,
             "line_items": [{"price": self.cfg.price_plan_onetime_id, "quantity": 1}],
             "client_reference_id": str(athlete.id),
