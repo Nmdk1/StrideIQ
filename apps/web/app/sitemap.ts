@@ -124,6 +124,105 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'yearly',
       priority: 0.4,
     },
+    // -------------------------------------------------------------------------
+    // Batch 1 traffic pages — added 2026-02-26
+    // -------------------------------------------------------------------------
+
+    // Goal pages — /tools/training-pace-calculator/goals/[slug]
+    {
+      url: `${BASE_URL}/tools/training-pace-calculator/goals/sub-20-minute-5k`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/training-pace-calculator/goals/sub-25-minute-5k`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/training-pace-calculator/goals/sub-40-minute-10k`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/training-pace-calculator/goals/sub-50-minute-10k`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/training-pace-calculator/goals/sub-2-hour-half-marathon`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/training-pace-calculator/goals/sub-4-hour-marathon`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+
+    // Demographic pages — /tools/age-grading-calculator/demographics/[slug]
+    {
+      url: `${BASE_URL}/tools/age-grading-calculator/demographics/5k-times-women-age-40s`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/age-grading-calculator/demographics/5k-times-women-age-50s`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/age-grading-calculator/demographics/marathon-times-men-age-50s`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/age-grading-calculator/demographics/marathon-times-women-age-50s`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/age-grading-calculator/demographics/10k-times-men-age-60s`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/age-grading-calculator/demographics/marathon-times-men-age-60s`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+
+    // Race equivalency — /tools/race-equivalency
+    {
+      url: `${BASE_URL}/tools/race-equivalency`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.8,
+    },
+    {
+      url: `${BASE_URL}/tools/race-equivalency/5k-to-marathon`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/tools/race-equivalency/10k-to-half-marathon`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
   ]
 }
 
