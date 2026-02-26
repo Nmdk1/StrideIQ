@@ -454,7 +454,7 @@ function CoachPageInner() {
                 >
                   {usedBaselineBanner && (
                     <div className="mb-4 rounded-md border border-slate-700/60 bg-slate-950/40 px-4 py-3 text-sm text-slate-200">
-                      Using your answers for now — connect Strava/Garmin for better insights.
+                      Using your answers for now — connect Strava/Garmin Connect for better insights.
                     </div>
                   )}
 

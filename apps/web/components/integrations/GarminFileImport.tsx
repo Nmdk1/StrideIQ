@@ -126,11 +126,11 @@ export function GarminFileImport({ compact = false }: { compact?: boolean }) {
           )}
           <div>
             <p className="font-medium text-slate-200">
-              {compact ? 'Import from ZIP' : 'Garmin (file import)'}
+              {compact ? 'Import from ZIP' : 'Garmin Connect (file import)'}
             </p>
             {!compact && (
               <p className="text-sm text-slate-400">
-                Upload your Garmin export ZIP. We import activities asynchronously.
+                Upload your Garmin Connect export ZIP. We import activities asynchronously.
               </p>
             )}
           </div>
@@ -206,7 +206,7 @@ export function GarminFileImport({ compact = false }: { compact?: boolean }) {
                 Loading recent imports…
               </div>
             ) : jobs.length === 0 ? (
-              <div className="text-sm text-slate-400">No Garmin imports yet.</div>
+              <div className="text-sm text-slate-400">No Garmin Connect imports yet.</div>
             ) : (
               <div className="space-y-2">
                 {jobs.map((j) => (

@@ -24,7 +24,7 @@ export function GarminConnectButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      aria-label="Connect your Garmin account"
+      aria-label="Connect your Garmin Connect account"
       className={`
         inline-flex items-center justify-center gap-2
         rounded-md px-5 py-3
@@ -45,7 +45,7 @@ export function GarminConnectButton({
       }}
     >
       <GarminWordmark />
-      <span>Connect with Garmin</span>
+      <span>Connect with Garmin Connect</span>
     </button>
   );
 }
@@ -76,7 +76,7 @@ export function GarminConnectLink({
       onClick={onClick}
       className={`text-sm underline ${className}`}
       style={{ color: '#007CC3' }}
-      aria-label="Connect your Garmin account"
+      aria-label="Connect your Garmin Connect account"
     >
       Connect with Garmin Connect
     </button>

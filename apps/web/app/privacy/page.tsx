@@ -47,7 +47,7 @@ export default function PrivacyPolicyPage() {
             
             <h4 className="text-lg font-semibold mt-4 mb-2">Garmin Connect</h4>
             <p className="text-slate-300 mb-2">
-              When you connect your Garmin account, we access:
+              When you connect your Garmin Connect account, we access:
             </p>
             <ul className="list-disc pl-6 text-slate-300 space-y-1">
               <li>Activity data: distance, duration, pace, elevation, GPS routes</li>
@@ -67,7 +67,7 @@ export default function PrivacyPolicyPage() {
             </p>
             <ul className="list-disc pl-6 text-slate-300 space-y-2">
               <li><strong>Direct input:</strong> Information you enter in forms (registration, check-ins, settings)</li>
-              <li><strong>OAuth authorization:</strong> When you connect Strava or Garmin, you authenticate 
+              <li><strong>OAuth authorization:</strong> When you connect Strava or Garmin Connect, you authenticate 
                 directly with those services. We receive an access token that allows us to retrieve your data 
                 on your behalf.</li>
               <li><strong>Automatic sync:</strong> After authorization, we periodically sync your new activities 
@@ -109,7 +109,7 @@ export default function PrivacyPolicyPage() {
             <ul className="list-disc pl-6 text-slate-300 space-y-2">
               <li>All data is encrypted in transit using HTTPS/TLS</li>
               <li>Database connections use encrypted channels</li>
-              <li>OAuth tokens from Strava and Garmin are encrypted at rest</li>
+              <li>OAuth tokens from Strava and Garmin Connect are encrypted at rest</li>
               <li>Access to production systems is restricted and logged</li>
               <li>Regular security reviews and updates</li>
             </ul>
@@ -148,7 +148,7 @@ export default function PrivacyPolicyPage() {
             
             <h3 className="text-xl font-semibold mt-6 mb-3">5.3 Platform Usage Data</h3>
             <p className="text-slate-300">
-              Strava and Garmin may collect usage data about how you access their APIs through StrideIQ. 
+              Strava and Garmin Connect may collect usage data about how you access their APIs through StrideIQ. 
               This is governed by their respective privacy policies.
             </p>
           </section>
@@ -170,7 +170,7 @@ export default function PrivacyPolicyPage() {
               <li><strong>Activity metrics:</strong> pace, heart rate, cadence, distance, elevation, training
                 load, splits, and effort data from your runs</li>
               <li><strong>Health data:</strong> sleep duration and quality, stress scores, HRV status, and
-                body battery (when connected from Garmin)</li>
+                body battery (when connected from Garmin Connect)</li>
               <li><strong>Training context:</strong> recent training history, weekly volume, planned workouts,
                 race goals, and training phase</li>
             </ul>
@@ -247,11 +247,11 @@ export default function PrivacyPolicyPage() {
               <li>To delete previously synced data, use the account deletion feature or contact us</li>
             </ul>
             <p className="text-slate-300 mt-4">
-              You can also revoke access directly from Strava or Garmin:
+              You can also revoke access directly from Strava or Garmin Connect:
             </p>
             <ul className="list-disc pl-6 text-slate-300 space-y-2">
               <li><strong>Strava:</strong> Settings → My Apps → Revoke Access</li>
-              <li><strong>Garmin:</strong> Garmin Connect → Account Settings → Connected Apps</li>
+              <li><strong>Garmin Connect:</strong> Garmin Connect → Account Settings → Connected Apps</li>
             </ul>
           </section>
 
@@ -287,7 +287,7 @@ export default function PrivacyPolicyPage() {
               <li><strong>Cached data:</strong> Temporary API caches cleared within 7 days</li>
             </ul>
             <p className="text-slate-300 mt-4">
-              If you delete an activity on Strava or Garmin, we will reflect that deletion in StrideIQ 
+              If you delete an activity on Strava or Garmin Connect, we will reflect that deletion in StrideIQ 
               within 48 hours of our next sync.
             </p>
           </section>

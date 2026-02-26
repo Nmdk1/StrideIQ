@@ -34,7 +34,7 @@ export function GarminConnection() {
       }, 500);
     }
     if (garminParam === 'error') {
-      setConnectError('Garmin connection failed. Please try again.');
+      setConnectError('Garmin Connect connection failed. Please try again.');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, [refetchStatus]);
@@ -45,7 +45,7 @@ export function GarminConnection() {
       window.location.href = auth_url;
     } catch (error) {
       setConnectError(
-        error instanceof Error ? error.message : 'Garmin connection failed. Please try again.'
+        error instanceof Error ? error.message : 'Garmin Connect connection failed. Please try again.'
       );
     }
   };
@@ -122,7 +122,7 @@ export function GarminConnection() {
 
           <div className="bg-slate-900/40 border border-slate-700/50 rounded p-3">
             <p className="text-sm text-slate-300 mb-1">
-              Activities and wellness data sync automatically via Garmin&apos;s push API.
+              Activities and wellness data sync automatically via Garmin Connect&apos;s push API.
             </p>
             <p className="text-xs text-slate-500">
               A 90-day backfill was requested when you connected. New data arrives within minutes of recording.
@@ -134,7 +134,7 @@ export function GarminConnection() {
           {/* Garmin file import still available when connected */}
           <div className="pt-4 border-t border-slate-700/50">
             <p className="text-xs text-slate-500 mb-3">
-              Already have a Garmin export ZIP? You can still import it manually.
+              Already have a Garmin Connect export ZIP? You can still import it manually.
             </p>
             <GarminFileImport compact />
           </div>

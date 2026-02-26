@@ -91,7 +91,7 @@ export function StravaConnection() {
       // Strava OAuth can fail for external reasons (e.g., app capacity). Surface a clear message.
       if (reason === 'capacity') {
         setConnectError(
-          "Strava connect is temporarily unavailable (app capacity reached). Upload Garmin for now, or try again later."
+          "Strava connect is temporarily unavailable (app capacity reached). Upload via Garmin Connect for now, or try again later."
         );
       } else {
         setConnectError('Strava connection failed. Please try again.');

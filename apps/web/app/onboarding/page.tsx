@@ -675,7 +675,7 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
                   >
                     <option value="none">None</option>
-                    <option value="garmin">Garmin</option>
+                    <option value="garmin">Garmin Connect</option>
                     <option value="oura">Oura</option>
                     <option value="apple">Apple</option>
                     <option value="other">Other</option>
@@ -892,7 +892,7 @@ function ConnectStravaStage({
     <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
       <h2 className="text-xl font-semibold mb-4">Connect Your Watch</h2>
       <p className="text-slate-400 mb-6">
-        Import your activities automatically. Connect Strava, Garmin, or both.
+        Import your activities automatically. Connect Strava, Garmin Connect, or both.
       </p>
 
       {paceProfileStatus === 'computed' && paceProfile ? (
@@ -994,7 +994,7 @@ function ConnectStravaStage({
               className="w-full px-4 py-2 rounded text-white font-medium transition-colors disabled:bg-slate-700 disabled:text-green-400"
               style={isGarminConnected ? {} : { backgroundColor: '#007CC3' }}
             >
-              {isGarminConnected ? '✓ Connected' : 'Connect Garmin'}
+              {isGarminConnected ? '✓ Connected' : 'Connect Garmin Connect'}
             </button>
             {isGarminConnected && (
               <div className="mt-3 text-xs text-slate-400">
