@@ -34,6 +34,7 @@ export default function Footer() {
               <li><a href="#tools" onClick={(e) => handleHashClick(e, 'tools')} className="hover:text-orange-500 transition-colors">Free Tools</a></li>
               <li><a href="/about" className="hover:text-orange-500 transition-colors">About</a></li>
               <li><a href="/mission" className="hover:text-orange-500 transition-colors">Mission Statement</a></li>
+              <li><a href="/stories" className="hover:text-orange-500 transition-colors">Stories</a></li>
               <li><a href="#pricing" onClick={(e) => handleHashClick(e, 'pricing')} className="hover:text-orange-500 transition-colors">Pricing</a></li>
             </ul>
           </div>
