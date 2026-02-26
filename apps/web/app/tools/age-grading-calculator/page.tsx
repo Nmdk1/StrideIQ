@@ -28,6 +28,25 @@ const toolJsonLd = {
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
 }
 
+const breadcrumbJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    { '@type': 'ListItem', position: 1, name: 'Tools', item: 'https://strideiq.run/tools' },
+    { '@type': 'ListItem', position: 2, name: 'Age-Grading Calculator', item: 'https://strideiq.run/tools/age-grading-calculator' },
+  ],
+}
+
+const faqJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: FAQ_ITEMS.map((item) => ({
+    '@type': 'Question',
+    name: item.q,
+    acceptedAnswer: { '@type': 'Answer', text: item.a },
+  })),
+}
+
 const FAQ_ITEMS = [
   {
     q: 'What is a good age-graded percentage for runners?',
@@ -47,6 +66,8 @@ export default function AgeGradingCalculatorPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <JsonLd data={toolJsonLd} />
+      <JsonLd data={breadcrumbJsonLd} />
+      <JsonLd data={faqJsonLd} />
 
       <div className="max-w-4xl mx-auto px-6 py-12">
         {/* Breadcrumb */}

@@ -19,7 +19,6 @@ const organizationJsonLd = {
   '@type': 'Organization',
   name: 'StrideIQ',
   url: 'https://strideiq.run',
-  logo: 'https://strideiq.run/og-image.png?v=3',
   description:
     'Evidence-based AI running coach. Free training pace calculator, age-grading calculator, and heat-adjusted pace tools.',
 }
