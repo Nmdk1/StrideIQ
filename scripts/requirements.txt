@@ -1,2 +1,0 @@
-# StrideIQ scripts/opportunity-assistant.py dependencies
-requests>=2.31.0   # Discord webhook delivery (avoids Cloudflare TLS blocks on urllib)
