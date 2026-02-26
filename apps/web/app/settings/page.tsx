@@ -8,7 +8,7 @@
 
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { StravaConnection } from '@/components/integrations/StravaConnection';
 import { GarminConnection } from '@/components/integrations/GarminConnection';
@@ -729,5 +729,9 @@ function SettingsPageContent() {
 }
 
 export default function SettingsPage() {
-  return <SettingsPageContent />;
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageContent />
+    </Suspense>
+  );
 }
