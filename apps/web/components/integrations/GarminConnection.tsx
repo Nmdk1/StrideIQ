@@ -125,7 +125,7 @@ export function GarminConnection() {
               Activities and wellness data sync automatically via Garmin Connect&apos;s push API.
             </p>
             <p className="text-xs text-slate-500">
-              A 90-day backfill was requested when you connected. New data arrives within minutes of recording.
+              A 30-day backfill was requested when you connected. New data arrives within minutes of recording.
             </p>
           </div>
 
