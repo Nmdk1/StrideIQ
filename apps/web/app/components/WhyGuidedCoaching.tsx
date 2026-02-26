@@ -11,8 +11,8 @@ export default function WhyGuidedCoaching() {
             Why Elite?
           </h2>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto">
-            Complete health and fitness management—comprehensive monitoring, correlation analysis, and outcomes-driven guidance. 
-            Elite-level insights, accessible to everyone—whether you&apos;re in a major city or a small town.
+            Complete AI running coach for marathon training, 5K training, injury prevention, and run analysis.
+            Syncs with Garmin Connect and Strava. Elite-level coaching accessible to everyone.
           </p>
         </div>
 
@@ -49,7 +49,7 @@ export default function WhyGuidedCoaching() {
 
         {/* Advantages Over Human Coaches */}
         <div className="bg-gradient-to-r from-orange-900/20 to-slate-900 rounded-lg p-8 border border-orange-500/30 mb-12">
-          <h3 className="text-2xl font-bold mb-6 text-center">How Elite Compares</h3>
+          <h3 className="text-2xl font-bold mb-6 text-center">AI Running Coach vs Human Running Coach</h3>
           <div className="grid md:grid-cols-2 gap-6">
             <div>
               <h4 className="font-semibold text-slate-300 mb-3">Knowledge Base</h4>

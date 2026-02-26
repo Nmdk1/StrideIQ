@@ -7,6 +7,37 @@ import HowItWorks from './components/HowItWorks';
 import WhyGuidedCoaching from './components/WhyGuidedCoaching';
 import Pricing from './components/Pricing';
 import Footer from './components/Footer';
+import FAQ from './components/FAQ';
+import { JsonLd } from '@/components/seo/JsonLd';
+
+const organizationJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'StrideIQ',
+  url: 'https://strideiq.run',
+  logo: 'https://strideiq.run/og-image.png',
+  description:
+    'Evidence-based AI running coach. Free training pace calculator, age-grading calculator, and heat-adjusted pace tools.',
+}
+
+const webAppJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'StrideIQ',
+  url: 'https://strideiq.run',
+  applicationCategory: 'HealthApplication',
+  operatingSystem: 'Web',
+  description:
+    'AI-powered running coaching platform with free training calculators for pace, age-grading, and heat adjustment. Connects with Garmin Connect and Strava.',
+  offers: [
+    {
+      '@type': 'Offer',
+      price: '0',
+      priceCurrency: 'USD',
+      description: 'Free training pace calculator, age-grading, and heat-adjusted pace tools',
+    },
+  ],
+}
 
 export const metadata: Metadata = {
   title: 'StrideIQ - AI Running Coach & Training Intelligence',
@@ -23,12 +54,15 @@ export const metadata: Metadata = {
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
+      <JsonLd data={organizationJsonLd} />
+      <JsonLd data={webAppJsonLd} />
       <Hero />
       <QuickValue />
       <FreeTools />
       <HowItWorks />
       <WhyGuidedCoaching />
       <Pricing />
+      <FAQ />
       <Footer />
     </div>
   );

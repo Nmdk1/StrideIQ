@@ -2,12 +2,14 @@
 
 /**
  * Tools Page
- * 
+ *
  * Enhanced with shadcn/ui + Lucide while preserving existing good style.
  * Provides access to all running calculators.
+ * Each calculator also has a dedicated SEO subpage linked below.
  */
 
 import React from 'react';
+import Link from 'next/link';
 import TrainingPaceCalculator from '@/app/components/tools/TrainingPaceCalculator';
 import WMACalculator from '@/app/components/tools/WMACalculator';
 import HeatAdjustedPace from '@/app/components/tools/HeatAdjustedPace';
@@ -45,14 +47,19 @@ export default function ToolsPage() {
           {/* Training Pace Calculator */}
           <Card className="bg-slate-800 border-slate-700 shadow-xl hover:border-slate-600 transition-colors">
             <CardHeader className="pb-4">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2.5 bg-orange-500/20 rounded-xl ring-1 ring-orange-500/30">
-                  <Zap className="w-6 h-6 text-orange-500" />
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-orange-500/20 rounded-xl ring-1 ring-orange-500/30">
+                    <Zap className="w-6 h-6 text-orange-500" />
+                  </div>
+                  <CardTitle className="text-xl text-white">Training Pace Calculator</CardTitle>
                 </div>
-                <CardTitle className="text-xl text-white">Training Pace Calculator</CardTitle>
+                <Link href="/tools/training-pace-calculator" className="text-xs text-orange-400 hover:text-orange-300 transition-colors shrink-0">
+                  Full page →
+                </Link>
               </div>
               <CardDescription className="text-slate-400">
-                Enter a race time to get personalized training paces for Easy, Marathon, 
+                Enter a race time to get personalized training paces for Easy, Marathon,
                 Threshold, Interval, and Repetition workouts.
               </CardDescription>
             </CardHeader>
@@ -64,11 +71,16 @@ export default function ToolsPage() {
           {/* WMA Age-Grading Calculator */}
           <Card className="bg-slate-800 border-slate-700 shadow-xl hover:border-slate-600 transition-colors">
             <CardHeader className="pb-4">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2.5 bg-orange-500/20 rounded-xl ring-1 ring-orange-500/30">
-                  <BarChart3 className="w-6 h-6 text-orange-500" />
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-orange-500/20 rounded-xl ring-1 ring-orange-500/30">
+                    <BarChart3 className="w-6 h-6 text-orange-500" />
+                  </div>
+                  <CardTitle className="text-xl text-white">Age-Grading Calculator</CardTitle>
                 </div>
-                <CardTitle className="text-xl text-white">Age-Grading Calculator</CardTitle>
+                <Link href="/tools/age-grading-calculator" className="text-xs text-orange-400 hover:text-orange-300 transition-colors shrink-0">
+                  Full page →
+                </Link>
               </div>
               <CardDescription className="text-slate-400">
                 Compare performances across ages using World Masters Athletics standards.
@@ -83,11 +95,16 @@ export default function ToolsPage() {
           {/* Heat-Adjusted Pace Calculator */}
           <Card className="bg-slate-800 border-slate-700 shadow-xl hover:border-slate-600 transition-colors">
             <CardHeader className="pb-4">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2.5 bg-orange-500/20 rounded-xl ring-1 ring-orange-500/30">
-                  <Sun className="w-6 h-6 text-orange-500" />
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-orange-500/20 rounded-xl ring-1 ring-orange-500/30">
+                    <Sun className="w-6 h-6 text-orange-500" />
+                  </div>
+                  <CardTitle className="text-xl text-white">Heat-Adjusted Pace</CardTitle>
                 </div>
-                <CardTitle className="text-xl text-white">Heat-Adjusted Pace</CardTitle>
+                <Link href="/tools/heat-adjusted-pace" className="text-xs text-orange-400 hover:text-orange-300 transition-colors shrink-0">
+                  Full page →
+                </Link>
               </div>
               <CardDescription className="text-slate-400">
                 Adjust your training paces for temperature and humidity.

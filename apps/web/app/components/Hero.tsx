@@ -67,13 +67,18 @@ export default function Hero() {
           </span>
         </p>
 
+        {/* AI Running Coach label */}
+        <p className="text-base font-semibold text-orange-400 mb-4 tracking-wide uppercase">
+          AI Running Coach
+        </p>
+
         {/* Trust indicators */}
         <div className="flex flex-wrap justify-center gap-6 mb-10 text-sm text-slate-400">
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
-            <span>Training calculators</span>
+            <span>Training pace calculator</span>
           </div>
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
@@ -85,7 +90,7 @@ export default function Hero() {
             <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
-            <span>Strava connected</span>
+            <span>Garmin Connect &amp; Strava</span>
           </div>
         </div>
 
