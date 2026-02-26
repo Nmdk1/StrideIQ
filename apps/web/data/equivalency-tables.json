@@ -1,0 +1,244 @@
+{
+  "_meta": {
+    "generated": "2026-02-26T18:42:03.758Z",
+    "schemaVersion": "1.0",
+    "formula": "Daniels/Gilbert 1979 binary search (rpi-formula.mjs)",
+    "note": "Equivalent times computed via RPI round-trip. Fully deterministic."
+  },
+  "5k-to-marathon": {
+    "slug": "5k-to-marathon",
+    "label": "5K → Marathon Equivalency",
+    "inputDistance": "5K",
+    "inputDistanceMeters": 5000,
+    "outputDistance": "Marathon",
+    "outputDistanceMeters": 42195,
+    "rows": [
+      {
+        "inputTime": "16:00",
+        "inputSeconds": 960,
+        "rpi": 64.6,
+        "outputTime": "2:33:24",
+        "outputSeconds": 9204,
+        "outputPaceMi": "5:51",
+        "outputPaceKm": "3:38"
+      },
+      {
+        "inputTime": "17:00",
+        "inputSeconds": 1020,
+        "rpi": 60.2,
+        "outputTime": "2:42:56",
+        "outputSeconds": 9776,
+        "outputPaceMi": "6:13",
+        "outputPaceKm": "3:52"
+      },
+      {
+        "inputTime": "18:00",
+        "inputSeconds": 1080,
+        "rpi": 56.3,
+        "outputTime": "2:52:29",
+        "outputSeconds": 10349,
+        "outputPaceMi": "6:35",
+        "outputPaceKm": "4:05"
+      },
+      {
+        "inputTime": "19:00",
+        "inputSeconds": 1140,
+        "rpi": 52.9,
+        "outputTime": "3:01:49",
+        "outputSeconds": 10909,
+        "outputPaceMi": "6:56",
+        "outputPaceKm": "4:18"
+      },
+      {
+        "inputTime": "20:00",
+        "inputSeconds": 1200,
+        "rpi": 49.8,
+        "outputTime": "3:11:19",
+        "outputSeconds": 11479,
+        "outputPaceMi": "7:18",
+        "outputPaceKm": "4:32"
+      },
+      {
+        "inputTime": "21:00",
+        "inputSeconds": 1260,
+        "rpi": 47,
+        "outputTime": "3:20:48",
+        "outputSeconds": 12048,
+        "outputPaceMi": "7:40",
+        "outputPaceKm": "4:46"
+      },
+      {
+        "inputTime": "22:00",
+        "inputSeconds": 1320,
+        "rpi": 44.5,
+        "outputTime": "3:30:12",
+        "outputSeconds": 12612,
+        "outputPaceMi": "8:01",
+        "outputPaceKm": "4:59"
+      },
+      {
+        "inputTime": "24:00",
+        "inputSeconds": 1440,
+        "rpi": 40.2,
+        "outputTime": "3:48:42",
+        "outputSeconds": 13722,
+        "outputPaceMi": "8:43",
+        "outputPaceKm": "5:25"
+      },
+      {
+        "inputTime": "26:00",
+        "inputSeconds": 1560,
+        "rpi": 36.6,
+        "outputTime": "4:07:00",
+        "outputSeconds": 14820,
+        "outputPaceMi": "9:25",
+        "outputPaceKm": "5:51"
+      },
+      {
+        "inputTime": "28:00",
+        "inputSeconds": 1680,
+        "rpi": 33.5,
+        "outputTime": "4:25:24",
+        "outputSeconds": 15924,
+        "outputPaceMi": "10:07",
+        "outputPaceKm": "6:17"
+      },
+      {
+        "inputTime": "30:00",
+        "inputSeconds": 1800,
+        "rpi": 30.8,
+        "outputTime": "4:43:48",
+        "outputSeconds": 17028,
+        "outputPaceMi": "10:49",
+        "outputPaceKm": "6:43"
+      },
+      {
+        "inputTime": "35:00",
+        "inputSeconds": 2100,
+        "rpi": 25.6,
+        "outputTime": "5:28:14",
+        "outputSeconds": 19694,
+        "outputPaceMi": "12:31",
+        "outputPaceKm": "7:47"
+      }
+    ]
+  },
+  "10k-to-half-marathon": {
+    "slug": "10k-to-half-marathon",
+    "label": "10K → Half Marathon Equivalency",
+    "inputDistance": "10K",
+    "inputDistanceMeters": 10000,
+    "outputDistance": "Half Marathon",
+    "outputDistanceMeters": 21097.5,
+    "rows": [
+      {
+        "inputTime": "32:00",
+        "inputSeconds": 1920,
+        "rpi": 67.5,
+        "outputTime": "1:10:33",
+        "outputSeconds": 4233,
+        "outputPaceMi": "5:23",
+        "outputPaceKm": "3:21"
+      },
+      {
+        "inputTime": "35:00",
+        "inputSeconds": 2100,
+        "rpi": 60.7,
+        "outputTime": "1:17:21",
+        "outputSeconds": 4641,
+        "outputPaceMi": "5:54",
+        "outputPaceKm": "3:40"
+      },
+      {
+        "inputTime": "38:00",
+        "inputSeconds": 2280,
+        "rpi": 55.2,
+        "outputTime": "1:24:01",
+        "outputSeconds": 5041,
+        "outputPaceMi": "6:25",
+        "outputPaceKm": "3:59"
+      },
+      {
+        "inputTime": "40:00",
+        "inputSeconds": 2400,
+        "rpi": 51.9,
+        "outputTime": "1:28:37",
+        "outputSeconds": 5317,
+        "outputPaceMi": "6:46",
+        "outputPaceKm": "4:12"
+      },
+      {
+        "inputTime": "42:00",
+        "inputSeconds": 2520,
+        "rpi": 49.1,
+        "outputTime": "1:32:58",
+        "outputSeconds": 5578,
+        "outputPaceMi": "7:05",
+        "outputPaceKm": "4:24"
+      },
+      {
+        "inputTime": "45:00",
+        "inputSeconds": 2700,
+        "rpi": 45.3,
+        "outputTime": "1:39:40",
+        "outputSeconds": 5980,
+        "outputPaceMi": "7:36",
+        "outputPaceKm": "4:43"
+      },
+      {
+        "inputTime": "48:00",
+        "inputSeconds": 2880,
+        "rpi": 42,
+        "outputTime": "1:46:22",
+        "outputSeconds": 6382,
+        "outputPaceMi": "8:07",
+        "outputPaceKm": "5:03"
+      },
+      {
+        "inputTime": "50:00",
+        "inputSeconds": 3000,
+        "rpi": 40,
+        "outputTime": "1:50:53",
+        "outputSeconds": 6653,
+        "outputPaceMi": "8:27",
+        "outputPaceKm": "5:15"
+      },
+      {
+        "inputTime": "55:00",
+        "inputSeconds": 3300,
+        "rpi": 35.8,
+        "outputTime": "2:01:53",
+        "outputSeconds": 7313,
+        "outputPaceMi": "9:18",
+        "outputPaceKm": "5:47"
+      },
+      {
+        "inputTime": "60:00",
+        "inputSeconds": 3600,
+        "rpi": 32.3,
+        "outputTime": "2:12:54",
+        "outputSeconds": 7974,
+        "outputPaceMi": "10:08",
+        "outputPaceKm": "6:18"
+      },
+      {
+        "inputTime": "65:00",
+        "inputSeconds": 3900,
+        "rpi": 29.3,
+        "outputTime": "2:24:03",
+        "outputSeconds": 8643,
+        "outputPaceMi": "10:59",
+        "outputPaceKm": "6:49"
+      },
+      {
+        "inputTime": "70:00",
+        "inputSeconds": 4200,
+        "rpi": 26.8,
+        "outputTime": "2:35:01",
+        "outputSeconds": 9301,
+        "outputPaceMi": "11:49",
+        "outputPaceKm": "7:21"
+      }
+    ]
+  }
+}

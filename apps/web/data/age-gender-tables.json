@@ -1,0 +1,1190 @@
+{
+  "_meta": {
+    "generated": "2026-02-26T18:42:03.752Z",
+    "schemaVersion": "1.0",
+    "formula": "WMA Alan Jones 2025 + Daniels/Gilbert 1979",
+    "note": "Training paces derived from WMA benchmark time for each age/level. Fully deterministic."
+  },
+  "5k-times-women-age-40s": {
+    "slug": "5k-times-women-age-40s",
+    "gender": "female",
+    "genderLabel": "Women",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "ageDecade": "40s",
+    "ageRange": "40–49",
+    "ages": [
+      40,
+      45
+    ],
+    "rows": [
+      {
+        "age": 40,
+        "ageFactor": 1.0527,
+        "ageStandardSeconds": 878,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1756,
+            "timeFormatted": "29:16",
+            "paceMi": "9:25",
+            "rpi": 31.8,
+            "trainingPaces": {
+              "easy": {
+                "mi": "12:11",
+                "km": "7:34"
+              },
+              "threshold": {
+                "mi": "9:23",
+                "km": "5:50"
+              },
+              "interval": {
+                "mi": "8:07",
+                "km": "5:03"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1463,
+            "timeFormatted": "24:23",
+            "paceMi": "7:51",
+            "rpi": 39.5,
+            "trainingPaces": {
+              "easy": {
+                "mi": "10:00",
+                "km": "6:13"
+              },
+              "threshold": {
+                "mi": "7:51",
+                "km": "4:53"
+              },
+              "interval": {
+                "mi": "6:51",
+                "km": "4:15"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1254,
+            "timeFormatted": "20:54",
+            "paceMi": "6:44",
+            "rpi": 47.3,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:47",
+                "km": "5:27"
+              },
+              "threshold": {
+                "mi": "7:02",
+                "km": "4:22"
+              },
+              "interval": {
+                "mi": "6:09",
+                "km": "3:49"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1097,
+            "timeFormatted": "18:17",
+            "paceMi": "5:53",
+            "rpi": 55.3,
+            "trainingPaces": {
+              "easy": {
+                "mi": "7:52",
+                "km": "4:53"
+              },
+              "threshold": {
+                "mi": "6:24",
+                "km": "3:59"
+              },
+              "interval": {
+                "mi": "5:38",
+                "km": "3:30"
+              }
+            }
+          }
+        }
+      },
+      {
+        "age": 45,
+        "ageFactor": 1.1016,
+        "ageStandardSeconds": 918.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1837,
+            "timeFormatted": "30:37",
+            "paceMi": "9:51",
+            "rpi": 30.1,
+            "trainingPaces": {
+              "easy": {
+                "mi": "12:53",
+                "km": "8:00"
+              },
+              "threshold": {
+                "mi": "9:53",
+                "km": "6:08"
+              },
+              "interval": {
+                "mi": "8:31",
+                "km": "5:18"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1531,
+            "timeFormatted": "25:31",
+            "paceMi": "8:13",
+            "rpi": 37.4,
+            "trainingPaces": {
+              "easy": {
+                "mi": "10:26",
+                "km": "6:29"
+              },
+              "threshold": {
+                "mi": "8:10",
+                "km": "5:04"
+              },
+              "interval": {
+                "mi": "7:07",
+                "km": "4:25"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1312,
+            "timeFormatted": "21:52",
+            "paceMi": "7:02",
+            "rpi": 44.9,
+            "trainingPaces": {
+              "easy": {
+                "mi": "9:05",
+                "km": "5:39"
+              },
+              "threshold": {
+                "mi": "7:16",
+                "km": "4:31"
+              },
+              "interval": {
+                "mi": "6:21",
+                "km": "3:57"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1148,
+            "timeFormatted": "19:08",
+            "paceMi": "6:10",
+            "rpi": 52.5,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:10",
+                "km": "5:04"
+              },
+              "threshold": {
+                "mi": "6:36",
+                "km": "4:06"
+              },
+              "interval": {
+                "mi": "5:48",
+                "km": "3:36"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "5k-times-women-age-50s": {
+    "slug": "5k-times-women-age-50s",
+    "gender": "female",
+    "genderLabel": "Women",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "ageDecade": "50s",
+    "ageRange": "50–59",
+    "ages": [
+      50,
+      55
+    ],
+    "rows": [
+      {
+        "age": 50,
+        "ageFactor": 1.1639,
+        "ageStandardSeconds": 970.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1941,
+            "timeFormatted": "32:21",
+            "paceMi": "10:25",
+            "rpi": 28.1,
+            "trainingPaces": {
+              "easy": {
+                "mi": "13:35",
+                "km": "8:26"
+              },
+              "threshold": {
+                "mi": "10:26",
+                "km": "6:29"
+              },
+              "interval": {
+                "mi": "9:01",
+                "km": "5:36"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1618,
+            "timeFormatted": "26:58",
+            "paceMi": "8:41",
+            "rpi": 35,
+            "trainingPaces": {
+              "easy": {
+                "mi": "11:00",
+                "km": "6:50"
+              },
+              "threshold": {
+                "mi": "8:34",
+                "km": "5:19"
+              },
+              "interval": {
+                "mi": "7:26",
+                "km": "4:37"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1387,
+            "timeFormatted": "23:07",
+            "paceMi": "7:26",
+            "rpi": 42,
+            "trainingPaces": {
+              "easy": {
+                "mi": "9:33",
+                "km": "5:56"
+              },
+              "threshold": {
+                "mi": "7:33",
+                "km": "4:41"
+              },
+              "interval": {
+                "mi": "6:36",
+                "km": "4:06"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1213,
+            "timeFormatted": "20:13",
+            "paceMi": "6:30",
+            "rpi": 49.2,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:33",
+                "km": "5:19"
+              },
+              "threshold": {
+                "mi": "6:52",
+                "km": "4:16"
+              },
+              "interval": {
+                "mi": "6:01",
+                "km": "3:44"
+              }
+            }
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.2335,
+        "ageStandardSeconds": 1028.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 2057,
+            "timeFormatted": "34:17",
+            "paceMi": "11:02",
+            "rpi": 26.2,
+            "trainingPaces": {
+              "easy": {
+                "mi": "14:19",
+                "km": "8:54"
+              },
+              "threshold": {
+                "mi": "11:02",
+                "km": "6:51"
+              },
+              "interval": {
+                "mi": "9:32",
+                "km": "5:55"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1715,
+            "timeFormatted": "28:35",
+            "paceMi": "9:12",
+            "rpi": 32.7,
+            "trainingPaces": {
+              "easy": {
+                "mi": "11:50",
+                "km": "7:21"
+              },
+              "threshold": {
+                "mi": "9:09",
+                "km": "5:41"
+              },
+              "interval": {
+                "mi": "7:55",
+                "km": "4:55"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1470,
+            "timeFormatted": "24:30",
+            "paceMi": "7:53",
+            "rpi": 39.2,
+            "trainingPaces": {
+              "easy": {
+                "mi": "10:04",
+                "km": "6:15"
+              },
+              "threshold": {
+                "mi": "7:54",
+                "km": "4:55"
+              },
+              "interval": {
+                "mi": "6:53",
+                "km": "4:17"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1286,
+            "timeFormatted": "21:26",
+            "paceMi": "6:54",
+            "rpi": 45.9,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:57",
+                "km": "5:34"
+              },
+              "threshold": {
+                "mi": "7:10",
+                "km": "4:27"
+              },
+              "interval": {
+                "mi": "6:16",
+                "km": "3:54"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "marathon-times-men-age-50s": {
+    "slug": "marathon-times-men-age-50s",
+    "gender": "male",
+    "genderLabel": "Men",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "ageDecade": "50s",
+    "ageRange": "50–59",
+    "ages": [
+      50,
+      55
+    ],
+    "rows": [
+      {
+        "age": 50,
+        "ageFactor": 1.1157,
+        "ageStandardSeconds": 8072.1,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 16144,
+            "timeFormatted": "4:29:04",
+            "paceMi": "10:16",
+            "rpi": 32.9,
+            "trainingPaces": {
+              "easy": {
+                "mi": "11:45",
+                "km": "7:18"
+              },
+              "threshold": {
+                "mi": "9:05",
+                "km": "5:39"
+              },
+              "interval": {
+                "mi": "7:52",
+                "km": "4:53"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 13453,
+            "timeFormatted": "3:44:13",
+            "paceMi": "8:33",
+            "rpi": 41.2,
+            "trainingPaces": {
+              "easy": {
+                "mi": "9:41",
+                "km": "6:01"
+              },
+              "threshold": {
+                "mi": "7:39",
+                "km": "4:45"
+              },
+              "interval": {
+                "mi": "6:41",
+                "km": "4:09"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 11532,
+            "timeFormatted": "3:12:12",
+            "paceMi": "7:20",
+            "rpi": 49.5,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:31",
+                "km": "5:18"
+              },
+              "threshold": {
+                "mi": "6:50",
+                "km": "4:15"
+              },
+              "interval": {
+                "mi": "5:59",
+                "km": "3:43"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 10090,
+            "timeFormatted": "2:48:10",
+            "paceMi": "6:25",
+            "rpi": 58,
+            "trainingPaces": {
+              "easy": {
+                "mi": "7:37",
+                "km": "4:44"
+              },
+              "threshold": {
+                "mi": "6:13",
+                "km": "3:52"
+              },
+              "interval": {
+                "mi": "5:28",
+                "km": "3:24"
+              }
+            }
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.1692,
+        "ageStandardSeconds": 8459.2,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 16918,
+            "timeFormatted": "4:41:58",
+            "paceMi": "10:45",
+            "rpi": 31.1,
+            "trainingPaces": {
+              "easy": {
+                "mi": "12:28",
+                "km": "7:45"
+              },
+              "threshold": {
+                "mi": "9:35",
+                "km": "5:57"
+              },
+              "interval": {
+                "mi": "8:17",
+                "km": "5:09"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 14099,
+            "timeFormatted": "3:54:59",
+            "paceMi": "8:58",
+            "rpi": 38.9,
+            "trainingPaces": {
+              "easy": {
+                "mi": "10:07",
+                "km": "6:17"
+              },
+              "threshold": {
+                "mi": "7:56",
+                "km": "4:56"
+              },
+              "interval": {
+                "mi": "6:56",
+                "km": "4:18"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 12085,
+            "timeFormatted": "3:21:25",
+            "paceMi": "7:41",
+            "rpi": 46.8,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:50",
+                "km": "5:29"
+              },
+              "threshold": {
+                "mi": "7:05",
+                "km": "4:24"
+              },
+              "interval": {
+                "mi": "6:12",
+                "km": "3:51"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 10574,
+            "timeFormatted": "2:56:14",
+            "paceMi": "6:43",
+            "rpi": 54.9,
+            "trainingPaces": {
+              "easy": {
+                "mi": "7:55",
+                "km": "4:55"
+              },
+              "threshold": {
+                "mi": "6:25",
+                "km": "3:59"
+              },
+              "interval": {
+                "mi": "5:39",
+                "km": "3:31"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "marathon-times-women-age-50s": {
+    "slug": "marathon-times-women-age-50s",
+    "gender": "female",
+    "genderLabel": "Women",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "ageDecade": "50s",
+    "ageRange": "50–59",
+    "ages": [
+      50,
+      55
+    ],
+    "rows": [
+      {
+        "age": 50,
+        "ageFactor": 1.1114,
+        "ageStandardSeconds": 8664.5,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 17329,
+            "timeFormatted": "4:48:49",
+            "paceMi": "11:01",
+            "rpi": 30.1,
+            "trainingPaces": {
+              "easy": {
+                "mi": "12:53",
+                "km": "8:00"
+              },
+              "threshold": {
+                "mi": "9:53",
+                "km": "6:08"
+              },
+              "interval": {
+                "mi": "8:31",
+                "km": "5:18"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 14441,
+            "timeFormatted": "4:00:41",
+            "paceMi": "9:11",
+            "rpi": 37.8,
+            "trainingPaces": {
+              "easy": {
+                "mi": "10:21",
+                "km": "6:26"
+              },
+              "threshold": {
+                "mi": "8:06",
+                "km": "5:02"
+              },
+              "interval": {
+                "mi": "7:04",
+                "km": "4:23"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 12378,
+            "timeFormatted": "3:26:18",
+            "paceMi": "7:52",
+            "rpi": 45.5,
+            "trainingPaces": {
+              "easy": {
+                "mi": "9:00",
+                "km": "5:36"
+              },
+              "threshold": {
+                "mi": "7:12",
+                "km": "4:28"
+              },
+              "interval": {
+                "mi": "6:18",
+                "km": "3:55"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 10831,
+            "timeFormatted": "3:00:31",
+            "paceMi": "6:53",
+            "rpi": 53.3,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:05",
+                "km": "5:01"
+              },
+              "threshold": {
+                "mi": "6:32",
+                "km": "4:04"
+              },
+              "interval": {
+                "mi": "5:45",
+                "km": "3:34"
+              }
+            }
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.1744,
+        "ageStandardSeconds": 9155.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 18311,
+            "timeFormatted": "5:05:11",
+            "paceMi": "11:38",
+            "rpi": 28.1,
+            "trainingPaces": {
+              "easy": {
+                "mi": "13:35",
+                "km": "8:26"
+              },
+              "threshold": {
+                "mi": "10:26",
+                "km": "6:29"
+              },
+              "interval": {
+                "mi": "9:01",
+                "km": "5:36"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 15259,
+            "timeFormatted": "4:14:19",
+            "paceMi": "9:42",
+            "rpi": 35.3,
+            "trainingPaces": {
+              "easy": {
+                "mi": "10:56",
+                "km": "6:48"
+              },
+              "threshold": {
+                "mi": "8:31",
+                "km": "5:18"
+              },
+              "interval": {
+                "mi": "7:23",
+                "km": "4:35"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 13079,
+            "timeFormatted": "3:37:59",
+            "paceMi": "8:19",
+            "rpi": 42.6,
+            "trainingPaces": {
+              "easy": {
+                "mi": "9:27",
+                "km": "5:52"
+              },
+              "threshold": {
+                "mi": "7:29",
+                "km": "4:39"
+              },
+              "interval": {
+                "mi": "6:33",
+                "km": "4:04"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 11445,
+            "timeFormatted": "3:10:45",
+            "paceMi": "7:17",
+            "rpi": 50,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:28",
+                "km": "5:16"
+              },
+              "threshold": {
+                "mi": "6:48",
+                "km": "4:14"
+              },
+              "interval": {
+                "mi": "5:57",
+                "km": "3:42"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "10k-times-men-age-60s": {
+    "slug": "10k-times-men-age-60s",
+    "gender": "male",
+    "genderLabel": "Men",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "ageDecade": "60s",
+    "ageRange": "60–69",
+    "ages": [
+      60,
+      65
+    ],
+    "rows": [
+      {
+        "age": 60,
+        "ageFactor": 1.2291,
+        "ageStandardSeconds": 1946.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3894,
+            "timeFormatted": "1:04:54",
+            "paceMi": "10:27",
+            "rpi": 29.4,
+            "trainingPaces": {
+              "easy": {
+                "mi": "13:08",
+                "km": "8:10"
+              },
+              "threshold": {
+                "mi": "10:05",
+                "km": "6:16"
+              },
+              "interval": {
+                "mi": "8:41",
+                "km": "5:24"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3245,
+            "timeFormatted": "54:05",
+            "paceMi": "8:42",
+            "rpi": 36.5,
+            "trainingPaces": {
+              "easy": {
+                "mi": "10:39",
+                "km": "6:37"
+              },
+              "threshold": {
+                "mi": "8:19",
+                "km": "5:10"
+              },
+              "interval": {
+                "mi": "7:14",
+                "km": "4:30"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2781,
+            "timeFormatted": "46:21",
+            "paceMi": "7:28",
+            "rpi": 43.7,
+            "trainingPaces": {
+              "easy": {
+                "mi": "9:16",
+                "km": "5:45"
+              },
+              "threshold": {
+                "mi": "7:23",
+                "km": "4:35"
+              },
+              "interval": {
+                "mi": "6:27",
+                "km": "4:00"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2434,
+            "timeFormatted": "40:34",
+            "paceMi": "6:32",
+            "rpi": 51.1,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:20",
+                "km": "5:11"
+              },
+              "threshold": {
+                "mi": "6:43",
+                "km": "4:10"
+              },
+              "interval": {
+                "mi": "5:53",
+                "km": "3:39"
+              }
+            }
+          }
+        }
+      },
+      {
+        "age": 65,
+        "ageFactor": 1.2885,
+        "ageStandardSeconds": 2041,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 4082,
+            "timeFormatted": "1:08:02",
+            "paceMi": "10:57",
+            "rpi": 27.8,
+            "trainingPaces": {
+              "easy": {
+                "mi": "13:42",
+                "km": "8:31"
+              },
+              "threshold": {
+                "mi": "10:32",
+                "km": "6:33"
+              },
+              "interval": {
+                "mi": "9:05",
+                "km": "5:39"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3402,
+            "timeFormatted": "56:42",
+            "paceMi": "9:07",
+            "rpi": 34.5,
+            "trainingPaces": {
+              "easy": {
+                "mi": "11:10",
+                "km": "6:56"
+              },
+              "threshold": {
+                "mi": "8:41",
+                "km": "5:24"
+              },
+              "interval": {
+                "mi": "7:32",
+                "km": "4:41"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2916,
+            "timeFormatted": "48:36",
+            "paceMi": "7:49",
+            "rpi": 41.4,
+            "trainingPaces": {
+              "easy": {
+                "mi": "9:39",
+                "km": "6:00"
+              },
+              "threshold": {
+                "mi": "7:37",
+                "km": "4:44"
+              },
+              "interval": {
+                "mi": "6:40",
+                "km": "4:09"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2551,
+            "timeFormatted": "42:31",
+            "paceMi": "6:51",
+            "rpi": 48.4,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:39",
+                "km": "5:22"
+              },
+              "threshold": {
+                "mi": "6:56",
+                "km": "4:18"
+              },
+              "interval": {
+                "mi": "6:04",
+                "km": "3:46"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "marathon-times-men-age-60s": {
+    "slug": "marathon-times-men-age-60s",
+    "gender": "male",
+    "genderLabel": "Men",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "ageDecade": "60s",
+    "ageRange": "60–69",
+    "ages": [
+      60,
+      65
+    ],
+    "rows": [
+      {
+        "age": 60,
+        "ageFactor": 1.228,
+        "ageStandardSeconds": 8884.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 17769,
+            "timeFormatted": "4:56:09",
+            "paceMi": "11:18",
+            "rpi": 29.2,
+            "trainingPaces": {
+              "easy": {
+                "mi": "13:12",
+                "km": "8:12"
+              },
+              "threshold": {
+                "mi": "10:08",
+                "km": "6:18"
+              },
+              "interval": {
+                "mi": "8:44",
+                "km": "5:26"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 14808,
+            "timeFormatted": "4:06:48",
+            "paceMi": "9:25",
+            "rpi": 36.6,
+            "trainingPaces": {
+              "easy": {
+                "mi": "10:37",
+                "km": "6:36"
+              },
+              "threshold": {
+                "mi": "8:18",
+                "km": "5:09"
+              },
+              "interval": {
+                "mi": "7:13",
+                "km": "4:29"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 12692,
+            "timeFormatted": "3:31:32",
+            "paceMi": "8:04",
+            "rpi": 44.2,
+            "trainingPaces": {
+              "easy": {
+                "mi": "9:11",
+                "km": "5:42"
+              },
+              "threshold": {
+                "mi": "7:20",
+                "km": "4:33"
+              },
+              "interval": {
+                "mi": "6:25",
+                "km": "3:59"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 11106,
+            "timeFormatted": "3:05:06",
+            "paceMi": "7:04",
+            "rpi": 51.8,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:15",
+                "km": "5:08"
+              },
+              "threshold": {
+                "mi": "6:39",
+                "km": "4:08"
+              },
+              "interval": {
+                "mi": "5:50",
+                "km": "3:37"
+              }
+            }
+          }
+        }
+      },
+      {
+        "age": 65,
+        "ageFactor": 1.2932,
+        "ageStandardSeconds": 9356.3,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 18713,
+            "timeFormatted": "5:11:53",
+            "paceMi": "11:54",
+            "rpi": 27.3,
+            "trainingPaces": {
+              "easy": {
+                "mi": "13:53",
+                "km": "8:38"
+              },
+              "threshold": {
+                "mi": "10:41",
+                "km": "6:38"
+              },
+              "interval": {
+                "mi": "9:13",
+                "km": "5:44"
+              }
+            }
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 15594,
+            "timeFormatted": "4:19:54",
+            "paceMi": "9:55",
+            "rpi": 34.4,
+            "trainingPaces": {
+              "easy": {
+                "mi": "11:12",
+                "km": "6:58"
+              },
+              "threshold": {
+                "mi": "8:43",
+                "km": "5:25"
+              },
+              "interval": {
+                "mi": "7:33",
+                "km": "4:41"
+              }
+            }
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 13366,
+            "timeFormatted": "3:42:46",
+            "paceMi": "8:30",
+            "rpi": 41.5,
+            "trainingPaces": {
+              "easy": {
+                "mi": "9:38",
+                "km": "5:59"
+              },
+              "threshold": {
+                "mi": "7:37",
+                "km": "4:44"
+              },
+              "interval": {
+                "mi": "6:39",
+                "km": "4:08"
+              }
+            }
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 11695,
+            "timeFormatted": "3:14:55",
+            "paceMi": "7:26",
+            "rpi": 48.7,
+            "trainingPaces": {
+              "easy": {
+                "mi": "8:37",
+                "km": "5:21"
+              },
+              "threshold": {
+                "mi": "6:54",
+                "km": "4:17"
+              },
+              "interval": {
+                "mi": "6:03",
+                "km": "3:46"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

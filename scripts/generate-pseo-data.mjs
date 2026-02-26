@@ -14,6 +14,11 @@
 import { writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  calculateRpi,
+  calculateTrainingPaces,
+  calculateEquivalentRaceTime,
+} from './lib/rpi-formula.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'apps', 'web', 'data');
@@ -388,33 +393,505 @@ async function generateTrainingPaceData() {
 }
 
 // ============================================================================
+// GOAL PACE TABLE GENERATION (deterministic — no API calls)
+// Pages: /tools/training-pace-calculator/goals/[slug]
+// Convention: goal time uses target - 1s ("sub-threshold seconds")
+// ============================================================================
+
+const GOAL_CONFIGS = [
+  {
+    slug: 'sub-20-minute-5k',
+    label: 'Sub-20 Minute 5K',
+    goalLabel: 'Sub-20:00',
+    distance: '5K',
+    distanceMeters: 5000,
+    goalTimeLabel: '19:59',
+    goalTimeSeconds: 1199,
+    equivalentDistances: [
+      { key: 'marathon',     label: 'Marathon',      meters: 42195 },
+      { key: 'halfMarathon', label: 'Half Marathon',  meters: 21097.5 },
+      { key: '10k',          label: '10K',            meters: 10000 },
+    ],
+  },
+  {
+    slug: 'sub-25-minute-5k',
+    label: 'Sub-25 Minute 5K',
+    goalLabel: 'Sub-25:00',
+    distance: '5K',
+    distanceMeters: 5000,
+    goalTimeLabel: '24:59',
+    goalTimeSeconds: 1499,
+    equivalentDistances: [
+      { key: 'marathon',     label: 'Marathon',      meters: 42195 },
+      { key: 'halfMarathon', label: 'Half Marathon',  meters: 21097.5 },
+      { key: '10k',          label: '10K',            meters: 10000 },
+    ],
+  },
+  {
+    slug: 'sub-40-minute-10k',
+    label: 'Sub-40 Minute 10K',
+    goalLabel: 'Sub-40:00',
+    distance: '10K',
+    distanceMeters: 10000,
+    goalTimeLabel: '39:59',
+    goalTimeSeconds: 2399,
+    equivalentDistances: [
+      { key: 'marathon',     label: 'Marathon',      meters: 42195 },
+      { key: 'halfMarathon', label: 'Half Marathon',  meters: 21097.5 },
+      { key: '5k',           label: '5K',             meters: 5000 },
+    ],
+  },
+  {
+    slug: 'sub-50-minute-10k',
+    label: 'Sub-50 Minute 10K',
+    goalLabel: 'Sub-50:00',
+    distance: '10K',
+    distanceMeters: 10000,
+    goalTimeLabel: '49:59',
+    goalTimeSeconds: 2999,
+    equivalentDistances: [
+      { key: 'marathon',     label: 'Marathon',      meters: 42195 },
+      { key: 'halfMarathon', label: 'Half Marathon',  meters: 21097.5 },
+      { key: '5k',           label: '5K',             meters: 5000 },
+    ],
+  },
+  {
+    slug: 'sub-2-hour-half-marathon',
+    label: 'Sub-2 Hour Half Marathon',
+    goalLabel: 'Sub-2:00:00',
+    distance: 'Half Marathon',
+    distanceMeters: 21097.5,
+    goalTimeLabel: '1:59:59',
+    goalTimeSeconds: 7199,
+    equivalentDistances: [
+      { key: 'marathon',     label: 'Marathon',      meters: 42195 },
+      { key: '10k',          label: '10K',            meters: 10000 },
+      { key: '5k',           label: '5K',             meters: 5000 },
+    ],
+  },
+  {
+    slug: 'sub-4-hour-marathon',
+    label: 'Sub-4 Hour Marathon',
+    goalLabel: 'Sub-4:00:00',
+    distance: 'Marathon',
+    distanceMeters: 42195,
+    goalTimeLabel: '3:59:59',
+    goalTimeSeconds: 14399,
+    equivalentDistances: [
+      { key: 'halfMarathon', label: 'Half Marathon',  meters: 21097.5 },
+      { key: '10k',          label: '10K',            meters: 10000 },
+      { key: '5k',           label: '5K',             meters: 5000 },
+    ],
+  },
+];
+
+function generateGoalPaceData() {
+  const result = {
+    _meta: {
+      generated: new Date().toISOString(),
+      schemaVersion: '1.0',
+      formula: 'Daniels/Gilbert 1979 (rpi-formula.mjs)',
+      note: 'Goal times use target - 1s convention. Fully deterministic — no API dependency.',
+    },
+  };
+
+  for (const cfg of GOAL_CONFIGS) {
+    const rpi = calculateRpi(cfg.distanceMeters, cfg.goalTimeSeconds);
+    if (!rpi) {
+      console.error(`  ERROR: could not compute RPI for ${cfg.slug}`);
+      continue;
+    }
+
+    const paces = calculateTrainingPaces(rpi);
+
+    const equivalents = {};
+    for (const { key, label, meters } of cfg.equivalentDistances) {
+      const equiv = calculateEquivalentRaceTime(rpi, meters);
+      if (equiv) {
+        equivalents[key] = { label, distanceMeters: meters, ...equiv };
+      }
+    }
+
+    result[cfg.slug] = {
+      slug:             cfg.slug,
+      label:            cfg.label,
+      goalLabel:        cfg.goalLabel,
+      distance:         cfg.distance,
+      distanceMeters:   cfg.distanceMeters,
+      goalTimeLabel:    cfg.goalTimeLabel,
+      goalTimeSeconds:  cfg.goalTimeSeconds,
+      rpi,
+      paces: {
+        easy:       { mi: paces.easy.mi,       km: paces.easy.km,       secPerMile: paces.easy.secPerMile },
+        marathon:   { mi: paces.marathon.mi,   km: paces.marathon.km,   secPerMile: paces.marathon.secPerMile },
+        threshold:  { mi: paces.threshold.mi,  km: paces.threshold.km,  secPerMile: paces.threshold.secPerMile },
+        interval:   { mi: paces.interval.mi,   km: paces.interval.km,   secPerMile: paces.interval.secPerMile },
+        repetition: { mi: paces.repetition.mi, km: paces.repetition.km, secPerMile: paces.repetition.secPerMile },
+      },
+      equivalents,
+    };
+  }
+
+  return result;
+}
+
+// ============================================================================
+// AGE-GENDER DEMOGRAPHIC TABLE GENERATION (deterministic)
+// Pages: /tools/age-grading-calculator/demographics/[slug]
+// Each page shows WMA benchmarks for a specific gender+decade+distance,
+// with training paces derived from each benchmark time.
+// ============================================================================
+
+const DEMOGRAPHIC_CONFIGS = [
+  {
+    slug:          '5k-times-women-age-40s',
+    gender:        'female',
+    genderLabel:   'Women',
+    distance:      '5K',
+    distanceMeters: 5000,
+    distKey:       '5k',
+    ageDecade:     '40s',
+    ageRange:      '40–49',
+    ages:          [40, 45],
+  },
+  {
+    slug:          '5k-times-women-age-50s',
+    gender:        'female',
+    genderLabel:   'Women',
+    distance:      '5K',
+    distanceMeters: 5000,
+    distKey:       '5k',
+    ageDecade:     '50s',
+    ageRange:      '50–59',
+    ages:          [50, 55],
+  },
+  {
+    slug:          'marathon-times-men-age-50s',
+    gender:        'male',
+    genderLabel:   'Men',
+    distance:      'Marathon',
+    distanceMeters: 42195,
+    distKey:       'marathon',
+    ageDecade:     '50s',
+    ageRange:      '50–59',
+    ages:          [50, 55],
+  },
+  {
+    slug:          'marathon-times-women-age-50s',
+    gender:        'female',
+    genderLabel:   'Women',
+    distance:      'Marathon',
+    distanceMeters: 42195,
+    distKey:       'marathon',
+    ageDecade:     '50s',
+    ageRange:      '50–59',
+    ages:          [50, 55],
+  },
+  {
+    slug:          '10k-times-men-age-60s',
+    gender:        'male',
+    genderLabel:   'Men',
+    distance:      '10K',
+    distanceMeters: 10000,
+    distKey:       '10k',
+    ageDecade:     '60s',
+    ageRange:      '60–69',
+    ages:          [60, 65],
+  },
+  {
+    slug:          'marathon-times-men-age-60s',
+    gender:        'male',
+    genderLabel:   'Men',
+    distance:      'Marathon',
+    distanceMeters: 42195,
+    distKey:       'marathon',
+    ageDecade:     '60s',
+    ageRange:      '60–69',
+    ages:          [60, 65],
+  },
+];
+
+const DEMO_PERF_LEVELS = [
+  { pct: 50, label: 'Recreational' },
+  { pct: 60, label: 'Local Class' },
+  { pct: 70, label: 'Regional Class' },
+  { pct: 80, label: 'National Class' },
+];
+
+function generateAgeDemographicData() {
+  const result = {
+    _meta: {
+      generated: new Date().toISOString(),
+      schemaVersion: '1.0',
+      formula: 'WMA Alan Jones 2025 + Daniels/Gilbert 1979',
+      note: 'Training paces derived from WMA benchmark time for each age/level. Fully deterministic.',
+    },
+  };
+
+  for (const cfg of DEMOGRAPHIC_CONFIGS) {
+    const dmKey = Number(
+      Object.entries(DISTANCES).find(([, d]) => d.key === cfg.distKey)?.[0]
+    );
+    if (!dmKey) {
+      console.error(`  ERROR: no distance key for ${cfg.distKey}`);
+      continue;
+    }
+
+    const rows = [];
+
+    for (const age of cfg.ages) {
+      const factor = AGE_FACTORS[cfg.gender][dmKey]?.[age];
+      if (!factor) {
+        console.error(`  ERROR: no age factor for ${cfg.gender} ${dmKey}m age ${age}`);
+        continue;
+      }
+
+      const openStd = OPEN_STANDARDS[cfg.gender][dmKey];
+      const ageStd = openStd * factor; // seconds — world-class standard for this age/gender
+
+      const levels = {};
+      for (const { pct, label } of DEMO_PERF_LEVELS) {
+        const timeSec = Math.round(ageStd / (pct / 100));
+        const rpi = calculateRpi(cfg.distanceMeters, timeSec);
+        const paces = rpi ? calculateTrainingPaces(rpi) : null;
+
+        levels[pct] = {
+          label,
+          timeSeconds:   timeSec,
+          timeFormatted: formatTime(timeSec),
+          paceMi:        formatPace(timeSec, cfg.distanceMeters),
+          rpi,
+          trainingPaces: paces
+            ? {
+                easy:      { mi: paces.easy.mi,      km: paces.easy.km },
+                threshold: { mi: paces.threshold.mi, km: paces.threshold.km },
+                interval:  { mi: paces.interval.mi,  km: paces.interval.km },
+              }
+            : null,
+        };
+      }
+
+      rows.push({
+        age,
+        ageFactor: factor,
+        ageStandardSeconds: Math.round(ageStd * 10) / 10,
+        levels,
+      });
+    }
+
+    result[cfg.slug] = {
+      slug:           cfg.slug,
+      gender:         cfg.gender,
+      genderLabel:    cfg.genderLabel,
+      distance:       cfg.distance,
+      distanceMeters: cfg.distanceMeters,
+      ageDecade:      cfg.ageDecade,
+      ageRange:       cfg.ageRange,
+      ages:           cfg.ages,
+      rows,
+    };
+  }
+
+  return result;
+}
+
+// ============================================================================
+// EQUIVALENCY TABLE GENERATION (deterministic)
+// Pages: /tools/race-equivalency/[conversion]
+// Given input race time, compute equivalent time in target distance.
+// ============================================================================
+
+const EQUIVALENCY_CONFIGS = [
+  {
+    slug:                '5k-to-marathon',
+    label:               '5K → Marathon Equivalency',
+    inputDistance:       '5K',
+    inputDistanceMeters: 5000,
+    outputDistance:      'Marathon',
+    outputDistanceMeters: 42195,
+    inputTimes: [
+      { label: '16:00', seconds: 960 },
+      { label: '17:00', seconds: 1020 },
+      { label: '18:00', seconds: 1080 },
+      { label: '19:00', seconds: 1140 },
+      { label: '20:00', seconds: 1200 },
+      { label: '21:00', seconds: 1260 },
+      { label: '22:00', seconds: 1320 },
+      { label: '24:00', seconds: 1440 },
+      { label: '26:00', seconds: 1560 },
+      { label: '28:00', seconds: 1680 },
+      { label: '30:00', seconds: 1800 },
+      { label: '35:00', seconds: 2100 },
+    ],
+  },
+  {
+    slug:                '10k-to-half-marathon',
+    label:               '10K → Half Marathon Equivalency',
+    inputDistance:       '10K',
+    inputDistanceMeters: 10000,
+    outputDistance:      'Half Marathon',
+    outputDistanceMeters: 21097.5,
+    inputTimes: [
+      { label: '32:00', seconds: 1920 },
+      { label: '35:00', seconds: 2100 },
+      { label: '38:00', seconds: 2280 },
+      { label: '40:00', seconds: 2400 },
+      { label: '42:00', seconds: 2520 },
+      { label: '45:00', seconds: 2700 },
+      { label: '48:00', seconds: 2880 },
+      { label: '50:00', seconds: 3000 },
+      { label: '55:00', seconds: 3300 },
+      { label: '60:00', seconds: 3600 },
+      { label: '65:00', seconds: 3900 },
+      { label: '70:00', seconds: 4200 },
+    ],
+  },
+];
+
+function generateEquivalencyData() {
+  const result = {
+    _meta: {
+      generated: new Date().toISOString(),
+      schemaVersion: '1.0',
+      formula: 'Daniels/Gilbert 1979 binary search (rpi-formula.mjs)',
+      note: 'Equivalent times computed via RPI round-trip. Fully deterministic.',
+    },
+  };
+
+  for (const cfg of EQUIVALENCY_CONFIGS) {
+    const rows = [];
+
+    for (const { label, seconds } of cfg.inputTimes) {
+      const rpi = calculateRpi(cfg.inputDistanceMeters, seconds);
+      if (!rpi) {
+        console.error(`  ERROR: could not compute RPI for ${cfg.slug} ${label}`);
+        continue;
+      }
+
+      const equiv = calculateEquivalentRaceTime(rpi, cfg.outputDistanceMeters);
+      if (!equiv) {
+        console.error(`  ERROR: could not compute equivalent for ${cfg.slug} ${label}`);
+        continue;
+      }
+
+      rows.push({
+        inputTime:    label,
+        inputSeconds: seconds,
+        rpi,
+        outputTime:    equiv.timeFormatted,
+        outputSeconds: equiv.timeSeconds,
+        outputPaceMi:  equiv.paceMi,
+        outputPaceKm:  equiv.paceKm,
+      });
+    }
+
+    result[cfg.slug] = {
+      slug:                cfg.slug,
+      label:               cfg.label,
+      inputDistance:       cfg.inputDistance,
+      inputDistanceMeters: cfg.inputDistanceMeters,
+      outputDistance:      cfg.outputDistance,
+      outputDistanceMeters: cfg.outputDistanceMeters,
+      rows,
+    };
+  }
+
+  return result;
+}
+
+// ============================================================================
 // MAIN
 // ============================================================================
 
 async function main() {
-  console.log('Generating age-grading tables...');
-  const ageGrading = generateAgeGradingData();
-  const ageFile = join(DATA_DIR, 'age-grading-tables.json');
-  writeFileSync(ageFile, JSON.stringify(ageGrading, null, 2));
-  console.log(`  Written to ${ageFile}`);
+  // --new-only flag: skip re-fetching existing API-dependent tables.
+  // Use when training-pace-tables.json already exists and only new
+  // deterministic tables need regeneration.
+  const newOnly = process.argv.includes('--new-only');
 
-  // Validate a sample: 57-year-old male 10K at 60% should be a real time
-  const sample = ageGrading['10k'].male.find(r => r.age === 57);
-  if (sample) {
-    console.log(`  Sample: 57M 10K, 60% = ${sample.levels[60].timeFormatted} (${sample.levels[60].pace}/mi)`);
-    console.log(`  Sample: 57M 10K, 80% = ${sample.levels[80].timeFormatted} (${sample.levels[80].pace}/mi)`);
+  let totalPaceRows = 0;
+
+  if (!newOnly) {
+    // --- Existing tables ---
+    console.log('Generating age-grading tables...');
+    const ageGrading = generateAgeGradingData();
+    const ageFile = join(DATA_DIR, 'age-grading-tables.json');
+    writeFileSync(ageFile, JSON.stringify(ageGrading, null, 2));
+    console.log(`  Written to ${ageFile}`);
+
+    const sample = ageGrading['10k'].male.find(r => r.age === 57);
+    if (sample) {
+      console.log(`  Sample: 57M 10K, 60% = ${sample.levels[60].timeFormatted} (${sample.levels[60].pace}/mi)`);
+      console.log(`  Sample: 57M 10K, 80% = ${sample.levels[80].timeFormatted} (${sample.levels[80].pace}/mi)`);
+    }
+
+    console.log('\nFetching training pace data from production API...');
+    const trainingPaces = await generateTrainingPaceData();
+    const paceFile = join(DATA_DIR, 'training-pace-tables.json');
+    writeFileSync(paceFile, JSON.stringify(trainingPaces, null, 2));
+    console.log(`  Written to ${paceFile}`);
+
+    for (const d of Object.values(trainingPaces)) totalPaceRows += d.rows.length;
+  } else {
+    console.log('(--new-only mode: skipping age-grading and API training-pace regeneration)');
   }
 
-  console.log('\nFetching training pace data from production API...');
-  const trainingPaces = await generateTrainingPaceData();
-  const paceFile = join(DATA_DIR, 'training-pace-tables.json');
-  writeFileSync(paceFile, JSON.stringify(trainingPaces, null, 2));
-  console.log(`  Written to ${paceFile}`);
+  // --- New tables (deterministic, no API) ---
+  console.log('\nGenerating goal-pace tables (deterministic)...');
+  const goalPaces = generateGoalPaceData();
+  const goalFile = join(DATA_DIR, 'goal-pace-tables.json');
+  writeFileSync(goalFile, JSON.stringify(goalPaces, null, 2));
+  console.log(`  Written to ${goalFile}`);
+  const goalSlugs = Object.keys(goalPaces).filter(k => k !== '_meta');
+  console.log(`  Goals generated: ${goalSlugs.join(', ')}`);
+  // Sample spot-check
+  const g = goalPaces['sub-20-minute-5k'];
+  if (g) {
+    console.log(`  Sample sub-20 5K: RPI=${g.rpi}, easy=${g.paces.easy.mi}, threshold=${g.paces.threshold.mi}, marathon equiv=${g.equivalents.marathon?.timeFormatted}`);
+  }
 
-  // Summary
-  let totalPaceRows = 0;
-  for (const d of Object.values(trainingPaces)) totalPaceRows += d.rows.length;
-  console.log(`\nDone. Age-grading: ${Object.keys(ageGrading).length} distances. Training paces: ${totalPaceRows} rows.`);
+  console.log('\nGenerating age-demographic tables (deterministic)...');
+  const ageDemos = generateAgeDemographicData();
+  const demoFile = join(DATA_DIR, 'age-gender-tables.json');
+  writeFileSync(demoFile, JSON.stringify(ageDemos, null, 2));
+  console.log(`  Written to ${demoFile}`);
+  const demoSlugs = Object.keys(ageDemos).filter(k => k !== '_meta');
+  console.log(`  Demographics generated: ${demoSlugs.join(', ')}`);
+  // Sample spot-check
+  const d = ageDemos['5k-times-women-age-50s'];
+  if (d && d.rows[0]) {
+    const r = d.rows[0];
+    console.log(`  Sample W50 5K 70%: ${r.levels[70].timeFormatted} — easy ${r.levels[70].trainingPaces?.easy.mi}, threshold ${r.levels[70].trainingPaces?.threshold.mi}`);
+  }
+
+  console.log('\nGenerating equivalency tables (deterministic)...');
+  const equivData = generateEquivalencyData();
+  const equivFile = join(DATA_DIR, 'equivalency-tables.json');
+  writeFileSync(equivFile, JSON.stringify(equivData, null, 2));
+  console.log(`  Written to ${equivFile}`);
+  // Sample spot-check
+  const e = equivData['5k-to-marathon'];
+  if (e) {
+    const row20 = e.rows.find(r => r.inputTime === '20:00');
+    if (row20) console.log(`  Sample 20:00 5K → marathon: ${row20.outputTime} (${row20.outputPaceMi}/mi)`);
+  }
+  const e2 = equivData['10k-to-half-marathon'];
+  if (e2) {
+    const row45 = e2.rows.find(r => r.inputTime === '45:00');
+    if (row45) console.log(`  Sample 45:00 10K → half: ${row45.outputTime} (${row45.outputPaceMi}/mi)`);
+  }
+
+  // --- Summary ---
+  const equivCount = Object.keys(equivData).filter(k => k !== '_meta').length;
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`DONE.`);
+  if (!newOnly) {
+    console.log(`  age-grading-tables.json   (regenerated)`);
+    console.log(`  training-pace-tables.json ${totalPaceRows} rows (API-fetched)`);
+  }
+  console.log(`  goal-pace-tables.json     ${goalSlugs.length} goals`);
+  console.log(`  age-gender-tables.json    ${demoSlugs.length} demographics`);
+  console.log(`  equivalency-tables.json   ${equivCount} conversions`);
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
