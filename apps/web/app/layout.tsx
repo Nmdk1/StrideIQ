@@ -14,7 +14,7 @@ import './globals.css'
 
 const META_DESCRIPTION =
   'Your body has a voice. StrideIQ is AI running intelligence that turns your data into decisions — training paces, trend signals, and coaching that adapts to you.'
-const OG_IMAGE_URL = '/og-image.png?v=3'
+const OG_IMAGE_URL = '/og-image.png?v=4'
 
 export const metadata: Metadata = {
   title: {
