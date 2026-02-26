@@ -1362,18 +1362,26 @@ async def get_week_workouts(
 # ============ Full Workout Control (Paid Tier) ============
 
 def _check_paid_tier(athlete: Athlete, db: Session) -> bool:
-    """Check if athlete has paid tier access for plan modifications."""
-    # Check subscription tier
-    if athlete.subscription_tier in ("pro", "elite", "premium", "guided", "subscription"):
+    """Check if athlete has paid tier access for plan modifications (guided+).
+
+    Uses the canonical tier hierarchy from core.tier_utils so that legacy tier
+    names (pro, elite, subscription) are normalised correctly.  Falls back to a
+    DB check for athletes who paid for a semi-custom/custom plan before the
+    subscription model existed.
+    """
+    from core.tier_utils import tier_satisfies
+
+    if tier_satisfies(athlete.subscription_tier, "guided"):
         return True
-    
-    # Check if they have any paid plans (semi-custom or custom)
+
+    # Legacy fallback: athletes who bought a semi-custom or custom plan
+    # before the subscription model existed retain workout-control access.
     from models import TrainingPlan
     paid_plan = db.query(TrainingPlan).filter(
         TrainingPlan.athlete_id == athlete.id,
         TrainingPlan.generation_method.in_(["semi_custom", "custom", "framework_v2"]),
     ).first()
-    
+
     return paid_plan is not None
 
 
