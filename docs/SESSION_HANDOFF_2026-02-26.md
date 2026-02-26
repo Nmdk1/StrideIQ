@@ -10,12 +10,13 @@
 ## Read order before first tool call
 
 1. `docs/FOUNDER_OPERATING_CONTRACT.md` — non-negotiable operating rules
-2. `docs/PRODUCT_MANIFESTO.md` — the soul of the product
-3. `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` — visual/UX contracts, rejected decisions
-4. `docs/RUN_SHAPE_VISION.md` — visual vision for run data
-5. `docs/TRAINING_PLAN_REBUILD_PLAN.md` — build priority order and phase gates
-6. `docs/SESSION_HANDOFF_2026-02-24_STRIPE_AND_GARMIN_REVIEW.md` — prior session (Stripe, sleep grounding)
-7. This document
+2. `docs/CODEBASE_ORIENTATION.md` — structural facts, shell quirks, friction points (read this early)
+3. `docs/PRODUCT_MANIFESTO.md` — the soul of the product
+4. `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` — visual/UX contracts, rejected decisions
+5. `docs/RUN_SHAPE_VISION.md` — visual vision for run data
+6. `docs/TRAINING_PLAN_REBUILD_PLAN.md` — build priority order and phase gates
+7. `docs/SESSION_HANDOFF_2026-02-24_STRIPE_AND_GARMIN_REVIEW.md` — prior session (Stripe, sleep grounding)
+8. This document
 
 ---
 
