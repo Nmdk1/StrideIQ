@@ -19,7 +19,8 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from core.database import get_db
-from core.auth import get_current_athlete, require_query_access, TOP_TIERS
+from core.auth import get_current_athlete, require_query_access
+from core.tier_utils import tier_satisfies
 from models import Athlete, Activity
 from services.query_engine import (
     QueryEngine, QuerySpec, QueryFilter, QueryScope,
@@ -120,8 +121,8 @@ def get_insight_templates(
     
     Some templates require premium subscription.
     """
-    is_premium = athlete.subscription_tier in TOP_TIERS or athlete.role in ("admin", "owner")
-    
+    is_premium = tier_satisfies(athlete.subscription_tier, "guided") or athlete.role in ("admin", "owner")
+
     return {
         "templates": [
             {
@@ -156,8 +157,7 @@ def execute_insight(
     if not template:
         raise HTTPException(status_code=404, detail=f"Template not found: {template_id}")
     
-    # Check premium access
-    is_premium = athlete.subscription_tier in TOP_TIERS or athlete.role in ("admin", "owner")
+    is_premium = tier_satisfies(athlete.subscription_tier, "guided") or athlete.role in ("admin", "owner")
     if template.requires_premium and not is_premium:
         raise HTTPException(
             status_code=403, 
