@@ -1,8 +1,58 @@
-# Session Handoff — Monetization Complete
+# Session Handoff — Monetization Complete (Frontend Last Mile added)
 
 **Date:** 2026-02-26  
-**Commits:** `48ac179`, `46c7c72`, `c89f35d`  
-**Status:** SHIPPED — all 3 streams delivered, deployed, production healthy
+**Backend Commits:** `48ac179`, `46c7c72`, `c89f35d`  
+**Frontend Last Mile Commits:** `2917e73`, `7d8ac2a`, `4f80f64`, `e906d7b`  
+**Status:** SHIPPED — all monetization surfaces live, production healthy
+
+---
+
+## Frontend Last Mile (4 additional commits)
+
+### Stream A — Pricing.tsx (`2917e73`)
+
+Replaced 2-tier Free/Elite view with canonical 4-tier model:
+
+| Tier | Price | CTA |
+|------|-------|-----|
+| Free | $0 | `/register` |
+| Race Plan Unlock | $5 one-time | `/register` |
+| Guided | $15/mo or $150/yr | `/settings?upgrade=guided&period=<period>` (authed) or `/register?tier=guided` |
+| Premium | $25/mo or $250/yr | `/settings?upgrade=premium&period=<period>` (authed) or `/register?tier=premium` |
+
+- Monthly/annual toggle — annual selected by default; savings callout per tier ("Save $30/yr", "Save $50/yr")
+- Authenticated users deep-linked directly to Settings upgrade panel; unauthenticated users go to `/register`
+- Guided card has "Most Popular" badge and orange border highlight
+
+### Stream B — Settings tier display + checkout UI (`7d8ac2a`, fixes `4f80f64`, `e906d7b`)
+
+Replaced binary `hasPaidAccess ? 'pro' : 'free'` with canonical 3-tier display:
+
+- **`canonicalizeTier(rawTier, hasActiveSub)`** — normalises all legacy values (pro, elite, subscription) to `free | guided | premium`
+- Membership card shows: "Free Plan", "Guided Plan", or "Premium Plan" — no more "PRO PLAN"
+- Tier-aware upgrade panel:
+  - **Free users**: period toggle (Monthly/Annual) + two checkout cards (Guided / Premium) — both show tier features and CTA
+  - **Guided users**: period toggle + one card (Premium upgrade)
+  - **Premium users**: "Manage subscription" only (Stripe portal)
+- Each CTA calls `POST /v1/billing/checkout` with `{tier, billing_period}` — matches the existing backend contract exactly
+- `?upgrade=guided&period=annual` URL params pre-seed the panel (from Pricing page deep link); uses `window.location.search` instead of `useSearchParams()` to avoid Next.js Suspense boundary requirement
+- Build fix: removed `<Suspense>` wrapper from default export after dropping `useSearchParams`
+
+### Production smoke check (post-deploy)
+
+```
+GET https://strideiq.run/       → 200
+GET https://strideiq.run/settings → 200
+GET https://strideiq.run/ping   → 200
+docker ps: all 6 containers Up and healthy
+```
+
+### Tests (no regressions)
+
+```
+python -m pytest tests/test_monetization_tier_mapping.py tests/test_stripe_service_unit.py -v
+46 passed, 12 xfailed, 0 failed
+```
 
 ---
 
@@ -137,13 +187,15 @@ Smoke check:
 
 ## What's Left in Monetization
 
-Everything backend and the primary frontend CTA are done. The remaining items are either:
+Frontend last mile is now also shipped. Remaining deferred items:
 
 1. **Upgrade prompts for 403 responses** — when free users hit intelligence endpoints, they see 403. The frontend should show an upgrade CTA ("Get Guided — $15/mo") instead of a blank error. Not yet built.
 
-2. **Group B tests** — will become real tests as features are built (advisory mode gating, tier transition webhooks, etc.)
+2. **Deep-link from `/register` → Settings upgrade** — currently, a new user clicking a paid tier on the Pricing page goes to `/register?tier=guided&period=annual`. After registration the flow lands on onboarding/home, not the Settings upgrade panel. A future improvement: the register page reads `?tier=` and `?period=` and redirects post-registration to `/settings?upgrade=<tier>&period=<period>`. This is a UX polish item, not a blocking gap.
 
-3. **Post-unlock re-fetch** — after Stripe returns to `/plans/{id}?unlocked=1`, the plan data re-fetches automatically (React Query cache busts on mount). Confirmed via architecture review.
+3. **Group B tests** — will become real tests as features are built (advisory mode gating, tier transition webhooks, etc.)
+
+4. **Post-unlock re-fetch** — after Stripe returns to `/plans/{id}?unlocked=1`, the plan data re-fetches automatically (React Query cache busts on mount). Confirmed via architecture review.
 
 ---
 
