@@ -9,7 +9,6 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { StravaConnection } from '@/components/integrations/StravaConnection';
 import { GarminConnection } from '@/components/integrations/GarminConnection';
@@ -44,11 +43,10 @@ const TIER_PRICES = {
   premium: { monthly: '$25/mo', annual: '$250/yr', savingsNote: 'Save $50/yr on annual' },
 };
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const { user } = useAuth();
   const { units, setUnits } = useUnits();
   const { aiConsent, loading: consentLoading, grantConsent, revokeConsent } = useConsent();
-  const searchParams = useSearchParams();
   const membershipRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -59,10 +57,22 @@ export default function SettingsPage() {
   const [paceProfile, setPaceProfile] = useState<any | null>(null);
 
   // Upgrade panel state — pre-seeded from ?upgrade= and ?period= URL params (e.g. from Pricing page CTA).
-  const urlUpgradeTier   = searchParams.get('upgrade') as 'guided' | 'premium' | null;
-  const urlPeriod        = searchParams.get('period') as 'monthly' | 'annual' | null;
-  const [upgradePeriod, setUpgradePeriod] = useState<'monthly' | 'annual'>(urlPeriod === 'monthly' ? 'monthly' : 'annual');
-  const [upgradePanel, setUpgradePanel] = useState<boolean>(!!urlUpgradeTier);
+  // Uses window.location.search instead of useSearchParams to avoid Next.js Suspense boundary requirement.
+  const [urlUpgradeTier, setUrlUpgradeTier] = useState<'guided' | 'premium' | null>(null);
+  const [upgradePeriod, setUpgradePeriod] = useState<'monthly' | 'annual'>('annual');
+  const [upgradePanel, setUpgradePanel] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const tier = params.get('upgrade') as 'guided' | 'premium' | null;
+    const period = params.get('period') as 'monthly' | 'annual' | null;
+    if (tier === 'guided' || tier === 'premium') {
+      setUrlUpgradeTier(tier);
+      setUpgradePanel(true);
+    }
+    if (period === 'monthly') setUpgradePeriod('monthly');
+  }, []);
 
   // Canonical tier derived from user data.
   const rawTier = (user?.subscription_tier || 'free').toLowerCase();
@@ -715,5 +725,13 @@ export default function SettingsPage() {
         </div>
       </div>
     </ProtectedRoute>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageContent />
+    </Suspense>
   );
 }
