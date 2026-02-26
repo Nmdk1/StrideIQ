@@ -229,6 +229,42 @@ class StripeEvent(Base):
     )
 
 
+class PlanPurchase(Base):
+    """One-time race-plan unlock purchase record.
+
+    Created when a checkout.session.completed webhook arrives with mode=payment
+    and purchase_type=plan_onetime in the session metadata.
+
+    Entitlement key: (athlete_id, plan_snapshot_id). Cross-athlete reuse is
+    blocked at checkout time (billing router ownership check) and here by design
+    — the athlete_id is written from the session's client_reference_id, not from
+    user input post-purchase.
+
+    plan_snapshot_id is an immutable reference to a specific plan artifact.
+    It must NOT change if the plan is later mutated; use a stable snapshot/version
+    identifier once the plan artifact system is in place.
+    """
+
+    __tablename__ = "plan_purchases"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    plan_snapshot_id = Column(Text, nullable=False, index=True)
+
+    stripe_session_id = Column(Text, nullable=True)
+    stripe_payment_intent_id = Column(Text, nullable=True, unique=True, index=True)
+
+    purchased_at = Column(DateTime(timezone=True), nullable=False)
+    amount_cents = Column(Integer, nullable=True)  # populated if available from Stripe event
+
+    __table_args__ = (
+        # One purchase per athlete+plan artifact.
+        UniqueConstraint("athlete_id", "plan_snapshot_id", name="uq_plan_purchases_athlete_snapshot"),
+        Index("ix_plan_purchases_athlete_id", "athlete_id"),
+        Index("ix_plan_purchases_plan_snapshot_id", "plan_snapshot_id"),
+    )
+
+
 class InviteAuditEvent(Base):
     """
     Audit log for invite operations.
