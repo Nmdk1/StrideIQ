@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     url: 'https://strideiq.run/tools',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StrideIQ - Free Running Calculators' }],
   },
 }
 

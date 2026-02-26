@@ -16,6 +16,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     url: 'https://strideiq.run',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StrideIQ - AI Running Coach' }],
   },
 }
 
