@@ -17,9 +17,33 @@ Build plan tier table (docs/TRAINING_PLAN_REBUILD_PLAN.md):
 Group A — real tests (xfail removed).  Features fully implemented in Phase 2.
 Group B — structured xfail. Features not yet built or not yet endpoint-gated.
 
+xfail AUDIT — 2026-02-26 (Monetization v1 closeout)
+----------------------------------------------------
+All 12 Group B xfails were reviewed against the shipped feature set.
+NONE represent shipped behavior — each is blocked by a genuine unbuilt gate:
+
+  TestGuidedTierGroupB:
+    test_guided_gets_n1_plan_parameters   — needs Strava fixture + plan-generation integration
+    test_guided_gets_readiness_score      — needs DailyReadiness activity data fixtures
+    test_guided_gets_completion_tracking  — needs full workout state-machine integration test
+    test_guided_no_advisory_mode          — /v1/coach/chat not yet tier-gated (Phase 3B/3C dep)
+
+  TestPremiumTierGroupB:
+    test_premium_gets_coach_advisory_mode        — advisory mode not yet built
+    test_premium_gets_multi_race_planning        — Phase 4 infrastructure not yet built
+    test_premium_gets_intelligence_bank_dashboard — dashboard endpoint does not yet exist
+    test_premium_gets_conversational_coach       — /v1/coach/chat not yet tier-gated
+
+  TestTierTransitions (4 tests):
+    All require Stripe webhook simulation fixtures — not yet in test infrastructure.
+
+Promotion rule: when a gate clears, remove @_XFAIL_NOT_BUILT / @_XFAIL_NO_ENDPOINT,
+replace NotImplementedError with real assertions, and verify strict=True would fail
+if the assertion were removed.
+
 Sources:
     docs/TRAINING_PLAN_REBUILD_PLAN.md (Monetization Mapping)
-    docs/SESSION_HANDOFF_2026-02-26_MONETIZATION_PHASE2.md
+    docs/SESSION_HANDOFF_2026-02-26_MONETIZATION_COMPLETE.md
 """
 
 from uuid import uuid4

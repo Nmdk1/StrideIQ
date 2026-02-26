@@ -610,7 +610,7 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 | **3B** | Contextual workout narratives. | Narration accuracy > 90% for 4 weeks | ✅ CODE COMPLETE — gate accruing |
 | **3C** | N=1 personalized insights. | 3+ months data + significant correlations | ✅ CODE COMPLETE — gate accruing |
 | **4** | 50K ultra: new primitives. | Phases 1-2 complete | 📋 CONTRACT ONLY — ready to build |
-| **Monetization** | Tier mapping: Free / One-time / Guided / Premium. | Phases 1-2 complete | ✅ COMPLETE — Phase 2 gating + frontend 4-tier UI + PDF export (2026-02-26) |
+| **Monetization** | Tier mapping: Free / One-time / Guided / Premium. | Phases 1-2 complete | ✅ v1 COMPLETE — tier gating + frontend 4-tier UI + PDF export + register intent carry-through (2026-02-26) |
 | **Parallel** | Coach trust: test harness, HRV study, narration scoring, advisory mode, autonomy. | Starts Day 1 | ✅ COMPLETE (ongoing accrual) |
 
 ---
