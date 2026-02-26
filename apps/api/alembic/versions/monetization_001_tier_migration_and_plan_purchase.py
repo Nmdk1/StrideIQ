@@ -25,7 +25,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "monetization_001"
-down_revision: Union[str, None] = "sleep_quality_001"
+down_revision: Union[str, None] = "garmin_004"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

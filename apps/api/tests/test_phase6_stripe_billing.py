@@ -22,10 +22,18 @@ class _DummyStripeConfig:
     def __init__(self):
         self.secret_key = "sk_test_dummy"
         self.webhook_secret = "whsec_dummy"
-        self.pro_monthly_price_id = "price_dummy"
         self.checkout_success_url = "http://localhost:3000/settings?success=1"
         self.checkout_cancel_url = "http://localhost:3000/settings?canceled=1"
         self.portal_return_url = "http://localhost:3000/settings"
+        # Price IDs required by build_price_to_tier.
+        # price_dummy maps through the legacy pro slot so the webhook test
+        # can verify that a subscription.updated event grants the correct tier.
+        self.price_guided_monthly_id = None
+        self.price_guided_annual_id = None
+        self.price_premium_monthly_id = None
+        self.price_premium_annual_id = None
+        self.price_legacy_pro_monthly_id = "price_dummy"
+        self.price_plan_onetime_id = None
 
 
 class _DummyEvent:
@@ -136,7 +144,7 @@ def test_webhook_idempotency_and_entitlement_update(monkeypatch):
     try:
         updated = db.query(Athlete).filter(Athlete.email.like("stripe_evt_%@example.com")).first()
         assert updated is not None
-        assert updated.subscription_tier == "pro"
+        assert updated.subscription_tier == "premium"
 
         ev_count = db.query(StripeEvent).filter(StripeEvent.event_id == "evt_1").count()
         assert ev_count == 1

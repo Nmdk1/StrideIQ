@@ -61,10 +61,16 @@ class _DummyStripeConfig:
     def __init__(self, *, webhook_secret: str):
         self.secret_key = "sk_test_dummy"
         self.webhook_secret = webhook_secret
-        self.pro_monthly_price_id = "price_dummy"
         self.checkout_success_url = "http://localhost:3000/settings?stripe=success"
         self.checkout_cancel_url = "http://localhost:3000/settings?stripe=cancel"
         self.portal_return_url = "http://localhost:3000/settings"
+        # Price IDs required by build_price_to_tier — all None for webhook smoke tests
+        self.price_guided_monthly_id = None
+        self.price_guided_annual_id = None
+        self.price_premium_monthly_id = None
+        self.price_premium_annual_id = None
+        self.price_legacy_pro_monthly_id = None
+        self.price_plan_onetime_id = None
 
 
 def _stripe_sig_header(*, secret: str, payload: bytes, timestamp: int) -> str:
