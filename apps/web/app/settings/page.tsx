@@ -24,12 +24,14 @@ import { authService } from '@/lib/api/services/auth';
 import { useConsent } from '@/lib/context/ConsentContext';
 
 // Map legacy/raw tier values to canonical 3-tier model.
+// Trial users have subscription_tier='free' with has_active_subscription=true;
+// we treat them as 'free' so the upgrade panel still shows.
 type CanonicalTier = 'free' | 'guided' | 'premium';
 function canonicalizeTier(raw: string, hasActiveSub: boolean): CanonicalTier {
   const t = (raw || '').toLowerCase();
-  if (!hasActiveSub) return 'free';
-  if (t === 'guided') return 'guided';
-  return 'premium';
+  if (t === 'guided' && hasActiveSub) return 'guided';
+  if (['premium', 'pro', 'elite', 'subscription'].includes(t)) return 'premium';
+  return 'free';
 }
 
 const TIER_LABELS: Record<CanonicalTier, string> = {
@@ -76,7 +78,10 @@ function SettingsPageContent() {
 
   // Canonical tier derived from user data.
   const rawTier = (user?.subscription_tier || 'free').toLowerCase();
-  const hasActiveSub = !!user?.has_active_subscription || (rawTier !== 'free' && rawTier !== '');
+  // has_active_subscription=true can also be set during a free trial — only consider
+  // it in combination with a non-free subscription_tier to avoid promoting trial
+  // users to 'premium' tier incorrectly.
+  const hasActiveSub = !!user?.has_active_subscription && rawTier !== 'free';
   const canonicalTier = canonicalizeTier(rawTier, hasActiveSub);
   const displayTier = TIER_LABELS[canonicalTier];
 
