@@ -12,13 +12,14 @@ import { JsonLd } from '@/components/seo/JsonLd';
 
 const LANDING_META_DESCRIPTION =
   'Your body has a voice. StrideIQ is AI running intelligence that turns your data into decisions — training paces, trend signals, and coaching that adapts to you.'
+const OG_IMAGE_URL = '/og-image.png?v=3'
 
 const organizationJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
   name: 'StrideIQ',
   url: 'https://strideiq.run',
-  logo: 'https://strideiq.run/og-image.png',
+  logo: 'https://strideiq.run/og-image.png?v=3',
   description:
     'Evidence-based AI running coach. Free training pace calculator, age-grading calculator, and heat-adjusted pace tools.',
 }
@@ -51,7 +52,7 @@ export const metadata: Metadata = {
   openGraph: {
     description: LANDING_META_DESCRIPTION,
     url: 'https://strideiq.run',
-    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StrideIQ - AI Running Coach' }],
+    images: [{ url: OG_IMAGE_URL, width: 1200, height: 630, alt: 'StrideIQ - AI Running Coach' }],
   },
 }
 

@@ -14,6 +14,7 @@ import './globals.css'
 
 const META_DESCRIPTION =
   'Your body has a voice. StrideIQ is AI running intelligence that turns your data into decisions — training paces, trend signals, and coaching that adapts to you.'
+const OG_IMAGE_URL = '/og-image.png?v=3'
 
 export const metadata: Metadata = {
   title: {
@@ -29,14 +30,14 @@ export const metadata: Metadata = {
     siteName: 'StrideIQ',
     title: 'StrideIQ - AI Running Coach & Training Intelligence',
     description: META_DESCRIPTION,
-    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StrideIQ - AI Running Coach' }],
+    images: [{ url: OG_IMAGE_URL, width: 1200, height: 630, alt: 'StrideIQ - AI Running Coach' }],
     url: 'https://strideiq.run',
   },
   twitter: {
     card: 'summary_large_image',
     title: 'StrideIQ - AI Running Coach & Training Intelligence',
     description: META_DESCRIPTION,
-    images: ['/og-image.png'],
+    images: [OG_IMAGE_URL],
   },
   robots: {
     index: true,
