@@ -614,29 +614,39 @@ def _post_to_discord(draft: str, question: str) -> bool:
         print("  [Discord] DISCORD_WEBHOOK_URL not set — skipping Discord delivery.", file=sys.stderr)
         return False
 
+    # Discord has a 2000-char message limit; truncate gracefully
+    content = draft
+    if len(content) > 1900:
+        content = content[:1897] + "..."
+
+    payload = json.dumps({
+        "username": "StrideIQ Opportunity Assistant",
+        "content": f"**New draft for review** _(do not post without editing)_\n\n{content}",
+    }).encode("utf-8")
+
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "StrideIQBot/1.0 (https://strideiq.run)",
+    }
+
+    # Use requests if available — avoids Cloudflare TLS fingerprint blocks on some hosts
+    try:
+        import requests as _req
+        r = _req.post(webhook_url, data=payload, headers=headers, timeout=10)
+        return r.status_code in (200, 204)
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"  [Discord] requests delivery failed: {e}", file=sys.stderr)
+        return False
+
+    # Fallback: urllib
     try:
         import urllib.request
         import urllib.error
-
-        # Discord has a 2000-char message limit; truncate gracefully
-        content = draft
-        if len(content) > 1900:
-            content = content[:1897] + "..."
-
-        payload = json.dumps({
-            "username": "StrideIQ Opportunity Assistant",
-            "content": f"**New draft for review** _(do not post without editing)_\n\n{content}",
-        }).encode("utf-8")
-
-        req = urllib.request.Request(
-            webhook_url,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
+        req = urllib.request.Request(webhook_url, data=payload, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.status in (200, 204)
-
     except Exception as e:
         print(f"  [Discord] Delivery failed: {e}", file=sys.stderr)
         return False

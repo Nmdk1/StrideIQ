@@ -1,4 +1,2 @@
 # StrideIQ scripts/opportunity-assistant.py dependencies
-# All other imports are Python standard library.
-# Discord delivery uses urllib (stdlib) — no requests required.
-# Add 'requests' only if you need SMTP or other HTTP integrations later.
+requests>=2.31.0   # Discord webhook delivery (avoids Cloudflare TLS blocks on urllib)
