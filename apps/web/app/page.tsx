@@ -12,7 +12,7 @@ import { JsonLd } from '@/components/seo/JsonLd';
 
 const LANDING_META_DESCRIPTION =
   'Your body has a voice. StrideIQ is AI running intelligence that turns your data into decisions — training paces, trend signals, and coaching that adapts to you.'
-const OG_IMAGE_URL = '/og-image.png?v=4'
+const OG_IMAGE_URL = '/og-image.png?v=5'
 
 const organizationJsonLd = {
   '@context': 'https://schema.org',
