@@ -12,6 +12,7 @@ Spec:
   pace reference card shows both min/mi and min/km
 """
 
+import concurrent.futures
 import io
 import re
 import logging
@@ -19,6 +20,26 @@ from datetime import datetime, date
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# ─── Generation guardrails ─────────────────────────────────────────────────────
+# These protect the API process from runaway memory and wall-clock time.
+# Values are deliberately generous — normal plans (8-24 weeks) are well inside.
+
+#: Maximum number of distinct week numbers accepted from the DB.
+#: 60 weeks covers the longest credible ultra-training block.
+MAX_PLAN_WEEKS: int = 60
+
+#: Maximum number of raw PlannedWorkout rows accepted before grouping.
+#: 60 weeks × 7 days = 420; cap at 500 gives headroom for edge cases.
+MAX_WORKOUT_ROWS: int = 500
+
+#: Maximum output size in bytes.  Typical plans render 100-500 KB;
+#: 20 MB indicates something went wrong with the render.
+MAX_PDF_BYTES: int = 20 * 1024 * 1024  # 20 MB
+
+#: Wall-clock timeout for the WeasyPrint render call.
+#: Normal renders complete in <5s; 30s timeout catches pathological input.
+GENERATION_TIMEOUT_SECONDS: int = 30
 
 
 # ─── Pace helpers ─────────────────────────────────────────────────────────────
@@ -180,6 +201,17 @@ def generate_plan_pdf(plan, workouts, athlete) -> bytes:
         or ""
     )
 
+    # ── Guardrail 1: input scope cap ───────────────────────────────────────────
+    # Fail fast before any template work.  Both checks raise RuntimeError so
+    # the endpoint can return 503 without leaking internal detail.
+    n_workouts = len(workouts)
+    if n_workouts > MAX_WORKOUT_ROWS:
+        raise RuntimeError(
+            f"Plan has {n_workouts} workout rows, which exceeds the "
+            f"render limit of {MAX_WORKOUT_ROWS}. "
+            "Split the plan or contact support."
+        )
+
     # ── Group workouts by week ─────────────────────────────────────────────────
     weeks_map: dict[int, list] = {}
     for w in workouts:
@@ -187,6 +219,14 @@ def generate_plan_pdf(plan, workouts, athlete) -> bytes:
         if wn not in weeks_map:
             weeks_map[wn] = []
         weeks_map[wn].append(w)
+
+    n_weeks = len(weeks_map)
+    if n_weeks > MAX_PLAN_WEEKS:
+        raise RuntimeError(
+            f"Plan spans {n_weeks} weeks, which exceeds the "
+            f"render limit of {MAX_PLAN_WEEKS}. "
+            "Split the plan or contact support."
+        )
 
     # ── Build week sections ────────────────────────────────────────────────────
     week_sections = []
@@ -264,13 +304,32 @@ def generate_plan_pdf(plan, workouts, athlete) -> bytes:
     template = env.from_string(template_src)
     html_content = template.render(**ctx)
 
-    # ── Generate PDF ───────────────────────────────────────────────────────────
-    buf = io.BytesIO()
-    weasyprint.HTML(string=html_content, base_url=None).write_pdf(buf)
-    pdf_bytes = buf.getvalue()
+    # ── Guardrail 2: timeout-protected render ──────────────────────────────────
+    def _do_render() -> bytes:
+        inner_buf = io.BytesIO()
+        weasyprint.HTML(string=html_content, base_url=None).write_pdf(inner_buf)
+        return inner_buf.getvalue()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_do_render)
+        try:
+            pdf_bytes = future.result(timeout=GENERATION_TIMEOUT_SECONDS)
+        except concurrent.futures.TimeoutError:
+            raise RuntimeError(
+                f"PDF generation timed out after {GENERATION_TIMEOUT_SECONDS}s. "
+                "Try again or contact support if the issue persists."
+            )
 
     if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
         raise RuntimeError("WeasyPrint produced invalid or empty PDF output")
+
+    # ── Guardrail 3: output byte-size cap ──────────────────────────────────────
+    if len(pdf_bytes) > MAX_PDF_BYTES:
+        raise RuntimeError(
+            f"Generated PDF is {len(pdf_bytes):,} bytes, which exceeds the "
+            f"{MAX_PDF_BYTES // (1024 * 1024)} MB safety limit. "
+            "Contact support."
+        )
 
     logger.info(
         "plan_pdf: generated %d bytes for plan=%s weeks=%d",

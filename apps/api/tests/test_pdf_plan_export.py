@@ -5,7 +5,8 @@ Categories:
   1. Unit: plan_pdf helper functions (no WeasyPrint required)
   2. Unit: template rendering — verifies HTML content via sys.modules mock
      (weasyprint not required to be installed locally)
-  3. Integration: GET /v1/plans/{plan_id}/pdf endpoint access control
+  3. Unit: generation guardrails (scope cap, byte-size cap, timeout)
+  4. Integration: GET /v1/plans/{plan_id}/pdf endpoint access control
      - 404 for missing / non-owned plan
      - 403 for free athlete without purchase
      - 200 + PDF bytes for one-time purchaser
@@ -400,7 +401,178 @@ class TestPdfRendering:
 
 
 # =============================================================================
-# CATEGORY 3: Integration tests — GET /v1/plans/{plan_id}/pdf
+# CATEGORY 3: Guardrail unit tests
+# =============================================================================
+
+class TestPdfGuardrails:
+    """
+    Verify that generate_plan_pdf raises RuntimeError for inputs that
+    would exceed the safety limits defined in plan_pdf.py constants.
+    All tests use the mock_weasyprint fixture so no WeasyPrint install needed.
+    """
+
+    @staticmethod
+    def _plan():
+        return types.SimpleNamespace(
+            id=uuid4(), name="Guardrail Test Plan",
+            goal_race_name=None, goal_race_date=None,
+            goal_race_distance_m=None,
+            plan_start_date=None, plan_end_date=None,
+            total_weeks=1, baseline_rpi=None, status="active",
+        )
+
+    @staticmethod
+    def _athlete():
+        return types.SimpleNamespace(
+            id=uuid4(), display_name="Runner",
+            email="r@test.com", preferred_units="imperial",
+        )
+
+    @staticmethod
+    def _workout(week: int, day: int = 1):
+        return types.SimpleNamespace(
+            week_number=week, day_of_week=day,
+            workout_type="easy", phase="base",
+            title="Easy Run", description="Easy effort",
+            coach_notes=None, target_distance_km=8.0,
+            target_pace_per_km_seconds=None,
+            target_pace_per_km_seconds_max=None,
+        )
+
+    # ── 1. Workout-row cap ────────────────────────────────────────────────────
+    # The row cap is checked against len(workouts) BEFORE grouping, so we
+    # can trigger it with duplicated (week, day) entries — which is what
+    # this guard is designed to catch (data anomalies bypassing the DB
+    # unique constraint).
+
+    def test_too_many_workout_rows_raises(self, mock_weasyprint):
+        from services.plan_pdf import generate_plan_pdf, MAX_WORKOUT_ROWS
+        plan = self._plan()
+        athlete = self._athlete()
+        # All in week 1, all same day — only len() matters for the cap
+        workouts = [self._workout(week=1, day=0) for _ in range(MAX_WORKOUT_ROWS + 1)]
+        with pytest.raises(RuntimeError, match="workout rows"):
+            generate_plan_pdf(plan, workouts, athlete)
+
+    def test_exactly_at_row_limit_does_not_raise(self, mock_weasyprint):
+        from services.plan_pdf import generate_plan_pdf, MAX_WORKOUT_ROWS
+        plan = self._plan()
+        athlete = self._athlete()
+        workouts = [self._workout(week=1, day=0) for _ in range(MAX_WORKOUT_ROWS)]
+        # Should not raise; mock_weasyprint handles the render
+        result = generate_plan_pdf(plan, workouts, athlete)
+        assert result.startswith(b"%PDF")
+
+    # ── 2. Week count cap ─────────────────────────────────────────────────────
+
+    def test_too_many_weeks_raises(self, mock_weasyprint):
+        from services.plan_pdf import generate_plan_pdf, MAX_PLAN_WEEKS
+        plan = self._plan()
+        athlete = self._athlete()
+        # One workout per week, one over the week limit
+        workouts = [self._workout(week=i + 1) for i in range(MAX_PLAN_WEEKS + 1)]
+        with pytest.raises(RuntimeError, match="weeks"):
+            generate_plan_pdf(plan, workouts, athlete)
+
+    def test_exactly_at_week_limit_does_not_raise(self, mock_weasyprint):
+        from services.plan_pdf import generate_plan_pdf, MAX_PLAN_WEEKS
+        plan = self._plan()
+        athlete = self._athlete()
+        workouts = [self._workout(week=i + 1) for i in range(MAX_PLAN_WEEKS)]
+        result = generate_plan_pdf(plan, workouts, athlete)
+        assert result.startswith(b"%PDF")
+
+    # ── 3. Output byte-size cap ───────────────────────────────────────────────
+
+    def test_oversized_output_raises(self, monkeypatch):
+        """WeasyPrint mock returns a PDF that exceeds MAX_PDF_BYTES."""
+        import sys
+        from services.plan_pdf import MAX_PDF_BYTES
+
+        oversized = b"%PDF-1.4 " + b"x" * (MAX_PDF_BYTES + 1)
+
+        def html_constructor(string=None, base_url=None, **kwargs):
+            inst = MagicMock()
+            inst.write_pdf.side_effect = lambda buf: buf.write(oversized)
+            return inst
+
+        mock_wp = MagicMock()
+        mock_wp.HTML.side_effect = html_constructor
+        monkeypatch.setitem(sys.modules, "weasyprint", mock_wp)
+
+        from services.plan_pdf import generate_plan_pdf
+        plan = self._plan()
+        athlete = self._athlete()
+        workouts = [self._workout(week=1)]
+        with pytest.raises(RuntimeError, match="exceeds"):
+            generate_plan_pdf(plan, workouts, athlete)
+
+    def test_output_at_size_limit_succeeds(self, monkeypatch):
+        """PDF exactly at MAX_PDF_BYTES must not raise."""
+        import sys
+        from services.plan_pdf import MAX_PDF_BYTES
+
+        at_limit = b"%PDF-1.4 " + b"x" * (MAX_PDF_BYTES - len(b"%PDF-1.4 "))
+        assert len(at_limit) == MAX_PDF_BYTES
+
+        def html_constructor(string=None, base_url=None, **kwargs):
+            inst = MagicMock()
+            inst.write_pdf.side_effect = lambda buf: buf.write(at_limit)
+            return inst
+
+        mock_wp = MagicMock()
+        mock_wp.HTML.side_effect = html_constructor
+        monkeypatch.setitem(sys.modules, "weasyprint", mock_wp)
+
+        from services.plan_pdf import generate_plan_pdf
+        plan = self._plan()
+        athlete = self._athlete()
+        workouts = [self._workout(week=1)]
+        result = generate_plan_pdf(plan, workouts, athlete)
+        assert result.startswith(b"%PDF")
+
+    # ── 4. Generation timeout ─────────────────────────────────────────────────
+
+    def test_timeout_raises_runtime_error(self, monkeypatch):
+        """WeasyPrint mock sleeps beyond the (patched) timeout budget."""
+        import sys
+        import time
+
+        # Patch the module constant to 1 s BEFORE building the mock,
+        # so generate_plan_pdf's future.result(timeout=1) fires quickly.
+        monkeypatch.setattr("services.plan_pdf.GENERATION_TIMEOUT_SECONDS", 1)
+
+        def html_constructor(string=None, base_url=None, **kwargs):
+            inst = MagicMock()
+            def slow_render(buf):
+                time.sleep(5)  # 5 s >> 1 s patched timeout
+                buf.write(FAKE_PDF)
+            inst.write_pdf.side_effect = slow_render
+            return inst
+
+        mock_wp = MagicMock()
+        mock_wp.HTML.side_effect = html_constructor
+        monkeypatch.setitem(sys.modules, "weasyprint", mock_wp)
+
+        from services.plan_pdf import generate_plan_pdf
+        plan = self._plan()
+        athlete = self._athlete()
+        workouts = [self._workout(week=1)]
+        with pytest.raises(RuntimeError, match="timed out"):
+            generate_plan_pdf(plan, workouts, athlete)
+
+    def test_fast_render_completes_within_timeout(self, mock_weasyprint):
+        """A normal render (instant mock) completes successfully."""
+        from services.plan_pdf import generate_plan_pdf
+        plan = self._plan()
+        athlete = self._athlete()
+        workouts = [self._workout(week=1)]
+        result = generate_plan_pdf(plan, workouts, athlete)
+        assert result.startswith(b"%PDF")
+
+
+# =============================================================================
+# CATEGORY 4: Integration tests — GET /v1/plans/{plan_id}/pdf
 # =============================================================================
 
 class TestPdfEndpointAccessControl:
