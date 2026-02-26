@@ -1,5 +1,4 @@
-"use client";
-
+import type { Metadata } from 'next'
 import React from 'react';
 import Hero from './components/Hero';
 import QuickValue from './components/QuickValue';
@@ -8,6 +7,17 @@ import HowItWorks from './components/HowItWorks';
 import WhyGuidedCoaching from './components/WhyGuidedCoaching';
 import Pricing from './components/Pricing';
 import Footer from './components/Footer';
+
+export const metadata: Metadata = {
+  title: 'StrideIQ - AI Running Coach & Training Intelligence',
+  description: 'Free training pace calculator, age-grading calculator, and heat-adjusted pace tools. Evidence-based AI running coach that correlates sleep, nutrition, and training with your performance.',
+  alternates: {
+    canonical: 'https://strideiq.run',
+  },
+  openGraph: {
+    url: 'https://strideiq.run',
+  },
+}
 
 export default function LandingPage() {
   return (

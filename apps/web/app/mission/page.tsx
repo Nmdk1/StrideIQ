@@ -1,7 +1,17 @@
-"use client";
-
+import type { Metadata } from 'next'
 import React from 'react';
 import Footer from '../components/Footer';
+
+export const metadata: Metadata = {
+  title: 'Our Mission - Evidence-Based Running Coaching for Every Age',
+  description: 'StrideIQ believes every runner deserves elite-level coaching. No age-based assumptions. Masters running performance analyzed on its own terms.',
+  alternates: {
+    canonical: 'https://strideiq.run/mission',
+  },
+  openGraph: {
+    url: 'https://strideiq.run/mission',
+  },
+}
 
 export default function MissionStatement() {
   return (

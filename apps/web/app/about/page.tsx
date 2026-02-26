@@ -1,5 +1,4 @@
-"use client";
-
+import type { Metadata } from 'next'
 import Link from "next/link";
 import Image from "next/image";
 import React from "react";
@@ -7,6 +6,17 @@ import Footer from "../components/Footer";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { BrainCircuit, ShieldCheck, Target, Activity } from "lucide-react";
+
+export const metadata: Metadata = {
+  title: 'About StrideIQ - Built by a Self-Coached Runner',
+  description: 'Founded by a lifelong self-coached runner and physicist. AI running analysis built on exercise science, not templates. N=1 intelligence that learns your body.',
+  alternates: {
+    canonical: 'https://strideiq.run/about',
+  },
+  openGraph: {
+    url: 'https://strideiq.run/about',
+  },
+}
 
 export default function AboutPage() {
   return (

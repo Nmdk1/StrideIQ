@@ -1,4 +1,8 @@
-strideiq.run, www.strideiq.run {
+www.strideiq.run {
+  redir https://strideiq.run{uri} 301
+}
+
+strideiq.run {
   encode gzip
 
   # Security Headers (M9 - External Security Report)
