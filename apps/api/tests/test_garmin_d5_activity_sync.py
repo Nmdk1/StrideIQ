@@ -630,6 +630,48 @@ class TestLastGarminSyncUpdate:
         assert result["status"] == "skipped"
         assert result["reason"] == "athlete_not_found"
 
+    def test_briefing_refresh_triggered_when_activity_changes(self):
+        """Created/updated Garmin activities should dirty + force-refresh home briefing."""
+        from tasks.garmin_webhook_tasks import process_garmin_activity_task
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+
+        # New activity path: no existing Garmin idempotency hit, no dedup candidates.
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
+             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
+            process_garmin_activity_task.run(ATHLETE_ID, _RUNNING_RAW)
+
+        mock_dirty.assert_called_once_with(ATHLETE_ID)
+        mock_enq.assert_called_once_with(
+            ATHLETE_ID,
+            force=True,
+            allow_circuit_probe=True,
+        )
+
+    def test_briefing_refresh_not_triggered_when_all_skipped(self):
+        """All-skipped Garmin payloads should not trigger briefing refresh."""
+        from tasks.garmin_webhook_tasks import process_garmin_activity_task
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+
+        # CYCLING payload is skipped by _ingest_activity_item
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
+             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
+            process_garmin_activity_task.run(ATHLETE_ID, _CYCLING_RAW)
+
+        mock_dirty.assert_not_called()
+        mock_enq.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # D5.2: process_garmin_activity_detail_task — stream ingestion

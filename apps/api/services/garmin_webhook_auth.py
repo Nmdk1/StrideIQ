@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # RateLimitMiddleware) is the primary defence. This limiter provides an
 # additional in-process check specifically for webhook endpoints.
 
-_WEBHOOK_RATE_LIMIT = 120   # max requests per window per IP
+_WEBHOOK_RATE_LIMIT = 600   # max requests per window per IP
 _WEBHOOK_RATE_WINDOW = 60   # sliding window in seconds
 
 
@@ -104,7 +104,13 @@ async def verify_garmin_webhook(request: Request) -> None:
         HTTPException(429): Per-IP rate limit exceeded.
     """
     # Layer 4: rate limiting (before any other processing)
-    client_ip = request.client.host if request.client else "unknown"
+    # Prefer the true client IP when behind a reverse proxy.
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    client_ip = (
+        forwarded_for.split(",")[0].strip()
+        if forwarded_for
+        else (request.client.host if request.client else "unknown")
+    )
     if not _rate_limiter.is_allowed(client_ip):
         logger.warning(
             "Garmin webhook rate limit exceeded",
@@ -115,8 +121,12 @@ async def verify_garmin_webhook(request: Request) -> None:
             detail="Rate limit exceeded",
         )
 
-    # Layer 1: garmin-client-id header check (primary gate)
-    received_id = request.headers.get("garmin-client-id")
+    # Layer 1: Garmin client ID header check (primary gate).
+    # Accept both documented and observed variants.
+    received_id = (
+        request.headers.get("garmin-client-id")
+        or request.headers.get("x-garmin-client-id")
+    )
 
     if not received_id:
         logger.warning(

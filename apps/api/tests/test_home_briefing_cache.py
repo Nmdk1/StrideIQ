@@ -611,7 +611,7 @@ class TestTriggers:
             app.dependency_overrides.pop(get_db, None)
 
     def test_trigger_activity_ingest_enqueues_refresh(self):
-        """Test 24: post_sync_processing_task calls enqueue_briefing_refresh at runtime."""
+        """Test 24: post_sync_processing_task dirties cache + force-enqueues refresh."""
         athlete_id = str(uuid4())
         mock_db = MagicMock()
         mock_athlete = MagicMock()
@@ -619,7 +619,8 @@ class TestTriggers:
         mock_db.get.return_value = mock_athlete
         mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
 
-        with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enqueue, \
+        with patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
+             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enqueue, \
              patch("tasks.strava_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.strava_tasks.calculate_athlete_derived_signals"), \
              patch("tasks.strava_tasks.sync_strava_best_efforts", return_value={}), \
@@ -627,7 +628,12 @@ class TestTriggers:
             mock_enqueue.return_value = True
             from tasks.strava_tasks import post_sync_processing_task
             result = post_sync_processing_task.run(athlete_id)
-            mock_enqueue.assert_called_once_with(athlete_id)
+            mock_dirty.assert_called_once_with(athlete_id)
+            mock_enqueue.assert_called_once_with(
+                athlete_id,
+                force=True,
+                allow_circuit_probe=True,
+            )
             assert result["status"] == "success"
 
     def test_trigger_plan_change_enqueues_refresh(self, db_session, test_athlete):
@@ -885,6 +891,34 @@ class TestCeleryTask:
         circuit_val = fake_redis.get(_circuit_key(athlete_id))
         assert circuit_val is not None
         assert int(circuit_val) == 1
+
+    def test_celery_task_writes_deterministic_fallback_when_llm_unavailable(self, fake_redis):
+        """LLM outage should still write a deterministic refreshed briefing."""
+        athlete_id = str(uuid4())
+        mock_db = MagicMock()
+
+        with patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=None), \
+             patch("tasks.home_briefing_tasks._build_deterministic_briefing", return_value={
+                 "coach_noticed": "Latest run synced: 6.0 mi at 8:56/mi.",
+                 "today_context": "Sync completed.",
+                 "week_assessment": "Data is current.",
+                 "morning_voice": "6.0 miles at 8:56/mi. Briefing refreshed.",
+                 "workout_why": "Fresh data anchors decisions.",
+             }), \
+             patch("services.consent.has_ai_consent", return_value=True):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+
+        assert result["status"] == "degraded"
+        payload, state = read_briefing_cache(athlete_id)
+        assert state == BriefingState.FRESH
+        assert payload is not None
+        assert "Briefing refreshed" in payload["morning_voice"]
 
     def test_celery_task_lock_prevents_parallel(self, fake_redis):
         """Test 33: concurrent task for same athlete is skipped."""

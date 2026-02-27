@@ -142,6 +142,15 @@ class TestVerifyGarminWebhook:
             await verify_garmin_webhook(req)
 
     @pytest.mark.asyncio
+    async def test_x_garmin_client_id_header_does_not_raise(self):
+        from services.garmin_webhook_auth import verify_garmin_webhook
+
+        req = self._make_request({"x-garmin-client-id": "correct-id"})
+        with patch("services.garmin_webhook_auth.settings") as mock_settings:
+            mock_settings.GARMIN_CLIENT_ID = "correct-id"
+            await verify_garmin_webhook(req)
+
+    @pytest.mark.asyncio
     async def test_unconfigured_raises_503(self):
         """If GARMIN_CLIENT_ID is not set, return 503."""
         from fastapi import HTTPException
@@ -204,6 +213,28 @@ class TestWebhookRateLimiter:
         time.sleep(1.1)
         # After window expires, should be allowed again
         assert limiter.is_allowed("1.2.3.4") is True
+
+
+class TestVerifyGarminWebhookProxyIpHandling:
+    @pytest.mark.asyncio
+    async def test_uses_x_forwarded_for_for_rate_limiter_key(self):
+        from services.garmin_webhook_auth import verify_garmin_webhook
+
+        req = MagicMock()
+        req.headers = {
+            "garmin-client-id": "correct-id",
+            "x-forwarded-for": "203.0.113.10, 10.0.0.1",
+        }
+        req.client = MagicMock()
+        req.client.host = "10.0.0.1"
+
+        with patch("services.garmin_webhook_auth.settings") as mock_settings, \
+             patch("services.garmin_webhook_auth._rate_limiter") as mock_limiter:
+            mock_settings.GARMIN_CLIENT_ID = "correct-id"
+            mock_limiter.is_allowed.return_value = True
+            await verify_garmin_webhook(req)
+
+        mock_limiter.is_allowed.assert_called_once_with("203.0.113.10")
 
 
 # ===========================================================================

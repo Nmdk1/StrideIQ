@@ -392,6 +392,26 @@ class TestForceEnqueueBehavior:
         assert result is False, "force=True + open circuit must still block enqueue"
         mock_task.delay.assert_not_called()
 
+    def test_force_probe_with_open_circuit_enqueues(self):
+        """force + probe mode bypasses open circuit for data-change recovery."""
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        from services.home_briefing_cache import _circuit_key, CIRCUIT_FAILURE_THRESHOLD
+
+        athlete_id = str(uuid4())
+        fake_r = FakeRedis()
+        fake_r._store[_circuit_key(athlete_id)] = str(CIRCUIT_FAILURE_THRESHOLD)
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r), \
+             patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+            result = enqueue_briefing_refresh(
+                athlete_id,
+                force=True,
+                allow_circuit_probe=True,
+            )
+
+        assert result is True
+        mock_task.delay.assert_called_once_with(athlete_id)
+
     def test_force_true_sets_cooldown_after_enqueue(self):
         """Test 7b: force path sets cooldown after enqueuing (prevents burst)."""
         from tasks.home_briefing_tasks import enqueue_briefing_refresh

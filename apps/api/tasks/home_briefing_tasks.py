@@ -335,6 +335,52 @@ def _call_llm_for_briefing(
     return _call_gemini_briefing(prompt, schema_fields, required_fields)
 
 
+def _build_deterministic_briefing(athlete_id: str, db: Session) -> Dict[str, str]:
+    """
+    Build a non-LLM fallback briefing so one athlete never stays stale.
+
+    This is used when provider calls or contract validation fail.
+    """
+    from models import Activity
+
+    latest = (
+        db.query(Activity)
+        .filter(Activity.athlete_id == athlete_id)
+        .order_by(desc(Activity.start_time))
+        .first()
+    )
+
+    if latest and latest.distance_m and latest.duration_s:
+        distance_mi = round(float(latest.distance_m) / 1609.344, 1)
+        pace_s = float(latest.duration_s) / max(float(latest.distance_m) / 1609.344, 0.1)
+        pace_str = f"{int(pace_s // 60)}:{int(pace_s % 60):02d}/mi"
+        coach_noticed = (
+            f"Latest run synced: {distance_mi} mi at {pace_str}. "
+            "Signals will refine as more data arrives."
+        )
+        morning_voice = (
+            f"{distance_mi} miles in your latest run at {pace_str}. "
+            "Your home briefing is refreshed from synced activity data."
+        )
+        today_context = "Sync completed. Use this as your current baseline for today's effort."
+        week_assessment = "Data is current; evaluate today's workload against this latest run."
+    else:
+        coach_noticed = "Your sync completed and your data timeline is current."
+        morning_voice = (
+            "Sync completed. Your briefing is refreshed from current account data."
+        )
+        today_context = "Data is refreshed. Follow your planned workout and re-check after your next run."
+        week_assessment = "Current data is available for this week; confidence improves with each new activity."
+
+    return {
+        "coach_noticed": coach_noticed,
+        "today_context": today_context,
+        "week_assessment": week_assessment,
+        "morning_voice": morning_voice,
+        "workout_why": "Fresh synced data keeps your training decisions anchored to what just happened.",
+    }
+
+
 @celery_app.task(
     name="tasks.generate_home_briefing",
     bind=True,
@@ -373,10 +419,16 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             # Normal skip — briefing was already cached under the old cache key
             return {"status": "skipped", "reason": "already_cached"}
         if prompt_result is False:
-            # Build failed (import error, DB error, etc.) — record so circuit breaker tracks it
-            record_task_failure(athlete_id)
-            logger.error(f"Prompt build failed for {athlete_id} — circuit breaker notified")
-            return {"status": "error", "reason": "prompt_build_failed"}
+            logger.error(f"Prompt build failed for {athlete_id}; writing deterministic fallback")
+            fallback_payload = _build_deterministic_briefing(athlete_id, db)
+            write_briefing_cache(
+                athlete_id=athlete_id,
+                payload=fallback_payload,
+                source_model="deterministic-fallback",
+                data_fingerprint=fingerprint,
+            )
+            reset_circuit(athlete_id)
+            return {"status": "degraded", "reason": "prompt_build_failed", "model": "deterministic-fallback"}
 
         prompt, schema_fields, required_fields, checkin_data, race_data, garmin_sleep_h = prompt_result
 
@@ -385,8 +437,16 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         result = _call_llm_for_briefing(prompt, schema_fields, required_fields)
 
         if result is None:
-            record_task_failure(athlete_id)
-            raise RuntimeError(f"All LLM providers failed for {athlete_id}")
+            logger.warning("All LLM providers failed for %s; writing deterministic fallback", athlete_id)
+            fallback_payload = _build_deterministic_briefing(athlete_id, db)
+            write_briefing_cache(
+                athlete_id=athlete_id,
+                payload=fallback_payload,
+                source_model="deterministic-fallback",
+                data_fingerprint=fingerprint,
+            )
+            reset_circuit(athlete_id)
+            return {"status": "degraded", "reason": "llm_unavailable", "model": "deterministic-fallback"}
 
         from routers.home import (
             _valid_home_briefing_contract,
@@ -397,8 +457,15 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
 
         if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
             logger.warning(f"Home briefing failed A->I->A contract for {athlete_id}")
-            record_task_failure(athlete_id)
-            return {"status": "error", "reason": "contract_validation_failed"}
+            fallback_payload = _build_deterministic_briefing(athlete_id, db)
+            write_briefing_cache(
+                athlete_id=athlete_id,
+                payload=fallback_payload,
+                source_model="deterministic-fallback",
+                data_fingerprint=fingerprint,
+            )
+            reset_circuit(athlete_id)
+            return {"status": "degraded", "reason": "contract_validation_failed", "model": "deterministic-fallback"}
 
         raw_voice = result.get("morning_voice")
         if raw_voice:
@@ -505,12 +572,19 @@ def refresh_active_home_briefings(self: Task) -> Dict:
             db.close()
 
 
-def enqueue_briefing_refresh(athlete_id: str, force: bool = False) -> bool:
+def enqueue_briefing_refresh(
+    athlete_id: str,
+    force: bool = False,
+    allow_circuit_probe: bool = False,
+) -> bool:
     """
     Fire-and-forget enqueue for home briefing refresh.
 
-    force=False (default): respects cooldown + circuit breaker (existing behavior).
-    force=True: bypasses cooldown, still honors circuit breaker + task lock.
+    force=False (default): respects cooldown + circuit breaker.
+    force=True: bypasses cooldown, still honors circuit breaker unless
+                allow_circuit_probe=True.
+    allow_circuit_probe=True: for real data-change events, enqueue one
+                probe even if circuit is open so a stuck athlete can recover.
                 Use only for high-priority triggers (check-in) where the athlete
                 explicitly submitted new data and must see a fresh briefing.
 
@@ -524,10 +598,16 @@ def enqueue_briefing_refresh(athlete_id: str, force: bool = False) -> bool:
     )
 
     if force:
-        # Bypass cooldown, but still block on open circuit
-        if is_circuit_open(athlete_id):
+        # Bypass cooldown, but block on open circuit unless caller explicitly
+        # allows one probe enqueue for a real data-change event.
+        if is_circuit_open(athlete_id) and not allow_circuit_probe:
             logger.debug("Home briefing force-enqueue blocked (circuit open): %s", athlete_id)
             return False
+        if is_circuit_open(athlete_id) and allow_circuit_probe:
+            logger.warning(
+                "Home briefing force-enqueue probe allowed despite open circuit: %s",
+                athlete_id,
+            )
     else:
         if not should_enqueue_refresh(athlete_id):
             return False
@@ -535,7 +615,7 @@ def enqueue_briefing_refresh(athlete_id: str, force: bool = False) -> bool:
     set_enqueue_cooldown(athlete_id)
     generate_home_briefing_task.delay(athlete_id)
     logger.info(
-        "Home briefing refresh enqueued for %s (force=%s)",
-        athlete_id, force,
+        "Home briefing refresh enqueued for %s (force=%s, probe=%s)",
+        athlete_id, force, allow_circuit_probe,
     )
     return True

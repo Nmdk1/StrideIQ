@@ -1066,10 +1066,23 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
 
         # ADR-065: trigger home briefing refresh after sync
         try:
+            from services.home_briefing_cache import mark_briefing_dirty
             from tasks.home_briefing_tasks import enqueue_briefing_refresh
-            enqueue_briefing_refresh(athlete_id)
-        except Exception:
-            pass
+
+            # Sync is an explicit athlete action; bypass cooldown and invalidate
+            # old cache so the refreshed briefing reflects newly ingested data.
+            mark_briefing_dirty(athlete_id)
+            enqueue_briefing_refresh(
+                athlete_id,
+                force=True,
+                allow_circuit_probe=True,
+            )
+        except Exception as refresh_exc:
+            logger.warning(
+                "Post-sync briefing refresh trigger failed for athlete %s: %s",
+                athlete_id,
+                refresh_exc,
+            )
 
         return {
             "status": "success",

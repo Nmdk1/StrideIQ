@@ -532,6 +532,25 @@ def process_garmin_activity_task(
         db.commit()
         from core.cache import invalidate_athlete_cache
         invalidate_athlete_cache(str(athlete_id))
+        # Ensure home coach briefing reflects newly ingested activities.
+        # We only trigger when data actually changed (created/updated), not for all-skipped payloads.
+        if created > 0 or updated > 0:
+            try:
+                from services.home_briefing_cache import mark_briefing_dirty
+                from tasks.home_briefing_tasks import enqueue_briefing_refresh
+
+                mark_briefing_dirty(str(athlete_id))
+                enqueue_briefing_refresh(
+                    str(athlete_id),
+                    force=True,
+                    allow_circuit_probe=True,
+                )
+            except Exception as refresh_exc:
+                logger.warning(
+                    "Garmin briefing refresh trigger failed for athlete %s: %s",
+                    athlete_id,
+                    refresh_exc,
+                )
 
         logger.info(
             "process_garmin_activity_task: athlete=%s created=%d updated=%d skipped=%d",
@@ -731,6 +750,22 @@ def process_garmin_health_task(
                 db.commit()
             else:
                 skipped += 1
+
+        # Health data can materially change home coaching context (sleep/HRV/stress).
+        # Trigger a briefing refresh when new health records were processed.
+        if processed > 0:
+            try:
+                from services.home_briefing_cache import mark_briefing_dirty
+                from tasks.home_briefing_tasks import enqueue_briefing_refresh
+
+                mark_briefing_dirty(str(athlete_id))
+                enqueue_briefing_refresh(str(athlete_id))
+            except Exception as refresh_exc:
+                logger.warning(
+                    "Garmin health briefing refresh trigger failed for athlete %s: %s",
+                    athlete_id,
+                    refresh_exc,
+                )
 
         logger.info(
             "process_garmin_health_task: athlete=%s data_type=%s processed=%d skipped=%d",

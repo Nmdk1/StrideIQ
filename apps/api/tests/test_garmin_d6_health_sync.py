@@ -534,3 +534,37 @@ class TestPayloadShapeNormalization:
         # Only the valid item creates a row
         assert result["processed"] == 1
         mock_db.add.assert_called_once()
+
+
+class TestHealthBriefingRefreshTrigger:
+    """Health ingestion should refresh home briefing when data changes."""
+
+    def test_refresh_triggered_when_processed(self):
+        from tasks.garmin_webhook_tasks import process_garmin_health_task
+        mock_db = _make_mock_db()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
+             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
+            result = process_garmin_health_task.run(ATHLETE_ID, "hrv", _HRV_RAW)
+
+        assert result["processed"] == 1
+        mock_dirty.assert_called_once_with(ATHLETE_ID)
+        mock_enq.assert_called_once_with(ATHLETE_ID)
+
+    def test_refresh_not_triggered_when_nothing_processed(self):
+        from tasks.garmin_webhook_tasks import process_garmin_health_task
+        mock_db = _make_mock_db()
+        # Missing calendarDate -> skipped
+        bad_item = {k: v for k, v in _HRV_RAW.items() if k != "calendarDate"}
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
+             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
+            result = process_garmin_health_task.run(ATHLETE_ID, "hrv", bad_item)
+
+        assert result["processed"] == 0
+        mock_dirty.assert_not_called()
+        mock_enq.assert_not_called()
