@@ -7,11 +7,29 @@
 
 ---
 
-## Pre-Capture Verification (do this before taking any screenshots)
+## Pre-Capture Verification
 
-- [ ] App is running on **production** (`strideiq.run`), not localhost — Marc needs live URLs, not staged captures
-- [ ] Logged in as an athlete with a **connected Garmin account and at least one synced activity** (so device model is present in every shot)
-- [ ] Note the exact device model that will appear — e.g., "Forerunner 165" — keep it consistent across all shots
+- [x] App is running on **production** (`strideiq.run`) — confirmed, commits `2e4f661` + `b265526` deployed 2026-02-26
+- [x] Two Garmin Connect users authorized in evaluation environment:
+  - `mbshaf@gmail.com` — `garmin_connected = true` (founder)
+  - `wlsrangertug@gmail.com` — `garmin_connected = true` (father)
+- [ ] Screenshots captured from production (founder to take manually post-deploy)
+
+---
+
+## Build Evidence
+
+**Frontend build:** `npm run build` — ✅ CLEAN (2026-02-26)
+```
+✓ Compiled successfully
+✓ Generating static pages (195/195)
+Zero errors. Zero warnings.
+```
+
+**TypeScript typecheck:** `npx tsc --noEmit` — ✅ CLEAN (2026-02-26)
+```
+Exit code: 0 — zero errors
+```
 
 ---
 
@@ -29,123 +47,92 @@ Capture in this order. Each item has the specific failure mode that causes rejec
 - [ ] Attribution is above the fold — nothing needs to be clicked or expanded to see it
 - [ ] No text reading "Recorded on ... via Garmin Connect"
 
+**Screenshot:** `screenshots/01-activity-detail-above-fold.png` ← CAPTURE MANUALLY
+
 ---
 
 ### 2. Activity Splits Table — Footer attribution
 **URL:** `/activities/[id]` (scroll to splits section)  
-**What to show:** Splits table footer updated to "Garmin [device model]" (or inline GarminBadge).  
+**What to show:** Splits table footer updated to GarminBadge with device model.  
 **Common failure:** Footer still reads "Splits are sourced from Garmin Connect."  
 **Checklist:**
 - [ ] Footer does NOT say "Garmin Connect" as data source
-- [ ] Footer says "Garmin Forerunner 165" (or device model shown) OR uses the GarminBadge component
-- [ ] StrideIQ pace computation note is still present ("Pace is computed from split distance/time") — that's our own disclosure, keep it
+- [ ] Footer shows GarminBadge (GARMIN® logo image) + device model
+- [ ] StrideIQ pace computation note is still present ("Pace is computed from split distance/time.")
+
+**Screenshot:** `screenshots/02-splits-footer-attribution.png` ← CAPTURE MANUALLY
 
 ---
 
 ### 3. Home Page — Last run attribution
-**URL:** `/` (logged in, Garmin activity synced)  
-**What to show:** Last run metrics row with "Garmin [device model]" text visible.  
+**URL:** `/home` (logged in, Garmin activity synced)  
+**What to show:** Last run hero with GarminBadge (logo + device model).  
 **Common failure:** Attribution says "Garmin Connect" instead of the device model.  
 **Checklist:**
-- [ ] Text reads "Garmin Forerunner 165" (or device model) — not "Garmin Connect"
+- [ ] GarminBadge visible (GARMIN® logo image + device model — not "Garmin Connect")
 - [ ] Attribution is above the fold and visually associated with the run data
-- [ ] Optional: Garmin tag logo inline before device text (include if implemented)
+
+**Screenshot:** `screenshots/03-home-last-run-attribution.png` ← CAPTURE MANUALLY
 
 ---
 
-### 4. Settings — Connected state (Garmin Connect button, connected)
+### 4. Settings — Connected state
 **URL:** `/settings` → Garmin integration section, connected athlete  
-**What to show:** Connected state UI with official Garmin Connect branding treatment and full app name "Garmin Connect".  
-**Common failure:** Custom icon/button treatment instead of official asset; truncated or altered app name.  
+**What to show:** Official Garmin Connect icon + "Garmin Connect™" heading.  
+**Common failure:** Custom icon/button treatment instead of official asset.  
 **Checklist:**
-- [ ] Official Garmin Connect branding asset is visible (badge/tile treatment, not a hand-drawn/custom icon)
-- [ ] Full app name "Garmin Connect" is present and not abbreviated/truncated
+- [ ] Official `garmin-connect-icon.png` visible (36×36 rounded icon)
+- [ ] Heading reads "Garmin Connect™" (with trademark symbol)
 - [ ] No StrideIQ-custom icon replacing the official asset
+
+**Screenshot:** `screenshots/04-settings-connected.png` ← CAPTURE MANUALLY
 
 ---
 
 ### 5. Settings — Disconnected state (Connect button)
 **URL:** `/settings` → Garmin integration section, disconnected athlete  
-**What to show:** The official Garmin Connect badge as the primary CTA visual (not a custom blue button).  
-**Common failure:** Custom-styled button with hand-drawn SVG remains — Marc specifically looks for the official badge asset here.  
+**What to show:** Official `garmin-connect-badge.png` as the primary CTA visual.  
+**Common failure:** Custom-styled blue button with hand-drawn SVG remains.  
 **Checklist:**
-- [ ] Official Garmin Connect badge image used as the CTA visual
-- [ ] Button is accessible (keyboard-focusable, aria label present)
-- [ ] "Garmin Connect" full name readable — not truncated
+- [ ] Official Garmin Connect badge image is the CTA visual
+- [ ] Button is accessible (keyboard-focusable, aria-label present)
 - [ ] No custom `#007CC3` button with hand-drawn SVG
 
+**Screenshot:** `screenshots/05-settings-disconnected-badge.png` ← CAPTURE MANUALLY  
+**Note:** To capture disconnected state — disconnect Garmin in settings, then screenshot, then reconnect.
+
 ---
 
-### 6. Derived-data attribution (if implemented in-scope)
-**URL:** Any AI insight surface backed by Garmin data (morning voice, coach briefing, progress analysis)  
-**What to show:** Attribution text "Insights derived in part from Garmin device-sourced data" visible on the surface.  
-**Condition:** Only capture and include this if it was implemented. If skipped (non-trivial detection path), omit from pack and document as follow-up in the email.  
+### 6. Derived-data attribution (if visible on your activity)
+**URL:** `/activities/[id]` — scroll to Coachable Moments section  
+**What to show:** "Insights derived in part from Garmin device-sourced data." text below AI insights.  
+**Condition:** Only include if visible. If not present on your specific activity, mark deferred below.  
 **Checklist:**
-- [ ] Attribution text is exact: "Insights derived in part from Garmin device-sourced data"
-- [ ] Text does NOT imply Garmin endorses or produces the insight
-- [ ] Only appears on surfaces where Garmin data was actually an input
+- [ ] Attribution text exact: "Insights derived in part from Garmin device-sourced data."
+- [ ] Does not imply Garmin endorses or produces the insight
+
+**Screenshot:** `screenshots/06-derived-data-attribution.png` ← CAPTURE IF VISIBLE
 
 ---
 
-### 7. Build evidence (attach to email)
-- [ ] `npm run build` output — last line confirms success, zero errors
-- [ ] TypeScript typecheck output — zero errors
-- [ ] Optional internal ops proof (not for Marc): production containers healthy
+## Pre-Flight (before sending to Marc)
+
+- [ ] Evaluation key ID obtained from Garmin Developer Portal and pasted into email
+- [ ] Garmin Partner Verification Tool run — results pasted into email
+- [ ] API Blog subscribed at `https://www.garmin.com/en-US/forms/api-blog-subscribe/` — confirmation pasted into email
+- [x] Two Garmin Connect users authorized in eval — `mbshaf@gmail.com` + `wlsrangertug@gmail.com`
+- [ ] All 5-6 screenshots captured from production
+- [ ] All three sections (Technical, Team, UX) addressed in email — no section left blank
+- [ ] Sender address is `michael@strideiq.run`
 
 ---
 
-## What to Write in the Email to Marc
+## Deferred (out of scope for this submission)
 
-Keep it short. Marc needs to verify compliance, not read a story. The reply must address **all three sections** of Marc's checklist — not just brand screenshots.
-
-**Subject:** RE: StrideIQ — Production Access Verification
-
-**Body structure:**
-
-### Section 1: Technical Review
-
-1. **Evaluation key:** [PASTE EVALUATION KEY ID HERE]
-   **Requesting production access for:** Activity API, Health API, Women's Health API (feature-gated, not yet exposed publicly).
-2. **APIs in use (read-only):**
-   - Activity API — activity summaries and streams
-   - Activity Details API — GPS, HR, cadence, velocity samples
-   - Health API — sleep, HRV, stress, dailies, user metrics
-   - Training/Courses API — not in our integration scope. StrideIQ does not write data to Garmin Connect.
-3. **Authorization:** Two Garmin Connect users are authorized in our evaluation environment.
-4. **User Deregistration:** Endpoint enabled at `/v1/garmin/webhook/deregistrations`. Returns HTTP 200 and processes asynchronously.
-5. **User Permissions:** Endpoint enabled at `/v1/garmin/webhook/permissions`. Returns HTTP 200 and processes asynchronously.
-6. **PING/PUSH:** All webhook endpoints receive Garmin push notifications and return HTTP 200 within seconds. Processing is asynchronous via task queue. Primary ingestion is webhook PING/PUSH; no scheduled polling pipeline is used.
-7. **Payload handling:** Endpoints accept payloads up to 100MB. HTTP 200 is returned immediately; data is processed asynchronously.
-8. **Partner Verification Tool:** [PASTE RESULTS HERE — run before sending]
-9. **Training/Courses API:** Not applicable — StrideIQ does not transfer workouts or courses to Garmin Connect.
-
-### Section 2: Team Members and Account Setup
-
-1. **API Blog:** Subscribed. [SUBSCRIBE BEFORE SENDING]
-2. **Authorized account:** `michael@strideiq.run` (sole operator, company domain). No additional team members.
-3. **No third-party integrators.** No NDA required.
-
-### Section 3: UX and Brand Compliance
-
-1. "We've updated all Garmin attribution in StrideIQ to comply with the Garmin API Brand Guidelines v2 (6/30/2025)."
-2. Bulleted list of what was changed (match checklist items 1-6 above, one line each)
-3. "Screenshots are attached in order below." — attach in the same order as this checklist
-4. One sentence for PDF deferred: "PDF export attribution is out of scope for this UI compliance review and will be addressed as a follow-up."
-5. If item 6 was deferred: "Derived-data AI surface attribution is documented as a follow-up compliance task; the primary UI trademark/attribution surfaces are all compliant."
-
-### Do NOT include:
-- Apologies for the prior state
-- Technical implementation details Marc didn't ask for
-- Unsolicited feature descriptions
-
----
-
-## Before Sending — Pre-Flight
-
-- [ ] API Blog subscribed
-- [ ] Partner Verification Tool run and results captured
-- [ ] All screenshots captured from **production** (not localhost)
-- [ ] Sections 1, 2, and 3 all addressed in the email — no section left blank
+| Item | Deferred Until |
+|------|----------------|
+| PDF plan export attribution | After UI approval secured |
+| Broad AI provenance plumbing | Phase 3B/3C when coach surfaces are built |
 
 ---
 
@@ -154,12 +141,3 @@ Keep it short. Marc needs to verify compliance, not read a story. The reply must
 - If approved → document production API key receipt in `docs/`, proceed with credential swap on droplet
 - If rejected → note the exact screenshot he flags, fix only that surface, resubmit the same day
 - If he asks about PDF/AI attribution → share the explicit plan and timeline, do not improvise commitments
-
----
-
-## Deferred (out of scope for this submission)
-
-| Item | Deferred Until |
-|------|---------------|
-| PDF plan export attribution | After UI approval secured |
-| Broad AI provenance plumbing | Phase 3B/3C work when coach surfaces are built |
