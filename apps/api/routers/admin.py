@@ -487,6 +487,24 @@ def list_stuck_ingestion(
     return {"cutoff": cutoff.isoformat(), "count": len(out), "items": out}
 
 
+@router.get("/ops/ingestion/garmin-health")
+def get_garmin_ingestion_health(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Garmin ingestion coverage report — last 7 calendar days (UTC).
+
+    Returns per-athlete GarminDay coverage ratios for sleep, HRV, and
+    resting HR.  Identifies athletes with < 50% coverage as underfed.
+
+    Admin/owner only.
+    """
+    from services.garmin_ingestion_health import compute_garmin_coverage
+
+    return compute_garmin_coverage(db)
+
+
 @router.get("/ops/ingestion/errors")
 def list_recent_ingestion_errors(
     current_user: Athlete = Depends(require_admin),

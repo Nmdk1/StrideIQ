@@ -31,6 +31,12 @@ beat_schedule = {
         'task': 'tasks.refresh_active_home_briefings',
         'schedule': crontab(minute='*/15'),  # Every 15 minutes
     },
+    # Garmin ingestion health check — daily at 07:00 UTC
+    # Logs underfed athletes (sleep/HRV < 50% coverage over last 7 days).
+    'garmin-ingestion-health-check': {
+        'task': 'tasks.check_garmin_ingestion_health',
+        'schedule': crontab(hour=7, minute=0),
+    },
 }
 
 
