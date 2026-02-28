@@ -21,6 +21,7 @@ import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 import { MiniPaceChart } from '@/components/home/MiniPaceChart';
 import { useUnits } from '@/lib/context/UnitsContext';
 import type { LastRun } from '@/lib/api/services/home';
+import { GarminBadge } from '@/components/integrations/GarminBadge';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -216,10 +217,8 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
           )}
         </div>
 
-        {lastRun.provider === 'garmin' && lastRun.device_name && (
-          <p className="text-xs text-slate-500">
-            {formatDeviceName(lastRun.device_name)} via Garmin Connect
-          </p>
+        {lastRun.provider === 'garmin' && (
+          <GarminBadge deviceName={lastRun.device_name} />
         )}
 
         {/* View Run link */}

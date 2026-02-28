@@ -34,6 +34,7 @@ import RunContextAnalysis from '@/components/activities/RunContextAnalysis';
 import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
 import { WhyThisRun } from '@/components/activities/WhyThisRun';
 import { PerceptionPrompt } from '@/components/activities/PerceptionPrompt';
+import { GarminBadge } from '@/components/integrations/GarminBadge';
 
 interface Activity {
   id: string;
@@ -238,10 +239,8 @@ export default function ActivityDetailPage() {
           <p className="text-slate-400 text-sm">
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
           </p>
-          {activity.provider === 'garmin' && activity.device_name && (
-            <p className="text-xs text-slate-500 mt-1">
-              {formatDeviceName(activity.device_name)} via Garmin Connect
-            </p>
+          {activity.provider === 'garmin' && (
+            <GarminBadge deviceName={activity.device_name} className="mt-1" />
           )}
         </div>
 
@@ -257,6 +256,12 @@ export default function ActivityDetailPage() {
             confidence={analysisData.confidence}
             className="mb-6"
           />
+        )}
+        {/* AI derived-data attribution — required by Garmin API Brand Guidelines v2 §Combined/Derived Data */}
+        {analysisData && activity.provider === 'garmin' && (
+          <p className="text-xs text-slate-500 mb-4">
+            Insights derived in part from Garmin device-sourced data.
+          </p>
         )}
 
         {/* ── 4. Reflection Prompt (quick 3-tap) ── */}
@@ -317,12 +322,7 @@ export default function ActivityDetailPage() {
               <MetricPill label="Workout" value={activity.workout_type?.replace(/_/g, ' ') || '--'} secondary />
             </div>
           )}
-          {/* Device attribution — shown when available */}
-          {activity.provider === 'garmin' && activity.device_name && (
-            <p className="text-xs text-slate-500 mt-2">
-              Recorded on {formatDeviceName(activity.device_name)} via Garmin Connect
-            </p>
-          )}
+          {/* Garmin attribution is shown above the fold in the header — not repeated here */}
         </div>
 
         {/* ── A6: Collapsible details (Plan Comparison through Narrative Context) ── */}

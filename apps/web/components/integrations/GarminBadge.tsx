@@ -3,9 +3,15 @@
 /**
  * Garmin Connect Attribution Badge
  *
- * Per Garmin developer compliance: display attribution wherever Garmin data
- * is shown. Includes optional device name when available.
+ * Per Garmin API Brand Guidelines v2:
+ * - Use the official GARMIN® tag logo image (not a custom SVG).
+ * - Data attribution text format: "[device model]" — e.g. "Forerunner 165".
+ * - Do NOT use "Garmin Connect" as the data source name; "Garmin Connect" is
+ *   the app name and is reserved for authentication/connection references only.
+ * - If device model is unavailable, the logo wordmark alone is sufficient.
  */
+
+import Image from 'next/image';
 
 interface GarminBadgeProps {
   deviceName?: string | null;
@@ -15,48 +21,40 @@ interface GarminBadgeProps {
 
 export function GarminBadge({ deviceName, className = '', size = 'sm' }: GarminBadgeProps) {
   const textSize = size === 'sm' ? 'text-xs' : 'text-sm';
-  const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-4 h-4';
+  // Logo heights per brand guidelines: 12-16px for sm, 16-20px for md.
+  const logoHeight = size === 'sm' ? 12 : 16;
+  const formattedDevice = deviceName ? formatDeviceName(deviceName) : null;
 
   return (
     <span
       className={`inline-flex items-center gap-1.5 text-slate-400 ${textSize} ${className}`}
-      title="Data from Garmin Connect"
+      title={formattedDevice ? `Garmin ${formattedDevice}` : 'Garmin'}
     >
-      <GarminIcon className={iconSize} />
-      <span>
-        {deviceName
-          ? `Garmin Connect · ${formatDeviceName(deviceName)}`
-          : 'Garmin Connect'}
-      </span>
+      {/* Official GARMIN® tag wordmark — do not replace with a custom icon */}
+      <Image
+        src="/garmin-tag-white.png"
+        alt="GARMIN®"
+        height={logoHeight}
+        width={logoHeight * 4}
+        style={{ height: logoHeight, width: 'auto', objectFit: 'contain' }}
+        unoptimized
+      />
+      {formattedDevice && (
+        <span>{formattedDevice}</span>
+      )}
     </span>
   );
 }
 
 /**
  * Format a raw device name string for display.
- * e.g. "forerunner965" -> "Forerunner 965", "fenix7" -> "Fenix 7"
+ * e.g. "forerunner965" → "Forerunner 965", "fenix7" → "Fenix 7"
  */
-function formatDeviceName(raw: string): string {
-  // Insert space before digit sequences and title-case each word
+export function formatDeviceName(raw: string): string {
   return raw
     .replace(/([a-z])(\d)/g, '$1 $2')
     .replace(/(\d)([a-z])/g, '$1 $2')
     .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function GarminIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-      style={{ color: '#007CC3' }}
-    >
-      {/* Garmin "G" simplified mark */}
-      <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 1.8a8.2 8.2 0 110 16.4A8.2 8.2 0 0112 3.8zm.9 3.5h-2.3v5.7h5.7v-2.3h-3.4V7.3z" />
-    </svg>
-  );
 }
 
 export default GarminBadge;

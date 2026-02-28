@@ -11,6 +11,7 @@
 import { useState, useEffect } from 'react';
 import { useGarminStatus } from '@/lib/hooks/queries/garmin';
 import { garminService } from '@/lib/api/services/garmin';
+import Image from 'next/image';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { GarminConnectButton, GarminConnectLink } from './GarminConnectButton';
@@ -88,11 +89,22 @@ export function GarminConnection() {
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
       <div className="flex justify-between items-start mb-4">
-        <div>
-          <h3 className="text-lg font-semibold">Garmin Connect</h3>
-          <p className="text-sm text-slate-400 mt-1">
-            Sync activities and wellness data (sleep, HRV, daily metrics)
-          </p>
+        <div className="flex items-center gap-3">
+          {/* Official Garmin Connect app icon — required for Settings connection UI */}
+          <Image
+            src="/garmin-connect-icon.png"
+            alt="Garmin Connect"
+            width={36}
+            height={36}
+            className="rounded-lg flex-shrink-0"
+            unoptimized
+          />
+          <div>
+            <h3 className="text-lg font-semibold">Garmin Connect™</h3>
+            <p className="text-sm text-slate-400 mt-0.5">
+              Sync activities and wellness data (sleep, HRV, daily metrics)
+            </p>
+          </div>
         </div>
         {isConnected && (
           <span className="px-3 py-1 bg-green-900/50 border border-green-700/50 rounded text-sm text-green-400">

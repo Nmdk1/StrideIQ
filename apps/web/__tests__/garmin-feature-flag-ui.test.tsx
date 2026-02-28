@@ -81,7 +81,7 @@ describe('GarminConnection — garmin_connect_available gating', () => {
 
     render(<GarminConnection />);
 
-    expect(screen.getByText('Garmin Connect')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Garmin Connect/i })).toBeInTheDocument();
     // At least one connect affordance is rendered (button or link, both use "Connect with Garmin")
     expect(screen.getAllByText(/Connect with Garmin/i).length).toBeGreaterThan(0);
     // Disconnect button must NOT be visible
@@ -103,8 +103,8 @@ describe('GarminConnection — garmin_connect_available gating', () => {
 
     render(<GarminConnection />);
 
-    // Heading present
-    expect(screen.getByText('Garmin Connect')).toBeInTheDocument();
+    // Heading present (™ added to full app name per brand guidelines)
+    expect(screen.getByRole('heading', { name: /Garmin Connect/i })).toBeInTheDocument();
     // Connected badge
     expect(screen.getByText('Connected')).toBeInTheDocument();
     // Disconnect button
@@ -202,8 +202,8 @@ describe('Settings page — Garmin component presence', () => {
 
     // Strava always present
     expect(screen.getByTestId('strava-connection')).toBeInTheDocument();
-    // Garmin connect CTA visible for allowlisted user
-    expect(screen.getByText('Garmin Connect')).toBeInTheDocument();
+    // Garmin connect CTA visible for allowlisted user (heading now shows "Garmin Connect™")
+    expect(screen.getByRole('heading', { name: /Garmin Connect/i })).toBeInTheDocument();
   });
 
   it('hides Garmin connect CTA (GarminConnection null) for non-allowlisted user', () => {

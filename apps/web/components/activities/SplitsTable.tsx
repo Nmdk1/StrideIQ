@@ -118,7 +118,7 @@ export function SplitsTable({ splits, provider, onRowHover, rowRefs }: SplitsTab
       </div>
       <p className="mt-2 text-xs text-slate-500">
         {provider === 'garmin'
-          ? 'Splits are sourced from Garmin Connect. Pace is computed from split distance/time.'
+          ? 'Splits from Garmin device data. Pace is computed from split distance/time.'
           : 'Splits are sourced from Strava laps (auto-laps or manual laps/intervals). Pace is computed from split distance/time.'}
       </p>
     </div>

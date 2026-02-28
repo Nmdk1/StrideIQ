@@ -3,11 +3,18 @@
 /**
  * Garmin Connect Button
  *
- * Garmin brand color: #007CC3 (blue)
- * Used for OAuth connect flow initiation.
+ * Per Garmin API Brand Guidelines v2:
+ * - Use the official Garmin Connect badge asset as the primary CTA visual.
+ * - Keep the full app name "Garmin Connect™" — do not abbreviate or truncate.
+ * - Do NOT recreate the badge with custom styling or a hand-drawn icon.
+ * - Keep an accessible <button> wrapper for keyboard/focus/aria compliance.
+ *
+ * Asset: /garmin-connect-badge.png
+ *   Source: Garmin_connect_badge_digital_RESOURCE_FILE-01.png (GCDP Branding Assets_v2)
  */
 
 import React from 'react';
+import Image from 'next/image';
 
 interface GarminConnectButtonProps {
   onClick: () => void;
@@ -26,41 +33,26 @@ export function GarminConnectButton({
       disabled={disabled}
       aria-label="Connect your Garmin Connect account"
       className={`
-        inline-flex items-center justify-center gap-2
-        rounded-md px-5 py-3
-        font-semibold text-white text-sm
-        transition-all duration-200
-        hover:opacity-90 hover:shadow-lg
-        focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900
+        inline-flex items-center justify-center
+        rounded-md
+        focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-blue-400
         disabled:opacity-50 disabled:cursor-not-allowed
+        transition-opacity hover:opacity-90
         ${className}
       `}
-      style={{
-        backgroundColor: '#007CC3',
-        borderColor: '#006aaa',
-        border: '1px solid',
-        minHeight: '48px',
-        minWidth: '193px',
-        ['--tw-ring-color' as string]: '#007CC3',
-      }}
+      style={{ minHeight: '48px', minWidth: '193px', background: 'none', border: 'none', padding: 0 }}
     >
-      <GarminWordmark />
-      <span>Connect with Garmin Connect</span>
+      {/* Official Garmin Connect badge — do not modify dimensions or styling */}
+      <Image
+        src="/garmin-connect-badge.png"
+        alt="Connect with Garmin Connect™"
+        height={48}
+        width={193}
+        style={{ height: 48, width: 'auto', objectFit: 'contain' }}
+        priority
+        unoptimized
+      />
     </button>
-  );
-}
-
-function GarminWordmark() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="white"
-      aria-hidden="true"
-    >
-      <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 1.8a8.2 8.2 0 110 16.4A8.2 8.2 0 0112 3.8zm.9 3.5h-2.3v5.7h5.7v-2.3h-3.4V7.3z" />
-    </svg>
   );
 }
 
