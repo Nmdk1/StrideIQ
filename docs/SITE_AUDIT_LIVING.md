@@ -1,8 +1,22 @@
 # StrideIQ — Living Site Audit
 
-**Purpose:** Single source of truth for every new builder session. Updated every session.
-**Last updated:** February 25, 2026
-**Last updated by:** Advisor session — Migrated production from DigitalOcean (1 vCPU, 2GB) to Hostinger KVM 8 (8 vCPU, 32GB)
+**Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
+**Last updated:** February 28, 2026
+**Last updated by:** Advisor session — audit catch-up + production email hardening pass
+
+---
+
+## 0. Delta Since Last Audit (Feb 25 -> Feb 28)
+
+Shipped and now live in product/system behavior:
+
+- **Monetization v1 completed**: 4-tier pricing UX, checkout flows, settings tier display, plan pace lock/unlock UX, register intent carry-through.
+- **PDF plan export shipped**: entitlement-gated endpoint `GET /v1/plans/{plan_id}/pdf`, WeasyPrint/Jinja backend generation, guarded limits.
+- **Garmin brand/compliance surfaces updated**: official badge/icon usage on settings + activity/home surfaces; attribution wording tightened.
+- **Home briefing reliability hardening shipped**: force-refresh triggers on Garmin/Strava sync paths plus deterministic fallback when LLM path is unavailable.
+- **Run context science moat upgrade shipped**: `GarminDay` now gap-fills run context inputs when check-ins are missing; explicit source labeling and device stress qualifier path added.
+- **Garmin ingestion health monitor shipped**: admin endpoint `GET /v1/admin/ops/ingestion/garmin-health` + daily Celery task + underfed coverage logging.
+- **Email transport hardening shipped**: SMTP timeout control, explicit TLS context, and reset-link base URL now sourced from `WEB_APP_BASE_URL`.
 
 ---
 
@@ -40,7 +54,7 @@ Migration runs automatically on API container startup. Manual migration: `docker
 
 ---
 
-## 2. Codebase Scale (as of 2026-02-16)
+## 2. Codebase Scale (as of 2026-02-16 snapshot; recount pending)
 
 | Metric | Count |
 |--------|-------|
@@ -259,13 +273,13 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 | Phase 3B (Workout Narratives) | CODE COMPLETE — gate accruing | 65+ passing, 24 xfail |
 | Phase 3C (N=1 Insights) | CODE COMPLETE — gate accruing | 65+ passing, 26 xfail |
 | Phase 4 (50K Ultra) | CONTRACT ONLY | 37 xfail |
-| Monetization Tiers | CONTRACT ONLY — Stripe infrastructure LIVE | 29 xfail |
+| Monetization Tiers | v1 COMPLETE (core revenue surfaces shipped) | residual xfails remain for deferred advisory/intelligence tier contracts |
 
-**Build priority order:**
-1. Monetization tier mapping (revenue unlock)
-2. Phase 4 (50K Ultra)
-3. Phase 3B (when narration quality gate clears — >90% for 4 weeks)
-4. Phase 3C (when per-athlete synced history + significant correlations exist)
+**Build priority order (current):**
+1. Phase 4 (50K Ultra)
+2. Phase 3B (when narration quality gate clears — >90% for 4 weeks)
+3. Phase 3C (when per-athlete synced history + significant correlations exist)
+4. Monetization deferred contracts (promote remaining xfails only as underlying features land)
 
 **Open gates:**
 - 3B: narration accuracy > 90% for 4 weeks (`/v1/intelligence/narration/quality`)
@@ -278,13 +292,12 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 ## 8. Known Issues & Technical Debt
 
 ### Active Issues
-- **Garmin backfill failing** — `request_garmin_backfill_task` returns 400/429 for all endpoints. Fix needed in `apps/api/services/garmin_backfill.py`: add `resp.text` logging, use 30-day range for activities/activityDetails (not 90), add 429 retry logic. See `docs/SESSION_HANDOFF_2026-02-22_GARMIN_LIVE.md` for full diagnosis.
-- **Garmin partner review in progress** — Elena Kononova (Garmin Connect Partner Services) reviewing authorization flow. Screenshots sent 2026-02-24. Awaiting response.
-- **GitHub Actions billing:** CI runs failing due to payment issue — not a code problem, needs billing fix in GitHub Settings > Billing & plans
+- **Garmin production-access process still pending final completion** — evaluation environment is active; endpoint compliance and submission package are in progress with Partner Services.
+- **Garmin physiology coverage is underfed for connected athletes** — monitor now exists (`/v1/admin/ops/ingestion/garmin-health`) and currently indicates sparse sleep/HRV population for some athletes.
+- ~~**Email deliverability wiring remains operationally sensitive**~~ — **RESOLVED (Feb 28, 2026).** Production email is live: `smtp.gmail.com:587`, sender `noreply@strideiq.run` via `michael@strideiq.run`. Password reset E2E verified by Codex. DNS hardening (SPF/DKIM/DMARC) still needed at Porkbun.
 - **Insights feed noise:** `/insights` Active Insights section has duplicate volume alerts and low-quality achievement cards — needs deduplication and quality filter
-- **Activity detail moments:** Key Moments show raw numbers ("Grade Adjusted Anomaly: 4.7") — need narrative translation
-- **Home page dual voice:** `compute_coach_noticed` and `morning_voice` are separate systems producing overlapping content — should be merged into single synthesis
-- **Missing table: `athlete_calibrated_model`** — fitness_bank.py queries it but migration doesn't exist in production. Fails gracefully (try/except), but logs warnings on every `/v1/home` load.
+- **Activity detail moments:** some key moments still show raw metrics that need stronger narrative translation
+- **Home page dual voice:** `compute_coach_noticed` and `morning_voice` still overlap; unify into one coherent briefing voice
 
 ### Technical Debt (Tracked, Not Blocking)
 - 8 services with local efficiency polarity assumptions — migrate to `OutputMetricMeta` registry
@@ -292,6 +305,12 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - Sleep weight = 0.00 in readiness score — excluded until correlation engine proves individual relationship
 
 ### Resolved Issues
+- **Monetization v1 closure (Feb 26, 2026)** — 4-tier purchase and entitlement surfaces now shipped end-to-end (pricing/settings/checkout/locked-pace UX/register carry-through).
+- **PDF plan export shipped (Feb 26, 2026)** — entitlement-gated download endpoint and full backend generation path live.
+- **Garmin sync-to-briefing staleness hardening (Feb 27-28, 2026)** — Garmin/Strava sync paths now explicitly mark briefing dirty and enqueue refresh; deterministic fallback prevents stale lock-in when LLM path fails.
+- **Run context GarminDay gap-fill (Feb 28, 2026)** — run analysis now consumes Garmin physiology when check-ins are missing, without overwriting athlete self-report.
+- **Garmin ingestion health monitor (Feb 28, 2026)** — new admin endpoint and daily worker checks make underfed physiology visible.
+- **Password-reset email transport hardening (Feb 28, 2026)** — SMTP send path now uses timeout + TLS context; reset links now derive from `WEB_APP_BASE_URL`; logging clarified for send failure scenarios.
 - **Sleep prompt grounding (Feb 24, 2026)** — Home morning briefing cited wrong sleep hours (7.5h vs 6h45 Garmin / 7.0h manual). Fixed with: `_build_checkin_data_dict()` (sleep_h numeric now in prompt), `_get_garmin_sleep_h_for_last_night()` (device sleep as ground truth), SLEEP SOURCE CONTRACT in prompt, `validate_sleep_claims()` validator (0.5h tolerance), wellness trends recency prefix. 22 new regression tests. Commit `494b9e9`.
 - **Garmin disconnect 500 (Feb 24, 2026)** — `POST /v1/garmin/disconnect` crashed with `ForeignKeyViolation` on `activity_split`. Fixed by deleting `ActivitySplit` rows before `Activity` rows in the disconnect handler. Commit `9b11504`.
 - **SEV-1: Coach stream hanging on "Thinking..." (Feb 17, 2026)** — fixed with 120s hard timeout + try/except + SSE error event in `ai_coach.py`
@@ -323,6 +342,21 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - `system.ingestion_paused` DB flag prevents new ingestion work during incidents
 - Workers on 429 mark as deferred (not error) with `deferred_until`
 
+### Email Delivery Activation (Production)
+1. Update `/opt/strideiq/repo/.env` (compose env file in current production setup) with:
+   - `EMAIL_ENABLED=true`
+   - `SMTP_SERVER=smtp.gmail.com`
+   - `SMTP_PORT=587`
+   - `SMTP_USERNAME=<workspace sender>`
+   - `SMTP_PASSWORD=<google app password>`
+   - `FROM_EMAIL=<workspace sender>`
+   - `FROM_NAME=StrideIQ`
+2. Recreate API service (restart alone does not reload env vars):
+   - `docker compose -f docker-compose.prod.yml up -d --force-recreate api`
+3. Runtime verify inside container:
+   - print effective email settings (excluding password)
+4. Run forgot-password E2E and verify sender branding/domain in inbox.
+
 ### Infrastructure Constraints (HARD RULES)
 - **Server: Hostinger KVM 8 — 8 vCPU, 32GB RAM, 400GB NVMe.** Migrated from DigitalOcean (1 vCPU, 2GB) on Feb 25, 2026. Old droplet `104.248.212.71` kept as 24-48h safety net.
 - **Uvicorn workers:** Currently 1. Safe to increase to 3-4 with 32GB RAM (each worker uses ~600MB). Increase requires founder sign-off.
@@ -333,24 +367,24 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 
 ---
 
-## 10. Stripe Integration (Live as of Feb 24, 2026)
+## 10. Billing / Monetization Integration (Live)
 
 | Item | Value |
 |---|---|
-| Account | `acct_1T4SGOLRj4KBJxHa` |
-| Product | `prod_U2XZC71b1B6nxX` — "StrideIQ Pro" |
-| Monthly price | `price_1T4SUtLRj4KBJxHa4sq8e35A` — $14.99/mo |
-| Annual price | `price_1T4SUuLRj4KBJxHat0sHVdrw` — $149.00/yr |
+| Model | 4-tier: Free / One-time $5 / Guided $15/mo ($150/yr) / Premium $25/mo ($250/yr) |
 | Webhook endpoint | `https://strideiq.run/v1/billing/webhooks/stripe` |
-| Webhook events | `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` |
-| Customer Portal | Configured (live mode) |
+| Core webhook events | `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` |
+| Entitlement enforcement | Canonical tier utilities + pace-access checks |
+| Revenue artifact | PDF plan export gated by paid entitlement |
 
 **Key files:**
+- `apps/api/core/tier_utils.py` — canonical tier normalization/satisfaction
 - `apps/api/services/stripe_service.py` — checkout, portal, webhook processing, idempotency
-- `apps/api/routers/billing.py` — `/v1/billing/checkout`, `/v1/billing/portal`, `/v1/billing/webhooks/stripe`, `/v1/billing/trial/start`
-- `apps/api/tests/test_phase6_stripe_billing.py` — billing test suite
+- `apps/api/routers/billing.py` — billing endpoints
+- `apps/api/core/pace_access.py` — one-time unlock + tier entitlement checks
+- `apps/api/routers/plan_export.py` and `apps/api/services/plan_pdf.py` — paid PDF export path
 
-**Subscription flow:** Stripe webhook → `Subscription` table mirror → `athlete.subscription_tier = "pro"`
+**Subscription flow:** Stripe webhook updates subscription mirror and athlete tier state used by gating utilities.
 
 **ADR:** `docs/adr/ADR-055-stripe-mvp-hosted-checkout-portal-and-webhooks.md`
 
@@ -360,12 +394,15 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 
 | Module | Purpose |
 |--------|---------|
-| `strava_tasks.py` | Strava activity sync, token refresh |
+| `strava_tasks.py` | Strava sync + post-sync processing |
+| `garmin_webhook_tasks.py` | Garmin activities/health webhook processing |
 | `intelligence_tasks.py` | Daily intelligence + narration (every 15 min) |
+| `home_briefing_tasks.py` | Home briefing generation/refresh orchestration |
 | `best_effort_tasks.py` | Best effort extraction from activities |
 | `import_tasks.py` | Bulk data import |
 | `digest_tasks.py` | Digest generation |
-| `garmin_tasks.py` | Garmin data import |
+| `progress_prewarm_tasks.py` | Progress endpoint/cache prewarm |
+| `garmin_health_monitor_task.py` | Daily Garmin ingestion coverage monitoring |
 
 ---
 
@@ -398,6 +435,84 @@ When adding a new migration: **must chain off the current head** — update `dow
 
 ---
 
+## 14. Audit Contract (Always-Current Requirement)
+
+This document is not a session recap. It is the founder-facing master audit.
+
+Non-negotiable operating rules:
+
+1. Every material ship updates this file in the same session.
+2. Changes must reflect product truth (shipped behavior), not plans.
+3. New route/surface/tool means inventory update here before closeout.
+4. "Built but hidden/flagged" must still be listed with flag/gate status.
+5. If something is uncertain, mark it as unknown explicitly (never assume).
+
+---
+
+## 15. Current Platform Inventory (Founder View)
+
+### Backend/API Inventory
+
+Current code scan snapshot:
+- SQLAlchemy model classes in `apps/api/models.py`: **60**
+- Router modules in `apps/api/routers/`: **61** files
+- Service modules in `apps/api/services/`: **152** files
+- Task modules in `apps/api/tasks/`: **14** files
+- API test files in `apps/api/tests/`: **176** files
+
+### Frontend Inventory
+
+Current code scan snapshot:
+- App Router pages in `apps/web/app/**/page.tsx`: **63**
+- UI/component files in `apps/web/components/**/*.tsx`: **70**
+- Query hook modules in `apps/web/lib/hooks/queries/`: **21**
+
+### User-Facing Product Surfaces (live)
+
+- Core athlete app: `home`, `activities`, `activity detail`, `calendar`, `coach`, `progress`, `analytics`, `training-load`, `discovery`, `insights`, `settings`
+- Plan surfaces: `plans/create`, `plans/preview`, `plans/[id]`, `plans/checkout`
+- Auth/account: `register`, `login`, `forgot-password`, `reset-password`, `onboarding`, `profile`
+- Admin/diagnostic surfaces: `admin`, `admin/diagnostics`, `diagnostic`, `diagnostic/report`
+- Marketing/site surfaces: `about`, `mission`, `stories`, `support`, `terms`, `privacy`
+
+### Public Tool Surfaces (no-auth acquisition tools)
+
+- Training pace calculator (`/tools/training-pace-calculator`)
+- Age-grading calculator (`/tools/age-grading-calculator`)
+- Race equivalency calculator (`/tools/race-equivalency`)
+- Heat-adjusted pace (`/tools/heat-adjusted-pace`)
+- Boston qualifying tools (`/tools/boston-qualifying`)
+
+Supporting public API surface:
+- `apps/api/routers/public_tools.py` provides unauthenticated calculation endpoints for pace and age-grade workflows.
+
+### Integrations
+
+- Strava: OAuth + webhook + sync + background ingest
+- Garmin Connect: OAuth + webhook ingest + GarminDay health storage + ingestion coverage monitoring
+- Stripe: hosted checkout + portal + webhook entitlements for 4-tier monetization model
+
+### Founder/Ops Tooling (live)
+
+- Admin API surface under `apps/api/routers/admin.py` (feature flags, user ops, ingestion ops, billing ops, diagnostics, query tools)
+- Garmin ingestion health endpoint: `GET /v1/admin/ops/ingestion/garmin-health`
+- Daily Garmin ingestion health task: `apps/api/tasks/garmin_health_monitor_task.py`
+- Home briefing reliability orchestration: `apps/api/tasks/home_briefing_tasks.py`
+
+---
+
+## 16. Update Checklist (must run at session close)
+
+Before any agent marks work complete:
+
+1. Update shipped behavior in this audit (not just handoff doc).
+2. Update inventory lists if routes/tools/modules changed.
+3. Move/annotate items between Active Issues and Resolved Issues.
+4. Update build priority order if phase status changed.
+5. Ensure this file can stand alone for founder review without reading handoffs.
+
+---
+
 ## Appendix: Key File Paths
 
 ```
@@ -422,6 +537,8 @@ apps/api/services/plan_framework/           ← Plan generation framework
 apps/api/routers/strava.py                  ← OAuth + API endpoints
 apps/api/services/strava_service.py         ← Strava API wrapper
 apps/api/tasks/strava_tasks.py              ← Background sync
+apps/api/tasks/garmin_webhook_tasks.py      ← Garmin webhook ingest workers
+apps/api/services/garmin_ingestion_health.py ← GarminDay coverage computation
 
 # Frontend
 apps/web/app/home/page.tsx                  ← Home page
