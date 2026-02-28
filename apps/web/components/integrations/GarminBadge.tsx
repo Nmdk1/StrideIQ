@@ -21,8 +21,8 @@ interface GarminBadgeProps {
 
 export function GarminBadge({ deviceName, className = '', size = 'sm' }: GarminBadgeProps) {
   const textSize = size === 'sm' ? 'text-sm' : 'text-base';
-  // Badge renders at 36px height (sm) or 48px height (md) — preserves aspect ratio.
-  const badgeHeight = size === 'sm' ? 36 : 48;
+  // Badge renders at 24px height (sm, splits/footer) or 28px height (md, header) — preserves aspect ratio.
+  const badgeHeight = size === 'sm' ? 24 : 28;
   const badgeWidth = Math.round(badgeHeight * (193 / 48));
   const formattedDevice = deviceName ? formatDeviceName(deviceName) : null;
 
