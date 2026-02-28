@@ -3,6 +3,7 @@
 import React from 'react';
 import { useUnits } from '@/lib/context/UnitsContext';
 import type { Split } from '@/lib/types/splits';
+import { GarminBadge } from '@/components/integrations/GarminBadge';
 
 const MILES_TO_KM = 1.60934;
 
@@ -38,13 +39,15 @@ export interface SplitsTableProps {
   splits: Split[];
   /** Data source: 'garmin' | 'strava' | null */
   provider?: string | null;
+  /** Device model for Garmin attribution (e.g. "forerunner165"). Optional — logo alone is shown if absent. */
+  deviceName?: string | null;
   /** Optional: callback when mouse enters a split row (index into splits array) */
   onRowHover?: (index: number | null) => void;
   /** Optional: ref map for direct DOM manipulation of row highlights */
   rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
 }
 
-export function SplitsTable({ splits, provider, onRowHover, rowRefs }: SplitsTableProps) {
+export function SplitsTable({ splits, provider, deviceName, onRowHover, rowRefs }: SplitsTableProps) {
   const { formatDistance, formatPace } = useUnits();
 
   if (!splits?.length) return null;
@@ -116,11 +119,18 @@ export function SplitsTable({ splits, provider, onRowHover, rowRefs }: SplitsTab
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-slate-500">
-        {provider === 'garmin'
-          ? 'Splits from Garmin device data. Pace is computed from split distance/time.'
-          : 'Splits are sourced from Strava laps (auto-laps or manual laps/intervals). Pace is computed from split distance/time.'}
-      </p>
+      <div className="mt-2 text-xs text-slate-500">
+        {provider === 'garmin' ? (
+          <span className="flex items-center gap-1.5 flex-wrap">
+            <GarminBadge deviceName={deviceName} size="sm" />
+            <span>· Pace is computed from split distance/time.</span>
+          </span>
+        ) : (
+          <span>
+            Splits are sourced from Strava laps (auto-laps or manual laps/intervals). Pace is computed from split distance/time.
+          </span>
+        )}
+      </div>
     </div>
   );
 }

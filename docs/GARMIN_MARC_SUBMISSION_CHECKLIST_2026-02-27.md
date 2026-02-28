@@ -111,13 +111,13 @@ Keep it short. Marc needs to verify compliance, not read a story. The reply must
    - Activity Details API — GPS, HR, cadence, velocity samples
    - Health API — sleep, HRV, stress, dailies, user metrics
    - Training/Courses API — not in our integration scope. StrideIQ does not write data to Garmin Connect.
-2. **Authorization:** Two Garmin Connect users are authorized in our evaluation environment.
-3. **User Deregistration:** Endpoint enabled at `/v1/garmin/webhook/deregistrations`. Returns HTTP 200 and processes asynchronously.
-4. **User Permissions:** Endpoint enabled at `/v1/garmin/webhook/permissions`. Returns HTTP 200 and processes asynchronously.
-5. **PING/PUSH:** All webhook endpoints receive Garmin push notifications and return HTTP 200 within seconds. Processing is asynchronous via task queue. Primary ingestion is webhook PING/PUSH; no scheduled polling pipeline is used.
-6. **Payload handling:** Endpoints accept payloads up to 100MB. HTTP 200 is returned immediately; data is processed asynchronously.
-7. **Partner Verification Tool:** [PASTE RESULTS HERE — run before sending]
-8. **Training/Courses API:** Not applicable — StrideIQ does not transfer workouts or courses to Garmin Connect.
+3. **Authorization:** Two Garmin Connect users are authorized in our evaluation environment.
+4. **User Deregistration:** Endpoint enabled at `/v1/garmin/webhook/deregistrations`. Returns HTTP 200 and processes asynchronously.
+5. **User Permissions:** Endpoint enabled at `/v1/garmin/webhook/permissions`. Returns HTTP 200 and processes asynchronously.
+6. **PING/PUSH:** All webhook endpoints receive Garmin push notifications and return HTTP 200 within seconds. Processing is asynchronous via task queue. Primary ingestion is webhook PING/PUSH; no scheduled polling pipeline is used.
+7. **Payload handling:** Endpoints accept payloads up to 100MB. HTTP 200 is returned immediately; data is processed asynchronously.
+8. **Partner Verification Tool:** [PASTE RESULTS HERE — run before sending]
+9. **Training/Courses API:** Not applicable — StrideIQ does not transfer workouts or courses to Garmin Connect.
 
 ### Section 2: Team Members and Account Setup
 

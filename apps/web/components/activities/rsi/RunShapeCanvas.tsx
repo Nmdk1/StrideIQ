@@ -72,6 +72,8 @@ export interface RunShapeCanvasProps {
   splits?: Split[] | null;
   /** Data source: 'garmin' | 'strava' | null */
   provider?: string | null;
+  /** Device model for Garmin attribution in the splits footer (e.g. "forerunner165") */
+  deviceName?: string | null;
 }
 
 interface ChartPoint {
@@ -520,11 +522,13 @@ function DriftMetrics({ drift }: { drift: DriftAnalysis }) {
 function SplitsModePanel({
   splits,
   provider,
+  deviceName,
   onRowHover,
   rowRefs,
 }: {
   splits: Split[];
   provider?: string | null;
+  deviceName?: string | null;
   onRowHover?: (index: number | null) => void;
   rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
 }) {
@@ -541,7 +545,7 @@ function SplitsModePanel({
       className="mt-3"
       data-testid="splits-panel"
     >
-      <SplitsTable splits={splits} provider={provider} onRowHover={onRowHover} rowRefs={rowRefs} />
+      <SplitsTable splits={splits} provider={provider} deviceName={deviceName} onRowHover={onRowHover} rowRefs={rowRefs} />
     </div>
   );
 }
@@ -686,7 +690,7 @@ function LabModePanel({
 // RunShapeCanvas (main export)
 // ---------------------------------------------------------------------------
 
-export function RunShapeCanvas({ activityId, splits, provider }: RunShapeCanvasProps) {
+export function RunShapeCanvas({ activityId, splits, provider, deviceName }: RunShapeCanvasProps) {
   const { data, isLoading, error, refetch } = useStreamAnalysis(activityId);
 
   // Toggle state (AC-4): survives resize by design (useState)
@@ -1218,6 +1222,7 @@ export function RunShapeCanvas({ activityId, splits, provider }: RunShapeCanvasP
         <SplitsModePanel
           splits={splits}
           provider={provider}
+          deviceName={deviceName}
           onRowHover={handleSplitRowHover}
           rowRefs={splitRowRefs}
         />
