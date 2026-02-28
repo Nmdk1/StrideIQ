@@ -128,12 +128,12 @@ class Settings(BaseSettings):
     
     # Email Configuration
     EMAIL_ENABLED: bool = Field(default=False)
-    SMTP_SERVER: str = Field(default="localhost")
+    SMTP_SERVER: str = Field(default="smtp.gmail.com")
     SMTP_PORT: int = Field(default=587)
     SMTP_USERNAME: Optional[str] = Field(default=None)
     SMTP_PASSWORD: Optional[str] = Field(default=None)
-    FROM_EMAIL: str = Field(default="noreply@performancefocused.com")
-    FROM_NAME: str = Field(default="Performance Focused")
+    FROM_EMAIL: str = Field(default="noreply@strideiq.run")
+    FROM_NAME: str = Field(default="StrideIQ")
     
     # Cache Configuration
     CACHE_TTL_DEFAULT: int = Field(default=300)  # 5 minutes
