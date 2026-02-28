@@ -9,6 +9,8 @@ contract. This document covers the mechanics of building.**
 
 Every task — no matter how small — follows this loop. No shortcuts. No exceptions.
 
+Builder notes must be authored from `docs/BUILDER_NOTE_TEMPLATE.md`.
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │  1. RESEARCH                                         │
@@ -52,6 +54,13 @@ Every task — no matter how small — follows this loop. No shortcuts. No excep
 │  7. CI                                               │
 │     Push. Verify CI green. Local pass is not enough. │
 │     If CI red, fix before moving on.                 │
+├─────────────────────────────────────────────────────┤
+│  8. SITE AUDIT UPDATE (MANDATORY)                    │
+│     Update docs/SITE_AUDIT_LIVING.md in the same     │
+│     session for every material ship.                 │
+│     This is the founder's canonical full-site audit, │
+│     not a handoff convenience.                        │
+│     No session closes without this update.            │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -529,3 +538,5 @@ These are non-negotiable. Violating any of them costs trust immediately.
 11. **No threshold is assumed universal.** Readiness thresholds, adaptation triggers, HRV direction — all per-athlete parameters that start conservative and calibrate from outcome data. Never hardcode a coaching opinion as a constant.
 
 12. **The system INFORMS, the athlete DECIDES.** The daily intelligence engine surfaces data and patterns. It does NOT swap workouts or override the athlete. Fatigue is a stimulus for adaptation, not an enemy. The system must never prevent a breakthrough by "protecting" the athlete from productive stress. Intervention (flagging, not overriding) only on sustained 3+ week negative trajectories. Self-regulation (athlete modifies their own workout) is first-class data that the system learns from.
+
+13. **`docs/SITE_AUDIT_LIVING.md` is mandatory founder infrastructure.** It must be kept current at all times as the complete inventory of what is built, what tools/routes exist, what is live, and what is pending. Every material change updates this file in-session. No exceptions.
