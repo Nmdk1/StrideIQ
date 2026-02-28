@@ -21,13 +21,13 @@ from datetime import datetime, timedelta, date, timezone
 from typing import List, Dict, Optional, Tuple, Any
 from uuid import UUID
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 import statistics
 import logging
 
-from models import Activity, Athlete, DailyCheckin, NutritionEntry, ActivitySplit
+from models import Activity, Athlete, DailyCheckin, GarminDay, NutritionEntry, ActivitySplit
 
 from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
 from services.efficiency_trending import analyze_efficiency_trend, TrendDirection as EfTrendDirection, TrendConfidence as EfTrendConfidence
@@ -66,6 +66,22 @@ class TrendDirection(Enum):
     INSUFFICIENT_DATA = "insufficient_data"
 
 
+def _garmin_stress_qualifier(score: int) -> str:
+    """
+    Map Garmin 0-100 avg_stress to a human-readable qualifier.
+
+    Bands match Garmin Connect UI labels.
+    Sentinel -1 is treated as null by callers before this function is reached.
+    """
+    if score < 25:
+        return "calm"
+    if score < 50:
+        return "balanced"
+    if score < 75:
+        return "stressful"
+    return "very_stressful"
+
+
 @dataclass
 class InputSnapshot:
     """All inputs leading up to a run"""
@@ -73,24 +89,31 @@ class InputSnapshot:
     sleep_last_night: Optional[float] = None
     sleep_3_day_avg: Optional[float] = None
     sleep_7_day_avg: Optional[float] = None
-    
-    # Subjective
+
+    # Subjective (self-reported 1-5 scale)
     stress_today: Optional[int] = None
     stress_3_day_avg: Optional[float] = None
     soreness_today: Optional[int] = None
     soreness_3_day_avg: Optional[float] = None
-    
+
     # Physiological
     hrv_today: Optional[float] = None
     hrv_7_day_avg: Optional[float] = None
     resting_hr_today: Optional[int] = None
     resting_hr_7_day_avg: Optional[float] = None
-    
+
+    # Garmin device stress — separate from self-report; never mapped to /5 scale
+    garmin_stress_score: Optional[int] = None
+    garmin_stress_qualifier: Optional[str] = None
+
+    # Fields sourced from GarminDay (device) rather than DailyCheckin (self-report)
+    garmin_filled_fields: List[str] = field(default_factory=list)
+
     # Training load
     atl: Optional[float] = None  # Acute Training Load (7-day)
     ctl: Optional[float] = None  # Chronic Training Load (42-day)
     tsb: Optional[float] = None  # Training Stress Balance (CTL - ATL)
-    
+
     # Life factors
     days_since_last_run: Optional[int] = None
     runs_this_week: Optional[int] = None
@@ -415,14 +438,88 @@ class RunAnalysisEngine:
             sleep_vals_7d = [c.sleep_h for c in checkins if c.sleep_h]
             hrv_vals_7d = [c.hrv_rmssd for c in checkins if c.hrv_rmssd]
             rhr_vals_7d = [c.resting_hr for c in checkins if c.resting_hr]
-            
+
             if sleep_vals_7d:
                 snapshot.sleep_7_day_avg = statistics.mean(sleep_vals_7d)
             if hrv_vals_7d:
                 snapshot.hrv_7_day_avg = statistics.mean(hrv_vals_7d)
             if rhr_vals_7d:
                 snapshot.resting_hr_7_day_avg = statistics.mean(rhr_vals_7d)
-        
+
+        # -----------------------------------------------------------------------
+        # GarminDay gap-fill pass
+        # Priority: DailyCheckin wins. GarminDay fills only null fields.
+        # Garmin stress is NEVER mapped into self-report stress_today (/5 scale).
+        # -----------------------------------------------------------------------
+        garmin_rows = (
+            self.db.query(GarminDay)
+            .filter(
+                GarminDay.athlete_id == athlete_id,
+                GarminDay.calendar_date >= week_ago,
+                GarminDay.calendar_date <= run_date,
+            )
+            .order_by(GarminDay.calendar_date.desc())
+            .all()
+        )
+
+        if garmin_rows:
+            # GarminDay.calendar_date is the WAKEUP day (Garmin convention).
+            # run_date row = sleep that ended this morning = "last night's sleep".
+            today_garmin = next(
+                (g for g in garmin_rows if g.calendar_date == run_date), None
+            )
+
+            if today_garmin is not None:
+                if snapshot.sleep_last_night is None and today_garmin.sleep_total_s is not None:
+                    snapshot.sleep_last_night = today_garmin.sleep_total_s / 3600
+                    snapshot.garmin_filled_fields.append("sleep_last_night")
+
+                if snapshot.hrv_today is None and today_garmin.hrv_overnight_avg is not None:
+                    snapshot.hrv_today = float(today_garmin.hrv_overnight_avg)
+                    snapshot.garmin_filled_fields.append("hrv_today")
+
+                if snapshot.resting_hr_today is None and today_garmin.resting_hr is not None:
+                    snapshot.resting_hr_today = today_garmin.resting_hr
+                    snapshot.garmin_filled_fields.append("resting_hr_today")
+
+                # Garmin stress: always device-sourced; never mapped to /5 field.
+                # Sentinel -1 means Garmin had no measurement for this period.
+                stress_val = today_garmin.avg_stress
+                if stress_val is not None and stress_val != -1:
+                    snapshot.garmin_stress_score = stress_val
+                    snapshot.garmin_stress_qualifier = _garmin_stress_qualifier(stress_val)
+
+            # 7-day averages from GarminDay (fill only if DailyCheckin didn't provide)
+            if snapshot.sleep_7_day_avg is None:
+                sleep_vals_g = [
+                    g.sleep_total_s / 3600
+                    for g in garmin_rows
+                    if g.sleep_total_s is not None
+                ]
+                if sleep_vals_g:
+                    snapshot.sleep_7_day_avg = statistics.mean(sleep_vals_g)
+                    snapshot.garmin_filled_fields.append("sleep_7_day_avg")
+
+            if snapshot.hrv_7_day_avg is None:
+                hrv_vals_g = [
+                    g.hrv_overnight_avg
+                    for g in garmin_rows
+                    if g.hrv_overnight_avg is not None
+                ]
+                if hrv_vals_g:
+                    snapshot.hrv_7_day_avg = statistics.mean(hrv_vals_g)
+                    snapshot.garmin_filled_fields.append("hrv_7_day_avg")
+
+            if snapshot.resting_hr_7_day_avg is None:
+                rhr_vals_g = [
+                    g.resting_hr
+                    for g in garmin_rows
+                    if g.resting_hr is not None
+                ]
+                if rhr_vals_g:
+                    snapshot.resting_hr_7_day_avg = statistics.mean(rhr_vals_g)
+                    snapshot.garmin_filled_fields.append("resting_hr_7_day_avg")
+
         # Training load (simplified - would need proper TSS calculation)
         activities_7d = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
