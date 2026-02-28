@@ -20,14 +20,14 @@ interface GarminBadgeProps {
 }
 
 export function GarminBadge({ deviceName, className = '', size = 'sm' }: GarminBadgeProps) {
-  const textSize = size === 'sm' ? 'text-xs' : 'text-sm';
-  // Logo heights per brand guidelines: 12-16px for sm, 16-20px for md.
-  const logoHeight = size === 'sm' ? 12 : 16;
+  const textSize = size === 'sm' ? 'text-sm' : 'text-base';
+  // Minimum legible height for the GARMIN® wordmark: 20px (sm), 28px (md).
+  const logoHeight = size === 'sm' ? 20 : 28;
   const formattedDevice = deviceName ? formatDeviceName(deviceName) : null;
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 text-slate-400 ${textSize} ${className}`}
+      className={`inline-flex items-center gap-1.5 text-slate-200 ${textSize} ${className}`}
       title={formattedDevice ? `Garmin ${formattedDevice}` : 'Garmin'}
     >
       {/* Official GARMIN® tag wordmark — do not replace with a custom icon */}

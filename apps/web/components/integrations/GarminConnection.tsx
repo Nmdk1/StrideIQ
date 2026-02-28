@@ -141,8 +141,6 @@ export function GarminConnection() {
             </p>
           </div>
 
-          <GarminBadge size="sm" className="mt-1" />
-
           {/* Garmin file import still available when connected */}
           <div className="pt-4 border-t border-slate-700/50">
             <p className="text-xs text-slate-500 mb-3">

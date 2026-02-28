@@ -61,13 +61,6 @@ function formatRelativeTime(isoString: string): string {
   return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function formatDeviceName(raw: string): string {
-  return raw
-    .replace(/([a-z])(\d)/g, '$1 $2')
-    .replace(/(\d)([a-z])/g, '$1 $2')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 // ---------------------------------------------------------------------------
 // MiniEffortCanvas — compact effort gradient for the hero
 // ---------------------------------------------------------------------------
@@ -162,7 +155,7 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
         )}
 
         {/* Single-line metrics + link — date first so you know what run this is */}
-        <div className="px-4 py-2.5 flex items-center justify-between">
+        <div className="px-4 pt-2.5 pb-1 flex items-center justify-between">
           <p className="text-sm text-slate-400">
             <span className="text-slate-500">{formatRelativeTime(lastRun.start_time)}</span>
             <span className="mx-1.5 text-slate-600">&middot;</span>
@@ -179,15 +172,14 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
                 {Math.round(lastRun.average_hr)} bpm
               </>
             )}
-            {lastRun.provider === 'garmin' && lastRun.device_name && (
-              <>
-                <span className="mx-1.5 text-slate-600">&middot;</span>
-                <span className="text-slate-500">{formatDeviceName(lastRun.device_name)}</span>
-              </>
-            )}
           </p>
           <ArrowRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
         </div>
+        {lastRun.provider === 'garmin' && (
+          <div className="px-4 pb-2.5">
+            <GarminBadge deviceName={lastRun.device_name} />
+          </div>
+        )}
       </Link>
     );
   }

@@ -240,7 +240,7 @@ export default function ActivityDetailPage() {
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
           </p>
           {activity.provider === 'garmin' && (
-            <GarminBadge deviceName={activity.device_name} className="mt-1" />
+            <GarminBadge deviceName={activity.device_name} size="md" className="mt-2" />
           )}
         </div>
 
