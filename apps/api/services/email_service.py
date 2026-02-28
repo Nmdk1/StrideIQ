@@ -8,6 +8,7 @@ FROM_EMAIL, FROM_NAME, EMAIL_ENABLED.
 """
 
 import smtplib
+import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Optional
@@ -25,6 +26,7 @@ class EmailService:
         self.smtp_port = settings.SMTP_PORT
         self.smtp_username = settings.SMTP_USERNAME
         self.smtp_password = settings.SMTP_PASSWORD
+        self.smtp_timeout_seconds = settings.SMTP_TIMEOUT_SECONDS
         self.from_email = settings.FROM_EMAIL
         self.from_name = settings.FROM_NAME
         self.enabled = settings.EMAIL_ENABLED
@@ -65,9 +67,13 @@ class EmailService:
                 msg.attach(MIMEText(text_content, "plain"))
             msg.attach(MIMEText(html_content, "html"))
 
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+            with smtplib.SMTP(
+                self.smtp_server,
+                self.smtp_port,
+                timeout=self.smtp_timeout_seconds,
+            ) as server:
                 server.ehlo()
-                server.starttls()
+                server.starttls(context=ssl.create_default_context())
                 server.ehlo()
                 server.login(self.smtp_username, self.smtp_password)
                 server.send_message(msg)

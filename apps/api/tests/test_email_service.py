@@ -21,6 +21,7 @@ def _service(enabled=True, username="test@strideiq.run", password="apppassword")
     svc.smtp_port = 587
     svc.smtp_username = username
     svc.smtp_password = password
+    svc.smtp_timeout_seconds = 15
     svc.from_email = "noreply@strideiq.run"
     svc.from_name = "StrideIQ"
     svc.enabled = enabled
@@ -45,7 +46,7 @@ class TestEmailServiceSend:
             )
 
         assert result is True
-        smtp_cls.assert_called_once_with("smtp.gmail.com", 587)
+        smtp_cls.assert_called_once_with("smtp.gmail.com", 587, timeout=15)
         mock_smtp.starttls.assert_called_once()
         mock_smtp.login.assert_called_once_with("test@strideiq.run", "apppassword")
         sent_msg = mock_smtp.send_message.call_args[0][0]

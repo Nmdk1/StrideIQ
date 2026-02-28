@@ -384,8 +384,8 @@ def forgot_password(
             algorithm=ALGORITHM,
         )
         
-        # Build reset URL
-        frontend_url = getattr(settings, "FRONTEND_URL", "https://strideiq.run")
+        # Build reset URL from canonical web app base URL config.
+        frontend_url = (settings.WEB_APP_BASE_URL or "https://strideiq.run").rstrip("/")
         reset_url = f"{frontend_url}/reset-password?token={reset_token}"
         
         # Send email
@@ -424,8 +424,11 @@ If you didn't request this, you can safely ignore this email.
         if sent:
             logger.info(f"Password reset email sent to {email}")
         else:
-            # Email not configured - log for debugging (NEVER log the reset URL/token)
-            logger.warning(f"Password reset requested for {email} but email service is disabled")
+            # NEVER log reset URL/token.
+            logger.warning(
+                "Password reset requested for %s but email send failed (service disabled, creds missing, or SMTP error)",
+                email,
+            )
     else:
         # Don't reveal that email doesn't exist
         logger.info(f"Password reset requested for non-existent email: {email}")

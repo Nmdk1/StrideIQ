@@ -132,6 +132,7 @@ class Settings(BaseSettings):
     SMTP_PORT: int = Field(default=587)
     SMTP_USERNAME: Optional[str] = Field(default=None)
     SMTP_PASSWORD: Optional[str] = Field(default=None)
+    SMTP_TIMEOUT_SECONDS: int = Field(default=15)
     FROM_EMAIL: str = Field(default="noreply@strideiq.run")
     FROM_NAME: str = Field(default="StrideIQ")
     
