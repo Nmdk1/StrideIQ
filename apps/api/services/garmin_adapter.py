@@ -387,6 +387,29 @@ def _compute_elevation_gain(samples: list) -> Optional[float]:
     return round(gain, 2) if gain > 0 else 0.0
 
 
+def _moving_time_from_samples(lap_samples: list, max_gap_s: int = 3) -> Optional[int]:
+    """
+    Derive moving time from sample timestamps by summing consecutive intervals
+    where the gap is <= max_gap_s seconds. Pauses create larger gaps and are
+    excluded. Used when Garmin does not provide timerDurationInSeconds per lap.
+    """
+    if len(lap_samples) < 2:
+        return None
+    sorted_ts = sorted(
+        s["startTimeInSeconds"]
+        for s in lap_samples
+        if s.get("startTimeInSeconds") is not None
+    )
+    if len(sorted_ts) < 2:
+        return None
+    total = sum(
+        sorted_ts[i + 1] - sorted_ts[i]
+        for i in range(len(sorted_ts) - 1)
+        if 0 < sorted_ts[i + 1] - sorted_ts[i] <= max_gap_s
+    )
+    return total if total > 0 else None
+
+
 def adapt_activity_detail_laps(
     raw_detail: Dict[str, Any],
     samples: list,
@@ -475,7 +498,10 @@ def adapt_activity_detail_laps(
             if len(ts_vals) >= 2:
                 elapsed_time = ts_vals[-1] - ts_vals[0]
         if moving_time is None:
-            moving_time = elapsed_time
+            # Garmin does not always provide timerDurationInSeconds per lap.
+            # Derive moving time from sample timestamps: sum only consecutive
+            # intervals ≤ 3s (pauses create larger gaps and are excluded).
+            moving_time = _moving_time_from_samples(lap_samples) or elapsed_time
 
         # --- Average heart rate ---
         avg_hr = _int_or_none(lap.get("averageHeartRateInBeatsPerMinute"))
