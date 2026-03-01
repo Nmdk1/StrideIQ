@@ -215,7 +215,7 @@ export default function TrainingLoadPage() {
                       stroke="#9CA3AF"
                       tickFormatter={(value) => {
                         const d = new Date(value);
-                        return `${d.getMonth() + 1}/${d.getDate()}`;
+                        return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
                       }}
                     />
                     <YAxis stroke="#9CA3AF" />
@@ -230,7 +230,8 @@ export default function TrainingLoadPage() {
                         return d.toLocaleDateString('en-US', { 
                           month: 'short', 
                           day: 'numeric',
-                          year: 'numeric'
+                          year: 'numeric',
+                          timeZone: 'UTC'
                         });
                       }}
                     />
@@ -302,7 +303,7 @@ export default function TrainingLoadPage() {
                       stroke="#9CA3AF"
                       tickFormatter={(value) => {
                         const d = new Date(value);
-                        return `${d.getMonth() + 1}/${d.getDate()}`;
+                        return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
                       }}
                     />
                     <YAxis stroke="#9CA3AF" />
@@ -316,7 +317,8 @@ export default function TrainingLoadPage() {
                         const d = new Date(label);
                         return d.toLocaleDateString('en-US', { 
                           month: 'short', 
-                          day: 'numeric'
+                          day: 'numeric',
+                          timeZone: 'UTC'
                         });
                       }}
                       formatter={(value) => [typeof value === 'number' ? value.toFixed(1) : '0', 'TSS']}

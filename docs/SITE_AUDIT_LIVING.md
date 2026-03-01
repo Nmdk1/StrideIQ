@@ -305,6 +305,7 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - Sleep weight = 0.00 in readiness score — excluded until correlation engine proves individual relationship
 
 ### Resolved Issues
+- **Chart date labels shifted by one day in US timezones (Mar 1, 2026)** — All Recharts date axes now use UTC methods (`getUTCMonth()`, `getUTCDate()`, `timeZone: 'UTC'`) to prevent local-timezone date shift. Fixed in `training-load/page.tsx` (PMC + Daily TSS charts, 4 locations) and `LoadResponseChart.tsx`, `AgeGradedChart.tsx`, `EfficiencyChart.tsx` (3 locations). 7 locations total.
 - **Monetization v1 closure (Feb 26, 2026)** — 4-tier purchase and entitlement surfaces now shipped end-to-end (pricing/settings/checkout/locked-pace UX/register carry-through).
 - **PDF plan export shipped (Feb 26, 2026)** — entitlement-gated download endpoint and full backend generation path live.
 - **Garmin sync-to-briefing staleness hardening (Feb 27-28, 2026)** — Garmin/Strava sync paths now explicitly mark briefing dirty and enqueue refresh; deterministic fallback prevents stale lock-in when LLM path fails.

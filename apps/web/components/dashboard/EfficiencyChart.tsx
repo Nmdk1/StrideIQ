@@ -34,7 +34,7 @@ export function EfficiencyChart({
 }: EfficiencyChartProps) {
   // Format data for Recharts
   const chartData = data.map((point) => ({
-    date: new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    date: new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
     fullDate: point.date,
     efficiency: point.efficiency_factor,
     rolling7d: point.rolling_7d_avg,
