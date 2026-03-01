@@ -24,6 +24,13 @@ strideiq.run {
     Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https://strideiq.run https://api.strideiq.run https://api.stripe.com wss:; frame-src https://js.stripe.com https://hooks.stripe.com; frame-ancestors 'none';"
   }
 
+  # MinIO object storage proxy — signed URLs only, private bucket
+  handle_path /storage/* {
+    reverse_proxy minio:9000 {
+      header_up Host minio:9000
+    }
+  }
+
   # Route API + operational endpoints to FastAPI
   @api path /v1/* /v2/* /docs* /openapi.json /redoc* /health* /ping /debug
   handle @api {

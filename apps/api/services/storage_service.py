@@ -137,6 +137,22 @@ def generate_signed_url(key: str, expires_in: int = 900) -> str:
         raise
 
 
+def to_public_url(internal_signed_url: str) -> str:
+    """
+    Replace the internal MinIO endpoint with the public Caddy proxy path.
+
+    Internal signed URLs point to http://minio:9000 which is only reachable
+    inside the Docker network. The Caddy reverse proxy at /storage/* forwards
+    requests to minio:9000 with the correct Host header so MinIO signature
+    verification passes.
+
+    Only use this for URLs returned to the browser. Internal operations
+    (worker photo fetch, etc.) should use the raw signed URL.
+    """
+    from core.config import settings
+    return internal_signed_url.replace(settings.R2_ENDPOINT_URL, "/storage", 1)
+
+
 def delete_file(key: str) -> None:
     """
     Delete an object from R2.

@@ -32,6 +32,7 @@ from core.auth import get_current_user
 from core.database import get_db
 from core.tier_utils import tier_satisfies
 from models import Athlete, AthletePhoto, RuntoonImage, Activity, FeatureFlag
+from services.storage_service import to_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +218,7 @@ async def upload_photo(
     db.refresh(photo)
 
     # Generate signed URL for response preview
-    signed_url = storage.generate_signed_url(storage_key, expires_in=SIGNED_URL_TTL)
+    signed_url = to_public_url(storage.generate_signed_url(storage_key, expires_in=SIGNED_URL_TTL))
 
     logger.info("Photo uploaded: athlete=%s photo_id=%s type=%s", current_user.id, photo_id, photo_type)
 
@@ -250,7 +251,7 @@ def list_photos(
     result = []
     for p in photos:
         try:
-            signed_url = storage.generate_signed_url(p.storage_key, expires_in=SIGNED_URL_TTL)
+            signed_url = to_public_url(storage.generate_signed_url(p.storage_key, expires_in=SIGNED_URL_TTL))
         except Exception:
             signed_url = ""
         result.append(
@@ -346,7 +347,7 @@ def get_runtoon(
 
     storage = _get_storage()
     try:
-        signed_url = storage.generate_signed_url(runtoon.storage_key, expires_in=SIGNED_URL_TTL)
+        signed_url = to_public_url(storage.generate_signed_url(runtoon.storage_key, expires_in=SIGNED_URL_TTL))
     except Exception as e:
         logger.warning("Could not generate signed URL for runtoon %s: %s", runtoon.id, e)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Image temporarily unavailable.")
@@ -473,7 +474,7 @@ def download_runtoon(
 
     if format == "1:1":
         # Fresh signed URL for the existing 1:1 image
-        signed_url = storage.generate_signed_url(runtoon.storage_key, expires_in=DOWNLOAD_SIGNED_URL_TTL)
+        signed_url = to_public_url(storage.generate_signed_url(runtoon.storage_key, expires_in=DOWNLOAD_SIGNED_URL_TTL))
 
         # Log download event
         logger.info(
@@ -501,7 +502,7 @@ def download_runtoon(
         # Upload 9:16 version to R2 (ephemeral — keyed by hash so idempotent)
         stories_key = f"runtoons/{runtoon.athlete_id}/{runtoon_id}_916.png"
         storage.upload_file(stories_key, stories_bytes, "image/png")
-        signed_url = storage.generate_signed_url(stories_key, expires_in=DOWNLOAD_SIGNED_URL_TTL)
+        signed_url = to_public_url(storage.generate_signed_url(stories_key, expires_in=DOWNLOAD_SIGNED_URL_TTL))
 
         logger.info(
             "ANALYTICS event=runtoon.downloaded athlete=%s runtoon=%s format=9:16",
