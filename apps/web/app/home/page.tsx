@@ -478,6 +478,9 @@ export default function HomePage() {
           {/* 1. Full-bleed hero (last run canvas) */}
           {last_run && <LastRunHero lastRun={last_run} />}
 
+          {/* Training Load — compact PMC (paired visually with LastRunHero) */}
+          <CompactPMC />
+
           {/* 2. The Voice — morning_voice + coach_noticed, or pending placeholder */}
           {(coach_briefing?.morning_voice || coach_briefing?.coach_noticed) ? (
             <div data-testid="morning-voice" className="px-1 py-2 space-y-2">
@@ -672,9 +675,6 @@ export default function HomePage() {
               )}
             </CardContent>
           </Card>
-
-          {/* Training Load — compact PMC */}
-          <CompactPMC />
 
           {/* Race Countdown */}
           {race_countdown && (
