@@ -78,6 +78,7 @@ class RuntoonResponse(BaseModel):
     generation_time_ms: Optional[int]
     cost_usd: Optional[float]
     created_at: datetime
+    caption_text: Optional[str] = None
     has_nine_sixteen: bool = True   # Always available if Runtoon exists
 
     class Config:
@@ -363,6 +364,7 @@ def get_runtoon(
         generation_time_ms=runtoon.generation_time_ms,
         cost_usd=float(runtoon.cost_usd) if runtoon.cost_usd else None,
         created_at=runtoon.created_at,
+        caption_text=runtoon.caption_text,
     )
 
 
@@ -477,7 +479,7 @@ def download_runtoon(
 
     if format == "1:1":
         # Fresh signed URL for the existing 1:1 image
-        signed_url = to_public_url(runtoon.storage_key, expires_in=DOWNLOAD_SIGNED_URL_TTL)
+        signed_url = to_public_url(storage.generate_signed_url(runtoon.storage_key, expires_in=DOWNLOAD_SIGNED_URL_TTL))
 
         # Log download event
         logger.info(
@@ -505,7 +507,7 @@ def download_runtoon(
         # Upload 9:16 version to R2 (ephemeral — keyed by hash so idempotent)
         stories_key = f"runtoons/{runtoon.athlete_id}/{runtoon_id}_916.png"
         storage.upload_file(stories_key, stories_bytes, "image/png")
-        signed_url = to_public_url(stories_key, expires_in=DOWNLOAD_SIGNED_URL_TTL)
+        signed_url = to_public_url(storage.generate_signed_url(stories_key, expires_in=DOWNLOAD_SIGNED_URL_TTL))
 
         logger.info(
             "ANALYTICS event=runtoon.downloaded athlete=%s runtoon=%s format=9:16",
