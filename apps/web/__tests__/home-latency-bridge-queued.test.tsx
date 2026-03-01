@@ -5,6 +5,8 @@ jest.mock('@/components/auth/ProtectedRoute', () => ({
   ProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+jest.mock('@/components/home/CompactPMC', () => ({ CompactPMC: () => null }));
+
 jest.mock('@/lib/hooks/queries/home', () => ({
   useHomeData: () => ({
     isLoading: false,

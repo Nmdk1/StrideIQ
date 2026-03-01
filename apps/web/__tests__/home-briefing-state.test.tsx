@@ -50,6 +50,8 @@ jest.mock('@/components/auth/ProtectedRoute', () => ({
   ProtectedRoute: ({ children }: any) => <>{children}</>,
 }));
 
+jest.mock('@/components/home/CompactPMC', () => ({ CompactPMC: () => null }));
+
 jest.mock('@/components/home/LastRunHero', () => ({
   LastRunHero: () => <div data-testid="last-run-hero" />,
 }));

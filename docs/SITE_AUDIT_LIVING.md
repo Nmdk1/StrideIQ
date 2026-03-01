@@ -6,10 +6,12 @@
 
 ---
 
-## 0. Delta Since Last Audit (Feb 25 -> Feb 28)
+## 0. Delta Since Last Audit (Feb 25 -> Mar 1)
 
 Shipped and now live in product/system behavior:
 
+- **Compact PMC chart added to home page (Mar 1, 2026)**: 30-day Fitness/Fatigue/Form chart now visible on home below This Week, above Race Countdown. Self-contained component `CompactPMC.tsx` fetches from existing `/v1/training-load/history?days=30` endpoint (5-min cache). Renders nothing if no data. Chart body tap navigates to `/training-load`. Legend tooltips explain each metric independently. UTC-safe date formatting.
+- **Chart date labels timezone fix (Mar 1, 2026)**: All Recharts date axes now use UTC methods — chart labels no longer shift one day back for US timezone users.
 - **Monetization v1 completed**: 4-tier pricing UX, checkout flows, settings tier display, plan pace lock/unlock UX, register intent carry-through.
 - **PDF plan export shipped**: entitlement-gated endpoint `GET /v1/plans/{plan_id}/pdf`, WeasyPrint/Jinja backend generation, guarded limits.
 - **Garmin brand/compliance surfaces updated**: official badge/icon usage on settings + activity/home surfaces; attribution wording tightened.
@@ -238,7 +240,7 @@ InsightLog → Adaptation Narrator → Narrated to athlete
 
 | Route | Purpose | Status |
 |-------|---------|--------|
-| `/home` | Morning command center: coach briefing, workout, check-in, race countdown | Working — optimistic check-in fix shipped 2/16 |
+| `/home` | Morning command center: coach briefing, workout, check-in, compact PMC, race countdown | Working — compact PMC added Mar 1 |
 | `/activities` | Activity list with mini charts | Working |
 | `/activities/[id]` | Activity detail: Run Shape Canvas, splits, analysis | Working — needs narrative moments |
 | `/calendar` | Training calendar with plan overlay | Working |

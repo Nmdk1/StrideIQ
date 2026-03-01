@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useHomeData, useQuickCheckin, useInvalidateHome } from '@/lib/hooks/queries/home';
 import { LastRunHero } from '@/components/home/LastRunHero';
+import { CompactPMC } from '@/components/home/CompactPMC';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -671,6 +672,9 @@ export default function HomePage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Training Load — compact PMC */}
+          <CompactPMC />
 
           {/* Race Countdown */}
           {race_countdown && (
