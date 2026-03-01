@@ -78,6 +78,9 @@ GPS watch on wrist.
 THE IMAGE MUST BE FUNNY — visual humor, exaggerated expressions,
 situational comedy that matches the run's emotional truth.
 
+DO NOT USE speech bubbles, thought bubbles, or comic sound effects (no "PUFF", "HOFF", etc.).
+The humor should come from the scene composition, facial expressions, and situational comedy — not from text overlays in the illustration.
+
 IMAGE LAYOUT:
 - Top 65%: Caricature scene with humorous visual element
 - Bottom 35%: Dark banner with stats and witty caption

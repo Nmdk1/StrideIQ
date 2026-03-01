@@ -152,7 +152,7 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
     },
   });
 
-  // Download signed URL fetch
+  // Download: fetch image blob and trigger a real file save
   const handleDownload = async (format: '1:1' | '9:16') => {
     try {
       const res = await fetch(
@@ -161,8 +161,19 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
       );
       if (!res.ok) throw new Error('Download URL unavailable.');
       const data: DownloadResponse = await res.json();
-      // Open in new tab — signed URL expires in 15 min
-      window.open(data.signed_url, '_blank', 'noopener');
+
+      const imgRes = await fetch(data.signed_url);
+      if (!imgRes.ok) throw new Error('Image fetch failed.');
+      const blob = await imgRes.blob();
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `runtoon-${format.replace(':', 'x')}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (e) {
       console.error('Download failed:', e);
     }
