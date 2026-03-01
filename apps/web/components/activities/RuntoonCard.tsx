@@ -75,7 +75,7 @@ export function RuntoonCard({ activityId, hasPhotos = true }: RuntoonCardProps) 
     queryKey: ['runtoon', activityId],
     queryFn: async () => {
       const res = await fetch(
-        `${API_CONFIG.baseUrl}/v1/activities/${activityId}/runtoon`,
+        `${API_CONFIG.baseURL}/v1/activities/${activityId}/runtoon`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) return null;
@@ -115,7 +115,7 @@ export function RuntoonCard({ activityId, hasPhotos = true }: RuntoonCardProps) 
   const regenMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(
-        `${API_CONFIG.baseUrl}/v1/activities/${activityId}/runtoon/generate`,
+        `${API_CONFIG.baseURL}/v1/activities/${activityId}/runtoon/generate`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) {
@@ -138,7 +138,7 @@ export function RuntoonCard({ activityId, hasPhotos = true }: RuntoonCardProps) 
   const handleDownload = async (format: '1:1' | '9:16') => {
     try {
       const res = await fetch(
-        `${API_CONFIG.baseUrl}/v1/runtoon/download/${runtoon!.id}?format=${encodeURIComponent(format)}`,
+        `${API_CONFIG.baseURL}/v1/runtoon/download/${runtoon!.id}?format=${encodeURIComponent(format)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) throw new Error('Download URL unavailable.');

@@ -65,7 +65,7 @@ export function RuntoonPhotoUpload() {
   const { data: photos = [], isLoading } = useQuery<Photo[]>({
     queryKey: ['runtoon-photos'],
     queryFn: async () => {
-      const res = await fetch(`${API_CONFIG.baseUrl}/v1/runtoon/photos`, {
+      const res = await fetch(`${API_CONFIG.baseURL}/v1/runtoon/photos`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.status === 403) return [];  // Feature flag not enabled
@@ -84,7 +84,7 @@ export function RuntoonPhotoUpload() {
       form.append('photo_type', selectedType);
       form.append('consent_given', 'true');
 
-      const res = await fetch(`${API_CONFIG.baseUrl}/v1/runtoon/photos`, {
+      const res = await fetch(`${API_CONFIG.baseURL}/v1/runtoon/photos`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: form,
@@ -109,7 +109,7 @@ export function RuntoonPhotoUpload() {
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (photoId: string) => {
-      const res = await fetch(`${API_CONFIG.baseUrl}/v1/runtoon/photos/${photoId}`, {
+      const res = await fetch(`${API_CONFIG.baseURL}/v1/runtoon/photos/${photoId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
