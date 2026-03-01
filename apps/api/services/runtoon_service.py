@@ -221,11 +221,10 @@ def _generate_caption(activity, insight_narrative: Optional[str], client) -> str
 
     The caption must be genuinely funny — NOT coaching speak.
     """
-    # Option 1: use existing insight narrative (already vetted)
-    if insight_narrative and insight_narrative.strip():
+    # Option 1: use existing insight narrative if it's a real sentence
+    if insight_narrative and len(insight_narrative.strip()) >= 15:
         caption = insight_narrative.strip()
         if len(caption) > 120:
-            # Trim to first sentence if too long
             first_sentence = caption.split(".")[0] + "."
             caption = first_sentence if len(first_sentence) < 120 else caption[:117] + "..."
         if _check_caption_blocklist(caption):

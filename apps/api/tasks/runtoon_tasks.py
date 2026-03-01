@@ -281,7 +281,7 @@ def _run_generation(
     act_snapshot = {
         "id": activity.id,
         "distance_meters": activity.distance_m,
-        "moving_time_s": activity.moving_time_s,
+        "moving_time_s": activity.moving_time_s or activity.duration_s,
         "average_hr": activity.avg_hr,
         "start_time": activity.start_time,
         "workout_type": activity.workout_type,
