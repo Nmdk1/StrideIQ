@@ -7,6 +7,7 @@ import { UnitsProvider } from '@/lib/context/UnitsContext'
 import { CompareProvider } from '@/lib/context/CompareContext'
 import { ConsentProvider } from '@/lib/context/ConsentContext'
 import { ConsentPrompt } from './components/ConsentPrompt'
+import { RuntoonSharePrompt } from '@/components/runtoon/RuntoonSharePrompt'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ImpersonationBanner } from '@/components/admin/ImpersonationBanner'
@@ -83,6 +84,7 @@ export default function RootLayout({
                       <ImpersonationBanner />
                       <ClientShell>
                         <ConsentPrompt />
+                        <RuntoonSharePrompt />
                         <main className="pb-[76px] md:pb-0">{children}</main>
                       </ClientShell>
                     </TooltipProvider>

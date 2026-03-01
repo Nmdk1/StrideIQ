@@ -8,9 +8,12 @@ Endpoints:
         DELETE /v1/runtoon/photos/{id}      — Remove a photo (DB + R2)
 
     Runtoon operations:
-        GET    /v1/activities/{id}/runtoon          — Get Runtoon for activity
-        POST   /v1/activities/{id}/runtoon/generate — Manual regeneration
-        GET    /v1/runtoon/download/{id}            — Signed download URL (1:1 or 9:16)
+        GET    /v1/activities/{id}/runtoon              — Get Runtoon for activity
+        POST   /v1/activities/{id}/runtoon/generate     — On-demand generation (sole trigger)
+        POST   /v1/activities/{id}/runtoon/dismiss      — Dismiss share prompt for activity
+        GET    /v1/runtoon/pending                      — Share-eligible activity check
+        GET    /v1/runtoon/download/{id}                — Signed download URL (1:1 or 9:16)
+        POST   /v1/runtoon/{id}/shared                  — Record share analytics
 
 Privacy invariant: storage keys are NEVER returned in API responses.
 All image access is via signed URLs with 15-minute TTL.
@@ -474,7 +477,7 @@ def download_runtoon(
 
     if format == "1:1":
         # Fresh signed URL for the existing 1:1 image
-        signed_url = to_public_url(storage.generate_signed_url(runtoon.storage_key, expires_in=DOWNLOAD_SIGNED_URL_TTL))
+        signed_url = to_public_url(runtoon.storage_key, expires_in=DOWNLOAD_SIGNED_URL_TTL)
 
         # Log download event
         logger.info(
@@ -502,7 +505,7 @@ def download_runtoon(
         # Upload 9:16 version to R2 (ephemeral — keyed by hash so idempotent)
         stories_key = f"runtoons/{runtoon.athlete_id}/{runtoon_id}_916.png"
         storage.upload_file(stories_key, stories_bytes, "image/png")
-        signed_url = to_public_url(storage.generate_signed_url(stories_key, expires_in=DOWNLOAD_SIGNED_URL_TTL))
+        signed_url = to_public_url(stories_key, expires_in=DOWNLOAD_SIGNED_URL_TTL)
 
         logger.info(
             "ANALYTICS event=runtoon.downloaded athlete=%s runtoon=%s format=9:16",
@@ -517,3 +520,234 @@ def download_runtoon(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="9:16 format temporarily unavailable. Use 1:1 instead.",
         )
+
+
+# ---------------------------------------------------------------------------
+# Share flow endpoints
+# ---------------------------------------------------------------------------
+
+# Distance threshold for the bottom-sheet auto-prompt (2 miles in meters)
+SHARE_PROMPT_MIN_DISTANCE_M = 3218.0   # 2.0 miles
+SHARE_ELIGIBLE_WINDOW_HOURS = 24
+PHOTO_REQUIRED_FOR_PROMPT = 3
+
+
+class ActivitySummary(BaseModel):
+    name: Optional[str]
+    distance_mi: float
+    pace: str
+    duration: str
+
+
+class PendingRuntoonResponse(BaseModel):
+    activity_id: UUID
+    activity_summary: ActivitySummary
+    has_runtoon: bool
+
+
+@router.get(
+    "/pending",
+    response_model=Optional[PendingRuntoonResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_pending(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return the most recent share-eligible activity.
+
+    Returns 204 if no eligible activity. Eligibility rules (all must be true):
+    - Synced within the last 24 hours
+    - Running type (not cycling, swimming, etc.)
+    - Distance >= 2 miles (3,218m) — shorter runs aren't auto-prompted
+    - share_dismissed_at is null on the Activity
+    - Athlete has 3+ active photos and feature flag enabled
+    - No RuntoonImage with shared_at set for this activity already
+
+    The `has_runtoon` field tells the frontend:
+    - false → tapping "Share Your Run" must trigger generation first
+    - true  → a Runtoon already exists; skip generation, go to share view
+    """
+    _require_feature_flag(db, current_user.id)
+
+    # Must have enough photos to generate
+    photo_count = (
+        db.query(sa_func.count(AthletePhoto.id))
+        .filter(
+            AthletePhoto.athlete_id == current_user.id,
+            AthletePhoto.is_active == True,
+        )
+        .scalar()
+    ) or 0
+    if photo_count < PHOTO_REQUIRED_FOR_PROMPT:
+        return None  # FastAPI returns 204 for None with status_code=200
+
+    from datetime import timedelta
+    from sqlalchemy import desc as sa_desc, and_, or_
+
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=SHARE_ELIGIBLE_WINDOW_HOURS)
+
+    # Running type keywords — same set used in other eligibility checks
+    running_keywords = ("run", "trail", "track", "road", "treadmill", "race")
+
+    # Activities synced in the last 24h, >= 2 miles, running type, not dismissed
+    candidate = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == current_user.id,
+            Activity.start_time >= cutoff,
+            Activity.distance_meters >= SHARE_PROMPT_MIN_DISTANCE_M,
+            Activity.share_dismissed_at.is_(None),
+            # Require a running workout_type (or null type — be permissive for
+            # activities that haven't been classified yet)
+            or_(
+                Activity.workout_type.is_(None),
+                *[Activity.workout_type.ilike(f"%{kw}%") for kw in running_keywords],
+            ),
+        )
+        .order_by(sa_desc(Activity.start_time))
+        .first()
+    )
+
+    if not candidate:
+        return None
+
+    # Exclude if already shared (any RuntoonImage with shared_at set)
+    already_shared = (
+        db.query(RuntoonImage)
+        .filter(
+            RuntoonImage.activity_id == candidate.id,
+            RuntoonImage.athlete_id == current_user.id,
+            RuntoonImage.shared_at.isnot(None),
+        )
+        .first()
+    )
+    if already_shared:
+        return None
+
+    # Does a Runtoon already exist for this activity?
+    existing_runtoon = (
+        db.query(RuntoonImage)
+        .filter(
+            RuntoonImage.activity_id == candidate.id,
+            RuntoonImage.athlete_id == current_user.id,
+            RuntoonImage.is_visible == True,
+        )
+        .order_by(sa_desc(RuntoonImage.attempt_number))
+        .first()
+    )
+    has_runtoon = existing_runtoon is not None
+
+    # Format activity summary
+    miles = (candidate.distance_meters / 1609.344) if candidate.distance_meters else 0.0
+    duration_str = ""
+    if candidate.moving_time_s:
+        h = int(candidate.moving_time_s // 3600)
+        m = int((candidate.moving_time_s % 3600) // 60)
+        s = int(candidate.moving_time_s % 60)
+        duration_str = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+    pace_str = ""
+    if candidate.distance_meters and candidate.moving_time_s:
+        pace_spm = candidate.moving_time_s / (candidate.distance_meters / 1609.344)
+        pace_min = int(pace_spm // 60)
+        pace_sec = int(pace_spm % 60)
+        pace_str = f"{pace_min}:{pace_sec:02d}/mi"
+
+    return PendingRuntoonResponse(
+        activity_id=candidate.id,
+        activity_summary=ActivitySummary(
+            name=getattr(candidate, "name", None),
+            distance_mi=round(miles, 1),
+            pace=pace_str,
+            duration=duration_str,
+        ),
+        has_runtoon=has_runtoon,
+    )
+
+
+@activity_router.post(
+    "/{activity_id}/runtoon/dismiss",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def dismiss_runtoon_prompt(
+    activity_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Dismiss the "Share Your Run" prompt for a specific activity.
+
+    Sets Activity.share_dismissed_at = now(). The /pending endpoint will
+    exclude this activity in all future checks.
+
+    This is keyed by activity_id (not runtoon_id) because the dismiss happens
+    before any image exists — the athlete is saying "I don't want to share
+    this run," not "I don't want this particular image."
+
+    Idempotent — calling it multiple times is safe (sets the timestamp only
+    if not already set, preserving the original dismiss time).
+    """
+    _require_feature_flag(db, current_user.id)
+
+    activity = db.get(Activity, activity_id)
+    if not activity or str(activity.athlete_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Activity not found.")
+
+    if activity.share_dismissed_at is None:
+        activity.share_dismissed_at = datetime.now(tz=timezone.utc)
+        db.commit()
+        logger.info(
+            "ANALYTICS event=runtoon.dismissed athlete=%s activity=%s",
+            current_user.id, activity_id,
+        )
+
+
+class SharedRequest(BaseModel):
+    share_format: str = "1:1"              # "1:1" or "9:16"
+    share_target: Optional[str] = None    # best-effort only; nullable
+
+
+@router.post("/{runtoon_id}/shared", status_code=status.HTTP_204_NO_CONTENT)
+def record_shared(
+    runtoon_id: UUID,
+    payload: SharedRequest,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Record that a Runtoon was shared (analytics endpoint).
+
+    Sets shared_at (first share only), share_format, and share_target.
+
+    share_target is best-effort telemetry — the Web Share API does NOT
+    reliably report which app the user picked. It is nullable and defaults
+    to "unknown". No logic should depend on this value.
+
+    Idempotent — subsequent calls update share_format/share_target but do
+    not overwrite shared_at (first-share timestamp is preserved).
+    """
+    _require_feature_flag(db, current_user.id)
+
+    runtoon = db.get(RuntoonImage, runtoon_id)
+    if not runtoon or str(runtoon.athlete_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtoon not found.")
+
+    if payload.share_format not in ("1:1", "9:16"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="share_format must be '1:1' or '9:16'",
+        )
+
+    # Preserve first-share timestamp; always update format + target
+    if runtoon.shared_at is None:
+        runtoon.shared_at = datetime.now(tz=timezone.utc)
+    runtoon.share_format = payload.share_format
+    runtoon.share_target = payload.share_target or "unknown"
+    db.commit()
+
+    logger.info(
+        "ANALYTICS event=runtoon.shared athlete=%s runtoon=%s format=%s target=%s",
+        current_user.id, runtoon_id, runtoon.share_format, runtoon.share_target,
+    )

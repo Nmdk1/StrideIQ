@@ -1084,16 +1084,8 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
                 refresh_exc,
             )
 
-        # Queue Runtoon generation for the most recent activity
-        try:
-            from tasks.runtoon_tasks import generate_runtoon_for_latest
-            generate_runtoon_for_latest.delay(str(athlete_id))
-        except Exception as e:
-            logger.warning(
-                "Post-sync Runtoon generation trigger failed for athlete %s: %s",
-                athlete_id,
-                e,
-            )
+        # Runtoon generation is on-demand only (athlete taps "Share Your Run").
+        # Auto-generation removed per RUNTOON_SHARE_FLOW_SPEC.md — Mar 2026.
 
         return {
             "status": "success",

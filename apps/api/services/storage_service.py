@@ -153,6 +153,21 @@ def to_public_url(internal_signed_url: str) -> str:
     return internal_signed_url.replace(settings.R2_ENDPOINT_URL, "/storage", 1)
 
 
+def to_public_url(key: str, expires_in: int = 900) -> str:
+    """
+    Canonical wrapper for all browser-facing signed URLs.
+
+    All R2 object access uses this function — never construct bucket URLs
+    directly or return raw storage keys to clients. This wrapper exists
+    so every browser-facing URL passes through one place: easy to audit,
+    easy to swap the TTL or signing strategy globally.
+
+    Delegates to generate_signed_url. Kept as a named wrapper so callers
+    signal intent: "this URL is going to a browser, not internal use."
+    """
+    return generate_signed_url(key, expires_in=expires_in)
+
+
 def delete_file(key: str) -> None:
     """
     Delete an object from R2.

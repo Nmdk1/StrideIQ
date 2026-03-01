@@ -2,7 +2,7 @@
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
 **Last updated:** March 1, 2026
-**Last updated by:** Advisor session — Runtoon MVP deployed with MinIO object storage, feature-flagged founder-only
+**Last updated by:** Builder session — Runtoon Share Flow deployed; Runtoon is now on-demand, not auto-generated
 
 ---
 
@@ -10,6 +10,7 @@
 
 Shipped and now live in product/system behavior:
 
+- **Runtoon Share Flow live (Mar 1, 2026)**: Major UX pivot — Runtoon is now generated on-demand when the athlete taps "Share Your Run," not automatically on sync. Backend: `runtoon_002` migration (`share_dismissed_at` on `Activity`, `shared_at`/`share_format`/`share_target` on `RuntoonImage`). 3 new endpoints: `GET /v1/runtoon/pending` (share-eligible activity check, 8 eligibility rules, 2-mile threshold, 24h window), `POST /v1/activities/{id}/runtoon/dismiss` (idempotent, keyed by activity), `POST /v1/runtoon/{id}/shared` (analytics, `share_target` best-effort). Auto-generation removed from Garmin/Strava sync pipelines. Frontend: new `RuntoonSharePrompt` (mobile bottom sheet, polls `/pending` every 10s, auto-dismisses after 10min), new `RuntoonShareView` (full-screen overlay, generation skeleton, Web Share API with native share sheet on iOS/Android, desktop download+copy fallback). `RuntoonCard` updated: download dropdown replaced with "Share Your Run" button → opens `RuntoonShareView`. All new endpoints gated behind feature flag. 39 new tests (81 total for Runtoon system).
 - **Runtoon MVP live (Mar 1, 2026)**: Full-stack AI-generated personalized run caricature — deployed and verified. Backend: `AthletePhoto` + `RuntoonImage` models, `runtoon_001` Alembic migration, `storage_service.py` (boto3 → MinIO), `runtoon_service.py` (Gemini `gemini-3.1-flash-image-preview`), `runtoon_tasks.py` (Celery async), `runtoon.py` router. Frontend: `RuntoonCard` on activity detail, `RuntoonPhotoUpload` in settings, home teaser + "Your body. Your data. Your voice." brand subline. Feature-flagged (`runtoon.enabled`) — founder-only rollout. Object storage: MinIO (self-hosted S3-compatible, `strideiq_minio` container, private bucket `strideiq-runtoon`).
 - **Compact PMC chart added to home page (Mar 1, 2026)**: 30-day Fitness/Fatigue/Form chart now visible on home in position 2 (directly below LastRunHero, above Morning Voice). Self-contained component `CompactPMC.tsx` fetches from existing `/v1/training-load/history?days=30` endpoint (5-min cache). Renders nothing if no data. "View training load →" CTA + chart body click navigates to `/training-load`. Legend tooltips explain each metric independently. UTC-safe date formatting.
 - **Chart date labels timezone fix (Mar 1, 2026)**: All Recharts date axes now use UTC methods — chart labels no longer shift one day back for US timezone users.

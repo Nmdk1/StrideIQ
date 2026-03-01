@@ -506,6 +506,11 @@ class Activity(Base):
     max_speed = Column(Float, nullable=True)
     active_kcal = Column(Integer, nullable=True)
 
+    # --- RUNTOON SHARE FLOW ---
+    # Dismiss is per-activity (not per-image) because it happens before generation.
+    # "I don't want to share this run" — set by POST /v1/activities/{id}/runtoon/dismiss.
+    share_dismissed_at = Column(DateTime(timezone=True), nullable=True)
+
     # --- THE ARMOR: Unique Constraint prevents duplicates at the DB level ---
     __table_args__ = (
         UniqueConstraint('provider', 'external_activity_id', name='uq_activity_provider_external_id'),
@@ -2556,6 +2561,14 @@ class RuntoonImage(Base):
     # Stored at generation time — required for 9:16 Pillow recompose
     caption_text = Column(Text, nullable=True)           # AI-generated caption baked into image
     stats_text = Column(Text, nullable=True)             # Formatted stats line (e.g., "13.0 mi • 7:28/mi • 1:37:00")
+
+    # --- Share tracking (set by POST /v1/runtoon/{id}/shared) ---
+    # share_target is best-effort telemetry only — Web Share API does not
+    # reliably report the selected app. Nullable, defaults to "unknown".
+    # No logic should depend on this value.
+    shared_at = Column(DateTime(timezone=True), nullable=True)
+    share_format = Column(Text, nullable=True)            # "1:1" or "9:16"
+    share_target = Column(Text, nullable=True)            # best-effort only; "unknown" if not reported
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

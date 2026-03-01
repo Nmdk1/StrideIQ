@@ -552,16 +552,8 @@ def process_garmin_activity_task(
                     refresh_exc,
                 )
 
-        if created > 0:
-            try:
-                from tasks.runtoon_tasks import generate_runtoon_for_latest
-                generate_runtoon_for_latest.delay(str(athlete_id))
-            except Exception as e:
-                logger.warning(
-                    "Garmin Runtoon generation trigger failed for athlete %s: %s",
-                    athlete_id,
-                    e,
-                )
+        # Runtoon generation is on-demand only (athlete taps "Share Your Run").
+        # Auto-generation removed per RUNTOON_SHARE_FLOW_SPEC.md — Mar 2026.
 
         logger.info(
             "process_garmin_activity_task: athlete=%s created=%d updated=%d skipped=%d",
