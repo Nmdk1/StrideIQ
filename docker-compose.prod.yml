@@ -42,6 +42,26 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: minio/minio:latest
+    container_name: strideiq_minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-strideiq-minio-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    expose:
+      - "9000"   # S3 API (internal only — boto3 via Docker network)
+      - "9001"   # Admin console (internal only — never exposed via Caddy)
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   api:
     build:
       context: ./apps/api
@@ -58,6 +78,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     volumes:
       - ./.uploads:/uploads
@@ -87,6 +109,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     volumes:
       - ./.uploads:/uploads
@@ -120,4 +144,6 @@ volumes:
     name: strideiq_caddy_data
   caddy_config:
     name: strideiq_caddy_config
+  minio_data:
+    name: strideiq_minio_data
 
