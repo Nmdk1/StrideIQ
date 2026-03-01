@@ -574,50 +574,19 @@ def recompose_stories(
     new_h = int(source.height * scale)
     source = source.resize((CANVAS_W, new_h), Image.LANCZOS)
 
-    # Create canvas
+    # Create canvas and center the 1:1 image vertically.
+    # The 1:1 image already contains stats + caption baked in by the
+    # generative model, so we only add the watermark below.
     canvas = Image.new("RGBA", (CANVAS_W, CANVAS_H), BG_COLOR + (255,))
-    canvas.paste(source, (0, 0), source)
+    y_offset = (CANVAS_H - new_h) // 2
+    canvas.paste(source, (0, y_offset), source)
 
     draw = ImageDraw.Draw(canvas)
 
-    # --- Extended banner area (below the 1:1 image) ---
-    banner_top = new_h + 20
-
-    # Try to load a font; fall back to default if unavailable
     try:
-        font_stats = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
-        font_caption = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 30)
         font_watermark = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
     except (IOError, OSError):
-        font_stats = ImageFont.load_default()
-        font_caption = font_stats
-        font_watermark = font_stats
-
-    # Stats line
-    if stats_text:
-        draw.text((CANVAS_W // 2, banner_top + 30), stats_text, fill=TEXT_COLOR, font=font_stats, anchor="mm")
-
-    # Caption (word-wrap at ~50 chars)
-    if caption_text:
-        words = caption_text.split()
-        lines, current = [], []
-        for word in words:
-            if len(" ".join(current + [word])) <= 50:
-                current.append(word)
-            else:
-                if current:
-                    lines.append(" ".join(current))
-                current = [word]
-        if current:
-            lines.append(" ".join(current))
-
-        caption_y = banner_top + 90
-        for line in lines[:3]:  # max 3 lines
-            draw.text((CANVAS_W // 2, caption_y), line, fill=TEXT_COLOR, font=font_caption, anchor="mm")
-            caption_y += 44
-
-    # Divider
-    draw.line([(80, banner_top + 10), (CANVAS_W - 80, banner_top + 10)], fill=ACCENT_COLOR, width=2)
+        font_watermark = ImageFont.load_default()
 
     # Watermark at bottom
     draw.text(
