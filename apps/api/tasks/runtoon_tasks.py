@@ -280,9 +280,9 @@ def _run_generation(
     # Snapshot activity fields (avoids lazy loads after session close)
     act_snapshot = {
         "id": activity.id,
-        "distance_meters": activity.distance_meters,
+        "distance_meters": activity.distance_m,
         "moving_time_s": activity.moving_time_s,
-        "average_hr": activity.average_hr,
+        "average_hr": activity.avg_hr,
         "start_time": activity.start_time,
         "workout_type": activity.workout_type,
         "name": getattr(activity, 'name', None),
