@@ -180,10 +180,42 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
   }
 
   // ------------------------------------------------------------------
-  // Render: generating (null + not timed out)
+  // Render: no Runtoon yet — show "Share Your Run" CTA (on-demand)
   // ------------------------------------------------------------------
   if (!runtoon && !isLoading) {
-    return null; // Not started yet — don't show anything before first poll
+    return (
+      <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/40">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-orange-400" />
+            <span className="text-sm font-semibold text-slate-200">Your Runtoon</span>
+          </div>
+        </div>
+        <div className="p-5 text-center">
+          <p className="text-sm text-slate-400 mb-3">
+            Get a personalized AI caricature of this run
+          </p>
+          <button
+            type="button"
+            onClick={() => setShareViewOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500 hover:bg-orange-400 rounded-lg text-sm font-semibold text-white transition-colors active:scale-95"
+          >
+            <Share2 className="w-4 h-4" />
+            Share Your Run
+          </button>
+        </div>
+        {shareViewOpen && (
+          <RuntoonShareView
+            activityId={activityId}
+            hasExistingRuntoon={false}
+            onClose={() => {
+              setShareViewOpen(false);
+              queryClient.invalidateQueries({ queryKey: ['runtoon', activityId] });
+            }}
+          />
+        )}
+      </div>
+    );
   }
 
   if (!runtoon && isLoading) {
