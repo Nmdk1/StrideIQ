@@ -12,11 +12,11 @@
  *   3. Coachable Moments (gated: confidence >= 0.8 AND moments.length > 0)
  *   4. Reflection Prompt (3-tap: harder | expected | easier)
  *   5. Metrics Ribbon (compact horizontal strip)
- *   6. Plan Comparison (conditional — from stream analysis)
- *   7. "Why This Run?" (existing component)
- *   8. "Compare to Similar" (existing link)
- *   9. Splits Table (secondary position)
- *  10. Context Analysis (existing component)
+ *   6. Runtoon (always visible — CTA for photo upload if not set up)
+ *   --- "Show details" collapsible below ---
+ *   7. Plan Comparison (conditional — from stream analysis)
+ *   8. "Why This Run?" + Context Analysis
+ *   9. "Compare to Similar" (existing link)
  */
 
 import React, { useState } from 'react';
@@ -326,6 +326,11 @@ export default function ActivityDetailPage() {
           {/* Garmin attribution is shown above the fold in the header — not repeated here */}
         </div>
 
+        {/* ── 6. Runtoon (always visible — CTA drives discovery for new users) ── */}
+        <div className="mb-6">
+          <RuntoonCard activityId={activityId} />
+        </div>
+
         {/* ── A6: Collapsible details (Plan Comparison through Narrative Context) ── */}
         <div className="mb-6">
           <button
@@ -347,7 +352,7 @@ export default function ActivityDetailPage() {
 
         {showDetails && (
           <>
-            {/* ── 6. Plan Comparison (conditional — from stream analysis) ── */}
+            {/* ── 7. Plan Comparison (conditional — from stream analysis) ── */}
             {analysisData?.plan_comparison && (
               <div className="mb-6 rounded-lg bg-slate-800/30 border border-slate-700/30 p-4">
                 <h3 className="text-sm font-medium text-slate-400 mb-3">Plan vs Actual</h3>
@@ -401,11 +406,6 @@ export default function ActivityDetailPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </Link>
-            </div>
-
-            {/* ── 10. Runtoon (AI-generated run caricature) ── */}
-            <div className="mb-6">
-              <RuntoonCard activityId={activityId} />
             </div>
 
             {/* ── Narrative Context (secondary — canvas is now the hero) ── */}
