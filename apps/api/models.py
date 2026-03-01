@@ -140,6 +140,8 @@ class Athlete(Base):
     # lazy="dynamic" prevents auto-loading (returns query, no perf impact).
     activities = relationship("Activity", back_populates="athlete", lazy="dynamic")
     garmin_days = relationship("GarminDay", back_populates="athlete", lazy="dynamic")
+    athlete_photos = relationship("AthletePhoto", back_populates="athlete", lazy="dynamic")
+    runtoon_images = relationship("RuntoonImage", back_populates="athlete", lazy="dynamic")
 
 
 class InviteAllowlist(Base):
@@ -2481,4 +2483,88 @@ class GarminDay(Base):
         UniqueConstraint("athlete_id", "calendar_date", name="uq_garmin_day_athlete_date"),
         Index("ix_garmin_day_athlete_id", "athlete_id"),
         Index("ix_garmin_day_calendar_date", "calendar_date"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Runtoon MVP Models
+# ---------------------------------------------------------------------------
+
+class AthletePhoto(Base):
+    """
+    Reference photos uploaded by the athlete for Runtoon generation.
+
+    Privacy invariant: storage_key is an R2 object key, NEVER a public URL.
+    All access is via signed URLs generated server-side (15-min TTL).
+
+    Consent is required before any photo is accepted. consent_at records
+    when the athlete agreed; consent_version records which policy they agreed to.
+    """
+    __tablename__ = "athlete_photo"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id", ondelete="CASCADE"), nullable=False, index=True)
+    storage_key = Column(Text, nullable=False)          # R2 object key — never a public URL
+    photo_type = Column(Text, nullable=False)            # "face" | "running" | "full_body" | "additional"
+    mime_type = Column(Text, nullable=False)             # "image/jpeg" | "image/png" | "image/webp"
+    size_bytes = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    # Consent tracking (required for biometric-adjacent data)
+    consent_at = Column(DateTime(timezone=True), nullable=False)
+    consent_version = Column(Text, nullable=False, default="1.0")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    athlete = relationship("Athlete", back_populates="athlete_photos")
+
+    __table_args__ = (
+        Index("ix_athlete_photo_athlete_id", "athlete_id"),
+    )
+
+
+class RuntoonImage(Base):
+    """
+    AI-generated personalized caricature image for a run.
+
+    Idempotency: UniqueConstraint on (activity_id, attempt_number) prevents
+    duplicate auto-generation from concurrent Strava + Garmin sync hooks.
+    attempt_number=1 is auto-generated; 2-3 are manual regenerations.
+
+    Privacy invariant: storage_key is an R2 object key, NEVER a public URL.
+    All access is via signed URLs generated server-side (15-min TTL).
+
+    caption_text and stats_text are stored at generation time so the 9:16
+    Pillow recompose can re-render them in the extended canvas without a
+    second API call.
+    """
+    __tablename__ = "runtoon_image"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id", ondelete="CASCADE"), nullable=False, index=True)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    storage_key = Column(Text, nullable=False)          # R2 object key — never a public URL
+    prompt_hash = Column(Text, nullable=True)            # SHA256 of assembled prompt (for debugging)
+    generation_time_ms = Column(Integer, nullable=True)
+    cost_usd = Column(Numeric(6, 4), nullable=True)      # e.g., 0.0670
+    model_version = Column(Text, nullable=False, default="gemini-3.1-flash-image-preview")
+    attempt_number = Column(Integer, nullable=False, default=1)  # 1=auto, 2-3=regeneration
+    is_visible = Column(Boolean, default=True, nullable=False)
+
+    # Stored at generation time — required for 9:16 Pillow recompose
+    caption_text = Column(Text, nullable=True)           # AI-generated caption baked into image
+    stats_text = Column(Text, nullable=True)             # Formatted stats line (e.g., "13.0 mi • 7:28/mi • 1:37:00")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    athlete = relationship("Athlete", back_populates="runtoon_images")
+    activity = relationship("Activity")
+
+    __table_args__ = (
+        UniqueConstraint("activity_id", "attempt_number", name="uq_runtoon_activity_attempt"),
+        Index("ix_runtoon_image_athlete_id", "athlete_id"),
+        Index("ix_runtoon_image_activity_id", "activity_id"),
     )

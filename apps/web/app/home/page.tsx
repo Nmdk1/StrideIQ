@@ -689,6 +689,34 @@ export default function HomePage() {
             />
           )}
 
+          {/* Runtoon teaser — shown only if athlete has a last run */}
+          {last_run && (
+            <div className="rounded-lg border border-slate-700/40 bg-slate-800/20 p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl flex-shrink-0" aria-hidden="true">🎨</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-200 leading-snug">
+                    Your Runtoon is on your last run
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                    AI-generated caricature from your actual run data.
+                  </p>
+                  <Link
+                    href={`/activities/${last_run.activity_id}`}
+                    className="inline-block mt-2 text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors"
+                  >
+                    See it →
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Brand subline */}
+          <p className="text-center text-xs text-slate-600 py-2">
+            Your body. Your data. Your voice.
+          </p>
+
         </div>
       </div>
     </ProtectedRoute>

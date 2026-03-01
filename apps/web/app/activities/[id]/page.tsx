@@ -35,6 +35,7 @@ import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector
 import { WhyThisRun } from '@/components/activities/WhyThisRun';
 import { PerceptionPrompt } from '@/components/activities/PerceptionPrompt';
 import { GarminBadge } from '@/components/integrations/GarminBadge';
+import { RuntoonCard } from '@/components/activities/RuntoonCard';
 
 interface Activity {
   id: string;
@@ -400,6 +401,11 @@ export default function ActivityDetailPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </Link>
+            </div>
+
+            {/* ── 10. Runtoon (AI-generated run caricature) ── */}
+            <div className="mb-6">
+              <RuntoonCard activityId={activityId} />
             </div>
 
             {/* ── Narrative Context (secondary — canvas is now the hero) ── */}

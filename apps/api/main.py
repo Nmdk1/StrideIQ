@@ -419,6 +419,14 @@ app.include_router(daily_intelligence.router)
 app.include_router(consent.router)
 app.include_router(provider_imports.router)
 
+# Runtoon — AI-generated personalized run images (feature-flagged)
+try:
+    from routers import runtoon as runtoon_router
+    app.include_router(runtoon_router.router)
+    app.include_router(runtoon_router.activity_router)
+except ImportError as e:
+    logger.warning(f"Could not include Runtoon router: {e}")
+
 # GDPR endpoints
 try:
     from routers import gdpr

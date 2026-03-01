@@ -195,6 +195,14 @@ class Settings(BaseSettings):
     # New checkouts do NOT use this; existing subscribers still reconcile against it.
     STRIPE_PRICE_PRO_MONTHLY_ID: Optional[str] = Field(default=None)
     
+    # Cloudflare R2 Object Storage (Runtoon photos + generated images)
+    # All buckets are private. All access is via signed URLs (15-min TTL).
+    R2_ACCOUNT_ID: Optional[str] = Field(default=None)
+    R2_ACCESS_KEY_ID: Optional[str] = Field(default=None)
+    R2_SECRET_ACCESS_KEY: Optional[str] = Field(default=None)
+    R2_BUCKET_NAME: str = Field(default="strideiq-runtoon")
+    R2_ENDPOINT_URL: Optional[str] = Field(default=None)  # https://<account_id>.r2.cloudflarestorage.com
+
     # Sentry Error Tracking
     SENTRY_DSN: Optional[str] = Field(default=None)
     SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.1)  # 10% of transactions

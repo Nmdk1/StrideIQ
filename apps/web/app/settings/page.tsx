@@ -19,7 +19,8 @@ import { API_CONFIG } from '@/lib/api/config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight, BrainCircuit, ChevronUp } from 'lucide-react';
+import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight, BrainCircuit, ChevronUp, Sparkles } from 'lucide-react';
+import { RuntoonPhotoUpload } from '@/components/settings/RuntoonPhotoUpload';
 import { authService } from '@/lib/api/services/auth';
 import { useConsent } from '@/lib/context/ConsentContext';
 
@@ -628,6 +629,18 @@ function SettingsPageContent() {
                       </>
                     )}
                   </Button>
+                </div>
+
+                {/* Runtoon Photos */}
+                <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-4 h-4 text-orange-400" />
+                    <p className="font-medium text-slate-200">Runtoon Photos</p>
+                  </div>
+                  <p className="text-sm text-slate-400 mb-4">
+                    Upload 3+ reference photos so StrideIQ can generate a personalized caricature after each run.
+                  </p>
+                  <RuntoonPhotoUpload />
                 </div>
 
                 {/* Delete Account */}

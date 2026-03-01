@@ -2,7 +2,7 @@
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
 **Last updated:** March 1, 2026
-**Last updated by:** Advisor session — compact PMC shipped + chart timezone fix + email hardening
+**Last updated by:** Builder session — Runtoon MVP built (pending deploy + R2 credentials)
 
 ---
 
@@ -10,6 +10,7 @@
 
 Shipped and now live in product/system behavior:
 
+- **Runtoon MVP built (Mar 1, 2026, pending deploy)**: Full-stack AI-generated personalized run caricature. Backend: `AthletePhoto` + `RuntoonImage` models, `runtoon_001` Alembic migration, `storage_service.py` (R2/boto3), `runtoon_service.py` (Gemini `gemini-3.1-flash-image-preview`), `runtoon_tasks.py` (Celery async), `runtoon.py` router. Frontend: `RuntoonCard` on activity detail, `RuntoonPhotoUpload` in settings, home teaser + "Your body. Your data. Your voice." brand subline. Feature-flagged (`runtoon.enabled`). Deploy gated on R2 bucket + credentials from founder.
 - **Compact PMC chart added to home page (Mar 1, 2026)**: 30-day Fitness/Fatigue/Form chart now visible on home in position 2 (directly below LastRunHero, above Morning Voice). Self-contained component `CompactPMC.tsx` fetches from existing `/v1/training-load/history?days=30` endpoint (5-min cache). Renders nothing if no data. "View training load →" CTA + chart body click navigates to `/training-load`. Legend tooltips explain each metric independently. UTC-safe date formatting.
 - **Chart date labels timezone fix (Mar 1, 2026)**: All Recharts date axes now use UTC methods — chart labels no longer shift one day back for US timezone users.
 - **Monetization v1 completed**: 4-tier pricing UX, checkout flows, settings tier display, plan pace lock/unlock UX, register intent carry-through.
