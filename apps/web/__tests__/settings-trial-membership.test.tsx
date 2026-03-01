@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import SettingsPage from '@/app/settings/page';
 
@@ -15,9 +16,24 @@ jest.mock('@/components/integrations/GarminConnection', () => ({
   GarminConnection: () => <div>GarminConnection</div>,
 }));
 
+jest.mock('@/components/settings/RuntoonPhotoUpload', () => ({
+  RuntoonPhotoUpload: () => <div>RuntoonPhotoUpload</div>,
+}));
+
 jest.mock('@/lib/context/UnitsContext', () => ({
   useUnits: () => ({ units: 'imperial', setUnits: jest.fn() }),
 }));
+
+function createTestQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = createTestQueryClient();
+  return render(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+  );
+}
 
 const useAuthMock = jest.fn();
 jest.mock('@/lib/hooks/useAuth', () => ({
@@ -49,7 +65,7 @@ describe('Settings membership trial UI', () => {
       },
     });
 
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
 
     expect(screen.getByText('Start 7-day trial')).toBeInTheDocument();
     // Upgrade panel toggle button (replaces the old single "Upgrade to Pro" button).
@@ -68,7 +84,7 @@ describe('Settings membership trial UI', () => {
       },
     });
 
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
 
     // Trial end date copy is visible.
     expect(screen.getByText(/Trial ends/i)).toBeInTheDocument();

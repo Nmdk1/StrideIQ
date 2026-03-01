@@ -10,6 +10,7 @@
 
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // ── Module-level mocks ───────────────────────────────────────────────────────
 // All jest.mock() calls must be at the top level. We use a configurable
@@ -155,6 +156,9 @@ jest.mock('@/components/integrations/StravaConnection', () => ({
 jest.mock('@/lib/context/UnitsContext', () => ({
   useUnits: () => ({ units: 'imperial', setUnits: jest.fn() }),
 }));
+jest.mock('@/components/settings/RuntoonPhotoUpload', () => ({
+  RuntoonPhotoUpload: () => <div>RuntoonPhotoUpload</div>,
+}));
 jest.mock('@/lib/context/ConsentContext', () => ({
   useConsent: () => ({
     aiConsent: false,
@@ -184,6 +188,13 @@ jest.mock('@/lib/api/services/auth', () => ({
 
 import SettingsPage from '@/app/settings/page';
 
+function renderSettingsPage() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}><SettingsPage /></QueryClientProvider>
+  );
+}
+
 describe('Settings page — Garmin component presence', () => {
   beforeEach(() => {
     mockUseGarminStatus.mockReset();
@@ -198,7 +209,7 @@ describe('Settings page — Garmin component presence', () => {
       refetch: jest.fn(),
     });
 
-    render(<SettingsPage />);
+    renderSettingsPage();
 
     // Strava always present
     expect(screen.getByTestId('strava-connection')).toBeInTheDocument();
@@ -213,7 +224,7 @@ describe('Settings page — Garmin component presence', () => {
       refetch: jest.fn(),
     });
 
-    render(<SettingsPage />);
+    renderSettingsPage();
 
     // Strava always present
     expect(screen.getByTestId('strava-connection')).toBeInTheDocument();
