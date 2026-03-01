@@ -1,6 +1,6 @@
 # Runtoon — Phase 0 Feasibility Proposal
 
-**Status:** PROPOSED (March 1, 2026)
+**Status:** GO (March 1, 2026) — 6/6 rubric thresholds passed. Builder note issued.
 **Author:** Advisor (Opus 4.6)
 **Decision Required From:** Founder + Codex
 
