@@ -597,7 +597,7 @@ def get_pending(
         .filter(
             Activity.athlete_id == current_user.id,
             Activity.start_time >= cutoff,
-            Activity.distance_meters >= SHARE_PROMPT_MIN_DISTANCE_M,
+            Activity.distance_m >= SHARE_PROMPT_MIN_DISTANCE_M,
             Activity.share_dismissed_at.is_(None),
             # Require a running workout_type (or null type — be permissive for
             # activities that haven't been classified yet)
@@ -640,7 +640,7 @@ def get_pending(
     has_runtoon = existing_runtoon is not None
 
     # Format activity summary
-    miles = (candidate.distance_meters / 1609.344) if candidate.distance_meters else 0.0
+    miles = (candidate.distance_m / 1609.344) if candidate.distance_m else 0.0
     duration_str = ""
     if candidate.moving_time_s:
         h = int(candidate.moving_time_s // 3600)
@@ -649,8 +649,8 @@ def get_pending(
         duration_str = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
     pace_str = ""
-    if candidate.distance_meters and candidate.moving_time_s:
-        pace_spm = candidate.moving_time_s / (candidate.distance_meters / 1609.344)
+    if candidate.distance_m and candidate.moving_time_s:
+        pace_spm = candidate.moving_time_s / (candidate.distance_m / 1609.344)
         pace_min = int(pace_spm // 60)
         pace_sec = int(pace_spm % 60)
         pace_str = f"{pace_min}:{pace_sec:02d}/mi"
