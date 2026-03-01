@@ -1,8 +1,8 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
-**Last updated:** February 28, 2026
-**Last updated by:** Advisor session — audit catch-up + production email hardening pass
+**Last updated:** March 1, 2026
+**Last updated by:** Advisor session — compact PMC shipped + chart timezone fix + email hardening
 
 ---
 
@@ -10,7 +10,7 @@
 
 Shipped and now live in product/system behavior:
 
-- **Compact PMC chart added to home page (Mar 1, 2026)**: 30-day Fitness/Fatigue/Form chart now visible on home below This Week, above Race Countdown. Self-contained component `CompactPMC.tsx` fetches from existing `/v1/training-load/history?days=30` endpoint (5-min cache). Renders nothing if no data. Chart body tap navigates to `/training-load`. Legend tooltips explain each metric independently. UTC-safe date formatting.
+- **Compact PMC chart added to home page (Mar 1, 2026)**: 30-day Fitness/Fatigue/Form chart now visible on home in position 2 (directly below LastRunHero, above Morning Voice). Self-contained component `CompactPMC.tsx` fetches from existing `/v1/training-load/history?days=30` endpoint (5-min cache). Renders nothing if no data. "View training load →" CTA + chart body click navigates to `/training-load`. Legend tooltips explain each metric independently. UTC-safe date formatting.
 - **Chart date labels timezone fix (Mar 1, 2026)**: All Recharts date axes now use UTC methods — chart labels no longer shift one day back for US timezone users.
 - **Monetization v1 completed**: 4-tier pricing UX, checkout flows, settings tier display, plan pace lock/unlock UX, register intent carry-through.
 - **PDF plan export shipped**: entitlement-gated endpoint `GET /v1/plans/{plan_id}/pdf`, WeasyPrint/Jinja backend generation, guarded limits.
@@ -240,7 +240,7 @@ InsightLog → Adaptation Narrator → Narrated to athlete
 
 | Route | Purpose | Status |
 |-------|---------|--------|
-| `/home` | Morning command center: coach briefing, workout, check-in, compact PMC, race countdown | Working — compact PMC added Mar 1 |
+| `/home` | Morning command center: run shape + compact PMC (visual pair), coach briefing, workout, check-in, race countdown | Working — compact PMC added Mar 1, moved to pos 2 |
 | `/activities` | Activity list with mini charts | Working |
 | `/activities/[id]` | Activity detail: Run Shape Canvas, splits, analysis | Working — needs narrative moments |
 | `/calendar` | Training calendar with plan overlay | Working |
