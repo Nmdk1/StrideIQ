@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-01  
 **Author:** Advisor  
-**Status:** Draft — awaiting Codex technical review + founder approval  
+**Status:** APPROVED (2026-03-01) — Codex reviewed, founder approved. Builder note: `docs/BUILDER_NOTE_2026-03-01_HOME_PMC_COMPACT.md`  
 **Scope:** Frontend only (new component + home page integration)
 
 ---
@@ -158,7 +158,10 @@ Import `CompactPMC` and place it between This Week and Race Countdown (~2 lines 
 | Hover on legend item (desktop) | Tooltip with one-sentence explanation |
 | Tap legend item (mobile) | Same tooltip behavior |
 | Hover on chart data point (desktop) | Recharts tooltip: date + Fitness/Fatigue/Form values |
-| Tap/click anywhere on the chart card | Navigate to `/training-load` |
+| Tap/click on chart body (not legend) | Navigate to `/training-load` |
+| Tap "View training load →" in header | Navigate to `/training-load` |
+
+**Note:** The entire card is NOT a single click target. The header CTA and chart body are clickable; the legend area is excluded to prevent tap conflicts with tooltips on mobile.
 
 ---
 
@@ -198,10 +201,12 @@ Import `CompactPMC` and place it between This Week and Race Countdown (~2 lines 
 
 ---
 
-## Open Questions for Codex
+## Resolved Questions (Codex Review — 2026-03-01)
 
-1. **Should the compact chart share the exact same Recharts config as the full page?** Duplicating the chart config is ~30 lines. Extracting a shared config adds a new file but ensures visual consistency and single-point-of-change for styling.
+1. **Shared Recharts config: No.** Keep `CompactPMC` self-contained. Extract only tiny shared helpers (UTC date formatter + color tokens) if needed. Full config sharing over-couples compact and full charts that intentionally differ.
 
-2. **Feature flag?** Should this be behind a feature flag for staged rollout, or ship directly? The risk is low (additive, below fold, own data fetch, no backend changes) but the founder's preference matters.
+2. **Feature flag: No.** Ship directly. Additive, below the fold, no backend change, existing endpoint/cache. Flagging adds process overhead for low risk.
 
-3. **Empty state for users with <7 days of data:** The training load endpoint requires minimum 7 days. Should the component show a muted "Need more data" prompt, or just not render? Current recommendation: don't render. Silence > noise.
+3. **Empty state (<7 days data): Don't render.** Silence. No "need more data" noise on home.
+
+4. **Interaction tweak (Codex addition): Don't make the entire card clickable.** Legend tooltips and chart hover need their own tap targets on mobile. Instead, use a clear "View training load →" CTA link in the section header. The chart body can be clickable, but the legend area must be excluded to avoid tap conflicts.
