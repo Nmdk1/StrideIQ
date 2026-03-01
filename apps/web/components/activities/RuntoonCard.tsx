@@ -52,6 +52,7 @@ interface DownloadResponse {
 const POLL_INTERVAL_MS = 5000;     // 5s polling while generating
 const POLL_TIMEOUT_MS = 90000;     // 90s max wait, then show "unavailable"
 const SIGNED_URL_TTL_MS = 14 * 60 * 1000; // Refresh 1 min before 15-min TTL
+const MIN_PHOTOS_REQUIRED = 3;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -59,16 +60,33 @@ const SIGNED_URL_TTL_MS = 14 * 60 * 1000; // Refresh 1 min before 15-min TTL
 
 interface RuntoonCardProps {
   activityId: string;
-  hasPhotos?: boolean;   // Passed from parent to skip poll if user has no photos
 }
 
-export function RuntoonCard({ activityId, hasPhotos = true }: RuntoonCardProps) {
+export function RuntoonCard({ activityId }: RuntoonCardProps) {
   const { token } = useAuth();
   const queryClient = useQueryClient();
   const pollStartRef = useRef<number | null>(null);
   const [timedOut, setTimedOut] = useState(false);
   const [downloadDropdownOpen, setDownloadDropdownOpen] = useState(false);
   const [regenCount, setRegenCount] = useState(0);
+
+  // Self-contained photo check — avoids prop-drilling from parent
+  // Uses the same query key as RuntoonPhotoUpload so responses are cached
+  const { data: photos, isLoading: photosLoading } = useQuery<{ id: string }[]>({
+    queryKey: ['runtoon-photos'],
+    queryFn: async () => {
+      const res = await fetch(`${API_CONFIG.baseURL}/v1/runtoon/photos`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 403) return [];  // Feature flag not enabled — graceful
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!token,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const hasPhotos = !photosLoading && (photos?.length ?? 0) >= MIN_PHOTOS_REQUIRED;
 
   // Poll for Runtoon — backs off after 90s
   const { data: runtoon, isLoading } = useQuery<RuntoonData | null>({
@@ -82,7 +100,7 @@ export function RuntoonCard({ activityId, hasPhotos = true }: RuntoonCardProps) 
       const body = await res.json();
       return body ?? null;
     },
-    enabled: !!token && hasPhotos && !timedOut,
+    enabled: !!token && !photosLoading && hasPhotos && !timedOut,
     refetchInterval: (data) => {
       // Stop polling once we have a result
       if (data?.state?.data) return false;
@@ -150,6 +168,11 @@ export function RuntoonCard({ activityId, hasPhotos = true }: RuntoonCardProps) 
     }
     setDownloadDropdownOpen(false);
   };
+
+  // ------------------------------------------------------------------
+  // Render: photo check still in flight — show nothing yet
+  // ------------------------------------------------------------------
+  if (photosLoading) return null;
 
   // ------------------------------------------------------------------
   // Render: no photos uploaded yet

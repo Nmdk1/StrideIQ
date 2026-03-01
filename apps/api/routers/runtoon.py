@@ -323,6 +323,8 @@ def get_runtoon(
     - null → Generating (poll every 5s, timeout 90s) or No photos uploaded
     - RuntoonResponse → Ready
     """
+    _require_feature_flag(db, current_user.id)
+
     # Verify activity belongs to this athlete
     activity = db.get(Activity, activity_id)
     if not activity or str(activity.athlete_id) != str(current_user.id):

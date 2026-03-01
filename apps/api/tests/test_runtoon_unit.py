@@ -396,6 +396,51 @@ class TestRuntoonRouterConstraints:
 
 
 # ---------------------------------------------------------------------------
+# Feature flag enforcement — regression tests for the advisor's findings
+# ---------------------------------------------------------------------------
+
+class TestFeatureFlagEnforcement:
+    """
+    Verify that ALL Runtoon endpoints enforce the feature flag consistently.
+    This is a regression test for the advisor finding: get_runtoon was missing
+    the _require_feature_flag call.
+    """
+
+    def test_get_runtoon_calls_require_feature_flag(self):
+        """
+        get_runtoon must call _require_feature_flag before any data access.
+        Verify by inspecting the source — presence of the call in the function body.
+        """
+        import inspect
+        from routers.runtoon import get_runtoon
+        source = inspect.getsource(get_runtoon)
+        assert "_require_feature_flag" in source, (
+            "get_runtoon is missing _require_feature_flag call — "
+            "non-allowed athletes can access Runtoon data during restricted rollout."
+        )
+
+    def test_all_activity_router_endpoints_have_feature_flag(self):
+        """All endpoints on activity_router must call _require_feature_flag."""
+        import inspect
+        from routers.runtoon import get_runtoon, trigger_regeneration
+        for fn in [get_runtoon, trigger_regeneration]:
+            source = inspect.getsource(fn)
+            assert "_require_feature_flag" in source, (
+                f"{fn.__name__} is missing _require_feature_flag"
+            )
+
+    def test_all_runtoon_router_endpoints_have_feature_flag(self):
+        """All guarded endpoints on the main router must call _require_feature_flag."""
+        import inspect
+        from routers.runtoon import upload_photo, list_photos, delete_photo, download_runtoon
+        for fn in [upload_photo, list_photos, delete_photo, download_runtoon]:
+            source = inspect.getsource(fn)
+            assert "_require_feature_flag" in source, (
+                f"{fn.__name__} is missing _require_feature_flag"
+            )
+
+
+# ---------------------------------------------------------------------------
 # Privacy invariant checks
 # ---------------------------------------------------------------------------
 
