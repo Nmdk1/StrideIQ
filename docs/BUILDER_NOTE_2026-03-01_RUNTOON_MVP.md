@@ -20,7 +20,7 @@ Ship an MVP of Runtoon: an AI-generated, personalized, humorous caricature image
 
 | Component | Type | Detail |
 |---|---|---|
-| `apps/api/services/runtoon_service.py` | **New service** | Prompt assembly from Activity/InsightLog/DailyCheckin + Nano Banana 2 API call + image storage write |
+| `apps/api/services/runtoon_service.py` | **New service** | Prompt assembly from Activity/InsightLog/DailyCheckin + `gemini-3.1-flash-image-preview` API call + image storage write |
 | `apps/api/tasks/runtoon_tasks.py` | **New Celery task** | `generate_runtoon(activity_id)`: called post-sync, fully async, silent on failure |
 | `RuntoonImage` model in `models.py` | **New model** | See schema below |
 | `AthletePhoto` model in `models.py` | **New model** | See schema below |
@@ -60,8 +60,20 @@ class AthletePhoto(Base):
     mime_type = Column(Text, nullable=False)  # "image/jpeg", "image/png"
     size_bytes = Column(Integer, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+
+    # Consent tracking (required for biometric-adjacent data)
+    consent_at = Column(DateTime(timezone=True), nullable=False)  # When athlete agreed
+    consent_version = Column(Text, nullable=False, default="1.0")  # Consent policy version
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 ```
+
+**Consent requirement:** The photo upload endpoint MUST capture an explicit consent timestamp and policy version before accepting the upload. The frontend upload flow must include a consent acknowledgment ("I agree that StrideIQ may use these photos to generate personalized run images") before the upload button activates.
+
+**Deletion/retention contract:**
+- When an athlete **deletes a photo** via `DELETE /v1/runtoon/photos/{id}`: mark `is_active = False` in DB AND delete the object from R2 immediately.
+- When an athlete **deletes their account**: cascade-delete all `AthletePhoto` and `RuntoonImage` records AND delete all corresponding R2 objects. Use a background task if the R2 deletion is slow.
+- When an athlete **disconnects Garmin/Strava**: photos are NOT deleted (photos are athlete-owned, not provider-owned). Runtoon generation stops because there are no new activities, but existing photos and Runtoons remain until the athlete explicitly deletes them or their account.
 
 ### `RuntoonImage`
 
@@ -72,6 +84,13 @@ class RuntoonImage(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
     activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False, index=True)
+
+    # Idempotency: only one auto-generated image per activity (attempt_number=1)
+    # UniqueConstraint prevents duplicate auto-generation from concurrent sync hooks
+    __table_args__ = (
+        UniqueConstraint("activity_id", "attempt_number", name="uq_runtoon_activity_attempt"),
+    )
+
     storage_key = Column(Text, nullable=False)  # R2 object key (never a public URL)
     prompt_hash = Column(Text, nullable=True)  # SHA256 of prompt for debugging
     generation_time_ms = Column(Integer, nullable=True)
@@ -109,10 +128,34 @@ POST   /v1/activities/{id}/runtoon/generate — Manual regeneration (rate-limite
 GET    /v1/runtoon/download/{id}            — Generate signed download URL (1:1 or 9:16 format)
 ```
 
-**Rate limits:**
-- Auto-generation: 1 per activity (triggered by sync)
-- Manual regeneration: max 2 per activity (3 total including auto)
-- Daily cap: max 5 generations per athlete per day
+**Rate limits (enforced, not advisory):**
+- Auto-generation: 1 per activity (enforced by `UniqueConstraint("activity_id", "attempt_number")` — insert with `attempt_number=1` will fail on duplicate)
+- Manual regeneration: max 2 per activity (enforced by query: `SELECT COUNT(*) FROM runtoon_image WHERE activity_id = ? AND athlete_id = ?` — reject if count >= 3)
+- Daily cap: max 5 generations per athlete per day (enforced by query: `SELECT COUNT(*) FROM runtoon_image WHERE athlete_id = ? AND created_at >= today_utc_start` — reject if count >= 5)
+
+**Enforcement path in Celery task:**
+```python
+# Step 1: Check daily cap BEFORE generation
+today_count = db.query(func.count(RuntoonImage.id)).filter(
+    RuntoonImage.athlete_id == athlete_id,
+    RuntoonImage.created_at >= today_start_utc,
+).scalar()
+if today_count >= 5:
+    logger.info(f"Daily Runtoon cap reached for {athlete_id}")
+    return  # silent exit, no error
+
+# Step 2: Check activity already has auto-generated image
+existing = db.query(RuntoonImage).filter(
+    RuntoonImage.activity_id == activity_id,
+    RuntoonImage.attempt_number == 1,
+).first()
+if existing:
+    logger.info(f"Runtoon already exists for activity {activity_id}")
+    return  # idempotent exit
+
+# Step 3: Generate and insert — UniqueConstraint is the final safety net
+# If concurrent tasks race, the loser gets IntegrityError and exits silently
+```
 
 ---
 
@@ -133,7 +176,7 @@ Use `tier_satisfies()` from `apps/api/core/tier_utils.py`. Follow `plan_export.p
 
 ## Prompt Architecture
 
-The prompt sent to Nano Banana 2 has 4 layers assembled by `runtoon_service.py`:
+The prompt sent to `gemini-3.1-flash-image-preview` (marketed as "Nano Banana 2") has 4 layers assembled by `runtoon_service.py`. **Always use the API model string `gemini-3.1-flash-image-preview` in code — never the marketing name.**
 
 ### Layer 1: Style Anchor (hardcoded constant)
 
@@ -175,7 +218,11 @@ Two-step process:
 1. **Check `InsightLog`** for any insight that fired on the same day as this activity. If found, use the insight's narrative as the coaching context.
 2. **If no insight exists**, generate a witty caption using a text-only Gemini Flash call with the activity data. The caption must be genuinely funny — NOT motivational coaching speak.
 
-The caption is baked into the image by Nano Banana 2, not overlaid.
+The caption is baked into the image by the model, not overlaid.
+
+**Content guardrails for captions:**
+- No profanity or slurs in generated captions. Add a simple blocklist check after caption generation — if a blocked word appears, regenerate the caption (text-only call, cheap).
+- No third-party logos or brand text should appear in the generated image. Add to the style anchor prompt: "Do not include any real brand logos, trademarked text, or copyrighted material in the image. The only text allowed is the stats line, caption, and strideiq.run watermark."
 
 ### Prompt Assembly
 
@@ -249,7 +296,7 @@ def generate_runtoon_for_latest(self, athlete_id: str):
     # 4. Get athlete's active AthletePhoto records (min 3 required)
     # 5. Load photo bytes from R2
     # 6. Assemble prompt via runtoon_service
-    # 7. Call Nano Banana 2 API with SDK timeout + asyncio.wait_for wrapper
+    # 7. Call gemini-3.1-flash-image-preview API with SDK timeout + task soft_time_limit
     # 8. Decode base64 response, upload to R2
     # 9. Create RuntoonImage record
     # 10. On ANY failure: log warning, do NOT raise, do NOT retry
@@ -305,19 +352,25 @@ runtoons/{athlete_id}/{runtoon_id}.png      — Generated Runtoon images
 
 ## Hard Constraints
 
-1. **Fully async.** Runtoon generation runs in a Celery task. It MUST NEVER block the sync pipeline, the home page, or any request thread. Generation failure = silent skip. Log the error, do not surface it.
+1. **Fully async.** Runtoon generation runs in a Celery task. It MUST NEVER block the sync pipeline, the home page, or any request thread. Generation failure = log server-side, show "Runtoon unavailable for this run" on frontend.
 
-2. **LLM timeout.** Nano Banana 2 API call must have both an SDK-level timeout AND a task-level `soft_time_limit`. Consistent with existing LLM timeout rules.
+2. **Idempotency.** Both Strava and Garmin sync paths trigger Runtoon generation. The task MUST be idempotent — if a Runtoon already exists for an activity (same `activity_id` + `attempt_number`), exit silently. Enforced by DB unique constraint + app-level check before API call.
 
-3. **DB sessions.** Do all DB reads in the Celery worker before passing pure data to the API call. Never pass a SQLAlchemy session across thread boundaries.
+3. **LLM timeout.** `gemini-3.1-flash-image-preview` API call must have both an SDK-level timeout AND a task-level `soft_time_limit`. Consistent with existing LLM timeout rules.
 
-4. **Cost guard.** Cap at 1 auto-generate per activity. Max 2 manual regenerations per activity. Max 5 total generations per athlete per day. Track `cost_usd` in `RuntoonImage`.
+4. **DB sessions.** Do all DB reads in the Celery worker before passing pure data to the API call. Never pass a SQLAlchemy session across thread boundaries.
 
-5. **Home page rule.** The Runtoon teaser on `/home` MUST use a cached signed URL. Never trigger generation from the home page request path.
+5. **Cost guard.** Cap at 1 auto-generate per activity. Max 2 manual regenerations per activity. Max 5 total generations per athlete per day. Track `cost_usd` in `RuntoonImage`. Enforced by DB queries (see Rate Limits section), not prose.
 
-6. **PG-safe.** The style anchor enforces: fully clothed runner in appropriate athletic gear, no nudity, no suggestive content. Safety filter at "Block some" (default) or higher. The athlete previews before downloading.
+6. **Home page rule.** The Runtoon teaser on `/home` MUST use a cached signed URL. Never trigger generation from the home page request path.
 
-7. **Body honesty.** The caricature depicts the runner accurately based on their photos. Do not idealize or alter body type. Make them heroic AS THEY ARE. Every runner is a hero.
+7. **PG-safe.** The style anchor enforces: fully clothed runner in appropriate athletic gear, no nudity, no suggestive content. Safety filter at "Block some" (default) or higher. The athlete previews before downloading.
+
+8. **Body honesty.** The caricature depicts the runner accurately based on their photos. Do not idealize or alter body type. Make them heroic AS THEY ARE. Every runner is a hero.
+
+9. **Consent + retention.** Photo upload requires explicit consent timestamp. Account deletion cascades to R2 object deletion. See AthletePhoto deletion/retention contract above.
+
+10. **No third-party content.** Generated images must not contain real brand logos, trademarked text, or copyrighted material. Enforced via prompt instruction + caption blocklist.
 
 ---
 
@@ -365,14 +418,15 @@ for part in response.candidates[0].content.parts:
 Add a "Your Runtoon" card below run analysis. States:
 
 1. **No photos uploaded:** "Upload photos in Settings to enable Runtoon" with link to Settings.
-2. **Generating:** Subtle loading state — "Creating your Runtoon..." with a spinner.
+2. **Generating:** Subtle loading state — "Creating your Runtoon..." with a spinner. Poll every 5s until ready or 90s timeout.
 3. **Ready:** Show the Runtoon image with:
    - Full preview on tap
    - "Regenerate" button (if attempts < 3 and entitled)
    - "Download 1:1" button (square, Instagram feed)
    - "Download 9:16" button (tall, Instagram Stories)
-4. **Free tier, first run used:** "Upgrade to Guided for unlimited Runtoons" CTA.
-5. **Not entitled:** "Available with Guided plan" — no image shown.
+4. **Generation failed:** Neutral state — "Runtoon unavailable for this run." No scary error, no stack trace, no retry button. Just a clean acknowledgment. Log failure details server-side.
+5. **Free tier, first run used:** "Upgrade to Guided for unlimited Runtoons" CTA.
+6. **Not entitled:** "Available with Guided plan" — no image shown.
 
 ### Settings Page (`/settings`)
 
@@ -384,14 +438,23 @@ Add "Runtoon Photos" section:
 
 ### Home Page (`/home`)
 
-After LastRunHero, show a small Runtoon thumbnail for the most recent activity (if one exists). Tap navigates to the activity detail page. **Use cached signed URL only — never trigger generation.**
+**Brand subline:** Add `"Your body. Your data. Your voice."` as a persistent brand-level subline on the home page. Position it directly below the greeting/logo area, above the fold, before any cards. Style: subtle, lowercase-feeling typography (light weight, muted but legible against the dark background). It is a brand promise, not a feature label — do not attach it to any specific card or component. It should feel like the first thing the athlete reads after their name.
+
+**Runtoon teaser:** After LastRunHero, show a small Runtoon thumbnail for the most recent activity (if one exists). Tap navigates to the activity detail page. **Use cached signed URL only — never trigger generation.**
 
 ### Download
 
 When the athlete taps "Download 1:1" or "Download 9:16":
 - Generate a fresh signed URL (15-min TTL)
 - Trigger browser download with proper filename: `runtoon_{date}_{distance}.png`
-- For 9:16: if the generated image is 1:1, the backend should generate a second image at 9:16 aspect ratio (or do a server-side crop/recompose — decide during implementation)
+
+**9:16 format (Stories):** Server-side deterministic recompose from the 1:1 original. Do NOT make a second API call. Use Pillow to:
+1. Create a 1080x1920 canvas with the dark banner color as background
+2. Place the 1:1 image (1024x1024) centered in the upper portion
+3. Re-render the stats line and caption below in the expanded space
+4. Add `strideiq.run` watermark at the bottom
+
+This avoids a $0.067 second API call per download format and gives deterministic output.
 
 ---
 
@@ -408,6 +471,7 @@ New migration `runtoon_001`:
 
 ### Python (add to requirements)
 - `boto3` — S3-compatible client for Cloudflare R2
+- `Pillow` — 9:16 server-side recompose from 1:1 original (canvas creation, image placement, text rendering)
 
 ### Existing (already installed)
 - `google-genai` — Gemini API client (already used by adaptation_narrator, ai_coach, etc.)
@@ -434,10 +498,14 @@ New migration `runtoon_001`:
 4. **Entitlement gating:** Free tier gets 1 Runtoon on first activity only. Guided/Premium get unlimited. Regeneration blocked for free.
 5. **Feature flag:** Runtoon is gated behind `runtoon.enabled` feature flag with `allowed_athlete_ids` for founder-only testing.
 6. **Privacy:** No public URLs anywhere. All signed URLs have 15-minute TTL. Verify by inspecting API responses — no R2 bucket URLs exposed.
-7. **Failure silence:** If Runtoon generation fails (API error, timeout, safety block), the activity page renders normally without any Runtoon card or error message. Failure is logged server-side only.
+7. **Failure handling:** If Runtoon generation fails (API error, timeout, safety block), the activity page shows a neutral "Runtoon unavailable for this run" message — no scary error, no stack trace. Failure details are logged server-side only.
 8. **Cost tracking:** Every `RuntoonImage` record has `cost_usd` and `generation_time_ms` populated.
 9. **Home teaser:** Latest Runtoon thumbnail appears on home page. Tap navigates to activity detail.
-10. **Build green:** `npm run build` passes. All existing tests pass. No regressions.
+10. **Brand subline:** "Your body. Your data. Your voice." visible on `/home` below greeting, above the fold, on every load.
+11. **Build green:** `npm run build` passes. All existing tests pass. No regressions.
+12. **Idempotency:** Triggering sync twice for the same activity does NOT produce a duplicate Runtoon. Verified by checking `runtoon_image` table count.
+13. **Account deletion:** Deleting an athlete cascades to delete all `AthletePhoto` and `RuntoonImage` records AND their R2 objects.
+14. **Analytics events:** Log structured events for: `runtoon.generated`, `runtoon.regenerated`, `runtoon.downloaded`, `runtoon.generation_failed` — each with `athlete_id`, `activity_id`, and relevant metadata (cost, latency, attempt_number, failure_reason).
 
 ### Required Evidence for Sign-off
 
@@ -447,7 +515,10 @@ New migration `runtoon_001`:
 - Screenshot: Home page with Runtoon teaser thumbnail
 - Screenshot: Free tier user seeing upgrade CTA instead of Runtoon
 - API response sample showing signed URLs (no public URLs)
-- Server logs showing successful generation + silent failure handling
+- Server logs showing successful generation + "Runtoon unavailable" failure state
+- DB query showing no duplicate `runtoon_image` rows for the same activity + attempt_number
+- Server logs showing `runtoon.generated` and `runtoon.downloaded` analytics events
+- Screenshot: Home page showing "Your body. Your data. Your voice." subline below greeting
 
 ---
 
