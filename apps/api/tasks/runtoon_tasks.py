@@ -262,22 +262,84 @@ def _run_generation(
                 db.query(InsightLog)
                 .filter(
                     InsightLog.athlete_id == athlete.id,
-                    sa_func.date(InsightLog.fired_at) == act_date,
+                    InsightLog.trigger_date == act_date,
                 )
-                .order_by(sa_desc(InsightLog.fired_at))
+                .order_by(sa_desc(InsightLog.trigger_date))
                 .first()
             )
-            if insight and getattr(insight, 'narrative', None):
-                insight_narrative = insight.narrative
+            if insight:
+                insight_narrative = getattr(insight, 'narrative', None) or getattr(insight, 'message', None)
     except Exception as e:
         logger.debug("runtoon: could not load InsightLog: %s", e)
+
+    # -----------------------------------------------------------------------
+    # 8b. Gather training context (weekly mileage, upcoming race, phase)
+    # -----------------------------------------------------------------------
+    weekly_miles = 0.0
+    race_name = None
+    days_to_race = None
+    training_phase = None
+
+    try:
+        from datetime import timedelta
+        act_date = activity.start_time.date() if activity.start_time else None
+        if act_date:
+            week_start = act_date - timedelta(days=6)
+            weekly_distance_m = (
+                db.query(sa_func.sum(Activity.distance_m))
+                .filter(
+                    Activity.athlete_id == athlete.id,
+                    sa_func.date(Activity.start_time) >= week_start,
+                    sa_func.date(Activity.start_time) <= act_date,
+                )
+                .scalar()
+            ) or 0
+            weekly_miles = round(weekly_distance_m / 1609.344, 1)
+    except Exception as e:
+        logger.debug("runtoon: weekly mileage query failed: %s", e)
+
+    try:
+        from models import TrainingPlan
+        from datetime import date as date_type
+        today = date_type.today()
+        plan = (
+            db.query(TrainingPlan)
+            .filter(
+                TrainingPlan.athlete_id == athlete.id,
+                TrainingPlan.status == "active",
+                TrainingPlan.goal_race_date >= today,
+            )
+            .order_by(TrainingPlan.goal_race_date)
+            .first()
+        )
+        if plan:
+            race_name = plan.goal_race_name or plan.name
+            days_to_race = (plan.goal_race_date - today).days
+    except Exception as e:
+        logger.debug("runtoon: race lookup failed: %s", e)
+
+    try:
+        from models import PlannedWorkout
+        act_date = activity.start_time.date() if activity.start_time else None
+        if act_date:
+            pw = (
+                db.query(PlannedWorkout)
+                .filter(
+                    PlannedWorkout.athlete_id == athlete.id,
+                    PlannedWorkout.scheduled_date == act_date,
+                )
+                .first()
+            )
+            if pw and pw.phase:
+                training_phase = pw.phase
+    except Exception as e:
+        logger.debug("runtoon: training phase lookup failed: %s", e)
 
     # -----------------------------------------------------------------------
     # 9. Snapshot all data needed BEFORE closing DB session
     # -----------------------------------------------------------------------
     photo_keys = [(p.storage_key, p.mime_type) for p in photos]
 
-    # Snapshot activity fields (avoids lazy loads after session close)
     act_snapshot = {
         "id": activity.id,
         "distance_meters": activity.distance_m,
@@ -287,6 +349,13 @@ def _run_generation(
         "workout_type": activity.workout_type,
         "name": getattr(activity, 'name', None),
         "is_race_candidate": getattr(activity, 'is_race_candidate', False),
+    }
+
+    training_context = {
+        "weekly_miles": weekly_miles,
+        "race_name": race_name,
+        "days_to_race": days_to_race,
+        "training_phase": training_phase,
     }
 
     # -----------------------------------------------------------------------
@@ -337,6 +406,7 @@ def _run_generation(
         activity=activity_proxy,
         athlete_photos=photo_bytes_list,
         insight_narrative=insight_narrative,
+        training_context=training_context,
         gemini_client=gemini_client,
     )
 

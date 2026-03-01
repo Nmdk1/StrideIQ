@@ -153,9 +153,10 @@ def _format_stats_text(activity) -> str:
     return "  •  ".join(parts) if parts else ""
 
 
-def _format_activity_context(activity) -> str:
-    """Describe the run conditions for the scene direction layer."""
+def _format_activity_context(activity, training_context: Optional[dict] = None) -> str:
+    """Describe the run conditions and training context for the scene direction layer."""
     lines = []
+    tc = training_context or {}
 
     if activity.start_time:
         dt = activity.start_time
@@ -180,14 +181,23 @@ def _format_activity_context(activity) -> str:
         miles = activity.distance_meters / 1609.344
         lines.append(f"Distance: {miles:.1f} miles")
 
+    if activity.moving_time_s and activity.distance_meters:
+        pace_spm = activity.moving_time_s / (activity.distance_meters / 1609.344)
+        pace_min = int(pace_spm // 60)
+        pace_sec = int(pace_spm % 60)
+        lines.append(f"Pace: {pace_min}:{pace_sec:02d}/mi")
+
     if activity.workout_type:
         lines.append(f"Workout type: {activity.workout_type}")
 
     if getattr(activity, 'name', None):
         lines.append(f"Activity name: {activity.name}")
 
-    if getattr(activity, 'is_race_candidate', False):
+    is_race = getattr(activity, 'is_race_candidate', False)
+    if is_race:
         lines.append("Context: RACE DAY — celebration and achievement")
+    else:
+        lines.append("Context: This is a TRAINING RUN, not a race. No race bibs, no finish lines, no race crowds.")
 
     if activity.average_hr:
         hr = int(activity.average_hr)
@@ -201,6 +211,14 @@ def _format_activity_context(activity) -> str:
             effort = "easy effort — relaxed and flowing"
         lines.append(f"Effort level: {effort} (avg HR {hr} bpm)")
 
+    # Training context
+    if tc.get("weekly_miles") and tc["weekly_miles"] > 0:
+        lines.append(f"Weekly mileage so far: {tc['weekly_miles']:.0f} miles this week")
+    if tc.get("race_name") and tc.get("days_to_race") is not None:
+        lines.append(f"Upcoming race: {tc['race_name']} in {tc['days_to_race']} days")
+    if tc.get("training_phase"):
+        lines.append(f"Training phase: {tc['training_phase']}")
+
     return "\n".join(lines)
 
 
@@ -210,42 +228,79 @@ def _check_caption_blocklist(text: str) -> bool:
     return not any(word in lowered for word in CAPTION_BLOCKLIST)
 
 
-def _generate_caption(activity, insight_narrative: Optional[str], client) -> str:
+def _generate_caption(
+    activity,
+    insight_narrative: Optional[str],
+    client,
+    training_context: Optional[dict] = None,
+) -> str:
     """
-    Generate a witty, non-motivational caption for the Runtoon.
+    Generate a witty, contextual caption for the Runtoon.
+
+    Quality bar: the caption must reference at least one specific detail
+    from the athlete's actual run or training week. Generic one-word
+    responses are rejected and regenerated.
 
     Priority:
-    1. Use InsightLog narrative if available (already contextual)
-    2. Generate fresh via text-only Gemini call
-    3. Fallback to a generic but honest line
-
-    The caption must be genuinely funny — NOT coaching speak.
+    1. Generate via text-only Gemini call with full training context
+    2. Use InsightLog narrative if Gemini unavailable
+    3. Fallback to a contextual but safe line
     """
-    # Option 1: use existing insight narrative if it's a real sentence
-    if insight_narrative and len(insight_narrative.strip()) >= 15:
-        caption = insight_narrative.strip()
-        if len(caption) > 120:
-            first_sentence = caption.split(".")[0] + "."
-            caption = first_sentence if len(first_sentence) < 120 else caption[:117] + "..."
-        if _check_caption_blocklist(caption):
-            return caption
+    tc = training_context or {}
 
-    # Option 2: generate fresh via text call
     if client is None or not GENAI_AVAILABLE:
-        return _fallback_caption(activity)
+        if insight_narrative and len(insight_narrative.strip()) >= 20:
+            return insight_narrative.strip()[:120]
+        return _fallback_caption(activity, tc)
+
+    miles = (activity.distance_meters / 1609.344) if activity.distance_meters else 0
+    pace_str = ""
+    if activity.distance_meters and activity.moving_time_s:
+        pace_spm = activity.moving_time_s / (activity.distance_meters / 1609.344)
+        pace_min = int(pace_spm // 60)
+        pace_sec = int(pace_spm % 60)
+        pace_str = f"{pace_min}:{pace_sec:02d}/mi"
+
+    # Build rich context block
+    context_lines = [
+        f"- Distance: {miles:.1f} miles",
+        f"- Pace: {pace_str or 'unknown'}",
+        f"- Avg HR: {activity.average_hr or 'unknown'} bpm",
+        f"- Workout type: {activity.workout_type or 'run'}",
+    ]
+    if tc.get("weekly_miles") and tc["weekly_miles"] > 0:
+        context_lines.append(f"- Weekly mileage: {tc['weekly_miles']:.0f} miles this week")
+    if tc.get("race_name") and tc.get("days_to_race") is not None:
+        context_lines.append(f"- Upcoming race: {tc['race_name']} in {tc['days_to_race']} days")
+    if tc.get("training_phase"):
+        context_lines.append(f"- Training phase: {tc['training_phase']}")
+    if insight_narrative and len(insight_narrative.strip()) >= 15:
+        context_lines.append(f"- Coach's take: {insight_narrative.strip()[:200]}")
+
+    context_block = "\n".join(context_lines)
+
+    prompt = (
+        f"You are writing the caption for a shareable post-run image. "
+        f"The athlete just finished this run:\n{context_block}\n\n"
+        f"Write ONE caption (1-2 sentences, max 120 characters) that is:\n"
+        f"- GENUINELY FUNNY — like a witty friend who runs, not a coach\n"
+        f"- SPECIFIC to this exact run — reference the distance, pace, weekly load, "
+        f"or upcoming race\n"
+        f"- Self-deprecating humor preferred over motivational\n"
+        f"- No exclamation points, no hashtags, no emoji\n\n"
+        f"GOOD examples of the tone we want:\n"
+        f'- "63-mile week and your brain said lets see how marathon pace feels. It felt like marathon pace."\n'
+        f'- "7:28 pace at 153 bpm means the engine is willing but the chassis has concerns."\n'
+        f'- "13 miles of taper denial. The race is in two weeks, not today."\n\n'
+        f"BAD examples (do NOT write these):\n"
+        f'- "Half" (too short, meaningless)\n'
+        f'- "Great run today" (generic, boring)\n'
+        f'- "You crushed it!" (motivational coaching speak)\n'
+        f'- "Thirteen" (single word, no context)\n\n'
+        f"Return ONLY the caption text, nothing else."
+    )
 
     try:
-        miles = (activity.distance_meters / 1609.344) if activity.distance_meters else 0
-        workout_type = activity.workout_type or "run"
-        prompt = (
-            f"Write a SHORT, FUNNY one-liner caption (max 100 chars) for this run:\n"
-            f"- Distance: {miles:.1f} miles\n"
-            f"- Workout type: {workout_type}\n"
-            f"- Avg HR: {activity.average_hr or 'unknown'} bpm\n\n"
-            f"Rules: FUNNY not motivational. Specific to THIS run. No clichés. "
-            f"No exclamation points. No coaching speak. Like a witty friend watching you run.\n"
-            f"Return ONLY the caption text, nothing else."
-        )
         response = client.models.generate_content(
             model=CAPTION_MODEL,
             contents=prompt,
@@ -256,35 +311,60 @@ def _generate_caption(activity, insight_narrative: Optional[str], client) -> str
         )
         raw = response.text.strip().strip('"').strip("'")
 
-        # Retry once if blocklist hit
+        # Quality gate: reject captions under 20 chars or single words
+        if len(raw) < 20 or " " not in raw:
+            logger.warning("Caption too short or single-word (%r), retrying", raw)
+            response2 = client.models.generate_content(
+                model=CAPTION_MODEL,
+                contents=prompt + "\nYour previous attempt was rejected for being too short. Write a FULL SENTENCE.",
+                config=genai_types.GenerateContentConfig(temperature=0.7),
+            )
+            raw = response2.text.strip().strip('"').strip("'")
+
         if not _check_caption_blocklist(raw):
             logger.warning("Caption blocklist hit, regenerating")
-            response2 = client.models.generate_content(
+            response3 = client.models.generate_content(
                 model=CAPTION_MODEL,
                 contents=prompt + "\nIMPORTANT: Keep it clean and family-friendly.",
                 config=genai_types.GenerateContentConfig(temperature=0.5),
             )
-            raw = response2.text.strip().strip('"').strip("'")
+            raw = response3.text.strip().strip('"').strip("'")
 
-        if raw and _check_caption_blocklist(raw):
-            return raw[:120]
+        if raw and len(raw) >= 15 and _check_caption_blocklist(raw):
+            return raw[:140]
     except Exception as e:
         logger.warning("Caption generation failed, using fallback: %s", e)
 
-    return _fallback_caption(activity)
+    # Fallback to insight narrative if available
+    if insight_narrative and len(insight_narrative.strip()) >= 20:
+        return insight_narrative.strip()[:120]
+
+    return _fallback_caption(activity, tc)
 
 
-def _fallback_caption(activity) -> str:
-    """Safe, generic fallback caption when generation fails."""
+def _fallback_caption(activity, training_context: Optional[dict] = None) -> str:
+    """Contextual fallback caption when generation fails."""
+    tc = training_context or {}
     miles = (activity.distance_meters / 1609.344) if activity.distance_meters else 0
+
     if getattr(activity, 'is_race_candidate', False):
         return "Race day. Everything hurt. Worth it."
-    elif miles >= 15:
+
+    if tc.get("race_name") and tc.get("days_to_race") is not None:
+        d = tc["days_to_race"]
+        if d <= 14:
+            return f"{miles:.0f} miles of taper denial. {tc['race_name']} is in {d} days."
+        return f"{miles:.0f} miles in the bank. {tc['race_name']} in {d} days."
+
+    if tc.get("weekly_miles") and tc["weekly_miles"] > 40:
+        return f"{tc['weekly_miles']:.0f}-mile week and still going. The legs have opinions."
+
+    if miles >= 15:
         return f"The last {miles:.0f} miles are mostly stubbornness."
     elif miles >= 10:
         return "Long enough to reconsider every decision that led to this."
     else:
-        return "Another run in the books."
+        return f"{miles:.1f} miles. Another day of convincing the body this is fun."
 
 
 def _hash_prompt(parts_text: str) -> str:
@@ -300,7 +380,7 @@ def generate_runtoon(
     activity,
     athlete_photos: List[Tuple[bytes, str]],  # List of (photo_bytes, mime_type)
     insight_narrative: Optional[str],
-    plan_context: Optional[str] = None,
+    training_context: Optional[dict] = None,
     gemini_client=None,
 ) -> RuntoonResult:
     """
@@ -311,10 +391,10 @@ def generate_runtoon(
     and all DB writes + R2 uploads after.
 
     Args:
-        activity:          SQLAlchemy Activity object (read-only, no lazy loads needed)
+        activity:          Activity proxy (read-only, no lazy loads needed)
         athlete_photos:    List of (bytes, mime_type) tuples for reference photos
         insight_narrative: Coaching insight text from InsightLog (or None)
-        plan_context:      Training plan context string (or None)
+        training_context:  Dict with weekly_miles, race_name, days_to_race, training_phase
         gemini_client:     google.genai.Client (None = dry-run, returns placeholder)
 
     Returns:
@@ -336,18 +416,23 @@ def generate_runtoon(
     try:
         # Build stats + caption text (stored separately for 9:16 recompose)
         stats_text = _format_stats_text(activity)
-        caption_text = _generate_caption(activity, insight_narrative, gemini_client)
-        activity_context = _format_activity_context(activity)
+        caption_text = _generate_caption(activity, insight_narrative, gemini_client, training_context)
+        activity_context = _format_activity_context(activity, training_context)
 
         result.stats_text = stats_text
         result.caption_text = caption_text
 
         # Assemble scene direction
+        tc = training_context or {}
+        is_race = getattr(activity, 'is_race_candidate', False)
+
         scene_direction_parts = [f"Scene: runner in {activity_context.split('Time of run:')[-1].split('(')[0].strip() if 'Time of run:' in activity_context else 'daylight'} conditions"]
-        if plan_context:
-            scene_direction_parts.append(f"Training context: {plan_context}")
-        if getattr(activity, 'is_race_candidate', False):
-            scene_direction_parts.append("This is a RACE — show triumph and celebration")
+        if is_race:
+            scene_direction_parts.append("This is a RACE — show triumph, celebration, finish line")
+        else:
+            scene_direction_parts.append("This is a TRAINING RUN — show the runner on a road or trail, no race bibs, no finish lines, no race crowds")
+            if tc.get("race_name") and tc.get("days_to_race") is not None:
+                scene_direction_parts.append(f"The runner is training for {tc['race_name']} in {tc['days_to_race']} days — show determination and preparation, NOT race day")
         scene_direction = ". ".join(scene_direction_parts)
 
         # Assemble full text prompt
