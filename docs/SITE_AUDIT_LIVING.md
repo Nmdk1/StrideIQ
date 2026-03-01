@@ -2,7 +2,7 @@
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
 **Last updated:** March 1, 2026
-**Last updated by:** Builder session — Runtoon MVP built (pending deploy + R2 credentials)
+**Last updated by:** Advisor session — Runtoon MVP deployed with MinIO object storage, feature-flagged founder-only
 
 ---
 
@@ -10,7 +10,7 @@
 
 Shipped and now live in product/system behavior:
 
-- **Runtoon MVP built (Mar 1, 2026, pending deploy)**: Full-stack AI-generated personalized run caricature. Backend: `AthletePhoto` + `RuntoonImage` models, `runtoon_001` Alembic migration, `storage_service.py` (R2/boto3), `runtoon_service.py` (Gemini `gemini-3.1-flash-image-preview`), `runtoon_tasks.py` (Celery async), `runtoon.py` router. Frontend: `RuntoonCard` on activity detail, `RuntoonPhotoUpload` in settings, home teaser + "Your body. Your data. Your voice." brand subline. Feature-flagged (`runtoon.enabled`). Deploy gated on R2 bucket + credentials from founder.
+- **Runtoon MVP live (Mar 1, 2026)**: Full-stack AI-generated personalized run caricature — deployed and verified. Backend: `AthletePhoto` + `RuntoonImage` models, `runtoon_001` Alembic migration, `storage_service.py` (boto3 → MinIO), `runtoon_service.py` (Gemini `gemini-3.1-flash-image-preview`), `runtoon_tasks.py` (Celery async), `runtoon.py` router. Frontend: `RuntoonCard` on activity detail, `RuntoonPhotoUpload` in settings, home teaser + "Your body. Your data. Your voice." brand subline. Feature-flagged (`runtoon.enabled`) — founder-only rollout. Object storage: MinIO (self-hosted S3-compatible, `strideiq_minio` container, private bucket `strideiq-runtoon`).
 - **Compact PMC chart added to home page (Mar 1, 2026)**: 30-day Fitness/Fatigue/Form chart now visible on home in position 2 (directly below LastRunHero, above Morning Voice). Self-contained component `CompactPMC.tsx` fetches from existing `/v1/training-load/history?days=30` endpoint (5-min cache). Renders nothing if no data. "View training load →" CTA + chart body click navigates to `/training-load`. Legend tooltips explain each metric independently. UTC-safe date formatting.
 - **Chart date labels timezone fix (Mar 1, 2026)**: All Recharts date axes now use UTC methods — chart labels no longer shift one day back for US timezone users.
 - **Monetization v1 completed**: 4-tier pricing UX, checkout flows, settings tier display, plan pace lock/unlock UX, register intent carry-through.
@@ -30,7 +30,8 @@ Shipped and now live in product/system behavior:
 | **Web** | Next.js 14 (App Router) | `apps/web/` |
 | **API** | FastAPI (Python 3.11) | `apps/api/` |
 | **Database** | TimescaleDB (PostgreSQL 16) | Docker: `timescale/timescaledb:latest-pg16` |
-| **Workers** | Celery | `apps/api/tasks/` (6 task modules) |
+| **Workers** | Celery | `apps/api/tasks/` (7 task modules — includes `runtoon_tasks.py`) |
+| **Object Storage** | MinIO (S3-compatible) | Docker: `strideiq_minio`, private bucket `strideiq-runtoon` |
 | **Cache/Queue** | Redis 7 Alpine | Celery broker + response cache |
 | **Proxy** | Caddy 2 | Auto-TLS, reverse proxy |
 | **CI** | GitHub Actions | `.github/workflows/` |
@@ -42,7 +43,7 @@ Shipped and now live in product/system behavior:
 
 ```
 /opt/strideiq/repo/          ← Git checkout
-docker compose up -d         ← 6 containers: api, web, caddy, postgres, redis, worker
+docker compose up -d         ← 7 containers: api, web, caddy, postgres, redis, worker, minio
 API runs migrations on boot  ← alembic upgrade head in entrypoint
 ```
 
