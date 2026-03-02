@@ -6,3 +6,6 @@ export { PairedSparkline } from './PairedSparkline';
 export { CapabilityBars } from './CapabilityBars';
 export { CompletionRing } from './CompletionRing';
 export { StatHighlight } from './StatHighlight';
+export { ProgressHero } from './ProgressHero';
+export { CorrelationWeb } from './CorrelationWeb';
+export { WhatDataProved } from './WhatDataProved';

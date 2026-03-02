@@ -346,3 +346,87 @@ export function useNarrativeFeedback() {
       apiClient.post('/v1/progress/narrative/feedback', body),
   });
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Progress Knowledge — Phase 1 types and hook
+// ═══════════════════════════════════════════════════════════════════
+
+export interface KnowledgeHeroStat {
+  label: string;
+  value: string;
+  color: string;
+}
+
+export interface KnowledgeHero {
+  date_label: string;
+  headline: string;
+  headline_accent: string;
+  subtext: string;
+  stats: KnowledgeHeroStat[];
+}
+
+export interface CorrelationNode {
+  id: string;
+  label: string;
+  group: string;
+}
+
+export interface CorrelationEdge {
+  source: string;
+  target: string;
+  r: number;
+  direction: string;
+  lag_days: number;
+  times_confirmed: number;
+  strength: string;
+  note: string;
+}
+
+export interface ProvedFact {
+  input_metric: string;
+  output_metric: string;
+  headline: string;
+  evidence: string;
+  implication: string;
+  times_confirmed: number;
+  confidence_tier: string;
+  direction: string;
+  correlation_coefficient: number;
+  lag_days: number;
+}
+
+export interface KnowledgePatternsForming {
+  checkin_count: number;
+  checkins_needed: number;
+  progress_pct: number;
+  message: string;
+}
+
+export interface KnowledgeDataCoverage {
+  total_findings: number;
+  confirmed_findings: number;
+  emerging_findings: number;
+  checkin_count: number;
+}
+
+export interface ProgressKnowledgeResponse {
+  hero: KnowledgeHero;
+  correlation_web: {
+    nodes: CorrelationNode[];
+    edges: CorrelationEdge[];
+  };
+  proved_facts: ProvedFact[];
+  patterns_forming: KnowledgePatternsForming | null;
+  generated_at: string;
+  data_coverage: KnowledgeDataCoverage;
+}
+
+export function useProgressKnowledge() {
+  return useQuery<ProgressKnowledgeResponse>({
+    queryKey: ['progress', 'knowledge'],
+    queryFn: () => apiClient.get<ProgressKnowledgeResponse>('/v1/progress/knowledge'),
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+}
