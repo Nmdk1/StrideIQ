@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Athlete, Activity, DailyCheckin
+from models import Athlete, Activity, DailyCheckin, CorrelationFinding, TrainingPlan
 from routers.auth import get_current_user
 from core.cache import get_cache, set_cache as _set_cache, invalidate_pattern
 
@@ -1895,3 +1895,327 @@ def post_narrative_feedback(
     db.commit()
 
     return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Progress Knowledge — Phase 1: Ship the Moat
+# ═══════════════════════════════════════════════════════════════════
+
+class CorrelationNode(BaseModel):
+    id: str
+    label: str
+    group: str  # "input" or "output"
+
+class CorrelationEdge(BaseModel):
+    source: str
+    target: str
+    r: float
+    direction: str  # "positive" or "negative"
+    lag_days: int
+    times_confirmed: int
+    strength: str
+    note: str
+
+class ProvedFact(BaseModel):
+    input_metric: str
+    output_metric: str
+    headline: str
+    evidence: str
+    implication: str
+    times_confirmed: int
+    confidence_tier: str  # "emerging", "confirmed", "strong"
+    direction: str
+    correlation_coefficient: float
+    lag_days: int
+
+class HeroStat(BaseModel):
+    label: str
+    value: str
+    color: str
+
+class HeroData(BaseModel):
+    date_label: str
+    headline: str
+    headline_accent: str
+    subtext: str
+    stats: List[HeroStat]
+
+class DataCoverageKnowledge(BaseModel):
+    total_findings: int
+    confirmed_findings: int
+    emerging_findings: int
+    checkin_count: int
+
+class PatternsFormingKnowledge(BaseModel):
+    checkin_count: int
+    checkins_needed: int
+    progress_pct: float
+    message: str
+
+class KnowledgeResponse(BaseModel):
+    hero: HeroData
+    correlation_web: Dict[str, Any]
+    proved_facts: List[ProvedFact]
+    patterns_forming: Optional[PatternsFormingKnowledge] = None
+    generated_at: str
+    data_coverage: DataCoverageKnowledge
+
+
+def _confidence_tier(times_confirmed: int) -> str:
+    if times_confirmed >= 6:
+        return "strong"
+    elif times_confirmed >= 3:
+        return "confirmed"
+    return "emerging"
+
+
+def _humanize_metric(raw: str) -> str:
+    """Turn 'sleep_hours' into 'Sleep Hours', 'motivation_1_5' into 'Motivation'."""
+    cleaned = raw.replace("_1_5", "").replace("_", " ")
+    return cleaned.title()
+
+
+def _build_headline(finding: CorrelationFinding) -> str:
+    inp = _humanize_metric(finding.input_name)
+    out = _humanize_metric(finding.output_metric)
+    verb = "improves" if finding.direction == "positive" else "reduces"
+    lag = f"within {finding.time_lag_days} day{'s' if finding.time_lag_days != 1 else ''}" if finding.time_lag_days > 0 else "same day"
+    return f"High {inp.lower()} {verb} {out.lower()} {lag}"
+
+
+def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
+    """Deterministic assembly of all Phase 1 knowledge data."""
+    from services.training_load import TrainingLoadCalculator
+
+    # 1. Query all active correlation findings
+    findings = (
+        db.query(CorrelationFinding)
+        .filter(
+            CorrelationFinding.athlete_id == athlete_id,
+            CorrelationFinding.is_active == True,
+            CorrelationFinding.times_confirmed >= 1,
+        )
+        .order_by(
+            (CorrelationFinding.times_confirmed * CorrelationFinding.confidence).desc()
+        )
+        .all()
+    )
+
+    # 2. Build nodes (deduplicate)
+    input_names = list(dict.fromkeys(f.input_name for f in findings))
+    output_names = list(dict.fromkeys(f.output_metric for f in findings))
+
+    nodes = []
+    for name in input_names:
+        nodes.append(CorrelationNode(id=name, label=_humanize_metric(name), group="input"))
+    for name in output_names:
+        nodes.append(CorrelationNode(id=name, label=_humanize_metric(name), group="output"))
+
+    # 3. Build edges
+    edges = []
+    for f in findings:
+        edges.append(CorrelationEdge(
+            source=f.input_name,
+            target=f.output_metric,
+            r=round(f.correlation_coefficient, 2),
+            direction=f.direction,
+            lag_days=f.time_lag_days,
+            times_confirmed=f.times_confirmed,
+            strength=f.strength,
+            note=f.insight_text or f"Correlation between {_humanize_metric(f.input_name)} and {_humanize_metric(f.output_metric)}.",
+        ))
+
+    # 4. Build proved facts
+    proved_facts = []
+    for f in sorted(findings, key=lambda x: x.times_confirmed, reverse=True):
+        proved_facts.append(ProvedFact(
+            input_metric=f.input_name,
+            output_metric=f.output_metric,
+            headline=_build_headline(f),
+            evidence=f.insight_text or f"Observed {f.times_confirmed} times with r={f.correlation_coefficient:.2f}.",
+            implication="",
+            times_confirmed=f.times_confirmed,
+            confidence_tier=_confidence_tier(f.times_confirmed),
+            direction=f.direction,
+            correlation_coefficient=round(f.correlation_coefficient, 2),
+            lag_days=f.time_lag_days,
+        ))
+
+    # 5. Hero data
+    calc = TrainingLoadCalculator(db)
+    history = calc.get_load_history(athlete_id, days=90)
+
+    ctl_first = round(history[0].ctl, 1) if history else 0
+    ctl_now = round(history[-1].ctl, 1) if history else 0
+    weeks_tracked = len(history) // 7 if history else 0
+
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.athlete_id == athlete_id,
+        TrainingPlan.status == "active",
+    ).first()
+
+    today = date.today()
+    day_name = today.strftime("%A")
+    date_str = today.strftime("%b %-d") if os.name != "nt" else today.strftime("%b %d").replace(" 0", " ")
+
+    if plan and plan.goal_race_date:
+        race_name = plan.goal_race_name or plan.name
+        days_out = (plan.goal_race_date - today).days
+        date_label = f"{day_name}, {date_str} · {race_name} in {days_out} days"
+        stat_third = HeroStat(label="Days out", value=str(max(0, days_out)), color="orange")
+    else:
+        date_label = f"{day_name}, {date_str}"
+        stat_third = HeroStat(label="Weeks tracked", value=str(weeks_tracked), color="orange")
+
+    hero = HeroData(
+        date_label=date_label,
+        headline=f"Your progress over {weeks_tracked} weeks.",
+        headline_accent="Here's what the data shows.",
+        subtext="Facts discovered from your own training data — confirmed across your own physiology, your own patterns.",
+        stats=[
+            HeroStat(label="CTL then", value=str(ctl_first), color="muted"),
+            HeroStat(label="CTL now", value=str(ctl_now), color="blue"),
+            stat_third,
+        ],
+    )
+
+    # 6. Patterns forming fallback
+    patterns_forming = None
+    if not findings:
+        checkin_count = db.query(DailyCheckin).filter(
+            DailyCheckin.athlete_id == athlete_id
+        ).count()
+        needed = 14
+        patterns_forming = PatternsFormingKnowledge(
+            checkin_count=checkin_count,
+            checkins_needed=needed,
+            progress_pct=min(100.0, (checkin_count / needed) * 100),
+            message="Keep doing your daily check-ins. The system needs about two weeks of data to discover how your body responds to training inputs.",
+        )
+
+    # 7. Data coverage
+    confirmed_count = sum(1 for f in findings if f.times_confirmed >= 3)
+    emerging_count = sum(1 for f in findings if f.times_confirmed < 3)
+
+    checkin_total = db.query(DailyCheckin).filter(
+        DailyCheckin.athlete_id == athlete_id
+    ).count()
+
+    data_coverage = DataCoverageKnowledge(
+        total_findings=len(findings),
+        confirmed_findings=confirmed_count,
+        emerging_findings=emerging_count,
+        checkin_count=checkin_total,
+    )
+
+    return KnowledgeResponse(
+        hero=hero,
+        correlation_web={
+            "nodes": [n.model_dump() for n in nodes],
+            "edges": [e.model_dump() for e in edges],
+        },
+        proved_facts=proved_facts,
+        patterns_forming=patterns_forming,
+        generated_at=datetime.utcnow().isoformat() + "Z",
+        data_coverage=data_coverage,
+    )
+
+
+def _generate_knowledge_llm(response: KnowledgeResponse, athlete_id) -> Optional[Dict]:
+    """LLM pass: generate hero headline + per-finding implications."""
+    if not gemini_client:
+        return None
+
+    try:
+        from google import genai
+
+        facts_summary = []
+        for f in response.proved_facts[:8]:
+            facts_summary.append(
+                f"- {f.headline} (r={f.correlation_coefficient}, confirmed {f.times_confirmed}x, {f.confidence_tier})"
+            )
+
+        stats_text = ", ".join(f"{s.label}: {s.value}" for s in response.hero.stats)
+
+        prompt = f"""You are a running coach writing for a progress page. The athlete's data:
+{stats_text}
+
+Confirmed patterns from their data:
+{chr(10).join(facts_summary)}
+
+Generate JSON with:
+1. "headline": A short, powerful sentence about their training arc (max 8 words). No generic praise.
+2. "headline_accent": A second line that reframes what follows (max 10 words). Must reference their specific data.
+3. "subtext": One paragraph (2-3 sentences) framing what the page shows. Reference that these are facts from THEIR data, not population averages.
+4. "implications": An object mapping each fact index (0, 1, 2...) to a one-sentence current implication. Connect the pattern to their current training state. If you can't say something specific and true, use empty string.
+
+Rules:
+- No generic motivational language
+- No "Great job" or "Keep it up"
+- Reference specific numbers from their data
+- Every sentence must be grounded in the data provided
+- Suppress over hallucinate — if uncertain, omit"""
+
+        result = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                max_output_tokens=1500,
+                temperature=0.3,
+                response_mime_type="application/json",
+            ),
+        )
+        return json.loads(result.text)
+    except Exception as e:
+        logger.warning(f"Knowledge LLM failed: {e}")
+        return None
+
+
+def _apply_knowledge_llm(response: KnowledgeResponse, llm_output: Dict):
+    """Merge LLM-generated text into the deterministic response."""
+    if "headline" in llm_output and llm_output["headline"]:
+        response.hero.headline = llm_output["headline"]
+    if "headline_accent" in llm_output and llm_output["headline_accent"]:
+        response.hero.headline_accent = llm_output["headline_accent"]
+    if "subtext" in llm_output and llm_output["subtext"]:
+        response.hero.subtext = llm_output["subtext"]
+
+    implications = llm_output.get("implications", {})
+    for idx_str, text in implications.items():
+        try:
+            idx = int(idx_str)
+            if 0 <= idx < len(response.proved_facts) and text:
+                tier = response.proved_facts[idx].confidence_tier
+                if tier == "emerging" and any(w in text.lower() for w in ["causes", "drives", "guarantees", "always"]):
+                    continue
+                response.proved_facts[idx].implication = text
+        except (ValueError, IndexError):
+            continue
+
+
+@router.get("/knowledge", response_model=KnowledgeResponse)
+async def get_progress_knowledge(
+    db: Session = Depends(get_db),
+    current_user: Athlete = Depends(get_current_user),
+):
+    """Phase 1 progress knowledge: correlation web, proved facts, hero."""
+    import asyncio
+    from services.consent import has_ai_consent
+
+    athlete_id = current_user.id
+    cache_key = f"progress_knowledge:{athlete_id}"
+
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return KnowledgeResponse(**cached)
+
+    response = _assemble_knowledge(athlete_id, db)
+
+    if has_ai_consent(athlete_id=athlete_id, db=db):
+        llm_output = await asyncio.to_thread(_generate_knowledge_llm, response, athlete_id)
+        if llm_output:
+            _apply_knowledge_llm(response, llm_output)
+
+    _set_cache(cache_key, response.model_dump(), ttl=1800)
+
+    return response
