@@ -4,17 +4,21 @@ import React, { useState } from 'react';
 
 interface SparklineChartProps {
   data: number[];
-  direction: 'rising' | 'stable' | 'declining';
+  direction: string;
   currentValue?: number;
   height?: number;
   width?: string;
 }
 
-const DIRECTION_COLORS = {
+const DIRECTION_COLORS: Record<string, { stroke: string; fill: string }> = {
   rising: { stroke: '#34d399', fill: '#34d39920' },
+  improving: { stroke: '#34d399', fill: '#34d39920' },
   stable: { stroke: '#fbbf24', fill: '#fbbf2420' },
   declining: { stroke: '#f87171', fill: '#f8717120' },
+  worsening: { stroke: '#f87171', fill: '#f8717120' },
 };
+
+const DEFAULT_COLORS = { stroke: '#fbbf24', fill: '#fbbf2420' };
 
 export function SparklineChart({
   data,
@@ -42,7 +46,7 @@ export function SparklineChart({
   const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const areaPath = `${linePath} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`;
 
-  const colors = DIRECTION_COLORS[direction];
+  const colors = DIRECTION_COLORS[direction] || DEFAULT_COLORS;
 
   return (
     <div className="relative" style={{ width }}>

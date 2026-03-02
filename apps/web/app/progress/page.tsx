@@ -59,7 +59,7 @@ function ChapterVisual({ chapter }: { chapter: NarrativeChapter }) {
       return (
         <SparklineChart
           data={(vd.values as number[]) || []}
-          direction={(vd.direction as 'rising' | 'stable' | 'declining') || 'stable'}
+          direction={(vd.direction as string) || 'stable'}
           currentValue={vd.current as number | undefined}
         />
       );
@@ -172,7 +172,7 @@ export default function ProgressPage() {
               <div className="mb-4">
                 <SparklineChart
                   data={verdict.sparkline_data}
-                  direction={verdict.sparkline_direction as 'rising' | 'stable' | 'declining'}
+                  direction={verdict.sparkline_direction}
                   currentValue={verdict.current_value}
                   height={56}
                 />
