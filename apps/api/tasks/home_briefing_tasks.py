@@ -519,6 +519,24 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             data_fingerprint=fingerprint,
         )
 
+        # Insight rotation: persist coach_noticed text for 49h so the next briefing
+        # can avoid repeating the same insight. 49h (1h buffer over 48h spec) ensures
+        # the suppression window outlasts consecutive daily briefings.
+        _coach_noticed_text = result.get("coach_noticed")
+        if _coach_noticed_text:
+            try:
+                import redis as _redis_mod
+                _r2 = _redis_mod.from_url(
+                    os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True
+                )
+                _r2.setex(
+                    f"coach_noticed_last:{athlete_id}",
+                    49 * 3600,  # 49-hour TTL (48h spec + 1h buffer)
+                    _coach_noticed_text,
+                )
+            except Exception as _e:
+                logger.debug("coach_noticed_last Redis write failed (non-blocking): %s", _e)
+
         reset_circuit(athlete_id)
 
         logger.info(

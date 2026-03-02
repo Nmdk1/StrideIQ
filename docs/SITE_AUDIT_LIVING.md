@@ -1,8 +1,8 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
-**Last updated:** March 1, 2026
-**Last updated by:** Builder session — Runtoon Share Flow deployed; Runtoon is now on-demand, not auto-generated
+**Last updated:** March 2, 2026
+**Last updated by:** Builder session — Coach quality fixes: Garmin Health API data in coach context, km→miles, 48h insight rotation, hallucination guardrails
 
 ---
 
@@ -10,8 +10,9 @@
 
 Shipped and now live in product/system behavior:
 
-- **Runtoon Share Flow live (Mar 1, 2026)**: Major UX pivot — Runtoon is now generated on-demand when the athlete taps "Share Your Run," not automatically on sync. Backend: `runtoon_002` migration (`share_dismissed_at` on `Activity`, `shared_at`/`share_format`/`share_target` on `RuntoonImage`). 3 new endpoints: `GET /v1/runtoon/pending` (share-eligible activity check, 8 eligibility rules, 2-mile threshold, 24h window), `POST /v1/activities/{id}/runtoon/dismiss` (idempotent, keyed by activity), `POST /v1/runtoon/{id}/shared` (analytics, `share_target` best-effort). Auto-generation removed from Garmin/Strava sync pipelines. Frontend: new `RuntoonSharePrompt` (mobile bottom sheet, polls `/pending` every 10s, auto-dismisses after 10min), new `RuntoonShareView` (full-screen overlay, generation skeleton, Web Share API with native share sheet on iOS/Android, desktop download+copy fallback). `RuntoonCard` updated: download dropdown replaced with "Share Your Run" button → opens `RuntoonShareView`. All new endpoints gated behind feature flag. 39 new tests (81 total for Runtoon system).
-- **Runtoon MVP live (Mar 1, 2026)**: Full-stack AI-generated personalized run caricature — deployed and verified. Backend: `AthletePhoto` + `RuntoonImage` models, `runtoon_001` Alembic migration, `storage_service.py` (boto3 → MinIO), `runtoon_service.py` (Gemini `gemini-3.1-flash-image-preview`), `runtoon_tasks.py` (Celery async), `runtoon.py` router. Frontend: `RuntoonCard` on activity detail, `RuntoonPhotoUpload` in settings, home teaser + "Your body. Your data. Your voice." brand subline. Feature-flagged (`runtoon.enabled`) — founder-only rollout. Object storage: MinIO (self-hosted S3-compatible, `strideiq_minio` container, private bucket `strideiq-runtoon`).
+- **Coach quality fixes (Mar 2, 2026)**: Three production failures addressed. (1) **GarminDay Health API data now in coach context**: `build_context()` in `ai_coach.py` queries `GarminDay` for last 7 days — `sleep_total_s` (shown as hours), `hrv_overnight_avg`, `resting_hr`, `avg_stress`, `sleep_score`, `body_battery_end` — formatted as "## Garmin Watch Data (Health API)" section with date-by-date rows. `get_wellness_trends()` in `coach_tools.py` now also queries `GarminDay` alongside `DailyCheckin`, adding Garmin-sourced sleep, HRV, RHR, stress to the narrative and a `garmin_health_api` data block. Attribution explicit: "source: Garmin Health API" in all narrative lines. (2) **Distances normalized to miles throughout coach context**: all `/ 1000` (km) replaced with `/ 1609.344` (miles), `_format_pace` now outputs `/mi`. (3) **Coach-noticed 48h rotation**: after each briefing write, `coach_noticed` text persisted to Redis `coach_noticed_last:{athlete_id}` with 49h TTL. Prompt for next briefing includes `ROTATION CONSTRAINT` instructing LLM not to repeat it. (4) **Hallucination guardrails**: soreness null → prompt says "not reported today — do NOT claim any soreness"; week run count explicitly grounded as `Runs completed this week so far: N` with LLM ban on fabricating missed/cut-run claims. 15 new unit tests (all passing). 117 pre-existing tests unchanged.
+- **Runtoon Share Flow live and verified (Mar 1, 2026)**: Major UX pivot — Runtoon is now generated on-demand when the athlete taps "Share Your Run," not automatically on sync. Confirmed working end-to-end on mobile: WhatsApp and Google Messages sharing verified. Backend: `runtoon_002` migration (`share_dismissed_at` on `Activity`, `shared_at`/`share_format`/`share_target` on `RuntoonImage`). 3 new endpoints: `GET /v1/runtoon/pending` (share-eligible activity check, 8 eligibility rules, 2-mile threshold, 24h window), `POST /v1/activities/{id}/runtoon/dismiss` (idempotent, keyed by activity), `POST /v1/runtoon/{id}/shared` (analytics, `share_target` best-effort/nullable). Auto-generation removed from Garmin/Strava sync pipelines. Frontend: new `RuntoonSharePrompt` (mobile bottom sheet, polls `/pending` every 10s, auto-dismisses after 10min), new `RuntoonShareView` (full-screen overlay, generation skeleton with "Almost there..." hint, Web Share API with native share sheet on iOS/Android, desktop download+copy fallback). `RuntoonCard` updated: shows "Share Your Run" CTA for all runs (with or without existing Runtoon). All endpoints gated behind feature flag. 39 new tests (81 total for Runtoon system). **3 post-deploy fixes applied:** (1) download endpoint was passing raw storage key instead of signed URL, (2) duplicate `to_public_url` function shadowed the MinIO-to-Caddy URL rewriter — all browser-facing URLs were pointing to internal Docker address, (3) `RuntoonCard` returned null when no Runtoon existed — now shows on-demand generation CTA.
+- **Runtoon MVP live (Feb 28–Mar 1, 2026)**: Full-stack AI-generated personalized run caricature. Backend: `AthletePhoto` + `RuntoonImage` models, `runtoon_001` Alembic migration, `storage_service.py` (boto3 → MinIO), `runtoon_service.py` (Gemini `gemini-3.1-flash-image-preview` for image, `gemini-2.5-flash` for caption), `runtoon_tasks.py` (Celery async), `runtoon.py` router. Frontend: `RuntoonCard` on activity detail (above the fold), `RuntoonPhotoUpload` in settings. Feature-flagged (`runtoon.enabled`) — founder + father rollout. Object storage: MinIO (self-hosted S3-compatible, `strideiq_minio` container, private bucket `strideiq-runtoon`). Caddy proxy route (`/storage/*`) serves signed MinIO URLs to browsers. Style: no speech bubbles/comic sound effects — humor from scene composition and expressions. Captions: AI-generated with quality gates (min 20 chars, multi-word, blocklist, retry on rejection). Rich context: weekly mileage, upcoming race, training phase, coach insights fed to both image and caption prompts. 9:16 Stories recompose: Pillow-based, centered letterbox with watermark. Download: blob-based file save (not new-tab). Daily cap: 5 generations/athlete/day.
 - **Compact PMC chart added to home page (Mar 1, 2026)**: 30-day Fitness/Fatigue/Form chart now visible on home in position 2 (directly below LastRunHero, above Morning Voice). Self-contained component `CompactPMC.tsx` fetches from existing `/v1/training-load/history?days=30` endpoint (5-min cache). Renders nothing if no data. "View training load →" CTA + chart body click navigates to `/training-load`. Legend tooltips explain each metric independently. UTC-safe date formatting.
 - **Chart date labels timezone fix (Mar 1, 2026)**: All Recharts date axes now use UTC methods — chart labels no longer shift one day back for US timezone users.
 - **Monetization v1 completed**: 4-tier pricing UX, checkout flows, settings tier display, plan pace lock/unlock UX, register intent carry-through.
@@ -66,7 +67,7 @@ Migration runs automatically on API container startup. Manual migration: `docker
 | SQLAlchemy models | 57 |
 | FastAPI routers | 53 |
 | Python services | 137 |
-| Celery task modules | 6 |
+| Celery task modules | 7 (includes `runtoon_tasks.py`) |
 | Test files | 144 |
 | Alembic migrations | 66 |
 | React pages | 43 |
@@ -245,7 +246,7 @@ InsightLog → Adaptation Narrator → Narrated to athlete
 |-------|---------|--------|
 | `/home` | Morning command center: run shape + compact PMC (visual pair), coach briefing, workout, check-in, race countdown | Working — compact PMC added Mar 1, moved to pos 2 |
 | `/activities` | Activity list with mini charts | Working |
-| `/activities/[id]` | Activity detail: Run Shape Canvas, splits, analysis | Working — needs narrative moments |
+| `/activities/[id]` | Activity detail: Run Shape Canvas, Runtoon (above the fold), splits, analysis | Working — needs narrative moments |
 | `/calendar` | Training calendar with plan overlay | Working |
 | `/coach` | AI coach chat interface | Strongest surface in the product |
 | `/progress` | Race readiness, predictions, pace zones, PBs | Working |
@@ -300,6 +301,10 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - **Garmin production-access process still pending final completion** — evaluation environment is active; endpoint compliance and submission package are in progress with Partner Services.
 - **Garmin physiology coverage is underfed for connected athletes** — monitor now exists (`/v1/admin/ops/ingestion/garmin-health`) and currently indicates sparse sleep/HRV population for some athletes.
 - ~~**Email deliverability wiring remains operationally sensitive**~~ — **RESOLVED (Feb 28, 2026).** Production email is live: `smtp.gmail.com:587`, sender `noreply@strideiq.run` via `michael@strideiq.run`. Password reset E2E verified by Codex. DNS hardening (SPF/DKIM/DMARC) still needed at Porkbun.
+- **Coach has no Garmin Health API data in context (Mar 2, 2026):** `build_context()` in `ai_coach.py` only queries `DailyCheckin` (athlete self-report). It never queries `GarminDay` — Garmin watch-measured sleep, HRV, stress, resting HR are invisible to the coach. When asked about watch data, coach returns only Activity API metrics. This blocks Garmin partner compliance screenshots (Marc Lussi requested Health API evidence). Builder note: `docs/BUILDER_NOTE_2026-03-02_COACH_QUALITY.md`.
+- **Coach hallucinations (Mar 2, 2026):** Coach referenced shin soreness that doesn't exist (check-in = None), a 15-mile Saturday run (actual = 10), and "cutting runs short this week" on Monday morning before any runs. Builder note tracks this.
+- **Home briefing `coach_noticed` staleness (Mar 2, 2026):** Same "efficiency improved 4.4%" insight repeated for 4 days despite significant new training. No insight rotation or cooldown mechanism. Builder note tracks this.
+- **Coach context distances in km (cosmetic):** `build_context()` internally formats distances in km before passing to LLM. Coach output is in miles (LLM converts), but feeding km into prompt risks occasional km in responses.
 - **Insights feed noise:** `/insights` Active Insights section has duplicate volume alerts and low-quality achievement cards — needs deduplication and quality filter
 - **Activity detail moments:** some key moments still show raw metrics that need stronger narrative translation
 - **Home page dual voice:** `compute_coach_noticed` and `morning_voice` still overlap; unify into one coherent briefing voice
@@ -409,12 +414,13 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 | `digest_tasks.py` | Digest generation |
 | `progress_prewarm_tasks.py` | Progress endpoint/cache prewarm |
 | `garmin_health_monitor_task.py` | Daily Garmin ingestion coverage monitoring |
+| `runtoon_tasks.py` | On-demand Runtoon generation (triggered by share flow, not by sync) |
 
 ---
 
 ## 12. Alembic Migration Chain
 
-Current head: `corr_persist_001` (chains off `demo_guard_001` ← `sleep_quality_001` ← `rsi_cache_001` ← ...)
+Current head: `runtoon_002` (chains off `runtoon_001` ← `corr_persist_001` ← `demo_guard_001` ← ...)
 
 CI enforces single-head integrity via `.github/scripts/ci_alembic_heads_check.py`.
 Max 2 roots allowed (main chain + phase chain).
@@ -545,6 +551,16 @@ apps/api/services/strava_service.py         ← Strava API wrapper
 apps/api/tasks/strava_tasks.py              ← Background sync
 apps/api/tasks/garmin_webhook_tasks.py      ← Garmin webhook ingest workers
 apps/api/services/garmin_ingestion_health.py ← GarminDay coverage computation
+
+# Runtoon (Share Your Run)
+apps/api/routers/runtoon.py                 ← Runtoon API (photos, generate, pending, dismiss, shared, download)
+apps/api/services/runtoon_service.py        ← Gemini image+caption generation, style anchor, 9:16 recompose
+apps/api/tasks/runtoon_tasks.py             ← Celery task: on-demand generation with rich context
+apps/api/services/storage_service.py        ← MinIO/S3 file ops + to_public_url (Caddy proxy rewriter)
+apps/web/components/activities/RuntoonCard.tsx       ← Activity page card (CTA or image + share button)
+apps/web/components/runtoon/RuntoonSharePrompt.tsx   ← Mobile bottom sheet (polls /pending)
+apps/web/components/runtoon/RuntoonShareView.tsx     ← Full-screen share overlay (Web Share API)
+docs/specs/RUNTOON_SHARE_FLOW_SPEC.md       ← Full product spec (all decisions finalized)
 
 # Frontend
 apps/web/app/home/page.tsx                  ← Home page

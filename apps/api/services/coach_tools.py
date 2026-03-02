@@ -2177,12 +2177,14 @@ def compare_training_periods(db: Session, athlete_id: UUID, days: int = 28) -> D
 
 def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[str, Any]:
     """
-    Phase 3: Wellness trends from DailyCheckin data.
+    Phase 3: Wellness trends from DailyCheckin (self-report) + GarminDay (watch-measured).
 
     Returns sleep, stress, soreness, HRV, and mindset trends.
     Critical for understanding recovery context and readiness.
+    Garmin Health API data (hrv_overnight_avg, resting_hr, sleep_total_s, avg_stress)
+    is included alongside athlete self-report when available.
     """
-    from models import DailyCheckin
+    from models import DailyCheckin, GarminDay
 
     now = datetime.utcnow()
     days = max(7, min(int(days), 90))
@@ -2199,7 +2201,18 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
             .all()
         )
 
-        if not checkins:
+        # Garmin Health API data — watch-measured biometrics for the same window
+        garmin_days = (
+            db.query(GarminDay)
+            .filter(
+                GarminDay.athlete_id == athlete_id,
+                GarminDay.calendar_date >= cutoff.date(),
+            )
+            .order_by(GarminDay.calendar_date.desc())
+            .all()
+        )
+
+        if not checkins and not garmin_days:
             return {
                 "ok": True,
                 "tool": "get_wellness_trends",
@@ -2207,12 +2220,13 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
                 "data": {
                     "window_days": days,
                     "checkin_count": 0,
-                    "message": "No wellness check-ins recorded in this period.",
+                    "garmin_days_count": 0,
+                    "message": "No wellness check-ins or Garmin Health API data recorded in this period.",
                 },
                 "evidence": [],
             }
 
-        # Aggregate metrics
+        # Aggregate metrics from self-report check-ins
         sleep_values = [float(c.sleep_h) for c in checkins if c.sleep_h is not None]
         stress_values = [int(c.stress_1_5) for c in checkins if c.stress_1_5 is not None]
         soreness_values = [int(c.soreness_1_5) for c in checkins if c.soreness_1_5 is not None]
@@ -2221,6 +2235,16 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
         enjoyment_values = [int(c.enjoyment_1_5) for c in checkins if c.enjoyment_1_5 is not None]
         confidence_values = [int(c.confidence_1_5) for c in checkins if c.confidence_1_5 is not None]
         motivation_values = [int(c.motivation_1_5) for c in checkins if c.motivation_1_5 is not None]
+
+        # Aggregate Garmin Health API biometrics (device-measured, higher fidelity than self-report)
+        # avg_stress = -1 means insufficient data from Garmin — exclude from aggregation
+        garmin_sleep_h_vals = [
+            g.sleep_total_s / 3600.0 for g in garmin_days if g.sleep_total_s is not None
+        ]
+        garmin_hrv_vals = [g.hrv_overnight_avg for g in garmin_days if g.hrv_overnight_avg is not None]
+        garmin_rhr_vals = [g.resting_hr for g in garmin_days if g.resting_hr is not None]
+        garmin_stress_vals = [g.avg_stress for g in garmin_days if g.avg_stress is not None and g.avg_stress >= 0]
+        garmin_sleep_score_vals = [g.sleep_score for g in garmin_days if g.sleep_score is not None]
 
         def avg(vals: List) -> Optional[float]:
             return round(sum(vals) / len(vals), 2) if vals else None
@@ -2264,36 +2288,64 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
             })
 
         # --- Narrative ---
-        # Lead with most recent entry for temporal anchoring — prevents LLM from
-        # misattributing aggregate averages as "last night" facts.
-        most_recent = checkins[0]
-        recent_parts: List[str] = [f"Most recent entry ({most_recent.date.isoformat()}):"]
-        if most_recent.sleep_h is not None:
-            recent_parts.append(f"sleep={float(most_recent.sleep_h):.1f}h")
-        if most_recent.stress_1_5 is not None:
-            recent_parts.append(f"stress={most_recent.stress_1_5}/5")
-        if most_recent.soreness_1_5 is not None:
-            recent_parts.append(f"soreness={most_recent.soreness_1_5}/5")
-        if most_recent.hrv_rmssd is not None:
-            recent_parts.append(f"HRV={float(most_recent.hrv_rmssd):.0f}ms")
-        if most_recent.resting_hr is not None:
-            recent_parts.append(f"RHR={most_recent.resting_hr}bpm")
-        most_recent_line = " | ".join(recent_parts) if len(recent_parts) > 1 else f"Most recent entry ({most_recent.date.isoformat()}): no numeric data."
+        # Lead with most recent self-report entry for temporal anchoring.
+        # Guard: if no checkins (only Garmin data), skip this block.
+        most_recent_line = ""
+        if checkins:
+            most_recent = checkins[0]
+            recent_parts: List[str] = [f"Most recent self-report ({most_recent.date.isoformat()}):"]
+            if most_recent.sleep_h is not None:
+                recent_parts.append(f"sleep={float(most_recent.sleep_h):.1f}h")
+            if most_recent.stress_1_5 is not None:
+                recent_parts.append(f"stress={most_recent.stress_1_5}/5")
+            if most_recent.soreness_1_5 is not None:
+                recent_parts.append(f"soreness={most_recent.soreness_1_5}/5")
+            if most_recent.hrv_rmssd is not None:
+                recent_parts.append(f"HRV={float(most_recent.hrv_rmssd):.0f}ms")
+            if most_recent.resting_hr is not None:
+                recent_parts.append(f"RHR={most_recent.resting_hr}bpm")
+            most_recent_line = (
+                " | ".join(recent_parts)
+                if len(recent_parts) > 1
+                else f"Most recent self-report ({most_recent.date.isoformat()}): no numeric data."
+            )
 
         wt_parts: List[str] = [
-            most_recent_line,
-            f"Wellness over {days} days ({len(checkins)} check-ins):",
+            most_recent_line or f"No self-report check-ins in last {days} days.",
+            f"Wellness over {days} days ({len(checkins)} check-ins, {len(garmin_days)} Garmin Health API days):",
         ]
         if sleep_values:
-            wt_parts.append(f"Sleep avg {avg(sleep_values):.1f}h (trend: {trend(sleep_values) or 'N/A'}).")
+            wt_parts.append(f"Self-report sleep avg {avg(sleep_values):.1f}h (trend: {trend(sleep_values) or 'N/A'}).")
+        if garmin_sleep_h_vals:
+            wt_parts.append(
+                f"Garmin device sleep avg {avg(garmin_sleep_h_vals):.1f}h "
+                f"(trend: {trend(garmin_sleep_h_vals) or 'N/A'}, source: Garmin Health API)."
+            )
+        if garmin_sleep_score_vals:
+            wt_parts.append(f"Garmin sleep score avg {avg(garmin_sleep_score_vals):.0f}/100 (source: Garmin Health API).")
         if stress_values:
-            wt_parts.append(f"Stress avg {avg(stress_values):.1f}/5 (trend: {trend(stress_values) or 'N/A'}).")
+            wt_parts.append(f"Self-report stress avg {avg(stress_values):.1f}/5 (trend: {trend(stress_values) or 'N/A'}).")
+        if garmin_stress_vals:
+            wt_parts.append(
+                f"Garmin device stress avg {avg(garmin_stress_vals):.0f} "
+                f"(trend: {trend(garmin_stress_vals) or 'N/A'}, source: Garmin Health API)."
+            )
         if soreness_values:
             wt_parts.append(f"Soreness avg {avg(soreness_values):.1f}/5 (trend: {trend(soreness_values) or 'N/A'}).")
         if hrv_values:
-            wt_parts.append(f"HRV avg {avg(hrv_values):.0f} ms (trend: {trend(hrv_values) or 'N/A'}). Higher = better recovery.")
+            wt_parts.append(f"HRV (self-report) avg {avg(hrv_values):.0f} ms (trend: {trend(hrv_values) or 'N/A'}).")
+        if garmin_hrv_vals:
+            wt_parts.append(
+                f"Garmin overnight HRV avg {avg(garmin_hrv_vals):.0f} ms "
+                f"(trend: {trend(garmin_hrv_vals) or 'N/A'}, source: Garmin Health API). Higher = better recovery."
+            )
         if resting_hr_values:
-            wt_parts.append(f"Resting HR avg {avg(resting_hr_values):.0f} bpm (trend: {trend(resting_hr_values) or 'N/A'}).")
+            wt_parts.append(f"Resting HR (self-report) avg {avg(resting_hr_values):.0f} bpm (trend: {trend(resting_hr_values) or 'N/A'}).")
+        if garmin_rhr_vals:
+            wt_parts.append(
+                f"Garmin resting HR avg {avg(garmin_rhr_vals):.0f} bpm "
+                f"(trend: {trend(garmin_rhr_vals) or 'N/A'}, source: Garmin Health API)."
+            )
         wt_narrative = " ".join(wt_parts) if len(wt_parts) > 1 else "No wellness data available."
 
         return {
@@ -2304,6 +2356,16 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
             "data": {
                 "window_days": days,
                 "checkin_count": len(checkins),
+                "garmin_days_count": len(garmin_days),
+                "garmin_health_api": {
+                    "sleep_avg_h": avg(garmin_sleep_h_vals),
+                    "sleep_score_avg": avg(garmin_sleep_score_vals),
+                    "hrv_overnight_avg_ms": avg(garmin_hrv_vals),
+                    "resting_hr_avg_bpm": avg(garmin_rhr_vals),
+                    "stress_avg": avg(garmin_stress_vals),
+                    "data_points": len(garmin_days),
+                    "note": "Device-measured data from Garmin Health API",
+                },
                 "sleep": {
                     "avg_hours": avg(sleep_values),
                     "min_hours": round(min(sleep_values), 1) if sleep_values else None,

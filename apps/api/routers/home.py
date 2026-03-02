@@ -19,6 +19,7 @@ from sqlalchemy import desc
 from pydantic import BaseModel, ConfigDict
 import asyncio
 import logging
+import redis
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -1160,6 +1161,19 @@ def generate_coach_home_briefing(
         logger.warning(f"compute_coach_noticed failed (non-blocking): {e}")
 
     # Build the prompt
+    # --- Insight rotation: suppress recently-surfaced coach_noticed insight for 48h ---
+    # Prevents the same EFFICIENCY_BREAK (or any persistent rule) from dominating
+    # coach_noticed indefinitely. The last-shown insight text is stored in Redis
+    # with 49h TTL; if present, the LLM is instructed to surface a different angle.
+    _last_coach_noticed: Optional[str] = None
+    try:
+        import redis as _redis_rot   # fresh alias — avoids UnboundLocalError from existing local imports
+        import os as _os
+        _r = _redis_rot.from_url(_os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        _last_coach_noticed = _r.get(f"coach_noticed_last:{athlete_id}")
+    except Exception:
+        pass  # Redis unavailable — skip rotation, not worth failing the build
+
     parts = [
         "You are an elite running coach speaking directly to your athlete about TODAY.",
         "You have their full training profile below. Use it. Be specific, direct, insightful.",
@@ -1241,7 +1255,13 @@ def generate_coach_home_briefing(
         parts.append("No planned workout and nothing completed yet today.")
 
     if checkin_data:
-        parts.append(f"Check-in: Feeling {checkin_data.get('motivation_label', '?')}, Sleep {checkin_data.get('sleep_label', '?')}, Soreness {checkin_data.get('soreness_label', '?')}")
+        soreness_label = checkin_data.get("soreness_label")
+        soreness_str = soreness_label if soreness_label else "not reported today — do NOT claim any soreness"
+        parts.append(
+            f"Check-in: Feeling {checkin_data.get('motivation_label', '?')}, "
+            f"Sleep {checkin_data.get('sleep_label', '?')}, "
+            f"Soreness {soreness_str}"
+        )
 
     # --- Sleep source grounding (source contract — prevents hallucinated sleep values) ---
     # Query Garmin device sleep for last night using athlete-local date.
@@ -1274,6 +1294,40 @@ def generate_coach_home_briefing(
         "Sleep grounding: athlete=%s garmin_sleep_h=%s checkin_sleep_h=%s",
         athlete_id, garmin_sleep_h, checkin_sleep_h,
     )
+
+    # Runs completed this week — ground the LLM so it never fabricates cut runs
+    try:
+        from datetime import date as _date
+        _today = _date.today()
+        _week_start = _today - __import__("datetime").timedelta(days=_today.weekday())
+        from models import Activity as _Activity
+        from sqlalchemy import func as _func
+        _runs_this_week = (
+            db.query(_func.count(_Activity.id))
+            .filter(
+                _Activity.athlete_id == athlete_id,
+                _Activity.start_time >= _week_start,
+                _Activity.start_time < _today + __import__("datetime").timedelta(days=1),
+            )
+            .scalar()
+        ) or 0
+        parts.append(
+            f"Runs completed this week so far (Monday through now): {_runs_this_week}. "
+            "CRITICAL: Do NOT claim the athlete cut runs short, reduced mileage, or missed runs "
+            "unless this count is LESS than the number of workouts planned for days already past."
+        )
+    except Exception:
+        pass  # Non-blocking
+
+    # Rotation constraint: if the same coach_noticed insight was shown within 48h,
+    # instruct the LLM to surface a different angle.
+    if _last_coach_noticed:
+        parts.append(
+            f"\nROTATION CONSTRAINT: The following coach_noticed insight was already shown to "
+            f"this athlete in the last 48 hours. Do NOT repeat it or rephrase it as your primary "
+            f"coach_noticed today. Choose a DIFFERENT signal, pattern, or angle from the data:\n"
+            f'"{_last_coach_noticed[:200]}"'
+        )
 
     prompt = "\n".join(parts)
 

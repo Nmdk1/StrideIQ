@@ -128,6 +128,7 @@ from models import (
     TrainingPlan,
     PlannedWorkout,
     DailyCheckin,
+    GarminDay,
     PersonalBest,
     IntakeQuestionnaire,
     CoachIntentSnapshot,
@@ -1780,15 +1781,15 @@ ATHLETE BRIEF:
         
         if recent_activities:
             context_parts.append("\n## Last 7 Days")
-            total_distance = sum(a.distance_m or 0 for a in recent_activities) / 1000
+            total_distance_mi = sum(a.distance_m or 0 for a in recent_activities) / 1609.344
             total_time = sum(a.duration_s or 0 for a in recent_activities) / 60
-            context_parts.append(f"Runs: {len(recent_activities)} | Distance: {total_distance:.1f} km | Time: {total_time:.0f} min")
+            context_parts.append(f"Runs: {len(recent_activities)} | Distance: {total_distance_mi:.1f} mi | Time: {total_time:.0f} min")
             
             for a in recent_activities[:5]:  # Show last 5
-                distance_km = (a.distance_m or 0) / 1000
+                distance_mi = (a.distance_m or 0) / 1609.344
                 pace = self._format_pace(a.duration_s, a.distance_m) if a.distance_m else "N/A"
                 hr = f"{a.avg_hr} bpm" if a.avg_hr else ""
-                context_parts.append(f"  - {a.start_time.strftime('%a %m/%d')}: {distance_km:.1f} km @ {pace} {hr}")
+                context_parts.append(f"  - {a.start_time.strftime('%a %m/%d')}: {distance_mi:.1f} mi @ {pace} {hr}")
         
         # --- 30-Day Summary ---
         thirty_days_ago = today - timedelta(days=30)
@@ -1800,19 +1801,19 @@ ATHLETE BRIEF:
         
         if month_activities:
             context_parts.append("\n## Last 30 Days")
-            total_distance = sum(a.distance_m or 0 for a in month_activities) / 1000
-            avg_weekly = total_distance / 4.3  # ~4.3 weeks
+            total_distance_mi = sum(a.distance_m or 0 for a in month_activities) / 1609.344
+            avg_weekly_mi = total_distance_mi / 4.3  # ~4.3 weeks
             run_count = len(month_activities)
             
             # Calculate average efficiency
             efficiencies = []
             for a in month_activities:
                 if a.avg_hr and a.distance_m and a.duration_s:
-                    pace_km = a.duration_s / (a.distance_m / 1000)
-                    efficiency = pace_km / a.avg_hr  # pace/HR ratio (directionally ambiguous — see OutputMetricMeta)
+                    pace_per_mi = a.duration_s / (a.distance_m / 1609.344)
+                    efficiency = pace_per_mi / a.avg_hr  # pace/HR ratio (directionally ambiguous — see OutputMetricMeta)
                     efficiencies.append(efficiency)
             
-            context_parts.append(f"Runs: {run_count} | Distance: {total_distance:.0f} km | Avg/week: {avg_weekly:.0f} km")
+            context_parts.append(f"Runs: {run_count} | Distance: {total_distance_mi:.0f} mi | Avg/week: {avg_weekly_mi:.0f} mi")
             
             if efficiencies:
                 avg_eff = sum(efficiencies) / len(efficiencies)
@@ -1825,7 +1826,7 @@ ATHLETE BRIEF:
         ).order_by(DailyCheckin.date.desc()).limit(3).all()
         
         if recent_checkins:
-            context_parts.append("\n## Recent Wellness")
+            context_parts.append("\n## Recent Wellness (athlete self-report)")
             for c in recent_checkins:
                 parts = []
                 if c.motivation_1_5 is not None:
@@ -1837,9 +1838,46 @@ ATHLETE BRIEF:
                     parts.append(f"Stress: {c.stress_1_5}/5")
                 if c.soreness_1_5 is not None:
                     parts.append(f"Soreness: {c.soreness_1_5}/5")
+                else:
+                    parts.append("Soreness: not reported")
                 if parts:
                     context_parts.append(f"  {c.date.strftime('%m/%d')}: {' | '.join(parts)}")
-        
+
+        # --- Garmin Watch Data (Health API) — last 7 days ---
+        # This is device-measured biometric data (not athlete self-report).
+        # Required for coach to answer "how is my body responding based on watch data?"
+        # and for Garmin partner compliance (demonstrating Health API usage).
+        garmin_days = (
+            self.db.query(GarminDay)
+            .filter(
+                GarminDay.athlete_id == athlete_id,
+                GarminDay.calendar_date >= seven_days_ago,
+            )
+            .order_by(GarminDay.calendar_date.desc())
+            .limit(7)
+            .all()
+        )
+        if garmin_days:
+            context_parts.append("\n## Garmin Watch Data (Health API — device-measured, last 7 days)")
+            for g in garmin_days:
+                row_parts = []
+                if g.sleep_total_s is not None:
+                    sleep_h = g.sleep_total_s / 3600.0
+                    row_parts.append(f"Sleep: {sleep_h:.1f}h")
+                if g.sleep_score is not None:
+                    row_parts.append(f"Sleep score: {g.sleep_score}")
+                if g.hrv_overnight_avg is not None:
+                    row_parts.append(f"HRV: {g.hrv_overnight_avg}ms")
+                if g.resting_hr is not None:
+                    row_parts.append(f"Resting HR: {g.resting_hr} bpm")
+                if g.avg_stress is not None and g.avg_stress >= 0:
+                    row_parts.append(f"Stress: {g.avg_stress}")
+                if g.body_battery_end is not None:
+                    row_parts.append(f"Body Battery EOD: {g.body_battery_end}")
+                if row_parts:
+                    date_str = g.calendar_date.strftime("%m/%d")
+                    context_parts.append(f"  {date_str}: {' | '.join(row_parts)}")
+
         return "\n".join(context_parts)
     
     def _format_time(self, seconds: int) -> str:
@@ -1853,14 +1891,14 @@ ATHLETE BRIEF:
         return f"{minutes}:{secs:02d}"
     
     def _format_pace(self, duration_s: Optional[int], distance_m: Optional[int]) -> str:
-        """Format pace as M:SS/km."""
+        """Format pace as M:SS/mi (always miles — never km or meters)."""
         if not duration_s or not distance_m or distance_m == 0:
             return "N/A"
-        
-        pace_per_km = duration_s / (distance_m / 1000)
-        minutes = int(pace_per_km // 60)
-        seconds = int(pace_per_km % 60)
-        return f"{minutes}:{seconds:02d}/km"
+
+        pace_per_mi = duration_s / (distance_m / 1609.344)
+        minutes = int(pace_per_mi // 60)
+        seconds = int(pace_per_mi % 60)
+        return f"{minutes}:{seconds:02d}/mi"
     
     def _get_plan_week(self, plan: TrainingPlan) -> int:
         """Calculate current week of the plan."""
