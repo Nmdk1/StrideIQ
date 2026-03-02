@@ -1,18 +1,38 @@
-# Builder Note — Progress Page Redesign
+# Builder Note — Progress Page Phase 1: Ship the Moat
 
 **Date:** March 2, 2026
 **Spec:** `docs/specs/PROGRESS_NARRATIVE_SPEC_V1.md`
+**Design target:** `docs/references/progress_page_mockup_v2_2026-03-02.html`
 **Design principle:** `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` Part 1
-**Priority:** High — this page converts free users to subscribers
+
+---
+
+## Before Your First Tool Call
+
+Read these in order:
+
+1. `docs/FOUNDER_OPERATING_CONTRACT.md` — how you work (non-negotiable)
+2. `docs/PRODUCT_MANIFESTO.md` — the soul
+3. `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` — visual doctrine
+4. `docs/specs/PROGRESS_NARRATIVE_SPEC_V1.md` — this feature's spec
+5. `docs/references/progress_page_mockup_v2_2026-03-02.html` — open in browser, this IS the design
+6. This builder note — scope, contracts, tests
+
+**Canonical mockup:** `docs/references/progress_page_mockup_v2_2026-03-02.html`
+There is an older v1 mockup in the same folder — ignore it. v2 is the only
+design target. If any doc references a different mockup filename, it is stale.
 
 ---
 
 ## Objective
 
-Replace the current progress page (12 disjointed text cards) with a visual
-story told by a coach. Every section follows the design principle: visual
-anchor catches the eye, narrative bridge below teaches the athlete to read
-the visual.
+Kill the current progress page (12 disjointed text cards, embarassingly
+generic) and replace it with three sections that show what no competitor
+can show: the system's accumulated knowledge about this specific human.
+
+**Phase 1 ships:** Hero + Correlation Web + What the Data Proved.
+All three use data that exists today. No new backend computation needed
+beyond querying `CorrelationFinding` and `TrainingLoadCalculator`.
 
 ---
 
@@ -20,187 +40,322 @@ the visual.
 
 ### In scope
 
-1. **New endpoint:** `GET /v1/progress/narrative`
-   - Phase 1: deterministic data assembly (sparklines, bar data, gauges, correlation series)
-   - Phase 2: LLM narrative synthesis (coach voice for each section)
-   - Redis caching (30min TTL narrative, longer for visual data)
-   - Graceful fallback: visuals + deterministic labels when LLM fails
+1. **New endpoint:** `GET /v1/progress/knowledge`
+   - Deterministic data assembly only (< 500ms) for correlation graph data
+   - LLM pass for hero headline + per-finding implication text (< 5s total)
+   - Redis caching: `progress_knowledge:{athlete_id}`, 30min TTL
+   - Graceful fallback: all data renders with deterministic text if LLM fails
 
-2. **Frontend visual components:**
-   - Sparkline (fitness arc, efficiency trend)
-   - Bar chart (weekly volume)
-   - Health strip (sleep, HRV, RHR, stress indicators)
-   - Gauge (readiness, form position)
-   - Paired sparkline (N=1 correlation visual)
-   - Capability bars (race time projections, no-race variant)
-   - Completion ring (consistency %)
-   - Stat highlight (PB callout)
+2. **Frontend — complete page replacement:**
+   - `ProgressHero` — gradient-backed header with CTL stats strip, coach headline
+   - `CorrelationWeb` — D3 force-directed graph of confirmed N=1 correlations
+   - `WhatDataProved` — expandable fact list with evidence + confidence tiers
+   - `PatternsForming` — indicator shown when no findings exist yet
 
-3. **Frontend narrative layout:**
-   - Flowing document with visual → narrative rhythm
-   - Not cards. Not a grid.
-   - Interactive visuals (hover/tap for values)
+3. **New dependency:** `d3` (npm) — force simulation for the correlation web
 
-4. **Looking Ahead — two variants:**
-   - Race on calendar: readiness gauge + scenario framing
-   - No race: capability trajectory bars + trend narrative
+4. **Old components removed from progress page:**
+   - SparklineChart, BarChart, HealthStrip, FormGauge, PairedSparkline,
+     CapabilityBars, CompletionRing, StatHighlight — none of these render
+     on the new page. Keep the component files (other pages may use them)
+     but remove all imports from `progress/page.tsx`.
 
-5. **Athlete feedback:** 3-button footer logged to `NarrativeFeedback` table
+### Out of scope (Phase 2-3)
 
-6. **New Alembic migration:** `progress_narrative_001`
-
-### Out of scope
-
-- Full PMC chart (lives on Training Load page)
-- Full efficiency chart (lives on Analytics page)
-- PB table as standalone section (woven into chapters if relevant)
-- Runner profile section (belongs on settings/profile)
+- Physiological Portrait (needs TSB-zone correlation job)
+- Training Block Timeline (needs block timeline endpoint)
+- Capability Expansion (needs prediction history snapshots)
+- Recovery Fingerprint (needs metric timestamping)
+- Prediction Space (needs `/v1/predictions/scenario`)
+- NarrativeFeedback model / feedback endpoint (defer until page proves itself)
+- Old `/v1/progress/narrative` endpoint — leave for now, do not break
 
 ---
 
-## Data Sources (all existing — no new services)
+## Data Sources
 
-| Source | What it provides | Visual it feeds |
-|--------|-----------------|-----------------|
-| `TrainingLoadCalculator` | CTL history, ATL, TSB, zone | Verdict sparkline, form gauge |
-| `get_efficiency_trends()` | Efficiency time series | Efficiency sparkline chapter |
-| `get_confirmed_correlations()` | N=1 patterns with time series | Paired sparkline |
-| `get_weekly_volume()` | Weekly mileage over 8 weeks | Volume bar chart chapter |
-| `get_wellness_trends()` | Sleep, HRV, RHR, stress, motivation | Health strip chapter, dot plot |
-| `get_recovery_status()` | Durability, injury risk, readiness | Readiness gauge |
-| `get_race_predictions()` | Finish time estimates by distance | Capability bars |
-| `TrainingPlan` | Race info, phase | Looking Ahead variant selection |
-| `GarminDay` | Device health metrics | Health strip data |
-| `DailyCheckin` | Checkin count, wellness scores | Dot plot, patterns_forming indicator |
-| `calculate_consistency_index()` | Completion % | Completion ring |
-| `PersonalBest` | Recent PBs | Stat highlight chapter |
-| `Activity` | Recent runs | Evidence in narratives |
+| Source | What it provides | Section |
+|--------|-----------------|---------|
+| `CorrelationFinding` model | All active N=1 correlation findings | Correlation Web + What Data Proved |
+| `TrainingLoadCalculator` | CTL history (first value, current value) | Hero stats strip |
+| `TrainingPlan` | goal_race_name, goal_race_date | Hero date label |
+| `DailyCheckin` | Checkin count (for patterns_forming fallback) | Patterns Forming |
 
 ---
 
-## Files to change
+## Files to Change
 
 | File | Change |
 |------|--------|
-| `apps/api/routers/progress.py` | New `get_progress_narrative()` endpoint + response models |
-| `apps/api/models.py` | `NarrativeFeedback` model |
-| `apps/api/alembic/versions/progress_narrative_001_*.py` | Migration |
-| `apps/web/app/progress/page.tsx` | Replace card grid with visual + narrative layout |
-| `apps/web/lib/hooks/queries/progress.ts` | New `useProgressNarrative()` hook + types |
-| `apps/web/components/progress/` | New visual components (sparkline, bar chart, gauge, etc.) |
-| `docs/SITE_AUDIT_LIVING.md` | Update |
+| `apps/api/routers/progress.py` | Add `GET /v1/progress/knowledge` endpoint + new response models (`KnowledgeResponse`, `CorrelationNode`, `CorrelationEdge`, `ProvedFact`, `HeroData`) |
+| `apps/web/app/progress/page.tsx` | **Complete rewrite** — replace card grid with Hero + CorrelationWeb + WhatDataProved |
+| `apps/web/lib/hooks/queries/progress.ts` | Add `useProgressKnowledge()` hook + new types |
+| `apps/web/components/progress/CorrelationWeb.tsx` | **New file** — D3 force graph |
+| `apps/web/components/progress/WhatDataProved.tsx` | **New file** — expandable fact list |
+| `apps/web/components/progress/ProgressHero.tsx` | **New file** — hero header |
+| `apps/web/components/progress/index.ts` | Update exports |
+| `apps/web/package.json` | Add `d3` + `@types/d3` |
+| `docs/SITE_AUDIT_LIVING.md` | Update post-deploy |
 
 ---
 
-## Build Contracts (non-negotiable — from spec)
+## Backend: `GET /v1/progress/knowledge`
 
-Read the full "Build Contracts" section in the spec. Summary:
+### Response Models
 
-1. **Render independence.** Single endpoint `GET /v1/progress/narrative`.
-   Visual data is assembled deterministically (< 500ms), then LLM narrative
-   is generated (< 5s total). If LLM fails, response still contains all
-   visual data + deterministic fallback text. No two-call split. The frontend
-   shows a visual-first skeleton while the call completes.
+```python
+class CorrelationNode(BaseModel):
+    id: str               # e.g. "sleep_hours" or "efficiency"
+    label: str            # e.g. "Sleep" or "Efficiency"
+    group: str            # "input" or "output"
 
-2. **Latency budget.** Deterministic visuals < 500ms. LLM narrative < 5s.
-   Cache hit < 100ms.
+class CorrelationEdge(BaseModel):
+    source: str           # node id
+    target: str           # node id
+    r: float              # correlation_coefficient
+    direction: str        # "positive" or "negative"
+    lag_days: int          # time_lag_days
+    times_confirmed: int
+    strength: str         # "weak", "moderate", "strong"
+    note: str             # insight_text or LLM-generated
 
-3. **Per-act fallback copy.** Every act has a deterministic text fallback
-   defined in the spec. When LLM fails, visuals render with factual labels.
-   No coaching language, no invented text.
+class ProvedFact(BaseModel):
+    input_metric: str
+    output_metric: str
+    headline: str         # human-readable pattern description
+    evidence: str         # what was observed
+    implication: str      # current relevance (LLM or fallback)
+    times_confirmed: int
+    confidence_tier: str  # "emerging", "confirmed", "strong"
+    direction: str
+    correlation_coefficient: float
+    lag_days: int
 
-4. **No-race capability grounding.** Trajectory variant uses ONLY times from
-   `get_race_predictions()`. No invented projections. If no prediction exists
-   for a distance, that bar doesn't render.
+class HeroStat(BaseModel):
+    label: str
+    value: str
+    color: str            # "muted", "blue", "orange"
 
-5. **N=1 confidence gating.** `emerging` (1-2 confirmations) = "signal to
-   watch." `confirmed` (3-5) = "becoming reliable." `strong` (6+) = "your body
-   consistently shows." Emerging patterns are NEVER presented as causal claims.
-   Validation rejects LLM output that violates this.
+class HeroData(BaseModel):
+    date_label: str
+    headline: str
+    headline_accent: str
+    subtext: str
+    stats: list[HeroStat]
 
-## Additional Rules
+class DataCoverageKnowledge(BaseModel):
+    total_findings: int
+    confirmed_findings: int
+    emerging_findings: int
+    checkin_count: int
 
-6. **Every section needs both visual and narrative.** A section without a
-   visual anchor is a text wall. A visual without narrative is a pretty chart.
+class KnowledgeResponse(BaseModel):
+    hero: HeroData
+    correlation_web: dict  # {"nodes": [...], "edges": [...]}
+    proved_facts: list[ProvedFact]
+    patterns_forming: Optional[PatternsFormingResponse] = None
+    generated_at: str
+    data_coverage: DataCoverageKnowledge
+```
 
-7. **Within narrative: interpretation leads, metrics follow.** The coach voice
-   arrives first. Numbers are evidence for what the coach said.
+### Assembly Logic
 
-8. **N=1 uniqueness test.** If the pattern callout could appear on a different
+```
+1. Query CorrelationFinding:
+   - WHERE athlete_id = current, is_active = True
+   - ORDER BY (times_confirmed * confidence) DESC
+   - No limit — show the full web
+
+2. Build nodes:
+   - Deduplicate input_name → input nodes
+   - Deduplicate output_metric → output nodes
+   - Label: input_name.replace("_", " ").title()
+
+3. Build edges:
+   - One per finding
+   - r = correlation_coefficient
+   - direction = finding.direction
+   - lag_days = finding.time_lag_days
+   - note = finding.insight_text or deterministic fallback
+
+4. Build proved_facts:
+   - Same findings, list presentation
+   - confidence_tier: 1-2 = "emerging", 3-5 = "confirmed", 6+ = "strong"
+   - headline: deterministic template from input_name + output_metric + direction
+   - evidence: from insight_text
+   - implication: LLM-generated or fallback
+
+5. Build hero:
+   - CTL history from TrainingLoadCalculator
+   - Race info from TrainingPlan
+   - Stats: CTL then, CTL now, days out (or weeks tracked if no race)
+   - Headline: LLM-generated or fallback "Your progress over N weeks."
+
+6. If no findings exist:
+   - correlation_web = {"nodes": [], "edges": []}
+   - proved_facts = []
+   - patterns_forming = PatternsFormingResponse with checkin count + message
+
+7. Cache in Redis: progress_knowledge:{athlete_id}, 30min TTL
+```
+
+### LLM Usage
+
+LLM generates:
+- `hero.headline` + `hero.headline_accent` + `hero.subtext`
+- `proved_fact[].implication` (one sentence per finding)
+
+LLM is NOT required for page to render. If LLM fails:
+- hero.headline = "Your progress over {N} weeks."
+- hero.headline_accent = "Here's what the data shows."
+- hero.subtext = "Facts discovered from your own training data."
+- proved_fact[].implication = "" (evidence section still shows)
+
+---
+
+## Frontend Implementation
+
+### Design Reference
+
+**The mockup is the spec.** Open `docs/references/progress_page_mockup_v2_2026-03-02.html`
+in a browser. That is what the page should look like.
+
+Use the mockup code directly for:
+- Color tokens (the `C` object)
+- Layout structure and spacing
+- Hover interaction patterns
+- Animation (IntersectionObserver reveals, count-up animations)
+- D3 force simulation configuration (node positioning, forces, edge rendering)
+- Typography hierarchy
+
+Swap hardcoded data for API calls. Everything else matches the mockup.
+
+### CorrelationWeb Component
+
+- D3 force simulation with `forceLink`, `forceX` (inputs left, outputs right),
+  `forceY` (center), `forceCollide`, `forceManyBody`
+- SVG rendering: nodes as circles, edges as paths
+- Edge thickness = `Math.abs(r) * scale`
+- Edge style: solid (positive), dashed (negative)
+- Edge color: green (positive), red (negative)
+- Hover edge → detail panel below with r, lag, confirmed count, note
+- Input nodes clustered left (x ≈ 18%), output nodes right (x ≈ 82%)
+- Legend: Positive / Inverse / Stronger = thicker
+- Responsive: `ResizeObserver` adjusts SVG dimensions
+- LiveDot indicator: "Live data" (green dot)
+
+### WhatDataProved Component
+
+- List of ProvedFact items, ordered by times_confirmed desc
+- Each item: confidence icon + headline + expandable detail
+- Expanded: evidence text + implication text + confirmation pips
+- Confidence visual:
+  - Emerging (1-2): `~` icon, "Early signal to watch" language
+  - Confirmed (3-5): `✓` icon, "Becoming reliable" language
+  - Strong (6+): `✓✓` icon, "Your body consistently shows" language
+- Tags with appropriate colors per confidence tier
+
+### ProgressHero Component
+
+- Full-width gradient background (orange faint gradient from top-left)
+- Date label with race countdown
+- Headline (large) + accent (orange)
+- Subtext paragraph
+- Stats strip: 3 stat blocks (CTL then, CTL now, Days out)
+- Count-up animation on stat values
+- No card border — hero sits at top of page
+
+### Patterns Forming (fallback)
+
+- Shown when `patterns_forming` is non-null (no correlation findings)
+- Checkin count / needed
+- Progress bar
+- Encouraging message about daily check-ins accelerating discovery
+
+---
+
+## Build Contracts (non-negotiable)
+
+1. **Single endpoint.** `GET /v1/progress/knowledge` returns everything.
+   No two-call split.
+
+2. **Render independence.** Visual data (nodes, edges, facts) is assembled
+   deterministically. LLM generates text embellishments only. Page renders
+   fully without LLM.
+
+3. **Latency.** Deterministic assembly < 500ms. With LLM < 5s. Cache < 100ms.
+
+4. **Confidence gating.** emerging (1-2) = "signal to watch."
+   confirmed (3-5) = "becoming reliable." strong (6+) = "consistently shows."
+   Emerging patterns NEVER presented as causal claims. Validate LLM output.
+
+5. **N=1 uniqueness.** If a pattern callout could appear on a different
    athlete's page, reject it.
 
-9. **Looking Ahead never vanishes.** Race variant or trajectory variant —
-   every runner gets a forward-looking section.
-
-10. **All distances in miles.**
+6. **All distances in miles.**
 
 ---
 
 ## Required Tests
 
-1. Endpoint returns valid JSON with all required visual_data + narrative fields
-2. Visual data is present even when LLM fails (deterministic fallback)
-3. Chapters are suppressed when no interpretation is generated
-4. N=1 section suppressed when no confirmed correlations; patterns_forming shown
-5. Looking Ahead selects race variant when TrainingPlan has goal_race_date
-6. Looking Ahead selects trajectory variant when no race on calendar
-7. Feedback endpoint logs to NarrativeFeedback
+1. Endpoint returns valid JSON with hero, correlation_web, proved_facts
+2. correlation_web.nodes deduplicates input/output names correctly
+3. correlation_web.edges maps 1:1 to CorrelationFinding rows
+4. proved_facts ordered by times_confirmed descending
+5. Confidence tiers assigned correctly (1-2=emerging, 3-5=confirmed, 6+=strong)
+6. When no findings exist: empty web, empty facts, patterns_forming populated
+7. LLM failure: all data fields present, text fields use fallback
 8. Redis cache hit on second call within TTL
-9. Cache invalidated on new activity or checkin
-10. All distances in miles
-11. Empty states render honest messaging with partial visuals
-12. Mobile responsive — visuals scale correctly
+9. Cache invalidated on new checkin or activity
+10. Hero stats populated from TrainingLoadCalculator + TrainingPlan
+11. Hero without race: "Days out" replaced with "Weeks tracked"
+12. Frontend: D3 force graph renders with correct node/edge count
+13. Frontend: Hover edge shows detail panel
+14. Frontend: Mobile responsive — SVG scales, touch works
 
 ---
 
 ## Production Smoke Checks (post-deploy)
 
-Run these on the server after deploy. All must pass.
-
 ```bash
-# 1. Endpoint returns valid response with visual_data + narrative fields
+# 1. Endpoint returns valid response shape
 TOKEN=$(...generate token...)
 curl -s -H "Authorization: Bearer $TOKEN" \
-  https://strideiq.run/v1/progress/narrative | python3 -c "
+  https://strideiq.run/v1/progress/knowledge | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-assert 'verdict' in d and d['verdict']['sparkline_data'], 'Missing verdict sparkline'
-assert 'chapters' in d and len(d['chapters']) >= 2, 'Too few chapters'
-for c in d['chapters']:
-    assert c.get('visual_type') and c.get('visual_data'), f'Chapter {c[\"topic\"]} missing visual'
-    assert c.get('observation') and c.get('interpretation'), f'Chapter {c[\"topic\"]} missing narrative'
-assert 'looking_ahead' in d and d['looking_ahead']['variant'] in ('race','trajectory'), 'Bad looking_ahead'
+assert 'hero' in d, 'Missing hero'
+assert 'correlation_web' in d, 'Missing correlation_web'
+web = d['correlation_web']
+assert 'nodes' in web and 'edges' in web, 'Bad web shape'
+assert 'proved_facts' in d, 'Missing proved_facts'
+print(f'Nodes: {len(web[\"nodes\"])}, Edges: {len(web[\"edges\"])}, Facts: {len(d[\"proved_facts\"])}')
 print('PASS: response shape valid')
 "
 
-# 2. Fallback path — LLM failure still returns visual data
-# (Temporarily break LLM key or mock failure, then verify)
-# visual_data fields must be present, narrative fields contain fallback text
-# Restore LLM key after test
+# 2. Fallback — LLM failure still returns data
+# Temporarily set ANTHROPIC_API_KEY="" or GOOGLE_AI_API_KEY="" then:
+# Verify hero, nodes, edges, facts all present. Text fields have fallback.
+# Restore key after.
 
-# 3. Race vs no-race variant
-# Verify looking_ahead.variant matches whether founder has active TrainingPlan
+# 3. Hero stats present
 curl -s -H "Authorization: Bearer $TOKEN" \
-  https://strideiq.run/v1/progress/narrative | python3 -c "
+  https://strideiq.run/v1/progress/knowledge | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-la = d['looking_ahead']
-print(f'Variant: {la[\"variant\"]}')
-if la['variant'] == 'race':
-    assert la['race']['race_name'] and la['race']['days_remaining'] >= 0
-    assert len(la['race']['scenarios']) >= 2, 'Need 2+ scenarios'
-    print(f'Race: {la[\"race\"][\"race_name\"]} in {la[\"race\"][\"days_remaining\"]}d')
-else:
-    assert la['trajectory']['capabilities'] and len(la['trajectory']['capabilities']) > 0
-    print(f'Trajectory: {len(la[\"trajectory\"][\"capabilities\"])} distances')
-print('PASS: looking_ahead variant correct')
+hero = d['hero']
+assert hero['stats'] and len(hero['stats']) >= 2, 'Missing hero stats'
+assert hero['date_label'], 'Missing date label'
+print(f'Hero: {hero[\"headline\"]} {hero[\"headline_accent\"]}')
+print(f'Stats: {hero[\"stats\"]}')
+print('PASS: hero valid')
 "
 
-# 4. Mobile rendering — open on phone browser, verify:
-#    - Sparklines visible and not clipped
-#    - Bar charts scale to viewport
-#    - Touch on visual shows tooltip/value
-#    - Narrative text readable line height
+# 4. Mobile rendering — open https://strideiq.run/progress on phone:
+#    - Force graph visible, nodes and edges render
+#    - Edge hover/tap shows detail panel
+#    - Facts list expandable
+#    - Hero text readable, stats strip wraps
 #    - No horizontal scroll
 ```
 
@@ -208,16 +363,15 @@ print('PASS: looking_ahead variant correct')
 
 ## Evidence Required in Handoff
 
-The builder must provide ALL of the following in the delivery message:
+The builder must provide ALL of the following:
 
 1. **Commit hash(es)** — scoped commits only
-2. **Files changed table** — file + one-line description of change
+2. **Files changed table** — file + one-line description
 3. **Test output** — full pytest output, total count, 0 failures
-4. **Production smoke check output** — paste results of all 4 checks above
-5. **Screenshot or recording** — desktop + mobile showing the full page with
-   visuals rendering and narrative below
-6. **Fallback evidence** — screenshot or log showing visual-only render when
-   LLM is unavailable
+4. **Production smoke check output** — paste results of checks above
+5. **Screenshot or recording** — desktop + mobile showing Hero, Correlation
+   Web with edges, What Data Proved with expanded item
+6. **Fallback evidence** — screenshot showing page renders without LLM
 7. **AC checklist** — every AC from the spec marked with evidence
 
 ---
@@ -226,23 +380,7 @@ The builder must provide ALL of the following in the delivery message:
 
 After deploy, update `docs/SITE_AUDIT_LIVING.md`:
 - New entry under "Delta Since Last Audit"
-- Update "Progress" page description to reflect visual + narrative redesign
+- Update "Progress" page description: "D3 force-directed correlation web,
+  expandable proved facts, coach-voice hero — replaces old card grid"
+- Document new endpoint `/v1/progress/knowledge`
 - Update `last_updated` date
-- Document any new endpoints, models, or migrations added
-
----
-
-## Acceptance Criteria
-
-See `docs/specs/PROGRESS_NARRATIVE_SPEC_V1.md` AC1-AC14.
-
-**Key gates:**
-- Single endpoint, single call (AC1)
-- Every section has visual + narrative (AC2)
-- Visuals load first, narrative fills in (AC3)
-- N=1 is athlete-specific (AC6)
-- Looking Ahead adapts to race/no-race (AC7)
-- LLM failure = visuals + deterministic labels, not blank page (AC10)
-- Visuals are interactive (AC11)
-- Page feels like a visual story, not a dashboard or text wall (AC12)
-- Tree clean, tests green, production healthy (AC14)
