@@ -52,6 +52,41 @@ const COLOR_MAP: Record<string, string> = {
   orange: C.oL,
 };
 
+function AnimatedStat({ stat }: { stat: HeroStat }) {
+  const numVal = parseFloat(stat.value);
+  const isNum = !isNaN(numVal);
+  const decimals = stat.value.includes('.') ? 1 : 0;
+  const animated = useCountUp(isNum ? numVal : 0, 1100, 300);
+  const color = COLOR_MAP[stat.color] || C.t40;
+
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <p
+        style={{
+          fontSize: 10,
+          color: C.t40,
+          textTransform: 'uppercase',
+          letterSpacing: '0.13em',
+          marginBottom: 4,
+        }}
+      >
+        {stat.label}
+      </p>
+      <span
+        style={{
+          fontSize: 34,
+          fontWeight: 800,
+          color,
+          letterSpacing: '-1.5px',
+          lineHeight: 1,
+        }}
+      >
+        {isNum ? animated.toFixed(decimals) : stat.value}
+      </span>
+    </div>
+  );
+}
+
 export function ProgressHero({ dateLabel, headline, headlineAccent, subtext, stats }: ProgressHeroProps) {
   return (
     <div
@@ -105,40 +140,9 @@ export function ProgressHero({ dateLabel, headline, headlineAccent, subtext, sta
           </p>
         </div>
         <div style={{ display: 'flex', gap: 32, alignItems: 'center', paddingTop: 4 }}>
-          {stats.map((s) => {
-            const numVal = parseFloat(s.value);
-            const isNum = !isNaN(numVal);
-            const decimals = s.value.includes('.') ? 1 : 0;
-            const animated = useCountUp(isNum ? numVal : 0, 1100, 300);
-            const color = COLOR_MAP[s.color] || C.t40;
-
-            return (
-              <div key={s.label} style={{ textAlign: 'center' }}>
-                <p
-                  style={{
-                    fontSize: 10,
-                    color: C.t40,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.13em',
-                    marginBottom: 4,
-                  }}
-                >
-                  {s.label}
-                </p>
-                <span
-                  style={{
-                    fontSize: 34,
-                    fontWeight: 800,
-                    color,
-                    letterSpacing: '-1.5px',
-                    lineHeight: 1,
-                  }}
-                >
-                  {isNum ? animated.toFixed(decimals) : s.value}
-                </span>
-              </div>
-            );
-          })}
+          {stats.map((s) => (
+            <AnimatedStat key={s.label} stat={s} />
+          ))}
         </div>
       </div>
     </div>
