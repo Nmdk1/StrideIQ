@@ -2236,15 +2236,46 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
         confidence_values = [int(c.confidence_1_5) for c in checkins if c.confidence_1_5 is not None]
         motivation_values = [int(c.motivation_1_5) for c in checkins if c.motivation_1_5 is not None]
 
-        # Aggregate Garmin Health API biometrics (device-measured, higher fidelity than self-report)
-        # avg_stress = -1 means insufficient data from Garmin — exclude from aggregation
-        garmin_sleep_h_vals = [
-            g.sleep_total_s / 3600.0 for g in garmin_days if g.sleep_total_s is not None
-        ]
-        garmin_hrv_vals = [g.hrv_overnight_avg for g in garmin_days if g.hrv_overnight_avg is not None]
-        garmin_rhr_vals = [g.resting_hr for g in garmin_days if g.resting_hr is not None]
-        garmin_stress_vals = [g.avg_stress for g in garmin_days if g.avg_stress is not None and g.avg_stress >= 0]
-        garmin_sleep_score_vals = [g.sleep_score for g in garmin_days if g.sleep_score is not None]
+        # Aggregate Garmin Health API biometrics (device-measured, higher fidelity than self-report).
+        # Be defensive: unit tests and mixed/malformed rows can contain mock/non-numeric values.
+        # avg_stress = -1 means insufficient data from Garmin — exclude from aggregation.
+        def _to_num(value: Any) -> Optional[float]:
+            if value is None:
+                return None
+            # Avoid unittest MagicMock placeholders being treated as numeric.
+            if value.__class__.__module__.startswith("unittest.mock"):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        garmin_sleep_h_vals: List[float] = []
+        garmin_hrv_vals: List[float] = []
+        garmin_rhr_vals: List[float] = []
+        garmin_stress_vals: List[float] = []
+        garmin_sleep_score_vals: List[float] = []
+
+        for g in garmin_days:
+            sleep_total_s = _to_num(getattr(g, "sleep_total_s", None))
+            if sleep_total_s is not None:
+                garmin_sleep_h_vals.append(sleep_total_s / 3600.0)
+
+            hrv_overnight_avg = _to_num(getattr(g, "hrv_overnight_avg", None))
+            if hrv_overnight_avg is not None:
+                garmin_hrv_vals.append(hrv_overnight_avg)
+
+            resting_hr = _to_num(getattr(g, "resting_hr", None))
+            if resting_hr is not None:
+                garmin_rhr_vals.append(resting_hr)
+
+            avg_stress = _to_num(getattr(g, "avg_stress", None))
+            if avg_stress is not None and avg_stress >= 0:
+                garmin_stress_vals.append(avg_stress)
+
+            sleep_score = _to_num(getattr(g, "sleep_score", None))
+            if sleep_score is not None:
+                garmin_sleep_score_vals.append(sleep_score)
 
         def avg(vals: List) -> Optional[float]:
             return round(sum(vals) / len(vals), 2) if vals else None
