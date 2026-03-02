@@ -5,7 +5,7 @@
  * training load history, personal bests.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { useWhatWorks, useWhatDoesntWork } from './correlations';
 import { useEfficiencyTrends } from './analytics';
@@ -220,5 +220,129 @@ export function usePersonalBests() {
     },
     staleTime: 30 * 60 * 1000,
     retry: 1,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Progress Narrative (Spec V1) — visual-first progress story
+// ═══════════════════════════════════════════════════════════════════
+
+export interface NarrativeVerdict {
+  sparkline_data: number[];
+  sparkline_direction: 'rising' | 'stable' | 'declining';
+  current_value: number;
+  text: string;
+  grounding: string[];
+  confidence: 'high' | 'moderate' | 'low';
+}
+
+export interface NarrativeChapter {
+  title: string;
+  topic: string;
+  visual_type: 'bar_chart' | 'sparkline' | 'health_strip' | 'gauge' | 'completion_ring' | 'dot_plot' | 'stat_highlight';
+  visual_data: Record<string, unknown>;
+  observation: string;
+  evidence: string;
+  interpretation: string;
+  action: string;
+  relevance_score: number;
+}
+
+export interface PersonalPattern {
+  narrative: string;
+  input_metric: string;
+  output_metric: string;
+  visual_type: 'paired_sparkline';
+  visual_data: {
+    input_series: number[];
+    output_series: number[];
+    input_label: string;
+    output_label: string;
+  };
+  times_confirmed: number;
+  current_relevance: string;
+  confidence: 'emerging' | 'confirmed' | 'strong';
+}
+
+export interface PatternsForming {
+  checkin_count: number;
+  checkins_needed: number;
+  progress_pct: number;
+  message: string;
+}
+
+export interface RaceScenario {
+  label: string;
+  narrative: string;
+  estimated_finish?: string;
+  key_action?: string;
+}
+
+export interface RaceAhead {
+  race_name: string;
+  days_remaining: number;
+  readiness_score: number;
+  readiness_label: string;
+  gauge_zones: string[];
+  scenarios: RaceScenario[];
+  training_phase: string;
+}
+
+export interface TrajectoryCapability {
+  distance: string;
+  current: string | null;
+  previous: string | null;
+  confidence: 'high' | 'moderate' | 'low';
+}
+
+export interface TrajectoryAhead {
+  capabilities: TrajectoryCapability[];
+  narrative: string;
+  trend_driver: string;
+  milestone_hint: string | null;
+}
+
+export interface LookingAhead {
+  variant: 'race' | 'trajectory';
+  race: RaceAhead | null;
+  trajectory: TrajectoryAhead | null;
+}
+
+export interface AthleteControls {
+  feedback_options: string[];
+  coach_query: string;
+}
+
+export interface DataCoverage {
+  activity_days: number;
+  checkin_days: number;
+  garmin_days: number;
+  correlation_findings: number;
+}
+
+export interface ProgressNarrativeResponse {
+  verdict: NarrativeVerdict;
+  chapters: NarrativeChapter[];
+  personal_patterns: PersonalPattern[];
+  patterns_forming: PatternsForming | null;
+  looking_ahead: LookingAhead;
+  athlete_controls: AthleteControls;
+  generated_at: string;
+  data_coverage: DataCoverage;
+}
+
+export function useProgressNarrative() {
+  return useQuery<ProgressNarrativeResponse>({
+    queryKey: ['progress', 'narrative'],
+    queryFn: () => apiClient.get<ProgressNarrativeResponse>('/v1/progress/narrative'),
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useNarrativeFeedback() {
+  return useMutation({
+    mutationFn: (body: { feedback_type: string; feedback_detail?: string }) =>
+      apiClient.post('/v1/progress/narrative/feedback', body),
   });
 }
