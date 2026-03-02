@@ -384,3 +384,35 @@ After deploy, update `docs/SITE_AUDIT_LIVING.md`:
   expandable proved facts, coach-voice hero — replaces old card grid"
 - Document new endpoint `/v1/progress/knowledge`
 - Update `last_updated` date
+
+---
+
+## Immediate Next Priority: Correlation Engine Quality
+
+**This is not part of this build.** But it is the highest priority after
+this page ships. The correlation engine is the heartbeat of this product —
+the reason it exists. Right now it surfaces misleading findings.
+
+**Known problem (founder-identified):** The engine reports "High motivation
+reduces efficiency within 3 days" as STRONG (9x confirmed). This is
+technically true but useless — high motivation days are hard workout days,
+and the efficiency "drop" 3 days later is normal recovery. The engine is
+detecting deload dips and blaming the input variable. Training load is the
+confounder.
+
+**What the engine should detect instead:** trend-within-the-pattern. Are
+the recovery-day efficiency values rising over time? That shows adaptation.
+Not "A causes B" but "the relationship between A and B is changing, and
+here's what that means about your body."
+
+**Fixes needed (next builder note):**
+1. Confounding variable awareness — filter or flag findings where training
+   load explains both the input and output
+2. Trend-within-pattern detection — track whether the correlated values
+   are trending even within the repeated pattern
+3. Direction validation — distinguish "natural training response" from
+   "problem to address"
+4. Interpretation quality gate — no finding surfaces unless the
+   interpretation would survive a coach's scrutiny
+
+**A builder note for this work must be written before any code changes.**
