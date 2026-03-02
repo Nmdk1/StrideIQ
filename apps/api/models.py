@@ -2581,3 +2581,24 @@ class RuntoonImage(Base):
         Index("ix_runtoon_image_athlete_id", "athlete_id"),
         Index("ix_runtoon_image_activity_id", "activity_id"),
     )
+
+
+class NarrativeFeedback(Base):
+    """
+    Athlete feedback on the progress narrative page.
+
+    Tracks whether the narrative resonated, felt off, or prompted
+    a coach conversation. Used for future narrative quality calibration.
+    """
+    __tablename__ = "narrative_feedback"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    feedback_type = Column(Text, nullable=False)       # "positive", "negative", "coach"
+    feedback_detail = Column(Text, nullable=True)       # Optional detail for "negative" sub-options
+
+    __table_args__ = (
+        Index("ix_narrative_feedback_athlete_created", "athlete_id", "created_at"),
+    )

@@ -5,20 +5,25 @@ Unified "Am I getting better?" endpoint.
 Pulls from ALL coach tools: training load, recovery, efficiency, correlations,
 race predictions, training paces, PB patterns, wellness trends, athlete profile,
 consistency, pace decay, volume trajectory — the full system.
+
+New: GET /v1/progress/narrative — visual-first progress story (spec v1).
 """
 
 import logging
+import os
+import json
 from datetime import datetime, timedelta, date
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Athlete, Activity, DailyCheckin
 from routers.auth import get_current_user
+from core.cache import get_cache, set_cache as _set_cache, invalidate_pattern
 
 # Module-level so tests can patch routers.progress.anthropic
 try:
@@ -26,9 +31,149 @@ try:
 except ImportError:
     anthropic = None  # type: ignore[assignment]
 
+# Module-level Gemini client for narrative synthesis
+try:
+    from google import genai as _genai_module
+    _gemini_api_key = os.getenv("GOOGLE_AI_API_KEY")
+    gemini_client = _genai_module.Client(api_key=_gemini_api_key) if _gemini_api_key else None
+except Exception:
+    gemini_client = None
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/progress", tags=["progress"])
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Progress Narrative Response Models (Spec V1)
+# ═══════════════════════════════════════════════════════════════════
+
+class VerdictResponse(BaseModel):
+    sparkline_data: List[float] = Field(default_factory=list)
+    sparkline_direction: str = "stable"
+    current_value: float = 0.0
+    text: str = ""
+    grounding: List[str] = Field(default_factory=list)
+    confidence: str = "low"
+
+
+class ChapterVisualData(BaseModel):
+    labels: Optional[List[str]] = None
+    values: Optional[List[float]] = None
+    highlight_index: Optional[int] = None
+    unit: Optional[str] = None
+    current: Optional[float] = None
+    average: Optional[float] = None
+    direction: Optional[str] = None
+    indicators: Optional[List[Dict[str, Any]]] = None
+    value: Optional[float] = None
+    zone_label: Optional[str] = None
+    pct: Optional[float] = None
+    distance: Optional[str] = None
+    time: Optional[str] = None
+    date_achieved: Optional[str] = None
+
+
+class ChapterResponse(BaseModel):
+    title: str
+    topic: str
+    visual_type: str
+    visual_data: Dict[str, Any] = Field(default_factory=dict)
+    observation: str = ""
+    evidence: str = ""
+    interpretation: str = ""
+    action: str = ""
+    relevance_score: float = 0.5
+
+
+class PatternVisualData(BaseModel):
+    input_series: List[float] = Field(default_factory=list)
+    output_series: List[float] = Field(default_factory=list)
+    input_label: str = ""
+    output_label: str = ""
+
+
+class PersonalPatternResponse(BaseModel):
+    narrative: str = ""
+    input_metric: str = ""
+    output_metric: str = ""
+    visual_type: str = "paired_sparkline"
+    visual_data: Dict[str, Any] = Field(default_factory=dict)
+    times_confirmed: int = 0
+    current_relevance: str = ""
+    confidence: str = "emerging"
+
+
+class PatternsFormingResponse(BaseModel):
+    checkin_count: int = 0
+    checkins_needed: int = 14
+    progress_pct: float = 0.0
+    message: str = ""
+
+
+class RaceScenario(BaseModel):
+    label: str
+    narrative: str = ""
+    estimated_finish: Optional[str] = None
+    key_action: Optional[str] = None
+
+
+class RaceAhead(BaseModel):
+    race_name: str = ""
+    days_remaining: int = 0
+    readiness_score: float = 0.0
+    readiness_label: str = ""
+    gauge_zones: List[str] = Field(default_factory=lambda: ["building", "ready", "peaked", "over-tapered"])
+    scenarios: List[RaceScenario] = Field(default_factory=list)
+    training_phase: str = ""
+
+
+class TrajectoryCapability(BaseModel):
+    distance: str
+    current: Optional[str] = None
+    previous: Optional[str] = None
+    confidence: str = "low"
+
+
+class TrajectoryAhead(BaseModel):
+    capabilities: List[TrajectoryCapability] = Field(default_factory=list)
+    narrative: str = ""
+    trend_driver: str = ""
+    milestone_hint: Optional[str] = None
+
+
+class LookingAheadResponse(BaseModel):
+    variant: str = "trajectory"
+    race: Optional[RaceAhead] = None
+    trajectory: Optional[TrajectoryAhead] = None
+
+
+class AthleteControlsResponse(BaseModel):
+    feedback_options: List[str] = Field(default_factory=lambda: ["This feels right", "Something's off", "Ask Coach"])
+    coach_query: str = "Walk me through my progress report in detail"
+
+
+class DataCoverageResponse(BaseModel):
+    activity_days: int = 0
+    checkin_days: int = 0
+    garmin_days: int = 0
+    correlation_findings: int = 0
+
+
+class ProgressNarrativeResponse(BaseModel):
+    verdict: VerdictResponse = Field(default_factory=VerdictResponse)
+    chapters: List[ChapterResponse] = Field(default_factory=list)
+    personal_patterns: List[PersonalPatternResponse] = Field(default_factory=list)
+    patterns_forming: Optional[PatternsFormingResponse] = None
+    looking_ahead: LookingAheadResponse = Field(default_factory=LookingAheadResponse)
+    athlete_controls: AthleteControlsResponse = Field(default_factory=AthleteControlsResponse)
+    generated_at: str = ""
+    data_coverage: DataCoverageResponse = Field(default_factory=DataCoverageResponse)
+
+
+class NarrativeFeedbackRequest(BaseModel):
+    feedback_type: str
+    feedback_detail: Optional[str] = None
 
 
 # --- Response Models ---
@@ -1012,3 +1157,741 @@ def _generate_progress_cards(
     except Exception as e:
         logger.warning(f"Progress coach cards LLM failed: {type(e).__name__}: {e}")
         return _fallback_progress_cards(summary, checkin_context, days)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Progress Narrative — Visual-first progress story (Spec V1)
+# ═══════════════════════════════════════════════════════════════════
+
+def _assemble_verdict_data(db: Session, athlete_id: UUID) -> VerdictResponse:
+    """Phase 1: Assemble the verdict sparkline from CTL history."""
+    try:
+        from services.training_load import TrainingLoadCalculator
+        calc = TrainingLoadCalculator(db)
+        history = calc.get_load_history(athlete_id, days=60)
+
+        if not history or len(history) < 7:
+            return VerdictResponse(
+                text="Rising trend over 0 weeks. CTL 0.",
+                confidence="low",
+            )
+
+        # Extract weekly CTL values (last 8 weeks)
+        weekly_ctl: List[float] = []
+        for i in range(0, len(history), 7):
+            chunk = history[i:i + 7]
+            if chunk:
+                weekly_ctl.append(round(chunk[-1].ctl, 1))
+        weekly_ctl = weekly_ctl[-8:] if len(weekly_ctl) > 8 else weekly_ctl
+
+        current_ctl = weekly_ctl[-1] if weekly_ctl else 0.0
+
+        # Determine direction
+        if len(weekly_ctl) >= 2:
+            first_half = weekly_ctl[:len(weekly_ctl) // 2]
+            second_half = weekly_ctl[len(weekly_ctl) // 2:]
+            avg_first = sum(first_half) / len(first_half) if first_half else 0
+            avg_second = sum(second_half) / len(second_half) if second_half else 0
+            change_pct = ((avg_second - avg_first) / avg_first * 100) if avg_first > 0 else 0
+            if change_pct > 5:
+                direction = "rising"
+            elif change_pct < -5:
+                direction = "declining"
+            else:
+                direction = "stable"
+        else:
+            direction = "stable"
+
+        load = calc.calculate_training_load(athlete_id)
+        grounding = [f"CTL {current_ctl}"]
+        if load:
+            grounding.append(f"TSB {load.current_tsb:+.1f}")
+
+        confidence = "high" if len(history) >= 42 else "moderate" if len(history) >= 21 else "low"
+
+        fallback_text = f"{direction.capitalize()} trend over {len(weekly_ctl)} weeks. CTL {current_ctl}."
+
+        return VerdictResponse(
+            sparkline_data=weekly_ctl,
+            sparkline_direction=direction,
+            current_value=current_ctl,
+            text=fallback_text,
+            grounding=grounding,
+            confidence=confidence,
+        )
+    except Exception as e:
+        logger.warning(f"Narrative verdict assembly failed: {e}")
+        return VerdictResponse(text="Insufficient data for fitness trend.", confidence="low")
+
+
+def _assemble_chapters_data(db: Session, athlete_id: UUID) -> List[ChapterResponse]:
+    """Phase 1: Assemble deterministic visual data for progress chapters."""
+    chapters: List[ChapterResponse] = []
+
+    # --- Volume Trajectory ---
+    try:
+        from services.coach_tools import get_weekly_volume
+        weekly = get_weekly_volume(db, athlete_id, weeks=8)
+        if weekly.get("ok"):
+            weeks_data = weekly.get("data", {}).get("weeks_data",
+                         weekly.get("data", {}).get("weeks", []))
+            if weeks_data:
+                labels = []
+                values = []
+                for w in weeks_data:
+                    labels.append(w.get("week_start", "")[-5:])
+                    values.append(round(w.get("total_distance_mi", 0), 1))
+
+                current_mi = values[-1] if values else 0
+                avg_4wk = sum(values[-4:]) / len(values[-4:]) if len(values) >= 4 else current_mi
+                trend_pct = round(((current_mi - avg_4wk) / avg_4wk * 100), 1) if avg_4wk > 0 else 0
+
+                chapters.append(ChapterResponse(
+                    title="Volume Trajectory",
+                    topic="volume_trajectory",
+                    visual_type="bar_chart",
+                    visual_data={
+                        "labels": labels,
+                        "values": values,
+                        "highlight_index": len(values) - 1,
+                        "unit": "mi",
+                    },
+                    observation=f"Weekly volume: {current_mi}mi this week. {trend_pct:+.0f}% vs 4-week average.",
+                    evidence=f"{current_mi}mi this week | Avg: {avg_4wk:.1f}mi | Trend: {trend_pct:+.1f}%",
+                    relevance_score=0.85,
+                ))
+    except Exception as e:
+        logger.warning(f"Narrative volume chapter failed: {e}")
+
+    # --- Efficiency Trend ---
+    try:
+        from services.efficiency_analytics import get_efficiency_trends
+        trends = get_efficiency_trends(
+            athlete_id=str(athlete_id), db=db, days=90,
+            include_stability=False, include_load_response=False, include_annotations=False,
+        )
+        if trends and trends.get("summary") and trends.get("time_series"):
+            summary = trends["summary"]
+            ts = trends["time_series"]
+            ef_values = [p["efficiency_factor"] for p in ts[-14:] if p.get("efficiency_factor")]
+
+            direction = summary.get("trend_direction", "stable")
+            current_ef = summary.get("current_efficiency", 0)
+            avg_ef = summary.get("average_efficiency", 0)
+
+            chapters.append(ChapterResponse(
+                title="Efficiency Trend",
+                topic="efficiency_trend",
+                visual_type="sparkline",
+                visual_data={
+                    "values": [round(v, 4) for v in ef_values],
+                    "current": round(current_ef, 4),
+                    "average": round(avg_ef, 4),
+                    "direction": direction,
+                },
+                observation=f"Efficiency {direction} over 90 days. Current: {current_ef:.4f}.",
+                evidence=f"Current: {current_ef:.4f} | Avg: {avg_ef:.4f} | Direction: {direction}",
+                relevance_score=0.80,
+            ))
+    except Exception as e:
+        logger.warning(f"Narrative efficiency chapter failed: {e}")
+
+    # --- Recovery / Health Strip ---
+    try:
+        from services.coach_tools import get_wellness_trends
+        wellness = get_wellness_trends(db, athlete_id, days=14)
+        if wellness.get("ok"):
+            wd = wellness["data"]
+            indicators = []
+            avg_sleep = wd.get("avg_sleep") or wd.get("garmin_sleep_avg_h")
+            avg_hrv = wd.get("avg_hrv") or wd.get("garmin_hrv_avg")
+            avg_rhr = wd.get("avg_resting_hr") or wd.get("garmin_rhr_avg")
+            avg_stress = wd.get("avg_stress") or wd.get("garmin_stress_avg")
+
+            parts = []
+            if avg_sleep is not None:
+                indicators.append({"label": "Sleep", "value": f"{avg_sleep:.1f}h", "status": "green" if avg_sleep >= 7 else "amber" if avg_sleep >= 6 else "red"})
+                parts.append(f"Sleep {avg_sleep:.1f}h avg")
+            if avg_hrv is not None:
+                indicators.append({"label": "HRV", "value": f"{avg_hrv:.0f}ms", "status": "green"})
+                parts.append(f"HRV {avg_hrv:.0f}ms")
+            if avg_rhr is not None:
+                indicators.append({"label": "RHR", "value": f"{avg_rhr:.0f}bpm", "status": "green"})
+                parts.append(f"RHR {avg_rhr:.0f}bpm")
+            if avg_stress is not None:
+                indicators.append({"label": "Stress", "value": f"{avg_stress:.0f}", "status": "green" if avg_stress <= 30 else "amber" if avg_stress <= 50 else "red"})
+
+            if indicators:
+                evidence_str = " | ".join(parts) if parts else "Recovery data available"
+                chapters.append(ChapterResponse(
+                    title="Recovery Signals",
+                    topic="recovery_signals",
+                    visual_type="health_strip",
+                    visual_data={"indicators": indicators},
+                    observation=evidence_str,
+                    evidence=evidence_str,
+                    relevance_score=0.75,
+                ))
+    except Exception as e:
+        logger.warning(f"Narrative recovery chapter failed: {e}")
+
+    # --- Training Load / Form Gauge ---
+    try:
+        from services.training_load import TrainingLoadCalculator
+        calc = TrainingLoadCalculator(db)
+        load = calc.calculate_training_load(athlete_id)
+        if load and load.current_ctl >= 10:
+            zone_info = calc.get_tsb_zone(load.current_tsb, athlete_id=athlete_id)
+            zone_label = zone_info.label if zone_info else "Unknown"
+
+            chapters.append(ChapterResponse(
+                title="Training Load",
+                topic="training_load",
+                visual_type="gauge",
+                visual_data={
+                    "value": round(load.current_tsb, 1),
+                    "zone_label": zone_label,
+                    "zones": ["fatigued", "training", "fresh", "peaked"],
+                },
+                observation=f"Form (TSB): {load.current_tsb:+.1f}. Zone: {zone_label}.",
+                evidence=f"TSB {load.current_tsb:+.1f} | CTL {load.current_ctl:.1f} | ATL {load.current_atl:.1f}",
+                relevance_score=0.70,
+            ))
+    except Exception as e:
+        logger.warning(f"Narrative load chapter failed: {e}")
+
+    # --- Consistency ---
+    try:
+        from services.recovery_metrics import calculate_consistency_index
+        ci = calculate_consistency_index(db, str(athlete_id), days=90)
+        if ci is not None:
+            chapters.append(ChapterResponse(
+                title="Consistency",
+                topic="consistency",
+                visual_type="completion_ring",
+                visual_data={"pct": round(ci, 1)},
+                observation=f"{ci:.0f}% of planned workouts completed.",
+                evidence=f"Consistency index: {ci:.1f}%",
+                relevance_score=0.65,
+            ))
+    except Exception as e:
+        logger.warning(f"Narrative consistency chapter failed: {e}")
+
+    # --- Personal Bests ---
+    try:
+        from models import PersonalBest
+        recent_pbs = (
+            db.query(PersonalBest)
+            .filter(
+                PersonalBest.athlete_id == athlete_id,
+                PersonalBest.achieved_at >= datetime.utcnow() - timedelta(days=90),
+            )
+            .order_by(PersonalBest.achieved_at.desc())
+            .limit(3)
+            .all()
+        )
+        if recent_pbs:
+            pb = recent_pbs[0]
+            dist_label = (pb.distance_category or "").replace("_", " ").title()
+            h = pb.time_seconds // 3600
+            m = (pb.time_seconds % 3600) // 60
+            s = pb.time_seconds % 60
+            time_str = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
+            date_str = pb.achieved_at.strftime("%b %d") if pb.achieved_at else ""
+
+            chapters.append(ChapterResponse(
+                title="Personal Best",
+                topic="personal_best",
+                visual_type="stat_highlight",
+                visual_data={
+                    "distance": dist_label,
+                    "time": time_str,
+                    "date_achieved": date_str,
+                },
+                observation=f"New {dist_label} PB: {time_str} on {date_str}.",
+                evidence=f"{dist_label}: {time_str} ({date_str})",
+                relevance_score=0.90,
+            ))
+    except Exception as e:
+        logger.warning(f"Narrative PB chapter failed: {e}")
+
+    # Sort by relevance score descending
+    chapters.sort(key=lambda c: c.relevance_score, reverse=True)
+    return chapters[:4]
+
+
+def _assemble_patterns_data(
+    db: Session, athlete_id: UUID
+) -> tuple[List[PersonalPatternResponse], Optional[PatternsFormingResponse]]:
+    """Phase 1: Assemble N=1 correlation data for personal patterns."""
+    patterns: List[PersonalPatternResponse] = []
+    forming: Optional[PatternsFormingResponse] = None
+
+    try:
+        from services.correlation_persistence import get_surfaceable_findings
+
+        # Get all active findings regardless of cooldown for display
+        from models import CorrelationFinding
+        findings = (
+            db.query(CorrelationFinding)
+            .filter(
+                CorrelationFinding.athlete_id == athlete_id,
+                CorrelationFinding.is_active == True,  # noqa: E712
+                CorrelationFinding.times_confirmed >= 1,
+            )
+            .order_by((CorrelationFinding.times_confirmed * CorrelationFinding.confidence).desc())
+            .limit(2)
+            .all()
+        )
+
+        for f in findings:
+            tc = f.times_confirmed
+            if tc >= 6:
+                conf = "strong"
+            elif tc >= 3:
+                conf = "confirmed"
+            else:
+                conf = "emerging"
+
+            # Build deterministic fallback narrative
+            fallback_narrative = f"Pattern: {f.input_name} → {f.output_metric}. Confirmed {tc} times."
+
+            patterns.append(PersonalPatternResponse(
+                narrative=fallback_narrative,
+                input_metric=f.input_name,
+                output_metric=f.output_metric,
+                visual_type="paired_sparkline",
+                visual_data={
+                    "input_series": [],
+                    "output_series": [],
+                    "input_label": f.input_name.replace("_", " ").title(),
+                    "output_label": f.output_metric.replace("_", " ").title(),
+                },
+                times_confirmed=tc,
+                current_relevance="",
+                confidence=conf,
+            ))
+
+        if not findings:
+            checkin_count = (
+                db.query(DailyCheckin)
+                .filter(DailyCheckin.athlete_id == athlete_id)
+                .count()
+            )
+            needed = 14
+            forming = PatternsFormingResponse(
+                checkin_count=checkin_count,
+                checkins_needed=needed,
+                progress_pct=round(min(100, (checkin_count / needed) * 100), 1),
+                message=f"Your personal patterns are forming. {checkin_count}/{needed} check-ins collected. Daily check-ins accelerate discovery.",
+            )
+
+    except Exception as e:
+        logger.warning(f"Narrative patterns assembly failed: {e}")
+        checkin_count = 0
+        try:
+            checkin_count = db.query(DailyCheckin).filter(DailyCheckin.athlete_id == athlete_id).count()
+        except Exception:
+            pass
+        forming = PatternsFormingResponse(
+            checkin_count=checkin_count,
+            checkins_needed=14,
+            progress_pct=round(min(100, (checkin_count / 14) * 100), 1),
+            message=f"Your personal patterns are forming. {checkin_count}/14 check-ins collected.",
+        )
+
+    return patterns, forming
+
+
+def _assemble_looking_ahead(db: Session, athlete_id: UUID) -> LookingAheadResponse:
+    """Phase 1: Assemble Looking Ahead — race or trajectory variant."""
+    try:
+        from models import TrainingPlan
+        plan = (
+            db.query(TrainingPlan)
+            .filter(TrainingPlan.athlete_id == athlete_id, TrainingPlan.status == "active")
+            .first()
+        )
+
+        if plan and plan.goal_race_date and plan.goal_race_date >= date.today():
+            # Race variant
+            days_remaining = (plan.goal_race_date - date.today()).days
+            race_name = plan.goal_race_name or plan.name or "Goal Race"
+
+            # Get readiness score
+            readiness_score = 50.0
+            readiness_label = "Building"
+            training_phase = "build"
+            try:
+                from services.training_load import TrainingLoadCalculator
+                calc = TrainingLoadCalculator(db)
+                readiness = calc.calculate_race_readiness(athlete_id)
+                readiness_score = readiness.score
+                training_phase = readiness.tsb_trend
+
+                if readiness_score >= 80:
+                    readiness_label = "Peaked"
+                elif readiness_score >= 65:
+                    readiness_label = "Ready"
+                elif readiness_score >= 45:
+                    readiness_label = "Building"
+                else:
+                    readiness_label = "Building"
+            except Exception:
+                pass
+
+            # Build scenarios
+            scenarios = [
+                RaceScenario(
+                    label="If current trend holds",
+                    narrative=f"{race_name} in {days_remaining} days. Readiness: {readiness_score:.0f}%.",
+                ),
+            ]
+
+            # Get estimated finish if predictions available
+            try:
+                from services.coach_tools import get_race_predictions
+                preds = get_race_predictions(db, athlete_id)
+                if preds.get("ok"):
+                    pred_data = preds.get("data", {}).get("predictions", {})
+                    # Match plan distance to prediction
+                    for dist_name in ["Marathon", "Half Marathon", "10K", "5K"]:
+                        p = pred_data.get(dist_name, {})
+                        pred_info = p.get("prediction", {}) if isinstance(p, dict) else {}
+                        if pred_info.get("time_formatted"):
+                            scenarios[0].estimated_finish = pred_info["time_formatted"]
+                            break
+            except Exception:
+                pass
+
+            return LookingAheadResponse(
+                variant="race",
+                race=RaceAhead(
+                    race_name=race_name,
+                    days_remaining=days_remaining,
+                    readiness_score=readiness_score,
+                    readiness_label=readiness_label,
+                    scenarios=scenarios,
+                    training_phase=training_phase,
+                ),
+            )
+        else:
+            # Trajectory variant
+            capabilities: List[TrajectoryCapability] = []
+            try:
+                from services.coach_tools import get_race_predictions
+                preds = get_race_predictions(db, athlete_id)
+                if preds.get("ok"):
+                    pred_data = preds.get("data", {}).get("predictions", {})
+                    for dist_name in ["5K", "10K", "Half Marathon", "Marathon"]:
+                        p = pred_data.get(dist_name, {})
+                        if not isinstance(p, dict):
+                            continue
+                        pred_info = p.get("prediction", {})
+                        if pred_info.get("time_formatted"):
+                            short_dist = dist_name.replace(" Marathon", "").replace("Half", "Half")
+                            conf = pred_info.get("confidence", "low")
+                            if isinstance(conf, str):
+                                conf = "high" if conf.lower() in ("high", "race-anchored") else "moderate" if conf.lower() in ("moderate", "estimate") else "low"
+                            capabilities.append(TrajectoryCapability(
+                                distance=dist_name,
+                                current=pred_info["time_formatted"],
+                                confidence=conf,
+                            ))
+            except Exception:
+                pass
+
+            fallback_narrative = ""
+            if capabilities:
+                parts = [f"{c.distance}: {c.current}" for c in capabilities if c.current]
+                fallback_narrative = "Current projections — " + " | ".join(parts) if parts else ""
+
+            return LookingAheadResponse(
+                variant="trajectory",
+                trajectory=TrajectoryAhead(
+                    capabilities=capabilities,
+                    narrative=fallback_narrative,
+                    trend_driver="",
+                ),
+            )
+
+    except Exception as e:
+        logger.warning(f"Narrative looking ahead failed: {e}")
+        return LookingAheadResponse(
+            variant="trajectory",
+            trajectory=TrajectoryAhead(narrative="Insufficient data for projections."),
+        )
+
+
+def _assemble_data_coverage(db: Session, athlete_id: UUID) -> DataCoverageResponse:
+    """Phase 1: Count available data sources."""
+    coverage = DataCoverageResponse()
+    cutoff = datetime.utcnow() - timedelta(days=90)
+
+    try:
+        coverage.activity_days = (
+            db.query(Activity)
+            .filter(Activity.athlete_id == athlete_id, Activity.start_time >= cutoff)
+            .count()
+        )
+    except Exception:
+        pass
+
+    try:
+        coverage.checkin_days = (
+            db.query(DailyCheckin)
+            .filter(DailyCheckin.athlete_id == athlete_id, DailyCheckin.date >= cutoff.date())
+            .count()
+        )
+    except Exception:
+        pass
+
+    try:
+        from models import GarminDay
+        coverage.garmin_days = (
+            db.query(GarminDay)
+            .filter(GarminDay.athlete_id == athlete_id, GarminDay.calendar_date >= cutoff.date())
+            .count()
+        )
+    except Exception:
+        pass
+
+    try:
+        from models import CorrelationFinding
+        coverage.correlation_findings = (
+            db.query(CorrelationFinding)
+            .filter(CorrelationFinding.athlete_id == athlete_id, CorrelationFinding.is_active == True)  # noqa: E712
+            .count()
+        )
+    except Exception:
+        pass
+
+    return coverage
+
+
+def _generate_narrative_llm(visual_snapshot: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Phase 2: Call Gemini 2.5 Flash to synthesize narrative for each section.
+
+    Returns a dict with narrative fields for verdict, chapters, patterns,
+    looking_ahead. Returns None if LLM is unavailable or fails.
+    """
+    if gemini_client is None:
+        return None
+
+    prompt_parts = [
+        "You are an elite running coach writing a progress narrative for one specific athlete.",
+        "You are given their visual data snapshot. Write coaching narrative for each section.",
+        "",
+        "RULES (non-negotiable):",
+        "- Interpretation leads, metrics follow. Coach voice first, numbers as evidence.",
+        "- Every claim must be grounded in the provided data. No invention.",
+        "- No raw metric readouts to open a sentence — interpret first.",
+        "- No generic templates. Reference THIS athlete's specific data.",
+        "- Max 3 sentences per section narrative.",
+        "- N=1 patterns: use EXACT confidence language:",
+        "  emerging (1-2 confirmations) = 'Early signal to watch'",
+        "  confirmed (3-5) = 'In your data: becoming reliable'",
+        "  strong (6+) = 'Your body consistently shows'",
+        "- Emerging patterns NEVER use causal language.",
+        "- Frame actions as athlete-controlled. The athlete decides.",
+        "",
+        "=== VISUAL DATA SNAPSHOT ===",
+        json.dumps(visual_snapshot, default=str, ensure_ascii=True),
+    ]
+    prompt = "\n".join(prompt_parts)
+
+    try:
+        from google import genai
+
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                max_output_tokens=3000,
+                temperature=0.3,
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "OBJECT",
+                    "properties": {
+                        "verdict_text": {"type": "STRING"},
+                        "chapters": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "topic": {"type": "STRING"},
+                                    "observation": {"type": "STRING"},
+                                    "interpretation": {"type": "STRING"},
+                                    "action": {"type": "STRING"},
+                                },
+                                "required": ["topic", "observation", "interpretation", "action"],
+                            },
+                        },
+                        "patterns": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "input_metric": {"type": "STRING"},
+                                    "narrative": {"type": "STRING"},
+                                    "current_relevance": {"type": "STRING"},
+                                },
+                                "required": ["input_metric", "narrative", "current_relevance"],
+                            },
+                        },
+                        "looking_ahead_narrative": {"type": "STRING"},
+                    },
+                    "required": ["verdict_text", "chapters"],
+                },
+            ),
+        )
+
+        return json.loads(response.text)
+    except Exception as e:
+        logger.warning(f"Narrative LLM generation failed: {type(e).__name__}: {e}")
+        return None
+
+
+def _apply_llm_narratives(
+    response: ProgressNarrativeResponse,
+    llm_output: Dict[str, Any],
+) -> None:
+    """Merge LLM-generated narratives into the deterministic response."""
+    # Verdict
+    if llm_output.get("verdict_text"):
+        response.verdict.text = llm_output["verdict_text"]
+
+    # Chapters
+    llm_chapters = {c["topic"]: c for c in llm_output.get("chapters", []) if c.get("topic")}
+    for chapter in response.chapters:
+        llm_ch = llm_chapters.get(chapter.topic)
+        if llm_ch:
+            if llm_ch.get("observation"):
+                chapter.observation = llm_ch["observation"]
+            if llm_ch.get("interpretation"):
+                chapter.interpretation = llm_ch["interpretation"]
+            if llm_ch.get("action"):
+                chapter.action = llm_ch["action"]
+
+    # Patterns
+    llm_patterns = {p["input_metric"]: p for p in llm_output.get("patterns", []) if p.get("input_metric")}
+    for pattern in response.personal_patterns:
+        llm_p = llm_patterns.get(pattern.input_metric)
+        if llm_p:
+            # Validate N=1 confidence gating
+            narrative = llm_p.get("narrative", "")
+            causal_terms = ["causes", "makes you", "leads to", "results in", "because of"]
+            if pattern.confidence == "emerging" and any(t in narrative.lower() for t in causal_terms):
+                logger.warning(f"LLM violated confidence gating for emerging pattern {pattern.input_metric}; using fallback")
+            else:
+                if narrative:
+                    pattern.narrative = narrative
+            if llm_p.get("current_relevance"):
+                pattern.current_relevance = llm_p["current_relevance"]
+
+    # Looking ahead
+    if llm_output.get("looking_ahead_narrative"):
+        la = response.looking_ahead
+        if la.variant == "race" and la.race and la.race.scenarios:
+            la.race.scenarios[0].narrative = llm_output["looking_ahead_narrative"]
+        elif la.variant == "trajectory" and la.trajectory:
+            la.trajectory.narrative = llm_output["looking_ahead_narrative"]
+
+
+@router.get("/narrative", response_model=ProgressNarrativeResponse)
+async def get_progress_narrative(
+    db: Session = Depends(get_db),
+    current_user: Athlete = Depends(get_current_user),
+):
+    """
+    Visual-first progress narrative. Single endpoint, single call.
+
+    Phase 1: Deterministic visual data assembly (< 500ms target).
+    Phase 2: LLM narrative synthesis (< 5s target).
+    Cache: Redis 30min TTL. Fallback: visuals + deterministic labels.
+    """
+    athlete_id = current_user.id
+    cache_key = f"progress_narrative:{athlete_id}"
+
+    # Cache check
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return ProgressNarrativeResponse(**cached)
+
+    # Phase 1: Deterministic data assembly
+    verdict = _assemble_verdict_data(db, athlete_id)
+
+    # Clean session after training load queries
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
+    chapters = _assemble_chapters_data(db, athlete_id)
+    personal_patterns, patterns_forming = _assemble_patterns_data(db, athlete_id)
+    looking_ahead = _assemble_looking_ahead(db, athlete_id)
+    data_coverage = _assemble_data_coverage(db, athlete_id)
+
+    response = ProgressNarrativeResponse(
+        verdict=verdict,
+        chapters=chapters,
+        personal_patterns=personal_patterns,
+        patterns_forming=patterns_forming,
+        looking_ahead=looking_ahead,
+        athlete_controls=AthleteControlsResponse(),
+        generated_at=datetime.utcnow().isoformat() + "Z",
+        data_coverage=data_coverage,
+    )
+
+    # Phase 2: LLM narrative synthesis
+    from services.consent import has_ai_consent
+    if has_ai_consent(athlete_id=athlete_id, db=db):
+        visual_snapshot = {
+            "verdict": verdict.model_dump(),
+            "chapters": [c.model_dump() for c in chapters],
+            "patterns": [p.model_dump() for p in personal_patterns],
+            "looking_ahead": looking_ahead.model_dump(),
+        }
+
+        import asyncio
+        try:
+            llm_output = await asyncio.to_thread(_generate_narrative_llm, visual_snapshot)
+            if llm_output:
+                _apply_llm_narratives(response, llm_output)
+        except Exception as e:
+            logger.warning(f"Narrative LLM phase failed: {e}")
+
+    # Suppress chapters without interpretation (spec rule)
+    response.chapters = [
+        c for c in response.chapters
+        if c.observation or c.interpretation
+    ]
+
+    # Cache the full response
+    _set_cache(cache_key, response.model_dump(), ttl=1800)
+
+    return response
+
+
+@router.post("/narrative/feedback")
+def post_narrative_feedback(
+    body: NarrativeFeedbackRequest,
+    db: Session = Depends(get_db),
+    current_user: Athlete = Depends(get_current_user),
+):
+    """Log athlete feedback on the progress narrative."""
+    from models import NarrativeFeedback
+
+    if body.feedback_type not in ("positive", "negative", "coach"):
+        raise HTTPException(status_code=400, detail="feedback_type must be positive, negative, or coach")
+
+    feedback = NarrativeFeedback(
+        athlete_id=current_user.id,
+        feedback_type=body.feedback_type,
+        feedback_detail=body.feedback_detail,
+    )
+    db.add(feedback)
+    db.commit()
+
+    return {"ok": True}
