@@ -2411,6 +2411,26 @@ class CorrelationFinding(Base):
     direction_expected = Column(Text, nullable=True)
     direction_counterintuitive = Column(Boolean, default=False, nullable=False)
 
+    # --- Layer 1: Threshold Detection ---
+    threshold_value = Column(Float, nullable=True)
+    threshold_direction = Column(Text, nullable=True)
+    r_below_threshold = Column(Float, nullable=True)
+    r_above_threshold = Column(Float, nullable=True)
+    n_below_threshold = Column(Integer, nullable=True)
+    n_above_threshold = Column(Integer, nullable=True)
+
+    # --- Layer 2: Asymmetric Response ---
+    asymmetry_ratio = Column(Float, nullable=True)
+    asymmetry_direction = Column(Text, nullable=True)
+    effect_below_baseline = Column(Float, nullable=True)
+    effect_above_baseline = Column(Float, nullable=True)
+    baseline_value = Column(Float, nullable=True)
+
+    # --- Layer 4: Decay Curves ---
+    lag_profile = Column(JSONB, nullable=True)
+    decay_half_life_days = Column(Float, nullable=True)
+    decay_type = Column(Text, nullable=True)
+
     __table_args__ = (
         # One row per unique (athlete, input, output, lag) combination.
         Index(
@@ -2420,6 +2440,26 @@ class CorrelationFinding(Base):
         ),
         Index("ix_corr_finding_active", "athlete_id", "is_active"),
     )
+
+
+class CorrelationMediator(Base):
+    """
+    Mediator variables detected for confirmed correlation findings (Layer 3).
+
+    When A→C is confirmed, mediation analysis tests whether B explains
+    the relationship (A→B→C).  Each row represents one mediator for one
+    finding.
+    """
+    __tablename__ = "correlation_mediator"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    finding_id = Column(UUID(as_uuid=True), ForeignKey("correlation_finding.id"), nullable=False, index=True)
+    mediator_variable = Column(Text, nullable=False)
+    direct_effect = Column(Float, nullable=False)
+    indirect_effect = Column(Float, nullable=False)
+    mediation_ratio = Column(Float, nullable=False)
+    is_full_mediation = Column(Boolean, default=False, nullable=False)
+    detected_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class GarminDay(Base):
