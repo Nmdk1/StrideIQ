@@ -781,7 +781,7 @@ def _generate_progress_headline(
         "- State facts first, then implication. Let the data speak — no cheerleading, no praise.\n"
         "- Never quote raw metrics or numeric score readouts to the athlete.\n"
         "- Frame any concern as a forward-looking action.\n"
-        "- Never use legacy trademarked terminology; use RPI when needed.\n"
+        "- Never use acronyms or jargon. Say 'fitness level' not 'CTL', 'fatigue' not 'ATL', 'form' not 'TSB'. No acronyms ever.\n"
         "- Use only provided evidence. Do not invent.\n\n"
         f"=== ATHLETE BRIEF ===\n{athlete_brief}\n"
     )
@@ -1051,7 +1051,7 @@ def _generate_progress_cards(
         "- NEVER quote raw metrics or values (no CTL/ATL/TSB numbers, no percentages, no score readouts).",
         "- NEVER contradict how the athlete says they feel.",
         "- Frame concerns as forward-looking actions.",
-        "- Never use legacy trademarked terminology. Use RPI if needed.",
+        "- NEVER use acronyms or jargon. Say 'fitness level' not 'CTL', 'fatigue' not 'ATL', 'form' not 'TSB'. No acronyms ever.",
         "- Use only facts from provided context. Do not invent.",
         "",
         "OUTPUT REQUIREMENTS:",
@@ -1172,7 +1172,7 @@ def _assemble_verdict_data(db: Session, athlete_id: UUID) -> VerdictResponse:
 
         if not history or len(history) < 7:
             return VerdictResponse(
-                text="Rising trend over 0 weeks. CTL 0.",
+                text="Not enough data yet to show a trend.",
                 confidence="low",
             )
 
@@ -1203,13 +1203,13 @@ def _assemble_verdict_data(db: Session, athlete_id: UUID) -> VerdictResponse:
             direction = "stable"
 
         load = calc.calculate_training_load(athlete_id)
-        grounding = [f"CTL {current_ctl}"]
+        grounding = [f"Fitness level {current_ctl}"]
         if load:
-            grounding.append(f"TSB {load.current_tsb:+.1f}")
+            grounding.append(f"Form {load.current_tsb:+.1f}")
 
         confidence = "high" if len(history) >= 42 else "moderate" if len(history) >= 21 else "low"
 
-        fallback_text = f"{direction.capitalize()} trend over {len(weekly_ctl)} weeks. CTL {current_ctl}."
+        fallback_text = f"{direction.capitalize()} fitness trend over {len(weekly_ctl)} weeks."
 
         return VerdictResponse(
             sparkline_data=weekly_ctl,
@@ -1353,8 +1353,8 @@ def _assemble_chapters_data(db: Session, athlete_id: UUID) -> List[ChapterRespon
                     "zone_label": zone_label,
                     "zones": ["fatigued", "training", "fresh", "peaked"],
                 },
-                observation=f"Form (TSB): {load.current_tsb:+.1f}. Zone: {zone_label}.",
-                evidence=f"TSB {load.current_tsb:+.1f} | CTL {load.current_ctl:.1f} | ATL {load.current_atl:.1f}",
+                observation=f"Your form score is {load.current_tsb:+.1f}. Current zone: {zone_label}.",
+                evidence=f"Form {load.current_tsb:+.1f} | Fitness {load.current_ctl:.1f} | Fatigue {load.current_atl:.1f}",
                 relevance_score=0.70,
             ))
     except Exception as e:
@@ -1991,9 +1991,9 @@ _METRIC_LABELS: dict = {
     "sleep_quality_1_5": "Sleep Quality",
     "hrv_rmssd": "Heart Rate Variability",
     "resting_hr": "Resting Heart Rate",
-    "atl": "Fatigue (ATL)",
-    "ctl": "Fitness (CTL)",
-    "tsb": "Form (TSB)",
+    "atl": "Fatigue",
+    "ctl": "Fitness",
+    "tsb": "Form",
     "daily_session_stress": "Session Stress",
     "weight_kg": "Weight",
 }
