@@ -348,9 +348,9 @@ def test_humanize_metric():
     assert _humanize_metric("readiness_1_5") == "Morning Readiness"
     assert _humanize_metric("efficiency") == "Efficiency"
     assert _humanize_metric("soreness_1_5") == "Soreness"
-    assert _humanize_metric("ctl") == "Fitness (CTL)"
-    assert _humanize_metric("atl") == "Fatigue (ATL)"
-    assert _humanize_metric("tsb") == "Form (TSB)"
+    assert _humanize_metric("ctl") == "Fitness"
+    assert _humanize_metric("atl") == "Fatigue"
+    assert _humanize_metric("tsb") == "Form"
     assert _humanize_metric("hrv_rmssd") == "Heart Rate Variability"
 
 
