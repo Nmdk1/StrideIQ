@@ -394,15 +394,24 @@ For a new session, read in this order:
 1. **`docs/PRODUCT_MANIFESTO.md`** — the soul of the product. What StrideIQ
    IS and what "done" looks like. Read this first, every time.
 2. **This document** — operating contract (how to work)
-3. **`docs/TRAINING_PLAN_REBUILD_PLAN.md`** — north star build plan (what
+3. **`docs/PRODUCT_STRATEGY_2026-03-03.md`** — the moat. Why the correlation
+   engine is the root of everything. Every feature, every acquisition hook,
+   every retention mechanism flows from the engine producing true, specific,
+   actionable findings about a single human. If you don't understand this
+   document, you will build the wrong thing.
+4. **`docs/specs/CORRELATION_ENGINE_ROADMAP.md`** — the 12-layer roadmap
+   for the engine. From threshold detection to cohort intelligence. This is
+   the build sequence for the scientific instrument at the heart of the
+   product.
+5. **`docs/TRAINING_PLAN_REBUILD_PLAN.md`** — north star build plan (what
    to build and why)
-4. **`docs/AGENT_WORKFLOW.md`** — build loop mechanics, testing commands,
+6. **`docs/AGENT_WORKFLOW.md`** — build loop mechanics, testing commands,
    phase execution plan (how to build)
-5. **`docs/RUN_SHAPE_VISION.md`** — vision doc for Run Shape Intelligence
-   (current priority — read if working on this feature)
-6. **Latest `docs/SESSION_HANDOFF_*.md`** — what happened in the last
+7. **`docs/RUN_SHAPE_VISION.md`** — vision doc for Run Shape Intelligence
+   (read if working on this feature)
+8. **Latest `docs/SESSION_HANDOFF_*.md`** — what happened in the last
    session (current state)
-7. **Latest `docs/SESSION_HANDOFF_*_BUILDER_NOTE.md`** — specific
+9. **Latest `docs/SESSION_HANDOFF_*_BUILDER_NOTE.md`** — specific
    assignment for the new agent (if one exists)
 
 ### Key Codebase References
