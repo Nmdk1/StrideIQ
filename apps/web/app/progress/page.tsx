@@ -7,6 +7,7 @@ import { useProgressKnowledge } from '@/lib/hooks/queries/progress';
 import { ProgressHero } from '@/components/progress/ProgressHero';
 import { CorrelationWeb } from '@/components/progress/CorrelationWeb';
 import { WhatDataProved } from '@/components/progress/WhatDataProved';
+import { RecoveryFingerprint } from '@/components/progress/RecoveryFingerprint';
 
 const C = {
   bg: '#0d1321',
@@ -114,7 +115,7 @@ export default function ProgressPage() {
     );
   }
 
-  const { hero, correlation_web, proved_facts, patterns_forming, data_coverage } = data;
+  const { hero, correlation_web, proved_facts, patterns_forming, recovery_curve, data_coverage } = data;
   const hasFindings = correlation_web.nodes.length > 0;
 
   return (
@@ -209,6 +210,13 @@ export default function ProgressPage() {
           {proved_facts.length > 0 && (
             <Card>
               <WhatDataProved facts={proved_facts} />
+            </Card>
+          )}
+
+          {/* Recovery Fingerprint */}
+          {recovery_curve && (
+            <Card>
+              <RecoveryFingerprint data={recovery_curve} />
             </Card>
           )}
 

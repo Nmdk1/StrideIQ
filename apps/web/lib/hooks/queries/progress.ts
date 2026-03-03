@@ -410,6 +410,16 @@ export interface KnowledgeDataCoverage {
   checkin_count: number;
 }
 
+export interface RecoveryCurveData {
+  before: (number | null)[];
+  now: (number | null)[];
+  days: string[];
+  hard_sessions_now: number;
+  hard_sessions_before: number;
+  fallback?: boolean;
+  message?: string;
+}
+
 export interface ProgressKnowledgeResponse {
   hero: KnowledgeHero;
   correlation_web: {
@@ -418,6 +428,7 @@ export interface ProgressKnowledgeResponse {
   };
   proved_facts: ProvedFact[];
   patterns_forming: KnowledgePatternsForming | null;
+  recovery_curve: RecoveryCurveData | null;
   generated_at: string;
   data_coverage: KnowledgeDataCoverage;
 }
