@@ -586,14 +586,11 @@ def get_pending(
         return None  # FastAPI returns 204 for None with status_code=200
 
     from datetime import timedelta
-    from sqlalchemy import desc as sa_desc, and_, or_
+    from sqlalchemy import desc as sa_desc
 
     cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=SHARE_ELIGIBLE_WINDOW_HOURS)
 
-    # Running type keywords — same set used in other eligibility checks
-    running_keywords = ("run", "trail", "track", "road", "treadmill", "race")
-
-    # Activities synced in the last 24h, >= 2 miles, running type, not dismissed
+    # Activities synced in the last 24h, >= 2 miles, running sport, not dismissed
     candidate = (
         db.query(Activity)
         .filter(
@@ -601,12 +598,9 @@ def get_pending(
             Activity.start_time >= cutoff,
             Activity.distance_m >= SHARE_PROMPT_MIN_DISTANCE_M,
             Activity.share_dismissed_at.is_(None),
-            # Require a running workout_type (or null type — be permissive for
-            # activities that haven't been classified yet)
-            or_(
-                Activity.workout_type.is_(None),
-                *[Activity.workout_type.ilike(f"%{kw}%") for kw in running_keywords],
-            ),
+            # Running eligibility should key on sport, not workout_type labels.
+            # workout_type can be "threshold"/"tempo"/etc. and is not a run/non-run signal.
+            Activity.sport.ilike("%run%"),
         )
         .order_by(sa_desc(Activity.start_time))
         .first()

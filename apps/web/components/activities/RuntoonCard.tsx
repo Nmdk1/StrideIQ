@@ -174,7 +174,28 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
   if (timedOut) {
     return (
       <div className="rounded-lg border border-slate-700/40 bg-slate-800/20 p-4 text-center">
-        <p className="text-sm text-slate-400">Runtoon unavailable for this run.</p>
+        <p className="text-sm text-slate-400 mb-3">Runtoon took longer than expected.</p>
+        <button
+          type="button"
+          onClick={() => setShareViewOpen(true)}
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500 hover:bg-orange-400 rounded-lg text-sm font-semibold text-white transition-colors active:scale-95"
+        >
+          <Share2 className="w-4 h-4" />
+          Share Your Run
+        </button>
+        {shareViewOpen && (
+          <RuntoonShareView
+            activityId={activityId}
+            hasExistingRuntoon={false}
+            onClose={() => {
+              setShareViewOpen(false);
+              // Reset timeout so the card can refresh after generation
+              pollStartRef.current = null;
+              setTimedOut(false);
+              queryClient.invalidateQueries({ queryKey: ['runtoon', activityId] });
+            }}
+          />
+        )}
       </div>
     );
   }

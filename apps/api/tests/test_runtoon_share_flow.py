@@ -186,12 +186,12 @@ class TestPendingEligibility:
         source = inspect.getsource(get_pending)
         assert "_require_feature_flag" in source
 
-    def test_pending_running_keywords_present(self):
-        """Pending must gate on running type (not cycling, swimming)."""
+    def test_pending_gates_on_running_sport(self):
+        """Pending must gate on running sport (not cycling, swimming)."""
         from routers.runtoon import get_pending
         source = inspect.getsource(get_pending)
-        assert "running_keywords" in source
-        assert "run" in source   # at least "run" as a keyword
+        assert "Activity.sport" in source
+        assert "ilike(\"%run%\")" in source
 
     def test_pending_returns_none_when_no_candidate(self):
         """If no eligible activity exists, endpoint returns None (→ 204)."""
