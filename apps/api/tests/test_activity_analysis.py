@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, date
 from decimal import Decimal
 from uuid import uuid4
 from core.database import SessionLocal
-from models import Athlete, Activity, PersonalBest, BestEffort
+from models import Athlete, Activity, ActivitySplit, PersonalBest, BestEffort
 from services.activity_analysis import (
     ActivityAnalysis,
     EfficiencyMetrics,
@@ -23,7 +23,7 @@ from services.activity_analysis import (
 
 @pytest.fixture
 def test_athlete():
-    """Create a test athlete with birthdate for age calculations"""
+    """Create a test athlete with birthdate and seeded HR history for classify_effort()"""
     db = SessionLocal()
     try:
         athlete = Athlete(
@@ -36,6 +36,25 @@ def test_athlete():
         db.add(athlete)
         db.commit()
         db.refresh(athlete)
+
+        # Seed HR distribution so classify_effort() uses Tier 1 (percentile).
+        # P40 ≈ 127, P80 ≈ 147  →  115=easy, 135=moderate, 170=hard
+        seed_hrs = [110, 115, 118, 120, 122, 125, 128, 130, 132, 135, 140, 145, 155, 160, 170]
+        for i, hr in enumerate(seed_hrs):
+            db.add(Activity(
+                athlete_id=athlete.id,
+                start_time=datetime.now() - timedelta(days=60 - i),
+                sport="run",
+                distance_m=5000,
+                duration_s=1800,
+                avg_hr=hr,
+                average_speed=Decimal('2.78'),
+            ))
+        db.commit()
+
+        from services.effort_classification import invalidate_effort_cache
+        invalidate_effort_cache(str(athlete.id))
+
         yield athlete
         # Cleanup - delete in correct order to respect foreign keys
         # Must commit between each to ensure order is respected
@@ -44,6 +63,10 @@ def test_athlete():
             db.commit()
             db.query(BestEffort).filter(BestEffort.athlete_id == athlete.id).delete()
             db.commit()
+            act_ids = [a.id for a in db.query(Activity.id).filter(Activity.athlete_id == athlete.id).all()]
+            if act_ids:
+                db.query(ActivitySplit).filter(ActivitySplit.activity_id.in_(act_ids)).delete(synchronize_session=False)
+                db.commit()
             db.query(Activity).filter(Activity.athlete_id == athlete.id).delete()
             db.commit()
             db.delete(athlete)
@@ -146,76 +169,153 @@ class TestRunTypeClassification:
             db.close()
     
     def test_easy_run_classification(self, test_athlete):
-        """Test easy run classification (low HR)"""
+        """Test easy run classification — below P40 in seeded distribution"""
         db = SessionLocal()
         try:
-            # Age ~44, max HR ~176, easy = 60-70% = 106-123 bpm
             activity = Activity(
                 athlete_id=test_athlete.id,
                 start_time=datetime.now(),
                 sport="run",
                 distance_m=5000,
-                avg_hr=115,  # ~65% max HR
-                average_speed=Decimal('2.5')  # ~10:40/mile
+                avg_hr=115,
+                average_speed=Decimal('2.5'),
             )
             db.add(activity)
             db.commit()
-            
+
             analysis = ActivityAnalysis(activity, test_athlete, db)
             run_type = analysis._classify_run_type()
             assert run_type == "easy"
-            
+
             db.delete(activity)
             db.commit()
         finally:
             db.close()
-    
+
     def test_tempo_classification(self, test_athlete):
-        """Test tempo run classification (moderate HR)"""
+        """Test tempo (moderate effort) — between P40 and P80"""
         db = SessionLocal()
         try:
-            # Tempo = 70-80% max HR = 123-141 bpm
             activity = Activity(
                 athlete_id=test_athlete.id,
                 start_time=datetime.now(),
                 sport="run",
                 distance_m=5000,
-                avg_hr=135,  # ~77% max HR
-                average_speed=Decimal('3.0')  # ~9:20/mile
+                avg_hr=135,
+                average_speed=Decimal('3.0'),
             )
             db.add(activity)
             db.commit()
-            
+
             analysis = ActivityAnalysis(activity, test_athlete, db)
             run_type = analysis._classify_run_type()
             assert run_type == "tempo"
-            
+
             db.delete(activity)
             db.commit()
         finally:
             db.close()
-    
-    def test_long_run_classification(self, test_athlete):
-        """Test long run classification (distance-based)"""
+
+    def test_threshold_classification(self, test_athlete):
+        """Test threshold — hard effort with steady split paces (no alternation)"""
         db = SessionLocal()
         try:
-            # Long run = >=10 miles or >=90 minutes
+            activity = Activity(
+                athlete_id=test_athlete.id,
+                start_time=datetime.now(),
+                sport="run",
+                distance_m=8000,
+                duration_s=2400,
+                avg_hr=155,
+                average_speed=Decimal('3.3'),
+            )
+            db.add(activity)
+            db.commit()
+
+            # Steady-state splits — low pace variance → threshold
+            for i in range(8):
+                db.add(ActivitySplit(
+                    activity_id=activity.id,
+                    split_number=i + 1,
+                    distance=1000,
+                    elapsed_time=300 + (i % 2) * 5,  # 5:00-5:05/km, minimal variance
+                ))
+            db.commit()
+
+            analysis = ActivityAnalysis(activity, test_athlete, db)
+            run_type = analysis._classify_run_type()
+            assert run_type == "threshold"
+
+            db.query(ActivitySplit).filter(ActivitySplit.activity_id == activity.id).delete()
+            db.delete(activity)
+            db.commit()
+        finally:
+            db.close()
+
+    def test_interval_classification(self, test_athlete):
+        """Test interval — hard effort with alternating fast/slow split paces"""
+        db = SessionLocal()
+        try:
+            activity = Activity(
+                athlete_id=test_athlete.id,
+                start_time=datetime.now(),
+                sport="run",
+                distance_m=6000,
+                duration_s=1800,
+                avg_hr=155,
+                average_speed=Decimal('3.3'),
+            )
+            db.add(activity)
+            db.commit()
+
+            # 6 splits alternating fast reps / slow recovery jogs
+            split_paces = [
+                (1000, 240),   # fast — 4:00/km
+                (500, 200),    # slow jog — 6:40/km
+                (1000, 245),   # fast
+                (500, 210),    # slow jog
+                (1000, 238),   # fast
+                (500, 195),    # slow jog
+            ]
+            for i, (dist, elapsed) in enumerate(split_paces):
+                db.add(ActivitySplit(
+                    activity_id=activity.id,
+                    split_number=i + 1,
+                    distance=dist,
+                    elapsed_time=elapsed,
+                ))
+            db.commit()
+
+            analysis = ActivityAnalysis(activity, test_athlete, db)
+            run_type = analysis._classify_run_type()
+            assert run_type == "interval"
+
+            db.query(ActivitySplit).filter(ActivitySplit.activity_id == activity.id).delete()
+            db.delete(activity)
+            db.commit()
+        finally:
+            db.close()
+
+    def test_long_run_classification(self, test_athlete):
+        """Test long run — distance-based with easy/moderate effort"""
+        db = SessionLocal()
+        try:
             activity = Activity(
                 athlete_id=test_athlete.id,
                 start_time=datetime.now(),
                 sport="run",
                 distance_m=16093,  # 10 miles
-                duration_s=5400,  # 90 minutes
-                avg_hr=130,  # Moderate effort
-                average_speed=Decimal('2.98')  # ~9:00/mile
+                duration_s=5400,   # 90 minutes
+                avg_hr=130,
+                average_speed=Decimal('2.98'),
             )
             db.add(activity)
             db.commit()
-            
+
             analysis = ActivityAnalysis(activity, test_athlete, db)
             run_type = analysis._classify_run_type()
             assert run_type == "long_run"
-            
+
             db.delete(activity)
             db.commit()
         finally:

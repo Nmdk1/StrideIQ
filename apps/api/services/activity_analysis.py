@@ -159,15 +159,15 @@ class ActivityAnalysis:
     
     def _classify_run_type(self) -> Optional[str]:
         """
-        Classify run type based on pace, HR, distance, and effort.
-        
-        Uses exercise physiology principles:
-        - Easy: 60-70% max HR, conversational pace
-        - Tempo: 70-80% max HR, comfortably hard
-        - Threshold: 80-90% max HR, hard but sustainable
-        - Interval/VO2max: 90-100% max HR, very hard
-        - Long run: Extended duration (>90 min or >10 miles), easy-moderate effort
-        - Race: Marked as race or very high effort
+        Classify run type using N=1 effort classification and split
+        pace structure.  No population formulas.
+
+        - Race: source-tagged or user-verified
+        - Long run: >= 10 mi or >= 90 min at easy/moderate effort
+        - Interval: hard effort + high split pace variance (fast/slow alternation)
+        - Threshold: hard effort + steady split paces
+        - Tempo: moderate effort
+        - Easy: easy effort
         """
         if not self.metrics.is_complete():
             return None
@@ -190,7 +190,7 @@ class ActivityAnalysis:
             return "long_run"
 
         if effort == "hard":
-            return "threshold"
+            return self._distinguish_hard_type()
 
         if effort == "moderate":
             return "tempo"
@@ -199,6 +199,38 @@ class ActivityAnalysis:
             return "easy"
 
         return None
+
+    def _distinguish_hard_type(self) -> str:
+        """
+        Interval vs threshold from split pace variance.
+
+        Intervals = fast reps with slow recovery jogs between.  That
+        alternating pattern produces high coefficient-of-variation in
+        split paces.  CV > 0.15 with 3+ splits → interval.
+        """
+        from models import ActivitySplit
+
+        splits = (
+            self.db.query(ActivitySplit)
+            .filter(ActivitySplit.activity_id == self.activity.id)
+            .order_by(ActivitySplit.split_number)
+            .all()
+        )
+
+        paces = []
+        for s in splits:
+            if s.distance and s.elapsed_time and float(s.distance) > 0:
+                paces.append(float(s.elapsed_time) / float(s.distance))
+
+        if len(paces) >= 3:
+            mean_pace = sum(paces) / len(paces)
+            if mean_pace > 0:
+                variance = sum((p - mean_pace) ** 2 for p in paces) / len(paces)
+                cv = (variance ** 0.5) / mean_pace
+                if cv > 0.15:
+                    return "interval"
+
+        return "threshold"
     
     def _get_pr_baseline(self) -> Optional[Baseline]:
         """Get PR baseline for this distance."""
