@@ -70,16 +70,28 @@ CAPTION_BLOCKLIST = frozenset([
 # ---------------------------------------------------------------------------
 
 STYLE_ANCHOR = """Bold, vibrant caricature/comic style. NOT photorealistic.
-The runner is the HERO. Accurate to their real body from reference photos,
-always powerful and determined. Depict them honestly — do not idealize or
-alter their body type. Make them look heroic AS THEY ARE.
+The runner is the HERO. Accurate to their real body from reference photos.
+Depict them honestly — do not idealize or alter their body type.
+Make them look GOOD — flattering, aspirational, someone who'd want to share this.
+NEVER make them look angry, in pain, grimacing, or aggressive.
 Fully clothed in appropriate running gear. PG-safe always. No nudity, no suggestive content.
 GPS watch on wrist.
-THE IMAGE MUST BE FUNNY — visual humor, exaggerated expressions,
-situational comedy that matches the run's emotional truth.
+
+CRITICAL — EXPRESSION MUST MATCH EFFORT LEVEL:
+- Easy runs: RELAXED, SMILING, enjoying the scenery, effortless stride
+- Moderate runs: Focused but comfortable, confident expression
+- Hard runs: Determined but controlled, strong presence
+- Race/max effort: Intense but heroic, triumph NOT suffering
+The default expression is ALWAYS a relaxed smile unless the effort demands otherwise.
+NEVER depict the runner as suffering, angry, or struggling on an easy run.
+
+THE IMAGE MUST BE FUNNY — but the humor comes from the SITUATION, not from
+making the runner look bad. Think: a dog joining the run, absurd scenery,
+a clever visual gag about the distance or pace. The runner always looks good.
 
 DO NOT USE speech bubbles, thought bubbles, or comic sound effects (no "PUFF", "HOFF", etc.).
-The humor should come from the scene composition, facial expressions, and situational comedy — not from text overlays in the illustration.
+The humor should come from the scene composition and situational comedy — not from
+text overlays or unflattering expressions.
 
 IMAGE LAYOUT:
 - Top 65%: Caricature scene with humorous visual element
@@ -455,9 +467,12 @@ VISUAL DIRECTION:
 
 WATERMARK: strideiq.run
 
-Create a flattering, heroic, HUMOROUS caricature using the reference photos provided.
-The runner should be depicted in a scene that accurately reflects the run conditions above.
-Make it funny. Make it theirs. Make it share-worthy."""
+Create a FLATTERING, humorous caricature using the reference photos provided.
+The runner should look GOOD — someone who'd proudly share this image.
+Their expression MUST match the effort level described above.
+For easy runs: relaxed smile, smooth stride, enjoying the moment.
+Make the SCENE funny (visual gag, unexpected element), NOT the runner's appearance.
+Make it theirs. Make it share-worthy."""
 
         result.prompt_hash = _hash_prompt(text_prompt)
 
