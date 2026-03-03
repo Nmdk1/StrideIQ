@@ -9,7 +9,7 @@ Calculates recovery-related metrics from the manifesto:
 Based on Manifesto Section 2: Secondary Signals
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 from decimal import Decimal
 from sqlalchemy.orm import Session
@@ -377,7 +377,7 @@ def compute_recovery_curve(
     from services.effort_classification import classify_effort_bulk
     from models import ActivitySplit
 
-    end = datetime.utcnow()
+    end = datetime.now(timezone.utc)
     now_start = end - timedelta(days=now_days)
     before_start = end - timedelta(days=before_days)
 
