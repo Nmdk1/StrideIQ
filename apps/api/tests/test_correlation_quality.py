@@ -115,7 +115,7 @@ def test_partial_correlation_insufficient_data():
 
 
 def test_confounder_map_motivation_efficiency():
-    assert CONFOUNDER_MAP[("motivation_1_5", "efficiency")] == "atl"
+    assert CONFOUNDER_MAP[("motivation_1_5", "efficiency")] == "daily_session_stress"
 
 
 # ---------------------------------------------------------------------------
@@ -262,11 +262,12 @@ def test_counterintuitive_and_confounded_deactivated():
 
 
 # ---------------------------------------------------------------------------
-# 10. Counterintuitive direction + NOT confounded → is_active = True, flag set
+# 10. Counterintuitive direction + NOT confounded → is_active = False (safety gate)
+#     See Post-Delivery Correction in BUILDER_NOTE_2026-03-03.
 # ---------------------------------------------------------------------------
 
 
-def test_counterintuitive_but_real_stays_active():
+def test_counterintuitive_direction_alone_suppresses():
     db = _mock_db()
     result = _make_analysis_result(
         direction="negative",
@@ -280,7 +281,7 @@ def test_counterintuitive_but_real_stays_active():
     persist_correlation_findings(ATHLETE_ID, result, db, "efficiency")
 
     added = db.add.call_args[0][0]
-    assert added.is_active is True
+    assert added.is_active is False
     assert added.direction_counterintuitive is True
     assert added.is_confounded is False
 

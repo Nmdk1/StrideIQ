@@ -103,10 +103,12 @@ def persist_correlation_findings(
         confidence = _compute_confidence(r, p, n)
         insight_text = _build_finding_text(input_name, direction, strength, r, lag, output_metric)
 
-        # Suppression rule: confounded findings are NOT active.
-        # Counterintuitive direction alone does NOT suppress —
-        # only counterintuitive + confounded = suppressed.
-        should_be_active = not is_confounded
+        # Suppression rules (safety gate — see Post-Delivery Correction
+        # in BUILDER_NOTE_2026-03-03_CORRELATION_ENGINE_QUALITY.md):
+        #  1. Confounded findings → inactive
+        #  2. Counterintuitive direction → inactive (temporary gate until
+        #     daily-session-stress confounder is implemented)
+        should_be_active = not is_confounded and not direction_counterintuitive
 
         # Upsert: find existing or create
         existing = (

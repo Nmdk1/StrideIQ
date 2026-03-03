@@ -51,32 +51,33 @@ TREND_CONFIRMATION_RUNS = 3  # Minimum runs to confirm a trend
 # Pairs not listed use bivariate r as-is — the map grows as new
 # confounders are identified.  Requires a code change + test to add.
 CONFOUNDER_MAP: Dict[Tuple[str, str], str] = {
-    # Motivation/enjoyment/confidence → efficiency:
-    #   ATL confounds because hard-workout days have high motivation AND
-    #   subsequent recovery-day efficiency dips.
-    ("motivation_1_5", "efficiency"): "atl",
-    ("enjoyment_1_5", "efficiency"): "atl",
-    ("confidence_1_5", "efficiency"): "atl",
-    ("motivation_1_5", "pace_easy"): "atl",
-    ("motivation_1_5", "pace_threshold"): "atl",
+    # Acute-stress inputs → efficiency/pace:
+    #   The confounder is daily session stress (distance × avg HR), NOT
+    #   ATL.  ATL is a 7-day rolling average that smooths over single-
+    #   session spikes.  The actual causal chain is:
+    #     high motivation → hard workout THAT DAY → acute session stress
+    #     → recovery dip 2-3 days later → efficiency drops
+    #   Daily session stress captures the acute spike that ATL misses.
+    ("motivation_1_5", "efficiency"): "daily_session_stress",
+    ("enjoyment_1_5", "efficiency"): "daily_session_stress",
+    ("confidence_1_5", "efficiency"): "daily_session_stress",
+    ("motivation_1_5", "pace_easy"): "daily_session_stress",
+    ("motivation_1_5", "pace_threshold"): "daily_session_stress",
+    ("soreness_1_5", "efficiency"): "daily_session_stress",
+    ("rpe_1_10", "efficiency"): "daily_session_stress",
 
-    # TSB → efficiency:
-    #   TSB derives from ATL/CTL.  Low-TSB (hard training) days produce
-    #   high same-day efficiency; the engine misreads as negative effect.
-    ("tsb", "efficiency"): "atl",
-    ("tsb", "pace_easy"): "atl",
-    ("tsb", "pace_threshold"): "atl",
+    # TSB → efficiency/pace:
+    #   TSB = CTL - ATL.  Do NOT use ATL as confounder — it's
+    #   mathematically circular.  Use daily session stress instead,
+    #   which is independent of the TSB derivation.
+    ("tsb", "efficiency"): "daily_session_stress",
+    ("tsb", "pace_easy"): "daily_session_stress",
+    ("tsb", "pace_threshold"): "daily_session_stress",
 
     # Sleep → pace:
     #   Taper produces both more sleep AND faster race pace.
     ("sleep_hours", "pace_easy"): "ctl",
     ("sleep_hours", "pace_threshold"): "ctl",
-
-    # Soreness / RPE → efficiency:
-    #   High soreness/RPE follow ATL spikes; efficiency on those days is
-    #   naturally lower.
-    ("soreness_1_5", "efficiency"): "atl",
-    ("rpe_1_10", "efficiency"): "atl",
 }
 
 # Expected physiological direction for (input, output) pairs.
@@ -660,6 +661,40 @@ def aggregate_activity_nutrition(
     return result
 
 
+def aggregate_daily_session_stress(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session,
+) -> List[Tuple[date_type, float]]:
+    """
+    Daily session stress = sum of (distance_m * avg_hr) for all activities
+    on that day.  This captures the acute mechanical + cardiovascular load
+    of a specific day's training, unlike ATL which is a 7-day rolling
+    average that smooths over single-session spikes.
+
+    Used as a confounder for acute-stress relationships (motivation,
+    enjoyment, confidence, soreness, RPE → efficiency/pace).
+    """
+    activities = (
+        db.query(
+            func.date(Activity.start_time).label("day"),
+            func.sum(Activity.distance_m * Activity.avg_hr).label("stress"),
+        )
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.start_time >= start_date,
+            Activity.start_time <= end_date,
+            Activity.distance_m.isnot(None),
+            Activity.avg_hr.isnot(None),
+        )
+        .group_by(func.date(Activity.start_time))
+        .all()
+    )
+
+    return [(row.day, float(row.stress)) for row in activities if row.stress]
+
+
 def aggregate_training_load_inputs(
     athlete_id: str,
     start_date: datetime,
@@ -1220,6 +1255,11 @@ def analyze_correlations(
     if include_training_load:
         load_inputs = aggregate_training_load_inputs(athlete_id, start_date, end_date, db)
         inputs.update(load_inputs)
+
+    # Daily session stress (acute load proxy for confounder control)
+    inputs["daily_session_stress"] = aggregate_daily_session_stress(
+        athlete_id, start_date, end_date, db,
+    )
     
     # Get outputs based on metric
     if output_metric == "efficiency":
