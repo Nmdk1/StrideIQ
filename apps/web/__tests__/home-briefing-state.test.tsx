@@ -99,7 +99,7 @@ const baseHomeData = {
   has_any_activities: true,
   total_activities: 50,
   checkin_needed: false,
-  today_checkin: { motivation_label: 'Fine', sleep_label: 'OK', soreness_label: 'None' },
+  today_checkin: { readiness_label: 'Good', sleep_label: 'OK', soreness_label: 'None' },
   coach_briefing: null,
   last_run: null,
 };

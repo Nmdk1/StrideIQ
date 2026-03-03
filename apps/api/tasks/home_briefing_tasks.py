@@ -519,23 +519,26 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             data_fingerprint=fingerprint,
         )
 
-        # Insight rotation: persist coach_noticed text for 49h so the next briefing
-        # can avoid repeating the same insight. 49h (1h buffer over 48h spec) ensures
-        # the suppression window outlasts consecutive daily briefings.
-        _coach_noticed_text = result.get("coach_noticed")
-        if _coach_noticed_text:
-            try:
-                import redis as _redis_mod
-                _r2 = _redis_mod.from_url(
-                    os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True
-                )
-                _r2.setex(
-                    f"coach_noticed_last:{athlete_id}",
-                    49 * 3600,  # 49-hour TTL (48h spec + 1h buffer)
-                    _coach_noticed_text,
-                )
-            except Exception as _e:
-                logger.debug("coach_noticed_last Redis write failed (non-blocking): %s", _e)
+        # Finding-level cooldown: after briefing generation, set cooldown keys
+        # for any correlation findings that appear in the output text.
+        try:
+            from routers.home import _set_finding_cooldowns
+            briefing_text = " ".join(str(v) for v in result.values() if v)
+            injected = kwargs.get("injected_findings", [])
+            if not injected:
+                from services.correlation_engine import analyze_correlations
+                try:
+                    corr_result = analyze_correlations(athlete_id, days=60, db=db)
+                    injected = [
+                        {"input_name": c.get("input_name", ""), "output_metric": c.get("output_metric", "efficiency")}
+                        for c in corr_result.get("correlations", [])
+                        if c.get("is_significant")
+                    ]
+                except Exception:
+                    pass
+            _set_finding_cooldowns(athlete_id, briefing_text, injected)
+        except Exception as _e:
+            logger.debug("Finding cooldown write failed (non-blocking): %s", _e)
 
         reset_circuit(athlete_id)
 

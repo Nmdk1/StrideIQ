@@ -101,7 +101,7 @@ def test_response_has_all_required_fields():
     db = MagicMock()
     findings = [
         _mock_finding("sleep_hours", "efficiency", "positive", 0.62, 7, "strong", 1),
-        _mock_finding("motivation_1_5", "efficiency", "positive", 0.71, 9, "strong", 2),
+        _mock_finding("readiness_1_5", "efficiency", "positive", 0.71, 9, "strong", 2),
     ]
     db.query.return_value.filter.return_value.order_by.return_value.all.return_value = findings
     db.query.return_value.filter.return_value.first.return_value = _make_plan()
@@ -132,7 +132,7 @@ def test_nodes_deduplicate_correctly():
     findings = [
         _mock_finding("sleep_hours", "efficiency", "positive", 0.62, 7, "strong", 1),
         _mock_finding("sleep_hours", "pace", "positive", 0.48, 4, "moderate", 2),
-        _mock_finding("motivation_1_5", "efficiency", "positive", 0.71, 9, "strong", 2),
+        _mock_finding("readiness_1_5", "efficiency", "positive", 0.71, 9, "strong", 2),
     ]
     db.query.return_value.filter.return_value.order_by.return_value.all.return_value = findings
     db.query.return_value.filter.return_value.first.return_value = _make_plan()
@@ -148,7 +148,7 @@ def test_nodes_deduplicate_correctly():
 
     input_ids = [n["id"] for n in input_nodes]
     assert input_ids.count("sleep_hours") == 1
-    assert "motivation_1_5" in input_ids
+    assert "readiness_1_5" in input_ids
 
     output_ids = [n["id"] for n in output_nodes]
     assert output_ids.count("efficiency") == 1
@@ -187,7 +187,7 @@ def test_proved_facts_ordered_by_times_confirmed():
     db = MagicMock()
     findings = [
         _mock_finding("sleep_hours", "efficiency", "positive", 0.62, 3, "moderate", 1),
-        _mock_finding("motivation_1_5", "efficiency", "positive", 0.71, 9, "strong", 2),
+        _mock_finding("readiness_1_5", "efficiency", "positive", 0.71, 9, "strong", 2),
         _mock_finding("hrv", "pace", "positive", 0.38, 1, "weak", 1),
     ]
     db.query.return_value.filter.return_value.order_by.return_value.all.return_value = findings
@@ -345,7 +345,7 @@ def test_hero_without_race():
 # ═══════════════════════════════════════════════════════════════════
 def test_humanize_metric():
     assert _humanize_metric("sleep_hours") == "Sleep"
-    assert _humanize_metric("motivation_1_5") == "Motivation"
+    assert _humanize_metric("readiness_1_5") == "Morning Readiness"
     assert _humanize_metric("efficiency") == "Efficiency"
     assert _humanize_metric("soreness_1_5") == "Soreness"
     assert _humanize_metric("ctl") == "Fitness (CTL)"

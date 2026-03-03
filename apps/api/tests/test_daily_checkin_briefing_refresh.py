@@ -279,7 +279,7 @@ class TestEndpointWiringWithDB:
                 with TestClient(app) as tc:
                     resp = tc.post("/v1/daily-checkin", json={
                         "date": "2026-02-24",
-                        "motivation_1_5": 4,
+                        "readiness_1_5": 4,
                         "sleep_quality_1_5": 3,
                         "sleep_h": 7.0,
                         "soreness_1_5": 1,
@@ -307,7 +307,7 @@ class TestEndpointWiringWithDB:
         existing = DailyCheckin(
             athlete_id=test_athlete.id,
             date=date(2026, 2, 24),
-            motivation_1_5=2,
+            readiness_1_5=2,
         )
         db_session.add(existing)
         db_session.commit()
@@ -320,7 +320,7 @@ class TestEndpointWiringWithDB:
                 with TestClient(app) as tc:
                     resp = tc.post("/v1/daily-checkin", json={
                         "date": "2026-02-24",
-                        "motivation_1_5": 4,
+                        "readiness_1_5": 4,
                         "sleep_quality_1_5": 3,
                     })
             assert resp.status_code == 201, f"Expected 201: {resp.status_code} {resp.text}"

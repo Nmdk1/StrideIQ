@@ -715,7 +715,7 @@ class DailyCheckin(Base):
     # --- MINDSET TRACKING (Snow-inspired) ---
     # "The mind is the limiter of performance"
     confidence_1_5 = Column(Integer, nullable=True)  # 1=doubtful, 5=unstoppable
-    motivation_1_5 = Column(Integer, nullable=True)  # 1=forcing myself, 5=fired up
+    readiness_1_5 = Column(Integer, nullable=True)   # 1=poor, 5=high (morning readiness)
 
     __table_args__ = (
         Index("uq_athlete_date", "athlete_id", "date", unique=True),

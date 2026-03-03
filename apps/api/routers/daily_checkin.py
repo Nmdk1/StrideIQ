@@ -57,7 +57,7 @@ class DailyCheckinCreate(BaseModel):
     # Coach-inspired additions
     enjoyment_1_5: Optional[int] = None  # Green: "if you don't enjoy it, you won't be consistent"
     confidence_1_5: Optional[int] = None  # Snow: mindset tracking
-    motivation_1_5: Optional[int] = None  # Snow: mindset tracking
+    readiness_1_5: Optional[int] = None   # Morning readiness (1=poor, 5=high)
 
 
 class DailyCheckinResponse(BaseModel):
@@ -77,7 +77,7 @@ class DailyCheckinResponse(BaseModel):
     # Coach-inspired additions
     enjoyment_1_5: Optional[int] = None
     confidence_1_5: Optional[int] = None
-    motivation_1_5: Optional[int] = None
+    readiness_1_5: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 

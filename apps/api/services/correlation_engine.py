@@ -55,14 +55,14 @@ CONFOUNDER_MAP: Dict[Tuple[str, str], str] = {
     #   The confounder is daily session stress (distance × avg HR), NOT
     #   ATL.  ATL is a 7-day rolling average that smooths over single-
     #   session spikes.  The actual causal chain is:
-    #     high motivation → hard workout THAT DAY → acute session stress
+    #     high readiness → hard workout THAT DAY → acute session stress
     #     → recovery dip 2-3 days later → efficiency drops
     #   Daily session stress captures the acute spike that ATL misses.
-    ("motivation_1_5", "efficiency"): "daily_session_stress",
+    ("readiness_1_5", "efficiency"): "daily_session_stress",
     ("enjoyment_1_5", "efficiency"): "daily_session_stress",
     ("confidence_1_5", "efficiency"): "daily_session_stress",
-    ("motivation_1_5", "pace_easy"): "daily_session_stress",
-    ("motivation_1_5", "pace_threshold"): "daily_session_stress",
+    ("readiness_1_5", "pace_easy"): "daily_session_stress",
+    ("readiness_1_5", "pace_threshold"): "daily_session_stress",
     ("soreness_1_5", "efficiency"): "daily_session_stress",
     ("rpe_1_10", "efficiency"): "daily_session_stress",
 
@@ -84,8 +84,8 @@ CONFOUNDER_MAP: Dict[Tuple[str, str], str] = {
 # Counterintuitive direction alone does NOT suppress — only when
 # combined with confounded = True.
 DIRECTION_EXPECTATIONS: Dict[Tuple[str, str], str] = {
-    ("motivation_1_5", "efficiency"): "positive",
-    ("motivation_1_5", "completion"): "positive",
+    ("readiness_1_5", "efficiency"): "positive",
+    ("readiness_1_5", "completion"): "positive",
     ("sleep_hours", "efficiency"): "positive",
     ("sleep_hours", "pace_easy"): "positive",
     ("hrv_rmssd", "efficiency"): "positive",
@@ -439,18 +439,18 @@ def aggregate_daily_inputs(
 
     inputs["confidence_1_5"] = [(row.date, float(row.confidence_1_5)) for row in confidence_data]
 
-    # Motivation (1-5 scale)
-    motivation_data = db.query(
+    # Morning readiness (1-5 scale)
+    readiness_data = db.query(
         DailyCheckin.date,
-        DailyCheckin.motivation_1_5
+        DailyCheckin.readiness_1_5
     ).filter(
         DailyCheckin.athlete_id == athlete_id,
         DailyCheckin.date >= start_date.date(),
         DailyCheckin.date <= end_date.date(),
-        DailyCheckin.motivation_1_5.isnot(None)
+        DailyCheckin.readiness_1_5.isnot(None)
     ).all()
 
-    inputs["motivation_1_5"] = [(row.date, float(row.motivation_1_5)) for row in motivation_data]
+    inputs["readiness_1_5"] = [(row.date, float(row.readiness_1_5)) for row in readiness_data]
 
     # Overnight average HR
     overnight_hr_data = db.query(

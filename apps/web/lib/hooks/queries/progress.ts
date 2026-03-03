@@ -80,7 +80,7 @@ export interface RunnerProfile {
 
 export interface WellnessTrends {
   avg_sleep: number | null;
-  avg_motivation: number | null;
+  avg_readiness: number | null;
   avg_soreness: number | null;
   avg_stress: number | null;
   checkin_count: number;

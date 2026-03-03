@@ -500,7 +500,7 @@ class TestIntelligenceRules:
             ],
             check_ins=[
                 MockCheckin(date=days_ago(i, TODAY), sleep_h=8, stress_1_5=1, soreness_1_5=1,
-                            motivation_1_5=5, enjoyment_1_5=4)
+                            readiness_1_5=5, enjoyment_1_5=4)
                 for i in range(1, 15)
             ],
             expected_insights=[

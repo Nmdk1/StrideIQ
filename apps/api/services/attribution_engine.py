@@ -847,19 +847,19 @@ class MindsetAnalyzer(InputAnalyzer):
         """Get mindset metrics for a date range"""
         checkins = self.db.query(
             DailyCheckin.confidence_1_5,
-            DailyCheckin.motivation_1_5,
+            DailyCheckin.readiness_1_5,
         ).filter(
             DailyCheckin.athlete_id == self.athlete_id,
             DailyCheckin.date >= start,
             DailyCheckin.date <= end,
         ).all()
         
-        result = {"confidence": [], "motivation": []}
+        result = {"confidence": [], "readiness": []}
         for c in checkins:
             if c.confidence_1_5:
                 result["confidence"].append(float(c.confidence_1_5))
-            if c.motivation_1_5:
-                result["motivation"].append(float(c.motivation_1_5))
+            if c.readiness_1_5:
+                result["readiness"].append(float(c.readiness_1_5))
         return result
 
 

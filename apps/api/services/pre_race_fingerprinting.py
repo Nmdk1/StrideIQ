@@ -290,7 +290,7 @@ def extract_pre_race_state(
         resting_hr_deviation_pct=rhr_deviation_pct,
         stress_level=primary_checkin.stress_1_5,
         soreness_level=primary_checkin.soreness_1_5,
-        motivation=primary_checkin.motivation_1_5,
+        motivation=primary_checkin.readiness_1_5,
         confidence=primary_checkin.confidence_1_5,
         days_since_hard_workout=days_since_hard
     )

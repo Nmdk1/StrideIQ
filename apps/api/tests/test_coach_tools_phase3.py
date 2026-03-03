@@ -151,7 +151,7 @@ class TestGetWellnessTrends:
             checkin.overnight_avg_hr = Decimal("52.0")
             checkin.enjoyment_1_5 = 4
             checkin.confidence_1_5 = 4
-            checkin.motivation_1_5 = 4
+            checkin.readiness_1_5 = 4
             checkins.append(checkin)
         
         mock_db.query.return_value.filter.return_value.order_by.return_value.all.return_value = checkins
@@ -183,7 +183,7 @@ class TestGetWellnessTrends:
             checkin.overnight_avg_hr = None
             checkin.enjoyment_1_5 = None
             checkin.confidence_1_5 = None
-            checkin.motivation_1_5 = None
+            checkin.readiness_1_5 = None
             checkins.append(checkin)
         
         mock_db.query.return_value.filter.return_value.order_by.return_value.all.return_value = checkins

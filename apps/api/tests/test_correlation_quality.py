@@ -110,12 +110,12 @@ def test_partial_correlation_insufficient_data():
 
 
 # ---------------------------------------------------------------------------
-# 3. CONFOUNDER_MAP: (motivation_1_5, efficiency) → atl
+# 3. CONFOUNDER_MAP: (readiness_1_5, efficiency) → atl
 # ---------------------------------------------------------------------------
 
 
 def test_confounder_map_motivation_efficiency():
-    assert CONFOUNDER_MAP[("motivation_1_5", "efficiency")] == "daily_session_stress"
+    assert CONFOUNDER_MAP[("readiness_1_5", "efficiency")] == "daily_session_stress"
 
 
 # ---------------------------------------------------------------------------
@@ -128,12 +128,12 @@ def test_confounder_map_sleep_efficiency_not_in_map():
 
 
 # ---------------------------------------------------------------------------
-# 5. DIRECTION_EXPECTATIONS: (motivation_1_5, efficiency) → "positive"
+# 5. DIRECTION_EXPECTATIONS: (readiness_1_5, efficiency) → "positive"
 # ---------------------------------------------------------------------------
 
 
 def test_direction_expectations_positive():
-    assert DIRECTION_EXPECTATIONS[("motivation_1_5", "efficiency")] == "positive"
+    assert DIRECTION_EXPECTATIONS[("readiness_1_5", "efficiency")] == "positive"
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +158,7 @@ def _mock_db():
 
 
 def _make_analysis_result(
-    input_name="motivation_1_5",
+    input_name="readiness_1_5",
     output_metric="efficiency",
     r=0.45,
     p=0.01,
@@ -323,7 +323,7 @@ def test_upsert_updates_confounder_fields():
 
     existing = MagicMock(spec=CorrelationFinding)
     existing.times_confirmed = 5
-    existing.input_name = "motivation_1_5"
+    existing.input_name = "readiness_1_5"
     existing.output_metric = "efficiency"
     existing.time_lag_days = 3
 

@@ -117,7 +117,7 @@ function QuickCheckin() {
     const today = new Date().toISOString().split('T')[0];
     checkin.mutate({
       date: today,
-      motivation_1_5: feel,
+      readiness_1_5: feel,
       sleep_quality_1_5: sleepQuality,
       sleep_h: sleepHours ?? undefined,
       soreness_1_5: soreness,
@@ -241,11 +241,11 @@ function QuickCheckin() {
 
 // ── Check-in Summary (shown after check-in) ────────────────────────
 
-function CheckinSummary({ motivation, sleep, soreness, coachReaction }: {
-  motivation?: string | null; sleep?: string | null; soreness?: string | null; coachReaction?: string;
+function CheckinSummary({ readiness, sleep, soreness, coachReaction }: {
+  readiness?: string | null; sleep?: string | null; soreness?: string | null; coachReaction?: string;
 }) {
   const items = [
-    { label: 'Feeling', value: motivation, emoji: motivation === 'Great' ? '💪' : motivation === 'Fine' ? '👍' : motivation === 'Tired' ? '😴' : '😓' },
+    { label: 'Readiness', value: readiness, emoji: readiness === 'High' ? '🔥' : readiness === 'Good' ? '💪' : readiness === 'Neutral' ? '😐' : readiness === 'Low' ? '😑' : '😴' },
     { label: 'Sleep', value: sleep, emoji: sleep === 'Great' ? '🌙' : sleep === 'OK' ? '😐' : '😵' },
     { label: 'Soreness', value: soreness, emoji: soreness === 'None' ? '✅' : soreness === 'Mild' ? '🤏' : '🔥' },
   ].filter((i) => i.value);
@@ -548,7 +548,7 @@ export default function HomePage() {
               <QuickCheckin />
             ) : today_checkin ? (
               <CheckinSummary
-                motivation={today_checkin.motivation_label}
+                readiness={today_checkin.readiness_label}
                 sleep={today_checkin.sleep_label}
                 soreness={today_checkin.soreness_label}
                 coachReaction={coach_briefing?.checkin_reaction}

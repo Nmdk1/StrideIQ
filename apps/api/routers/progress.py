@@ -277,7 +277,7 @@ class RunnerProfile(BaseModel):
 
 class WellnessTrends(BaseModel):
     avg_sleep: Optional[float] = None
-    avg_motivation: Optional[float] = None
+    avg_readiness: Optional[float] = None
     avg_soreness: Optional[float] = None
     avg_stress: Optional[float] = None
     checkin_count: int = 0
@@ -519,7 +519,7 @@ async def get_progress_summary(
             wd = wellness["data"]
             result.wellness = WellnessTrends(
                 avg_sleep=wd.get("avg_sleep"),
-                avg_motivation=wd.get("avg_motivation"),
+                avg_readiness=wd.get("avg_readiness"),
                 avg_soreness=wd.get("avg_soreness"),
                 avg_stress=wd.get("avg_stress"),
                 checkin_count=wd.get("checkin_count", 0),
@@ -844,13 +844,13 @@ def _latest_checkin_context(db: Session, athlete_id: str) -> Optional[Dict[str, 
         if not latest:
             return None
 
-        motivation_map = {5: "Great", 4: "Fine", 3: "Neutral", 2: "Tired", 1: "Rough"}
+        readiness_map = {5: "High", 4: "Good", 3: "Neutral", 2: "Low", 1: "Poor"}
         sleep_map = {8: "Great", 7: "OK", 6: "Fair", 5: "Poor"}
         soreness_map = {1: "None", 2: "Mild", 3: "Moderate", 4: "High", 5: "Severe"}
 
         return {
             "date": latest.date.isoformat() if latest.date else "",
-            "motivation": motivation_map.get(int(latest.motivation_1_5 or 0), "Unknown"),
+            "readiness": readiness_map.get(int(latest.readiness_1_5 or 0), "Unknown"),
             "sleep": sleep_map.get(int(latest.sleep_h or 0), "Unknown"),
             "soreness": soreness_map.get(int(latest.soreness_1_5 or 0), "Unknown"),
         }
@@ -1981,7 +1981,7 @@ _METRIC_LABELS: dict = {
     "efficiency_trend": "Efficiency Trend",
     "pb_events": "Personal Bests",
     "race_pace": "Race Pace",
-    "motivation_1_5": "Motivation",
+    "readiness_1_5": "Morning Readiness",
     "enjoyment_1_5": "Enjoyment",
     "confidence_1_5": "Confidence",
     "stress_1_5": "Stress",

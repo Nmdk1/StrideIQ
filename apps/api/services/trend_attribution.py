@@ -309,7 +309,7 @@ def collect_factor_data(
         # and avoid 500s from missing columns.
         #
         # Current model fields include: sleep_h, stress_1_5, soreness_1_5, rpe_1_10,
-        # hrv_rmssd/hrv_sdnn, resting_hr, overnight_avg_hr, enjoyment_1_5, confidence_1_5, motivation_1_5.
+        # hrv_rmssd/hrv_sdnn, resting_hr, overnight_avg_hr, enjoyment_1_5, confidence_1_5, readiness_1_5.
         #
         # We only include factors that we can measure reliably from stored columns.
 

@@ -68,7 +68,7 @@ class MockCheckin:
     hrv_rmssd: Optional[float] = None
     resting_hr: Optional[int] = None
     enjoyment_1_5: Optional[int] = None
-    motivation_1_5: Optional[int] = None
+    readiness_1_5: Optional[int] = None
 
 
 @dataclass
@@ -242,7 +242,7 @@ class ScenarioLoader:
                 hrv_rmssd=ci.hrv_rmssd,
                 resting_hr=ci.resting_hr,
                 enjoyment_1_5=ci.enjoyment_1_5,
-                motivation_1_5=ci.motivation_1_5,
+                readiness_1_5=ci.readiness_1_5,
             )
             self.db.add(checkin)
 

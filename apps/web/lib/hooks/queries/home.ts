@@ -31,14 +31,14 @@ export function useInvalidateHome(): () => void {
 /** Quick check-in payload */
 export interface QuickCheckinPayload {
   date: string; // ISO date
-  motivation_1_5?: number;
+  readiness_1_5?: number;
   sleep_quality_1_5?: number;  // 1=poor, 5=great
   sleep_h?: number;            // actual hours (explicit input)
   soreness_1_5?: number;
 }
 
 // Label maps for optimistic cache update (match backend maps)
-const MOTIVATION_LABELS: Record<number, string> = { 5: 'Great', 4: 'Fine', 2: 'Tired', 1: 'Rough' };
+const READINESS_LABELS: Record<number, string> = { 5: 'High', 4: 'Good', 3: 'Neutral', 2: 'Low', 1: 'Poor' };
 const SLEEP_QUALITY_LABELS: Record<number, string> = { 5: 'Great', 4: 'Good', 3: 'OK', 2: 'Poor', 1: 'Awful' };
 const SORENESS_LABELS: Record<number, string> = { 1: 'None', 2: 'Mild', 4: 'Yes' };
 
@@ -61,7 +61,7 @@ export function useQuickCheckin() {
           checkin_needed: false,
           briefing_state: 'refreshing',
           today_checkin: {
-            motivation_label: MOTIVATION_LABELS[variables.motivation_1_5 ?? -1] ?? null,
+            readiness_label: READINESS_LABELS[variables.readiness_1_5 ?? -1] ?? null,
             sleep_label: SLEEP_QUALITY_LABELS[variables.sleep_quality_1_5 ?? -1] ?? null,
             soreness_label: SORENESS_LABELS[variables.soreness_1_5 ?? -1] ?? null,
           },

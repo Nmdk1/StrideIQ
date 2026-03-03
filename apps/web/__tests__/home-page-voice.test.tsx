@@ -80,7 +80,7 @@ const mockHomeData = {
   has_any_activities: true,
   total_activities: 100,
   checkin_needed: false,
-  today_checkin: { motivation_label: 'Fine', sleep_label: 'Poor', soreness_label: 'Yes' },
+  today_checkin: { readiness_label: 'Good', sleep_label: 'Poor', soreness_label: 'Yes' },
   strava_status: { connected: true, needs_reconnect: false },
   coach_briefing: {
     coach_noticed: 'Strong consistency this week.',

@@ -40,13 +40,13 @@ if _API_ROOT not in sys.path:
 def _make_checkin(
     sleep_h: Optional[float] = 7.0,
     sleep_quality_1_5: Optional[int] = None,
-    motivation_1_5: Optional[int] = 4,
+    readiness_1_5: Optional[int] = 4,
     soreness_1_5: Optional[int] = 1,
 ) -> MagicMock:
     c = MagicMock()
     c.sleep_h = Decimal(str(sleep_h)) if sleep_h is not None else None
     c.sleep_quality_1_5 = sleep_quality_1_5
-    c.motivation_1_5 = motivation_1_5
+    c.readiness_1_5 = readiness_1_5
     c.soreness_1_5 = soreness_1_5
     return c
 
@@ -170,7 +170,7 @@ class TestPromptContainsSourceLabeledSleepFields:
             prep = generate_coach_home_briefing(
                 athlete_id="test-athlete-id",
                 db=mock_db,
-                checkin_data={"motivation_label": "Fine", "sleep_label": "Good", "soreness_label": "None", "sleep_h": 7.0},
+                checkin_data={"readiness_label": "Fine", "sleep_label": "Good", "soreness_label": "None", "sleep_h": 7.0},
                 skip_cache=True,
             )
 
@@ -196,7 +196,7 @@ class TestPromptContainsSourceLabeledSleepFields:
             prep = generate_coach_home_briefing(
                 athlete_id="test-athlete-id",
                 db=mock_db,
-                checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "motivation_label": "Fine", "soreness_label": "None"},
+                checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "readiness_label": "Fine", "soreness_label": "None"},
                 skip_cache=True,
             )
 
@@ -220,7 +220,7 @@ class TestPromptContainsSourceLabeledSleepFields:
             prep = generate_coach_home_briefing(
                 athlete_id="test-athlete-id",
                 db=mock_db,
-                checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "motivation_label": "Fine", "soreness_label": "None"},
+                checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "readiness_label": "Fine", "soreness_label": "None"},
                 skip_cache=True,
             )
 
@@ -256,7 +256,7 @@ class TestWellnessTrendsRecentPrefix:
         checkin_today.resting_hr = None
         checkin_today.enjoyment_1_5 = None
         checkin_today.confidence_1_5 = None
-        checkin_today.motivation_1_5 = None
+        checkin_today.readiness_1_5 = None
 
         checkin_yesterday = _make_checkin(sleep_h=6.5)
         checkin_yesterday.date = yesterday
@@ -266,7 +266,7 @@ class TestWellnessTrendsRecentPrefix:
         checkin_yesterday.resting_hr = None
         checkin_yesterday.enjoyment_1_5 = None
         checkin_yesterday.confidence_1_5 = None
-        checkin_yesterday.motivation_1_5 = None
+        checkin_yesterday.readiness_1_5 = None
 
         q = MagicMock()
         q.filter.return_value.order_by.return_value.all.return_value = [checkin_today, checkin_yesterday]

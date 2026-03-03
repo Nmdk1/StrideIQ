@@ -134,7 +134,7 @@ export interface HomeData {
   race_countdown?: RaceCountdown | null;
   checkin_needed: boolean;
   today_checkin?: {
-    motivation_label?: string | null;
+    readiness_label?: string | null;
     sleep_label?: string | null;
     soreness_label?: string | null;
   } | null;
