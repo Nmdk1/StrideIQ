@@ -73,21 +73,18 @@ STYLE_ANCHOR = """Bold, vibrant caricature/comic style. NOT photorealistic.
 The runner is the HERO. Accurate to their real body from reference photos.
 Depict them honestly — do not idealize or alter their body type.
 Make them look GOOD — flattering, aspirational, someone who'd want to share this.
-NEVER make them look angry, in pain, grimacing, or aggressive.
 Fully clothed in appropriate running gear. PG-safe always. No nudity, no suggestive content.
 GPS watch on wrist.
 
 CRITICAL — EXPRESSION MUST MATCH EFFORT LEVEL:
-- Easy runs: RELAXED, SMILING, enjoying the scenery, effortless stride
-- Moderate runs: Focused but comfortable, confident expression
-- Hard runs: Determined but controlled, strong presence
-- Race/max effort: Intense but heroic, triumph NOT suffering
-The default expression is ALWAYS a relaxed smile unless the effort demands otherwise.
-NEVER depict the runner as suffering, angry, or struggling on an easy run.
+- Easy runs: relaxed, comfortable, enjoying the moment — NOT grimacing, straining, or angry
+- Moderate runs: focused but comfortable, confident
+- Hard runs: determined, intense, powerful — grit is appropriate here
+- Race/max effort: fierce, heroic, all-out — suffering is real and earned
+The expression should feel HONEST to the effort. Easy runs are easy. Hard runs are hard.
 
-THE IMAGE MUST BE FUNNY — but the humor comes from the SITUATION, not from
-making the runner look bad. Think: a dog joining the run, absurd scenery,
-a clever visual gag about the distance or pace. The runner always looks good.
+THE IMAGE MUST BE FUNNY — situational humor, visual gags, unexpected elements
+in the scene. The runner should look like THEMSELVES at that effort level.
 
 DO NOT USE speech bubbles, thought bubbles, or comic sound effects (no "PUFF", "HOFF", etc.).
 The humor should come from the scene composition and situational comedy — not from
@@ -467,12 +464,9 @@ VISUAL DIRECTION:
 
 WATERMARK: strideiq.run
 
-Create a FLATTERING, humorous caricature using the reference photos provided.
-The runner should look GOOD — someone who'd proudly share this image.
+Create a flattering, humorous caricature using the reference photos provided.
 Their expression MUST match the effort level described above.
-For easy runs: relaxed smile, smooth stride, enjoying the moment.
-Make the SCENE funny (visual gag, unexpected element), NOT the runner's appearance.
-Make it theirs. Make it share-worthy."""
+Make it funny. Make it theirs. Make it share-worthy."""
 
         result.prompt_hash = _hash_prompt(text_prompt)
 
