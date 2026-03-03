@@ -353,6 +353,11 @@ def test_combine_easy_tpp_hard_hr():
     assert _combine_tpp_hr("easy", "hard") == "moderate"
 
 
+# Test T0-11b: Combined — easy TPP + moderate HR → easy (minor elevation)
+def test_combine_easy_tpp_moderate_hr():
+    assert _combine_tpp_hr("easy", "moderate") == "easy"
+
+
 # Test T0-12: Disagreement logged when TPP and HR differ
 def test_tpp_hr_disagreement_logged():
     t = _make_thresholds(tier="tpp", threshold_pace=450, hr_tier="percentile")

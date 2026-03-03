@@ -444,6 +444,13 @@ def _classify_from_tpp(tpp: float) -> str:
 def _combine_tpp_hr(tpp_class: str, hr_class: Optional[str]) -> str:
     """
     Pace anchors. HR can upgrade (environmental stress), never downgrade.
+
+    From spec table:
+      moderate TPP + hard HR   → hard  (environmental stress)
+      easy TPP + hard HR       → moderate  (body under load at easy pace)
+      easy TPP + moderate HR   → easy  (minor elevation, not enough to override)
+      hard TPP + easy/mod HR   → hard  (pace anchors, no downgrade)
+      moderate TPP + easy HR   → moderate  (pace anchors)
     """
     if hr_class is None:
         return tpp_class
@@ -455,11 +462,13 @@ def _combine_tpp_hr(tpp_class: str, hr_class: Optional[str]) -> str:
     hr_rank = _TIER_TO_RPE[hr_class]
 
     if hr_rank > tpp_rank:
-        # HR says harder — environmental stress degrading pace.
-        # easy TPP + hard HR → moderate (not full upgrade, flagged anomaly)
+        # Only upgrade when the gap is 2 tiers or when moderate TPP + hard HR
+        if tpp_class == "moderate" and hr_class == "hard":
+            return "hard"
         if tpp_class == "easy" and hr_class == "hard":
             return "moderate"
-        return hr_class
+        # easy TPP + moderate HR → easy (minor elevation)
+        return tpp_class
 
     # HR says easier — pace anchors, no downgrade
     return tpp_class
