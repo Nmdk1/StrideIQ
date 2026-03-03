@@ -311,6 +311,14 @@ class TrainingLoadCalculator:
             )
         
         # Try hrTSS first (most accurate for running)
+        # Use N=1 observed peak + resting HR from effort thresholds when athlete.max_hr is missing
+        from services.effort_classification import get_effort_thresholds
+        et = get_effort_thresholds(str(athlete.id), self.db)
+        peak = et.get("observed_peak_hr")
+        resting = et.get("resting_hr")
+        can_hr_tss = activity.avg_hr and peak and resting and et.get("tier") == "hrr"
+        if can_hr_tss:
+            return self._calculate_hr_tss_from_thresholds(activity, peak, resting, duration_minutes)
         if activity.avg_hr and athlete.max_hr and athlete.resting_hr:
             return self._calculate_hr_tss(activity, athlete, duration_minutes)
         
@@ -365,6 +373,30 @@ class TrainingLoadCalculator:
             calculation_method="hrTSS"
         )
     
+    def _calculate_hr_tss_from_thresholds(
+        self,
+        activity: Activity,
+        observed_peak: int,
+        resting_hr: int,
+        duration_minutes: float
+    ) -> WorkoutStress:
+        """hrTSS using N=1 observed peak and resting HR instead of athlete.max_hr."""
+        avg_hr = activity.avg_hr
+        hr_reserve = (avg_hr - resting_hr) / (observed_peak - resting_hr)
+        hr_reserve = max(0, min(1.1, hr_reserve))
+        trimp_factor = 0.75 * math.exp(1.8 * hr_reserve)
+        threshold_trimp = 0.75 * math.exp(1.8 * 0.88)
+        intensity_factor = trimp_factor / threshold_trimp
+        tss = (duration_minutes * intensity_factor ** 2) / 60 * 100
+        return WorkoutStress(
+            activity_id=activity.id,
+            date=activity.start_time.date(),
+            tss=round(tss, 1),
+            duration_minutes=duration_minutes,
+            intensity_factor=round(intensity_factor, 3),
+            calculation_method="hrTSS_n1"
+        )
+
     def _calculate_running_tss(
         self, 
         activity: Activity, 

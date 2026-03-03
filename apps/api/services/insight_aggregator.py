@@ -416,15 +416,20 @@ class InsightAggregator:
         # (simplified - would need workout type classification)
         # Flag if avg HR > 75% of max on runs that aren't race-flagged
         
-        max_hr = self.athlete.max_hr or 185  # Default estimate
-        threshold_hr = max_hr * 0.75
-        
+        from services.effort_classification import get_effort_thresholds, classify_effort_bulk
+        et = get_effort_thresholds(str(self.athlete.id), self.db)
+        p80 = et.get("p80_hr")
+        threshold_hr = p80 * 0.95 if p80 else None
+
         easy_runs = [
-            a for a in recent 
+            a for a in recent
             if not a.is_race_candidate and a.distance_m and a.distance_m > 3000
         ]
-        
-        too_hard_count = sum(1 for a in easy_runs if a.avg_hr and a.avg_hr > threshold_hr)
+
+        if threshold_hr:
+            too_hard_count = sum(1 for a in easy_runs if a.avg_hr and a.avg_hr > threshold_hr)
+        else:
+            too_hard_count = 0
         
         if len(easy_runs) >= 4 and too_hard_count / len(easy_runs) >= 0.5:
             insights.append(GeneratedInsight(
@@ -954,8 +959,9 @@ class InsightAggregator:
 
         # --- What doesn't work (detectable, data-backed flags) ---
         # 1) “Easy runs too hard” heuristic: non-race runs above 75% max HR.
-        max_hr = float(self.athlete.max_hr or 185)
-        easy_hr_threshold = max_hr * 0.75
+        et_intel = get_effort_thresholds(str(self.athlete.id), self.db)
+        p80_intel = et_intel.get("p80_hr")
+        easy_hr_threshold = float(p80_intel) * 0.95 if p80_intel else 999.0
         last_28_cutoff = now - timedelta(days=28)
         recent_28 = [a for a in runs if a.start_time >= last_28_cutoff]
         non_race_recent = [

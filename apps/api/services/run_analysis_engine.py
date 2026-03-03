@@ -332,36 +332,26 @@ class RunAnalysisEngine:
         long_run_threshold = thresholds['long_run_duration_min']
         
         # =====================================================================
-        # HR-BASED CLASSIFICATION (PRIMARY - when available)
+        # HR-BASED CLASSIFICATION (PRIMARY - using N=1 percentile)
         # =====================================================================
-        # HR tells us EFFORT. Duration tells us if it's "long" or not.
-        if avg_hr and athlete and athlete.max_hr:
-            hr_percent = (avg_hr / athlete.max_hr) * 100
-            
-            # Easy effort (< 75% max HR)
-            if hr_percent < 75:
-                # Is it long enough to be a "long run"?
+        if avg_hr:
+            from services.effort_classification import classify_effort
+            effort = classify_effort(activity, str(activity.athlete_id), self.db)
+
+            if effort == "easy":
                 if duration_minutes >= long_run_threshold:
                     return WorkoutType.LONG_RUN, 0.85
                 else:
-                    # Regular easy/aerobic run
                     return WorkoutType.EASY, 0.80
-            
-            # Moderate effort (75-82% max HR) - aerobic but pushing
-            elif hr_percent < 82:
+
+            elif effort == "moderate":
                 if duration_minutes >= long_run_threshold:
-                    # Long run at moderate effort - still a long run
                     return WorkoutType.LONG_RUN, 0.80
                 else:
                     return WorkoutType.MODERATE, 0.75
-            
-            # Tempo/threshold effort (82-88% max HR)
-            elif hr_percent < 88:
+
+            else:  # hard
                 return WorkoutType.TEMPO, 0.80
-            
-            # Hard effort (88%+ max HR) - intervals or race
-            else:
-                return WorkoutType.INTERVAL, 0.75
         
         # =====================================================================
         # FALLBACK: No HR data - use duration only (lower confidence)
@@ -1103,11 +1093,13 @@ class RunAnalysisEngine:
         # Red flag detection
         red_flags = []
         
-        # Extremely high HR for the pace
+        # Extremely high HR — using N=1 observed peak
         if activity.avg_hr and activity.max_hr:
-            athlete = self.db.query(Athlete).filter(Athlete.id == activity.athlete_id).first()
-            if athlete and athlete.max_hr:
-                hr_percent = (activity.avg_hr / athlete.max_hr) * 100
+            from services.effort_classification import get_effort_thresholds
+            et = get_effort_thresholds(str(activity.athlete_id), self.db)
+            peak = et.get("observed_peak_hr")
+            if peak and peak > 0:
+                hr_percent = (activity.avg_hr / peak) * 100
                 if hr_percent > 95:
                     red_flags.append("HR near maximum for extended period")
         

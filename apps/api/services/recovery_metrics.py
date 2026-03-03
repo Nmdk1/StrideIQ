@@ -374,14 +374,8 @@ def compute_recovery_curve(
     "days" labels, or a fallback message if insufficient data.
     """
     from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
+    from services.effort_classification import classify_effort_bulk
     from models import ActivitySplit
-
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    if not athlete or not athlete.max_hr:
-        return None
-
-    hard_hr = int(athlete.max_hr * HARD_SESSION_HR_THRESHOLD)
-    easy_hr = int(athlete.max_hr * EASY_SESSION_HR_THRESHOLD)
 
     end = datetime.utcnow()
     now_start = end - timedelta(days=now_days)
@@ -400,6 +394,8 @@ def compute_recovery_curve(
 
     if len(activities) < 10:
         return None
+
+    classifications = classify_effort_bulk(activities, str(athlete_id), db)
 
     ef_cache: Dict = {}
 
@@ -426,7 +422,7 @@ def compute_recovery_curve(
 
     easy_efs: List[float] = []
     for a in activities:
-        if a.avg_hr and int(a.avg_hr) < easy_hr:
+        if classifications.get(a.id) == "easy":
             ef = _get_ef(a)
             if ef:
                 easy_efs.append(ef)
@@ -440,8 +436,7 @@ def compute_recovery_curve(
         for a in activities:
             if (
                 window_start <= a.start_time <= window_end
-                and a.avg_hr
-                and int(a.avg_hr) >= hard_hr
+                and classifications.get(a.id) == "hard"
             ):
                 hard_dates.append(a.start_time.date())
 

@@ -1502,36 +1502,27 @@ def get_efficiency_by_zone(
         # Evidence: include a few concrete, citable activities that match the zone filter.
         evidence: List[Dict[str, Any]] = []
         try:
-            athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-            max_hr = int(athlete.max_hr) if athlete and athlete.max_hr else None
-            if max_hr:
-                if effort_zone == "easy":
-                    hr_min, hr_max = 0, int(max_hr * 0.75)
-                elif effort_zone == "threshold":
-                    hr_min, hr_max = int(max_hr * 0.80), int(max_hr * 0.88)
-                elif effort_zone == "race":
-                    hr_min, hr_max = int(max_hr * 0.88), 999
-                else:
-                    hr_min, hr_max = None, None
-
-                if hr_min is not None and hr_max is not None:
-                    acts = (
+            from services.effort_classification import classify_effort_bulk
+            zone_map = {"easy": "easy", "threshold": "moderate", "race": "hard"}
+            target_class = zone_map.get(effort_zone)
+            if target_class:
+                    acts_all = (
                         db.query(Activity)
                         .filter(
                             Activity.athlete_id == athlete_id,
                             Activity.sport == "run",
                             Activity.start_time >= start,
                             Activity.start_time <= now,
-                            Activity.avg_hr >= hr_min,
-                            Activity.avg_hr <= hr_max,
                             Activity.distance_m >= 3000,
                             Activity.duration_s.isnot(None),
                             Activity.avg_hr.isnot(None),
                         )
                         .order_by(Activity.start_time.desc())
-                        .limit(5)
+                        .limit(50)
                         .all()
                     )
+                    classifications = classify_effort_bulk(acts_all, str(athlete_id), db)
+                    acts = [a for a in acts_all if classifications.get(a.id) == target_class][:5]
 
                     for a in acts:
                         pace_sec_km = float(a.duration_s) / (float(a.distance_m) / 1000.0)
@@ -1903,23 +1894,20 @@ def get_best_runs(
             )
         )
 
+        _effort_zone_filter = None
         if effort_zone:
             ez = effort_zone.lower().strip()
-            athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-            max_hr = int(athlete.max_hr) if athlete and athlete.max_hr else None
-            if max_hr:
-                if ez == "easy":
-                    hr_min, hr_max = 0, int(max_hr * 0.75)
-                elif ez == "threshold":
-                    hr_min, hr_max = int(max_hr * 0.80), int(max_hr * 0.88)
-                elif ez == "race":
-                    hr_min, hr_max = int(max_hr * 0.88), 999
-                else:
-                    hr_min, hr_max = None, None
-                if hr_min is not None and hr_max is not None:
-                    q = q.filter(Activity.avg_hr.isnot(None), Activity.avg_hr >= hr_min, Activity.avg_hr <= hr_max)
+            zone_map = {"easy": "easy", "threshold": "moderate", "race": "hard"}
+            _effort_zone_filter = zone_map.get(ez)
 
-        acts = q.order_by(Activity.start_time.desc()).limit(200).all()  # bounded
+        acts_raw = q.order_by(Activity.start_time.desc()).limit(200).all()  # bounded
+
+        if _effort_zone_filter:
+            from services.effort_classification import classify_effort_bulk
+            classifications = classify_effort_bulk(acts_raw, str(athlete_id), db)
+            acts = [a for a in acts_raw if classifications.get(a.id) == _effort_zone_filter]
+        else:
+            acts = acts_raw
 
         rows: List[Dict[str, Any]] = []
         for a in acts:
@@ -2483,9 +2471,22 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 s = int(round(athlete.threshold_pace_per_km % 60))
                 threshold_pace_display = f"{m}:{s:02d}/km"
 
-        # Calculate HR zones if max_hr available
+        # Derive HR zones from N=1 effort thresholds
         hr_zones = None
-        if athlete.max_hr:
+        from services.effort_classification import get_effort_thresholds
+        et = get_effort_thresholds(str(athlete_id), db)
+        p80 = et.get("p80_hr")
+        p40 = et.get("p40_hr")
+        peak = et.get("observed_peak_hr")
+        if p80 and p40:
+            hr_zones = {
+                "zone_1_recovery": {"min": int(p40 * 0.85), "max": int(p40)},
+                "zone_2_easy": {"min": int(p40), "max": int((p40 + p80) / 2)},
+                "zone_3_moderate": {"min": int((p40 + p80) / 2), "max": int(p80)},
+                "zone_4_threshold": {"min": int(p80), "max": int(p80 * 1.05)},
+                "zone_5_max": {"min": int(p80 * 1.05), "max": int(peak) if peak else int(p80 * 1.10)},
+            }
+        elif athlete.max_hr:
             max_hr = athlete.max_hr
             hr_zones = {
                 "zone_1_recovery": {"min": int(max_hr * 0.50), "max": int(max_hr * 0.60)},

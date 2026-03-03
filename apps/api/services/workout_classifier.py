@@ -242,6 +242,7 @@ class WorkoutClassifierService:
 
     def __init__(self, db: Session):
         self.db = db
+        self._current_athlete_id: Optional[UUID] = None
 
     def classify_activity(
         self,
@@ -251,6 +252,8 @@ class WorkoutClassifierService:
         """
         Classify an activity into a workout type.
         """
+        self._current_athlete_id = activity.athlete_id
+
         # Get athlete thresholds if not provided
         if athlete_thresholds is None:
             athlete_thresholds = self._get_athlete_thresholds(activity.athlete_id)
@@ -530,22 +533,36 @@ class WorkoutClassifierService:
         We use this internally to help classify workout types, not to tell
         athletes "you were in Zone 3".
         """
-        if not avg_hr or not thresholds.max_hr:
+        if not avg_hr:
             return None
 
-        hr_pct = (avg_hr / thresholds.max_hr) * 100
+        from services.effort_classification import get_effort_thresholds
+        et = get_effort_thresholds(str(self._current_athlete_id), self.db) if self._current_athlete_id else {}
+        p80 = et.get("p80_hr")
+        p40 = et.get("p40_hr")
 
-        # Rough categories - remember these shift based on fatigue, heat, sleep, etc.
-        if hr_pct < 72:
-            return 1  # Very easy
-        elif hr_pct < 81:
-            return 2  # Easy/aerobic
-        elif hr_pct < 88:
-            return 3  # Moderate/threshold region
-        elif hr_pct < 92:
-            return 4  # Hard
-        else:
-            return 5  # Very hard
+        if p80 and p40:
+            if avg_hr >= p80:
+                return 5
+            mid = (p80 + p40) / 2
+            if avg_hr >= mid:
+                return 4 if avg_hr >= (p80 + mid) / 2 else 3
+            return 2 if avg_hr >= p40 else 1
+
+        if thresholds.max_hr:
+            hr_pct = (avg_hr / thresholds.max_hr) * 100
+            if hr_pct < 72:
+                return 1
+            elif hr_pct < 81:
+                return 2
+            elif hr_pct < 88:
+                return 3
+            elif hr_pct < 92:
+                return 4
+            else:
+                return 5
+
+        return 3
 
     def _calculate_intensity(
         self,
@@ -564,25 +581,39 @@ class WorkoutClassifierService:
         """
         scores = []
 
-        # HR-based intensity
-        if avg_hr and thresholds.max_hr:
-            hr_pct = (avg_hr / thresholds.max_hr) * 100
-            # Map 60-100% HR to 0-100 intensity
-            hr_intensity = max(0, min(100, (hr_pct - 60) * 2.5))
-            scores.append(hr_intensity)
+        # HR-based intensity via N=1 percentile thresholds
+        if avg_hr:
+            from services.effort_classification import get_effort_thresholds
+            et = get_effort_thresholds(str(self._current_athlete_id), self.db) if self._current_athlete_id else {}
+            p80 = et.get("p80_hr")
+            p40 = et.get("p40_hr")
 
-            # Boost intensity if max_hr significantly exceeds avg_hr
-            # This catches progression runs, hard finishes, fartlek patterns
-            if max_hr and avg_hr:
-                hr_spread = (max_hr - avg_hr) / avg_hr if avg_hr > 0 else 0
-                # If max_hr is 15%+ above avg, this wasn't a truly easy run
-                if hr_spread > 0.15:  # e.g., avg 140, max 161+
-                    # Add intensity boost based on how high max went
-                    max_hr_pct = (max_hr / thresholds.max_hr) * 100
-                    if max_hr_pct > 85:  # Max HR hit threshold zone
-                        boost = min(20, (max_hr_pct - 85) * 2)  # Up to 20 point boost
-                        hr_intensity = min(100, hr_intensity + boost)
-                        scores[-1] = hr_intensity  # Update the HR intensity
+            if p80 and p40 and p80 > p40:
+                # Map [p40 - 20, p80 + 10] → [0, 100]
+                hr_range = p80 - p40
+                relative_pos = (avg_hr - p40) / hr_range
+                hr_intensity = max(0.0, min(100.0, relative_pos * 70 + 15))
+                scores.append(hr_intensity)
+
+                if max_hr and avg_hr and avg_hr > 0:
+                    hr_spread = (max_hr - avg_hr) / avg_hr
+                    if hr_spread > 0.15 and max_hr >= p80:
+                        boost = min(20.0, (max_hr - p80) * 2)
+                        hr_intensity = min(100.0, hr_intensity + boost)
+                        scores[-1] = hr_intensity
+            elif thresholds.max_hr:
+                hr_pct = (avg_hr / thresholds.max_hr) * 100
+                hr_intensity = max(0.0, min(100.0, (hr_pct - 60) * 2.5))
+                scores.append(hr_intensity)
+
+                if max_hr and avg_hr and avg_hr > 0:
+                    hr_spread = (max_hr - avg_hr) / avg_hr
+                    if hr_spread > 0.15:
+                        max_hr_pct = (max_hr / thresholds.max_hr) * 100
+                        if max_hr_pct > 85:
+                            boost = min(20.0, (max_hr_pct - 85) * 2)
+                            hr_intensity = min(100.0, hr_intensity + boost)
+                            scores[-1] = hr_intensity
 
         # Pace-based intensity (if we have threshold pace)
         if avg_pace_per_km and thresholds.threshold_pace_per_km:
@@ -803,14 +834,16 @@ class WorkoutClassifierService:
             quality_indicators.append("significant_acceleration")
             reasoning_parts.append(f"dropped {pace_delta:.0f}s/km from start to finish")
 
-        # Indicator 3: Hard finish HR response
+        # Indicator 3: Hard finish HR response (using N=1 thresholds)
         has_hard_finish_hr = False
-        if max_hr and thresholds.max_hr and thresholds.max_hr > 0:
-            max_hr_pct = (max_hr / thresholds.max_hr) * 100
-            if max_hr_pct > 85 and hr_spread_pct > 15:
+        if max_hr and hr_spread_pct > 15:
+            from services.effort_classification import get_effort_thresholds
+            et = get_effort_thresholds(str(self._current_athlete_id), self.db) if self._current_athlete_id else {}
+            p80 = et.get("p80_hr")
+            if p80 and max_hr >= p80:
                 has_hard_finish_hr = True
                 quality_indicators.append("hard_finish_hr")
-                reasoning_parts.append(f"max HR {max_hr} ({max_hr_pct:.0f}% of max) shows real effort")
+                reasoning_parts.append(f"max HR {max_hr} (above P80 {p80}) shows real effort")
 
         # Indicator 4: Final pace is quality (within 10% of threshold)
         final_pace_is_quality = False

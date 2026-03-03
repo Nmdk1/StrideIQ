@@ -176,37 +176,28 @@ class ActivityAnalysis:
         if self.activity.is_race_candidate or self.activity.user_verified_race:
             return "race"
         
-        # Get athlete's max HR estimate (220 - age, or use actual if available)
-        age = calculate_age_at_date(self.athlete.birthdate, self.activity.start_time) if self.athlete.birthdate else None
-        max_hr_estimate = (220 - age) if age else 200
-        
-        hr_percent = (self.metrics.avg_heart_rate / max_hr_estimate) * 100 if max_hr_estimate else None
-        
+        # Classify using N=1 effort classification (no population formulas)
+        from services.effort_classification import classify_effort
+        effort = classify_effort(self.activity, str(self.athlete.id), self.db)
+
         # Long run detection (distance-based, typically easy-moderate effort)
         distance_miles = (self.metrics.distance_m / 1609.34) if self.metrics.distance_m else 0
         duration_hours = (self.activity.duration_s / 3600) if self.activity.duration_s else 0
-        
+
         is_long_run = (distance_miles >= 10) or (duration_hours >= 1.5)
-        
-        if is_long_run and hr_percent and hr_percent <= 80:
+
+        if is_long_run and effort in ("easy", "moderate"):
             return "long_run"
-        
-        # High intensity (intervals/VO2max)
-        if hr_percent and hr_percent >= 90:
-            return "interval"
-        
-        # Threshold (hard but sustainable)
-        if hr_percent and 80 <= hr_percent < 90:
+
+        if effort == "hard":
             return "threshold"
-        
-        # Tempo (comfortably hard)
-        if hr_percent and 70 <= hr_percent < 80:
+
+        if effort == "moderate":
             return "tempo"
-        
-        # Easy (conversational pace)
-        if hr_percent and hr_percent < 70:
+
+        if effort == "easy":
             return "easy"
-        
+
         return None
     
     def _get_pr_baseline(self) -> Optional[Baseline]:

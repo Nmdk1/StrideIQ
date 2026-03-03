@@ -779,44 +779,37 @@ def aggregate_pace_at_effort(
     effort_level: str = "easy"  # "easy", "threshold"
 ) -> List[Tuple[datetime, float]]:
     """
-    Aggregate pace at specific effort levels.
-    
-    Args:
-        effort_level: "easy" (< 75% max_hr) or "threshold" (85-92% max_hr)
-    
-    Returns:
-        List of (activity_date, pace_per_km_seconds) tuples
+    Aggregate pace at specific effort levels using N=1 percentile classification.
     """
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    if not athlete or not athlete.max_hr:
+    from services.effort_classification import classify_effort_bulk
+
+    if effort_level not in ("easy", "threshold"):
         return []
-    
-    max_hr = athlete.max_hr
-    
-    if effort_level == "easy":
-        hr_min = 0
-        hr_max = int(max_hr * 0.75)
-    elif effort_level == "threshold":
-        hr_min = int(max_hr * 0.85)
-        hr_max = int(max_hr * 0.92)
-    else:
-        return []
-    
+
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.start_time >= start_date,
         Activity.start_time <= end_date,
-        Activity.avg_hr >= hr_min,
-        Activity.avg_hr <= hr_max,
         Activity.distance_m > 0,
-        Activity.duration_s > 0
+        Activity.duration_s > 0,
+        Activity.avg_hr.isnot(None),
     ).order_by(Activity.start_time).all()
-    
+
+    if not activities:
+        return []
+
+    classifications = classify_effort_bulk(activities, athlete_id, db)
+
+    target = "easy" if effort_level == "easy" else "hard"
+    if effort_level == "threshold":
+        target = "moderate"
+
     pace_data = []
     for activity in activities:
-        pace_per_km = activity.duration_s / (activity.distance_m / 1000.0)
-        pace_data.append((activity.start_time.date(), pace_per_km))
-    
+        if classifications.get(activity.id) == target:
+            pace_per_km = activity.duration_s / (activity.distance_m / 1000.0)
+            pace_data.append((activity.start_time.date(), pace_per_km))
+
     return pace_data
 
 
@@ -919,46 +912,36 @@ def aggregate_efficiency_by_effort_zone(
     effort_zone: str = "threshold"  # "easy", "threshold", "race"
 ) -> List[Tuple[date_type, float]]:
     """
-    Aggregate efficiency for COMPARABLE runs only.
-    
-    Effort zones (% max HR):
-    - easy: < 75%
-    - threshold: 80-88%
-    - race: > 88%
-    
-    Returns Pace/HR ratio (higher = better efficiency — same pace at lower HR)
+    Aggregate efficiency for COMPARABLE runs using N=1 percentile classification.
     """
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    if not athlete or not athlete.max_hr:
+    from services.effort_classification import classify_effort_bulk
+
+    zone_map = {"easy": "easy", "threshold": "moderate", "race": "hard"}
+    target = zone_map.get(effort_zone)
+    if not target:
         return []
-    
-    max_hr = athlete.max_hr
-    
-    if effort_zone == "easy":
-        hr_min, hr_max = 0, int(max_hr * 0.75)
-    elif effort_zone == "threshold":
-        hr_min, hr_max = int(max_hr * 0.80), int(max_hr * 0.88)
-    elif effort_zone == "race":
-        hr_min, hr_max = int(max_hr * 0.88), 999
-    else:
-        return []
-    
+
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.start_time >= start_date,
         Activity.start_time <= end_date,
-        Activity.avg_hr >= hr_min,
-        Activity.avg_hr <= hr_max,
-        Activity.distance_m >= 3000,  # Minimum 3km for meaningful data
-        Activity.duration_s > 0
+        Activity.avg_hr.isnot(None),
+        Activity.distance_m >= 3000,
+        Activity.duration_s > 0,
     ).order_by(Activity.start_time).all()
-    
+
+    if not activities:
+        return []
+
+    classifications = classify_effort_bulk(activities, athlete_id, db)
+
     result = []
     for a in activities:
-        pace_sec_km = a.duration_s / (a.distance_m / 1000)
-        efficiency = pace_sec_km / a.avg_hr  # Higher = same pace at lower HR = better
-        result.append((a.start_time.date(), efficiency))
-    
+        if classifications.get(a.id) == target:
+            pace_sec_km = a.duration_s / (a.distance_m / 1000)
+            efficiency = pace_sec_km / a.avg_hr
+            result.append((a.start_time.date(), efficiency))
+
     return result
 
 
@@ -1038,46 +1021,30 @@ def aggregate_race_pace(
     db: Session
 ) -> List[Tuple[date_type, float]]:
     """
-    Aggregate pace on race-like efforts.
-    
-    Filters to activities that are likely races or hard efforts:
-    - avg_hr > 85% max_hr, OR
-    - distance > 5km with avg_hr > 80% max_hr
-    
-    Returns:
-        List of (date, pace_per_km_seconds) tuples
+    Aggregate pace on race-like efforts using N=1 percentile classification.
     """
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    if not athlete or not athlete.max_hr:
-        return []
-    
-    max_hr = athlete.max_hr
-    hr_threshold_high = int(max_hr * 0.85)
-    hr_threshold_mid = int(max_hr * 0.80)
-    
-    # Race-like efforts: high HR OR long + moderately high HR
+    from services.effort_classification import classify_effort_bulk
+
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.start_time >= start_date,
         Activity.start_time <= end_date,
         Activity.distance_m > 0,
         Activity.duration_s > 0,
-        Activity.avg_hr.isnot(None)
-    ).filter(
-        or_(
-            Activity.avg_hr >= hr_threshold_high,
-            and_(
-                Activity.distance_m >= 5000,
-                Activity.avg_hr >= hr_threshold_mid
-            )
-        )
+        Activity.avg_hr.isnot(None),
     ).order_by(Activity.start_time).all()
-    
+
+    if not activities:
+        return []
+
+    classifications = classify_effort_bulk(activities, athlete_id, db)
+
     pace_data = []
     for activity in activities:
-        pace_per_km = activity.duration_s / (activity.distance_m / 1000.0)
-        pace_data.append((activity.start_time.date(), pace_per_km))
-    
+        if classifications.get(activity.id) == "hard":
+            pace_per_km = activity.duration_s / (activity.distance_m / 1000.0)
+            pace_data.append((activity.start_time.date(), pace_per_km))
+
     return pace_data
 
 
