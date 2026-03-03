@@ -2012,7 +2012,7 @@ def _build_headline(finding: CorrelationFinding) -> str:
     out = _humanize_metric(finding.output_metric)
     verb = "improves" if finding.direction == "positive" else "reduces"
     lag = f"within {finding.time_lag_days} day{'s' if finding.time_lag_days != 1 else ''}" if finding.time_lag_days > 0 else "same day"
-    return f"High {inp.lower()} {verb} {out.lower()} {lag}"
+    return f"High {inp} {verb} {out} {lag}"
 
 
 def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
@@ -2097,12 +2097,28 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
         stat_third = HeroStat(label="Days out", value=str(max(0, days_out)), color="orange")
     else:
         date_label = f"{day_name}, {date_str}"
-        stat_third = HeroStat(label="Weeks tracked", value=str(weeks_tracked), color="orange")
+        n_findings = len(findings) if findings else 0
+        stat_third = HeroStat(label="Patterns found", value=str(n_findings), color="orange")
+
+    # Build headline based on context
+    ctl_delta = ctl_now - ctl_first if ctl_now and ctl_first else 0
+    if plan and plan.goal_race_date:
+        hero_headline = f"Your progress over {weeks_tracked} weeks."
+        hero_accent = "Here's what the data shows."
+    elif ctl_delta >= 10:
+        hero_headline = f"Fitness surged: {ctl_first} to {ctl_now} in {weeks_tracked} weeks."
+        hero_accent = "Your data reveals what drives your performance."
+    elif findings:
+        hero_headline = f"{weeks_tracked} weeks of data. {len(findings)} pattern{'s' if len(findings) != 1 else ''} discovered."
+        hero_accent = "Your data reveals what drives your performance."
+    else:
+        hero_headline = "Building your physiological profile."
+        hero_accent = "Every session teaches the system about your body."
 
     hero = HeroData(
         date_label=date_label,
-        headline=f"Your progress over {weeks_tracked} weeks.",
-        headline_accent="Here's what the data shows.",
+        headline=hero_headline,
+        headline_accent=hero_accent,
         subtext="Facts discovered from your own training data — confirmed across your own physiology, your own patterns.",
         stats=[
             HeroStat(label="Fitness then", value=str(ctl_first), color="muted"),

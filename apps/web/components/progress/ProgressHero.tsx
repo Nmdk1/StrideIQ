@@ -102,13 +102,11 @@ export function ProgressHero({ dateLabel, headline, headlineAccent, subtext, sta
           maxWidth: 900,
           margin: '0 auto',
           display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          flexWrap: 'wrap',
+          flexDirection: 'column',
           gap: 24,
         }}
       >
-        <div style={{ flex: 1, minWidth: 280 }}>
+        <div>
           <p
             style={{
               color: C.t40,
@@ -139,7 +137,7 @@ export function ProgressHero({ dateLabel, headline, headlineAccent, subtext, sta
             {subtext}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 32, alignItems: 'center', paddingTop: 4 }}>
+        <div style={{ display: 'flex', gap: 40, alignItems: 'center', flexWrap: 'wrap' }}>
           {stats.map((s) => (
             <AnimatedStat key={s.label} stat={s} />
           ))}

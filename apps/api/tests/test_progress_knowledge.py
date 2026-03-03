@@ -336,7 +336,7 @@ def test_hero_without_race():
 
     stats = resp.hero.stats
     labels = [s.label for s in stats]
-    assert "Weeks tracked" in labels
+    assert "Patterns found" in labels
     assert "Days out" not in labels
 
 
