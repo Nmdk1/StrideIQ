@@ -104,10 +104,9 @@ export function RuntoonSharePrompt() {
       return res.json();
     },
     enabled: isAuthenticated && isMobile,
-    refetchInterval: (data) => {
-      // Stop polling once we have a result to show (or have dismissed it)
-      if (data !== undefined && data !== null) return false;
-      return 10_000; // 10s per spec
+    refetchInterval: (query) => {
+      if (query.state.data !== undefined && query.state.data !== null) return false;
+      return 10_000;
     },
     staleTime: 0,
     retry: false,

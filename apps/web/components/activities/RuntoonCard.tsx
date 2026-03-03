@@ -97,9 +97,8 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
       return body ?? null;
     },
     enabled: !!token && !photosLoading && hasPhotos && !timedOut,
-    refetchInterval: (data) => {
-      // Stop polling once we have a result
-      if (data?.state?.data) return false;
+    refetchInterval: (query) => {
+      if (query.state.data) return false;
       // Track poll start time
       if (pollStartRef.current === null) pollStartRef.current = Date.now();
       const elapsed = Date.now() - (pollStartRef.current ?? Date.now());

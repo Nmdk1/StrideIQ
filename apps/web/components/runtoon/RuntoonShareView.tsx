@@ -178,8 +178,8 @@ export function RuntoonShareView({
       if (!res.ok) return null;
       return res.json();
     },
-    refetchInterval: (data) => {
-      if (data) return false; // Stop polling once image is ready
+    refetchInterval: (query) => {
+      if (query.state.data) return false;
       if (Date.now() - pollStart.current > POLL_TIMEOUT) return false;
       return POLL_INTERVAL;
     },
