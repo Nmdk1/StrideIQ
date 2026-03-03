@@ -2404,6 +2404,13 @@ class CorrelationFinding(Base):
     # --- Lifecycle ---
     is_active = Column(Boolean, default=True, nullable=False)
 
+    # --- Confounder control (Phase 1) ---
+    partial_correlation_coefficient = Column(Float, nullable=True)
+    confounder_variable = Column(Text, nullable=True)
+    is_confounded = Column(Boolean, default=False, nullable=False)
+    direction_expected = Column(Text, nullable=True)
+    direction_counterintuitive = Column(Boolean, default=False, nullable=False)
+
     __table_args__ = (
         # One row per unique (athlete, input, output, lag) combination.
         Index(

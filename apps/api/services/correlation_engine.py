@@ -43,6 +43,113 @@ SIGNIFICANCE_LEVEL = 0.05  # p-value threshold
 TREND_CONFIRMATION_RUNS = 3  # Minimum runs to confirm a trend
 
 
+# ---------------------------------------------------------------------------
+# Confounder control tables
+# ---------------------------------------------------------------------------
+
+# Which variable to partial out for each (input, output) pair.
+# Pairs not listed use bivariate r as-is — the map grows as new
+# confounders are identified.  Requires a code change + test to add.
+CONFOUNDER_MAP: Dict[Tuple[str, str], str] = {
+    # Motivation/enjoyment/confidence → efficiency:
+    #   ATL confounds because hard-workout days have high motivation AND
+    #   subsequent recovery-day efficiency dips.
+    ("motivation_1_5", "efficiency"): "atl",
+    ("enjoyment_1_5", "efficiency"): "atl",
+    ("confidence_1_5", "efficiency"): "atl",
+    ("motivation_1_5", "pace_easy"): "atl",
+    ("motivation_1_5", "pace_threshold"): "atl",
+
+    # TSB → efficiency:
+    #   TSB derives from ATL/CTL.  Low-TSB (hard training) days produce
+    #   high same-day efficiency; the engine misreads as negative effect.
+    ("tsb", "efficiency"): "atl",
+    ("tsb", "pace_easy"): "atl",
+    ("tsb", "pace_threshold"): "atl",
+
+    # Sleep → pace:
+    #   Taper produces both more sleep AND faster race pace.
+    ("sleep_hours", "pace_easy"): "ctl",
+    ("sleep_hours", "pace_threshold"): "ctl",
+
+    # Soreness / RPE → efficiency:
+    #   High soreness/RPE follow ATL spikes; efficiency on those days is
+    #   naturally lower.
+    ("soreness_1_5", "efficiency"): "atl",
+    ("rpe_1_10", "efficiency"): "atl",
+}
+
+# Expected physiological direction for (input, output) pairs.
+# Counterintuitive direction alone does NOT suppress — only when
+# combined with confounded = True.
+DIRECTION_EXPECTATIONS: Dict[Tuple[str, str], str] = {
+    ("motivation_1_5", "efficiency"): "positive",
+    ("motivation_1_5", "completion"): "positive",
+    ("sleep_hours", "efficiency"): "positive",
+    ("sleep_hours", "pace_easy"): "positive",
+    ("hrv_rmssd", "efficiency"): "positive",
+    ("stress_1_5", "efficiency"): "negative",
+    ("stress_1_5", "completion"): "negative",
+    ("soreness_1_5", "efficiency"): "negative",
+    ("soreness_1_5", "pace_easy"): "negative",
+    ("tsb", "efficiency"): "positive",
+    ("tsb", "pace_easy"): "positive",
+    ("tsb", "pace_threshold"): "positive",
+    ("rpe_1_10", "efficiency"): "negative",
+}
+
+
+def compute_partial_correlation(
+    input_data: List[Tuple],
+    output_data: List[Tuple],
+    control_data: List[Tuple],
+    lag_days: int = 0,
+) -> Optional[float]:
+    """
+    Partial correlation r_xy.z using the standard formula:
+
+        r_xy.z = (r_xy - r_xz * r_yz) / sqrt((1 - r_xz²)(1 - r_yz²))
+
+    All three series are aligned by date.  input_data is shifted forward
+    by ``lag_days`` before alignment (same shift used by
+    ``find_time_shifted_correlations``).
+
+    Returns None when any component pair has < MIN_SAMPLE_SIZE aligned
+    points, or when a denominator is zero.
+    """
+    shifted_input = [
+        (d + timedelta(days=lag_days), v) for d, v in input_data
+    ]
+
+    xy = _align_time_series(shifted_input, output_data)
+    xz = _align_time_series(shifted_input, control_data)
+    yz = _align_time_series(output_data, control_data)
+
+    if (
+        len(xy) < MIN_SAMPLE_SIZE
+        or len(xz) < MIN_SAMPLE_SIZE
+        or len(yz) < MIN_SAMPLE_SIZE
+    ):
+        return None
+
+    r_xy, _ = calculate_pearson_correlation(
+        [p[0] for p in xy], [p[1] for p in xy]
+    )
+    r_xz, _ = calculate_pearson_correlation(
+        [p[0] for p in xz], [p[1] for p in xz]
+    )
+    r_yz, _ = calculate_pearson_correlation(
+        [p[0] for p in yz], [p[1] for p in yz]
+    )
+
+    denom_sq = (1 - r_xz ** 2) * (1 - r_yz ** 2)
+    if denom_sq <= 0:
+        return None
+
+    partial_r = (r_xy - r_xz * r_yz) / math.sqrt(denom_sq)
+    return round(partial_r, 4)
+
+
 class CorrelationResult:
     """Result of a correlation analysis."""
     
@@ -1165,7 +1272,36 @@ def analyze_correlations(
         if significant:
             # Keep the strongest correlation (by absolute value)
             best = max(significant, key=lambda r: abs(r.correlation_coefficient))
-            correlations.append(best.to_dict())
+            entry = best.to_dict()
+
+            # --- Confounder control ---
+            confounder_key = (input_name, output_metric)
+            confounder_var = CONFOUNDER_MAP.get(confounder_key)
+
+            if confounder_var and confounder_var in inputs:
+                partial_r = compute_partial_correlation(
+                    input_data, outputs, inputs[confounder_var],
+                    lag_days=best.time_lag_days,
+                )
+                entry["partial_correlation_coefficient"] = partial_r
+                entry["confounder_variable"] = confounder_var
+                entry["is_confounded"] = (
+                    partial_r is None
+                    or abs(partial_r) < MIN_CORRELATION_STRENGTH
+                )
+            else:
+                entry["partial_correlation_coefficient"] = None
+                entry["confounder_variable"] = None
+                entry["is_confounded"] = False
+
+            # --- Direction validation ---
+            expected_dir = DIRECTION_EXPECTATIONS.get(confounder_key)
+            entry["direction_expected"] = expected_dir
+            entry["direction_counterintuitive"] = (
+                expected_dir is not None and best.direction != expected_dir
+            )
+
+            correlations.append(entry)
     
     # Sort by correlation strength (absolute value)
     correlations.sort(key=lambda x: abs(x["correlation_coefficient"]), reverse=True)

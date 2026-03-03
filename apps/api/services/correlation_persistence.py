@@ -85,6 +85,13 @@ def persist_correlation_findings(
         n = corr.get("sample_size", 0)
         strength = corr.get("strength", "weak")
 
+        # Confounder-control fields (may be absent for legacy callers)
+        partial_r = corr.get("partial_correlation_coefficient")
+        confounder_var = corr.get("confounder_variable")
+        is_confounded = corr.get("is_confounded", False)
+        direction_expected = corr.get("direction_expected")
+        direction_counterintuitive = corr.get("direction_counterintuitive", False)
+
         # Only persist findings that pass significance gates
         if abs(r) < MIN_CORRELATION_STRENGTH or p >= SIGNIFICANCE_LEVEL or n < MIN_SAMPLE_SIZE:
             continue
@@ -95,6 +102,11 @@ def persist_correlation_findings(
         category = _categorize_finding(direction, output_metric)
         confidence = _compute_confidence(r, p, n)
         insight_text = _build_finding_text(input_name, direction, strength, r, lag, output_metric)
+
+        # Suppression rule: confounded findings are NOT active.
+        # Counterintuitive direction alone does NOT suppress —
+        # only counterintuitive + confounded = suppressed.
+        should_be_active = not is_confounded
 
         # Upsert: find existing or create
         existing = (
@@ -119,7 +131,12 @@ def persist_correlation_findings(
             existing.confidence = confidence
             existing.category = category
             existing.insight_text = insight_text
-            existing.is_active = True  # Re-activate if previously faded
+            existing.partial_correlation_coefficient = partial_r
+            existing.confounder_variable = confounder_var
+            existing.is_confounded = is_confounded
+            existing.direction_expected = direction_expected
+            existing.direction_counterintuitive = direction_counterintuitive
+            existing.is_active = should_be_active
             stats["confirmed"] += 1
         else:
             finding = CorrelationFinding(
@@ -138,7 +155,12 @@ def persist_correlation_findings(
                 insight_text=insight_text,
                 category=category,
                 confidence=confidence,
-                is_active=True,
+                is_active=should_be_active,
+                partial_correlation_coefficient=partial_r,
+                confounder_variable=confounder_var,
+                is_confounded=is_confounded,
+                direction_expected=direction_expected,
+                direction_counterintuitive=direction_counterintuitive,
             )
             db.add(finding)
             stats["created"] += 1
