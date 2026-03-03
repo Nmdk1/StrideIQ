@@ -119,8 +119,6 @@ export function CorrelationWeb({ nodes: rawNodes, edges: rawEdges }: Correlation
 
     const { w, h } = dims;
     const simNodes: SimNode[] = rawNodes.map((n) => ({ ...n }));
-    const links = rawEdges.map((e) => ({ ...e, source: e.source, target: e.target }));
-
     const inputs = simNodes.filter((n) => n.group === 'input');
     const outputs = simNodes.filter((n) => n.group === 'output');
 
@@ -132,6 +130,20 @@ export function CorrelationWeb({ nodes: rawNodes, edges: rawEdges }: Correlation
       n.x = w * 0.82;
       n.y = h * 0.15 + i * ((h * 0.7) / Math.max(arr.length - 1, 1));
     });
+
+    // For <= 5 nodes, fixed positions are more stable than force simulation
+    if (simNodes.length <= 5) {
+      const p: Record<string, { x: number; y: number }> = {};
+      simNodes.forEach((n) => {
+        p[n.id] = { x: n.x!, y: n.y! };
+      });
+      setPos(p);
+      return;
+    }
+
+    const links = rawEdges.map((e) => ({ ...e, source: e.source, target: e.target }));
+    let rafId: number | null = null;
+    const lastPos = new Map<string, { x: number; y: number }>();
 
     const sim = d3
       .forceSimulation(simNodes)
@@ -149,9 +161,29 @@ export function CorrelationWeb({ nodes: rawNodes, edges: rawEdges }: Correlation
       )
       .force('y', d3.forceY(h / 2).strength(0.08))
       .force('col', d3.forceCollide(32))
-      .alphaDecay(0.04);
+      .alphaDecay(0.1);
 
     sim.on('tick', () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        let changed = false;
+        const p: Record<string, { x: number; y: number }> = {};
+        simNodes.forEach((n) => {
+          const nx = Math.max(36, Math.min(w - 36, n.x!));
+          const ny = Math.max(18, Math.min(h - 18, n.y!));
+          const prev = lastPos.get(n.id);
+          if (!prev || Math.abs(prev.x - nx) > 1 || Math.abs(prev.y - ny) > 1) {
+            changed = true;
+          }
+          p[n.id] = { x: nx, y: ny };
+          lastPos.set(n.id, { x: nx, y: ny });
+        });
+        if (changed) setPos({ ...p });
+      });
+    });
+
+    sim.on('end', () => {
       const p: Record<string, { x: number; y: number }> = {};
       simNodes.forEach((n) => {
         p[n.id] = {
@@ -164,6 +196,7 @@ export function CorrelationWeb({ nodes: rawNodes, edges: rawEdges }: Correlation
 
     return () => {
       sim.stop();
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [inView, dims, rawNodes, rawEdges]);
 
@@ -268,7 +301,7 @@ export function CorrelationWeb({ nodes: rawNodes, edges: rawEdges }: Correlation
                     d={`M${s.x},${s.y} Q${mx},${my} ${t.x},${t.y}`}
                     fill="none"
                     stroke="transparent"
-                    strokeWidth={20}
+                    strokeWidth={typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches ? 40 : 20}
                   />
                 </g>
               );

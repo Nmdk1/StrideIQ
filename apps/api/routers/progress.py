@@ -1957,6 +1957,7 @@ class KnowledgeResponse(BaseModel):
     correlation_web: Dict[str, Any]
     proved_facts: List[ProvedFact]
     patterns_forming: Optional[PatternsFormingKnowledge] = None
+    recovery_curve: Optional[Dict[str, Any]] = None
     generated_at: str
     data_coverage: DataCoverageKnowledge
 
@@ -1969,9 +1970,40 @@ def _confidence_tier(times_confirmed: int) -> str:
     return "emerging"
 
 
+_METRIC_LABELS: dict = {
+    "efficiency": "Efficiency",
+    "pace_easy": "Easy Pace",
+    "pace_threshold": "Threshold Pace",
+    "completion": "Completion",
+    "efficiency_threshold": "Threshold Efficiency",
+    "efficiency_race": "Race Efficiency",
+    "efficiency_easy": "Easy Efficiency",
+    "efficiency_trend": "Efficiency Trend",
+    "pb_events": "Personal Bests",
+    "race_pace": "Race Pace",
+    "motivation_1_5": "Motivation",
+    "enjoyment_1_5": "Enjoyment",
+    "confidence_1_5": "Confidence",
+    "stress_1_5": "Stress",
+    "soreness_1_5": "Soreness",
+    "rpe_1_10": "Effort (RPE)",
+    "sleep_hours": "Sleep",
+    "sleep_quality_1_5": "Sleep Quality",
+    "hrv_rmssd": "Heart Rate Variability",
+    "resting_hr": "Resting Heart Rate",
+    "atl": "Fatigue (ATL)",
+    "ctl": "Fitness (CTL)",
+    "tsb": "Form (TSB)",
+    "daily_session_stress": "Session Stress",
+    "weight_kg": "Weight",
+}
+
+
 def _humanize_metric(raw: str) -> str:
-    """Turn 'sleep_hours' into 'Sleep Hours', 'motivation_1_5' into 'Motivation'."""
-    cleaned = raw.replace("_1_5", "").replace("_", " ")
+    """Athlete-friendly metric names. No raw acronyms."""
+    if raw in _METRIC_LABELS:
+        return _METRIC_LABELS[raw]
+    cleaned = raw.replace("_1_5", "").replace("_1_10", "").replace("_", " ")
     return cleaned.title()
 
 
@@ -2073,8 +2105,8 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
         headline_accent="Here's what the data shows.",
         subtext="Facts discovered from your own training data — confirmed across your own physiology, your own patterns.",
         stats=[
-            HeroStat(label="CTL then", value=str(ctl_first), color="muted"),
-            HeroStat(label="CTL now", value=str(ctl_now), color="blue"),
+            HeroStat(label="Fitness then", value=str(ctl_first), color="muted"),
+            HeroStat(label="Fitness now", value=str(ctl_now), color="blue"),
             stat_third,
         ],
     )
@@ -2108,6 +2140,13 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
         checkin_count=checkin_total,
     )
 
+    # Recovery curve
+    try:
+        from services.recovery_metrics import compute_recovery_curve
+        rc = compute_recovery_curve(db, str(athlete_id))
+    except Exception:
+        rc = None
+
     return KnowledgeResponse(
         hero=hero,
         correlation_web={
@@ -2116,6 +2155,7 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
         },
         proved_facts=proved_facts,
         patterns_forming=patterns_forming,
+        recovery_curve=rc,
         generated_at=datetime.utcnow().isoformat() + "Z",
         data_coverage=data_coverage,
     )

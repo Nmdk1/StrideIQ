@@ -315,8 +315,8 @@ def test_hero_with_race():
 
     stats = resp.hero.stats
     labels = [s.label for s in stats]
-    assert "CTL then" in labels
-    assert "CTL now" in labels
+    assert "Fitness then" in labels
+    assert "Fitness now" in labels
     assert "Days out" in labels
     assert "Tobacco Road" in resp.hero.date_label
 
@@ -344,10 +344,14 @@ def test_hero_without_race():
 # Test 11: Humanize metric names
 # ═══════════════════════════════════════════════════════════════════
 def test_humanize_metric():
-    assert _humanize_metric("sleep_hours") == "Sleep Hours"
+    assert _humanize_metric("sleep_hours") == "Sleep"
     assert _humanize_metric("motivation_1_5") == "Motivation"
     assert _humanize_metric("efficiency") == "Efficiency"
     assert _humanize_metric("soreness_1_5") == "Soreness"
+    assert _humanize_metric("ctl") == "Fitness (CTL)"
+    assert _humanize_metric("atl") == "Fatigue (ATL)"
+    assert _humanize_metric("tsb") == "Form (TSB)"
+    assert _humanize_metric("hrv_rmssd") == "Heart Rate Variability"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -356,7 +360,7 @@ def test_humanize_metric():
 def test_build_headline():
     f = _mock_finding("sleep_hours", "efficiency", "positive", 0.62, 7, "strong", 2)
     headline = _build_headline(f)
-    assert "sleep hours" in headline.lower()
+    assert "sleep" in headline.lower()
     assert "efficiency" in headline.lower()
     assert "improves" in headline.lower()
 
