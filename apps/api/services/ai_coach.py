@@ -961,11 +961,12 @@ Policy:
         messages.append({"role": "user", "content": message})
         
         # System prompt for high-stakes reasoning WITH tool guidance
-        system_prompt = """You are StrideIQ, an expert running coach. This is a HIGH-STAKES query involving training load, injury risk, or recovery decisions.
+        _today = date.today()
+        system_prompt = f"""You are StrideIQ, an expert running coach. Today is {_today.isoformat()} ({_today.strftime('%A')}). This is a HIGH-STAKES query involving training load, injury risk, or recovery decisions.
 
-CRITICAL: NEVER HALLUCINATE DATA. Every number, distance, pace, and date you cite MUST come from tool results. NEVER fabricate or estimate training data. If you haven't called a tool yet, call one NOW. Violating this rule destroys athlete trust.
+ZERO-HALLUCINATION RULE (NON-NEGOTIABLE): Every number, distance, pace, date, and training fact you state MUST come from tool results. NEVER fabricate or estimate ANY training data. If you haven't called a tool yet, call one NOW. If no tool has the data, say "I don't have that data" -- NEVER make it up. This athlete relies on you exclusively. A wrong number could cause injury. All dates in tool results include pre-computed relative times like '(2 days ago)'. USE those labels verbatim -- do NOT compute your own relative time.
 
-YOU HAVE 22 TOOLS — USE THEM PROACTIVELY:
+YOU HAVE 22 TOOLS -- USE THEM PROACTIVELY:
 - ALWAYS call get_weekly_volume first to understand the athlete's training history
 - Call get_recent_runs to see individual workout details (up to 730 days back)
 - Call get_training_load for current fitness/fatigue/form
@@ -977,7 +978,7 @@ YOU HAVE 22 TOOLS — USE THEM PROACTIVELY:
 - Call compare_training_periods to compare recent vs previous training
 - Call get_calendar_day_context for specific day plan + actual
 - Call get_wellness_trends for sleep, stress, soreness patterns
-- NEVER say "I don't have access" — call the tools instead
+- NEVER say "I don't have access" -- call the tools instead
 
 REASONING APPROACH:
 1. First gather data with tools - look at weeks/months of history, not just recent days
@@ -999,6 +1000,7 @@ If you need more data to answer well, call the tools. That's why they're there."
         try:
             total_input_tokens = 0
             total_output_tokens = 0
+            tools_called: List[str] = []
             
             # Initial call with tools
             response = self.anthropic_client.messages.create(
@@ -1024,6 +1026,7 @@ If you need more data to answer well, call the tools. That's why they're there."
                         tool_name = block.name
                         tool_input = block.input
                         tool_id = block.id
+                        tools_called.append(tool_name)
                         
                         logger.info(f"Opus calling tool: {tool_name} with {tool_input}")
                         result = self._execute_opus_tool(athlete_id, tool_name, tool_input)
@@ -1067,6 +1070,17 @@ If you need more data to answer well, call the tools. That's why they're there."
                 if hasattr(block, 'text'):
                     response_text += block.text
             
+            # Post-response validation: data questions must have used tools
+            is_valid, reason = self._validate_tool_usage(
+                message, tools_called, len(tools_called)
+            )
+            if not is_valid:
+                logger.warning(
+                    "Opus response failed tool validation (%s) for athlete %s: "
+                    "tools_called=%s, message='%.80s'",
+                    reason, athlete_id, tools_called, message,
+                )
+            
             self.track_usage(
                 athlete_id=athlete_id,
                 input_tokens=total_input_tokens,
@@ -1077,6 +1091,7 @@ If you need more data to answer well, call the tools. That's why they're there."
             
             logger.info(
                 f"Opus query completed: athlete={athlete_id}, "
+                f"tools_called={tools_called}, "
                 f"input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
             )
             
@@ -1087,6 +1102,7 @@ If you need more data to answer well, call the tools. That's why they're there."
                 "is_high_stakes": True,
                 "input_tokens": total_input_tokens,
                 "output_tokens": total_output_tokens,
+                "tools_called": tools_called,
             }
             
         except Exception as e:
@@ -1404,27 +1420,34 @@ If you need more data to answer well, call the tools. That's why they're there."
             athlete_brief = "(Brief unavailable — call tools for data.)"
 
         # ADR-16: System prompt — coaching persona + brief injection
-        system_instruction = f"""You are the athlete's personal running coach. You have reviewed their complete file before this conversation — it's in the ATHLETE BRIEF below.
+        _today = date.today()
+        system_instruction = f"""You are the athlete's personal running coach. Today is {_today.isoformat()} ({_today.strftime('%A')}). You have reviewed their complete file before this conversation — it's in the ATHLETE BRIEF below.
+
+ZERO-HALLUCINATION RULE (NON-NEGOTIABLE):
+Every number, distance, pace, date, and training fact you state MUST come from the ATHLETE BRIEF below or from a tool result. NEVER fabricate, estimate, or guess ANY training data. If the brief doesn't have it, CALL A TOOL. If no tool has it, say "I don't have that data" — NEVER make it up. This athlete is 79 years old and relies on you exclusively. A wrong number could cause injury.
 
 COACHING APPROACH:
 - Lead with what matters. If you see something important in the brief, bring it up — don't wait to be asked.
 - Be direct and sparse. Athletes don't want essays.
 - Show patterns, explain what they mean, recommend what to do about them.
-- Every number you cite MUST come from the brief or a tool result. NEVER fabricate, estimate, or guess training data. If the brief doesn't have it and you haven't called a tool, call one.
+- All dates in the brief and tool results include pre-computed relative times like '(2 days ago)' or '(yesterday)'. USE those labels verbatim — do NOT compute your own relative time.
 - NEVER compute math yourself — use the compute_running_math tool for pace/distance/time calculations.
-- When the brief doesn't cover something, call a tool. Read the tool's narrative summary and coach from it.
-- For deeper dives, call tools — you have 24 tools available. NEVER say "I don't have access."
 - Conversational A->I->A requirement (chat prose, not JSON): provide an interpretive Assessment, explain the Implication, then a concrete Action.
 - Do NOT output internal labels like "fact capsule", "response contract", or schema keys.
 
-AVAILABLE TOOLS (call as needed for details beyond the brief):
-get_recent_runs, get_calendar_day_context, get_efficiency_trend, get_plan_week,
-get_weekly_volume, get_training_load, get_training_paces, get_correlations,
-get_race_predictions, get_recovery_status, get_active_insights, get_pb_patterns,
-get_efficiency_by_zone, get_nutrition_correlations, get_best_runs,
-compare_training_periods, get_coach_intent_snapshot, set_coach_intent_snapshot,
-get_training_prescription_window, get_wellness_trends, get_athlete_profile,
-get_training_load_history, compute_running_math, analyze_run_streams
+YOU HAVE 24 TOOLS — USE THEM PROACTIVELY:
+- Call get_weekly_volume to understand training history
+- Call get_recent_runs for individual workout details (up to 730 days back)
+- Call get_training_load for current fitness/fatigue/form
+- Call get_training_load_history for load progression over time
+- Call get_recovery_status for injury risk assessment
+- Call get_race_predictions for time estimates
+- Call get_plan_week for the current training plan
+- Call get_calendar_day_context for specific day plan + actual
+- Call get_wellness_trends for sleep, stress, soreness patterns
+- Call compute_running_math for ANY pace/distance/time calculation
+- NEVER say "I don't have access" — call the tools instead
+- When in doubt, call a tool. A tool call is ALWAYS better than a guess.
 
 TOOL OUTPUTS: Each tool returns a "narrative" field — a pre-interpreted summary. Coach from the narrative, not the raw JSON.
 
@@ -1463,8 +1486,8 @@ ATHLETE BRIEF:
         try:
             total_input_tokens = 0
             total_output_tokens = 0
+            tools_called: List[str] = []
             
-            # Configure generation
             # Temperature 0.2: Gemini docs recommend low temperature for
             # "more deterministic and reliable function calls". 0.7 caused
             # hallucination of training data (fabricated distances/volumes).
@@ -1502,11 +1525,11 @@ ATHLETE BRIEF:
                 # Add assistant response to contents
                 contents.append(response.candidates[0].content)
                 
-                # Execute function calls and build responses
                 function_response_parts = []
                 for fc in function_calls:
                     tool_name = fc.name
                     tool_args = dict(fc.args) if fc.args else {}
+                    tools_called.append(tool_name)
                     
                     logger.info(f"Gemini calling tool: {tool_name} with {tool_args}")
                     result = self._execute_opus_tool(athlete_id, tool_name, tool_args)
@@ -1543,6 +1566,17 @@ ATHLETE BRIEF:
                 if hasattr(part, 'text') and part.text:
                     response_text += part.text
             
+            # Post-response validation: data questions must have used tools
+            is_valid, reason = self._validate_tool_usage(
+                message, tools_called, len(tools_called)
+            )
+            if not is_valid:
+                logger.warning(
+                    "Gemini response failed tool validation (%s) for athlete %s: "
+                    "tools_called=%s, message='%.80s'",
+                    reason, athlete_id, tools_called, message,
+                )
+            
             # Track usage with Gemini pricing
             self.track_usage(
                 athlete_id=athlete_id,
@@ -1554,6 +1588,7 @@ ATHLETE BRIEF:
             
             logger.info(
                 f"Gemini query completed: athlete={athlete_id}, "
+                f"tools_called={tools_called}, "
                 f"input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
             )
             
@@ -1564,6 +1599,7 @@ ATHLETE BRIEF:
                 "is_high_stakes": False,
                 "input_tokens": total_input_tokens,
                 "output_tokens": total_output_tokens,
+                "tools_called": tools_called,
             }
             
         except Exception as e:
@@ -1829,9 +1865,9 @@ ATHLETE BRIEF:
             context_parts.append("\n## Recent Wellness (athlete self-report)")
             for c in recent_checkins:
                 parts = []
-                if c.motivation_1_5 is not None:
-                    motivation_map = {5: 'Great', 4: 'Fine', 2: 'Tired', 1: 'Rough'}
-                    parts.append(f"Feeling: {motivation_map.get(c.motivation_1_5, c.motivation_1_5)}")
+                if c.readiness_1_5 is not None:
+                    readiness_map = {5: 'High', 4: 'Good', 3: 'Neutral', 2: 'Low', 1: 'Poor'}
+                    parts.append(f"Readiness: {readiness_map.get(c.readiness_1_5, c.readiness_1_5)}")
                 if c.sleep_h is not None:
                     parts.append(f"Sleep: {c.sleep_h}h")
                 if c.stress_1_5 is not None:
@@ -3962,9 +3998,9 @@ ATHLETE BRIEF:
                     state_lines.append(f"Last checkin ({checkin.date}):")
                     if checkin.sleep_h is not None:
                         state_lines.append(f"  Sleep: {checkin.sleep_h}h")
-                    if checkin.motivation_1_5 is not None:
-                        motivation_map = {5: 'Great', 4: 'Fine', 2: 'Tired', 1: 'Rough'}
-                        state_lines.append(f"  Feeling: {motivation_map.get(checkin.motivation_1_5, checkin.motivation_1_5)}")
+                    if checkin.readiness_1_5 is not None:
+                        readiness_map = {5: 'High', 4: 'Good', 3: 'Neutral', 2: 'Low', 1: 'Poor'}
+                        state_lines.append(f"  Readiness: {readiness_map.get(checkin.readiness_1_5, checkin.readiness_1_5)}")
                     if checkin.soreness_1_5 is not None:
                         state_lines.append(f"  Soreness: {checkin.soreness_1_5}/5")
                     if checkin.stress_1_5 is not None:

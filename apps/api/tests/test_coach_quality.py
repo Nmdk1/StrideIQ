@@ -314,17 +314,12 @@ class TestInsightRotation:
     - Time-frozen: we mock Redis so the stored text is always present.
     """
 
-    def _run_briefing(self, athlete_id, db, last_notice=None, **kwargs):
-        """Helper: call generate_coach_home_briefing with all heavy dependencies mocked.
-
-        We patch redis.from_url at the redis-module level (not routers.home.redis)
-        because the rotation code uses 'import redis as _redis_rot' inside the
-        function — patching routers.home.redis would not intercept that local import.
-        """
+    def _run_briefing(self, athlete_id, db, **kwargs):
+        """Helper: call generate_coach_home_briefing with all heavy dependencies mocked."""
         from routers.home import generate_coach_home_briefing
 
         mock_redis_instance = MagicMock()
-        mock_redis_instance.get.return_value = last_notice
+        mock_redis_instance.get.return_value = None
 
         with patch("redis.from_url", return_value=mock_redis_instance), \
              patch("services.coach_tools.build_athlete_brief", return_value="(brief)"), \
@@ -344,42 +339,28 @@ class TestInsightRotation:
         db.query.return_value.filter.return_value.scalar.return_value = 0
         return db
 
-    def test_insight_rotation_injects_constraint_when_last_notice_exists(self):
-        """When coach_noticed_last:{athlete_id} exists in Redis, the prompt must
-        include a ROTATION CONSTRAINT instructing the LLM to avoid repeating it."""
+    def test_finding_cooldown_functions_exist(self):
+        """The finding-level cooldown functions must exist in home.py."""
+        from routers.home import _is_finding_in_cooldown, _set_finding_cooldowns
+        assert callable(_is_finding_in_cooldown)
+        assert callable(_set_finding_cooldowns)
+
+    def test_one_new_thing_rule_in_prompt(self):
+        """Briefing prompt must include the ONE-NEW-THING RULE."""
         athlete_id = str(uuid.uuid4())
-        last_notice = "Your efficiency tends to improve within 2 days of better sleep."
-
-        prep = self._run_briefing(athlete_id, self._make_min_db(), last_notice=last_notice)
-
-        # Result is a tuple: (None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h)
-        assert len(prep) >= 2, "Expected tuple from generate_coach_home_briefing"
+        prep = self._run_briefing(athlete_id, self._make_min_db())
         prompt = prep[1]
-        assert "ROTATION CONSTRAINT" in prompt, (
-            "ROTATION CONSTRAINT not found in prompt — same insight can repeat indefinitely"
-        )
-        assert last_notice[:60] in prompt, (
-            "Last coach_noticed text not injected into rotation constraint"
+        assert "ONE-NEW-THING RULE" in prompt, (
+            "ONE-NEW-THING RULE not found in prompt — briefings may repeat stale findings"
         )
 
-    def test_insight_rotation_not_injected_when_no_stored_notice(self):
-        """When no prior coach_noticed exists, prompt must NOT include ROTATION CONSTRAINT."""
-        athlete_id = str(uuid.uuid4())
-        prep = self._run_briefing(athlete_id, self._make_min_db(), last_notice=None)
-        prompt = prep[1]
-        assert "ROTATION CONSTRAINT" not in prompt
-
-    def test_task_records_coach_noticed_after_write(self):
-        """generate_home_briefing_task must persist coach_noticed to Redis after success."""
+    def test_task_sets_finding_cooldowns_after_briefing(self):
+        """generate_home_briefing_task must call _set_finding_cooldowns after success."""
         from tasks.home_briefing_tasks import generate_home_briefing_task
         source = inspect.getsource(generate_home_briefing_task)
-        # Structural: must contain the Redis write for coach_noticed_last
-        assert "coach_noticed_last" in source, (
-            "coach_noticed_last key missing from home_briefing_tasks — "
-            "insight rotation cannot work without persisting the last notice"
-        )
-        assert "setex" in source or "set(" in source, (
-            "Redis setex/set call missing from home_briefing_tasks"
+        assert "_set_finding_cooldowns" in source, (
+            "_set_finding_cooldowns call missing from home_briefing_tasks — "
+            "finding cooldown cannot work without setting keys after briefing"
         )
 
 
@@ -420,7 +401,7 @@ class TestCoachNoFabricatedSoreness:
         """soreness_label=None in checkin_data → prompt must say 'not reported today'."""
         athlete_id = str(uuid.uuid4())
         checkin_data = {
-            "motivation_label": "Fine",
+            "readiness_label": "Good",
             "sleep_label": "OK",
             "soreness_label": None,  # Not reported
             "sleep_h": 7.0,
@@ -556,4 +537,401 @@ class TestCoachNoThisWeekRunsBeforeWeekStart:
         # The task calls generate_coach_home_briefing which owns the grounding
         assert "generate_coach_home_briefing" in source, (
             "generate_coach_home_briefing call missing from _build_briefing_prompt"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 9. test_date_grounding_in_all_llm_prompts
+# ---------------------------------------------------------------------------
+
+class TestDateGroundingInPrompts:
+    """
+    Every LLM prompt path must inject today's date so the model can compute
+    correct relative times ('3 days ago' not 'two weeks ago').
+
+    Production incident: race_assessment said "13-miler two weeks ago"
+    for a run that happened 2 days prior. Root cause: no date anchor.
+    """
+
+    def _run_briefing(self, athlete_id, db):
+        from routers.home import generate_coach_home_briefing
+
+        with patch("redis.from_url") as mock_redis, \
+             patch("services.coach_tools.build_athlete_brief", return_value="(brief)"), \
+             patch("routers.home.compute_coach_noticed", return_value=None), \
+             patch("routers.home._build_rich_intelligence_context", return_value=""), \
+             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None)):
+            mock_redis.return_value.get.return_value = None
+
+            return generate_coach_home_briefing(
+                athlete_id=athlete_id, db=db, skip_cache=True
+            )
+
+    def _make_min_db(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        db.query.return_value.filter.return_value.scalar.return_value = 0
+        return db
+
+    def test_home_briefing_prompt_contains_todays_date(self):
+        """The home briefing prompt must include today's ISO date."""
+        athlete_id = str(uuid.uuid4())
+        prep = self._run_briefing(athlete_id, self._make_min_db())
+        prompt = prep[1]
+        today_iso = date.today().isoformat()
+        assert today_iso in prompt, (
+            f"Today's date ({today_iso}) not found in home briefing prompt — "
+            "LLM cannot compute correct relative times without a date anchor"
+        )
+
+    def test_home_briefing_prompt_contains_relative_time_instruction(self):
+        """The prompt must tell the LLM to USE pre-computed relative times, not compute its own."""
+        athlete_id = str(uuid.uuid4())
+        prep = self._run_briefing(athlete_id, self._make_min_db())
+        prompt = prep[1]
+        assert "pre-computed" in prompt.lower(), (
+            "Prompt must tell LLM to USE pre-computed relative times"
+        )
+        assert "do not compute your own" in prompt.lower(), (
+            "Prompt must explicitly tell LLM NOT to compute relative times itself"
+        )
+
+    def test_fallback_briefing_system_prompt_contains_date(self):
+        """The fallback sync briefing system prompt must also include today's date."""
+        from routers.home import _fetch_llm_briefing_sync
+        source = inspect.getsource(_fetch_llm_briefing_sync)
+        assert "isoformat" in source and "today" in source.lower(), (
+            "Fallback briefing system prompt does not inject today's date — "
+            "same hallucination risk as primary path"
+        )
+
+    def test_chat_coach_gemini_prompt_contains_date(self):
+        """The Gemini chat coach system instruction must include today's date."""
+        from services.ai_coach import AICoach
+        source = inspect.getsource(AICoach.query_gemini)
+        assert "isoformat" in source and "today" in source.lower(), (
+            "Chat coach Gemini prompt does not inject today's date"
+        )
+
+    def test_chat_coach_high_stakes_prompt_contains_date(self):
+        """The high-stakes Opus system prompt must include today's date."""
+        from services.ai_coach import AICoach
+        source = inspect.getsource(AICoach.query_opus)
+        assert "isoformat" in source and "today" in source.lower(), (
+            "Chat coach high-stakes prompt does not inject today's date"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 10. test_relative_time_validator
+# ---------------------------------------------------------------------------
+
+class TestRelativeTimeValidator:
+    """
+    Post-generation validator must catch 'two weeks ago' when the most
+    recent run was 2 days ago.
+
+    Production incident: race_assessment said "13-miler two weeks ago"
+    for a Saturday run viewed on Monday.
+    """
+
+    def test_catches_weeks_ago_when_run_was_recent(self):
+        """'two weeks ago' with a run 2 days old → invalid."""
+        from routers.home import validate_relative_time_claims
+        recent = [date.today() - timedelta(days=2)]
+        result = validate_relative_time_claims(
+            "Your 13-miler at 7:28/mi two weeks ago suggests solid fitness.",
+            recent,
+        )
+        assert not result["valid"], "Should catch 'two weeks ago' for a 2-day-old run"
+        assert "relative_time" in result["reason"]
+
+    def test_allows_correct_relative_time(self):
+        """Correct claim ('Saturday') with recent run → valid."""
+        from routers.home import validate_relative_time_claims
+        recent = [date.today() - timedelta(days=2)]
+        result = validate_relative_time_claims(
+            "Your 13-miler on Saturday at 7:28/mi suggests solid fitness.",
+            recent,
+        )
+        assert result["valid"]
+
+    def test_allows_weeks_ago_when_run_actually_old(self):
+        """'two weeks ago' is fine when the run really was 14+ days old."""
+        from routers.home import validate_relative_time_claims
+        recent = [date.today() - timedelta(days=15)]
+        result = validate_relative_time_claims(
+            "Your tempo two weeks ago showed good form.",
+            recent,
+        )
+        assert result["valid"]
+
+    def test_catches_last_week_when_run_was_yesterday(self):
+        """'last week' with a run 1 day old → invalid."""
+        from routers.home import validate_relative_time_claims
+        recent = [date.today() - timedelta(days=1)]
+        result = validate_relative_time_claims(
+            "Your long run last week was strong.",
+            recent,
+        )
+        assert not result["valid"]
+
+    def test_catches_month_ago_when_run_was_this_week(self):
+        """'a month ago' with a run 3 days old → invalid."""
+        from routers.home import validate_relative_time_claims
+        recent = [date.today() - timedelta(days=3)]
+        result = validate_relative_time_claims(
+            "Your 13-miler a month ago and a predicted marathon of 3:00:56.",
+            recent,
+        )
+        assert not result["valid"]
+
+    def test_empty_text_valid(self):
+        """Empty/None text → valid (no claim to check)."""
+        from routers.home import validate_relative_time_claims
+        assert validate_relative_time_claims("", [date.today()])["valid"]
+        assert validate_relative_time_claims(None, [date.today()])["valid"]
+
+    def test_no_dates_valid(self):
+        """No recent run dates → valid (nothing to compare against)."""
+        from routers.home import validate_relative_time_claims
+        assert validate_relative_time_claims("two weeks ago", [])["valid"]
+
+    def test_validator_wired_into_fetch_llm_briefing(self):
+        """_fetch_llm_briefing_sync must call validate_relative_time_claims (structural)."""
+        from routers.home import _fetch_llm_briefing_sync
+        source = inspect.getsource(_fetch_llm_briefing_sync)
+        assert "validate_relative_time_claims" in source, (
+            "validate_relative_time_claims not called in _fetch_llm_briefing_sync — "
+            "relative-time hallucinations will not be caught"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 11. Contract: _relative_date() and pre-computed relative times
+# ---------------------------------------------------------------------------
+
+class TestRelativeDateHelper:
+    """The shared _relative_date() helper must be correct and used everywhere."""
+
+    def test_today(self):
+        from services.coach_tools import _relative_date
+        assert _relative_date(date.today()) == "(today)"
+
+    def test_yesterday(self):
+        from services.coach_tools import _relative_date
+        assert _relative_date(date.today() - timedelta(days=1)) == "(yesterday)"
+
+    def test_days_ago(self):
+        from services.coach_tools import _relative_date
+        assert _relative_date(date.today() - timedelta(days=3)) == "(3 days ago)"
+
+    def test_weeks_ago(self):
+        from services.coach_tools import _relative_date
+        assert _relative_date(date.today() - timedelta(days=14)) == "(2 weeks ago)"
+
+    def test_tomorrow(self):
+        from services.coach_tools import _relative_date
+        assert _relative_date(date.today() + timedelta(days=1)) == "(tomorrow)"
+
+    def test_in_days(self):
+        from services.coach_tools import _relative_date
+        assert _relative_date(date.today() + timedelta(days=5)) == "(in 5 days)"
+
+    def test_in_weeks(self):
+        from services.coach_tools import _relative_date
+        assert _relative_date(date.today() + timedelta(days=21)) == "(in 3 weeks)"
+
+
+class TestBriefDatePreComputation:
+    """
+    Contract: build_athlete_brief must pre-compute relative times for ALL dates.
+    If this test fails, an LLM will be asked to do date arithmetic — which it
+    gets wrong, as proven by the 'two weeks ago' production incident.
+    """
+
+    def test_brief_contains_relative_time_markers(self):
+        """Every ISO date in the athlete brief must be followed by a relative time."""
+        from services.coach_tools import build_athlete_brief
+        import re
+
+        db = MagicMock()
+        athlete_id = uuid.uuid4()
+
+        athlete_mock = MagicMock()
+        athlete_mock.id = athlete_id
+        athlete_mock.first_name = "Test"
+        athlete_mock.birthdate = date(1990, 1, 1)
+        athlete_mock.gender = "male"
+        athlete_mock.preferred_units = "imperial"
+        athlete_mock.rpi = 5.5
+
+        db.query.return_value.filter.return_value.first.return_value = athlete_mock
+        db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        db.query.return_value.filter.return_value.all.return_value = []
+        db.query.return_value.filter.return_value.scalar.return_value = 0
+
+        brief = build_athlete_brief(db, athlete_id)
+
+        iso_dates = re.findall(r'\d{4}-\d{2}-\d{2}', brief)
+        for iso_date in iso_dates:
+            idx = brief.index(iso_date)
+            surrounding = brief[idx:idx + 60]
+            today_str = date.today().isoformat()
+            if iso_date == today_str:
+                continue
+            has_relative = any(
+                marker in surrounding
+                for marker in [
+                    "days ago", "yesterday", "today", "tomorrow",
+                    "weeks ago", "week ago", "in ", "days away",
+                    "days remaining", "of 7 days",
+                ]
+            )
+            assert has_relative, (
+                f"ISO date {iso_date} in brief has no pre-computed relative time. "
+                f"Context: '{surrounding.strip()}'. "
+                "The LLM must NEVER compute relative time — pre-compute it in Python."
+            )
+
+    def test_prompt_says_use_precomputed_not_compute(self):
+        """Home briefing prompt must instruct LLM to USE pre-computed times, not compute them."""
+        from routers.home import generate_coach_home_briefing
+        athlete_id = str(uuid.uuid4())
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        db.query.return_value.filter.return_value.scalar.return_value = 0
+
+        with patch("redis.from_url") as mock_redis, \
+             patch("services.coach_tools.build_athlete_brief", return_value="(brief)"), \
+             patch("routers.home.compute_coach_noticed", return_value=None), \
+             patch("routers.home._build_rich_intelligence_context", return_value=""), \
+             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None)):
+            mock_redis.return_value.get.return_value = None
+            prep = generate_coach_home_briefing(
+                athlete_id=athlete_id, db=db, skip_cache=True
+            )
+
+        prompt = prep[1]
+        assert "pre-computed" in prompt.lower(), (
+            "Prompt must tell LLM to USE pre-computed relative times"
+        )
+        assert "do not compute your own" in prompt.lower(), (
+            "Prompt must explicitly tell LLM NOT to compute relative times itself"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 12. Anti-hallucination: tool enforcement in chat coach
+# ---------------------------------------------------------------------------
+
+class TestToolEnforcement:
+    """
+    The chat coach must call tools for data questions and validate it did so.
+    Production incident: LLM fabricated dates, distances, and volumes when
+    it answered from the brief alone without calling tools.
+    """
+
+    def test_validate_tool_usage_exists(self):
+        """_validate_tool_usage must exist and be callable."""
+        from services.ai_coach import AICoach
+        assert hasattr(AICoach, '_validate_tool_usage'), (
+            "_validate_tool_usage method missing — tool enforcement is impossible"
+        )
+
+    def test_validate_tool_usage_rejects_no_tools_for_data_question(self):
+        """A data question with no tool calls must fail validation."""
+        from services.ai_coach import AICoach
+        coach = AICoach.__new__(AICoach)
+        is_valid, reason = coach._validate_tool_usage(
+            "how far did I run this week", [], 0
+        )
+        assert not is_valid, "Data question with 0 tools should fail validation"
+        assert reason == "no_tools_called"
+
+    def test_validate_tool_usage_passes_with_tools(self):
+        """A data question with appropriate tools must pass."""
+        from services.ai_coach import AICoach
+        coach = AICoach.__new__(AICoach)
+        is_valid, reason = coach._validate_tool_usage(
+            "how far did I run this week",
+            ["get_weekly_volume", "get_recent_runs"],
+            2,
+        )
+        assert is_valid, f"Data question with tools should pass: {reason}"
+
+    def test_validate_tool_usage_skips_non_data_questions(self):
+        """Non-data questions (definitions, greetings) don't need tools."""
+        from services.ai_coach import AICoach
+        coach = AICoach.__new__(AICoach)
+        is_valid, reason = coach._validate_tool_usage(
+            "what is a tempo run", [], 0
+        )
+        assert is_valid, "Definition question should not require tools"
+
+    def test_validate_tool_usage_wired_in_opus(self):
+        """query_opus must call _validate_tool_usage (structural check)."""
+        from services.ai_coach import AICoach
+        source = inspect.getsource(AICoach.query_opus)
+        assert "_validate_tool_usage" in source, (
+            "_validate_tool_usage not called in query_opus — "
+            "Opus can hallucinate without detection"
+        )
+        assert "tools_called" in source, (
+            "tools_called tracking missing from query_opus — "
+            "cannot validate which tools were used"
+        )
+
+    def test_validate_tool_usage_wired_in_gemini(self):
+        """query_gemini must call _validate_tool_usage (structural check)."""
+        from services.ai_coach import AICoach
+        source = inspect.getsource(AICoach.query_gemini)
+        assert "_validate_tool_usage" in source, (
+            "_validate_tool_usage not called in query_gemini — "
+            "Gemini can hallucinate without detection"
+        )
+        assert "tools_called" in source, (
+            "tools_called tracking missing from query_gemini — "
+            "cannot validate which tools were used"
+        )
+
+    def test_zero_hallucination_rule_in_gemini_prompt(self):
+        """Gemini system instruction must include zero-hallucination rule."""
+        from services.ai_coach import AICoach
+        source = inspect.getsource(AICoach.query_gemini)
+        assert "ZERO-HALLUCINATION" in source, (
+            "Gemini prompt missing ZERO-HALLUCINATION rule"
+        )
+        assert "USE THEM PROACTIVELY" in source, (
+            "Gemini prompt missing proactive tool usage instruction"
+        )
+
+    def test_zero_hallucination_rule_in_opus_prompt(self):
+        """Opus system prompt must include zero-hallucination rule."""
+        from services.ai_coach import AICoach
+        source = inspect.getsource(AICoach.query_opus)
+        assert "ZERO-HALLUCINATION" in source, (
+            "Opus prompt missing ZERO-HALLUCINATION rule"
+        )
+        assert "USE THEM PROACTIVELY" in source, (
+            "Opus prompt missing proactive tool usage instruction"
+        )
+
+    def test_tools_called_returned_in_response(self):
+        """Both query methods must return tools_called in the response dict."""
+        from services.ai_coach import AICoach
+        opus_source = inspect.getsource(AICoach.query_opus)
+        gemini_source = inspect.getsource(AICoach.query_gemini)
+        assert '"tools_called"' in opus_source, (
+            "query_opus does not return tools_called in response"
+        )
+        assert '"tools_called"' in gemini_source, (
+            "query_gemini does not return tools_called in response"
         )
