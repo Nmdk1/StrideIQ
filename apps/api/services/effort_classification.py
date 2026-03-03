@@ -2,13 +2,14 @@
 N=1 Effort Classification
 
 Single shared function for all effort classification across the system.
-Replaces every max_hr-gated code path with percentile-based classification
-derived from the athlete's own HR distribution.
 
-Three tiers:
-  Tier 1 (primary):   HR percentile from athlete's own distribution
+Four tiers:
+  Tier 0 (preferred): TPP — grade-adjusted pace as % of threshold pace
+  Tier 1 (fallback):  HR percentile from athlete's own distribution
   Tier 2 (secondary): HRR with observed peak (earned after data threshold)
-  Tier 3 (tertiary):  Workout type + RPE (sparse HR data)
+  Tier 3 (tertiary):  Workout type + RPE (sparse HR/pace data)
+
+Pace is what the athlete did. HR is how the body felt about it.
 
 Design reference: docs/specs/EFFORT_CLASSIFICATION_SPEC.md
 """
@@ -22,9 +23,12 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from models import Activity, Athlete, DailyCheckin
+from models import Activity, ActivitySplit, Athlete, DailyCheckin
 
 logger = logging.getLogger(__name__)
+
+TPP_HARD = 0.92
+TPP_MODERATE = 0.78
 
 TIER_1_HARD_PERCENTILE = 80
 TIER_1_EASY_PERCENTILE = 40
@@ -51,18 +55,49 @@ def classify_effort(
     """
     Returns "hard", "moderate", or "easy".
 
-    "The statement 'this session was in the top 20% of effort'
-     is always true from the data that exists."
+    Pace is what the athlete did. HR is how the body felt about it.
+    The statement is always true from the data that exists.
 
+    Tier 0: TPP — grade-adjusted pace as % of threshold pace.
     Tier 1: HR percentile from athlete's own distribution.
     Tier 2: HRR with observed peak (when eligible).
-    Tier 3: Workout type + RPE (when HR data sparse).
+    Tier 3: Workout type + RPE (when pace and HR data sparse).
     """
     thresholds = get_effort_thresholds(athlete_id, db)
-    tier = thresholds["tier"]
     avg_hr = activity.avg_hr
 
-    if tier == "percentile" and avg_hr:
+    # Tier 0: TPP (when RPI and split GAP available)
+    threshold_pace = thresholds.get("threshold_pace")
+    if threshold_pace:
+        activity_gap = compute_activity_gap(activity.id, db)
+        if activity_gap and activity_gap > 0:
+            tpp = threshold_pace / activity_gap
+            tpp_class = _classify_from_tpp(tpp)
+
+            hr_class = (
+                _classify_tier1(avg_hr, thresholds)
+                if avg_hr and thresholds.get("p80_hr") is not None
+                else None
+            )
+            final = _combine_tpp_hr(tpp_class, hr_class)
+
+            if hr_class is not None and tpp_class != hr_class:
+                _log_tpp_hr_disagreement(
+                    athlete_id, activity.id, tpp_class, hr_class,
+                    tpp, activity_gap, threshold_pace, avg_hr,
+                )
+
+            logger.debug(
+                "effort_classification tier=tpp athlete=%s activity=%s "
+                "tpp=%.3f tpp_class=%s hr_class=%s final=%s",
+                athlete_id, activity.id, tpp, tpp_class, hr_class, final,
+            )
+            return final
+
+    # Fallthrough to HR-based tiers
+    hr_tier = thresholds.get("hr_tier", thresholds["tier"])
+
+    if hr_tier == "percentile" and avg_hr:
         result = _classify_tier1(avg_hr, thresholds)
         logger.debug(
             "effort_classification tier=percentile athlete=%s activity=%s result=%s",
@@ -70,7 +105,7 @@ def classify_effort(
         )
         return result
 
-    if tier == "hrr" and avg_hr:
+    if hr_tier == "hrr" and avg_hr:
         result = _classify_tier2(avg_hr, thresholds)
         logger.debug(
             "effort_classification tier=hrr athlete=%s activity=%s result=%s",
@@ -92,14 +127,19 @@ def get_effort_thresholds(
 ) -> dict:
     """
     Returns the athlete's current effort thresholds:
+    - tier: which classification tier is active ("tpp", "percentile",
+      "hrr", "workout_type")
+    - hr_tier: HR-based tier for fallthrough when Tier 0 per-activity
+      data is unavailable
+    - threshold_pace: seconds/mile (from RPI), or None
+    - five_k_pace: seconds/mile (from RPI), or None
     - p80_hr, p40_hr (Tier 1 boundaries)
-    - tier: which classification tier is active
     - observed_peak_hr (if available)
     - resting_hr (if available)
     - activity_count: how many activities with HR data
     - hard_count: how many classified as hard by Tier 1
 
-    Cached in Redis, recalculated when new activities arrive.
+    Cached in Redis, recalculated when new activities arrive or RPI changes.
     """
     try:
         from core.cache import get_redis_client
@@ -136,14 +176,29 @@ def classify_effort_bulk(
     Computes thresholds once, applies to all.
     """
     thresholds = get_effort_thresholds(athlete_id, db)
-    tier = thresholds["tier"]
+    has_tpp = bool(thresholds.get("threshold_pace"))
+    hr_tier = thresholds.get("hr_tier", thresholds["tier"])
     result: Dict[UUID, str] = {}
 
     for act in activities:
         avg_hr = act.avg_hr
-        if tier == "percentile" and avg_hr:
+
+        if has_tpp:
+            activity_gap = compute_activity_gap(act.id, db)
+            if activity_gap and activity_gap > 0:
+                tpp = thresholds["threshold_pace"] / activity_gap
+                tpp_class = _classify_from_tpp(tpp)
+                hr_class = (
+                    _classify_tier1(avg_hr, thresholds)
+                    if avg_hr and thresholds.get("p80_hr") is not None
+                    else None
+                )
+                result[act.id] = _combine_tpp_hr(tpp_class, hr_class)
+                continue
+
+        if hr_tier == "percentile" and avg_hr:
             result[act.id] = _classify_tier1(avg_hr, thresholds)
-        elif tier == "hrr" and avg_hr:
+        elif hr_tier == "hrr" and avg_hr:
             result[act.id] = _classify_tier2(avg_hr, thresholds)
         else:
             result[act.id] = _classify_tier3(act, athlete_id, db)
@@ -177,7 +232,7 @@ def log_rpe_disagreement(
 
 
 def invalidate_effort_cache(athlete_id: str) -> None:
-    """Call after new activities sync to bust the cached thresholds."""
+    """Call after new activities sync or RPI changes."""
     try:
         from core.cache import get_redis_client
         redis = get_redis_client()
@@ -187,11 +242,44 @@ def invalidate_effort_cache(athlete_id: str) -> None:
         pass
 
 
+def compute_activity_gap(activity_id: UUID, db: Session) -> Optional[float]:
+    """
+    Activity-level GAP (seconds/mile) as the distance-weighted average
+    of ActivitySplit.gap_seconds_per_mile.  Returns None if no splits
+    with GAP exist.
+    """
+    splits = (
+        db.query(
+            ActivitySplit.distance,
+            ActivitySplit.gap_seconds_per_mile,
+        )
+        .filter(
+            ActivitySplit.activity_id == activity_id,
+            ActivitySplit.gap_seconds_per_mile.isnot(None),
+            ActivitySplit.distance.isnot(None),
+        )
+        .all()
+    )
+
+    total_distance = 0.0
+    weighted_gap = 0.0
+    for dist, gap in splits:
+        d = float(dist)
+        if d > 0:
+            total_distance += d
+            weighted_gap += d * float(gap)
+
+    if total_distance <= 0:
+        return None
+
+    return weighted_gap / total_distance
+
+
 # ─── internals ────────────────────────────────────────────────────────
 
 
 def _compute_thresholds(athlete_id: str, db: Session) -> dict:
-    """Build threshold dict from the athlete's activity history."""
+    """Build threshold dict from the athlete's activity history and RPI."""
     hr_values = (
         db.query(Activity.avg_hr)
         .filter(
@@ -221,21 +309,36 @@ def _compute_thresholds(athlete_id: str, db: Session) -> dict:
     )
     observed_peak_hr = int(peak_row) if peak_row else None
 
-    # Resting HR — prefer GarminDay (most recent), fall back to DailyCheckin
     resting_hr = _get_resting_hr(athlete_id, db)
 
-    # Count hard sessions by Tier 1
     hard_count = 0
     if p80_hr is not None:
         hard_count = sum(1 for h in hrs if h >= p80_hr)
 
-    # Determine active tier
-    tier = _select_tier(activity_count, hard_count, observed_peak_hr, resting_hr)
+    hr_tier = _select_tier(activity_count, hard_count, observed_peak_hr, resting_hr)
+
+    # Tier 0: threshold pace from RPI
+    threshold_pace: Optional[int] = None
+    five_k_pace: Optional[int] = None
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    if athlete and athlete.rpi:
+        try:
+            from services.rpi_calculator import calculate_training_paces
+            paces = calculate_training_paces(athlete.rpi)
+            threshold_pace = paces.get("threshold_pace")
+            five_k_pace = paces.get("interval_pace")
+        except Exception:
+            pass
+
+    tier = "tpp" if threshold_pace else hr_tier
 
     return {
         "p80_hr": p80_hr,
         "p40_hr": p40_hr,
         "tier": tier,
+        "hr_tier": hr_tier,
+        "threshold_pace": threshold_pace,
+        "five_k_pace": five_k_pace,
         "observed_peak_hr": observed_peak_hr,
         "resting_hr": resting_hr,
         "activity_count": activity_count,
@@ -328,6 +431,57 @@ def _percentile(sorted_values: List[int], pct: int) -> float:
     c = f + 1 if f + 1 < n else f
     d = k - f
     return sorted_values[f] + d * (sorted_values[c] - sorted_values[f])
+
+
+def _classify_from_tpp(tpp: float) -> str:
+    if tpp >= TPP_HARD:
+        return "hard"
+    if tpp >= TPP_MODERATE:
+        return "moderate"
+    return "easy"
+
+
+def _combine_tpp_hr(tpp_class: str, hr_class: Optional[str]) -> str:
+    """
+    Pace anchors. HR can upgrade (environmental stress), never downgrade.
+    """
+    if hr_class is None:
+        return tpp_class
+
+    if tpp_class == hr_class:
+        return tpp_class
+
+    tpp_rank = _TIER_TO_RPE[tpp_class]
+    hr_rank = _TIER_TO_RPE[hr_class]
+
+    if hr_rank > tpp_rank:
+        # HR says harder — environmental stress degrading pace.
+        # easy TPP + hard HR → moderate (not full upgrade, flagged anomaly)
+        if tpp_class == "easy" and hr_class == "hard":
+            return "moderate"
+        return hr_class
+
+    # HR says easier — pace anchors, no downgrade
+    return tpp_class
+
+
+def _log_tpp_hr_disagreement(
+    athlete_id: str,
+    activity_id,
+    tpp_class: str,
+    hr_class: str,
+    tpp_value: float,
+    activity_gap: float,
+    threshold_pace: float,
+    avg_hr,
+) -> None:
+    logger.info(
+        "tpp_hr_disagreement athlete=%s activity=%s "
+        "tpp_class=%s hr_class=%s tpp=%.3f gap=%.1f "
+        "threshold_pace=%.1f avg_hr=%s",
+        athlete_id, activity_id, tpp_class, hr_class,
+        tpp_value, activity_gap, threshold_pace, avg_hr,
+    )
 
 
 def _get_resting_hr(athlete_id: str, db: Session) -> Optional[int]:
