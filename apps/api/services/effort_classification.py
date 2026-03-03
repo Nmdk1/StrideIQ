@@ -193,6 +193,11 @@ def classify_effort_bulk(
                     if avg_hr and thresholds.get("p80_hr") is not None
                     else None
                 )
+                if hr_class is not None and tpp_class != hr_class:
+                    _log_tpp_hr_disagreement(
+                        athlete_id, act.id, tpp_class, hr_class,
+                        tpp, activity_gap, thresholds["threshold_pace"], avg_hr,
+                    )
                 result[act.id] = _combine_tpp_hr(tpp_class, hr_class)
                 continue
 
