@@ -37,6 +37,13 @@ beat_schedule = {
         'task': 'tasks.check_garmin_ingestion_health',
         'schedule': crontab(hour=7, minute=0),
     },
+    # Daily correlation sweep — after morning intelligence.
+    # Runs analyze_correlations() for all 9 output metrics for athletes
+    # with new data in the last 24h.
+    'daily-correlation-sweep': {
+        'task': 'tasks.run_daily_correlation_sweep',
+        'schedule': crontab(hour=8, minute=0),
+    },
 }
 
 
