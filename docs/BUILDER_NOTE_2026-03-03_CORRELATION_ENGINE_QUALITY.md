@@ -2,7 +2,7 @@
 
 **Date:** March 3, 2026
 **Priority:** Critical — the correlation engine is the heartbeat of this product
-**Status:** Spec — phased build
+**Status:** Phase 1 delivered — correction required (see Post-Delivery Correction)
 
 ---
 
@@ -199,10 +199,12 @@ DIRECTION_EXPECTATIONS: Dict[Tuple[str, str], str] = {
 }
 ```
 
-**Rule:** If observed direction contradicts expected direction, the finding
-is flagged as `direction_counterintuitive = True`. Counterintuitive findings
-are NOT surfaced unless they survive partial correlation (i.e., the
-relationship is real even after controlling for confounders).
+**Rule (UPDATED — see Post-Delivery Correction):** If observed direction
+contradicts expected direction, the finding is flagged as
+`direction_counterintuitive = True` AND `is_active = False`. This is a
+safety gate to protect athlete trust. Counterintuitive findings are
+suppressed regardless of partial correlation result until confounder
+methodology is corrected (ATL → daily TSS).
 
 #### 4. New Model Fields
 
@@ -237,10 +239,10 @@ In `persist_correlation_findings()`:
 
 1. Save new fields on upsert
 2. If `is_confounded = True`: set `is_active = False`
-3. If `direction_counterintuitive = True` AND `is_confounded = True`:
-   set `is_active = False` (double-flagged = definitely suppress)
-4. If `direction_counterintuitive = True` BUT passes partial correlation:
-   keep `is_active = True` but store the flag for future review
+3. **If `direction_counterintuitive = True`: set `is_active = False`**
+   (UPDATED — see Post-Delivery Correction. This is a safety gate.
+   Counterintuitive findings are suppressed regardless of partial r
+   until confounder methodology is corrected.)
 
 #### 6. Re-run Existing Findings
 
@@ -297,10 +299,13 @@ This requires:
 3. **Confounded findings are deactivated, not deleted.** `is_active = False`
    and `is_confounded = True`. They can be reviewed and the map adjusted.
 
-4. **Direction expectations are advisory, not blocking alone.** A
-   counterintuitive direction does NOT automatically suppress the finding.
-   Only counterintuitive + confounded = suppressed. A real counterintuitive
-   finding (passes partial correlation) is kept and flagged for review.
+4. **Direction expectations are now a safety gate (UPDATED).** A
+   counterintuitive direction DOES suppress the finding (`is_active = False`).
+   This was changed from "advisory only" after Phase 1 delivery revealed
+   that ATL is too coarse a confounder for acute-stress relationships
+   (see Post-Delivery Correction). This gate will be relaxed only after
+   the confounder map is corrected to use daily session stress instead
+   of rolling ATL.
 
 5. **No changes to the Progress page.** The page reads `is_active = True`
    findings. Fixing the engine fixes the page automatically.
@@ -321,8 +326,8 @@ This requires:
 6. Direction expectations: (stress_1_5, completion) → "negative"
 7. Finding with |partial_r| < 0.3 after confounder control → is_confounded = True, is_active = False
 8. Finding with |partial_r| >= 0.3 after confounder control → is_confounded = False, is_active = True
-9. Counterintuitive direction + confounded → is_active = False
-10. Counterintuitive direction + NOT confounded → is_active = True, direction_counterintuitive = True
+9. Counterintuitive direction → is_active = False (regardless of confounder result)
+10. ~~Counterintuitive direction + NOT confounded → is_active = True~~ REMOVED — see Post-Delivery Correction
 11. Finding NOT in confounder map → uses bivariate r, no partial_r stored
 12. Existing finding updated with new fields on re-run (upsert preserves times_confirmed)
 13. `get_surfaceable_findings()` excludes confounded findings
@@ -373,8 +378,9 @@ problems = db.query(CorrelationFinding).filter(
     CorrelationFinding.output_metric == 'efficiency',
 ).all()
 for f in problems:
-    print(f'{f.input_name} → {f.output_metric}: active={f.is_active}, confounded={f.is_confounded}, partial_r={f.partial_correlation_coefficient}')
-    assert not f.is_active or not f.is_confounded, f'FAIL: {f.input_name} still active despite being confounded'
+    print(f'{f.input_name} → {f.output_metric}: active={f.is_active}, confounded={f.is_confounded}, counterintuitive={f.direction_counterintuitive}, partial_r={f.partial_correlation_coefficient}')
+    assert not f.is_active, f'FAIL: {f.input_name} still active despite being counterintuitive'
+    assert f.direction_counterintuitive, f'FAIL: {f.input_name} not flagged as counterintuitive'
 print('PASS: problematic findings suppressed')
 db.close()
 "
@@ -404,10 +410,83 @@ print('PASS: only valid findings displayed')
 2. **Files changed table** — file + one-line description
 3. **Test output** — full pytest output, 0 failures, including new + existing tests
 4. **Production smoke check output** — paste results of all 4 checks above
-5. **Before/after evidence** — show the two problematic findings changing from
-   `is_active=True` to `is_active=False, is_confounded=True`
-6. **Progress page screenshot** — show the page no longer displays misleading findings
-7. **AC checklist** — every test requirement marked with evidence
+5. **Before/after table** for the flagged findings showing all fields:
+   - bivariate r, partial r, direction_expected, direction_counterintuitive, is_active
+6. **Proof that direction-counterintuitive findings no longer surface on Progress page**
+   (curl output or screenshot showing the Correlation Web without the bad edges)
+7. **Confirmation that suppression is documented as a safety gate** — the builder
+   note's Post-Delivery Correction section must be referenced, not just the code
+8. **AC checklist** — every test requirement marked with evidence
+
+---
+
+## Post-Delivery Correction (March 3, 2026)
+
+### What happened
+
+Phase 1 was delivered correctly. Partial correlation with ATL as the
+confounder was implemented. But the two problematic findings survived:
+
+| Finding | Bivariate r | Partial r (controlling ATL) | Outcome |
+|---------|-------------|---------------------------|---------|
+| motivation_1_5 → efficiency (lag 3d) | negative | -0.5679 | Survived — still above 0.3 |
+| tsb → efficiency (lag 5d) | negative | -0.3462 | Survived — still above 0.3 |
+
+Both remained `is_active = True` because the original contract said
+"direction_counterintuitive alone doesn't suppress."
+
+### Why ATL is the wrong confounder for these pairs
+
+ATL is a 7-day exponentially weighted moving average. It captures
+cumulative load, not the acute stress of a specific workout. The causal
+chain is:
+
+```
+high motivation → hard workout on THAT DAY → acute session stress
+    → recovery 3 days later → efficiency dip
+```
+
+ATL barely moves from a single hard session because it's a rolling
+average. The actual confounder is the **daily session stress** (daily
+TSS, or distance × intensity for that specific day). ATL smooths over
+the spike that causes the recovery dip.
+
+TSB as an input is worse — TSB = CTL - ATL. Partialing out ATL from a
+TSB-derived metric is mathematically circular.
+
+### Corrections applied
+
+1. **Suppression rule changed:** `direction_counterintuitive = True` now
+   sets `is_active = False` regardless of partial r. This is a temporary
+   safety gate to protect athlete trust while the confounder methodology
+   is corrected.
+
+2. **Confounder map to be refined:** For acute-stress relationships
+   (motivation, enjoyment, confidence, soreness, RPE → efficiency/pace),
+   the confounder should be **daily session stress** (daily TSS or daily
+   distance × avg HR), not rolling ATL. This requires:
+   - A new aggregation function: `aggregate_daily_session_stress()`
+   - Updated CONFOUNDER_MAP entries for acute-stress pairs
+   - Re-computation of partial correlations with the corrected confounder
+   - If findings now drop below threshold with the right confounder,
+     the direction-only safety gate can be relaxed for those pairs
+
+3. **TSB pairs:** Do not use ATL as confounder for TSB→anything. TSB is
+   derived from ATL/CTL. Either use a non-derived confounder or accept
+   that TSB correlations require a different methodology (e.g., stratified
+   analysis by training phase).
+
+### When to relax the safety gate
+
+The `direction_counterintuitive → is_active = False` rule should be
+relaxed ONLY when:
+1. Daily session stress is implemented as a confounder
+2. The problematic findings are re-tested with the corrected confounder
+3. If they drop below threshold with the correct confounder, the gate
+   was correctly protecting the athlete
+4. If they survive even with daily TSS, the relationship is genuinely
+   counterintuitive and requires physiological interpretation before
+   surfacing
 
 ---
 
