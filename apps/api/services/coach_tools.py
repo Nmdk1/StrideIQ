@@ -98,6 +98,37 @@ def _fmt_mmss(total_seconds: int) -> str:
     return f"{m}:{s:02d}"
 
 
+def _relative_date(target: date, reference: Optional[date] = None) -> str:
+    """Pre-compute a human-readable relative time string.
+
+    Past dates  → "(today)", "(yesterday)", "(3 days ago)", "(2 weeks ago)"
+    Future dates → "(tomorrow)", "(in 3 days)", "(in 2 weeks)"
+
+    Every date entering an LLM prompt MUST use this — the LLM must never
+    compute relative time itself (it gets it wrong).
+    """
+    ref = reference or date.today()
+    delta = (ref - target).days
+
+    if delta == 0:
+        return "(today)"
+    elif delta == 1:
+        return "(yesterday)"
+    elif delta == -1:
+        return "(tomorrow)"
+    elif delta < 0:
+        future = abs(delta)
+        if future <= 13:
+            return f"(in {future} days)"
+        weeks = future // 7
+        return f"(in {weeks} week{'s' if weeks != 1 else ''})"
+    elif delta <= 13:
+        return f"({delta} days ago)"
+    else:
+        weeks = delta // 7
+        return f"({weeks} week{'s' if weeks != 1 else ''} ago)"
+
+
 def _preferred_units(db: Session, athlete_id: UUID) -> str:
     athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
     units = (athlete.preferred_units if athlete else None) or "metric"
@@ -201,14 +232,14 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
             parts.append(f"({a.weather_condition})")
         value_str = " ".join(parts) if parts else "run"
 
+        _run_rel = _relative_date(a.start_time.date()) if a.start_time else ""
         evidence.append(
             {
                 "type": "activity",
                 "id": str(a.id),
                 "ref": str(a.id)[:8],
-                "date": date_str,
+                "date": f"{date_str} {_run_rel}",
                 "value": value_str,
-                # Back-compat keys (internal use in earlier phases)
                 "activity_id": str(a.id),
                 "start_time": _iso(a.start_time),
             }
@@ -236,8 +267,12 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
         l_dist = latest.get("distance_mi") if units == "imperial" else latest.get("distance_km")
         l_unit = "mi" if units == "imperial" else "km"
         l_pace = latest.get("pace_per_mile") if units == "imperial" else latest.get("pace_per_km")
+        try:
+            _relative = " " + _relative_date(date.fromisoformat(l_date))
+        except (ValueError, TypeError):
+            _relative = ""
         rr_parts.append(
-            f"Most recent: {l_name} on {l_date}, "
+            f"Most recent: {l_name} on {l_date}{_relative}, "
             f"{l_dist:.1f} {l_unit} @ {l_pace or 'N/A'}."
         )
     narrative = " ".join(rr_parts)
@@ -437,7 +472,8 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
         )
 
     # --- Narrative ---
-    cd_parts: List[str] = [f"Calendar day {day_date.isoformat()} ({weekday_name}):"]
+    _cd_rel = _relative_date(day_date)
+    cd_parts: List[str] = [f"Calendar day {day_date.isoformat()} ({weekday_name}) {_cd_rel}:"]
     if planned_data:
         status = "completed" if planned_data.get("completed") else ("skipped" if planned_data.get("skipped") else "not yet completed")
         cd_parts.append(
@@ -673,10 +709,11 @@ def get_plan_week(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     evidence: List[Dict[str, Any]] = []
 
     for w in workouts:
+        _w_rel = _relative_date(w.scheduled_date, today)
         workout_rows.append(
             {
                 "planned_workout_id": str(w.id),
-                "scheduled_date": w.scheduled_date.isoformat(),
+                "scheduled_date": f"{w.scheduled_date.isoformat()} {_w_rel}",
                 "title": w.title,
                 "workout_type": w.workout_type,
                 "workout_subtype": w.workout_subtype,
@@ -692,11 +729,10 @@ def get_plan_week(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             {
                 "type": "planned_workout",
                 "id": str(w.id),
-                "date": w.scheduled_date.isoformat(),
+                "date": f"{w.scheduled_date.isoformat()} {_w_rel}",
                 "value": f"{w.title} ({w.workout_type})",
-                # Back-compat keys
                 "planned_workout_id": str(w.id),
-                "scheduled_date": w.scheduled_date.isoformat(),
+                "scheduled_date": f"{w.scheduled_date.isoformat()} {_w_rel}",
             }
         )
 
@@ -1145,8 +1181,9 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 if t:
                     pred_parts.append(f"{label_key}: {t}")
         pred_summary = ", ".join(pred_parts) if pred_parts else "No predictions available"
+        _race_rel = _relative_date(race_date)
         narrative = (
-            f"Race predictions (target date {race_date.isoformat()}): {pred_summary}. "
+            f"Race predictions (target date {race_date.isoformat()} {_race_rel}): {pred_summary}. "
             f"These are model-derived estimates — use compute_running_math for exact pace/time calculations."
         )
 
@@ -1441,14 +1478,19 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             })
 
         # --- Narrative ---
+        _today = date.today()
         pb_narr_parts: List[str] = [f"{len(pb_details)} personal best(s) in the last year."]
         for pbd in pb_details[:3]:
             cat = pbd.get("category", "?")
             t_min = pbd.get("time_min")
             t_str = f"{t_min:.1f} min" if t_min else "?"
             pb_date_str = pbd.get("date", "?")
+            try:
+                _pb_narr_rel = _relative_date(date.fromisoformat(pb_date_str), _today)
+            except (ValueError, TypeError):
+                _pb_narr_rel = ""
             tsb_str = f"TSB was {pbd['tsb_day_before']}" if pbd.get("tsb_day_before") is not None else "TSB unknown"
-            pb_narr_parts.append(f"{cat} PR on {pb_date_str}: {t_str} ({tsb_str}).")
+            pb_narr_parts.append(f"{cat} PR on {pb_date_str} {_pb_narr_rel}: {t_str} ({tsb_str}).")
         if summary.get("tsb_mean") is not None:
             pb_narr_parts.append(f"Average TSB before PRs: {summary['tsb_mean']}.")
         pb_narrative = " ".join(pb_narr_parts)
@@ -1810,8 +1852,12 @@ def get_weekly_volume(db: Session, athlete_id: UUID, weeks: int = 12) -> Dict[st
                 f"DO NOT treat this as a full week."
             )
         if last_full:
+            try:
+                _lf_rel = _relative_date(date.fromisoformat(last_full['week_start']), today)
+            except (ValueError, TypeError):
+                _lf_rel = ""
             lines.append(
-                f"Last full week ({last_full['week_start']}): "
+                f"Last full week ({last_full['week_start']} {_lf_rel}): "
                 f"{last_full[dist_key]:.1f} {unit_label} across {last_full['run_count']} runs."
             )
 
@@ -1922,10 +1968,11 @@ def get_best_runs(
             speed_mps = (distance_m / duration_s) if duration_s > 0 else None
             eff = (speed_mps / float(a.avg_hr)) if (speed_mps and a.avg_hr) else None
 
+            _br_rel = _relative_date(a.start_time.date())
             rows.append(
                 {
                     "activity_id": str(a.id),
-                    "date": a.start_time.date().isoformat(),
+                    "date": f"{a.start_time.date().isoformat()} {_br_rel}",
                     "name": (a.name or "").strip() or "Run",
                     "distance_km": round(distance_m / 1000.0, 2),
                     "distance_mi": round(distance_m / _M_PER_MI, 2),
@@ -2222,7 +2269,7 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
         resting_hr_values = [int(c.resting_hr) for c in checkins if c.resting_hr is not None]
         enjoyment_values = [int(c.enjoyment_1_5) for c in checkins if c.enjoyment_1_5 is not None]
         confidence_values = [int(c.confidence_1_5) for c in checkins if c.confidence_1_5 is not None]
-        motivation_values = [int(c.motivation_1_5) for c in checkins if c.motivation_1_5 is not None]
+        readiness_values = [int(c.readiness_1_5) for c in checkins if c.readiness_1_5 is not None]
 
         # Aggregate Garmin Health API biometrics (device-measured, higher fidelity than self-report).
         # Be defensive: unit tests and mixed/malformed rows can contain mock/non-numeric values.
@@ -2300,9 +2347,10 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
             if c.resting_hr:
                 parts.append(f"RHR:{c.resting_hr}")
 
+            _today = date.today()
             evidence.append({
                 "type": "wellness",
-                "date": c.date.isoformat(),
+                "date": f"{c.date.isoformat()} {_relative_date(c.date, _today)}",
                 "value": " | ".join(parts) if parts else "check-in recorded",
             })
 
@@ -2310,9 +2358,11 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
         # Lead with most recent self-report entry for temporal anchoring.
         # Guard: if no checkins (only Garmin data), skip this block.
         most_recent_line = ""
+        _today = date.today()
         if checkins:
             most_recent = checkins[0]
-            recent_parts: List[str] = [f"Most recent self-report ({most_recent.date.isoformat()}):"]
+            _mr_rel = _relative_date(most_recent.date, _today)
+            recent_parts: List[str] = [f"Most recent self-report ({most_recent.date.isoformat()} {_mr_rel}):"]
             if most_recent.sleep_h is not None:
                 recent_parts.append(f"sleep={float(most_recent.sleep_h):.1f}h")
             if most_recent.stress_1_5 is not None:
@@ -2419,7 +2469,7 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
                 "mindset": {
                     "avg_enjoyment": avg(enjoyment_values),
                     "avg_confidence": avg(confidence_values),
-                    "avg_motivation": avg(motivation_values),
+                    "avg_readiness": avg(readiness_values),
                     "note": "All scales 1-5, higher is better",
                 },
             },
@@ -3443,7 +3493,9 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
         return _cached
 
     today = date.today()
-    sections: List[str] = []
+    sections: List[str] = [
+        f"## Date Context\nToday is {today.isoformat()} ({today.strftime('%A')}). All dates below are absolute — compute relative time from today when speaking to the athlete."
+    ]
 
     # ── 1. IDENTITY ──────────────────────────────────────────────────
     try:
@@ -3566,7 +3618,11 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
                             lines.append(f"Trend: {direction} {abs(pct_change):.0f}% over {len(recent)} weeks")
                     # Peak volume
                     peak = max(completed_weeks, key=lambda x: x[1])
-                    lines.append(f"Peak week: {peak[1]:.1f}mi (week of {peak[0]})")
+                    try:
+                        _peak_rel = _relative_date(date.fromisoformat(peak[0]), today)
+                    except (ValueError, TypeError):
+                        _peak_rel = ""
+                    lines.append(f"Peak week: {peak[1]:.1f}mi (week of {peak[0]}) {_peak_rel}")
                     if last_val > 0 and peak[1] > 0:
                         pct_of_peak = (last_val / peak[1]) * 100
                         lines.append(f"Current vs peak: {pct_of_peak:.0f}%")
@@ -3592,7 +3648,11 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
                     pace = run.get("pace_per_mile", "N/A")
                     hr = run.get("avg_hr", "")
                     hr_str = f" | HR {hr}" if hr else ""
-                    lines.append(f"  {run_date}: {name} — {dist:.1f}mi @ {pace}{hr_str}")
+                    try:
+                        _run_rel = " " + _relative_date(date.fromisoformat(run_date), today)
+                    except (ValueError, TypeError):
+                        _run_rel = ""
+                    lines.append(f"  {run_date}{_run_rel}: {name} — {dist:.1f}mi @ {pace}{hr_str}")
                 sections.append("## Recent Runs\n" + "\n".join(lines))
     except Exception as e:
         logger.debug(f"Brief: recent runs failed: {e}")
@@ -3643,8 +3703,12 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
                     dist_km = pb.get("distance_km", "")
                     time_min = pb.get("time_min", "")
                     pb_date = (pb.get("date") or "")[:10]
+                    try:
+                        _pb_rel = _relative_date(date.fromisoformat(pb_date), today)
+                    except (ValueError, TypeError):
+                        _pb_rel = ""
                     if dist_km and time_min:
-                        lines.append(f"  {cat}: {time_min:.1f}min / {dist_km:.1f}km ({pb_date})")
+                        lines.append(f"  {cat}: {time_min:.1f}min / {dist_km:.1f}km ({pb_date} {_pb_rel})")
                 if lines:
                     sections.append("## Personal Bests\n" + "\n".join(lines))
     except Exception as e:
@@ -3707,7 +3771,11 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
             if d.get("weekly_mileage_target"):
                 lines.append(f"Weekly mileage target: {d['weekly_mileage_target']}")
             if d.get("next_event_date"):
-                lines.append(f"Next event: {d['next_event_date']} ({d.get('next_event_type', '')})")
+                try:
+                    _evt_rel = _relative_date(date.fromisoformat(str(d['next_event_date'])[:10]), today)
+                except (ValueError, TypeError):
+                    _evt_rel = ""
+                lines.append(f"Next event: {d['next_event_date']} {_evt_rel} ({d.get('next_event_type', '')})")
             if lines:
                 sections.append("## Athlete Intent\n" + "\n".join(lines))
     except Exception as e:
@@ -3722,12 +3790,17 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
             .first()
         )
         if checkin:
-            lines = [f"Date: {checkin.date}"]
+            try:
+                _ci_date = checkin.date if isinstance(checkin.date, date) else date.fromisoformat(str(checkin.date)[:10])
+                _ci_rel = _relative_date(_ci_date, today)
+            except (ValueError, TypeError):
+                _ci_rel = ""
+            lines = [f"Date: {checkin.date} {_ci_rel}"]
             if checkin.sleep_h is not None:
                 lines.append(f"Sleep: {checkin.sleep_h}h")
-            if checkin.motivation_1_5 is not None:
-                motivation_map = {5: 'Great', 4: 'Fine', 2: 'Tired', 1: 'Rough'}
-                lines.append(f"Feeling: {motivation_map.get(checkin.motivation_1_5, checkin.motivation_1_5)}")
+            if checkin.readiness_1_5 is not None:
+                readiness_map = {5: 'High', 4: 'Good', 3: 'Neutral', 2: 'Low', 1: 'Poor'}
+                lines.append(f"Readiness: {readiness_map.get(checkin.readiness_1_5, checkin.readiness_1_5)}")
             if checkin.soreness_1_5 is not None:
                 soreness_map = {1: 'None', 2: 'Mild', 4: 'Yes'}
                 lines.append(f"Soreness: {soreness_map.get(checkin.soreness_1_5, checkin.soreness_1_5)}/5")

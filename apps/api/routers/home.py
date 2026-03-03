@@ -128,7 +128,7 @@ class StravaStatusDetail(BaseModel):
 
 class TodayCheckin(BaseModel):
     """Today's check-in summary (shown after athlete checks in)."""
-    motivation_label: Optional[str] = None
+    readiness_label: Optional[str] = None
     sleep_label: Optional[str] = None
     sleep_h: Optional[float] = None  # Numeric sleep hours for LLM grounding
     soreness_label: Optional[str] = None
@@ -543,6 +543,46 @@ _SLEEP_CONTEXT_KEYWORDS = {"sleep", "slept", "overnight", "last night"}
 _SLEEP_MAX_H = 14.0   # upper bound for a plausible sleep value (vs workout minutes)
 _SLEEP_TOLERANCE_H = 0.5  # slider rounding + sync lag allowance
 
+_FINDING_COOLDOWN_TTL = 72 * 3600  # 72 hours
+
+
+def _is_finding_in_cooldown(
+    athlete_id: str,
+    input_name: str,
+    output_metric: str,
+) -> bool:
+    """Check if a correlation finding is in cooldown (surfaced within 72h)."""
+    try:
+        import redis as _r
+        import os
+        client = _r.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        key = f"finding_surfaced:{athlete_id}:{input_name}:{output_metric}"
+        return client.get(key) is not None
+    except Exception:
+        return False  # Fail open
+
+
+def _set_finding_cooldowns(
+    athlete_id: str,
+    briefing_text: str,
+    injected_findings: list,
+):
+    """After briefing generation, set cooldown keys for surfaced findings."""
+    try:
+        import redis as _r
+        import os
+        client = _r.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        combined = briefing_text.lower()
+        for finding in injected_findings:
+            input_name = finding.get("input_name", "")
+            output_metric = finding.get("output_metric", "")
+            readable = input_name.replace("_1_5", "").replace("_", " ")
+            if readable and readable in combined:
+                key = f"finding_surfaced:{athlete_id}:{input_name}:{output_metric}"
+                client.setex(key, _FINDING_COOLDOWN_TTL, "1")
+    except Exception:
+        pass  # Fail open
+
 
 def _build_checkin_data_dict(checkin) -> dict:
     """
@@ -550,7 +590,7 @@ def _build_checkin_data_dict(checkin) -> dict:
     Centralised so request path and worker path stay in sync.
     Includes numeric sleep_h for LLM grounding (not just the label).
     """
-    motivation_map = {5: "Great", 4: "Fine", 2: "Tired", 1: "Rough"}
+    readiness_map = {5: "High", 4: "Good", 3: "Neutral", 2: "Low", 1: "Poor"}
     sleep_quality_map = {5: "Great", 4: "Good", 3: "OK", 2: "Poor", 1: "Awful"}
     sleep_legacy_map = {8: "Great", 7: "OK", 5: "Poor"}
     soreness_map = {1: "None", 2: "Mild", 4: "Yes"}
@@ -566,8 +606,8 @@ def _build_checkin_data_dict(checkin) -> dict:
     sleep_h_val = float(checkin.sleep_h) if checkin.sleep_h is not None else None
 
     return {
-        "motivation_label": motivation_map.get(
-            int(checkin.motivation_1_5) if checkin.motivation_1_5 is not None else -1
+        "readiness_label": readiness_map.get(
+            int(checkin.readiness_1_5) if checkin.readiness_1_5 is not None else -1
         ),
         "sleep_label": sleep_label,
         "sleep_h": sleep_h_val,
@@ -767,6 +807,63 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
     return {"valid": True}
 
 
+def validate_relative_time_claims(
+    text: str,
+    recent_run_dates: List[date],
+) -> dict:
+    """
+    Catch obviously wrong relative-time claims in LLM output.
+
+    Scans text for phrases like "two weeks ago", "a month ago", etc.
+    and cross-references against the most recent activity dates.
+    If the most recent run was within 7 days but the text says
+    "weeks ago" or "month ago", the claim is invalid.
+
+    Returns {"valid": True} or {"valid": False, "reason": ...}.
+    """
+    import re
+
+    if not text or not recent_run_dates:
+        return {"valid": True}
+
+    lower = text.lower()
+    today = date.today()
+
+    most_recent = max(recent_run_dates)
+    days_since_most_recent = (today - most_recent).days
+
+    weeks_phrases = [
+        r"\btwo weeks?\b", r"\bthree weeks?\b", r"\bfour weeks?\b",
+        r"\bseveral weeks?\b", r"\ba few weeks?\b", r"\bweeks? ago\b",
+    ]
+    months_phrases = [
+        r"\ba month ago\b", r"\bmonths? ago\b", r"\blast month\b",
+    ]
+
+    if days_since_most_recent <= 7:
+        for pattern in weeks_phrases + months_phrases:
+            if re.search(pattern, lower):
+                return {
+                    "valid": False,
+                    "reason": (
+                        f"relative_time:claimed_weeks_or_months_but_most_recent_run_was"
+                        f"_{days_since_most_recent}_days_ago"
+                    ),
+                }
+
+    if days_since_most_recent <= 3:
+        if re.search(r"\blast week\b", lower):
+            return {
+                "valid": False,
+                "reason": (
+                    f"relative_time:claimed_last_week_but_most_recent_run_was"
+                    f"_{days_since_most_recent}_days_ago"
+                ),
+            }
+
+    return {"valid": True}
+
+
 def _looks_like_action(text: Optional[str]) -> bool:
     if not text:
         return False
@@ -842,8 +939,11 @@ def _call_opus_briefing_sync(
         for k, v in schema_fields.items()
     )
 
+    _today = date.today()
     system_prompt = (
-        "You are an elite running coach generating a structured home page briefing. "
+        f"You are an elite running coach generating a structured home page briefing. "
+        f"Today is {_today.isoformat()} ({_today.strftime('%A')}). "
+        "All dates include pre-computed relative times like '(2 days ago)'. USE those labels — do NOT compute your own. "
         "Respond with ONLY a valid JSON object — no markdown, no code fences, no explanation. "
         "The JSON must contain these fields:\n"
         f"{field_descriptions}\n\n"
@@ -1048,6 +1148,33 @@ def _fetch_llm_briefing_sync(
             logger.warning(f"workout_why failed validation ({why_check.get('reason')}); using fallback")
             result["workout_why"] = None
 
+    # --- Post-generation validator: relative-time claims ---
+    # Extract run dates from the prompt (athlete brief uses "YYYY-MM-DD:" format)
+    # and validate all text fields for obviously wrong time references.
+    import re as _re_time
+    _run_date_matches = _re_time.findall(r"(\d{4}-\d{2}-\d{2}):", prompt)
+    if _run_date_matches:
+        try:
+            _recent_dates = [date.fromisoformat(d) for d in _run_date_matches]
+            _text_fields = ["morning_voice", "coach_noticed", "race_assessment",
+                           "today_context", "week_assessment", "checkin_reaction"]
+            for _field_name in _text_fields:
+                _field_text = result.get(_field_name)
+                if not _field_text:
+                    continue
+                _time_check = validate_relative_time_claims(_field_text, _recent_dates)
+                if not _time_check["valid"]:
+                    logger.warning(
+                        "Briefing field '%s' has wrong relative-time claim (%s); clearing",
+                        _field_name, _time_check.get("reason"),
+                    )
+                    if _field_name == "morning_voice":
+                        result[_field_name] = _VOICE_FALLBACK
+                    else:
+                        result[_field_name] = None
+        except Exception as _e:
+            logger.debug("Relative-time validation failed (non-blocking): %s", _e)
+
     # Cache for 30 minutes
     try:
         import redis as _redis
@@ -1162,21 +1289,10 @@ def generate_coach_home_briefing(
 
     # Build the prompt
     # --- Insight rotation: suppress recently-surfaced coach_noticed insight for 48h ---
-    # Prevents the same EFFICIENCY_BREAK (or any persistent rule) from dominating
-    # coach_noticed indefinitely. The last-shown insight text is stored in Redis
-    # with 49h TTL; if present, the LLM is instructed to surface a different angle.
-    _last_coach_noticed: Optional[str] = None
-    try:
-        import redis as _redis_rot   # fresh alias — avoids UnboundLocalError from existing local imports
-        import os as _os
-        _r = _redis_rot.from_url(_os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
-        _last_coach_noticed = _r.get(f"coach_noticed_last:{athlete_id}")
-    except Exception:
-        pass  # Redis unavailable — skip rotation, not worth failing the build
-
     parts = [
-        "You are an elite running coach speaking directly to your athlete about TODAY.",
+        f"You are an elite running coach speaking directly to your athlete about TODAY ({date.today().isoformat()}, {date.today().strftime('%A')}).",
         "You have their full training profile below. Use it. Be specific, direct, insightful.",
+        "CRITICAL: All dates below include pre-computed relative times like '(2 days ago)' or '(yesterday)'. USE those labels verbatim — do NOT compute your own relative time. NEVER say 'two weeks ago' unless the data says '(2 weeks ago)'.",
         "Reference their actual numbers. Sound like a real coach, not a dashboard.",
         "CRITICAL: Only reference data explicitly provided. Do NOT invent or assume anything.",
         "1-2 sentences per field max.",
@@ -1258,7 +1374,7 @@ def generate_coach_home_briefing(
         soreness_label = checkin_data.get("soreness_label")
         soreness_str = soreness_label if soreness_label else "not reported today — do NOT claim any soreness"
         parts.append(
-            f"Check-in: Feeling {checkin_data.get('motivation_label', '?')}, "
+            f"Check-in: Readiness {checkin_data.get('readiness_label', '?')}, "
             f"Sleep {checkin_data.get('sleep_label', '?')}, "
             f"Soreness {soreness_str}"
         )
@@ -1319,15 +1435,14 @@ def generate_coach_home_briefing(
     except Exception:
         pass  # Non-blocking
 
-    # Rotation constraint: if the same coach_noticed insight was shown within 48h,
-    # instruct the LLM to surface a different angle.
-    if _last_coach_noticed:
-        parts.append(
-            f"\nROTATION CONSTRAINT: The following coach_noticed insight was already shown to "
-            f"this athlete in the last 48 hours. Do NOT repeat it or rephrase it as your primary "
-            f"coach_noticed today. Choose a DIFFERENT signal, pattern, or angle from the data:\n"
-            f'"{_last_coach_noticed[:200]}"'
-        )
+    parts.append(
+        "\nONE-NEW-THING RULE: Your briefing should contain exactly ONE observation "
+        "the athlete didn't know yesterday — one genuinely new piece of "
+        "information, finding, or pattern. Not four insights. Not three "
+        "correlation findings. Not two ways of saying the same thing. One true, "
+        "useful, new thing — then practical guidance for today. If you don't "
+        "have anything new, just coach today's session. Don't fill space."
+    )
 
     prompt = "\n".join(parts)
 
@@ -1363,7 +1478,7 @@ def compute_coach_noticed(
     3. Top insight feed card summary
     4. Hero narrative fallback
     """
-    # 1. Strong correlation
+    # 1. Strong correlation (skip findings in cooldown)
     try:
         from services.correlation_engine import analyze_correlations
         result = analyze_correlations(athlete_id, days=60, db=db)
@@ -1374,6 +1489,9 @@ def compute_coach_noticed(
             n = corr.get("sample_size", 0)
             if abs(r) >= 0.5 and n >= 15:
                 input_name = corr.get("input_name", "factor")
+                output_metric = corr.get("output_metric", "efficiency")
+                if _is_finding_in_cooldown(athlete_id, input_name, output_metric):
+                    continue
                 direction = "positively" if r > 0 else "negatively"
                 lag_days = int(corr.get("time_lag_days", 0) or 0)
                 if lag_days == 0:
@@ -1458,19 +1576,27 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
 
     sections: list[str] = []
 
-    # 1. N=1 personal patterns — crown jewels
+    # 1. N=1 personal patterns — crown jewels (skip cooled-down findings)
     try:
         from services.n1_insight_generator import generate_n1_insights
         n1_insights = generate_n1_insights(athlete_uuid, db, max_insights=5)
         if n1_insights:
-            lines = [
-                f"- {ins.text} (confidence: {ins.confidence:.2f})"
-                for ins in n1_insights
-            ]
-            sections.append(
-                "--- Personal Patterns (N=1, statistically validated) ---\n"
-                + "\n".join(lines)
-            )
+            filtered = []
+            for ins in n1_insights:
+                inp = ins.evidence.get("input_name", "")
+                out = ins.evidence.get("output_metric", "efficiency")
+                if inp and _is_finding_in_cooldown(athlete_id, inp, out):
+                    continue
+                filtered.append(ins)
+            if filtered:
+                lines = [
+                    f"- {ins.text} (confidence: {ins.confidence:.2f})"
+                    for ins in filtered
+                ]
+                sections.append(
+                    "--- Personal Patterns (N=1, statistically validated) ---\n"
+                    + "\n".join(lines)
+                )
     except Exception as e:
         logger.warning(f"N=1 insights failed for home briefing ({athlete_id}): {e}")
 
@@ -2143,7 +2269,7 @@ async def get_home_data(
         if existing_checkin is not None:
             _cd = _build_checkin_data_dict(existing_checkin)
             today_checkin = TodayCheckin(
-                motivation_label=_cd["motivation_label"],
+                readiness_label=_cd["readiness_label"],
                 sleep_label=_cd["sleep_label"],
                 sleep_h=_cd["sleep_h"],
                 soreness_label=_cd["soreness_label"],
@@ -2242,7 +2368,7 @@ async def get_home_data(
                 checkin_data_dict = None
                 if today_checkin:
                     checkin_data_dict = {
-                        "motivation_label": today_checkin.motivation_label,
+                        "readiness_label": today_checkin.readiness_label,
                         "sleep_label": today_checkin.sleep_label,
                         "sleep_h": today_checkin.sleep_h,
                         "soreness_label": today_checkin.soreness_label,
