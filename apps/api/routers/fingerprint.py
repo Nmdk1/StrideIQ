@@ -40,15 +40,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/fingerprint", tags=["Fingerprint"])
 
 
-def _format_pace(distance_m: float, duration_s: int) -> str:
-    """Format pace as min:ss/km."""
+def _format_pace(distance_m: float, duration_s: int, units: str = "imperial") -> str:
+    """Format pace as min:ss/mi (imperial) or min:ss/km (metric)."""
     if not distance_m or not duration_s or distance_m <= 0:
         return "—"
-    km = distance_m / 1000
-    sec_per_km = duration_s / km
-    mins = int(sec_per_km // 60)
-    secs = int(sec_per_km % 60)
-    return f"{mins}:{secs:02d}/km"
+    if units == "metric":
+        divisor = distance_m / 1000
+        label = "/km"
+    else:
+        divisor = distance_m / 1609.34
+        label = "/mi"
+    sec_per_unit = duration_s / divisor
+    mins = int(sec_per_unit // 60)
+    secs = int(sec_per_unit % 60)
+    return f"{mins}:{secs:02d}{label}"
 
 
 def _format_duration(seconds: int) -> str:
@@ -63,7 +68,11 @@ def _format_duration(seconds: int) -> str:
     return f"{m}:{s:02d}"
 
 
-def _activity_to_card(act: Activity, event: Optional[PerformanceEvent] = None) -> RaceCard:
+def _activity_to_card(
+    act: Activity,
+    event: Optional[PerformanceEvent] = None,
+    units: str = "imperial",
+) -> RaceCard:
     dist_m = float(act.distance_m) if act.distance_m else 0
     from services.personal_best import get_distance_category
     dist_cat = get_distance_category(dist_m) or "unknown"
@@ -87,7 +96,7 @@ def _activity_to_card(act: Activity, event: Optional[PerformanceEvent] = None) -
         day_of_week=day_of_week,
         distance_category=dist_cat,
         distance_meters=int(dist_m),
-        pace_display=_format_pace(dist_m, act.duration_s),
+        pace_display=_format_pace(dist_m, act.duration_s, units),
         duration_display=_format_duration(act.duration_s),
         avg_hr=act.avg_hr,
         detection_confidence=event.detection_confidence if event else None,
@@ -174,7 +183,7 @@ async def get_race_candidates(
     candidates = []
 
     for ev, act in rows:
-        card = _activity_to_card(act, ev)
+        card = _activity_to_card(act, ev, units=current_user.preferred_units or "imperial")
 
         if ev.user_confirmed is True or (ev.detection_confidence and ev.detection_confidence >= 0.7) or ev.detection_source in ('strava_tag', 'user_verified'):
             confirmed.append(card)
@@ -252,7 +261,8 @@ async def browse_activities(
         (Activity.duration_s / Activity.distance_m).asc()
     ).offset(offset).limit(limit).all()
 
-    items = [_activity_to_card(act) for act in activities]
+    units = current_user.preferred_units or "imperial"
+    items = [_activity_to_card(act, units=units) for act in activities]
 
     return BrowseResponse(items=items, total=total, offset=offset, limit=limit)
 

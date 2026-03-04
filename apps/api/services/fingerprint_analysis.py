@@ -249,12 +249,17 @@ def _std(values: List[float]) -> float:
     return math.sqrt(sum((x - m) ** 2 for x in values) / (len(values) - 1))
 
 
-def _format_pace(sec_per_mile: float) -> str:
-    """Format pace as min:ss/km for athlete-facing text."""
-    sec_per_km = sec_per_mile / 1.60934
-    mins = int(sec_per_km // 60)
-    secs = int(sec_per_km % 60)
-    return f"{mins}:{secs:02d}/km"
+def _format_pace(sec_per_mile: float, units: str = "imperial") -> str:
+    """Format pace as min:ss/mi (imperial) or min:ss/km (metric)."""
+    if units == "metric":
+        sec_per_unit = sec_per_mile / 1.60934
+        label = "/km"
+    else:
+        sec_per_unit = sec_per_mile
+        label = "/mi"
+    mins = int(sec_per_unit // 60)
+    secs = int(sec_per_unit % 60)
+    return f"{mins}:{secs:02d}{label}"
 
 
 # ═══════════════════════════════════════════════════════
