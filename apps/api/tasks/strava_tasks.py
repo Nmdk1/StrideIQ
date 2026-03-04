@@ -159,7 +159,8 @@ def _calculate_performance_metrics(activity, athlete, db):
             avg_hr=activity.avg_hr,
             splits=splits_data,
             distance_meters=float(activity.distance_m) if activity.distance_m else 0,
-            duration_seconds=activity.duration_s
+            duration_seconds=activity.duration_s,
+            activity_name=activity.name,
         )
 
         if confidence > 0:
@@ -831,6 +832,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 temperature_f=temp_f,
                 provider=provider,
                 external_activity_id=external_activity_id,
+                strava_workout_type_raw=a.get("workout_type"),
                 is_race_candidate=bool(a.get("workout_type") == 3),
                 race_confidence=None,
                 user_verified_race=False,

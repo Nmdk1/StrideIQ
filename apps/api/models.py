@@ -418,6 +418,7 @@ class Activity(Base):
     # --- INGESTION CONTRACT COLUMNS ---
     provider = Column(Text, index=True)
     external_activity_id = Column(Text, index=True)
+    strava_workout_type_raw = Column(Integer, nullable=True)
     is_race_candidate = Column(Boolean, default=False)
     race_confidence = Column(Float, nullable=True)
     user_verified_race = Column(Boolean, nullable=True)

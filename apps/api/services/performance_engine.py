@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Tuple, List, Dict
 from decimal import Decimal
 import math
+import re
 
 
 def _now_utc() -> datetime:
@@ -413,78 +414,85 @@ def calculate_consistency_index(
 # RACE DETECTION (Existing Implementation)
 # ============================================================================
 
+RACE_DISTANCES = {
+    'mile': (1570, 1660),
+    '5k': (4957, 5311),
+    '10k': (9914, 10622),
+    '15k': (14850, 15150),
+    '25k': (24750, 25250),
+    'half_marathon': (21000, 21300),
+    'marathon': (42000, 42400),
+    '50k': (49500, 50500),
+}
+
+RACE_NAME_PATTERNS = [
+    r'\brace\b', r'\bclassic\b', r'\bcharity\b',
+    r'\bmarathon\b', r'\bhalf\b', r'\b5k\b', r'\b10k\b',
+    r'\b\d+k\b', r'\bchip\s*time\b',
+    r'\b(?:1st|2nd|3rd|\d+th)\b',
+    r'\boverall\b', r'\bgrandmaster\b', r'\bags?\s*group\b',
+    r'\bfinish(?:er)?\b', r'\bbib\b', r'\bcourse\b',
+]
+
+
+def _name_race_score(activity_name: Optional[str]) -> float:
+    if not activity_name:
+        return 0.0
+    name_lower = activity_name.lower()
+    matches = sum(1 for p in RACE_NAME_PATTERNS
+                  if re.search(p, name_lower))
+    if matches >= 3:
+        return 1.0
+    elif matches >= 2:
+        return 0.8
+    elif matches >= 1:
+        return 0.5
+    return 0.0
+
+
 def detect_race_candidate(
     activity_pace: Optional[float],
     max_hr: Optional[int],
     avg_hr: Optional[int],
     splits: List[dict],
     distance_meters: float,
-    duration_seconds: Optional[int]
+    duration_seconds: Optional[int],
+    activity_name: Optional[str] = None,
 ) -> Tuple[bool, float]:
     """
-    Detect if an activity is likely a race based on intensity analysis.
-    
-    Race detection heuristics (MORE CONSERVATIVE):
-    1. Must match standard race distance (5K, 10K, Half, Full Marathon)
-    2. High and sustained heart rate (near max HR)
-    3. Consistent pace throughout
-    4. Effort pattern matches race profile
-    
-    Args:
-        activity_pace: Average pace per mile in minutes
-        max_hr: Maximum heart rate during activity
-        avg_hr: Average heart rate during activity
-        splits: List of split dicts with pace, HR, etc.
-        distance_meters: Total distance in meters
-        duration_seconds: Total duration in seconds
-    
-    Returns:
-        Tuple of (is_race_candidate: bool, confidence: float 0.0-1.0)
+    Detect if an activity is likely a race.
+
+    Signals (weights): HR intensity 35%, pace consistency 25%,
+    distance match 15%, name signals 15%, effort profile 10%.
+    HR is not required — activities with name + distance + pace
+    consistency can still qualify at a lower threshold.
     """
     confidence_score = 0.0
-    
-    # CRITICAL: Must match standard race distance to be considered a race
-    # This is the primary filter - non-standard distances are rarely races
-    standard_distances = {
-        5000: "5K",
-        10000: "10K",
-        21097.5: "Half Marathon",  # 13.1 miles
-        42195: "Marathon"  # 26.2 miles
-    }
-    
-    distance_match = False
-    matched_distance_name = None
-    matched_distance = None
-    for std_dist, name in standard_distances.items():
-        # Allow 3% tolerance for GPS accuracy
-        if abs(distance_meters - std_dist) / std_dist < 0.03:
-            distance_match = True
-            matched_distance_name = name
-            matched_distance = std_dist
+    has_hr = bool(max_hr and avg_hr and max_hr > 0)
+
+    # Gate: must match a standard race distance
+    matched_category = None
+    for cat, (lo, hi) in RACE_DISTANCES.items():
+        if lo <= distance_meters <= hi:
+            matched_category = cat
             break
-    
-    # If it doesn't match a standard distance, it's very unlikely to be a race
-    if not distance_match:
+
+    if not matched_category:
         return False, 0.0
-    
-    # For 5K races, require even stricter criteria (more likely to be training runs)
-    is_5k = matched_distance == 5000
-    
-    # Signal 1: Heart Rate Intensity (40% weight) - REQUIRED for race
+
+    is_short = matched_category in ('mile', '5k')
+
+    # Signal 1: Heart Rate Intensity (35%)
     hr_score = 0.0
-    if max_hr and avg_hr and max_hr > 0:
+    if has_hr:
         hr_intensity = avg_hr / max_hr
-        # Race effort typically >88% of max HR average (more strict)
-        # For 5K, require even higher HR (>90%) since they're often training runs
-        if is_5k:
+        if is_short:
             if hr_intensity >= 0.93:
                 hr_score = 1.0
             elif hr_intensity >= 0.90:
                 hr_score = 0.7
             elif hr_intensity >= 0.88:
                 hr_score = 0.4
-            else:
-                hr_score = 0.0  # Too low HR for a 5K race
         else:
             if hr_intensity >= 0.92:
                 hr_score = 1.0
@@ -494,14 +502,9 @@ def detect_race_candidate(
                 hr_score = 0.5
             elif hr_intensity >= 0.80:
                 hr_score = 0.2
-            else:
-                hr_score = 0.0  # Too low HR for a race
-        confidence_score += hr_score * 0.4
-    else:
-        # No HR data = can't confirm race intensity
-        return False, 0.0
-    
-    # Signal 2: Pace Consistency (30% weight) - REQUIRED for race
+        confidence_score += hr_score * 0.35
+
+    # Signal 2: Pace Consistency (25%)
     pace_score = 0.0
     if len(splits) >= 3:
         split_paces = []
@@ -515,14 +518,13 @@ def detect_race_candidate(
                     if miles > 0:
                         pace = minutes / miles
                         split_paces.append(pace)
-        
+
         if len(split_paces) >= 3:
             avg_pace = sum(split_paces) / len(split_paces)
             variance = sum((p - avg_pace) ** 2 for p in split_paces) / len(split_paces)
             std_dev = math.sqrt(variance)
             cv = (std_dev / avg_pace) * 100 if avg_pace > 0 else 100
-            
-            # Very strict: races have very consistent pace
+
             if cv < 2:
                 pace_score = 1.0
             elif cv < 4:
@@ -531,18 +533,22 @@ def detect_race_candidate(
                 pace_score = 0.5
             else:
                 pace_score = 0.2
-            
-            confidence_score += pace_score * 0.3
-    
-    # Signal 3: Standard Distance Match (20% weight) - Already confirmed above
-    confidence_score += 1.0 * 0.2
-    
-    # Signal 4: Effort Profile (10% weight)
+
+            confidence_score += pace_score * 0.25
+
+    # Signal 3: Distance Match (15%)
+    confidence_score += 1.0 * 0.15
+
+    # Signal 4: Name Signal (15%)
+    name_score = _name_race_score(activity_name)
+    confidence_score += name_score * 0.15
+
+    # Signal 5: Effort Profile (10%)
     if len(splits) >= 4:
         first_half_hr = []
         second_half_hr = []
         midpoint = len(splits) // 2
-        
+
         for i, split in enumerate(splits):
             hr = split.get('average_heartrate') or split.get('avg_hr')
             if hr:
@@ -550,25 +556,27 @@ def detect_race_candidate(
                     first_half_hr.append(hr)
                 else:
                     second_half_hr.append(hr)
-        
+
         if first_half_hr and second_half_hr:
             avg_first = sum(first_half_hr) / len(first_half_hr)
             avg_second = sum(second_half_hr) / len(second_half_hr)
-            
-            # Sustained effort (within 3% variation)
+
             if avg_second >= avg_first * 0.97:
                 effort_score = 1.0
             elif avg_second >= avg_first * 0.93:
                 effort_score = 0.7
             else:
                 effort_score = 0.3
-            
+
             confidence_score += effort_score * 0.1
-    
-    # Threshold: >0.80 confidence for longer distances, >0.85 for 5K (very conservative)
-    # Requires: Standard distance + High HR + Consistent pace
-    # 5K races need higher confidence since many training runs are 5K distance
-    threshold = 0.85 if is_5k else 0.80
+
+    # Without HR: max possible = 0.65 (distance 0.15 + pace 0.25 + name 0.15 + effort 0.10).
+    # With HR: max = 1.0. Thresholds calibrated accordingly.
+    if has_hr:
+        threshold = 0.85 if is_short else 0.80
+    else:
+        threshold = 0.50
+
     is_race = confidence_score >= threshold
-    
+
     return is_race, round(confidence_score, 3)
