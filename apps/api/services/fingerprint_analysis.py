@@ -144,7 +144,13 @@ def store_findings(
 
 def passes_quality_gate(finding: FingerprintFindingResult) -> bool:
     """Returns True if the finding clears the automated quality gate."""
-    if finding.sample_size < QUALITY_THRESHOLDS['min_sample_size']:
+    # Trajectory findings are factual observations (you went from X to Y),
+    # not statistical inferences — they need strong effect size, not large
+    # sample size. A 7-minute half marathon PB across 2 races speaks for itself.
+    is_trajectory = finding.finding_type.startswith('trajectory_')
+    min_n = 2 if is_trajectory else QUALITY_THRESHOLDS['min_sample_size']
+
+    if finding.sample_size < min_n:
         return False
     if abs(finding.effect_size) < QUALITY_THRESHOLDS['min_effect_size']:
         return False
