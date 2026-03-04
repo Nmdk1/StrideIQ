@@ -430,6 +430,12 @@ def _layer2_campaign_comparison(
         bottom_mean = _mean(bottom_vals)
         diff = top_mean - bottom_mean
 
+        # Suppress trivially small differences — with a single campaign,
+        # best and worst races share identical campaign stats so any
+        # difference is noise.
+        overall_mean = (top_mean + bottom_mean) / 2
+        if overall_mean > 0 and abs(diff) / overall_mean < 0.10:
+            continue
         if abs(diff) < 0.01:
             continue
 

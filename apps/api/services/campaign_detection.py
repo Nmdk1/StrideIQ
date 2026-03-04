@@ -554,8 +554,14 @@ def store_campaign_data_on_events(
 ) -> int:
     """
     Store campaign summary on each linked PerformanceEvent.
+    Clears stale campaign_data first, then sets fresh values.
     Returns the number of events updated.
     """
+    db.query(PerformanceEvent).filter(
+        PerformanceEvent.athlete_id == athlete_id,
+        PerformanceEvent.campaign_data.isnot(None),
+    ).update({PerformanceEvent.campaign_data: None}, synchronize_session='fetch')
+
     updated = 0
     for campaign in campaigns:
         campaign_summary = {
