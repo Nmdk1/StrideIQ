@@ -60,6 +60,8 @@ def _mock_event(
     ev.user_confirmed = user_confirmed
     ev.fitness_relative_performance = frp
     ev.performance_percentage = 65.0
+    ev.campaign_data = None
+    ev.effective_time_seconds = time_seconds
     return ev
 
 

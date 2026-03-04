@@ -1,9 +1,12 @@
 """
-Fingerprint Analysis — Racing Fingerprint Phase 1B
+Fingerprint Analysis — Racing Fingerprint Phase 1C
 
-Four-layer pattern extraction across confirmed PerformanceEvents.
+Five-layer pattern extraction across confirmed PerformanceEvents.
 Each layer answers a different question about an athlete's racing history.
 Every finding produces a sentence. The sentence is the product.
+
+Layers 1-4 from Phase 1B. Layer 5 (trajectory) added in Phase 1C.
+Layer 2 now uses campaign_data when available (Phase 1C revision).
 """
 
 from __future__ import annotations
@@ -89,6 +92,11 @@ def extract_fingerprint_findings(
         all_findings.extend(_layer4_fitness_relative(events, units=units))
     except Exception as e:
         logger.warning("Layer 4 failed: %s", e)
+
+    try:
+        all_findings.extend(_layer5_trajectory(events, units=units))
+    except Exception as e:
+        logger.warning("Layer 5 failed: %s", e)
 
     all_findings.sort(key=lambda f: (
         0 if f.confidence_tier == 'high' else
@@ -348,19 +356,217 @@ def _layer1_pb_distribution(
 
 
 # ═══════════════════════════════════════════════════════
-# Layer 2: Block Signature Comparison
+# Layer 2: Campaign Comparison (upgraded from Block Signature)
 # ═══════════════════════════════════════════════════════
 
 def _layer2_block_comparison(
     events: List[PerformanceEvent],
     units: str = "imperial",
 ) -> List[FingerprintFindingResult]:
-    """What training patterns preceded the best races?"""
+    """What training patterns preceded the best races?
+
+    Uses campaign_data when available (Phase 1C), falling back to
+    block_signature for backward compatibility.
+    """
+    # Prefer campaign data for comparison
+    events_with_campaigns = [e for e in events if e.campaign_data and e.rpi_at_event]
+    if len(events_with_campaigns) >= 4:
+        return _layer2_campaign_comparison(events_with_campaigns, units)
+
+    # Fallback to block signature
     events_with_sigs = [e for e in events if e.block_signature and e.rpi_at_event]
     if len(events_with_sigs) < 4:
         return []
+    return _layer2_block_signature_comparison(events_with_sigs, units)
 
-    sorted_events = sorted(events_with_sigs, key=lambda e: e.rpi_at_event, reverse=True)
+
+def _layer2_campaign_comparison(
+    events: List[PerformanceEvent],
+    units: str = "imperial",
+) -> List[FingerprintFindingResult]:
+    """Compare full campaign dimensions between best and worst races."""
+    sorted_events = sorted(events, key=lambda e: e.rpi_at_event, reverse=True)
+    mid = len(sorted_events) // 2
+    top_group = sorted_events[:mid]
+    bottom_group = sorted_events[mid:]
+
+    findings: List[FingerprintFindingResult] = []
+    group_sizes = (len(top_group), len(bottom_group))
+    can_stat_test = min(group_sizes) >= QUALITY_THRESHOLDS['min_per_group']
+
+    KM_TO_MI = 0.621371
+    is_imperial = units != "metric"
+    dist_unit = "mi" if is_imperial else "km"
+
+    dimensions = [
+        ('total_weeks', 'campaign length', 'weeks', False),
+        ('peak_weekly_volume_km', 'peak weekly volume', f'{dist_unit}/week', is_imperial),
+        ('avg_weekly_volume_km', 'average weekly volume', f'{dist_unit}/week', is_imperial),
+    ]
+
+    for dim_key, dim_label, dim_unit, needs_conversion in dimensions:
+        top_vals = [
+            e.campaign_data.get(dim_key, 0) for e in top_group
+            if e.campaign_data.get(dim_key) is not None
+        ]
+        bottom_vals = [
+            e.campaign_data.get(dim_key, 0) for e in bottom_group
+            if e.campaign_data.get(dim_key) is not None
+        ]
+
+        if not top_vals or not bottom_vals:
+            continue
+
+        d = _cohens_d(top_vals, bottom_vals)
+        p_value = None
+        stat_conf = 0.5
+
+        if can_stat_test:
+            p_value = _mann_whitney_u(top_vals, bottom_vals)
+            if p_value is not None:
+                stat_conf = 1 - p_value
+
+        top_mean = _mean(top_vals)
+        bottom_mean = _mean(bottom_vals)
+        diff = top_mean - bottom_mean
+
+        if abs(diff) < 0.01:
+            continue
+
+        display_top = top_mean * KM_TO_MI if needs_conversion else top_mean
+        display_bottom = bottom_mean * KM_TO_MI if needs_conversion else bottom_mean
+
+        direction = "higher" if diff > 0 else "lower"
+
+        # Narrative-quality sentence that references campaign scope
+        if dim_key == 'total_weeks':
+            sentence = (
+                f"Your best races came after campaigns averaging {display_top:.0f} weeks "
+                f"of sustained preparation, vs {display_bottom:.0f} weeks for weaker races."
+            )
+        elif dim_key == 'peak_weekly_volume_km':
+            sentence = (
+                f"Your best races followed campaigns with peak volume of "
+                f"{display_top:.0f} {dim_unit}, "
+                f"vs {display_bottom:.0f} {dim_unit} for weaker races."
+            )
+        elif dim_key == 'avg_weekly_volume_km':
+            sentence = (
+                f"The campaigns behind your best races averaged "
+                f"{display_top:.0f} {dim_unit} consistently, "
+                f"vs {display_bottom:.0f} {dim_unit} for weaker races."
+            )
+        else:
+            sentence = (
+                f"Your best races had {direction} {dim_label}: "
+                f"{display_top:.0f} vs {display_bottom:.0f} {dim_unit}."
+            )
+
+        finding = FingerprintFindingResult(
+            layer=2,
+            finding_type=f'campaign_{dim_key}',
+            sentence=sentence,
+            evidence={
+                'dimension': dim_key,
+                'source': 'campaign_data',
+                'top_mean': round(top_mean, 1),
+                'top_std': round(_std(top_vals), 1),
+                'bottom_mean': round(bottom_mean, 1),
+                'bottom_std': round(_std(bottom_vals), 1),
+                'p_value': round(p_value, 4) if p_value is not None else None,
+                'n_top': len(top_vals),
+                'n_bottom': len(bottom_vals),
+            },
+            statistical_confidence=round(stat_conf, 3),
+            effect_size=round(abs(d), 2),
+            sample_size=len(events),
+            confidence_tier='',
+            is_significant=False,
+        )
+        finding.confidence_tier = _assign_confidence_tier(
+            finding, is_comparison_layer=True, group_sizes=group_sizes
+        )
+        finding.is_significant = finding.confidence_tier != 'suppressed'
+        findings.append(finding)
+
+    # Phase composition comparison
+    top_phases = []
+    bottom_phases = []
+    for e in top_group:
+        if e.campaign_data.get('phases'):
+            top_phases.append([p['name'] for p in e.campaign_data['phases']])
+    for e in bottom_group:
+        if e.campaign_data.get('phases'):
+            bottom_phases.append([p['name'] for p in e.campaign_data['phases']])
+
+    if top_phases and bottom_phases:
+        top_has_escalation = sum(1 for pp in top_phases if 'escalation' in pp) / len(top_phases)
+        bottom_has_escalation = sum(1 for pp in bottom_phases if 'escalation' in pp) / len(bottom_phases)
+
+        if top_has_escalation > bottom_has_escalation + 0.3:
+            sentence = (
+                "Your best races followed campaigns with a distinct escalation phase — "
+                "you built a base then deliberately increased intensity."
+            )
+            finding = FingerprintFindingResult(
+                layer=2,
+                finding_type='campaign_escalation',
+                sentence=sentence,
+                evidence={
+                    'top_escalation_rate': round(top_has_escalation, 2),
+                    'bottom_escalation_rate': round(bottom_has_escalation, 2),
+                },
+                statistical_confidence=0.6,
+                effect_size=round(abs(top_has_escalation - bottom_has_escalation), 2),
+                sample_size=len(events),
+                confidence_tier='',
+                is_significant=False,
+            )
+            finding.confidence_tier = _assign_confidence_tier(finding, is_comparison_layer=False)
+            finding.is_significant = finding.confidence_tier != 'suppressed'
+            findings.append(finding)
+
+    # Check for disruption context
+    residual_races = [
+        e for e in events
+        if e.campaign_data.get('raced_on_residual_fitness')
+    ]
+    if residual_races:
+        best_residual = max(residual_races, key=lambda e: e.rpi_at_event)
+        campaign_weeks = best_residual.campaign_data.get('total_weeks', 0)
+        sentence = (
+            f"You raced on residual fitness after your campaign was interrupted — "
+            f"and still performed at a high level. "
+            f"That {campaign_weeks}-week campaign built deep fitness."
+        )
+        finding = FingerprintFindingResult(
+            layer=2,
+            finding_type='residual_fitness',
+            sentence=sentence,
+            evidence={
+                'residual_race_count': len(residual_races),
+                'campaign_weeks': campaign_weeks,
+                'best_residual_rpi': round(best_residual.rpi_at_event, 1) if best_residual.rpi_at_event else None,
+            },
+            statistical_confidence=0.7,
+            effect_size=0.5,
+            sample_size=len(events),
+            confidence_tier='',
+            is_significant=False,
+        )
+        finding.confidence_tier = _assign_confidence_tier(finding, is_comparison_layer=False)
+        finding.is_significant = finding.confidence_tier != 'suppressed'
+        findings.append(finding)
+
+    return findings
+
+
+def _layer2_block_signature_comparison(
+    events: List[PerformanceEvent],
+    units: str = "imperial",
+) -> List[FingerprintFindingResult]:
+    """Fallback: compare block signatures when campaign data isn't available."""
+    sorted_events = sorted(events, key=lambda e: e.rpi_at_event, reverse=True)
     mid = len(sorted_events) // 2
     top_group = sorted_events[:mid]
     bottom_group = sorted_events[mid:]
@@ -424,6 +630,7 @@ def _layer2_block_comparison(
             sentence=sentence,
             evidence={
                 'dimension': dim_key,
+                'source': 'block_signature',
                 'top_mean': round(top_mean, 1),
                 'top_std': round(_std(top_vals), 1),
                 'bottom_mean': round(bottom_mean, 1),
@@ -434,7 +641,7 @@ def _layer2_block_comparison(
             },
             statistical_confidence=round(stat_conf, 3),
             effect_size=round(abs(d), 2),
-            sample_size=len(events_with_sigs),
+            sample_size=len(events),
             confidence_tier='',
             is_significant=False,
         )
@@ -443,64 +650,6 @@ def _layer2_block_comparison(
         )
         finding.is_significant = finding.confidence_tier != 'suppressed'
         findings.append(finding)
-
-    # Taper comparison
-    top_tapers = [
-        e.block_signature.get('taper_start_week') for e in top_group
-        if e.block_signature.get('taper_start_week') is not None
-    ]
-    bottom_tapers = [
-        e.block_signature.get('taper_start_week') for e in bottom_group
-        if e.block_signature.get('taper_start_week') is not None
-    ]
-
-    if top_tapers and bottom_tapers:
-        top_taper_weeks = [
-            e.block_signature.get('lookback_weeks', 12) - t
-            for e, t in zip(top_group, top_tapers) if t is not None
-        ]
-        bottom_taper_weeks = [
-            e.block_signature.get('lookback_weeks', 12) - t
-            for e, t in zip(bottom_group, bottom_tapers) if t is not None
-        ]
-
-        if top_taper_weeks and bottom_taper_weeks:
-            d = _cohens_d(top_taper_weeks, bottom_taper_weeks)
-            p_value = _mann_whitney_u(top_taper_weeks, bottom_taper_weeks) if can_stat_test else None
-            stat_conf = (1 - p_value) if p_value is not None else 0.5
-
-            top_mean = _mean(top_taper_weeks)
-            bottom_mean = _mean(bottom_taper_weeks)
-
-            if abs(top_mean - bottom_mean) >= 0.5:
-                sentence = (
-                    f"Your best races had a taper starting {top_mean:.0f} weeks out "
-                    f"vs {bottom_mean:.0f} weeks for weaker races."
-                )
-
-                finding = FingerprintFindingResult(
-                    layer=2,
-                    finding_type='block_taper',
-                    sentence=sentence,
-                    evidence={
-                        'dimension': 'taper_weeks_before_race',
-                        'top_mean': round(top_mean, 1),
-                        'bottom_mean': round(bottom_mean, 1),
-                        'p_value': round(p_value, 4) if p_value is not None else None,
-                        'n_top': len(top_taper_weeks),
-                        'n_bottom': len(bottom_taper_weeks),
-                    },
-                    statistical_confidence=round(stat_conf, 3),
-                    effect_size=round(abs(d), 2),
-                    sample_size=len(events_with_sigs),
-                    confidence_tier='',
-                    is_significant=False,
-                )
-                finding.confidence_tier = _assign_confidence_tier(
-                    finding, is_comparison_layer=True, group_sizes=group_sizes
-                )
-                finding.is_significant = finding.confidence_tier != 'suppressed'
-                findings.append(finding)
 
     return findings
 
@@ -686,3 +835,334 @@ def _layer4_fitness_relative(
         findings.append(finding)
 
     return findings
+
+
+# ═══════════════════════════════════════════════════════
+# Layer 5: Performance Trajectory
+# ═══════════════════════════════════════════════════════
+
+def _layer5_trajectory(
+    events: List[PerformanceEvent],
+    units: str = "imperial",
+) -> List[FingerprintFindingResult]:
+    """
+    Analyze performance trajectory across all races.
+
+    Detects:
+    - Continuous improvement (PB every race when healthy)
+    - Improvement rate acceleration
+    - Disruption resilience (residual fitness races)
+    - Per-distance trajectory
+    """
+    if len(events) < 4:
+        return []
+
+    findings: List[FingerprintFindingResult] = []
+
+    by_dist: Dict[str, List[PerformanceEvent]] = {}
+    for ev in events:
+        by_dist.setdefault(ev.distance_category, []).append(ev)
+
+    rpi_events = sorted(
+        [e for e in events if e.rpi_at_event],
+        key=lambda e: e.event_date,
+    )
+
+    if len(rpi_events) >= 4:
+        findings.extend(_detect_pb_chain(rpi_events))
+        findings.extend(_detect_improvement_acceleration(rpi_events))
+        findings.extend(_detect_disruption_impact(rpi_events))
+
+    for dist_cat, dist_events in by_dist.items():
+        if len(dist_events) < 3:
+            continue
+        sorted_de = sorted(dist_events, key=lambda e: e.event_date)
+        findings.extend(_detect_distance_trajectory(sorted_de, dist_cat))
+
+    return findings
+
+
+def _detect_pb_chain(
+    events: List[PerformanceEvent],
+) -> List[FingerprintFindingResult]:
+    """Detect continuous improvement across races (using RPI)."""
+    findings = []
+
+    best_streak = 0
+    current_streak = 1
+    streak_start = 0
+    best_start = 0
+
+    for i in range(1, len(events)):
+        if events[i].rpi_at_event > events[i-1].rpi_at_event:
+            current_streak += 1
+            if current_streak > best_streak:
+                best_streak = current_streak
+                best_start = streak_start
+        else:
+            current_streak = 1
+            streak_start = i
+
+    if best_streak >= 3:
+        streak_events = events[best_start:best_start + best_streak]
+        first_date = streak_events[0].event_date
+        last_date = streak_events[-1].event_date
+        months = max(1, (last_date - first_date).days // 30)
+
+        total_improvement = (
+            (streak_events[-1].rpi_at_event - streak_events[0].rpi_at_event)
+            / streak_events[0].rpi_at_event * 100
+        )
+
+        sentence = (
+            f"You improved across {best_streak} consecutive races over {months} months, "
+            f"with each race faster than the last."
+        )
+
+        finding = FingerprintFindingResult(
+            layer=5,
+            finding_type='pb_chain',
+            sentence=sentence,
+            evidence={
+                'streak_length': best_streak,
+                'months': months,
+                'total_improvement_pct': round(total_improvement, 1),
+                'first_date': first_date.isoformat(),
+                'last_date': last_date.isoformat(),
+            },
+            statistical_confidence=min(best_streak / 6.0, 1.0),
+            effect_size=round(abs(total_improvement) / 10, 2),
+            sample_size=len(events),
+            confidence_tier='',
+            is_significant=False,
+        )
+        finding.confidence_tier = _assign_confidence_tier(finding, is_comparison_layer=False)
+        finding.is_significant = finding.confidence_tier != 'suppressed'
+        findings.append(finding)
+
+    return findings
+
+
+def _detect_improvement_acceleration(
+    events: List[PerformanceEvent],
+) -> List[FingerprintFindingResult]:
+    """Detect when improvement rate increased."""
+    if len(events) < 6:
+        return []
+
+    findings = []
+
+    rates = []
+    for i in range(1, len(events)):
+        days = max(1, (events[i].event_date - events[i-1].event_date).days)
+        rpi_change = events[i].rpi_at_event - events[i-1].rpi_at_event
+        rate_per_month = (rpi_change / events[i-1].rpi_at_event) * (30 / days) * 100
+        rates.append({
+            'date': events[i].event_date,
+            'rate_per_month': rate_per_month,
+            'event': events[i],
+        })
+
+    if len(rates) < 4:
+        return []
+
+    mid = len(rates) // 2
+    early_rates = [r['rate_per_month'] for r in rates[:mid]]
+    late_rates = [r['rate_per_month'] for r in rates[mid:]]
+
+    early_avg = _mean(early_rates)
+    late_avg = _mean(late_rates)
+
+    if late_avg > early_avg * 1.5 and late_avg > 0.5:
+        acceleration_date = rates[mid]['date']
+        sentence = (
+            f"Your improvement rate accelerated after "
+            f"{acceleration_date.strftime('%B %Y')}. "
+            f"Something changed in your training that made you get faster, faster."
+        )
+
+        acceleration_event = rates[mid]['event']
+        if acceleration_event.campaign_data:
+            campaign_weeks = acceleration_event.campaign_data.get('total_weeks', 0)
+            if campaign_weeks > 0:
+                sentence = (
+                    f"Your improvement rate accelerated after "
+                    f"{acceleration_date.strftime('%B %Y')}. "
+                    f"The {campaign_weeks}-week campaign that followed produced "
+                    f"your steepest gains."
+                )
+
+        d = _cohens_d(late_rates, early_rates)
+
+        finding = FingerprintFindingResult(
+            layer=5,
+            finding_type='improvement_acceleration',
+            sentence=sentence,
+            evidence={
+                'early_rate_pct_per_month': round(early_avg, 2),
+                'late_rate_pct_per_month': round(late_avg, 2),
+                'acceleration_date': acceleration_date.isoformat(),
+                'acceleration_factor': round(late_avg / max(early_avg, 0.01), 1),
+            },
+            statistical_confidence=min(len(rates) / 8.0, 1.0),
+            effect_size=round(abs(d), 2),
+            sample_size=len(events),
+            confidence_tier='',
+            is_significant=False,
+        )
+        finding.confidence_tier = _assign_confidence_tier(finding, is_comparison_layer=False)
+        finding.is_significant = finding.confidence_tier != 'suppressed'
+        findings.append(finding)
+
+    return findings
+
+
+def _detect_disruption_impact(
+    events: List[PerformanceEvent],
+) -> List[FingerprintFindingResult]:
+    """Detect races on residual fitness after disruption."""
+    findings = []
+
+    residual_races = [
+        e for e in events
+        if e.campaign_data and e.campaign_data.get('raced_on_residual_fitness')
+        and e.rpi_at_event
+    ]
+
+    if not residual_races:
+        return []
+
+    best_residual = max(residual_races, key=lambda e: e.rpi_at_event)
+    all_rpis = sorted([e.rpi_at_event for e in events if e.rpi_at_event], reverse=True)
+
+    try:
+        rank = all_rpis.index(best_residual.rpi_at_event) + 1
+    except ValueError:
+        rank = len(all_rpis)
+    percentile = (1 - rank / len(all_rpis)) * 100
+
+    if percentile >= 50:
+        campaign_weeks = best_residual.campaign_data.get('total_weeks', 0)
+        sentence = (
+            f"Even racing after your training was disrupted, "
+            f"you produced one of your top performances. "
+            f"The {campaign_weeks}-week campaign built fitness that lasted "
+            f"beyond the interruption."
+        )
+
+        finding = FingerprintFindingResult(
+            layer=5,
+            finding_type='disruption_resilience',
+            sentence=sentence,
+            evidence={
+                'residual_race_date': best_residual.event_date.isoformat(),
+                'residual_rpi': round(best_residual.rpi_at_event, 1),
+                'overall_rank': rank,
+                'total_races': len(all_rpis),
+                'performance_percentile': round(percentile, 0),
+                'campaign_weeks': campaign_weeks,
+            },
+            statistical_confidence=0.7,
+            effect_size=round(percentile / 100, 2),
+            sample_size=len(events),
+            confidence_tier='',
+            is_significant=False,
+        )
+        finding.confidence_tier = _assign_confidence_tier(finding, is_comparison_layer=False)
+        finding.is_significant = finding.confidence_tier != 'suppressed'
+        findings.append(finding)
+
+    return findings
+
+
+def _detect_distance_trajectory(
+    events: List[PerformanceEvent],
+    dist_cat: str,
+) -> List[FingerprintFindingResult]:
+    """Detect trajectory at a specific distance."""
+    findings = []
+
+    pb_count = 0
+    best_so_far = events[0].effective_time_seconds
+    all_pb = True
+
+    for i in range(1, len(events)):
+        t = events[i].effective_time_seconds
+        if t < best_so_far:
+            pb_count += 1
+            best_so_far = t
+        else:
+            all_pb = False
+
+    total_improvement = (
+        (events[0].effective_time_seconds - events[-1].effective_time_seconds)
+        / events[0].effective_time_seconds * 100
+    )
+
+    if pb_count >= 2 and total_improvement > 3:
+        first_time = events[0].effective_time_seconds
+        last_time = events[-1].effective_time_seconds
+        first_str = _format_time(first_time)
+        last_str = _format_time(last_time)
+
+        dist_label = _dist_label(dist_cat)
+        months = max(1, (events[-1].event_date - events[0].event_date).days // 30)
+
+        if all_pb and len(events) >= 3:
+            sentence = (
+                f"Every {dist_label} you've raced has been faster than the last — "
+                f"from {first_str} to {last_str} over {months} months."
+            )
+        else:
+            sentence = (
+                f"You've dropped your {dist_label} from {first_str} to {last_str} "
+                f"over {months} months — {total_improvement:.0f}% faster."
+            )
+
+        finding = FingerprintFindingResult(
+            layer=5,
+            finding_type=f'trajectory_{dist_cat}',
+            sentence=sentence,
+            evidence={
+                'distance': dist_cat,
+                'first_time': first_time,
+                'last_time': last_time,
+                'improvement_pct': round(total_improvement, 1),
+                'pb_count': pb_count,
+                'race_count': len(events),
+                'all_pbs': all_pb,
+                'months': months,
+            },
+            statistical_confidence=min(len(events) / 5.0, 1.0),
+            effect_size=round(total_improvement / 10, 2),
+            sample_size=len(events),
+            confidence_tier='',
+            is_significant=False,
+        )
+        finding.confidence_tier = _assign_confidence_tier(finding, is_comparison_layer=False)
+        finding.is_significant = finding.confidence_tier != 'suppressed'
+        findings.append(finding)
+
+    return findings
+
+
+def _format_time(seconds: int) -> str:
+    """Format seconds as H:MM:SS or M:SS."""
+    m, s = divmod(seconds, 60)
+    h, m = divmod(m, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
+
+
+def _dist_label(dist_cat: str) -> str:
+    """Human-friendly distance name."""
+    labels = {
+        'mile': 'mile',
+        '5k': '5K',
+        '10k': '10K',
+        'half_marathon': 'half marathon',
+        'marathon': 'marathon',
+        '50k': '50K',
+    }
+    return labels.get(dist_cat, dist_cat)
