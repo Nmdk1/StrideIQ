@@ -135,15 +135,17 @@ def detect_inflection_points(
 
     inflections: List[InflectionPoint] = []
 
-    # Check for disruptions first (raw weekly volume cliffs)
-    for i in range(1, len(weekly_volumes)):
-        prev_4wk = [weekly_volumes[j][1] for j in range(max(0, i - 4), i)]
-        avg_before = sum(prev_4wk) / len(prev_4wk) if prev_4wk else 0
+    # Check for disruptions: both instant cliffs and progressive declines
+    for i in range(4, len(weekly_volumes)):
+        prev_4wk = [weekly_volumes[j][1] for j in range(i - 4, i)]
+        avg_before = sum(prev_4wk) / len(prev_4wk)
 
-        if avg_before < 5.0:
+        if avg_before < 10.0:
             continue
 
         curr_vol = weekly_volumes[i][1]
+
+        # Pattern 1: Instant cliff — volume drops to < 25% in one week
         if curr_vol < avg_before * 0.25:
             sustained = _count_sustained_low(
                 weekly_volumes, i, threshold=avg_before * 0.25
@@ -158,7 +160,36 @@ def detect_inflection_points(
                     change_pct=round(drop_pct, 1),
                     sustained_weeks=sustained,
                 ))
-                break  # one disruption per history for now
+                break
+
+        # Pattern 2: Progressive disruption — volume declines >70% over
+        # 3-5 weeks (e.g., injury where athlete keeps racing briefly)
+        if i + 4 < len(weekly_volumes):
+            window_ahead = [weekly_volumes[i + j][1] for j in range(5)]
+            min_in_window = min(window_ahead)
+            if min_in_window < avg_before * 0.10:
+                # Reached near-zero within 5 weeks — find the onset
+                onset_idx = i
+                for j in range(5):
+                    if weekly_volumes[i + j][1] < avg_before * 0.30:
+                        onset_idx = i + j
+                        break
+
+                sustained = _count_sustained_low(
+                    weekly_volumes, onset_idx, threshold=avg_before * 0.30
+                )
+                if sustained >= 2:
+                    onset_vol = weekly_volumes[onset_idx][1]
+                    drop_pct = ((onset_vol - avg_before) / avg_before) * 100
+                    inflections.append(InflectionPoint(
+                        date=weekly_volumes[i][0],
+                        type='disruption',
+                        before_avg_weekly_km=round(avg_before, 1),
+                        after_avg_weekly_km=round(onset_vol, 1),
+                        change_pct=round(drop_pct, 1),
+                        sustained_weeks=sustained,
+                    ))
+                    break
 
     # Detect step_up / step_down using non-overlapping block comparison
     block_size = 4
