@@ -880,7 +880,7 @@ def _layer5_trajectory(
         findings.extend(_detect_disruption_impact(rpi_events))
 
     for dist_cat, dist_events in by_dist.items():
-        if len(dist_events) < 3:
+        if len(dist_events) < 2:
             continue
         sorted_de = sorted(dist_events, key=lambda e: e.event_date)
         findings.extend(_detect_distance_trajectory(sorted_de, dist_cat))
@@ -1085,13 +1085,31 @@ def _detect_distance_trajectory(
     events: List[PerformanceEvent],
     dist_cat: str,
 ) -> List[FingerprintFindingResult]:
-    """Detect trajectory at a specific distance."""
+    """Detect trajectory at a specific distance.
+
+    Compares first race to fastest race (not just consecutive PBs).
+    For 2-race distances, requires a larger improvement to surface.
+    """
     findings = []
 
-    pb_count = 0
-    best_so_far = events[0].effective_time_seconds
-    all_pb = True
+    first_time = events[0].effective_time_seconds
+    fastest = min(events, key=lambda e: e.effective_time_seconds)
+    fastest_time = fastest.effective_time_seconds
 
+    if fastest_time >= first_time:
+        return findings
+
+    total_improvement = (first_time - fastest_time) / first_time * 100
+
+    # 2-race distances need a bigger improvement to be worth surfacing
+    min_improvement = 5.0 if len(events) == 2 else 3.0
+    if total_improvement < min_improvement:
+        return findings
+
+    # Check for all-PB pattern
+    pb_count = 0
+    best_so_far = first_time
+    all_pb = True
     for i in range(1, len(events)):
         t = events[i].effective_time_seconds
         if t < best_so_far:
@@ -1100,54 +1118,60 @@ def _detect_distance_trajectory(
         else:
             all_pb = False
 
-    total_improvement = (
-        (events[0].effective_time_seconds - events[-1].effective_time_seconds)
-        / events[0].effective_time_seconds * 100
-    )
+    first_str = _format_time(first_time)
+    fastest_str = _format_time(fastest_time)
+    dist_label = _dist_label(dist_cat)
+    months = max(1, (fastest.event_date - events[0].event_date).days // 30)
 
-    if pb_count >= 2 and total_improvement > 3:
-        first_time = events[0].effective_time_seconds
-        last_time = events[-1].effective_time_seconds
-        first_str = _format_time(first_time)
-        last_str = _format_time(last_time)
+    time_diff = first_time - fastest_time
+    minutes_diff = time_diff // 60
+    has_large_absolute_drop = minutes_diff >= 5
 
-        dist_label = _dist_label(dist_cat)
-        months = max(1, (events[-1].event_date - events[0].event_date).days // 30)
-
-        if all_pb and len(events) >= 3:
-            sentence = (
-                f"Every {dist_label} you've raced has been faster than the last — "
-                f"from {first_str} to {last_str} over {months} months."
-            )
-        else:
-            sentence = (
-                f"You've dropped your {dist_label} from {first_str} to {last_str} "
-                f"over {months} months — {total_improvement:.0f}% faster."
-            )
-
-        finding = FingerprintFindingResult(
-            layer=5,
-            finding_type=f'trajectory_{dist_cat}',
-            sentence=sentence,
-            evidence={
-                'distance': dist_cat,
-                'first_time': first_time,
-                'last_time': last_time,
-                'improvement_pct': round(total_improvement, 1),
-                'pb_count': pb_count,
-                'race_count': len(events),
-                'all_pbs': all_pb,
-                'months': months,
-            },
-            statistical_confidence=min(len(events) / 5.0, 1.0),
-            effect_size=round(total_improvement / 10, 2),
-            sample_size=len(events),
-            confidence_tier='',
-            is_significant=False,
+    if all_pb and len(events) >= 3:
+        sentence = (
+            f"Every {dist_label} you've raced has been faster than the last — "
+            f"from {first_str} to {fastest_str} over {months} months."
         )
-        finding.confidence_tier = _assign_confidence_tier(finding, is_comparison_layer=False)
-        finding.is_significant = finding.confidence_tier != 'suppressed'
-        findings.append(finding)
+    elif has_large_absolute_drop and minutes_diff >= 60:
+        sentence = (
+            f"You've taken {minutes_diff // 60} minutes {minutes_diff % 60} seconds "
+            f"off your {dist_label} — from {first_str} to {fastest_str} "
+            f"over {months} months."
+        )
+    elif has_large_absolute_drop:
+        sentence = (
+            f"You've taken {minutes_diff} minutes off your {dist_label} — "
+            f"from {first_str} to {fastest_str} over {months} months."
+        )
+    else:
+        sentence = (
+            f"You've dropped your {dist_label} from {first_str} to {fastest_str} "
+            f"over {months} months — {total_improvement:.0f}% faster."
+        )
+
+    finding = FingerprintFindingResult(
+        layer=5,
+        finding_type=f'trajectory_{dist_cat}',
+        sentence=sentence,
+        evidence={
+            'distance': dist_cat,
+            'first_time': first_time,
+            'fastest_time': fastest_time,
+            'improvement_pct': round(total_improvement, 1),
+            'pb_count': pb_count,
+            'race_count': len(events),
+            'all_pbs': all_pb,
+            'months': months,
+        },
+        statistical_confidence=min(len(events) / 5.0, 1.0),
+        effect_size=round(total_improvement / 10, 2),
+        sample_size=len(events),
+        confidence_tier='',
+        is_significant=False,
+    )
+    finding.confidence_tier = _assign_confidence_tier(finding, is_comparison_layer=False)
+    finding.is_significant = finding.confidence_tier != 'suppressed'
+    findings.append(finding)
 
     return findings
 
