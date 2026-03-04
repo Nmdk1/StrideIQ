@@ -2274,7 +2274,46 @@ def get_race_code_qr(
         media_type="image/png",
         headers={
             "Content-Disposition": f'inline; filename="{promo.code}_qr.png"',
-            "Cache-Control": "max-age=86400",  # Cache for 24 hours
+            "Cache-Control": "max-age=86400",
         }
     )
+
+
+@router.post("/classify-all-athletes")
+async def admin_classify_all(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Classify all unclassified activities across all athletes."""
+    from services.workout_classifier import WorkoutClassifierService
+
+    classifier = WorkoutClassifierService(db)
+
+    activities = db.query(Activity).filter(
+        Activity.workout_type.is_(None),
+        Activity.distance_m >= 1000,
+        Activity.is_duplicate == False,  # noqa: E712
+    ).all()
+
+    classified = 0
+    skipped = 0
+    for act in activities:
+        try:
+            result = classifier.classify_activity(act)
+            act.workout_type = result.workout_type.value
+            act.workout_zone = result.workout_zone.value
+            act.workout_confidence = result.confidence
+            act.intensity_score = result.intensity_score
+            classified += 1
+        except Exception:
+            skipped += 1
+            continue
+
+    db.commit()
+
+    return {
+        "classified": classified,
+        "skipped": skipped,
+        "total_unclassified_before": len(activities),
+    }
 
