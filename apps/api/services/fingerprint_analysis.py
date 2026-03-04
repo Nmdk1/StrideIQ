@@ -54,6 +54,10 @@ def extract_fingerprint_findings(
     Run all four layers of pattern extraction across confirmed events.
     Returns findings sorted by significance (quality-gate-passing first).
     """
+    from models import Athlete as AthleteModel
+    athlete = db.query(AthleteModel).filter(AthleteModel.id == athlete_id).first()
+    units = athlete.preferred_units if athlete else "imperial"
+
     events = db.query(PerformanceEvent).filter(
         PerformanceEvent.athlete_id == athlete_id,
         PerformanceEvent.user_confirmed == True,  # noqa: E712
@@ -72,7 +76,7 @@ def extract_fingerprint_findings(
         logger.warning("Layer 1 failed: %s", e)
 
     try:
-        all_findings.extend(_layer2_block_comparison(events))
+        all_findings.extend(_layer2_block_comparison(events, units=units))
     except Exception as e:
         logger.warning("Layer 2 failed: %s", e)
 
@@ -82,7 +86,7 @@ def extract_fingerprint_findings(
         logger.warning("Layer 3 failed: %s", e)
 
     try:
-        all_findings.extend(_layer4_fitness_relative(events))
+        all_findings.extend(_layer4_fitness_relative(events, units=units))
     except Exception as e:
         logger.warning("Layer 4 failed: %s", e)
 
@@ -349,6 +353,7 @@ def _layer1_pb_distribution(
 
 def _layer2_block_comparison(
     events: List[PerformanceEvent],
+    units: str = "imperial",
 ) -> List[FingerprintFindingResult]:
     """What training patterns preceded the best races?"""
     events_with_sigs = [e for e in events if e.block_signature and e.rpi_at_event]
@@ -364,14 +369,18 @@ def _layer2_block_comparison(
     group_sizes = (len(top_group), len(bottom_group))
     can_stat_test = min(group_sizes) >= QUALITY_THRESHOLDS['min_per_group']
 
+    KM_TO_MI = 0.621371
+    is_imperial = units != "metric"
+    dist_unit = "mi" if is_imperial else "km"
+
     dimensions = [
-        ('peak_volume_km', 'peak training volume', 'km/week'),
-        ('peak_volume_week', 'peak volume timing', 'weeks before race'),
-        ('quality_sessions', 'hard sessions in the block', 'sessions'),
-        ('long_run_max_km', 'longest run', 'km'),
+        ('peak_volume_km', 'peak training volume', f'{dist_unit}/week', is_imperial),
+        ('peak_volume_week', 'peak volume timing', 'weeks before race', False),
+        ('quality_sessions', 'hard sessions in the block', 'sessions', False),
+        ('long_run_max_km', 'longest run', dist_unit, is_imperial),
     ]
 
-    for dim_key, dim_label, dim_unit in dimensions:
+    for dim_key, dim_label, dim_unit, needs_conversion in dimensions:
         top_vals = [
             e.block_signature.get(dim_key, 0) for e in top_group
             if e.block_signature.get(dim_key) is not None
@@ -400,10 +409,13 @@ def _layer2_block_comparison(
         if abs(diff) < 0.01:
             continue
 
+        display_top = top_mean * KM_TO_MI if needs_conversion else top_mean
+        display_bottom = bottom_mean * KM_TO_MI if needs_conversion else bottom_mean
+
         direction = "higher" if diff > 0 else "lower"
         sentence = (
             f"Your best races had {direction} {dim_label}: "
-            f"{top_mean:.0f} vs {bottom_mean:.0f} {dim_unit}."
+            f"{display_top:.0f} vs {display_bottom:.0f} {dim_unit}."
         )
 
         finding = FingerprintFindingResult(
@@ -595,6 +607,7 @@ def _layer3_tuneup_pattern(
 
 def _layer4_fitness_relative(
     events: List[PerformanceEvent],
+    units: str = "imperial",
 ) -> List[FingerprintFindingResult]:
     """What training patterns produce outperformance of fitness level?
 
@@ -613,14 +626,17 @@ def _layer4_fitness_relative(
     group_sizes = (len(outperformers), len(underperformers))
     can_stat_test = min(group_sizes) >= QUALITY_THRESHOLDS['min_per_group']
 
+    KM_TO_MI = 0.621371
+    is_imperial = units != "metric"
+
     dimensions = [
-        ('peak_volume_km', 'peak training volume'),
-        ('taper_start_week', 'taper timing'),
-        ('quality_sessions', 'hard sessions'),
-        ('long_run_max_km', 'longest run'),
+        ('peak_volume_km', 'peak training volume', is_imperial),
+        ('taper_start_week', 'taper timing', False),
+        ('quality_sessions', 'hard sessions', False),
+        ('long_run_max_km', 'longest run', is_imperial),
     ]
 
-    for dim_key, dim_label in dimensions:
+    for dim_key, dim_label, needs_conversion in dimensions:
         out_vals = [
             e.block_signature.get(dim_key, 0) for e in outperformers
             if e.block_signature and e.block_signature.get(dim_key) is not None
