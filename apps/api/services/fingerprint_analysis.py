@@ -202,7 +202,7 @@ def _mann_whitney_u(group_a: List[float], group_b: List[float]) -> Optional[floa
     try:
         from scipy.stats import mannwhitneyu
         _, p = mannwhitneyu(group_a, group_b, alternative='two-sided')
-        return p
+        return float(p)
     except ImportError:
         pass
 
