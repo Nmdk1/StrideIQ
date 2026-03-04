@@ -554,6 +554,7 @@ class PerformanceEvent(Base):
 
     # Performance
     time_seconds = Column(Integer, nullable=False)
+    chip_time_seconds = Column(Integer, nullable=True)
     pace_per_mile = Column(Float, nullable=True)
     rpi_at_event = Column(Float, nullable=True)
     performance_percentage = Column(Float, nullable=True)
@@ -567,6 +568,14 @@ class PerformanceEvent(Base):
 
     # Block signature (the fingerprint)
     block_signature = Column(JSONB, nullable=True)
+
+    # Campaign data (replaces fixed-window block_signature for analysis)
+    campaign_data = Column(JSONB, nullable=True)
+
+    @property
+    def effective_time_seconds(self) -> int:
+        """Chip time if available, otherwise GPS time."""
+        return self.chip_time_seconds or self.time_seconds
 
     # Wellness state
     pre_event_wellness = Column(JSONB, nullable=True)

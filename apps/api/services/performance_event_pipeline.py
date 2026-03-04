@@ -95,7 +95,7 @@ def populate_performance_events(
         elif getattr(act, 'strava_workout_type_raw', None) == 3:
             detection_source = 'strava_tag'
             detection_confidence = 0.9
-            user_confirmed = None
+            user_confirmed = True
         else:
             _is_race, conf = detect_race_candidate(
                 activity_pace=act.pace_per_mile,

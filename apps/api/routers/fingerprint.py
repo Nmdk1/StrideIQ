@@ -284,6 +284,7 @@ async def browse_activities(
 async def confirm_race(
     event_id: UUID,
     confirmed: bool = Query(...),
+    chip_time_seconds: Optional[int] = Query(None),
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -296,9 +297,26 @@ async def confirm_race(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
+    if confirmed:
+        dupe = db.query(PerformanceEvent).filter(
+            PerformanceEvent.athlete_id == current_user.id,
+            PerformanceEvent.id != event_id,
+            PerformanceEvent.event_date == event.event_date,
+            PerformanceEvent.distance_category == event.distance_category,
+            PerformanceEvent.user_confirmed == True,  # noqa: E712
+        ).first()
+        if dupe:
+            event.user_confirmed = False
+            event.detection_source = 'duplicate_rejected'
+            db.commit()
+            strip_data = _build_strip_data(current_user.id, db)
+            return {"status": "duplicate_rejected", "kept_event_id": str(dupe.id), "strip_data": strip_data.model_dump()}
+
     event.user_confirmed = confirmed
     if confirmed:
         event.detection_source = 'user_verified'
+        if chip_time_seconds:
+            event.chip_time_seconds = chip_time_seconds
         if not event.block_signature:
             try:
                 event.block_signature = compute_block_signature(
@@ -320,6 +338,7 @@ async def confirm_race(
 @router.post("/add-race/{activity_id}")
 async def add_race(
     activity_id: UUID,
+    chip_time_seconds: Optional[int] = Query(None),
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -340,6 +359,8 @@ async def add_race(
     if existing:
         existing.user_confirmed = True
         existing.detection_source = 'user_added'
+        if chip_time_seconds:
+            existing.chip_time_seconds = chip_time_seconds
         db.commit()
         strip_data = _build_strip_data(current_user.id, db)
         return {"status": "updated", "event_id": str(existing.id), "strip_data": strip_data.model_dump()}
@@ -349,6 +370,17 @@ async def add_race(
 
     dist_m = float(act.distance_m) if act.distance_m else 0
     dist_cat = get_distance_category(dist_m) or "unknown"
+    event_date = act.start_time.date()
+
+    dupe = db.query(PerformanceEvent).filter(
+        PerformanceEvent.athlete_id == current_user.id,
+        PerformanceEvent.event_date == event_date,
+        PerformanceEvent.distance_category == dist_cat,
+        PerformanceEvent.user_confirmed == True,  # noqa: E712
+    ).first()
+    if dupe:
+        strip_data = _build_strip_data(current_user.id, db)
+        return {"status": "duplicate_exists", "event_id": str(dupe.id), "strip_data": strip_data.model_dump()}
 
     rpi = calculate_rpi_from_race_time(dist_m, act.duration_s) if act.duration_s else None
 
@@ -356,7 +388,6 @@ async def add_race(
     ctl = atl = tsb = None
     try:
         load_svc = TrainingLoadCalculator(db)
-        event_date = act.start_time.date()
         state = load_svc.compute_training_state_history(
             current_user.id, target_dates=[event_date]
         )
@@ -382,9 +413,10 @@ async def add_race(
         athlete_id=current_user.id,
         activity_id=activity_id,
         distance_category=dist_cat,
-        event_date=act.start_time.date(),
+        event_date=event_date,
         event_type='race',
         time_seconds=act.duration_s,
+        chip_time_seconds=chip_time_seconds,
         pace_per_mile=act.pace_per_mile,
         rpi_at_event=rpi,
         performance_percentage=act.performance_percentage,
