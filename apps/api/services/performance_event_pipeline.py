@@ -156,10 +156,9 @@ def populate_performance_events(
         except Exception as e:
             logger.warning("Failed to compute block signature for %s: %s", act.id, e)
 
-        # Fitness-relative performance
-        fitness_rel = None
-        if rpi and ctl and ctl > 5:
-            fitness_rel = rpi / ctl
+        # fitness_relative_performance is intentionally None until a CTL→RPI
+        # linear model can be fitted (requires 8+ confirmed races with both values).
+        # The column stores actual_rpi / predicted_rpi, not rpi / ctl.
 
         event = PerformanceEvent(
             athlete_id=athlete_id,
@@ -175,7 +174,6 @@ def populate_performance_events(
             ctl_at_event=ctl,
             atl_at_event=atl,
             tsb_at_event=tsb,
-            fitness_relative_performance=fitness_rel,
             block_signature=block_sig,
             detection_source=detection_source,
             detection_confidence=detection_confidence,
@@ -196,7 +194,7 @@ def _mark_personal_bests(athlete_id: UUID, db: Session) -> None:
     """Mark the fastest PerformanceEvent per distance category as PB."""
     events = db.query(PerformanceEvent).filter(
         PerformanceEvent.athlete_id == athlete_id,
-        PerformanceEvent.user_confirmed != False,  # noqa: E712
+        PerformanceEvent.user_confirmed == True,  # noqa: E712
     ).all()
 
     best_by_cat: Dict[str, PerformanceEvent] = {}
@@ -215,7 +213,7 @@ def _classify_race_roles(athlete_id: UUID, db: Session) -> None:
     """Infer race roles (a_race, tune_up, training_race) from proximity."""
     events = db.query(PerformanceEvent).filter(
         PerformanceEvent.athlete_id == athlete_id,
-        PerformanceEvent.user_confirmed != False,  # noqa: E712
+        PerformanceEvent.user_confirmed == True,  # noqa: E712
     ).order_by(PerformanceEvent.event_date).all()
 
     for ev in events:

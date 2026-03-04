@@ -97,7 +97,7 @@ def _build_strip_data(athlete_id: UUID, db: Session) -> RacingLifeStripData:
     """Build the Racing Life Strip data for the athlete."""
     confirmed_events = db.query(PerformanceEvent).filter(
         PerformanceEvent.athlete_id == athlete_id,
-        PerformanceEvent.user_confirmed != False,  # noqa: E712
+        PerformanceEvent.user_confirmed == True,  # noqa: E712
     ).order_by(PerformanceEvent.event_date).all()
 
     pins = [
@@ -158,19 +158,18 @@ async def get_race_candidates(
         populate_performance_events(current_user.id, db)
         db.commit()
 
-    events = db.query(PerformanceEvent).filter(
+    rows = db.query(PerformanceEvent, Activity).join(
+        Activity, PerformanceEvent.activity_id == Activity.id
+    ).filter(
         PerformanceEvent.athlete_id == current_user.id,
     ).all()
 
-    event_activity_ids = {ev.activity_id for ev in events}
+    event_activity_ids = {ev.activity_id for ev, _ in rows}
 
     confirmed = []
     candidates = []
 
-    for ev in events:
-        act = db.query(Activity).filter(Activity.id == ev.activity_id).first()
-        if not act:
-            continue
+    for ev, act in rows:
         card = _activity_to_card(act, ev)
 
         if ev.user_confirmed is True or (ev.detection_confidence and ev.detection_confidence >= 0.7) or ev.detection_source in ('strava_tag', 'user_verified'):
@@ -178,16 +177,18 @@ async def get_race_candidates(
         elif ev.user_confirmed is None:
             candidates.append(card)
 
-    # Count browseable activities at standard distances not already events
-    browse_count = 0
+    from sqlalchemy import or_
+    dist_filters = []
     for lo, hi in DISTANCE_CATEGORIES.values():
-        browse_count += db.query(Activity).filter(
-            Activity.athlete_id == current_user.id,
-            Activity.is_duplicate == False,  # noqa: E712
-            Activity.distance_m >= lo,
-            Activity.distance_m <= hi,
-            ~Activity.id.in_(event_activity_ids),
-        ).count()
+        dist_filters.append(
+            (Activity.distance_m >= lo) & (Activity.distance_m <= hi)
+        )
+    browse_count = db.query(Activity).filter(
+        Activity.athlete_id == current_user.id,
+        Activity.is_duplicate == False,  # noqa: E712
+        or_(*dist_filters) if dist_filters else True,
+        ~Activity.id.in_(event_activity_ids) if event_activity_ids else True,
+    ).count() if dist_filters else 0
 
     strip_data = _build_strip_data(current_user.id, db)
 
