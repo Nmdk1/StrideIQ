@@ -539,6 +539,65 @@ class Activity(Base):
         return 26.8224 / float(self.average_speed)
 
 
+class PerformanceEvent(Base):
+    __tablename__ = "performance_event"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"),
+                        nullable=False, index=True)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"),
+                         nullable=False, index=True)
+
+    distance_category = Column(Text, nullable=False)
+    event_date = Column(Date, nullable=False, index=True)
+    event_type = Column(Text, nullable=False)
+
+    # Performance
+    time_seconds = Column(Integer, nullable=False)
+    pace_per_mile = Column(Float, nullable=True)
+    rpi_at_event = Column(Float, nullable=True)
+    performance_percentage = Column(Float, nullable=True)
+    is_personal_best = Column(Boolean, default=False)
+
+    # Training state at event
+    ctl_at_event = Column(Float, nullable=True)
+    atl_at_event = Column(Float, nullable=True)
+    tsb_at_event = Column(Float, nullable=True)
+    fitness_relative_performance = Column(Float, nullable=True)
+
+    # Block signature (the fingerprint)
+    block_signature = Column(JSONB, nullable=True)
+
+    # Wellness state
+    pre_event_wellness = Column(JSONB, nullable=True)
+
+    # Classification
+    race_role = Column(Text, nullable=True)
+    user_classified_role = Column(Text, nullable=True)
+    cycle_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Source / verification
+    detection_source = Column(Text, nullable=False, default='algorithm')
+    detection_confidence = Column(Float, nullable=True)
+    user_confirmed = Column(Boolean, nullable=True)
+
+    # Metadata
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(),
+                        onupdate=func.now())
+    computation_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        UniqueConstraint('athlete_id', 'activity_id',
+                         name='uq_performance_event_athlete_activity'),
+        Index('ix_performance_event_athlete_date',
+              'athlete_id', 'event_date'),
+    )
+
+    athlete = relationship("Athlete")
+    activity = relationship("Activity")
+
+
 class ActivitySplit(Base):
     __tablename__ = "activity_split"
 
