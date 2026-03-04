@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from core.auth import get_current_user, require_admin
 from core.database import get_db
-from models import Activity, Athlete, PerformanceEvent
+from models import Activity, Athlete, PerformanceEvent, StoredFingerprintFinding
 from schemas_fingerprint import (
     BrowseResponse,
     RaceCard,
@@ -24,6 +24,10 @@ from schemas_fingerprint import (
     FingerprintFindingsResponse,
 )
 from services.effort_classification import classify_effort_bulk
+from services.fingerprint_analysis import (
+    extract_fingerprint_findings,
+    store_findings,
+)
 from services.performance_event_pipeline import (
     populate_performance_events,
     compute_block_signature,
@@ -392,8 +396,40 @@ async def get_fingerprint_findings(
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Returns pattern extraction findings. Empty until Phase 1B."""
-    return FingerprintFindingsResponse(findings=[])
+    """Returns stored pattern extraction findings for the current athlete."""
+    stored = db.query(StoredFingerprintFinding).filter(
+        StoredFingerprintFinding.athlete_id == current_user.id
+    ).order_by(StoredFingerprintFinding.layer).all()
+    return FingerprintFindingsResponse(findings=stored)
+
+
+@router.post("/admin/extract/{athlete_id}")
+async def admin_extract_findings(
+    athlete_id: UUID,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin trigger for pattern extraction and finding storage."""
+    findings = extract_fingerprint_findings(athlete_id, db)
+    stored_count = store_findings(athlete_id, findings, db)
+    db.commit()
+
+    return {
+        "total_findings": len(findings),
+        "stored": stored_count,
+        "suppressed": len(findings) - stored_count,
+        "findings": [
+            {
+                "layer": f.layer,
+                "type": f.finding_type,
+                "tier": f.confidence_tier,
+                "effect_size": f.effect_size,
+                "sample_size": f.sample_size,
+                "sentence": f.sentence,
+            }
+            for f in findings
+        ],
+    }
 
 
 @router.post("/admin/populate/{athlete_id}")

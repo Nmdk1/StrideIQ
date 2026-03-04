@@ -32,7 +32,7 @@ sys.path.insert(0, str(api_root))
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-EXPECTED_HEADS = {"fingerprint_1a_001"}
+EXPECTED_HEADS = {"fingerprint_1b_001"}
 MAX_ROOTS = 2  # main chain root + phase chain root (readiness_score_001)
 
 

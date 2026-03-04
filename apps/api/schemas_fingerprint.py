@@ -69,5 +69,18 @@ class RacingLifeStripResponse(BaseModel):
     strip_data: RacingLifeStripData
 
 
+class FingerprintFindingOut(BaseModel):
+    layer: int
+    finding_type: str
+    sentence: str
+    evidence: dict
+    statistical_confidence: float
+    effect_size: float
+    sample_size: int
+    confidence_tier: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class FingerprintFindingsResponse(BaseModel):
-    findings: list = []
+    findings: List[FingerprintFindingOut] = []

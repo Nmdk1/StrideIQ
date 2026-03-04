@@ -598,6 +598,24 @@ class PerformanceEvent(Base):
     activity = relationship("Activity")
 
 
+class StoredFingerprintFinding(Base):
+    __tablename__ = "fingerprint_finding"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"),
+                        nullable=False, index=True)
+    layer = Column(Integer, nullable=False)
+    finding_type = Column(Text, nullable=False)
+    sentence = Column(Text, nullable=False)
+    evidence = Column(JSONB, nullable=False)
+    statistical_confidence = Column(Float, nullable=False)
+    effect_size = Column(Float, nullable=False)
+    sample_size = Column(Integer, nullable=False)
+    confidence_tier = Column(Text, nullable=False)
+    computation_version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class ActivitySplit(Base):
     __tablename__ = "activity_split"
 
