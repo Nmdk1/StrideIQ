@@ -292,8 +292,8 @@ class TestCampaignConstruction:
 
 
 class TestDisruptionClassification:
-    def test_complete_stop_is_injury(self):
-        """Volume drops to 0 for 4+ weeks -> complete_stop, injury."""
+    def test_complete_stop_detected(self):
+        """Volume drops to 0 for 4+ weeks -> complete_stop severity."""
         athlete_id = uuid.uuid4()
         disruption = date(2025, 11, 25)
         volumes = _make_weekly_volumes(
@@ -305,12 +305,28 @@ class TestDisruptionClassification:
                    return_value=volumes):
             result = classify_disruption(athlete_id, disruption, MagicMock())
 
-        assert result['type'] == 'injury'
         assert result['severity'] == 'complete_stop'
         assert result['duration_weeks'] >= 4
+        assert 'type' not in result  # no cause guessing
 
-    def test_gradual_reduction_is_not_disruption(self):
-        """Volume decreases 30% over 3 weeks -> moderate_reduction."""
+    def test_progressive_decline_detected(self):
+        """Volume declines over weeks -> near_complete_stop, progressive."""
+        athlete_id = uuid.uuid4()
+        disruption = date(2025, 11, 25)
+        volumes = _make_weekly_volumes(
+            [60] * 20 + [50, 40, 25, 10, 2, 0, 0, 0, 0, 0],
+            start_date=date(2025, 7, 7),
+        )
+
+        with patch('services.campaign_detection._compute_weekly_volumes',
+                   return_value=volumes):
+            result = classify_disruption(athlete_id, disruption, MagicMock())
+
+        assert result['severity'] in ('complete_stop', 'near_complete_stop')
+        assert result['decline_pattern'] == 'progressive'
+
+    def test_gradual_reduction_is_not_complete_stop(self):
+        """Volume decreases 30% over 3 weeks then bounces back -> not complete_stop."""
         athlete_id = uuid.uuid4()
         disruption = date(2025, 11, 25)
         volumes = _make_weekly_volumes(
@@ -322,7 +338,6 @@ class TestDisruptionClassification:
                    return_value=volumes):
             result = classify_disruption(athlete_id, disruption, MagicMock())
 
-        # Not a complete stop — volume didn't go to zero
         assert result['severity'] != 'complete_stop'
 
 

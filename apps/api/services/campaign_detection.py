@@ -280,68 +280,40 @@ def build_campaigns(
     """
     Construct training campaigns from inflection points and confirmed races.
 
-    A campaign starts at a step_up and ends at a disruption, the next step_up,
-    or today. Races within the campaign window (and up to 4 weeks after a
-    disruption) are linked.
+    A campaign starts at the first step_up. Subsequent step_ups before a
+    disruption are escalation phases within the same campaign — not separate
+    campaigns. A campaign ends at a disruption or today.
+
+    Races within the campaign window (and up to 4 weeks after a disruption
+    for residual-fitness races) are linked.
     """
     weekly_volumes = _compute_weekly_volumes(athlete_id, db)
     if not weekly_volumes or not inflection_points:
         return []
 
-    step_ups = [ip for ip in inflection_points if ip.type == 'step_up']
-    disruptions = [ip for ip in inflection_points if ip.type == 'disruption']
-
+    sorted_ips = sorted(inflection_points, key=lambda ip: ip.date)
     campaigns: List[TrainingCampaign] = []
 
-    for idx, su in enumerate(step_ups):
-        campaign_start = su.date
+    campaign_step_ups: List[InflectionPoint] = []
 
-        # Determine end: next disruption, next step_up, or today
-        end_date = date.today()
-        end_reason = 'ongoing'
+    def _finalize_campaign(step_ups: List[InflectionPoint], end: date, reason: str):
+        # When multiple step_ups cluster before a disruption, the last one
+        # is the campaign start — earlier ones were pre-campaign ramp/racing.
+        start = step_ups[-1].date
 
-        # Check disruptions within this campaign window
-        campaign_disruption = None
-        for d in disruptions:
-            if d.date > campaign_start:
-                if idx + 1 < len(step_ups) and d.date > step_ups[idx + 1].date:
-                    continue
-                campaign_disruption = d
-                end_date = d.date
-                end_reason = 'disruption'
-                break
-
-        # Check next step_up
-        if idx + 1 < len(step_ups):
-            next_su = step_ups[idx + 1]
-            if end_reason == 'ongoing' or next_su.date < end_date:
-                # Next step_up is within this campaign — it's an escalation, not a new campaign
-                # Only treat it as a new campaign if it's after a disruption
-                if campaign_disruption and next_su.date > campaign_disruption.date:
-                    pass  # disruption ended this campaign, next step_up is a new one
-                elif not campaign_disruption:
-                    # No disruption — keep extending to the next step_up only if far apart
-                    pass
-
-        # Link races: within campaign window + 4 weeks after disruption
-        residual_cutoff = end_date + timedelta(weeks=4) if end_reason == 'disruption' else end_date
-        linked_race_ids = []
-        for ev in events:
-            if campaign_start <= ev.event_date <= residual_cutoff:
-                linked_race_ids.append(ev.id)
-
-        # Build phases
-        phases = _detect_phases(
-            campaign_start, end_date, weekly_volumes, athlete_id, db
-        )
-
-        # Compute campaign stats
-        campaign_weeks_data = [
-            (ws, vol) for ws, vol in weekly_volumes
-            if campaign_start <= ws <= end_date
+        residual_cutoff = end + timedelta(weeks=4) if reason == 'disruption' else end
+        linked_race_ids = [
+            ev.id for ev in events
+            if start <= ev.event_date <= residual_cutoff
         ]
 
-        total_weeks = max(1, (end_date - campaign_start).days // 7)
+        phases = _detect_phases(start, end, weekly_volumes, athlete_id, db)
+
+        campaign_weeks_data = [
+            (ws, vol) for ws, vol in weekly_volumes
+            if start <= ws <= end
+        ]
+        total_weeks = max(1, (end - start).days // 7)
         peak_vol = max((vol for _, vol in campaign_weeks_data), default=0.0)
         avg_vol = (
             sum(vol for _, vol in campaign_weeks_data) / len(campaign_weeks_data)
@@ -350,15 +322,28 @@ def build_campaigns(
 
         campaigns.append(TrainingCampaign(
             athlete_id=athlete_id,
-            start_date=campaign_start,
-            end_date=end_date,
-            end_reason=end_reason,
+            start_date=start,
+            end_date=end,
+            end_reason=reason,
             phases=phases,
             linked_races=linked_race_ids,
             total_weeks=total_weeks,
             peak_weekly_volume_km=round(peak_vol, 1),
             avg_weekly_volume_km=round(avg_vol, 1),
         ))
+
+    for ip in sorted_ips:
+        if ip.type == 'step_up':
+            campaign_step_ups.append(ip)
+
+        elif ip.type == 'disruption':
+            if campaign_step_ups:
+                _finalize_campaign(campaign_step_ups, ip.date, 'disruption')
+                campaign_step_ups = []
+
+    # If step_ups are still open, close as ongoing
+    if campaign_step_ups:
+        _finalize_campaign(campaign_step_ups, date.today(), 'ongoing')
 
     return campaigns
 
@@ -458,21 +443,24 @@ def classify_disruption(
     db: Session,
 ) -> dict:
     """
-    When a disruption is detected, determine what happened.
+    Describe the volume pattern around a disruption using only what the
+    data shows. No guessing at cause — we can't know from mileage data
+    whether it was injury, illness, or life event.
 
-    Analyzes volume before, during, and after the disruption point to
-    classify severity and recovery pattern.
+    Returns the observable pattern: how much volume was there before,
+    how quickly it declined, how long the low period lasted, and whether
+    recovery has started.
     """
     weekly_volumes = _compute_weekly_volumes(athlete_id, db)
     if not weekly_volumes:
         return {
-            'type': 'unknown',
             'severity': 'unknown',
             'duration_weeks': 0,
             'volume_before_km': 0.0,
             'volume_during_km': 0.0,
             'volume_after_km': 0.0,
             'recovery_pattern': 'unknown',
+            'decline_pattern': 'unknown',
         }
 
     # Volume in the 4 weeks before disruption
@@ -480,64 +468,75 @@ def classify_disruption(
     before_vols = [vol for ws, vol in weekly_volumes if before_start <= ws < disruption_date]
     volume_before = sum(before_vols) / max(1, len(before_vols))
 
-    # Weeks of low/no volume after disruption
-    low_threshold = volume_before * 0.25
-    duration_weeks = 0
-    post_disruption_vols = []
-    for ws, vol in weekly_volumes:
-        if ws >= disruption_date:
-            if vol < low_threshold:
-                duration_weeks += 1
-                post_disruption_vols.append(vol)
-            else:
-                break
+    # Scan 12-week window after disruption date for the low-volume period.
+    # Progressive disruptions may take weeks to reach near-zero.
+    low_threshold = volume_before * 0.30
+    post_window = [
+        (ws, vol) for ws, vol in weekly_volumes
+        if disruption_date <= ws <= disruption_date + timedelta(weeks=12)
+    ]
+
+    low_weeks = [(ws, vol) for ws, vol in post_window if vol < low_threshold]
+    duration_weeks = len(low_weeks)
 
     volume_during = (
-        sum(post_disruption_vols) / len(post_disruption_vols)
-        if post_disruption_vols else 0.0
+        sum(v for _, v in low_weeks) / len(low_weeks)
+        if low_weeks else 0.0
     )
 
-    # Recovery pattern
+    # Decline pattern: did volume drop instantly or taper down?
+    if post_window:
+        first_week_vol = post_window[0][1]
+        if first_week_vol < low_threshold:
+            decline_pattern = 'immediate'
+        else:
+            decline_pattern = 'progressive'
+    else:
+        decline_pattern = 'unknown'
+
+    # Recovery: look at volume after the low period
+    low_end = disruption_date + timedelta(weeks=12)
+    if low_weeks:
+        low_end = max(ws for ws, _ in low_weeks) + timedelta(weeks=1)
+
     recovery_vols = [
         vol for ws, vol in weekly_volumes
-        if ws > disruption_date + timedelta(weeks=duration_weeks)
+        if ws >= low_end
     ]
 
     if not recovery_vols:
         recovery_pattern = 'not_yet_recovered'
-    elif len(recovery_vols) >= 3:
-        if recovery_vols[0] > volume_before * 0.5:
-            recovery_pattern = 'sudden'
-        else:
+    elif len(recovery_vols) >= 4:
+        avg_first_4 = sum(recovery_vols[:4]) / 4
+        if avg_first_4 > volume_before * 0.6:
+            recovery_pattern = 'rapid'
+        elif avg_first_4 > volume_before * 0.3:
             recovery_pattern = 'gradual'
+        else:
+            recovery_pattern = 'slow'
     else:
-        recovery_pattern = 'not_yet_recovered'
+        avg_recovery = sum(recovery_vols) / len(recovery_vols)
+        if avg_recovery > volume_before * 0.4:
+            recovery_pattern = 'gradual'
+        else:
+            recovery_pattern = 'slow'
 
-    # Severity
-    if duration_weeks == 0:
-        severity = 'moderate_reduction'
-    elif volume_during < 1.0:
+    # Severity: only from the volume pattern
+    min_vol_in_window = min((v for _, v in post_window), default=volume_before)
+    if min_vol_in_window < 1.0 and duration_weeks >= 4:
         severity = 'complete_stop'
-    elif volume_during < volume_before * 0.3:
-        severity = 'major_reduction'
-    else:
-        severity = 'moderate_reduction'
-
-    # Type inference
-    if duration_weeks == 0:
-        disruption_type = 'unknown'
-    elif severity == 'complete_stop' and duration_weeks >= 4:
-        disruption_type = 'injury'
-    elif severity == 'complete_stop' and duration_weeks < 4:
-        disruption_type = 'illness'
+    elif min_vol_in_window < volume_before * 0.10:
+        severity = 'near_complete_stop'
     elif duration_weeks >= 2:
-        disruption_type = 'injury'
+        severity = 'major_reduction'
+    elif duration_weeks >= 1:
+        severity = 'moderate_reduction'
     else:
-        disruption_type = 'unknown'
+        severity = 'minor'
 
     return {
-        'type': disruption_type,
         'severity': severity,
+        'decline_pattern': decline_pattern,
         'duration_weeks': duration_weeks,
         'volume_before_km': round(volume_before, 1),
         'volume_during_km': round(volume_during, 1),
