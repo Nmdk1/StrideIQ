@@ -59,9 +59,10 @@ def calculate_athlete_derived_signals(
                 'consistency_index': athlete.consistency_index,
             }
     
-    # Fetch all activities for this athlete
+    # Fetch all activities for this athlete (exclude duplicates)
     activities = db.query(Activity).filter(
-        Activity.athlete_id == athlete.id
+        Activity.athlete_id == athlete.id,
+        Activity.is_duplicate == False,  # noqa: E712
     ).order_by(Activity.start_time.desc()).all()
     
     if not activities:

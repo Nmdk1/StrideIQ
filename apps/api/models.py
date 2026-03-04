@@ -507,9 +507,11 @@ class Activity(Base):
     active_kcal = Column(Integer, nullable=True)
 
     # --- RUNTOON SHARE FLOW ---
-    # Dismiss is per-activity (not per-image) because it happens before generation.
-    # "I don't want to share this run" — set by POST /v1/activities/{id}/runtoon/dismiss.
     share_dismissed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # --- DUPLICATE DETECTION (Racing Fingerprint Pre-Work P1) ---
+    is_duplicate = Column(Boolean, default=False, nullable=False, server_default="false", index=True)
+    duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=True)
 
     # --- THE ARMOR: Unique Constraint prevents duplicates at the DB level ---
     __table_args__ = (

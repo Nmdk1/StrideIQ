@@ -519,6 +519,7 @@ class TrainingLoadCalculator:
         
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.is_duplicate == False,  # noqa: E712
             Activity.start_time >= datetime.combine(start_date, datetime.min.time()),
             Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time())
         ).order_by(Activity.start_time).all()
@@ -607,6 +608,7 @@ class TrainingLoadCalculator:
         
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.is_duplicate == False,  # noqa: E712
             Activity.start_time >= datetime.combine(start_date, datetime.min.time()),
             Activity.start_time < datetime.combine(end_date + timedelta(days=1), datetime.min.time())
         ).order_by(Activity.start_time).all()
