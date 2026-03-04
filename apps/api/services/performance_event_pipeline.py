@@ -200,7 +200,7 @@ def _mark_personal_bests(athlete_id: UUID, db: Session) -> None:
     best_by_cat: Dict[str, PerformanceEvent] = {}
     for ev in events:
         cat = ev.distance_category
-        if cat not in best_by_cat or ev.time_seconds < best_by_cat[cat].time_seconds:
+        if cat not in best_by_cat or ev.effective_time_seconds < best_by_cat[cat].effective_time_seconds:
             best_by_cat[cat] = ev
 
     for ev in events:
