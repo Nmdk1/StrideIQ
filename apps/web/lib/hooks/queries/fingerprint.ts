@@ -21,14 +21,16 @@ export function useRaceCandidates() {
 
 export function useBrowseActivities(params: {
   distance_category?: string;
+  day_of_week?: string;
   limit?: number;
   offset?: number;
   enabled?: boolean;
 }) {
   return useQuery<BrowseResponse>({
-    queryKey: ['fingerprint', 'browse', params.distance_category, params.offset],
+    queryKey: ['fingerprint', 'browse', params.distance_category, params.day_of_week, params.offset],
     queryFn: () => browseActivities({
       distance_category: params.distance_category,
+      day_of_week: params.day_of_week,
       limit: params.limit || 50,
       offset: params.offset || 0,
     }),

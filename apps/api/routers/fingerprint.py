@@ -218,13 +218,17 @@ async def browse_activities(
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
     distance_category: Optional[str] = Query(None),
+    day_of_week: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
     """
     Tier 3 browse: activities at standard distances that don't have
     a PerformanceEvent yet. Sorted by pace (fastest first).
+    Supports day_of_week filter: "saturday", "sunday", or "weekend".
     """
+    from sqlalchemy import extract, or_
+
     event_activity_ids = set(
         row[0] for row in db.query(PerformanceEvent.activity_id).filter(
             PerformanceEvent.athlete_id == current_user.id,
@@ -245,7 +249,6 @@ async def browse_activities(
         lo, hi = DISTANCE_CATEGORIES[distance_category]
         q = q.filter(Activity.distance_m >= lo, Activity.distance_m <= hi)
     else:
-        from sqlalchemy import or_
         dist_filters = []
         for lo, hi in DISTANCE_CATEGORIES.values():
             dist_filters.append(
@@ -253,6 +256,16 @@ async def browse_activities(
             )
         if dist_filters:
             q = q.filter(or_(*dist_filters))
+
+    if day_of_week:
+        dow = extract('dow', Activity.start_time)  # PostgreSQL: 0=Sun, 6=Sat
+        dow_lower = day_of_week.lower()
+        if dow_lower == 'weekend':
+            q = q.filter(or_(dow == 0, dow == 6))
+        elif dow_lower == 'saturday':
+            q = q.filter(dow == 6)
+        elif dow_lower == 'sunday':
+            q = q.filter(dow == 0)
 
     total = q.count()
 

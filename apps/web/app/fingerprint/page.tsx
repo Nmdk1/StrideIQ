@@ -307,10 +307,12 @@ function TierSection({
 
 function BrowseSection() {
   const [distFilter, setDistFilter] = useState<string | undefined>(undefined);
+  const [dayFilter, setDayFilter] = useState<string | undefined>(undefined);
   const [offset, setOffset] = useState(0);
   const [showBrowse, setShowBrowse] = useState(false);
   const { data, isLoading } = useBrowseActivities({
     distance_category: distFilter,
+    day_of_week: dayFilter,
     offset,
     limit: 20,
     enabled: showBrowse,
@@ -346,7 +348,23 @@ function BrowseSection() {
         </p>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        <FilterChip
+          label="Weekend"
+          active={dayFilter === 'weekend'}
+          onClick={() => { setDayFilter(dayFilter === 'weekend' ? undefined : 'weekend'); setOffset(0); }}
+        />
+        <FilterChip
+          label="Saturday"
+          active={dayFilter === 'saturday'}
+          onClick={() => { setDayFilter(dayFilter === 'saturday' ? undefined : 'saturday'); setOffset(0); }}
+        />
+        <FilterChip
+          label="Sunday"
+          active={dayFilter === 'sunday'}
+          onClick={() => { setDayFilter(dayFilter === 'sunday' ? undefined : 'sunday'); setOffset(0); }}
+        />
+        <span style={{ width: 1, background: C.border, margin: '4px 4px' }} />
         <FilterChip
           label="All distances"
           active={!distFilter}

@@ -59,11 +59,13 @@ export async function getRaceCandidates(): Promise<RaceCandidateResponse> {
 
 export async function browseActivities(params: {
   distance_category?: string;
+  day_of_week?: string;
   limit?: number;
   offset?: number;
 }): Promise<BrowseResponse> {
   const query = new URLSearchParams();
   if (params.distance_category) query.set('distance_category', params.distance_category);
+  if (params.day_of_week) query.set('day_of_week', params.day_of_week);
   if (params.limit) query.set('limit', String(params.limit));
   if (params.offset) query.set('offset', String(params.offset));
   return apiClient.get<BrowseResponse>(`/v1/fingerprint/browse?${query.toString()}`);
