@@ -13,6 +13,8 @@ Architecture:
     4. Returns a finding only if it survives scrutiny — or None
 
   The engine runs all registered investigations and returns the survivors.
+  Investigations declare their signal requirements via @investigation decorator.
+  The runner checks signal availability before executing.
 """
 
 import logging
@@ -24,9 +26,9 @@ from typing import List, Optional, Dict, Tuple, Callable
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, func as sa_func
 
-from models import Activity, ActivitySplit, Athlete, PerformanceEvent
+from models import Activity, ActivitySplit, ActivityStream, Athlete, PerformanceEvent
 from services.rpi_calculator import calculate_training_paces
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,127 @@ MI_PER_KM = 0.621371
 SEC_PER_MIN = 60.0
 METERS_PER_MILE = 1609.34
 TREADMILL_ELEV_THRESHOLD_M = 20
+
+
+# ═══════════════════════════════════════════════════════
+#  Investigation Registry
+# ═══════════════════════════════════════════════════════
+
+@dataclass
+class InvestigationSpec:
+    """Metadata for a registered investigation."""
+    name: str
+    fn: Callable
+    requires: List[str]
+    min_activities: int = 0
+    min_races: int = 0
+    min_data_weeks: int = 0
+    description: str = ""
+
+INVESTIGATION_REGISTRY: List[InvestigationSpec] = []
+
+
+def investigation(
+    requires: List[str],
+    min_activities: int = 0,
+    min_races: int = 0,
+    min_data_weeks: int = 0,
+    description: str = "",
+):
+    """Decorator that registers an investigation with its signal requirements."""
+    def decorator(fn):
+        INVESTIGATION_REGISTRY.append(InvestigationSpec(
+            name=fn.__name__,
+            fn=fn,
+            requires=requires,
+            min_activities=min_activities,
+            min_races=min_races,
+            min_data_weeks=min_data_weeks,
+            description=description,
+        ))
+        return fn
+    return decorator
+
+
+def get_athlete_signal_coverage(athlete_id: UUID, db: Session) -> Dict[str, bool]:
+    """Check which signal types have sufficient data for this athlete."""
+    act_count = db.query(sa_func.count(Activity.id)).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.is_duplicate == False,  # noqa: E712
+    ).scalar() or 0
+
+    split_count = db.query(sa_func.count(ActivitySplit.id)).join(Activity).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.is_duplicate == False,  # noqa: E712
+    ).scalar() or 0
+
+    stream_count = db.query(sa_func.count(ActivityStream.id)).join(Activity).filter(
+        Activity.athlete_id == athlete_id,
+    ).scalar() or 0
+
+    shape_count = db.query(sa_func.count(Activity.id)).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.run_shape.isnot(None),
+    ).scalar() or 0
+
+    env_count = db.query(sa_func.count(Activity.id)).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.temperature_f.isnot(None),
+    ).scalar() or 0
+
+    race_count = db.query(sa_func.count(PerformanceEvent.id)).filter(
+        PerformanceEvent.athlete_id == athlete_id,
+        PerformanceEvent.user_confirmed == True,  # noqa: E712
+    ).scalar() or 0
+
+    return {
+        'activity_summary': act_count > 0,
+        'activity_splits': split_count > 0,
+        'activity_stream': stream_count > 0,
+        'run_shape': shape_count > 0,
+        'environment': env_count > 0,
+        'race_result': race_count > 0,
+    }
+
+
+def meets_minimums(spec: InvestigationSpec, athlete_id: UUID, db: Session) -> bool:
+    """Check if an athlete meets the minimum data thresholds for an investigation."""
+    if spec.min_activities > 0:
+        act_count = db.query(sa_func.count(Activity.id)).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.is_duplicate == False,  # noqa: E712
+        ).scalar() or 0
+        if act_count < spec.min_activities:
+            return False
+
+    if spec.min_races > 0:
+        race_count = db.query(sa_func.count(PerformanceEvent.id)).filter(
+            PerformanceEvent.athlete_id == athlete_id,
+            PerformanceEvent.user_confirmed == True,  # noqa: E712
+        ).scalar() or 0
+        if race_count < spec.min_races:
+            return False
+
+    if spec.min_data_weeks > 0:
+        earliest = db.query(sa_func.min(Activity.start_time)).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.is_duplicate == False,  # noqa: E712
+        ).scalar()
+        if earliest is None:
+            return False
+        latest = db.query(sa_func.max(Activity.start_time)).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.is_duplicate == False,  # noqa: E712
+        ).scalar()
+        if latest is None:
+            return False
+        weeks = (latest - earliest).days / 7
+        if weeks < spec.min_data_weeks:
+            return False
+
+    return True
 
 
 # ═══════════════════════════════════════════════════════
@@ -829,6 +952,12 @@ def connect_adaptations_to_races(
 #  INVESTIGATIONS — Question-based mining
 # ═══════════════════════════════════════════════════════
 
+@investigation(
+    requires=['activity_summary', 'activity_splits'],
+    min_activities=20,
+    min_races=3,
+    description="Cardiovascular durability from back-to-back quality + long run days",
+)
 def investigate_back_to_back_durability(
     athlete_id: UUID,
     db: Session,
@@ -1008,6 +1137,11 @@ def investigate_back_to_back_durability(
     )
 
 
+@investigation(
+    requires=['activity_summary', 'activity_splits', 'race_result'],
+    min_races=3,
+    description="Race execution analysis — pacing, cardiac drift, GAP-adjusted splits",
+)
 def investigate_race_execution(
     athlete_id: UUID,
     db: Session,
@@ -1142,6 +1276,11 @@ def investigate_race_execution(
     return findings
 
 
+@investigation(
+    requires=['activity_summary', 'activity_splits'],
+    min_activities=30,
+    description="Recovery cost of different quality session types on next-day running",
+)
 def investigate_recovery_cost(
     athlete_id: UUID,
     db: Session,
@@ -1300,6 +1439,12 @@ def investigate_recovery_cost(
     )
 
 
+@investigation(
+    requires=['activity_summary', 'activity_splits', 'race_result'],
+    min_activities=20,
+    min_races=4,
+    description="Training recipe comparison — what mix preceded best vs worst races",
+)
 def investigate_training_recipe(
     athlete_id: UUID,
     db: Session,
@@ -1533,6 +1678,12 @@ def investigate_training_recipe(
     return findings
 
 
+@investigation(
+    requires=['activity_summary', 'activity_splits', 'environment'],
+    min_activities=20,
+    min_data_weeks=12,
+    description="Pace at equivalent HR over time — aerobic adaptation signal",
+)
 def investigate_pace_at_hr_adaptation(
     athlete_id: UUID,
     db: Session,
@@ -1677,6 +1828,11 @@ def investigate_pace_at_hr_adaptation(
     return findings if findings else None
 
 
+@investigation(
+    requires=['activity_summary', 'activity_splits', 'environment'],
+    min_activities=30,
+    description="Personal heat resilience — does this athlete's response match the generic formula",
+)
 def investigate_heat_tax(
     athlete_id: UUID,
     db: Session,
@@ -1801,6 +1957,12 @@ def investigate_heat_tax(
     )
 
 
+@investigation(
+    requires=['activity_summary', 'environment'],
+    min_activities=20,
+    min_data_weeks=16,
+    description="Post-disruption fitness retention — did training survive the break",
+)
 def investigate_post_injury_resilience(
     athlete_id: UUID,
     db: Session,
@@ -1934,6 +2096,12 @@ def investigate_post_injury_resilience(
     )
 
 
+@investigation(
+    requires=['activity_summary', 'activity_splits'],
+    min_activities=20,
+    min_data_weeks=12,
+    description="Stride economy — stride length at equivalent cadence over time",
+)
 def investigate_stride_economy(
     athlete_id: UUID,
     db: Session,
@@ -2059,6 +2227,12 @@ def investigate_stride_economy(
     )
 
 
+@investigation(
+    requires=['activity_summary', 'activity_splits'],
+    min_activities=15,
+    min_data_weeks=8,
+    description="Quality workout pace progression by zone over time",
+)
 def investigate_workout_progression(
     athlete_id: UUID,
     db: Session,
@@ -2212,6 +2386,11 @@ def investigate_workout_progression(
     return findings if findings else None
 
 
+@investigation(
+    requires=['activity_summary', 'activity_splits', 'environment'],
+    min_activities=20,
+    description="Long run muscular durability — cadence/stride decay in final quarter",
+)
 def investigate_long_run_durability(
     athlete_id: UUID,
     db: Session,
@@ -2373,19 +2552,260 @@ def investigate_long_run_durability(
     )
 
 
-# All investigations, run in order
-ALL_INVESTIGATIONS: List[Callable] = [
-    investigate_back_to_back_durability,
-    investigate_race_execution,
-    investigate_recovery_cost,
-    investigate_training_recipe,
-    investigate_pace_at_hr_adaptation,
-    investigate_heat_tax,
-    investigate_post_injury_resilience,
-    investigate_stride_economy,
-    investigate_workout_progression,
-    investigate_long_run_durability,
-]
+# ═══════════════════════════════════════════════════════
+#  Shape-Aware Investigations (Living Fingerprint Cap. 4)
+# ═══════════════════════════════════════════════════════
+
+@investigation(
+    requires=['activity_summary', 'run_shape'],
+    min_activities=10,
+    min_data_weeks=4,
+    description="Stride frequency, quality, and progression over time",
+)
+def investigate_stride_progression(
+    athlete_id: UUID,
+    db: Session,
+    zones: TrainingZones,
+    events: List[PerformanceEvent],
+) -> Optional[RaceInputFinding]:
+    """
+    Track stride (acceleration) frequency and quality over time
+    using activity shapes.
+    """
+    acts = db.query(Activity).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.run_shape.isnot(None),
+    ).order_by(Activity.start_time).all()
+
+    stride_runs = []
+    for act in acts:
+        shape = act.run_shape
+        if not shape or 'summary' not in shape:
+            continue
+        summary = shape['summary']
+        if summary.get('acceleration_clustering') != 'end_loaded':
+            continue
+        accels = shape.get('accelerations', [])
+        fast_accels = [a for a in accels if a.get('pace_zone') in
+                       ('interval', 'repetition', 'threshold')]
+        if len(fast_accels) < 2:
+            continue
+
+        stride_runs.append({
+            'date': act.start_time.date().isoformat(),
+            'activity_id': str(act.id),
+            'count': len(fast_accels),
+            'avg_pace': sum(a.get('avg_pace_sec_per_mile', 0) for a in fast_accels) / len(fast_accels),
+            'avg_duration': sum(a.get('duration_s', 0) for a in fast_accels) / len(fast_accels),
+        })
+
+    if len(stride_runs) < 4:
+        return None
+
+    half = len(stride_runs) // 2
+    early = stride_runs[:half]
+    late = stride_runs[half:]
+
+    early_pace = sum(s['avg_pace'] for s in early) / len(early)
+    late_pace = sum(s['avg_pace'] for s in late) / len(late)
+    pace_change = late_pace - early_pace
+
+    early_count = sum(s['count'] for s in early) / len(early)
+    late_count = sum(s['count'] for s in late) / len(late)
+
+    def _fmt(sec):
+        m = int(sec) // 60
+        s = int(sec) % 60
+        return f"{m}:{s:02d}"
+
+    direction = "faster" if pace_change < 0 else "slower"
+    sentence = (
+        f"End-of-run strides tracked across {len(stride_runs)} runs: "
+        f"average count went from {early_count:.1f} to {late_count:.1f}, "
+        f"average pace from {_fmt(early_pace)}/mi to {_fmt(late_pace)}/mi "
+        f"({int(abs(pace_change))} sec/mi {direction})."
+    )
+
+    return RaceInputFinding(
+        layer='B',
+        finding_type='stride_progression',
+        sentence=sentence,
+        receipts={
+            'runs': stride_runs,
+            'early_avg_pace': _fmt(early_pace),
+            'late_avg_pace': _fmt(late_pace),
+            'pace_change_sec': int(pace_change),
+        },
+        confidence='genuine' if len(stride_runs) >= 8 else 'suggestive',
+    )
+
+
+@investigation(
+    requires=['activity_summary', 'run_shape'],
+    min_activities=10,
+    min_data_weeks=8,
+    description="Threshold interval duration and pace improvement over sessions",
+)
+def investigate_cruise_interval_quality(
+    athlete_id: UUID,
+    db: Session,
+    zones: TrainingZones,
+    events: List[PerformanceEvent],
+) -> Optional[RaceInputFinding]:
+    """
+    Track sustained threshold work quality across sessions using shapes.
+    """
+    acts = db.query(Activity).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.run_shape.isnot(None),
+    ).order_by(Activity.start_time).all()
+
+    threshold_sessions = []
+    for act in acts:
+        shape = act.run_shape
+        if not shape:
+            continue
+        phases = shape.get('phases', [])
+        thr_phases = [p for p in phases
+                      if p.get('pace_zone') == 'threshold'
+                      and p.get('duration_s', 0) >= 240]
+        if len(thr_phases) < 2:
+            continue
+
+        total_thr_km = sum(p.get('distance_m', 0) for p in thr_phases) / 1000
+        avg_pace = sum(p.get('avg_pace_sec_per_mile', 0) for p in thr_phases) / len(thr_phases)
+        avg_hr = None
+        hrs = [p.get('avg_hr') for p in thr_phases if p.get('avg_hr')]
+        if hrs:
+            avg_hr = sum(hrs) / len(hrs)
+
+        threshold_sessions.append({
+            'date': act.start_time.date().isoformat(),
+            'activity_id': str(act.id),
+            'phase_count': len(thr_phases),
+            'total_threshold_km': round(total_thr_km, 1),
+            'avg_pace': round(avg_pace, 1),
+            'avg_hr': round(avg_hr, 1) if avg_hr else None,
+        })
+
+    if len(threshold_sessions) < 4:
+        return None
+
+    half = len(threshold_sessions) // 2
+    early = threshold_sessions[:half]
+    late = threshold_sessions[half:]
+
+    early_km = sum(s['total_threshold_km'] for s in early) / len(early)
+    late_km = sum(s['total_threshold_km'] for s in late) / len(late)
+
+    early_hrs = [s['avg_hr'] for s in early if s['avg_hr']]
+    late_hrs = [s['avg_hr'] for s in late if s['avg_hr']]
+    early_hr = sum(early_hrs) / len(early_hrs) if early_hrs else None
+    late_hr = sum(late_hrs) / len(late_hrs) if late_hrs else None
+
+    def _fmt(sec):
+        m = int(sec) // 60
+        s = int(sec) % 60
+        return f"{m}:{s:02d}"
+
+    sentence = (
+        f"Over {len(threshold_sessions)} threshold sessions, "
+        f"sustained distance grew from {early_km:.1f}km to {late_km:.1f}km. "
+    )
+    if early_hr and late_hr:
+        hr_change = late_hr - early_hr
+        sentence += (
+            f"Threshold HR went from {early_hr:.0f} to {late_hr:.0f} bpm "
+            f"({'lower' if hr_change < 0 else 'higher'} effort for more distance)."
+        )
+
+    return RaceInputFinding(
+        layer='B',
+        finding_type='cruise_interval_quality',
+        sentence=sentence,
+        receipts={
+            'sessions': threshold_sessions,
+            'early_avg_km': round(early_km, 1),
+            'late_avg_km': round(late_km, 1),
+        },
+        confidence='genuine',
+    )
+
+
+@investigation(
+    requires=['activity_summary', 'run_shape'],
+    min_activities=10,
+    min_data_weeks=8,
+    description="Recovery between interval reps — does inter-rep recovery improve",
+)
+def investigate_interval_recovery_trend(
+    athlete_id: UUID,
+    db: Session,
+    zones: TrainingZones,
+    events: List[PerformanceEvent],
+) -> Optional[RaceInputFinding]:
+    """
+    Track recovery between interval reps over successive sessions.
+    """
+    acts = db.query(Activity).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.run_shape.isnot(None),
+    ).order_by(Activity.start_time).all()
+
+    sessions_with_recovery = []
+    for act in acts:
+        shape = act.run_shape
+        if not shape:
+            continue
+        accels = shape.get('accelerations', [])
+        recoveries = [a.get('recovery_after_s') for a in accels
+                       if a.get('recovery_after_s') is not None and a.get('recovery_after_s') > 0]
+        if len(recoveries) < 3:
+            continue
+
+        sessions_with_recovery.append({
+            'date': act.start_time.date().isoformat(),
+            'activity_id': str(act.id),
+            'avg_recovery_s': round(sum(recoveries) / len(recoveries), 1),
+            'rep_count': len(recoveries),
+        })
+
+    if len(sessions_with_recovery) < 4:
+        return None
+
+    half = len(sessions_with_recovery) // 2
+    early = sessions_with_recovery[:half]
+    late = sessions_with_recovery[half:]
+
+    early_avg = sum(s['avg_recovery_s'] for s in early) / len(early)
+    late_avg = sum(s['avg_recovery_s'] for s in late) / len(late)
+    change = late_avg - early_avg
+
+    if abs(change) < 3:
+        return None
+
+    direction = "faster" if change < 0 else "slower"
+    sentence = (
+        f"Inter-rep recovery time across {len(sessions_with_recovery)} sessions: "
+        f"averaged {early_avg:.0f}s early, {late_avg:.0f}s recently — "
+        f"{abs(change):.0f}s {direction} recovery."
+    )
+
+    return RaceInputFinding(
+        layer='B',
+        finding_type='interval_recovery_trend',
+        sentence=sentence,
+        receipts={
+            'sessions': sessions_with_recovery,
+            'early_avg_recovery_s': round(early_avg, 1),
+            'late_avg_recovery_s': round(late_avg, 1),
+            'change_s': round(change, 1),
+        },
+        confidence='genuine' if len(sessions_with_recovery) >= 6 else 'suggestive',
+    )
 
 
 # ═══════════════════════════════════════════════════════
@@ -2395,32 +2815,47 @@ ALL_INVESTIGATIONS: List[Callable] = [
 def mine_race_inputs(
     athlete_id: UUID,
     db: Session,
-) -> List[RaceInputFinding]:
+) -> Tuple[List[RaceInputFinding], List[str]]:
     """
-    Run all investigations against the athlete's data.
+    Run all registered investigations against the athlete's data.
 
-    Flow: load athlete's RPI → compute zones → run each investigation →
-    return only findings that survive confound checks.
+    Uses the investigation registry to check signal availability and
+    minimum data thresholds before executing each investigation.
+
+    Returns (findings, honest_gaps) where honest_gaps lists investigations
+    that were skipped and why — for honest reporting to the athlete.
     """
     findings: List[RaceInputFinding] = []
+    honest_gaps: List[str] = []
 
     zones = load_training_zones(athlete_id, db)
     if not zones:
         logger.warning("No RPI/zones for athlete %s — cannot mine inputs", athlete_id)
-        return findings
+        return findings, ["Training pace profile not available — need at least one race result"]
+
+    coverage = get_athlete_signal_coverage(athlete_id, db)
 
     events = db.query(PerformanceEvent).filter(
         PerformanceEvent.athlete_id == athlete_id,
         PerformanceEvent.user_confirmed == True,  # noqa: E712
     ).order_by(PerformanceEvent.event_date).all()
 
-    if len(events) < 3:
-        return findings
+    for spec in INVESTIGATION_REGISTRY:
+        missing = [s for s in spec.requires if not coverage.get(s)]
+        if missing:
+            honest_gaps.append(
+                f"{spec.description}: needs {', '.join(missing)}"
+            )
+            continue
 
-    # Run each investigation
-    for investigation in ALL_INVESTIGATIONS:
+        if not meets_minimums(spec, athlete_id, db):
+            honest_gaps.append(
+                f"{spec.description}: not enough data yet"
+            )
+            continue
+
         try:
-            result = investigation(athlete_id, db, zones, events)
+            result = spec.fn(athlete_id, db, zones, events)
             if result is None:
                 continue
             if isinstance(result, list):
@@ -2428,7 +2863,7 @@ def mine_race_inputs(
             else:
                 findings.append(result)
         except Exception:
-            logger.exception("Investigation %s failed", investigation.__name__)
+            logger.exception("Investigation %s failed", spec.name)
 
     # Legacy: adaptation curves and weekly patterns
     curves = detect_adaptation_curves(athlete_id, db, zones)
@@ -2442,7 +2877,7 @@ def mine_race_inputs(
     for p in patterns:
         findings.append(_pattern_to_finding(p, events))
 
-    return findings
+    return findings, honest_gaps
 
 
 def _pattern_to_finding(

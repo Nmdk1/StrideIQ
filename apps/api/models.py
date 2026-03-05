@@ -437,6 +437,11 @@ class Activity(Base):
     temperature_f = Column(Float, nullable=True)  # Temperature at start
     humidity_pct = Column(Float, nullable=True)  # Humidity percentage
     weather_condition = Column(Text, nullable=True)  # e.g., 'clear', 'cloudy', 'rain'
+    dew_point_f = Column(Float, nullable=True)  # Dew point in °F (Magnus formula from temp+humidity)
+    heat_adjustment_pct = Column(Float, nullable=True)  # Pace slowdown fraction from Temp+DewPoint model
+
+    # --- ACTIVITY SHAPE (Living Fingerprint) ---
+    run_shape = Column(JSONB, nullable=True)  # RunShape.to_dict() — phases, accelerations, summary
 
     # --- INGESTION PROGRESS MARKERS ---
     # Strava only returns `best_efforts` when an activity sets PRs; we still need a
@@ -607,22 +612,27 @@ class PerformanceEvent(Base):
     activity = relationship("Activity")
 
 
-class StoredFingerprintFinding(Base):
+class AthleteFinding(Base):
+    """Persistent store for investigation findings (Living Fingerprint).
+
+    Keeps tablename 'fingerprint_finding' for migration continuity.
+    Supersession logic: one active finding per (investigation_name, finding_type).
+    """
     __tablename__ = "fingerprint_finding"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"),
                         nullable=False, index=True)
-    layer = Column(Integer, nullable=False)
+    investigation_name = Column(Text, nullable=False)
     finding_type = Column(Text, nullable=False)
     sentence = Column(Text, nullable=False)
-    evidence = Column(JSONB, nullable=False)
-    statistical_confidence = Column(Float, nullable=False)
-    effect_size = Column(Float, nullable=False)
-    sample_size = Column(Integer, nullable=False)
-    confidence_tier = Column(Text, nullable=False)
-    computation_version = Column(Integer, nullable=False, default=1)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    receipts = Column(JSONB, nullable=False)
+    confidence = Column(Text, nullable=False)  # 'table_stakes', 'genuine', 'suggestive'
+    computation_version = Column(Integer, nullable=False, default=2)
+    first_detected_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_confirmed_at = Column(DateTime(timezone=True), server_default=func.now())
+    superseded_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
 
 
 class ActivitySplit(Base):

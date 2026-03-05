@@ -11,8 +11,8 @@ a = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
 print(f"Running training story for {a.email} (RPI: {a.rpi})")
 print("=" * 80)
 
-findings = mine_race_inputs(a.id, db)
-print(f"{len(findings)} findings produced")
+findings, honest_gaps = mine_race_inputs(a.id, db)
+print(f"{len(findings)} findings produced, {len(honest_gaps)} gaps")
 
 events = db.query(PerformanceEvent).filter(
     PerformanceEvent.athlete_id == a.id,

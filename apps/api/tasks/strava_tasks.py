@@ -1076,6 +1076,41 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
         except Exception as e:
             print(f"Warning [post-sync] Could not generate insights: {e}")
 
+        # 4. Living Fingerprint: compute heat adjustment for new activities
+        try:
+            from services.heat_adjustment import compute_activity_heat_fields
+            new_acts = db.query(Activity).filter(
+                Activity.athlete_id == athlete.id,
+                Activity.temperature_f.isnot(None),
+                Activity.humidity_pct.isnot(None),
+                Activity.dew_point_f.is_(None),
+            ).all()
+            for act in new_acts:
+                fields = compute_activity_heat_fields(act.temperature_f, act.humidity_pct)
+                act.dew_point_f = fields['dew_point_f']
+                act.heat_adjustment_pct = fields['heat_adjustment_pct']
+            if new_acts:
+                db.flush()
+                print(f"DEBUG [post-sync] Computed heat adjustment for {len(new_acts)} activities")
+        except Exception as e:
+            print(f"Warning [post-sync] Heat adjustment failed: {e}")
+
+        # 5. Living Fingerprint: persist investigation findings
+        try:
+            from services.race_input_analysis import mine_race_inputs
+            from services.finding_persistence import store_all_findings
+            findings, _gaps = mine_race_inputs(athlete.id, db)
+            if findings:
+                totals = store_all_findings(athlete.id, findings, db)
+                db.commit()
+                print(f"DEBUG [post-sync] Findings: {totals}")
+        except Exception as e:
+            print(f"Warning [post-sync] Finding persistence failed: {e}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
         # ADR-065: trigger home briefing refresh after sync
         try:
             from services.home_briefing_cache import mark_briefing_dirty

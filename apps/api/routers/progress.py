@@ -2298,10 +2298,10 @@ def get_training_story(
     if cached is not None:
         return cached
 
-    findings = mine_race_inputs(athlete_id, db)
+    findings, honest_gaps = mine_race_inputs(athlete_id, db)
     if not findings:
         return {"race_stories": [], "progressions": [], "connections": [],
-                "campaign_narrative": None, "honest_gaps": [], "finding_count": 0}
+                "campaign_narrative": None, "honest_gaps": honest_gaps, "finding_count": 0}
 
     events = db.query(PerformanceEvent).filter(
         PerformanceEvent.athlete_id == athlete_id,
@@ -2310,6 +2310,7 @@ def get_training_story(
 
     story = synthesize_training_story(findings, events)
     result = story.to_dict()
+    result['honest_gaps'] = honest_gaps
 
     _set_cache(cache_key, result, ttl=3600)
 

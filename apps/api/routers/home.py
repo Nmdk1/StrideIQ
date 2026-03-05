@@ -1653,7 +1653,7 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
         from services.training_story_engine import synthesize_training_story
         from models import PerformanceEvent as _PE
 
-        findings = mine_race_inputs(athlete_uuid, db)
+        findings, _gaps = mine_race_inputs(athlete_uuid, db)
         if findings:
             events = db.query(_PE).filter(
                 _PE.athlete_id == athlete_uuid,

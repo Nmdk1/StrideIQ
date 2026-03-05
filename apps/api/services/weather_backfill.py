@@ -229,6 +229,19 @@ def backfill_weather_for_athlete(
             act.temperature_f = weather['temperature_f']
             act.humidity_pct = weather['humidity_pct']
             act.weather_condition = weather['weather_condition']
+
+            if weather.get('dew_point_f') is not None:
+                act.dew_point_f = weather['dew_point_f']
+            elif weather['temperature_f'] is not None and weather['humidity_pct'] is not None:
+                from services.heat_adjustment import calculate_dew_point_f
+                act.dew_point_f = round(calculate_dew_point_f(
+                    weather['temperature_f'], weather['humidity_pct']), 1)
+
+            if act.dew_point_f is not None and act.temperature_f is not None:
+                from services.heat_adjustment import calculate_heat_adjustment_pct
+                act.heat_adjustment_pct = round(calculate_heat_adjustment_pct(
+                    act.temperature_f, act.dew_point_f), 4)
+
             stats['updated'] += 1
 
         time.sleep(REQUEST_DELAY_S)

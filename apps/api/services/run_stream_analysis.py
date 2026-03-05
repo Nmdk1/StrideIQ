@@ -40,6 +40,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+METERS_PER_MILE = 1609.34
+
 
 # ---------------------------------------------------------------------------
 # Enums (typed labels — no prose)
@@ -680,6 +682,8 @@ class StreamAnalysisResult:
     # --- A2: HR sanity check ---
     hr_reliable: bool = True
     hr_note: Optional[str] = None
+    # --- Living Fingerprint: Activity Shape ---
+    run_shape: Optional[Dict[str, Any]] = None
 
     def __eq__(self, other):
         if not isinstance(other, StreamAnalysisResult):
@@ -706,6 +710,7 @@ class StreamAnalysisResult:
             "effort_intensity": self.effort_intensity,
             "hr_reliable": self.hr_reliable,
             "hr_note": self.hr_note,
+            "run_shape": self.run_shape,
         }
 
 
@@ -1739,6 +1744,27 @@ def analyze_stream(
         ctx=athlete_context,
     )
 
+    # Living Fingerprint: Activity Shape Extraction
+    shape_dict = None
+    try:
+        from services.shape_extractor import extract_shape, PaceProfile
+        pace_prof = None
+        if athlete_context and athlete_context.threshold_pace_per_km:
+            thr_v = 1000.0 / athlete_context.threshold_pace_per_km
+            thr_sec_mi = METERS_PER_MILE / thr_v if thr_v > 0 else 450
+            pace_prof = PaceProfile(
+                easy_sec=int(thr_sec_mi * 1.35),
+                marathon_sec=int(thr_sec_mi * 1.10),
+                threshold_sec=int(thr_sec_mi),
+                interval_sec=int(thr_sec_mi * 0.88),
+                repetition_sec=int(thr_sec_mi * 0.80),
+            )
+        shape = extract_shape(stream_data, pace_profile=pace_prof)
+        if shape:
+            shape_dict = shape.to_dict()
+    except Exception as exc:
+        logger.warning("Shape extraction failed (non-blocking): %s", exc)
+
     return StreamAnalysisResult(
         segments=segments, drift=drift, moments=moments,
         plan_comparison=plan_comparison,
@@ -1749,6 +1775,7 @@ def analyze_stream(
         effort_intensity=effort_array,
         hr_reliable=hr_reliable,
         hr_note=hr_note,
+        run_shape=shape_dict,
     )
 
 

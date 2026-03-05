@@ -10,9 +10,14 @@ a = db.query(Athlete).filter(Athlete.email == 'mbshaf@gmail.com').first()
 print(f"Running investigations for {a.email} (RPI: {a.rpi})")
 print("=" * 80)
 
-findings = mine_race_inputs(a.id, db)
+findings, honest_gaps = mine_race_inputs(a.id, db)
 
-print(f"\n{len(findings)} findings produced\n")
+print(f"\n{len(findings)} findings produced, {len(honest_gaps)} investigations skipped\n")
+if honest_gaps:
+    print("Honest gaps:")
+    for gap in honest_gaps:
+        print(f"  - {gap}")
+    print()
 
 for i, f in enumerate(findings, 1):
     print(f"{'=' * 80}")

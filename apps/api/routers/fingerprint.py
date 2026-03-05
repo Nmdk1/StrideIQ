@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from core.auth import get_current_user, require_admin
 from core.database import get_db
-from models import Activity, Athlete, PerformanceEvent, StoredFingerprintFinding
+from models import Activity, Athlete, PerformanceEvent, AthleteFinding
 from schemas_fingerprint import (
     BrowseResponse,
     RaceCard,
@@ -452,9 +452,10 @@ async def get_fingerprint_findings(
     db: Session = Depends(get_db),
 ):
     """Returns stored pattern extraction findings for the current athlete."""
-    stored = db.query(StoredFingerprintFinding).filter(
-        StoredFingerprintFinding.athlete_id == current_user.id
-    ).order_by(StoredFingerprintFinding.layer).all()
+    stored = db.query(AthleteFinding).filter(
+        AthleteFinding.athlete_id == current_user.id,
+        AthleteFinding.is_active == True,  # noqa: E712
+    ).order_by(AthleteFinding.first_detected_at).all()
     return FingerprintFindingsResponse(findings=stored)
 
 

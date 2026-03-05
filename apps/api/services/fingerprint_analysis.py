@@ -19,7 +19,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from models import Activity, PerformanceEvent, StoredFingerprintFinding
+from models import Activity, PerformanceEvent, AthleteFinding
 
 logger = logging.getLogger(__name__)
 
@@ -117,24 +117,26 @@ def store_findings(
     Store quality-gate-passing findings. Replaces previous findings
     for this athlete (full recompute model).
     """
-    db.query(StoredFingerprintFinding).filter(
-        StoredFingerprintFinding.athlete_id == athlete_id
+    from datetime import datetime, timezone
+
+    db.query(AthleteFinding).filter(
+        AthleteFinding.athlete_id == athlete_id
     ).delete()
 
     stored = 0
     for f in findings:
         if f.confidence_tier == 'suppressed':
             continue
-        sf = StoredFingerprintFinding(
+        sf = AthleteFinding(
             athlete_id=athlete_id,
-            layer=f.layer,
+            investigation_name=f'legacy_layer{f.layer}',
             finding_type=f.finding_type,
             sentence=f.sentence,
-            evidence=f.evidence,
-            statistical_confidence=f.statistical_confidence,
-            effect_size=f.effect_size,
-            sample_size=f.sample_size,
-            confidence_tier=f.confidence_tier,
+            receipts=f.evidence,
+            confidence=f.confidence_tier,
+            first_detected_at=datetime.now(timezone.utc),
+            last_confirmed_at=datetime.now(timezone.utc),
+            is_active=True,
         )
         db.add(sf)
         stored += 1
