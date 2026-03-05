@@ -52,6 +52,59 @@ FOUNDER_PROFILE = PaceProfile(
     repetition_sec=321,
 )
 
+# Larry: 79-year-old runner, easy pace ~13:00/mi, strides around 9:00-10:00/mi
+SLOW_RUNNER_PROFILE = PaceProfile(
+    easy_sec=780,
+    marathon_sec=660,
+    threshold_sec=600,
+    interval_sec=540,
+    repetition_sec=500,
+)
+
+
+def _build_slow_runner_stream(
+    duration_s: int = 2400,
+    base_velocity: float = 2.06,
+    stride_segments: list = None,
+) -> dict:
+    """Build stream simulating a slow runner (13:00/mi) with cadence-visible strides.
+
+    GPS velocity changes are small (~0.6 m/s), but cadence spikes are clear
+    (92 spm baseline → 115+ spm during strides). This is the real-world
+    pattern for slower runners where GPS can't resolve short bursts.
+    """
+    time = list(range(duration_s))
+    velocity = [base_velocity] * duration_s
+    heartrate = [125] * duration_s
+    cadence = [92] * duration_s
+    grade = [0.0] * duration_s
+    altitude = [100.0] * duration_s
+
+    if stride_segments:
+        for seg in stride_segments:
+            start = seg['start']
+            end = seg['end']
+            stride_v = seg.get('velocity', base_velocity * 1.25)
+            stride_cad = seg.get('cadence', 116)
+            for i in range(start, min(end, duration_s)):
+                velocity[i] = stride_v
+                cadence[i] = stride_cad
+                heartrate[i] = min(160, 125 + 15)
+
+    distance = [0.0]
+    for i in range(1, duration_s):
+        distance.append(distance[-1] + velocity[i])
+
+    return {
+        'time': time,
+        'velocity_smooth': velocity,
+        'heartrate': heartrate,
+        'cadence': cadence,
+        'grade_smooth': grade,
+        'altitude': altitude,
+        'distance': distance,
+    }
+
 
 class TestPaceProfile:
     def test_easy_pace(self):
@@ -133,6 +186,35 @@ class TestStrides:
         assert shape.summary.acceleration_count >= 3
         assert shape.summary.acceleration_clustering == 'end_loaded'
         assert shape.summary.workout_classification in ('strides', 'long_run_with_strides', None)
+
+    def test_slow_runner_strides_via_cadence(self):
+        """Slow runner (13:00/mi) strides detected via cadence when GPS is marginal.
+        Real-world pattern: Larry at 79 years old. GPS shows maybe 1.10x velocity
+        change but cadence jumps from 92 to 116 spm — unmistakable."""
+        stride_segs = [
+            {'start': 1800, 'end': 1819, 'velocity': 2.64, 'cadence': 116},
+            {'start': 1860, 'end': 1889, 'velocity': 3.14, 'cadence': 118},
+            {'start': 1930, 'end': 1952, 'velocity': 3.33, 'cadence': 118},
+            {'start': 2100, 'end': 2110, 'velocity': 3.90, 'cadence': 120},
+        ]
+        stream = _build_slow_runner_stream(
+            duration_s=2400, base_velocity=2.06,
+            stride_segments=stride_segs,
+        )
+        shape = extract_shape(stream, pace_profile=SLOW_RUNNER_PROFILE)
+
+        assert shape is not None
+        assert shape.summary.acceleration_count >= 3
+        assert shape.summary.workout_classification in ('strides', None)
+
+    def test_slow_runner_no_false_strides(self):
+        """Slow runner easy run: cadence max 101, no spikes — must stay easy_run."""
+        stream = _build_slow_runner_stream(duration_s=2400, base_velocity=2.06)
+        shape = extract_shape(stream, pace_profile=SLOW_RUNNER_PROFILE)
+
+        assert shape is not None
+        assert shape.summary.acceleration_count == 0
+        assert shape.summary.workout_classification == 'easy_run'
 
     def test_strides_not_too_long(self):
         """Strides should be 10-30s duration."""

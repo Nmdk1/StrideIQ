@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 METERS_PER_MILE = 1609.34
 MIN_PHASE_DURATION_S = 60
-MIN_ACCELERATION_DURATION_S = 10
+MIN_ACCELERATION_DURATION_S = 8
 MAX_VELOCITY_MPS = 11.0  # 25 mph
 STOPPED_VELOCITY_THRESHOLD = 0.5  # m/s
 
@@ -86,6 +86,7 @@ class Acceleration:
     cadence_delta: Optional[float]
     position_in_run: float
     recovery_after_s: Optional[int]
+    hr_recovery_rate: Optional[float] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -238,8 +239,8 @@ def extract_shape(
     ]
     zone_per_point = _stabilize_zones(zone_per_point, window=61)
 
-    # Light smoothing (15s) for acceleration detection (preserves short bursts)
-    accel_v = _rolling_mean(velocity, window=15)
+    # Light smoothing (7s) for acceleration detection — must preserve 8-20s strides
+    accel_v = _rolling_mean(velocity, window=7)
     accel_v = _clamp_velocity(accel_v)
     accel_pace = _velocity_to_pace(accel_v)
 
@@ -679,19 +680,25 @@ def _detect_accelerations(
     total_time: int, total_distance: float,
     heat_adj_pct: Optional[float],
 ) -> List[Acceleration]:
-    """Detect short bursts of speed within or between phases."""
+    """Detect short bursts of speed within or between phases.
+
+    Uses two parallel detection channels:
+      1. Velocity-based: detects accelerations via GPS-derived speed
+      2. Cadence-based: detects accelerations via watch accelerometer
+    Cadence detection catches strides that GPS misses for slower runners
+    where the absolute velocity change is too small for GPS accuracy.
+    Results from both channels are merged and deduplicated.
+    """
     n = len(time)
     if n < 30:
         return []
 
-    # Exclude warmup/cooldown time ranges
     excluded_ranges = set()
     for p in phases:
         if p.phase_type in ('warmup', 'cooldown'):
             for t in range(p.start_time_s, p.end_time_s + 1):
                 excluded_ranges.add(t)
 
-    # Baseline velocity from easy/steady phases
     easy_vels = []
     for p in phases:
         if p.phase_type in ('easy', 'steady', 'recovery_jog'):
@@ -707,9 +714,40 @@ def _detect_accelerations(
         return []
 
     baseline_v = statistics.median(easy_vels)
+
+    vel_accels = _detect_velocity_accelerations(
+        time, velocity, pace, heartrate, cadence,
+        baseline_v, excluded_ranges, pace_profile,
+        total_time, heat_adj_pct, n,
+    )
+
+    cad_accels = _detect_cadence_accelerations(
+        time, velocity, pace, heartrate, cadence,
+        baseline_v, excluded_ranges, pace_profile,
+        total_time, heat_adj_pct, n,
+    )
+
+    merged = _merge_acceleration_channels(vel_accels, cad_accels)
+
+    for accel in merged:
+        accel.hr_recovery_rate = _compute_hr_recovery_rate(
+            time, heartrate, accel.end_time_s, n,
+        )
+
+    return merged
+
+
+def _detect_velocity_accelerations(
+    time: List, velocity: List[float], pace: List[float],
+    heartrate: List, cadence: List,
+    baseline_v: float, excluded_ranges: set,
+    pace_profile: PaceProfile,
+    total_time: int, heat_adj_pct: Optional[float],
+    n: int,
+) -> List[Acceleration]:
+    """Channel 1: velocity-based acceleration detection."""
     accel_threshold = baseline_v * 1.15
     end_threshold = baseline_v * 1.10
-
     accelerations = []
     i = 0
 
@@ -725,7 +763,6 @@ def _detect_accelerations(
 
             accel_start = i
             below_count = 0
-
             j = i + 1
             while j < n:
                 if velocity[j] < end_threshold:
@@ -746,71 +783,230 @@ def _detect_accelerations(
                 i = j
                 continue
 
-            accel_paces = [p for p in pace[accel_start:accel_end + 1] if p > 0]
-            accel_vels = [v for v in velocity[accel_start:accel_end + 1] if v > 0]
-            accel_hrs = [h for h in heartrate[accel_start:accel_end + 1] if h is not None and h > 0]
-            accel_cads = [c for c in cadence[accel_start:accel_end + 1] if c is not None and c > 0]
-
-            avg_pace_val = sum(accel_paces) / len(accel_paces) if accel_paces else 0
-            avg_hr_val = sum(accel_hrs) / len(accel_hrs) if accel_hrs else None
-            avg_cad_val = sum(accel_cads) / len(accel_cads) if accel_cads else None
-
-            accel_dist = sum(v * 1.0 for v in accel_vels)
-
-            zone = pace_profile.classify_pace(avg_pace_val) if avg_pace_val > 0 else 'easy'
-
-            # HR delta vs preceding 30s baseline
-            hr_delta = None
-            if avg_hr_val and accel_start > 30:
-                pre_hrs = [h for h in heartrate[max(0, accel_start - 30):accel_start]
-                           if h is not None and h > 0]
-                if pre_hrs:
-                    hr_delta = round(avg_hr_val - sum(pre_hrs) / len(pre_hrs), 1)
-
-            # Cadence delta
-            cad_delta = None
-            if avg_cad_val and accel_start > 30:
-                pre_cads = [c for c in cadence[max(0, accel_start - 30):accel_start]
-                            if c is not None and c > 0]
-                if pre_cads:
-                    cad_delta = round(avg_cad_val - sum(pre_cads) / len(pre_cads), 1)
-
-            # Position in run
-            position = (time[accel_start] - time[0]) / total_time if total_time > 0 else 0
-
-            # Recovery after
-            recovery_s = None
-            if accel_end < n - 5:
-                for k in range(accel_end + 1, min(n, accel_end + 120)):
-                    if velocity[k] <= baseline_v * 1.05:
-                        recovery_s = time[k] - time[accel_end]
-                        break
-
-            heat_adj_pace_val = None
-            if heat_adj_pct and heat_adj_pct > 0 and avg_pace_val > 0:
-                heat_adj_pace_val = round(avg_pace_val / (1 + heat_adj_pct), 1)
-
-            accelerations.append(Acceleration(
-                start_time_s=time[accel_start],
-                end_time_s=time[accel_end],
-                duration_s=duration,
-                distance_m=round(accel_dist, 1),
-                avg_pace_sec_per_mile=round(avg_pace_val, 1),
-                avg_pace_heat_adjusted=heat_adj_pace_val,
-                pace_zone=zone,
-                avg_hr=round(avg_hr_val, 1) if avg_hr_val else None,
-                hr_delta=hr_delta,
-                avg_cadence=round(avg_cad_val, 1) if avg_cad_val else None,
-                cadence_delta=cad_delta,
-                position_in_run=round(position, 3),
-                recovery_after_s=recovery_s,
-            ))
+            accel = _build_acceleration(
+                time, velocity, pace, heartrate, cadence,
+                accel_start, accel_end, baseline_v, pace_profile,
+                total_time, heat_adj_pct, n,
+            )
+            if accel:
+                accelerations.append(accel)
 
             i = accel_end + 1
         else:
             i += 1
 
     return accelerations
+
+
+MIN_CADENCE_SPIKE_SPM = 15
+
+def _detect_cadence_accelerations(
+    time: List, velocity: List[float], pace: List[float],
+    heartrate: List, cadence: List,
+    baseline_v: float, excluded_ranges: set,
+    pace_profile: PaceProfile,
+    total_time: int, heat_adj_pct: Optional[float],
+    n: int,
+) -> List[Acceleration]:
+    """Channel 2: cadence-based acceleration detection.
+
+    Watch accelerometer measures cadence directly — not GPS-dependent.
+    A stride always produces a cadence spike regardless of runner speed.
+    """
+    valid_cads = [c for c in cadence if c is not None and c > 0]
+    if len(valid_cads) < 30:
+        return []
+
+    baseline_cad = statistics.median(valid_cads)
+    cad_threshold = baseline_cad + MIN_CADENCE_SPIKE_SPM
+    cad_end_threshold = baseline_cad + (MIN_CADENCE_SPIKE_SPM * 0.6)
+
+    accelerations = []
+    i = 0
+
+    while i < n:
+        if time[i] in excluded_ranges:
+            i += 1
+            continue
+
+        c = cadence[i] if cadence[i] is not None else 0
+        if c >= cad_threshold:
+            accel_start = i
+            below_count = 0
+            j = i + 1
+            while j < n:
+                cj = cadence[j] if cadence[j] is not None else 0
+                if cj < cad_end_threshold:
+                    below_count += 1
+                    if below_count >= 5:
+                        break
+                else:
+                    below_count = 0
+                j += 1
+
+            accel_end = j - below_count if below_count >= 5 else j - 1
+            if accel_end <= accel_start:
+                i = j
+                continue
+
+            duration = time[accel_end] - time[accel_start]
+            if duration < MIN_ACCELERATION_DURATION_S:
+                i = j
+                continue
+
+            accel = _build_acceleration(
+                time, velocity, pace, heartrate, cadence,
+                accel_start, accel_end, baseline_v, pace_profile,
+                total_time, heat_adj_pct, n,
+            )
+            if accel:
+                accelerations.append(accel)
+
+            i = accel_end + 1
+        else:
+            i += 1
+
+    return accelerations
+
+
+def _build_acceleration(
+    time: List, velocity: List[float], pace: List[float],
+    heartrate: List, cadence: List,
+    start_idx: int, end_idx: int,
+    baseline_v: float, pace_profile: PaceProfile,
+    total_time: int, heat_adj_pct: Optional[float],
+    n: int,
+) -> Optional[Acceleration]:
+    """Build an Acceleration object from a detected start/end index pair."""
+    duration = time[end_idx] - time[start_idx]
+    if duration < MIN_ACCELERATION_DURATION_S:
+        return None
+
+    accel_paces = [p for p in pace[start_idx:end_idx + 1] if p > 0]
+    accel_vels = [v for v in velocity[start_idx:end_idx + 1] if v > 0]
+    accel_hrs = [h for h in heartrate[start_idx:end_idx + 1]
+                 if h is not None and h > 0]
+    accel_cads = [c for c in cadence[start_idx:end_idx + 1]
+                  if c is not None and c > 0]
+
+    avg_pace_val = sum(accel_paces) / len(accel_paces) if accel_paces else 0
+    avg_hr_val = sum(accel_hrs) / len(accel_hrs) if accel_hrs else None
+    avg_cad_val = sum(accel_cads) / len(accel_cads) if accel_cads else None
+    accel_dist = sum(v * 1.0 for v in accel_vels)
+
+    zone = pace_profile.classify_pace(avg_pace_val) if avg_pace_val > 0 else 'easy'
+
+    hr_delta = None
+    if avg_hr_val and start_idx > 30:
+        pre_hrs = [h for h in heartrate[max(0, start_idx - 30):start_idx]
+                   if h is not None and h > 0]
+        if pre_hrs:
+            hr_delta = round(avg_hr_val - sum(pre_hrs) / len(pre_hrs), 1)
+
+    cad_delta = None
+    if avg_cad_val and start_idx > 30:
+        pre_cads = [c for c in cadence[max(0, start_idx - 30):start_idx]
+                    if c is not None and c > 0]
+        if pre_cads:
+            cad_delta = round(avg_cad_val - sum(pre_cads) / len(pre_cads), 1)
+
+    position = (time[start_idx] - time[0]) / total_time if total_time > 0 else 0
+
+    recovery_s = None
+    if end_idx < n - 5:
+        for k in range(end_idx + 1, min(n, end_idx + 120)):
+            if velocity[k] <= baseline_v * 1.05:
+                recovery_s = time[k] - time[end_idx]
+                break
+
+    heat_adj_pace_val = None
+    if heat_adj_pct and heat_adj_pct > 0 and avg_pace_val > 0:
+        heat_adj_pace_val = round(avg_pace_val / (1 + heat_adj_pct), 1)
+
+    return Acceleration(
+        start_time_s=time[start_idx],
+        end_time_s=time[end_idx],
+        duration_s=duration,
+        distance_m=round(accel_dist, 1),
+        avg_pace_sec_per_mile=round(avg_pace_val, 1),
+        avg_pace_heat_adjusted=heat_adj_pace_val,
+        pace_zone=zone,
+        avg_hr=round(avg_hr_val, 1) if avg_hr_val else None,
+        hr_delta=hr_delta,
+        avg_cadence=round(avg_cad_val, 1) if avg_cad_val else None,
+        cadence_delta=cad_delta,
+        position_in_run=round(position, 3),
+        recovery_after_s=recovery_s,
+    )
+
+
+def _merge_acceleration_channels(
+    vel_accels: List[Acceleration],
+    cad_accels: List[Acceleration],
+) -> List[Acceleration]:
+    """Merge velocity-detected and cadence-detected accelerations.
+    Deduplicates overlapping detections, preferring the one with
+    longer duration (more complete capture of the stride)."""
+    if not cad_accels:
+        return vel_accels
+    if not vel_accels:
+        return cad_accels
+
+    all_accels = vel_accels + cad_accels
+    all_accels.sort(key=lambda a: a.start_time_s)
+
+    merged = [all_accels[0]]
+    for accel in all_accels[1:]:
+        prev = merged[-1]
+        if accel.start_time_s <= prev.end_time_s + 3:
+            if accel.duration_s > prev.duration_s:
+                merged[-1] = accel
+        else:
+            merged.append(accel)
+
+    return merged
+
+
+def _compute_hr_recovery_rate(
+    time: List, heartrate: List,
+    accel_end_time: int, n: int,
+) -> Optional[float]:
+    """Compute cardiac recovery rate (bpm/s) in the 30-60s after an accel.
+    Measures how fast HR drops — the real fitness signal for interval recovery."""
+    end_idx = None
+    for i in range(n):
+        if time[i] >= accel_end_time:
+            end_idx = i
+            break
+    if end_idx is None or end_idx >= n - 10:
+        return None
+
+    hr_at_end = None
+    for i in range(end_idx, min(end_idx + 5, n)):
+        h = heartrate[i] if heartrate[i] is not None else 0
+        if h > 0:
+            hr_at_end = h
+            break
+    if hr_at_end is None:
+        return None
+
+    window_end = min(n, end_idx + 60)
+    recovery_hrs = []
+    for i in range(end_idx + 20, window_end):
+        h = heartrate[i] if i < len(heartrate) and heartrate[i] is not None else 0
+        if h > 0:
+            recovery_hrs.append(h)
+
+    if len(recovery_hrs) < 5:
+        return None
+
+    hr_at_recovery = statistics.mean(recovery_hrs[-10:]) if len(recovery_hrs) >= 10 else statistics.mean(recovery_hrs)
+    hr_drop = hr_at_end - hr_at_recovery
+    if hr_drop <= 0:
+        return None
+
+    elapsed = (window_end - end_idx)
+    return round(hr_drop / elapsed, 2) if elapsed > 0 else None
 
 
 # ═══════════════════════════════════════════════════════
@@ -1027,7 +1223,7 @@ def _derive_classification(
                          all(p.pace_zone in ('easy', 'recovery') for p in main_body))
         if body_all_easy:
             accel_durations = [a.duration_s for a in accelerations]
-            if all(10 <= d <= 45 for d in accel_durations):
+            if all(8 <= d <= 60 for d in accel_durations):
                 fast_enough = all(
                     a.pace_zone in ('interval', 'repetition', 'threshold', 'marathon')
                     for a in accelerations

@@ -2766,7 +2766,10 @@ def investigate_interval_recovery_trend(
     events: List[PerformanceEvent],
 ) -> Optional[RaceInputFinding]:
     """
-    Track recovery between interval reps over successive sessions.
+    Track cardiac recovery rate between interval reps over successive sessions.
+    HR recovery rate (bpm/s) is the real fitness signal — how fast the heart
+    recovers after hard effort. Pace recovery time is also tracked but is
+    secondary to cardiac response.
     """
     acts = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
@@ -2780,17 +2783,27 @@ def investigate_interval_recovery_trend(
         if not shape:
             continue
         accels = shape.get('accelerations', [])
-        recoveries = [a.get('recovery_after_s') for a in accels
-                       if a.get('recovery_after_s') is not None and a.get('recovery_after_s') > 0]
-        if len(recoveries) < 3:
+
+        hr_rates = [a.get('hr_recovery_rate') for a in accels
+                     if a.get('hr_recovery_rate') is not None and a.get('hr_recovery_rate') > 0]
+        pace_recoveries = [a.get('recovery_after_s') for a in accels
+                           if a.get('recovery_after_s') is not None and a.get('recovery_after_s') > 0]
+
+        if len(hr_rates) < 2 and len(pace_recoveries) < 3:
             continue
 
-        sessions_with_recovery.append({
+        entry = {
             'date': act.start_time.date().isoformat(),
             'activity_id': str(act.id),
-            'avg_recovery_s': round(sum(recoveries) / len(recoveries), 1),
-            'rep_count': len(recoveries),
-        })
+            'rep_count': max(len(hr_rates), len(pace_recoveries)),
+        }
+
+        if hr_rates:
+            entry['avg_hr_recovery_bpm_per_s'] = round(sum(hr_rates) / len(hr_rates), 3)
+        if pace_recoveries:
+            entry['avg_recovery_s'] = round(sum(pace_recoveries) / len(pace_recoveries), 1)
+
+        sessions_with_recovery.append(entry)
 
     if len(sessions_with_recovery) < 4:
         return None
@@ -2799,30 +2812,61 @@ def investigate_interval_recovery_trend(
     early = sessions_with_recovery[:half]
     late = sessions_with_recovery[half:]
 
-    early_avg = sum(s['avg_recovery_s'] for s in early) / len(early)
-    late_avg = sum(s['avg_recovery_s'] for s in late) / len(late)
-    change = late_avg - early_avg
+    has_hr_data = all('avg_hr_recovery_bpm_per_s' in s for s in sessions_with_recovery)
 
-    if abs(change) < 3:
-        return None
+    if has_hr_data:
+        early_avg = sum(s['avg_hr_recovery_bpm_per_s'] for s in early) / len(early)
+        late_avg = sum(s['avg_hr_recovery_bpm_per_s'] for s in late) / len(late)
+        change = late_avg - early_avg
 
-    direction = "faster" if change < 0 else "slower"
-    sentence = (
-        f"Inter-rep recovery time across {len(sessions_with_recovery)} sessions: "
-        f"averaged {early_avg:.0f}s early, {late_avg:.0f}s recently — "
-        f"{abs(change):.0f}s {direction} recovery."
-    )
+        if abs(change) < 0.05:
+            return None
+
+        direction = "faster" if change > 0 else "slower"
+        sentence = (
+            f"Cardiac recovery rate across {len(sessions_with_recovery)} sessions: "
+            f"heart rate dropped {early_avg:.2f} bpm/s after reps early, "
+            f"{late_avg:.2f} bpm/s recently — {direction} cardiac recovery."
+        )
+        receipts = {
+            'sessions': sessions_with_recovery,
+            'metric': 'hr_recovery_rate_bpm_per_s',
+            'early_avg': round(early_avg, 3),
+            'late_avg': round(late_avg, 3),
+            'change': round(change, 3),
+        }
+    else:
+        early_vals = [s['avg_recovery_s'] for s in early if 'avg_recovery_s' in s]
+        late_vals = [s['avg_recovery_s'] for s in late if 'avg_recovery_s' in s]
+        if not early_vals or not late_vals:
+            return None
+
+        early_avg = sum(early_vals) / len(early_vals)
+        late_avg = sum(late_vals) / len(late_vals)
+        change = late_avg - early_avg
+
+        if abs(change) < 3:
+            return None
+
+        direction = "faster" if change < 0 else "slower"
+        sentence = (
+            f"Inter-rep recovery time across {len(sessions_with_recovery)} sessions: "
+            f"averaged {early_avg:.0f}s early, {late_avg:.0f}s recently — "
+            f"{abs(change):.0f}s {direction} recovery."
+        )
+        receipts = {
+            'sessions': sessions_with_recovery,
+            'metric': 'pace_recovery_s',
+            'early_avg': round(early_avg, 1),
+            'late_avg': round(late_avg, 1),
+            'change': round(change, 1),
+        }
 
     return RaceInputFinding(
         layer='B',
         finding_type='interval_recovery_trend',
         sentence=sentence,
-        receipts={
-            'sessions': sessions_with_recovery,
-            'early_avg_recovery_s': round(early_avg, 1),
-            'late_avg_recovery_s': round(late_avg, 1),
-            'change_s': round(change, 1),
-        },
+        receipts=receipts,
         confidence='genuine' if len(sessions_with_recovery) >= 6 else 'suggestive',
     )
 
@@ -2841,14 +2885,19 @@ def investigate_workout_variety_effect(
 ) -> Optional[RaceInputFinding]:
     """
     Measure whether higher workout variety in training blocks correlates
-    with race performance. Uses run_shape classifications to count distinct
-    workout types in the 4-week block preceding each race.
+    with race performance. Uses RPI (distance-normalized fitness score) to
+    compare across different race distances — raw pace comparison between
+    a 5K and a half marathon is meaningless.
     """
     if len(events) < 4:
         return None
 
     race_blocks = []
     for ev in events:
+        rpi = ev.rpi_at_event
+        if not rpi or rpi <= 0:
+            continue
+
         block_start = ev.event_date - timedelta(days=28)
         block_acts = db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
@@ -2868,25 +2917,13 @@ def investigate_workout_variety_effect(
             if cls:
                 classifications.add(cls)
 
-        race_time_sec = None
-        if ev.finish_time_seconds:
-            race_time_sec = ev.finish_time_seconds
-        elif ev.time_seconds:
-            race_time_sec = ev.time_seconds
-
-        if race_time_sec and race_time_sec > 0:
-            dist_m = ev.distance_meters or 0
-            pace_sec_mi = (race_time_sec / (dist_m / METERS_PER_MILE)) if dist_m > 0 else 0
-        else:
-            pace_sec_mi = 0
-
         race_blocks.append({
             'date': ev.event_date.isoformat(),
             'distance': ev.distance_category,
             'variety_count': len(classifications),
             'types_found': sorted(classifications),
             'activity_count': len(block_acts),
-            'race_pace_sec_mi': round(pace_sec_mi),
+            'rpi': round(rpi, 1),
         })
 
     if len(race_blocks) < 4:
@@ -2901,35 +2938,28 @@ def investigate_workout_variety_effect(
     if not high_variety or not low_variety:
         return None
 
-    high_paces = [rb['race_pace_sec_mi'] for rb in high_variety if rb['race_pace_sec_mi'] > 0]
-    low_paces = [rb['race_pace_sec_mi'] for rb in low_variety if rb['race_pace_sec_mi'] > 0]
+    high_rpis = [rb['rpi'] for rb in high_variety]
+    low_rpis = [rb['rpi'] for rb in low_variety]
 
-    if not high_paces or not low_paces:
+    high_avg = sum(high_rpis) / len(high_rpis)
+    low_avg = sum(low_rpis) / len(low_rpis)
+    diff = high_avg - low_avg
+
+    if abs(diff) < 0.3:
         return None
 
-    high_avg = sum(high_paces) / len(high_paces)
-    low_avg = sum(low_paces) / len(low_paces)
-    diff = low_avg - high_avg
-
-    def _fmt(sec):
-        m = int(sec) // 60
-        s = int(sec) % 60
-        return f"{m}:{s:02d}"
-
-    if diff > 5:
+    if diff > 0:
         verdict = (
             f"Higher variety training blocks ({sum(rb['variety_count'] for rb in high_variety)/len(high_variety):.1f} "
-            f"types) preceded races averaging {_fmt(high_avg)}/mi vs {_fmt(low_avg)}/mi "
-            f"with less variety — {int(diff)} sec/mi faster."
-        )
-    elif diff < -5:
-        verdict = (
-            f"Focused training blocks with fewer types preceded faster races — "
-            f"{_fmt(low_avg)}/mi vs {_fmt(high_avg)}/mi with more variety. "
-            f"You may respond better to consistency than variety."
+            f"types) preceded races with RPI {high_avg:.1f} vs {low_avg:.1f} "
+            f"with less variety — {diff:.1f} points higher fitness across all distances."
         )
     else:
-        return None
+        verdict = (
+            f"Focused training blocks with fewer types preceded stronger races — "
+            f"RPI {low_avg:.1f} vs {high_avg:.1f} with more variety. "
+            f"You may respond better to consistency than variety."
+        )
 
     return RaceInputFinding(
         layer='B',
@@ -2937,9 +2967,9 @@ def investigate_workout_variety_effect(
         sentence=verdict,
         receipts={
             'race_blocks': race_blocks,
-            'high_variety_avg_pace': _fmt(high_avg),
-            'low_variety_avg_pace': _fmt(low_avg),
-            'diff_sec_mi': round(diff),
+            'high_variety_avg_rpi': round(high_avg, 1),
+            'low_variety_avg_rpi': round(low_avg, 1),
+            'diff_rpi': round(diff, 1),
         },
         confidence='suggestive',
     )
@@ -3108,17 +3138,31 @@ def mine_race_inputs(
         except Exception:
             logger.exception("Investigation %s failed", spec.name)
 
-    # Legacy: adaptation curves and weekly patterns
-    curves = detect_adaptation_curves(athlete_id, db, zones)
-    actionable_curves = [
-        c for c in curves
-        if c.inflection_date and (c.trend == 'improving' or c.inflection_description)
-    ]
-    findings.extend(connect_adaptations_to_races(actionable_curves, events))
+    # Legacy investigations — not yet @investigation-decorated because they
+    # return domain types (AdaptationCurve, WeeklyPattern) rather than
+    # RaceInputFinding. Wrapped with error handling and signal checks so
+    # failures appear in honest gaps rather than silently swallowed.
+    if coverage.get('activity_summary'):
+        try:
+            curves = detect_adaptation_curves(athlete_id, db, zones)
+            actionable_curves = [
+                c for c in curves
+                if c.inflection_date and (c.trend == 'improving' or c.inflection_description)
+            ]
+            findings.extend(connect_adaptations_to_races(actionable_curves, events))
+        except Exception:
+            logger.exception("detect_adaptation_curves failed")
+            honest_gaps.append("Adaptation curve detection: encountered an error")
 
-    patterns = detect_weekly_patterns(athlete_id, db, zones)
-    for p in patterns:
-        findings.append(_pattern_to_finding(p, events))
+        try:
+            patterns = detect_weekly_patterns(athlete_id, db, zones)
+            for p in patterns:
+                findings.append(_pattern_to_finding(p, events))
+        except Exception:
+            logger.exception("detect_weekly_patterns failed")
+            honest_gaps.append("Weekly pattern detection: encountered an error")
+    else:
+        honest_gaps.append("Adaptation curves and weekly patterns: needs activity_summary")
 
     return findings, honest_gaps
 
