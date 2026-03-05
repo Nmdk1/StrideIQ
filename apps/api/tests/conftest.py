@@ -87,6 +87,7 @@ def _patch_psycopg2_when_db_unavailable(request):
     BaseException that doesn't get caught by app startup handlers using
     ``except Exception``, which would crash TestClient's async event loop."""
     if not getattr(request.config, "_db_unavailable", False):
+        yield
         return
 
     import psycopg2 as _pg
