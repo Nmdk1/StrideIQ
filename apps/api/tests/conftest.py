@@ -77,6 +77,64 @@ except Exception:
     Athlete = Activity = PersonalBest = BestEffort = None
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _patch_psycopg2_when_db_unavailable(request):
+    """When postgres is unreachable, patch psycopg2.connect to raise
+    OperationalError with a sentinel message.  The pytest_runtest_makereport
+    hook below converts these into clean skips.
+
+    We raise OperationalError (not pytest.skip) because skip is a
+    BaseException that doesn't get caught by app startup handlers using
+    ``except Exception``, which would crash TestClient's async event loop."""
+    if not getattr(request.config, "_db_unavailable", False):
+        return
+
+    import psycopg2 as _pg
+
+    _original_connect = _pg.connect
+
+    _SENTINEL = "Database unavailable (not in Docker)"
+
+    def _fail_connect(*a, **kw):
+        raise _pg.OperationalError(_SENTINEL)
+
+    _pg.connect = _fail_connect
+    yield
+    _pg.connect = _original_connect
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Convert DB-unavailable failures into clean skips.
+
+    Covers both fixture setup (SessionLocal in fixtures) and test call
+    (endpoints hitting get_db without override) phases."""
+    outcome = yield
+    report = outcome.get_result()
+    if (call.when in ("setup", "call")
+            and report.outcome == "failed"
+            and getattr(item.config, "_db_unavailable", False)
+            and call.excinfo is not None
+            and _is_db_unavailable_error(call.excinfo)):
+        report.outcome = "skipped"
+        report.longrepr = ("", "", "Skipped: Database unavailable (not in Docker)")
+        if hasattr(report, "wasxfail"):
+            del report.wasxfail
+
+
+def _is_db_unavailable_error(excinfo) -> bool:
+    """Check if the exception chain contains our sentinel DB error."""
+    val = excinfo.value
+    for _ in range(10):
+        if val is None:
+            break
+        msg = str(val)
+        if "Database unavailable" in msg or "could not translate host name" in msg:
+            return True
+        val = getattr(val, "__cause__", None) or getattr(val, "__context__", None)
+    return False
+
+
 @pytest.fixture(scope="function")
 def db_session(request):
     """

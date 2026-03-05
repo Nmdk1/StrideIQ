@@ -561,12 +561,14 @@ class TestGarmin004Schema:
 
     def test_garmin_004_migration_file_exists(self):
         import pathlib
-        migrations = list(pathlib.Path("alembic/versions").glob("garmin_004_*.py"))
+        alembic_dir = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "versions"
+        migrations = list(alembic_dir.glob("garmin_004_*.py"))
         assert migrations, "garmin_004 migration file not found"
 
     def test_migration_chains_from_garmin_003(self):
         import pathlib
-        path = list(pathlib.Path("alembic/versions").glob("garmin_004_*.py"))[0]
+        alembic_dir = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "versions"
+        path = list(alembic_dir.glob("garmin_004_*.py"))[0]
         content = path.read_text()
         assert 'down_revision' in content
         assert '"garmin_003"' in content or "'garmin_003'" in content, (
