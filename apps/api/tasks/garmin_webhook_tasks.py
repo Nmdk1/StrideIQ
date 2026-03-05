@@ -437,6 +437,45 @@ def _ingest_activity_detail_item(
 
     activity.stream_fetch_status = "success"
 
+    # Living Fingerprint: extract and store run_shape after stream ingestion
+    if samples and stream_data:
+        try:
+            from services.shape_extractor import extract_shape, PaceProfile, pace_profile_from_training_paces
+            from models import AthleteTrainingPaceProfile, Athlete as _AthModel
+
+            pace_prof = None
+            profile_row = (
+                db.query(AthleteTrainingPaceProfile)
+                .filter(AthleteTrainingPaceProfile.athlete_id == athlete_id)
+                .order_by(AthleteTrainingPaceProfile.created_at.desc())
+                .first()
+            )
+            if profile_row and profile_row.paces:
+                pace_prof = pace_profile_from_training_paces(profile_row.paces)
+
+            if not pace_prof:
+                ath = db.query(_AthModel).filter(_AthModel.id == athlete_id).first()
+                if ath and ath.threshold_pace_per_km:
+                    thr_sec_km = float(ath.threshold_pace_per_km)
+                    if thr_sec_km < 30:
+                        thr_sec_km = thr_sec_km * 60
+                    thr_v = 1000.0 / thr_sec_km
+                    thr_sec_mi = 1609.34 / thr_v if thr_v > 0 else 450
+                    pace_prof = PaceProfile(
+                        easy_sec=int(thr_sec_mi * 1.35),
+                        marathon_sec=int(thr_sec_mi * 1.10),
+                        threshold_sec=int(thr_sec_mi),
+                        interval_sec=int(thr_sec_mi * 0.88),
+                        repetition_sec=int(thr_sec_mi * 0.80),
+                    )
+
+            heat_adj = float(activity.heat_adjustment_pct) if activity.heat_adjustment_pct else None
+            shape = extract_shape(stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj)
+            if shape:
+                activity.run_shape = shape.to_dict()
+        except Exception as shape_exc:
+            logger.warning("Garmin shape extraction failed for %s: %s", garmin_activity_id_int, shape_exc)
+
     # --- Lap splits (idempotent: delete-then-create) ---
     # lap_splits was computed before the samples block to allow early-return logic above.
     if lap_splits:

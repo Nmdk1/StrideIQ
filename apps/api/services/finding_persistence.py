@@ -61,6 +61,7 @@ def store_findings(
                 athlete_id=athlete_id,
                 investigation_name=investigation_name,
                 finding_type=f.finding_type,
+                layer=getattr(f, 'layer', 'B') or 'B',
                 sentence=f.sentence,
                 receipts=f.receipts,
                 confidence=f.confidence,
@@ -115,11 +116,17 @@ def _infer_investigation_name(f: RaceInputFinding) -> str:
         'race_execution': 'investigate_race_execution',
         'recovery_cost': 'investigate_recovery_cost',
         'training_recipe': 'investigate_training_recipe',
+        'heat_resilience': 'investigate_heat_tax',
         'heat_tax': 'investigate_heat_tax',
         'post_injury_resilience': 'investigate_post_injury_resilience',
         'stride_economy': 'investigate_stride_economy',
         'long_run_durability': 'investigate_long_run_durability',
         'weekly_pattern': 'detect_weekly_patterns',
+        'stride_progression': 'investigate_stride_progression',
+        'cruise_interval_quality': 'investigate_cruise_interval_quality',
+        'interval_recovery_trend': 'investigate_interval_recovery_trend',
+        'workout_variety_effect': 'investigate_workout_variety_effect',
+        'progressive_run_execution': 'investigate_progressive_run_execution',
     }
 
     for prefix, inv in type_to_inv.items():

@@ -28,7 +28,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func as sa_func
 
-from models import Activity, ActivitySplit, ActivityStream, Athlete, PerformanceEvent
+from models import Activity, ActivitySplit, ActivityStream, Athlete, DailyCheckin, PerformanceEvent
 from services.rpi_calculator import calculate_training_paces
 
 logger = logging.getLogger(__name__)
@@ -113,6 +113,16 @@ def get_athlete_signal_coverage(athlete_id: UUID, db: Session) -> Dict[str, bool
         PerformanceEvent.user_confirmed == True,  # noqa: E712
     ).scalar() or 0
 
+    health_count = db.query(sa_func.count(DailyCheckin.id)).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.hrv_rmssd.isnot(None),
+    ).scalar() or 0
+
+    subjective_count = db.query(sa_func.count(DailyCheckin.id)).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.rpe_1_10.isnot(None),
+    ).scalar() or 0
+
     return {
         'activity_summary': act_count > 0,
         'activity_splits': split_count > 0,
@@ -120,6 +130,8 @@ def get_athlete_signal_coverage(athlete_id: UUID, db: Session) -> Dict[str, bool
         'run_shape': shape_count > 0,
         'environment': env_count > 0,
         'race_result': race_count > 0,
+        'daily_health': health_count > 0,
+        'subjective': subjective_count > 0,
     }
 
 

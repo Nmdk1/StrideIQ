@@ -1027,6 +1027,27 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         db.close()
 
 
+def _update_shape_heat_paces(activity, heat_adj_pct: float):
+    """Patch heat-adjusted pace into an existing run_shape JSONB."""
+    shape = activity.run_shape
+    if not shape:
+        return
+    changed = False
+    for phase in shape.get('phases', []):
+        raw = phase.get('avg_pace_sec_per_mile')
+        if raw and raw > 0 and phase.get('avg_pace_heat_adjusted') is None:
+            phase['avg_pace_heat_adjusted'] = round(raw / (1 + heat_adj_pct), 1)
+            changed = True
+    for accel in shape.get('accelerations', []):
+        raw = accel.get('avg_pace_sec_per_mile')
+        if raw and raw > 0 and accel.get('avg_pace_heat_adjusted') is None:
+            accel['avg_pace_heat_adjusted'] = round(raw / (1 + heat_adj_pct), 1)
+            changed = True
+    if changed:
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(activity, 'run_shape')
+
+
 @celery_app.task(name="tasks.post_sync_processing", bind=True, max_retries=0)
 def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
     """
@@ -1089,13 +1110,67 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
                 fields = compute_activity_heat_fields(act.temperature_f, act.humidity_pct)
                 act.dew_point_f = fields['dew_point_f']
                 act.heat_adjustment_pct = fields['heat_adjustment_pct']
+                if act.run_shape and fields['heat_adjustment_pct'] and fields['heat_adjustment_pct'] > 0:
+                    _update_shape_heat_paces(act, fields['heat_adjustment_pct'])
             if new_acts:
                 db.flush()
                 print(f"DEBUG [post-sync] Computed heat adjustment for {len(new_acts)} activities")
         except Exception as e:
             print(f"Warning [post-sync] Heat adjustment failed: {e}")
 
-        # 5. Living Fingerprint: persist investigation findings
+        # 5. Living Fingerprint: extract and store run_shape for new activities
+        try:
+            from services.shape_extractor import extract_shape, PaceProfile, pace_profile_from_training_paces
+            from models import AthleteTrainingPaceProfile
+
+            acts_needing_shape = db.query(Activity).filter(
+                Activity.athlete_id == athlete.id,
+                Activity.run_shape.is_(None),
+            ).all()
+
+            if acts_needing_shape:
+                pace_prof = None
+                profile_row = db.query(AthleteTrainingPaceProfile).filter(
+                    AthleteTrainingPaceProfile.athlete_id == athlete.id,
+                ).order_by(AthleteTrainingPaceProfile.created_at.desc()).first()
+
+                if profile_row and profile_row.paces:
+                    pace_prof = pace_profile_from_training_paces(profile_row.paces)
+
+                if not pace_prof and athlete.threshold_pace_per_km:
+                    thr_sec_km = float(athlete.threshold_pace_per_km)
+                    if thr_sec_km < 30:
+                        thr_sec_km = thr_sec_km * 60
+                    thr_v = 1000.0 / thr_sec_km
+                    thr_sec_mi = 1609.34 / thr_v if thr_v > 0 else 450
+                    pace_prof = PaceProfile(
+                        easy_sec=int(thr_sec_mi * 1.35),
+                        marathon_sec=int(thr_sec_mi * 1.10),
+                        threshold_sec=int(thr_sec_mi),
+                        interval_sec=int(thr_sec_mi * 0.88),
+                        repetition_sec=int(thr_sec_mi * 0.80),
+                    )
+
+                shaped = 0
+                for act in acts_needing_shape:
+                    stream = db.query(ActivityStream).filter(
+                        ActivityStream.activity_id == act.id,
+                    ).first()
+                    if not stream or not stream.stream_data:
+                        continue
+                    heat_adj = float(act.heat_adjustment_pct) if act.heat_adjustment_pct else None
+                    shape = extract_shape(stream.stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj)
+                    if shape:
+                        act.run_shape = shape.to_dict()
+                        shaped += 1
+
+                if shaped:
+                    db.flush()
+                    print(f"DEBUG [post-sync] Shape extracted for {shaped} activities")
+        except Exception as e:
+            print(f"Warning [post-sync] Shape extraction failed: {e}")
+
+        # 6. Living Fingerprint: persist investigation findings
         try:
             from services.race_input_analysis import mine_race_inputs
             from services.finding_persistence import store_all_findings

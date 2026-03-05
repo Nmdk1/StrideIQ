@@ -256,8 +256,10 @@ def extract_shape(
     )
 
     # Step 7: Derive classification
+    is_anomaly = _check_anomaly(velocity, time, phases)
     summary.workout_classification = _derive_classification(
         phases, accelerations, summary, total_distance, pace_profile,
+        is_anomaly=is_anomaly,
     )
 
     return RunShape(phases=phases, accelerations=accelerations, summary=summary)
@@ -967,21 +969,28 @@ def _derive_classification(
     summary: ShapeSummary,
     total_distance: float,
     pace_profile: PaceProfile,
+    is_anomaly: bool = False,
 ) -> Optional[str]:
     """Derive an optional workout classification from shape structure."""
+    if is_anomaly:
+        return 'anomaly'
+
     n_phases = summary.total_phases
     n_accels = summary.acceleration_count
 
     effort_phases = [p for p in phases if p.phase_type not in
                      ('warmup', 'cooldown', 'interval_recovery', 'recovery_jog')]
 
-    # Easy run: all phases easy, few accelerations, low pace CV
+    # Easy run / recovery run: all phases easy, few accelerations, low pace CV
     all_easy = all(p.pace_zone in ('easy', 'recovery') for p in effort_phases)
     if all_easy and n_accels < 2:
         avg_cv = sum(p.pace_cv for p in effort_phases) / len(effort_phases) if effort_phases else 0
         if avg_cv < 0.15:
             if total_distance > 20000:
                 return 'long_run'
+            all_recovery_zone = all(p.pace_zone == 'recovery' for p in effort_phases)
+            if total_distance < 8000 and all_recovery_zone:
+                return 'recovery_run'
             return 'easy_run'
 
     # Strides: end-loaded accelerations at meaningful pace
@@ -1076,7 +1085,25 @@ def _derive_classification(
             return 'long_run_with_strides'
         return 'long_run'
 
-    # Check anomaly
-    # (handled externally based on GPS gap analysis)
-
     return None
+
+
+def _check_anomaly(
+    velocity: List[float], time: List, phases: List[Phase],
+) -> bool:
+    """GPS gaps > 30s AND (unrealistic velocity > 25 mph OR 3+ separate gaps).
+    A single tunnel/pause is not an anomaly."""
+    gaps = 0
+    unrealistic_count = 0
+    n = len(time)
+
+    for i in range(1, n):
+        dt = time[i] - time[i - 1]
+        if dt > 30:
+            gaps += 1
+
+    for v in velocity:
+        if v > MAX_VELOCITY_MPS:
+            unrealistic_count += 1
+
+    return gaps > 0 and (unrealistic_count > 0 or gaps >= 3)

@@ -1648,12 +1648,29 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
         logger.debug(f"Compare training periods failed for home briefing ({athlete_id}): {e}")
 
     # 6. Training Story — race stories, progressions, campaign narrative
+    #    Read from stored AthleteFinding (fast path) with fallback to recompute
     try:
-        from services.race_input_analysis import mine_race_inputs
+        from services.finding_persistence import get_active_findings
         from services.training_story_engine import synthesize_training_story
+        from services.race_input_analysis import RaceInputFinding
         from models import PerformanceEvent as _PE
 
-        findings, _gaps = mine_race_inputs(athlete_uuid, db)
+        stored = get_active_findings(athlete_uuid, db)
+        if stored:
+            findings = [
+                RaceInputFinding(
+                    layer=getattr(f, 'layer', 'B'),
+                    finding_type=f.finding_type,
+                    sentence=f.sentence,
+                    receipts=f.receipts or {},
+                    confidence=f.confidence,
+                )
+                for f in stored
+            ]
+        else:
+            from services.race_input_analysis import mine_race_inputs
+            findings, _gaps = mine_race_inputs(athlete_uuid, db)
+
         if findings:
             events = db.query(_PE).filter(
                 _PE.athlete_id == athlete_uuid,

@@ -72,6 +72,7 @@ class RacingLifeStripResponse(BaseModel):
 class FingerprintFindingOut(BaseModel):
     investigation_name: str
     finding_type: str
+    layer: str = 'B'
     sentence: str
     receipts: Optional[dict] = None
     confidence: str

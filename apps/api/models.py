@@ -625,6 +625,7 @@ class AthleteFinding(Base):
                         nullable=False, index=True)
     investigation_name = Column(Text, nullable=False)
     finding_type = Column(Text, nullable=False)
+    layer = Column(Text, nullable=False, server_default='B')
     sentence = Column(Text, nullable=False)
     receipts = Column(JSONB, nullable=False)
     confidence = Column(Text, nullable=False)  # 'table_stakes', 'genuine', 'suggestive'

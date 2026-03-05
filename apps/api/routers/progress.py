@@ -2287,9 +2287,15 @@ def get_training_story(
     db: Session = Depends(get_db),
     current_user: Athlete = Depends(get_current_user),
 ):
-    """Training story synthesis — race stories, progressions, connections."""
-    from services.race_input_analysis import mine_race_inputs
+    """Training story synthesis — race stories, progressions, connections.
+
+    Reads from stored AthleteFinding (fast path, populated by post-sync
+    and daily fingerprint refresh). Falls back to recompute if no stored
+    findings exist yet.
+    """
+    from services.finding_persistence import get_active_findings
     from services.training_story_engine import synthesize_training_story
+    from services.race_input_analysis import RaceInputFinding
 
     athlete_id = current_user.id
 
@@ -2298,7 +2304,24 @@ def get_training_story(
     if cached is not None:
         return cached
 
-    findings, honest_gaps = mine_race_inputs(athlete_id, db)
+    stored = get_active_findings(athlete_id, db)
+    honest_gaps = []
+
+    if stored:
+        findings = [
+            RaceInputFinding(
+                layer=getattr(f, 'layer', 'B'),
+                finding_type=f.finding_type,
+                sentence=f.sentence,
+                receipts=f.receipts or {},
+                confidence=f.confidence,
+            )
+            for f in stored
+        ]
+    else:
+        from services.race_input_analysis import mine_race_inputs
+        findings, honest_gaps = mine_race_inputs(athlete_id, db)
+
     if not findings:
         return {"race_stories": [], "progressions": [], "connections": [],
                 "campaign_narrative": None, "honest_gaps": honest_gaps, "finding_count": 0}
