@@ -7,8 +7,8 @@ import sqlalchemy as sa
 
 
 revision = 'lfp_001_heat'
-down_revision = None
-branch_labels = ('living_fp',)
+down_revision = 'phase1c_001'
+branch_labels = None
 depends_on = None
 
 
