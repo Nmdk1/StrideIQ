@@ -2275,3 +2275,42 @@ async def get_progress_knowledge(
     _set_cache(cache_key, response.model_dump(), ttl=1800)
 
     return response
+
+
+# ═══════════════════════════════════════════════════════
+#  Training Story endpoint
+# ═══════════════════════════════════════════════════════
+
+
+@router.get("/training-story")
+def get_training_story(
+    db: Session = Depends(get_db),
+    current_user: Athlete = Depends(get_current_user),
+):
+    """Training story synthesis — race stories, progressions, connections."""
+    from services.race_input_analysis import mine_race_inputs
+    from services.training_story_engine import synthesize_training_story
+
+    athlete_id = current_user.id
+
+    cache_key = f"training_story:{athlete_id}"
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    findings = mine_race_inputs(athlete_id, db)
+    if not findings:
+        return {"race_stories": [], "progressions": [], "connections": [],
+                "campaign_narrative": None, "honest_gaps": [], "finding_count": 0}
+
+    events = db.query(PerformanceEvent).filter(
+        PerformanceEvent.athlete_id == athlete_id,
+        PerformanceEvent.user_confirmed == True,  # noqa: E712
+    ).order_by(PerformanceEvent.event_date).all()
+
+    story = synthesize_training_story(findings, events)
+    result = story.to_dict()
+
+    _set_cache(cache_key, result, ttl=3600)
+
+    return result
