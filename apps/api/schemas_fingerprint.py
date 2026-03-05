@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 from uuid import UUID
 
@@ -70,14 +70,15 @@ class RacingLifeStripResponse(BaseModel):
 
 
 class FingerprintFindingOut(BaseModel):
-    layer: int
+    investigation_name: str
     finding_type: str
     sentence: str
-    evidence: dict
-    statistical_confidence: float
-    effect_size: float
-    sample_size: int
-    confidence_tier: str
+    receipts: Optional[dict] = None
+    confidence: str
+    computation_version: Optional[int] = None
+    first_detected_at: Optional[datetime] = None
+    last_confirmed_at: Optional[datetime] = None
+    is_active: bool = True
 
     model_config = ConfigDict(from_attributes=True)
 

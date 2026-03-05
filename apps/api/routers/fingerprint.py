@@ -476,11 +476,8 @@ async def admin_extract_findings(
         "suppressed": len(findings) - stored_count,
         "findings": [
             {
-                "layer": f.layer,
                 "type": f.finding_type,
-                "tier": f.confidence_tier,
-                "effect_size": f.effect_size,
-                "sample_size": f.sample_size,
+                "confidence": f.confidence,
                 "sentence": f.sentence,
             }
             for f in findings
