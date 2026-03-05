@@ -768,6 +768,13 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 if existing.temperature_f is None and details.get("average_temp") is not None:
                     existing.temperature_f = round(details.get("average_temp") * 9 / 5 + 32, 1)
 
+                # Backfill lat/lng from details if missing
+                if existing.start_lat is None:
+                    latlng = details.get("start_latlng") or []
+                    if len(latlng) >= 2:
+                        existing.start_lat = latlng[0]
+                        existing.start_lng = latlng[1]
+
                 db.flush()
 
                 # Recalculate performance metrics
@@ -817,9 +824,10 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             if a.get("average_temp") is not None:
                 temp_f = round(a.get("average_temp") * 9 / 5 + 32, 1)
 
+            latlng = a.get("start_latlng") or []
             activity = Activity(
                 athlete_id=athlete.id,
-                name=a.get("name"),  # Store the activity name from Strava
+                name=a.get("name"),
                 start_time=start_time,
                 sport="run",
                 source="strava",
@@ -836,6 +844,8 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 is_race_candidate=bool(a.get("workout_type") == 3),
                 race_confidence=None,
                 user_verified_race=False,
+                start_lat=latlng[0] if len(latlng) >= 2 else None,
+                start_lng=latlng[1] if len(latlng) >= 2 else None,
             )
 
             try:
