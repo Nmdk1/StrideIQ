@@ -205,7 +205,7 @@ class TestStrides:
 
         assert shape is not None
         assert shape.summary.acceleration_count >= 3
-        assert shape.summary.workout_classification in ('strides', None)
+        assert shape.summary.workout_classification == 'strides'
 
     def test_slow_runner_no_false_strides(self):
         """Slow runner easy run: cadence max 101, no spikes — must stay easy_run."""

@@ -1226,6 +1226,7 @@ def _derive_classification(
             if all(8 <= d <= 60 for d in accel_durations):
                 fast_enough = all(
                     a.pace_zone in ('interval', 'repetition', 'threshold', 'marathon')
+                    or (a.cadence_delta is not None and a.cadence_delta >= MIN_CADENCE_SPIKE_SPM)
                     for a in accelerations
                 )
                 if fast_enough:
