@@ -1647,6 +1647,29 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
     except Exception as e:
         logger.debug(f"Compare training periods failed for home briefing ({athlete_id}): {e}")
 
+    # 6. Training Story — race stories, progressions, campaign narrative
+    try:
+        from services.race_input_analysis import mine_race_inputs
+        from services.training_story_engine import synthesize_training_story
+        from models import PerformanceEvent as _PE
+
+        findings = mine_race_inputs(athlete_uuid, db)
+        if findings:
+            events = db.query(_PE).filter(
+                _PE.athlete_id == athlete_uuid,
+                _PE.user_confirmed == True,  # noqa: E712
+            ).order_by(_PE.event_date).all()
+
+            story = synthesize_training_story(findings, events)
+            ctx = story.to_coach_context()
+            if ctx.strip():
+                sections.append(
+                    "--- Training Story (race attribution + adaptation progressions) ---\n"
+                    + ctx
+                )
+    except Exception as e:
+        logger.debug(f"Training story failed for home briefing ({athlete_id}): {e}")
+
     if not sections:
         return ""
 
