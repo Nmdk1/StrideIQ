@@ -1747,7 +1747,7 @@ def analyze_stream(
     # Living Fingerprint: Activity Shape Extraction
     shape_dict = None
     try:
-        from services.shape_extractor import extract_shape, PaceProfile
+        from services.shape_extractor import extract_shape, PaceProfile, pace_profile_from_rpi
         pace_prof = None
         if athlete_context and athlete_context.threshold_pace_per_km:
             thr_sec_km = athlete_context.threshold_pace_per_km
@@ -1762,6 +1762,8 @@ def analyze_stream(
                 interval_sec=int(thr_sec_mi * 0.88),
                 repetition_sec=int(thr_sec_mi * 0.80),
             )
+        if not pace_prof and athlete_context and hasattr(athlete_context, 'rpi') and athlete_context.rpi:
+            pace_prof = pace_profile_from_rpi(float(athlete_context.rpi))
         shape = extract_shape(stream_data, pace_profile=pace_prof)
         if shape:
             shape_dict = shape.to_dict()

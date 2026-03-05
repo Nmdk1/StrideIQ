@@ -440,7 +440,10 @@ def _ingest_activity_detail_item(
     # Living Fingerprint: extract and store run_shape after stream ingestion
     if samples and stream_data:
         try:
-            from services.shape_extractor import extract_shape, PaceProfile, pace_profile_from_training_paces
+            from services.shape_extractor import (
+                extract_shape, PaceProfile,
+                pace_profile_from_training_paces, pace_profile_from_rpi,
+            )
             from models import AthleteTrainingPaceProfile, Athlete as _AthModel
 
             pace_prof = None
@@ -468,6 +471,8 @@ def _ingest_activity_detail_item(
                         interval_sec=int(thr_sec_mi * 0.88),
                         repetition_sec=int(thr_sec_mi * 0.80),
                     )
+                if not pace_prof and ath and ath.rpi:
+                    pace_prof = pace_profile_from_rpi(float(ath.rpi))
 
             heat_adj = float(activity.heat_adjustment_pct) if activity.heat_adjustment_pct else None
             shape = extract_shape(stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj)

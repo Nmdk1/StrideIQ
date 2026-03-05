@@ -159,6 +159,31 @@ def pace_profile_from_training_paces(paces_json: dict) -> Optional[PaceProfile]:
     return None
 
 
+def pace_profile_from_rpi(rpi: float) -> Optional[PaceProfile]:
+    """Derive a PaceProfile from athlete RPI using the training pace calculator."""
+    if not rpi or rpi <= 0:
+        return None
+    try:
+        from services.rpi_calculator import calculate_training_paces
+        paces = calculate_training_paces(rpi)
+        easy = paces.get('easy_pace_low')
+        marathon = paces.get('marathon_pace')
+        threshold = paces.get('threshold_pace')
+        interval = paces.get('interval_pace')
+        rep = paces.get('repetition_pace')
+        if easy and threshold:
+            return PaceProfile(
+                easy_sec=int(easy),
+                marathon_sec=int(marathon) if marathon else int(easy * 0.82),
+                threshold_sec=int(threshold),
+                interval_sec=int(interval) if interval else int(threshold * 0.88),
+                repetition_sec=int(rep) if rep else int(threshold * 0.80),
+            )
+    except Exception:
+        pass
+    return None
+
+
 def extract_shape(
     stream_data: Dict[str, List],
     pace_profile: Optional[PaceProfile] = None,

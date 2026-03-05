@@ -1120,7 +1120,10 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
 
         # 5. Living Fingerprint: extract and store run_shape for new activities
         try:
-            from services.shape_extractor import extract_shape, PaceProfile, pace_profile_from_training_paces
+            from services.shape_extractor import (
+                extract_shape, PaceProfile,
+                pace_profile_from_training_paces, pace_profile_from_rpi,
+            )
             from models import AthleteTrainingPaceProfile
 
             acts_needing_shape = db.query(Activity).filter(
@@ -1150,6 +1153,9 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
                         interval_sec=int(thr_sec_mi * 0.88),
                         repetition_sec=int(thr_sec_mi * 0.80),
                     )
+
+                if not pace_prof and athlete.rpi:
+                    pace_prof = pace_profile_from_rpi(float(athlete.rpi))
 
                 shaped = 0
                 for act in acts_needing_shape:
