@@ -244,6 +244,17 @@ class ActivityContext:
     has_gap_data: bool
 
 
+def _heat_normalize_pace(pace_sec_mi: float, heat_adjustment_pct: Optional[float]) -> float:
+    """Remove heat tax from a raw pace value.
+
+    If the activity was run in heat (e.g., heat_adjustment_pct=0.04 meaning
+    4% slower), this returns what the pace would have been in neutral conditions.
+    """
+    if heat_adjustment_pct and heat_adjustment_pct > 0 and pace_sec_mi > 0:
+        return pace_sec_mi / (1 + heat_adjustment_pct)
+    return pace_sec_mi
+
+
 def build_activity_context(act: Activity) -> ActivityContext:
     """Build environmental context for confound checking."""
     elev = float(act.total_elevation_gain) if act.total_elevation_gain else 0
@@ -1691,21 +1702,20 @@ def investigate_pace_at_hr_adaptation(
     events: List[PerformanceEvent],
 ) -> Optional[List[RaceInputFinding]]:
     """
-    Track pace at specific HR bands over time, controlling for temperature.
+    Track pace at specific HR bands over time using heat-normalized pace.
 
-    This is the purest aerobic adaptation signal: if pace at the same HR
-    improves month-over-month at comparable temperatures, that's genuine
-    physiological adaptation — not weather or effort variation.
+    Uses ALL outdoor activities (no temperature band filter) because each
+    pace is heat-adjusted using the activity's stored heat_adjustment_pct.
+    This gives more data points and a cleaner signal.
 
     Analyzes two bands:
-      - Easy (HR 130-140): aerobic floor
-      - Threshold (HR 150-160): aerobic ceiling
+      - Easy effort (HR 130-140): aerobic floor
+      - High effort (HR 150-160): aerobic ceiling
     """
     acts = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.is_duplicate == False,  # noqa: E712
         Activity.avg_hr.isnot(None),
-        Activity.temperature_f.isnot(None),
         Activity.distance_m > 3000,
         Activity.duration_s > 0,
     ).order_by(Activity.start_time).all()
@@ -1715,9 +1725,9 @@ def investigate_pace_at_hr_adaptation(
 
     findings = []
 
-    for band_name, hr_low, hr_high, temp_low, temp_high in [
-        ('easy', 130, 140, 70, 85),
-        ('threshold', 150, 160, 60, 80),
+    for band_name, hr_low, hr_high in [
+        ('easy effort', 130, 140),
+        ('high effort', 150, 160),
     ]:
         monthly: Dict[str, List[Dict]] = defaultdict(list)
 
@@ -1726,13 +1736,13 @@ def investigate_pace_at_hr_adaptation(
             dist_km = (act.distance_m or 0) * KM_PER_METER
             if elev < TREADMILL_ELEV_THRESHOLD_M and dist_km > 5:
                 continue
-            if act.temperature_f < temp_low or act.temperature_f > temp_high:
-                continue
 
             splits = db.query(ActivitySplit).filter(
                 ActivitySplit.activity_id == act.id,
                 ActivitySplit.average_heartrate.isnot(None),
             ).order_by(ActivitySplit.split_number).all()
+
+            heat_adj = act.heat_adjustment_pct
 
             for sp in splits:
                 if sp.average_heartrate is None or sp.distance is None or sp.elapsed_time is None:
@@ -1743,13 +1753,16 @@ def investigate_pace_at_hr_adaptation(
                 dist_mi = float(sp.distance) * MI_PER_KM * KM_PER_METER
                 if dist_mi < 0.1:
                     continue
-                pace_sec_mi = float(sp.elapsed_time) / dist_mi
+                raw_pace = float(sp.elapsed_time) / dist_mi
+                adj_pace = _heat_normalize_pace(raw_pace, heat_adj)
 
                 month = act.start_time.strftime('%Y-%m')
                 monthly[month].append({
-                    'pace_sec_mi': pace_sec_mi,
+                    'pace_sec_mi': adj_pace,
+                    'raw_pace_sec_mi': raw_pace,
                     'hr': hr,
                     'temp': act.temperature_f,
+                    'heat_adj_pct': heat_adj,
                     'date': act.start_time.date().isoformat(),
                 })
 
@@ -1765,8 +1778,6 @@ def investigate_pace_at_hr_adaptation(
         last_pace = sum(e['pace_sec_mi'] for e in last_data) / len(last_data)
         first_hr = sum(e['hr'] for e in first_data) / len(first_data)
         last_hr = sum(e['hr'] for e in last_data) / len(last_data)
-        first_temp = sum(e['temp'] for e in first_data) / len(first_data)
-        last_temp = sum(e['temp'] for e in last_data) / len(last_data)
 
         pace_change = last_pace - first_pace
         if abs(pace_change) < 10:
@@ -1784,23 +1795,20 @@ def investigate_pace_at_hr_adaptation(
         for m, data in valid_months:
             avg_p = sum(e['pace_sec_mi'] for e in data) / len(data)
             avg_h = sum(e['hr'] for e in data) / len(data)
-            avg_t = sum(e['temp'] for e in data) / len(data)
             receipts_months[m] = {
-                'pace': _fmt(avg_p),
+                'heat_adjusted_pace': _fmt(avg_p),
                 'hr': round(avg_h),
-                'temp_f': round(avg_t),
                 'n': len(data),
             }
 
         sentence = (
-            f"At {band_name}-effort heart rate ({hr_low}-{hr_high} bpm), "
-            f"pace improved from {_fmt(first_pace)}/mi ({first_month}) "
+            f"At {band_name} heart rate ({hr_low}-{hr_high} bpm), "
+            f"the pace you sustain improved from {_fmt(first_pace)}/mi ({first_month}) "
             f"to {_fmt(last_pace)}/mi ({last_month}) — "
-            f"{secs} sec/mi {direction} at the same HR, "
-            f"controlling for temperature ({temp_low}-{temp_high}°F)."
+            f"{secs} sec/mi {direction} at the same effort level. "
+            f"All paces weather-normalized."
         )
 
-        # Check for races that bracket key adaptation periods
         race_links = []
         for ev in events:
             ev_month = ev.event_date.strftime('%Y-%m')
@@ -1813,11 +1821,11 @@ def investigate_pace_at_hr_adaptation(
 
         findings.append(RaceInputFinding(
             layer='B',
-            finding_type=f'pace_at_hr_{band_name}_adaptation',
+            finding_type=f'pace_at_hr_{band_name.replace(" ", "_")}_adaptation',
             sentence=sentence,
             receipts={
                 'hr_band': f'{hr_low}-{hr_high}',
-                'temp_band': f'{temp_low}-{temp_high}°F',
+                'weather_normalized': True,
                 'monthly_progression': receipts_months,
                 'total_change_sec': int(pace_change),
                 'linked_races': race_links,
@@ -1831,7 +1839,7 @@ def investigate_pace_at_hr_adaptation(
 @investigation(
     requires=['activity_summary', 'activity_splits', 'environment'],
     min_activities=30,
-    description="Personal heat resilience — does this athlete's response match the generic formula",
+    description="N=1 heat resilience — how does this athlete's actual heat response compare to the generic formula",
 )
 def investigate_heat_tax(
     athlete_id: UUID,
@@ -1840,17 +1848,22 @@ def investigate_heat_tax(
     events: List[PerformanceEvent],
 ) -> Optional[RaceInputFinding]:
     """
-    Quantify this athlete's personal heat impact on performance.
+    Compare athlete's ACTUAL heat response to the generic heat adjustment formula.
 
-    Compares pace at the same HR in hot vs cool conditions to derive
-    a personalized heat tax (seconds per mile per degree Fahrenheit).
-    This enables weather-adjusted performance expectations.
+    The generic formula (from heat_adjustment.py) predicts how much heat
+    should slow a runner. This investigation measures how much it ACTUALLY
+    slowed THIS runner — revealing whether they're heat-resilient, average,
+    or heat-vulnerable.
+
+    Method: compare raw pace at same HR in hot vs cool, then compare the
+    measured slowdown to the formula-predicted slowdown for those temperatures.
     """
     acts = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.is_duplicate == False,  # noqa: E712
         Activity.avg_hr.isnot(None),
         Activity.temperature_f.isnot(None),
+        Activity.heat_adjustment_pct.isnot(None),
         Activity.distance_m > 3000,
     ).order_by(Activity.start_time).all()
 
@@ -1883,6 +1896,7 @@ def investigate_heat_tax(
                 hot_splits.append({
                     'pace': pace_sec_mi, 'hr': hr,
                     'temp': act.temperature_f,
+                    'formula_adj_pct': act.heat_adjustment_pct or 0,
                     'date': act.start_time.date().isoformat(),
                 })
             elif act.temperature_f < 65:
@@ -1897,32 +1911,42 @@ def investigate_heat_tax(
 
     hot_pace = sum(e['pace'] for e in hot_splits) / len(hot_splits)
     cool_pace = sum(e['pace'] for e in cool_splits) / len(cool_splits)
-    hot_hr = sum(e['hr'] for e in hot_splits) / len(hot_splits)
-    cool_hr = sum(e['hr'] for e in cool_splits) / len(cool_splits)
     hot_temp = sum(e['temp'] for e in hot_splits) / len(hot_splits)
     cool_temp = sum(e['temp'] for e in cool_splits) / len(cool_splits)
 
-    diff_sec = hot_pace - cool_pace
-    temp_diff = hot_temp - cool_temp
-    if temp_diff < 10:
-        return None
-    sec_per_degree = diff_sec / temp_diff
+    actual_diff_sec = hot_pace - cool_pace
+    actual_diff_pct = actual_diff_sec / cool_pace if cool_pace > 0 else 0
+
+    avg_formula_pct = sum(e['formula_adj_pct'] for e in hot_splits) / len(hot_splits)
+    predicted_diff_sec = cool_pace * avg_formula_pct
+
+    ratio = actual_diff_pct / avg_formula_pct if avg_formula_pct > 0 else 1.0
 
     def _fmt(sec):
         m = int(sec) // 60
         s = int(sec) % 60
         return f"{m}:{s:02d}"
 
+    if ratio < 0.75:
+        resilience = "heat-resilient"
+        insight = "you lose less pace in the heat than the average runner"
+    elif ratio > 1.25:
+        resilience = "heat-vulnerable"
+        insight = "heat costs you more than it costs the average runner"
+    else:
+        resilience = "average heat response"
+        insight = "your heat response is typical"
+
     sentence = (
-        f"Personal heat tax: at the same easy-effort heart rate (125-145 bpm), "
-        f"hot conditions (85°F+) cost {int(diff_sec)} seconds per mile "
-        f"compared to cool conditions (<65°F). "
-        f"That's roughly {sec_per_degree:.1f} sec/mi for every degree above 65°F. "
+        f"At easy-effort heart rate (125-145 bpm), heat costs you "
+        f"{int(actual_diff_sec)} sec/mi ({actual_diff_pct:.1%} slower) — "
+        f"the generic formula predicted {int(predicted_diff_sec)} sec/mi "
+        f"({avg_formula_pct:.1%}). "
+        f"You appear {resilience}: {insight}. "
         f"Hot: {_fmt(hot_pace)}/mi at {hot_temp:.0f}°F (n={len(hot_splits)}). "
         f"Cool: {_fmt(cool_pace)}/mi at {cool_temp:.0f}°F (n={len(cool_splits)})."
     )
 
-    # Check if any races were in hot conditions
     hot_races = []
     for ev in events:
         race_act = db.query(Activity).filter(
@@ -1932,25 +1956,27 @@ def investigate_heat_tax(
             Activity.temperature_f.isnot(None),
         ).first()
         if race_act and race_act.temperature_f >= 80:
-            expected_cost = sec_per_degree * (race_act.temperature_f - 65)
+            personal_cost = actual_diff_pct * cool_pace
             hot_races.append({
                 'race': f"{ev.distance_category} on {ev.event_date}",
                 'date': ev.event_date.isoformat(),
                 'temp_f': race_act.temperature_f,
-                'expected_cost_sec_mi': round(expected_cost),
+                'estimated_personal_cost_sec_mi': round(personal_cost),
             })
 
     return RaceInputFinding(
         layer='B',
-        finding_type='heat_tax',
+        finding_type='heat_resilience',
         sentence=sentence,
         receipts={
             'hot_n': len(hot_splits),
             'cool_n': len(cool_splits),
-            'hot_avg_temp': round(hot_temp),
-            'cool_avg_temp': round(cool_temp),
-            'diff_sec_per_mi': round(diff_sec),
-            'sec_per_degree_f': round(sec_per_degree, 1),
+            'actual_diff_sec_mi': round(actual_diff_sec),
+            'actual_diff_pct': round(actual_diff_pct, 3),
+            'formula_predicted_diff_sec_mi': round(predicted_diff_sec),
+            'formula_avg_adj_pct': round(avg_formula_pct, 3),
+            'resilience_ratio': round(ratio, 2),
+            'classification': resilience,
             'hot_races': hot_races,
         },
         confidence='genuine',
@@ -2231,7 +2257,7 @@ def investigate_stride_economy(
     requires=['activity_summary', 'activity_splits'],
     min_activities=15,
     min_data_weeks=8,
-    description="Quality workout pace progression by zone over time",
+    description="Quality workout pace progression by zone over time (weather-normalized)",
 )
 def investigate_workout_progression(
     athlete_id: UUID,
@@ -2243,11 +2269,8 @@ def investigate_workout_progression(
     Track quality workout progression over time by zone.
 
     Uses the athlete's RPI-derived training zones to classify every split.
-    No hardcoded pace or distance filters — zones decide what's quality work.
-
-    Separates by zone (interval vs threshold) so different workout types
-    aren't blended together. Compares pace at equivalent HR within
-    the same zone over time. Controls for temperature.
+    All paces are heat-normalized so seasonal temperature changes don't
+    create false adaptation signals.
     """
     acts = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
@@ -2255,7 +2278,6 @@ def investigate_workout_progression(
         Activity.avg_hr.isnot(None),
     ).order_by(Activity.start_time).all()
 
-    # Collect quality splits by zone, grouped into sessions
     zone_sessions: Dict[str, List[Dict]] = defaultdict(list)
 
     for act in acts:
@@ -2263,7 +2285,8 @@ def investigate_workout_progression(
             ActivitySplit.activity_id == act.id,
         ).order_by(ActivitySplit.split_number).all()
 
-        # Classify each split by zone
+        heat_adj = act.heat_adjustment_pct
+
         zone_reps: Dict[str, List[Dict]] = defaultdict(list)
         for sp in splits:
             if sp.distance is None or sp.elapsed_time is None:
@@ -2273,20 +2296,20 @@ def investigate_workout_progression(
             if dist_m < 50 or time_s < 10:
                 continue
 
-            pace_sec_mi = int(time_s / (dist_m * MI_PER_KM * KM_PER_METER))
-            z = zones.classify_pace(pace_sec_mi)
+            raw_pace = int(time_s / (dist_m * MI_PER_KM * KM_PER_METER))
+            adj_pace = _heat_normalize_pace(raw_pace, heat_adj)
+            z = zones.classify_pace(int(adj_pace))
 
             if z in ('interval', 'repetition'):
                 hr = float(sp.average_heartrate) if sp.average_heartrate else None
                 cadence = float(sp.average_cadence) if sp.average_cadence else None
                 zone_reps[z].append({
-                    'pace_sec_mi': pace_sec_mi,
+                    'pace_sec_mi': adj_pace,
+                    'raw_pace_sec_mi': raw_pace,
                     'hr': hr,
                     'cadence': cadence,
                     'dist_m': dist_m,
                 })
-
-        elev = float(act.total_elevation_gain) if act.total_elevation_gain else 0
 
         for z, reps in zone_reps.items():
             if len(reps) >= 2:
@@ -2297,8 +2320,7 @@ def investigate_workout_progression(
                     'avg_pace': sum(r['pace_sec_mi'] for r in reps) / len(reps),
                     'avg_hr': sum(hrs) / len(hrs) if hrs else None,
                     'rep_count': len(reps),
-                    'temp': act.temperature_f,
-                    'elevation': elev,
+                    'heat_adj_pct': heat_adj,
                 })
 
     findings = []
@@ -2307,7 +2329,6 @@ def investigate_workout_progression(
         if len(sessions) < 4:
             continue
 
-        # Compare first third vs last third
         n = len(sessions)
         third = max(n // 3, 1)
         early = sessions[:third]
@@ -2321,8 +2342,6 @@ def investigate_workout_progression(
         late_hr = sum(late_hrs) / len(late_hrs) if late_hrs else None
 
         pace_change = late_pace - early_pace
-
-        # Report any meaningful change (faster OR slower)
         if abs(pace_change) < 3:
             continue
 
@@ -2338,36 +2357,23 @@ def investigate_workout_progression(
             f"{zone_label.title()} rep pace went from {_fmt(early_pace)}/mi "
             f"to {_fmt(late_pace)}/mi ({int(abs(pace_change))} sec/mi {direction}) "
             f"across {n} sessions ({sessions[0]['date']} to {sessions[-1]['date']}). "
+            f"All paces weather-normalized."
         )
 
         if early_hr is not None and late_hr is not None:
             hr_change = late_hr - early_hr
             sentence += (
-                f"Heart rate: {early_hr:.0f} → {late_hr:.0f} bpm "
+                f" Heart rate: {early_hr:.0f} → {late_hr:.0f} bpm "
                 f"({'lower' if hr_change < 0 else 'higher'} effort)."
             )
-
-        # Temperature confound check
-        early_temps = [s['temp'] for s in early if s['temp'] is not None]
-        late_temps = [s['temp'] for s in late if s['temp'] is not None]
-        confidence = 'genuine'
-        if early_temps and late_temps:
-            avg_et = sum(early_temps) / len(early_temps)
-            avg_lt = sum(late_temps) / len(late_temps)
-            if abs(avg_et - avg_lt) > 15:
-                sentence += (
-                    f" Note: temperature differed ({avg_et:.0f}°F vs {avg_lt:.0f}°F)."
-                )
-                confidence = 'suggestive'
 
         session_receipts = []
         for s in sessions:
             session_receipts.append({
                 'date': s['date'].isoformat(),
                 'reps': s['rep_count'],
-                'avg_pace': _fmt(s['avg_pace']),
+                'heat_adjusted_pace': _fmt(s['avg_pace']),
                 'avg_hr': round(s['avg_hr']) if s['avg_hr'] else None,
-                'temp_f': s['temp'],
             })
 
         findings.append(RaceInputFinding(
@@ -2378,9 +2384,10 @@ def investigate_workout_progression(
                 'zone': zone_name,
                 'total_sessions': n,
                 'pace_change_sec': int(pace_change),
+                'weather_normalized': True,
                 'sessions': session_receipts,
             },
-            confidence=confidence,
+            confidence='genuine',
         ))
 
     return findings if findings else None
@@ -2805,6 +2812,230 @@ def investigate_interval_recovery_trend(
             'change_s': round(change, 1),
         },
         confidence='genuine' if len(sessions_with_recovery) >= 6 else 'suggestive',
+    )
+
+
+@investigation(
+    requires=['activity_summary', 'run_shape'],
+    min_activities=20,
+    min_data_weeks=8,
+    description="Workout variety — does mixing workout types correlate with better race results",
+)
+def investigate_workout_variety_effect(
+    athlete_id: UUID,
+    db: Session,
+    zones: TrainingZones,
+    events: List[PerformanceEvent],
+) -> Optional[RaceInputFinding]:
+    """
+    Measure whether higher workout variety in training blocks correlates
+    with race performance. Uses run_shape classifications to count distinct
+    workout types in the 4-week block preceding each race.
+    """
+    if len(events) < 4:
+        return None
+
+    race_blocks = []
+    for ev in events:
+        block_start = ev.event_date - timedelta(days=28)
+        block_acts = db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.is_duplicate == False,  # noqa: E712
+            Activity.run_shape.isnot(None),
+            Activity.start_time >= block_start,
+            Activity.start_time < ev.event_date,
+        ).all()
+
+        if len(block_acts) < 5:
+            continue
+
+        classifications = set()
+        for act in block_acts:
+            rs = act.run_shape or {}
+            cls = rs.get('summary', {}).get('workout_classification')
+            if cls:
+                classifications.add(cls)
+
+        race_time_sec = None
+        if ev.finish_time_seconds:
+            race_time_sec = ev.finish_time_seconds
+        elif ev.time_seconds:
+            race_time_sec = ev.time_seconds
+
+        if race_time_sec and race_time_sec > 0:
+            dist_m = ev.distance_meters or 0
+            pace_sec_mi = (race_time_sec / (dist_m / METERS_PER_MILE)) if dist_m > 0 else 0
+        else:
+            pace_sec_mi = 0
+
+        race_blocks.append({
+            'date': ev.event_date.isoformat(),
+            'distance': ev.distance_category,
+            'variety_count': len(classifications),
+            'types_found': sorted(classifications),
+            'activity_count': len(block_acts),
+            'race_pace_sec_mi': round(pace_sec_mi),
+        })
+
+    if len(race_blocks) < 4:
+        return None
+
+    varieties = [rb['variety_count'] for rb in race_blocks]
+    avg_variety = sum(varieties) / len(varieties)
+
+    high_variety = [rb for rb in race_blocks if rb['variety_count'] > avg_variety]
+    low_variety = [rb for rb in race_blocks if rb['variety_count'] <= avg_variety]
+
+    if not high_variety or not low_variety:
+        return None
+
+    high_paces = [rb['race_pace_sec_mi'] for rb in high_variety if rb['race_pace_sec_mi'] > 0]
+    low_paces = [rb['race_pace_sec_mi'] for rb in low_variety if rb['race_pace_sec_mi'] > 0]
+
+    if not high_paces or not low_paces:
+        return None
+
+    high_avg = sum(high_paces) / len(high_paces)
+    low_avg = sum(low_paces) / len(low_paces)
+    diff = low_avg - high_avg
+
+    def _fmt(sec):
+        m = int(sec) // 60
+        s = int(sec) % 60
+        return f"{m}:{s:02d}"
+
+    if diff > 5:
+        verdict = (
+            f"Higher variety training blocks ({sum(rb['variety_count'] for rb in high_variety)/len(high_variety):.1f} "
+            f"types) preceded races averaging {_fmt(high_avg)}/mi vs {_fmt(low_avg)}/mi "
+            f"with less variety — {int(diff)} sec/mi faster."
+        )
+    elif diff < -5:
+        verdict = (
+            f"Focused training blocks with fewer types preceded faster races — "
+            f"{_fmt(low_avg)}/mi vs {_fmt(high_avg)}/mi with more variety. "
+            f"You may respond better to consistency than variety."
+        )
+    else:
+        return None
+
+    return RaceInputFinding(
+        layer='B',
+        finding_type='workout_variety_effect',
+        sentence=verdict,
+        receipts={
+            'race_blocks': race_blocks,
+            'high_variety_avg_pace': _fmt(high_avg),
+            'low_variety_avg_pace': _fmt(low_avg),
+            'diff_sec_mi': round(diff),
+        },
+        confidence='suggestive',
+    )
+
+
+@investigation(
+    requires=['activity_summary', 'run_shape'],
+    min_activities=10,
+    min_data_weeks=4,
+    description="Progressive run execution quality — pace control and finishing effort",
+)
+def investigate_progressive_run_execution(
+    athlete_id: UUID,
+    db: Session,
+    zones: TrainingZones,
+    events: List[PerformanceEvent],
+) -> Optional[RaceInputFinding]:
+    """
+    Analyze progressive runs (each phase faster than the last) to track
+    execution quality over time. Progressive runs teach pace control and
+    finishing speed — key race execution skills.
+    """
+    acts = db.query(Activity).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.run_shape.isnot(None),
+    ).order_by(Activity.start_time).all()
+
+    progressions = []
+    for act in acts:
+        rs = act.run_shape or {}
+        cls = rs.get('summary', {}).get('workout_classification')
+        if cls != 'progression':
+            continue
+
+        phases = rs.get('phases', [])
+        effort_phases = [p for p in phases
+                         if p.get('phase_type') not in ('warmup', 'cooldown', 'interval_recovery')]
+        if len(effort_phases) < 2:
+            continue
+
+        first_pace = effort_phases[0].get('avg_pace_sec_per_mile', 0)
+        last_pace = effort_phases[-1].get('avg_pace_sec_per_mile', 0)
+        if first_pace <= 0 or last_pace <= 0:
+            continue
+
+        pace_drop = first_pace - last_pace
+        last_zone = effort_phases[-1].get('pace_zone', 'easy')
+        first_hr = effort_phases[0].get('avg_hr')
+        last_hr = effort_phases[-1].get('avg_hr')
+
+        progressions.append({
+            'date': act.start_time.date().isoformat(),
+            'activity_id': str(act.id),
+            'name': (act.name or '')[:50],
+            'pace_drop_sec_mi': round(pace_drop),
+            'finishing_zone': last_zone,
+            'starting_pace_sec_mi': round(first_pace),
+            'finishing_pace_sec_mi': round(last_pace),
+            'starting_hr': round(first_hr) if first_hr else None,
+            'finishing_hr': round(last_hr) if last_hr else None,
+            'n_phases': len(effort_phases),
+        })
+
+    if len(progressions) < 3:
+        return None
+
+    half = len(progressions) // 2
+    early = progressions[:half]
+    late = progressions[half:]
+
+    early_drop = sum(p['pace_drop_sec_mi'] for p in early) / len(early)
+    late_drop = sum(p['pace_drop_sec_mi'] for p in late) / len(late)
+
+    def _fmt(sec):
+        m = int(sec) // 60
+        s = int(sec) % 60
+        return f"{m}:{s:02d}"
+
+    change = late_drop - early_drop
+    direction = "bigger" if change > 0 else "smaller"
+
+    sentence = (
+        f"Across {len(progressions)} progressive runs, "
+        f"the pace drop from start to finish went from {int(early_drop)} sec/mi "
+        f"to {int(late_drop)} sec/mi ({direction} negative splits). "
+    )
+
+    if change > 10:
+        sentence += "Your ability to build through a run has improved."
+    elif change < -10:
+        sentence += "Your progressions have become more controlled — less dramatic acceleration."
+
+    finishing_zones = Counter(p['finishing_zone'] for p in progressions)
+    most_common_finish = finishing_zones.most_common(1)[0]
+    sentence += f" Most common finishing effort: {most_common_finish[0]}."
+
+    return RaceInputFinding(
+        layer='B',
+        finding_type='progressive_run_execution',
+        sentence=sentence,
+        receipts={
+            'progressions': progressions,
+            'early_avg_drop': round(early_drop),
+            'late_avg_drop': round(late_drop),
+            'finishing_zone_distribution': dict(finishing_zones),
+        },
+        confidence='genuine' if len(progressions) >= 5 else 'suggestive',
     )
 
 

@@ -1750,7 +1750,10 @@ def analyze_stream(
         from services.shape_extractor import extract_shape, PaceProfile
         pace_prof = None
         if athlete_context and athlete_context.threshold_pace_per_km:
-            thr_v = 1000.0 / athlete_context.threshold_pace_per_km
+            thr_sec_km = athlete_context.threshold_pace_per_km
+            if thr_sec_km < 30:
+                thr_sec_km = thr_sec_km * 60
+            thr_v = 1000.0 / thr_sec_km
             thr_sec_mi = METERS_PER_MILE / thr_v if thr_v > 0 else 450
             pace_prof = PaceProfile(
                 easy_sec=int(thr_sec_mi * 1.35),

@@ -33,10 +33,13 @@ FINDING_ROLES: Dict[str, str] = {
     # Inputs — training behaviors the athlete chose
     'weekly_pattern': 'input',
     'training_recipe': 'input',
+    'workout_variety_effect': 'input',
 
     # Adaptations — measurable physiological changes
     'pace_at_hr_easy_adaptation': 'adaptation',
     'pace_at_hr_threshold_adaptation': 'adaptation',
+    'pace_at_hr_easy_effort_adaptation': 'adaptation',
+    'pace_at_hr_high_effort_adaptation': 'adaptation',
     'back_to_back_durability': 'adaptation',
     'workout_progression_interval': 'adaptation',
     'workout_progression_repetition': 'adaptation',
@@ -46,12 +49,17 @@ FINDING_ROLES: Dict[str, str] = {
     'stride_economy': 'adaptation',
     'long_run_durability': 'adaptation',
     'post_injury_resilience': 'adaptation',
+    'stride_progression': 'adaptation',
+    'cruise_interval_quality': 'adaptation',
+    'interval_recovery_trend': 'adaptation',
+    'progressive_run_execution': 'adaptation',
 
     # Outcomes — race performances
     'race_execution': 'outcome',
 
     # Contextual — constants that modify interpretation
     'heat_tax': 'contextual',
+    'heat_resilience': 'contextual',
     'recovery_cost': 'contextual',
 }
 
@@ -61,16 +69,27 @@ MECHANISM_REGISTRY: Dict[str, List[str]] = {
     'weekly_pattern': [
         'back_to_back_durability',
         'pace_at_hr_easy_adaptation',
+        'pace_at_hr_easy_effort_adaptation',
         'long_run_durability',
+        'stride_progression',
     ],
     'training_recipe': [
         'pace_at_hr_easy_adaptation',
         'pace_at_hr_threshold_adaptation',
+        'pace_at_hr_easy_effort_adaptation',
+        'pace_at_hr_high_effort_adaptation',
         'workout_progression_interval',
         'workout_progression_repetition',
         'adaptation_threshold',
         'adaptation_interval',
         'stride_economy',
+        'cruise_interval_quality',
+        'interval_recovery_trend',
+    ],
+    'workout_variety_effect': [
+        'workout_progression_interval',
+        'workout_progression_repetition',
+        'progressive_run_execution',
     ],
 }
 
@@ -78,6 +97,8 @@ MECHANISM_REGISTRY: Dict[str, List[str]] = {
 ADAPTATION_TO_OUTCOME: Dict[str, List[str]] = {
     'pace_at_hr_easy_adaptation': ['half_marathon', 'marathon', '10k'],
     'pace_at_hr_threshold_adaptation': ['5k', '10k', 'half_marathon'],
+    'pace_at_hr_easy_effort_adaptation': ['half_marathon', 'marathon', '10k'],
+    'pace_at_hr_high_effort_adaptation': ['5k', '10k', 'half_marathon'],
     'back_to_back_durability': ['half_marathon', 'marathon'],
     'adaptation_threshold': ['10k', 'half_marathon', 'marathon'],
     'adaptation_interval': ['mile', '5k', '10k'],
@@ -86,6 +107,10 @@ ADAPTATION_TO_OUTCOME: Dict[str, List[str]] = {
     'stride_economy': ['5k', '10k', 'half_marathon', 'marathon'],
     'long_run_durability': ['half_marathon', 'marathon'],
     'post_injury_resilience': ['5k', '10k', 'half_marathon', 'marathon', 'mile'],
+    'stride_progression': ['5k', '10k', 'half_marathon', 'marathon', 'mile'],
+    'cruise_interval_quality': ['10k', 'half_marathon', 'marathon'],
+    'interval_recovery_trend': ['5k', '10k', 'half_marathon'],
+    'progressive_run_execution': ['10k', 'half_marathon', 'marathon'],
 }
 
 

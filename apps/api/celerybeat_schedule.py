@@ -44,6 +44,13 @@ beat_schedule = {
         'task': 'tasks.run_daily_correlation_sweep',
         'schedule': crontab(hour=8, minute=0),
     },
+    # Living Fingerprint refresh — daily at 06:00 UTC.
+    # Re-runs all investigations for athletes with new data in the last 24h,
+    # persists updated findings, and refreshes training story cache.
+    'fingerprint-refresh': {
+        'task': 'tasks.refresh_living_fingerprint',
+        'schedule': crontab(hour=6, minute=0),
+    },
 }
 
 

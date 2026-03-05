@@ -491,3 +491,57 @@ def run_intelligence_for_athlete_task(
         return {"status": "error", "athlete_id": athlete_id, "message": str(e)}
     finally:
         db.close()
+
+
+@celery_app.task(
+    name="tasks.refresh_living_fingerprint",
+    bind=True,
+    max_retries=0,
+    soft_time_limit=300,
+    time_limit=600,
+)
+def refresh_living_fingerprint(self: Task) -> Dict:
+    """
+    Daily fingerprint refresh: re-run investigations for athletes with
+    new activity data in the last 24h, persist updated findings, and
+    log the results.
+    """
+    db: Session = next(get_db_sync())
+    try:
+        from models import Athlete, Activity
+        from services.race_input_analysis import mine_race_inputs
+        from services.finding_persistence import store_all_findings
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        active_ids = (
+            db.query(Activity.athlete_id)
+            .filter(Activity.start_time >= cutoff)
+            .distinct()
+            .all()
+        )
+        active_ids = [row[0] for row in active_ids]
+        logger.info("Fingerprint refresh: %d athletes with recent data", len(active_ids))
+
+        results = []
+        for aid in active_ids:
+            try:
+                findings, gaps = mine_race_inputs(aid, db)
+                if findings:
+                    store_all_findings(aid, findings, db)
+                    db.commit()
+                results.append({
+                    'athlete_id': str(aid),
+                    'findings': len(findings),
+                    'gaps': len(gaps),
+                })
+            except Exception as e:
+                db.rollback()
+                logger.error("Fingerprint refresh failed for %s: %s", aid, e)
+                results.append({
+                    'athlete_id': str(aid),
+                    'error': str(e),
+                })
+
+        return {'refreshed': len(results), 'results': results}
+    finally:
+        db.close()

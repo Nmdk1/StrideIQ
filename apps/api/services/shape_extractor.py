@@ -26,7 +26,7 @@ from typing import Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 METERS_PER_MILE = 1609.34
-MIN_PHASE_DURATION_S = 20
+MIN_PHASE_DURATION_S = 60
 MIN_ACCELERATION_DURATION_S = 10
 MAX_VELOCITY_MPS = 11.0  # 25 mph
 STOPPED_VELOCITY_THRESHOLD = 0.5  # m/s
@@ -62,6 +62,13 @@ class PaceProfile:
     def is_at_least_marathon(self, pace_sec_per_mile: float) -> bool:
         mar_easy = (self.marathon_sec + self.easy_sec) // 2
         return 0 < pace_sec_per_mile <= mar_easy
+
+    def is_significant_acceleration(self, pace_sec_per_mile: float) -> bool:
+        """True if pace is meaningfully faster than easy — at least 20% faster.
+        Works for all athletes regardless of speed."""
+        if pace_sec_per_mile <= 0:
+            return False
+        return pace_sec_per_mile < self.easy_sec * 0.85
 
 
 @dataclass
@@ -138,6 +145,20 @@ class RunShape:
         }
 
 
+def pace_profile_from_training_paces(paces_json: dict) -> Optional[PaceProfile]:
+    """Build a PaceProfile from AthleteTrainingPaceProfile.paces JSONB."""
+    raw = paces_json.get('_raw_seconds_per_mile')
+    if raw:
+        return PaceProfile(
+            easy_sec=raw.get('easy_pace_low', 600),
+            marathon_sec=raw.get('marathon_pace', 480),
+            threshold_sec=raw.get('threshold_pace', 450),
+            interval_sec=raw.get('interval_pace', 400),
+            repetition_sec=raw.get('repetition_pace', 360),
+        )
+    return None
+
+
 def extract_shape(
     stream_data: Dict[str, List],
     pace_profile: Optional[PaceProfile] = None,
@@ -182,13 +203,20 @@ def extract_shape(
         pace_profile = _derive_profile_from_stream(velocity)
 
     # Step 1: Smooth and compute per-point metrics
-    smoothed_v = _rolling_mean(velocity, window=15)
-    smoothed_v = _clamp_velocity(smoothed_v)
-    pace_per_point = _velocity_to_pace(smoothed_v)
+    # Heavy smoothing (30s) for stable phase detection
+    phase_v = _rolling_mean(velocity, window=30)
+    phase_v = _clamp_velocity(phase_v)
+    phase_pace = _velocity_to_pace(phase_v)
     zone_per_point = [
         pace_profile.classify_pace(p) if p > 0 else 'stopped'
-        for p in pace_per_point
+        for p in phase_pace
     ]
+    zone_per_point = _stabilize_zones(zone_per_point, window=61)
+
+    # Light smoothing (15s) for acceleration detection (preserves short bursts)
+    accel_v = _rolling_mean(velocity, window=15)
+    accel_v = _clamp_velocity(accel_v)
+    accel_pace = _velocity_to_pace(accel_v)
 
     total_time = time[-1] - time[0] if len(time) >= 2 else 0
     total_distance = _compute_total_distance(distance, velocity, time)
@@ -199,9 +227,15 @@ def extract_shape(
     # Step 3: Merge micro-phases
     merged_blocks = _merge_micro_phases(raw_blocks, MIN_PHASE_DURATION_S)
 
+    # Step 3b: Pace-similarity merge — adjacent phases within 20 sec/mi
+    # of each other get combined even if zones differ (GPS noise at boundaries)
+    merged_blocks = _merge_similar_pace_blocks(
+        merged_blocks, phase_pace, threshold_sec_mi=20,
+    )
+
     # Step 4: Classify phase types and compute metrics
     phases = _build_phases(
-        merged_blocks, time, smoothed_v, pace_per_point, zone_per_point,
+        merged_blocks, time, phase_v, phase_pace, zone_per_point,
         heartrate, cadence, grade, altitude, distance,
         total_time, heat_adjustment_pct,
     )
@@ -209,9 +243,9 @@ def extract_shape(
     if not phases:
         return None
 
-    # Step 5: Detect accelerations
+    # Step 5: Detect accelerations (uses light smoothing to catch short bursts)
     accelerations = _detect_accelerations(
-        time, smoothed_v, pace_per_point, zone_per_point,
+        time, accel_v, accel_pace, zone_per_point,
         heartrate, cadence, phases, pace_profile,
         total_time, total_distance, heat_adjustment_pct,
     )
@@ -317,6 +351,25 @@ def _derive_profile_from_stream(velocity: List) -> PaceProfile:
 #  Step 2: Zone transition detection
 # ═══════════════════════════════════════════════════════
 
+def _stabilize_zones(zones: List[str], window: int = 31) -> List[str]:
+    """Mode filter: replace each point's zone with the most common zone in
+    a sliding window. Eliminates per-second oscillation at zone boundaries."""
+    n = len(zones)
+    if n < window:
+        return zones
+    half = window // 2
+    stable = []
+    for i in range(n):
+        lo = max(0, i - half)
+        hi = min(n, i + half + 1)
+        chunk = zones[lo:hi]
+        counts: Dict[str, int] = {}
+        for z in chunk:
+            counts[z] = counts.get(z, 0) + 1
+        stable.append(max(counts, key=counts.get))
+    return stable
+
+
 def _detect_zone_transitions(
     time: List, zones: List[str],
 ) -> List[Tuple[int, int, str]]:
@@ -342,11 +395,27 @@ def _detect_zone_transitions(
 #  Step 3: Merge micro-phases
 # ═══════════════════════════════════════════════════════
 
+def _consolidate_same_zone(
+    blocks: List[Tuple[int, int, str]],
+) -> List[Tuple[int, int, str]]:
+    """Merge adjacent blocks that share the same zone."""
+    if len(blocks) <= 1:
+        return blocks
+    result = [blocks[0]]
+    for start, end, zone in blocks[1:]:
+        if zone == result[-1][2]:
+            result[-1] = (result[-1][0], end, zone)
+        else:
+            result.append((start, end, zone))
+    return result
+
+
 def _merge_micro_phases(
     blocks: List[Tuple[int, int, str]],
     min_duration_s: int,
 ) -> List[Tuple[int, int, str]]:
-    """Merge blocks shorter than min_duration into neighbors."""
+    """Merge blocks shorter than min_duration into neighbors, then
+    consolidate adjacent same-zone blocks."""
     if len(blocks) <= 1:
         return blocks
 
@@ -384,7 +453,46 @@ def _merge_micro_phases(
 
         merged = new_merged
 
-    return merged
+    return _consolidate_same_zone(merged)
+
+
+def _merge_similar_pace_blocks(
+    blocks: List[Tuple[int, int, str]],
+    pace_per_point: List[float],
+    threshold_sec_mi: float = 20.0,
+) -> List[Tuple[int, int, str]]:
+    """Merge adjacent blocks whose average pace is within threshold_sec_mi
+    of the anchor (first block in the merge chain).
+
+    Uses an anchor-based approach: tracks the pace of the first block in
+    each merge chain. A new block only merges if its pace is within
+    threshold of the anchor, preventing cascading merges that erase
+    genuine progressions (e.g., 8:12→7:49→7:41→7:15 should NOT become
+    one phase even though each adjacent pair is within 20s).
+    """
+    if len(blocks) <= 1:
+        return blocks
+
+    def _avg_pace(start: int, end: int) -> float:
+        paces = [p for p in pace_per_point[start:end + 1] if p > 0]
+        return sum(paces) / len(paces) if paces else 0
+
+    result = [blocks[0]]
+    anchor_pace = _avg_pace(blocks[0][0], blocks[0][1])
+
+    for start, end, zone in blocks[1:]:
+        prev_start, prev_end, prev_zone = result[-1]
+        curr_pace = _avg_pace(start, end)
+
+        if (anchor_pace > 0 and curr_pace > 0 and
+                abs(anchor_pace - curr_pace) < threshold_sec_mi):
+            keep_zone = prev_zone if (prev_end - prev_start) >= (end - start) else zone
+            result[-1] = (prev_start, end, keep_zone)
+        else:
+            result.append((start, end, zone))
+            anchor_pace = curr_pace
+
+    return result
 
 
 # ═══════════════════════════════════════════════════════
@@ -584,7 +692,7 @@ def _detect_accelerations(
             continue
 
         if velocity[i] >= accel_threshold and pace[i] > 0:
-            if not pace_profile.is_at_least_marathon(pace[i]):
+            if not pace_profile.is_significant_acceleration(pace[i]):
                 i += 1
                 continue
 
@@ -876,20 +984,24 @@ def _derive_classification(
                 return 'long_run'
             return 'easy_run'
 
-    # Strides: end-loaded accelerations at interval/rep pace
+    # Strides: end-loaded accelerations at meaningful pace
     if (3 <= n_accels <= 8 and
-            summary.acceleration_clustering == 'end_loaded' and
-            all_easy):
-        accel_durations = [a.duration_s for a in accelerations]
-        if all(10 <= d <= 30 for d in accel_durations):
-            fast_enough = all(
-                a.pace_zone in ('interval', 'repetition', 'threshold')
-                for a in accelerations
-            )
-            if fast_enough:
-                if total_distance > 20000:
-                    return 'long_run_with_strides'
-                return 'strides'
+            summary.acceleration_clustering == 'end_loaded'):
+        main_body = [p for p in effort_phases
+                     if p.end_time_s < accelerations[0].start_time_s]
+        body_all_easy = (not main_body or
+                         all(p.pace_zone in ('easy', 'recovery') for p in main_body))
+        if body_all_easy:
+            accel_durations = [a.duration_s for a in accelerations]
+            if all(10 <= d <= 45 for d in accel_durations):
+                fast_enough = all(
+                    a.pace_zone in ('interval', 'repetition', 'threshold', 'marathon')
+                    for a in accelerations
+                )
+                if fast_enough:
+                    if total_distance > 20000:
+                        return 'long_run_with_strides'
+                    return 'strides'
 
     # Fartlek: scattered accelerations with variable duration
     if (n_accels >= 3 and
@@ -924,10 +1036,14 @@ def _derive_classification(
             except statistics.StatisticsError:
                 pass
 
-    # Progression: successive phases getting faster
-    if len(effort_phases) >= 3 and summary.pace_progression == 'building':
+    # Progression: successive phases getting faster with meaningful pace drop
+    if len(effort_phases) >= 2 and summary.pace_progression == 'building':
         last_zone = effort_phases[-1].pace_zone
-        if last_zone in ('marathon', 'threshold', 'interval', 'repetition'):
+        first_pace = effort_phases[0].avg_pace_sec_per_mile
+        last_pace = effort_phases[-1].avg_pace_sec_per_mile
+        if (last_zone in ('marathon', 'threshold', 'interval', 'repetition')
+                and first_pace > 0 and last_pace > 0
+                and first_pace - last_pace > 15):
             return 'progression'
 
     # Over/under: alternating above/below marathon pace
