@@ -276,7 +276,21 @@ is earned through demonstrated accuracy:
 Each level requires measurable accuracy at the previous level. There is
 no shortcut.
 
-### 10. Tree Clean, Tests Green, Production Healthy
+### 10. CI First, Local Second
+
+When verifying test results, always check CI (`gh run view`) before
+running tests locally. The CI environment is the source of truth —
+it has Postgres, the full migration chain, and the correct container
+context. Local environments may not have Docker Postgres running,
+which produces misleading failures.
+
+If CI is green, the code is correct. Do not burn tokens debugging
+local environment issues when CI is already passing.
+
+If CI is red, fix the CI failure. Do not try to reproduce it locally
+unless CI logs are insufficient to diagnose.
+
+### 11. Tree Clean, Tests Green, Production Healthy
 
 Every session ends with:
 - `git status` showing a clean tree

@@ -527,7 +527,7 @@ These are non-negotiable. Violating any of them costs trust immediately.
 
 6. **Show evidence, don't claim results.** Paste test output. Paste deploy logs. "It should work" is not acceptable.
 
-7. **CI must be green.** Local passing is not sufficient.
+7. **CI must be green.** Local passing is not sufficient. **Check CI first** (`gh run view`) — do not debug local test failures when the CI environment (with Postgres, full migration chain) is the source of truth. If CI is green, the code is correct. If CI is red, diagnose from CI logs first.
 
 8. **Deploy commands must be exact.** Use the correct compose file, container names, flags. If unsure, ask.
 

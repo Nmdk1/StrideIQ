@@ -1,15 +1,16 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
-**Last updated:** March 3, 2026
-**Last updated by:** Builder session — Correlation Engine Layers 1–4 shipped
+**Last updated:** March 5, 2026
+**Last updated by:** Builder session — Living Fingerprint complete (4 capabilities, 9,486 lines, 55 tests)
 
 ---
 
-## 0. Delta Since Last Audit (Feb 25 -> Mar 1)
+## 0. Delta Since Last Audit (Feb 25 -> Mar 5)
 
 Shipped and now live in product/system behavior:
 
+- **Living Fingerprint — Full Build (Mar 3-5, 2026)**: 9,486 lines across 35 files. Four capabilities: (1) **Weather Normalization** — `heat_adjustment.py` (Magnus formula dew point + combined value heat model, cross-validated against TypeScript implementation). `dew_point_f` and `heat_adjustment_pct` columns on Activity. All pace comparisons in investigations now use heat-adjusted pace. `investigate_heat_tax` refactored to personal heat resilience score. Migration `lfp_001_heat`. (2) **Activity Shape Extraction** — `shape_extractor.py` (1,331 lines pure computation, no DB/IO). Extracts phases, accelerations, shape summary, and classification from per-second stream data. Dual-channel detection: velocity (GPS) + cadence (watch accelerometer) merged with deduplication. HR recovery rate computed per acceleration. Classifications: `easy_run`, `progression`, `tempo`, `fartlek`, `strides`, `threshold_intervals`, `speed_intervals`, `hill_repeats`, `long_run`, `anomaly`, `null`. `run_shape` JSONB column on Activity. Migration `lfp_002_shape`. Gate L passed: founder's progression, Larry's strides (cadence channel), BHL's tempo, easy run suppression — all correct. (3) **Investigation Registry** — `@investigation` decorator with `InvestigationSpec`, `INVESTIGATION_REGISTRY`, signal coverage checking, honest gap reporting. 15 registered investigations (10 original + 5 shape-aware). Legacy investigations wrapped with error handling. Migration `lfp_003_registry`. (4) **Shape-Aware Investigations** — 5 new: stride progression, cruise interval quality, interval recovery trend (cardiac recovery rate bpm/s), workout variety effect (RPI-normalized), progressive run execution. Migration `lfp_004_layer`. **Integration:** Strava post-sync runs weather→shape→findings chain. Garmin webhook runs shape extraction. Daily Celery beat refresh at 06:00 UTC. Finding persistence with supersession logic (one active per investigation×type pair). Coach fast path reads stored `AthleteFinding`. Training story reads from stored findings. **Quality:** `investigate_interval_recovery_trend` tracks HR bpm/s drop rate (not just pace recovery). `investigate_workout_variety_effect` uses `rpi_at_event` (eliminates cross-distance confound). Cadence-based stride detection works for all runner speeds. `MIN_ACCELERATION_DURATION_S = 8`. 55 tests. 9 commits from `0f066d6` to `189a53e`. CI all green. Production deployed and healthy.
 - **Correlation Engine Layers 1–4 (Mar 3, 2026)**: Four second-pass analyses on confirmed correlation findings during the daily sweep. New file `services/correlation_layers.py` with four functions: (1) `detect_threshold()` — finds the input value where the correlation changes character (split-point scan, min 5 per segment, min |Δr| 0.2). (2) `detect_asymmetry()` — regression-slope comparison on each side of median baseline to detect whether bad inputs hurt more than good inputs help (t-test p < 0.1 gate). (3) `compute_decay_curve()` — full lag profile (0–7 days), classified as exponential (monotonic decay, half-life computed), sustained (4+ significant lags), or complex (non-monotonic). (4) `detect_mediators()` — cascade detection via existing `compute_partial_correlation()`, mediation ratio > 0.4, full mediation when partial_r < 0.3. New `CorrelationMediator` table for mediator rows. 14 new nullable columns on `CorrelationFinding` (6 threshold, 5 asymmetry, 3 decay). Migration `correlation_layers_001`. Second pass wired into `correlation_tasks.py` — runs after first pass for each athlete, only on confirmed findings (is_active AND times_confirmed >= 3). Fire-and-forget: layer failures logged but never break the sweep. 25 new tests in `test_correlation_layers.py` (all passing). Production: migration applied, all 14 columns verified, `CorrelationMediator` table created. Founder has 7 active findings (max 2x confirmed) — layers will activate as findings cross the 3x confirmation gate via daily sweeps. Commit: `085a878`.
 - **Progress Page Fixes (Mar 3, 2026)**: (1) Hero layout changed from side-by-side flex to stacked column — headline full width, stats row below. (2) No-race hero mode now shows contextual content: CTL delta headline when fitness surged, patterns-found count, N=1 messaging. "Weeks tracked" stat replaced with "Patterns found". (3) Acronym fix: `_build_headline()` no longer lowercases metric labels — "Form (TSB)" stays as-is instead of becoming "form (tsb)". (4) Full correlation sweep triggered post effort-classification: 7 correlations found across 7 metrics (was 1), 5 new findings created. Commit: `25a8a96`.
 - **N=1 Effort Classification (Mar 3, 2026)**: Replaced all `athlete.max_hr`-gated effort classification across 8 services (13 code paths) with a single shared function `classify_effort()` in new `services/effort_classification.py`. Three tiers: (1) HR percentile from athlete's own distribution (primary, always works), (2) HRR with observed peak (earned after 20+ activities and 3+ hard sessions), (3) Workout type + RPE (sparse HR data). Results: Recovery Fingerprint now renders real data (was `None`). All 6 correlation aggregate functions produce non-empty output (were `[]`). No `220-age` or hardcoded `185` in any consumer service. Founder thresholds: Tier=hrr, P80=145, P40=133, 381 activities, 85 hard sessions, observed peak 180, resting HR 59. 17 new tests, 60 total passing. 4 commits: `4abce42`, `9e052b7`, `c7ceab3`, `ab91715`.
@@ -199,6 +200,21 @@ Phase 3A. Gemini Flash generates 2–3 sentence coaching narrations for each Ins
 - Score < 0.67 → suppressed (silence > bad narrative)
 - Contradiction detected → suppressed
 - Results stored in `NarrationLog`
+
+### Living Fingerprint — Activity Intelligence Pipeline
+
+Persistent, incrementally-updated intelligence layer. Four capabilities:
+
+1. **Weather Normalization** (`services/heat_adjustment.py`) — Magnus formula dew point + combined value heat adjustment. All pace comparisons heat-adjusted.
+2. **Shape Extraction** (`services/shape_extractor.py`) — 1,331 lines pure computation. Per-second stream → phases, accelerations (dual-channel: velocity + cadence), shape summary, classification. JSONB on Activity.
+3. **Investigation Registry** (`services/race_input_analysis.py`) — `@investigation` decorator, 15 registered investigations, signal coverage, honest gaps.
+4. **Finding Persistence** (`services/finding_persistence.py`) — `AthleteFinding` model. Supersession logic. One active per investigation×type. Coach fast path.
+
+Refresh: daily Celery beat task at 06:00 UTC (`refresh_living_fingerprint`). Also runs inline on every Strava sync and Garmin webhook.
+
+### Training Story Engine (`services/training_story_engine.py`)
+
+Synthesizes findings into race stories, build sequences, and training progressions. Operates on `mine_race_inputs()` output without re-querying DB. Connection types: input→adaptation, adaptation→outcome, compounding, confound adjustment.
 
 ### Readiness Score (`services/readiness_score.py`)
 
@@ -429,10 +445,10 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 
 ## 12. Alembic Migration Chain
 
-Current head: `runtoon_002` (chains off `runtoon_001` ← `corr_persist_001` ← `demo_guard_001` ← ...)
+Current head: `lfp_004_layer` (chains off `lfp_003_registry` ← `lfp_002_shape` ← `lfp_001_heat` ← `phase1c_001` ← ...)
 
 CI enforces single-head integrity via `.github/scripts/ci_alembic_heads_check.py`.
-Max 2 roots allowed (main chain + phase chain).
+`EXPECTED_HEADS = {"lfp_004_layer"}`.
 
 When adding a new migration: **must chain off the current head** — update `down_revision` and `EXPECTED_HEADS` in the CI script.
 
@@ -550,6 +566,14 @@ apps/api/services/n1_insight_generator.py   ← Polarity-aware insight generatio
 apps/api/services/adaptation_narrator.py    ← Gemini Flash narration + scoring
 apps/api/services/readiness_score.py        ← Composite readiness
 apps/api/tasks/intelligence_tasks.py        ← Daily intelligence orchestration
+
+# Living Fingerprint
+apps/api/services/heat_adjustment.py        ← Weather normalization (Magnus + combined value)
+apps/api/services/shape_extractor.py        ← Activity shape extraction (1,331 lines pure computation)
+apps/api/services/race_input_analysis.py    ← Investigation registry + 15 investigations
+apps/api/services/finding_persistence.py    ← AthleteFinding persistence + supersession
+apps/api/services/training_story_engine.py  ← Training story synthesis
+apps/api/services/weather_backfill.py       ← Historical weather data retrieval
 
 # Training Plans
 apps/api/services/plan_framework/           ← Plan generation framework
