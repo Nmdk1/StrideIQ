@@ -619,9 +619,9 @@ def _classify_phase_type(
     pct_of_run = duration / total_time if total_time > 0 else 0
 
     # Position-based overrides
-    if idx == 0 and zone in ('easy', 'recovery', 'stopped') and pct_of_run < 0.15:
+    if idx == 0 and zone in ('easy', 'recovery', 'stopped') and pct_of_run < 0.25:
         return 'warmup'
-    if idx == total_phases - 1 and zone in ('easy', 'recovery', 'stopped') and pct_of_run < 0.15:
+    if idx == total_phases - 1 and zone in ('easy', 'recovery', 'stopped') and pct_of_run < 0.25:
         return 'cooldown'
 
     # Elevation-based
@@ -1042,10 +1042,10 @@ def _derive_classification(
             summary.acceleration_clustering == 'scattered'):
         return 'fartlek'
 
-    # Tempo: single sustained threshold phase with warmup/cooldown
-    threshold_phases = [p for p in effort_phases
-                        if p.phase_type == 'threshold' and p.duration_s > 720]
-    if len(threshold_phases) == 1 and (summary.has_warmup or summary.has_cooldown):
+    # Tempo: single sustained threshold/marathon phase with warmup/cooldown
+    tempo_phases = [p for p in effort_phases
+                    if p.phase_type in ('threshold', 'steady') and p.duration_s > 720]
+    if len(tempo_phases) == 1 and (summary.has_warmup or summary.has_cooldown):
         return 'tempo'
 
     # Threshold intervals: 2-5 threshold phases with recovery between
