@@ -464,30 +464,32 @@ def generate_yesterday_insight(activity: Activity) -> str:
     Generate one sparse insight from yesterday's activity.
     Tone: Data speaks. No praise, no prescription.
     """
+    if activity.shape_sentence:
+        result = activity.shape_sentence
+        if activity.avg_hr and activity.avg_hr > 165:
+            result += f" (HR ran high — {activity.avg_hr} avg)"
+        return result
+
     insights = []
 
-    # Efficiency comparison (if available)
     if hasattr(activity, 'efficiency_score') and activity.efficiency_score:
         if activity.efficiency_score > 0:
             insights.append(f"Efficiency {activity.efficiency_score:+.1f}% vs baseline.")
         elif activity.efficiency_score < 0:
             insights.append(f"Efficiency {activity.efficiency_score:.1f}% vs baseline.")
 
-    # Heart rate context
     if activity.avg_hr:
         if activity.avg_hr < 140:
             insights.append(f"HR stayed low ({activity.avg_hr} avg).")
         elif activity.avg_hr > 165:
             insights.append(f"HR ran high ({activity.avg_hr} avg).")
 
-    # Pace consistency (if splits available)
     if hasattr(activity, 'pace_variability') and activity.pace_variability:
         if activity.pace_variability < 5:
             insights.append("Consistent pacing.")
         elif activity.pace_variability > 15:
             insights.append("Variable pacing.")
 
-    # Default to distance/pace if no other insight
     if not insights:
         if activity.distance_m and activity.duration_s:
             pace_per_mile = (activity.duration_s / (activity.distance_m / 1609.344))
@@ -1686,6 +1688,24 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
                 )
     except Exception as e:
         logger.debug(f"Training story failed for home briefing ({athlete_id}): {e}")
+
+    # 7. Recent activity shapes — what the athlete actually did this week
+    try:
+        recent = db.query(Activity).filter(
+            Activity.athlete_id == athlete_uuid,
+            Activity.shape_sentence.isnot(None),
+        ).order_by(Activity.start_time.desc()).limit(5).all()
+        if recent:
+            lines = []
+            for a in recent:
+                day = a.start_time.strftime("%a") if a.start_time else "?"
+                lines.append(f"- {day}: {a.shape_sentence}")
+            sections.append(
+                "--- This Week's Training (auto-detected from stream data) ---\n"
+                + "\n".join(lines)
+            )
+    except Exception as e:
+        logger.debug(f"Activity shapes failed for home briefing ({athlete_id}): {e}")
 
     if not sections:
         return ""

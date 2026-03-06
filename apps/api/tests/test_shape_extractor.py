@@ -2,6 +2,7 @@
 import pytest
 from services.shape_extractor import (
     extract_shape, PaceProfile, RunShape, Phase, Acceleration, ShapeSummary,
+    ZoneBand, build_zone_bands, generate_shape_sentence,
     _rolling_mean, _velocity_to_pace, _detect_zone_transitions,
     _merge_micro_phases, _compute_clustering, _compute_pace_progression,
 )
@@ -110,22 +111,58 @@ class TestPaceProfile:
     def test_easy_pace(self):
         assert FOUNDER_PROFILE.classify_pace(600) == 'easy'
 
-    def test_marathon_pace(self):
-        assert FOUNDER_PROFILE.classify_pace(470) == 'marathon'
+    def test_easy_no_floor(self):
+        """Easy has no floor — any slow pace is easy (until walking threshold)."""
+        assert FOUNDER_PROFILE.classify_pace(900) == 'easy'
+        assert FOUNDER_PROFILE.classify_pace(1100) == 'easy'
 
-    def test_threshold_pace(self):
-        assert FOUNDER_PROFILE.classify_pace(400) == 'threshold'
+    def test_walking(self):
+        assert FOUNDER_PROFILE.classify_pace(1200) == 'walking'
+        assert FOUNDER_PROFILE.classify_pace(1500) == 'walking'
 
-    def test_interval_pace(self):
-        assert FOUNDER_PROFILE.classify_pace(350) == 'interval'
+    def test_gray_area(self):
+        """Paces between zones should be 'gray'."""
+        # Between easy (540±10 → ceiling 530) and marathon (465±10 → 455-475)
+        assert FOUNDER_PROFILE.classify_pace(510) == 'gray'
 
-    def test_repetition_pace(self):
-        assert FOUNDER_PROFILE.classify_pace(310) == 'repetition'
+    def test_marathon_center(self):
+        assert FOUNDER_PROFILE.classify_pace(465) == 'marathon'
+
+    def test_threshold_center(self):
+        assert FOUNDER_PROFILE.classify_pace(391) == 'threshold'
+
+    def test_interval_center(self):
+        assert FOUNDER_PROFILE.classify_pace(345) == 'interval'
+
+    def test_repetition_center(self):
+        assert FOUNDER_PROFILE.classify_pace(321) == 'repetition'
 
     def test_is_at_least_marathon(self):
         assert FOUNDER_PROFILE.is_at_least_marathon(465) is True
-        assert FOUNDER_PROFILE.is_at_least_marathon(400) is True
+        assert FOUNDER_PROFILE.is_at_least_marathon(391) is True
         assert FOUNDER_PROFILE.is_at_least_marathon(600) is False
+
+    def test_stopped(self):
+        assert FOUNDER_PROFILE.classify_pace(0) == 'stopped'
+        assert FOUNDER_PROFILE.classify_pace(-1) == 'stopped'
+
+
+class TestZoneBands:
+    def test_build_non_overlapping(self):
+        centers = {'repetition': 321, 'interval': 345, 'threshold': 391,
+                   'marathon': 465, 'easy': 540}
+        bands = build_zone_bands(centers)
+        for i in range(len(bands) - 2):
+            assert bands[i].ceiling < bands[i + 1].floor, \
+                f"{bands[i].name} ceiling ({bands[i].ceiling}) overlaps {bands[i+1].name} floor ({bands[i+1].floor})"
+
+    def test_overlap_prevention(self):
+        """When zones are close, slower zone floor shrinks to avoid overlap."""
+        centers = {'repetition': 320, 'interval': 340, 'threshold': 360,
+                   'marathon': 380, 'easy': 400}
+        bands = build_zone_bands(centers)
+        for i in range(len(bands) - 2):
+            assert bands[i].ceiling < bands[i + 1].floor
 
 
 class TestHelpers:
@@ -185,7 +222,7 @@ class TestStrides:
         assert shape is not None
         assert shape.summary.acceleration_count >= 3
         assert shape.summary.acceleration_clustering == 'end_loaded'
-        assert shape.summary.workout_classification in ('strides', 'long_run_with_strides', None)
+        assert shape.summary.workout_classification in ('strides', 'easy_run', None)
 
     def test_slow_runner_strides_via_cadence(self):
         """Slow runner (13:00/mi) strides detected via cadence when GPS is marginal.
@@ -367,3 +404,59 @@ class TestClusteringThresholds:
             position_in_run=p, recovery_after_s=None,
         ) for p in [0.2, 0.4, 0.6, 0.8]]
         assert _compute_clustering(accels, 5000) == 'periodic'
+
+
+class TestSentenceGeneration:
+    def test_easy_run_sentence(self):
+        stream = _build_stream(duration_s=2400, base_velocity=2.8)
+        shape = extract_shape(stream, pace_profile=FOUNDER_PROFILE)
+        total_dist = 2.8 * 2400
+        sentence = generate_shape_sentence(shape, total_dist, 2400, pace_profile=FOUNDER_PROFILE)
+        assert sentence is not None
+        assert 'easy' in sentence.lower()
+
+    def test_strides_sentence(self):
+        segments = []
+        for i in range(5):
+            start = 1600 + i * 40
+            segments.append({'start': start, 'end': start + 20, 'velocity': 5.0})
+        stream = _build_stream(duration_s=1800, base_velocity=2.8, segments=segments)
+        shape = extract_shape(stream, pace_profile=FOUNDER_PROFILE)
+        if shape and shape.summary.workout_classification == 'strides':
+            total_dist = sum(s.get('velocity', 2.8) * 20 for s in segments) + 2.8 * 1700
+            sentence = generate_shape_sentence(shape, total_dist, 1800, pace_profile=FOUNDER_PROFILE)
+            assert sentence is not None
+            assert 'stride' in sentence.lower()
+
+    def test_suppression_for_null_classification(self):
+        """Null classification → sentence suppressed."""
+        summary = ShapeSummary(
+            total_phases=1, acceleration_count=0,
+            acceleration_avg_duration_s=None, acceleration_avg_pace_zone=None,
+            acceleration_clustering='none', has_warmup=False, has_cooldown=False,
+            pace_progression='steady', pace_range_sec_per_mile=0,
+            longest_sustained_effort_s=100, longest_sustained_zone='easy',
+            elevation_profile='flat', workout_classification=None,
+        )
+        shape = RunShape(phases=[], accelerations=[], summary=summary)
+        assert generate_shape_sentence(shape, 5000, 1800) is None
+
+    def test_suppression_for_short_run(self):
+        """Very short runs → suppressed."""
+        summary = ShapeSummary(
+            total_phases=1, acceleration_count=0,
+            acceleration_avg_duration_s=None, acceleration_avg_pace_zone=None,
+            acceleration_clustering='none', has_warmup=False, has_cooldown=False,
+            pace_progression='steady', pace_range_sec_per_mile=0,
+            longest_sustained_effort_s=100, longest_sustained_zone='easy',
+            elevation_profile='flat', workout_classification='easy_run',
+        )
+        shape = RunShape(phases=[], accelerations=[], summary=summary)
+        assert generate_shape_sentence(shape, 800, 300) is None
+
+    def test_no_profile_unzoned(self):
+        """Without a pace profile, shape should be unzoned with null classification."""
+        stream = _build_stream(duration_s=1800, base_velocity=3.0)
+        shape = extract_shape(stream, pace_profile=None)
+        assert shape is not None
+        assert shape.summary.workout_classification is None

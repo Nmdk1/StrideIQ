@@ -4,7 +4,7 @@ Celery tasks for Strava synchronization.
 These tasks run in the background worker to prevent blocking the API.
 """
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Optional
 from celery import Task
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -1048,6 +1048,60 @@ def _update_shape_heat_paces(activity, heat_adj_pct: float):
         flag_modified(activity, 'run_shape')
 
 
+def _resolve_pace_profile(athlete, db):
+    """Resolve athlete pace profile: training profile → threshold → RPI."""
+    from services.shape_extractor import (
+        PaceProfile, pace_profile_from_training_paces, pace_profile_from_rpi,
+    )
+    from models import AthleteTrainingPaceProfile
+
+    profile_row = db.query(AthleteTrainingPaceProfile).filter(
+        AthleteTrainingPaceProfile.athlete_id == athlete.id,
+    ).order_by(AthleteTrainingPaceProfile.created_at.desc()).first()
+
+    if profile_row and profile_row.paces:
+        pp = pace_profile_from_training_paces(profile_row.paces)
+        if pp:
+            return pp
+
+    if athlete.threshold_pace_per_km:
+        thr_sec_km = float(athlete.threshold_pace_per_km)
+        if thr_sec_km < 30:
+            thr_sec_km = thr_sec_km * 60
+        thr_v = 1000.0 / thr_sec_km
+        thr_sec_mi = 1609.34 / thr_v if thr_v > 0 else 450
+        return PaceProfile(
+            easy_sec=int(thr_sec_mi * 1.35),
+            marathon_sec=int(thr_sec_mi * 1.10),
+            threshold_sec=int(thr_sec_mi),
+            interval_sec=int(thr_sec_mi * 0.88),
+            repetition_sec=int(thr_sec_mi * 0.80),
+        )
+
+    if athlete.rpi:
+        return pace_profile_from_rpi(float(athlete.rpi))
+
+    return None
+
+
+def _get_median_duration(athlete_id, db) -> Optional[float]:
+    """Get 30-day rolling median activity duration for long run detection."""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    durations = db.query(Activity.moving_time).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.start_time >= cutoff,
+        Activity.moving_time.isnot(None),
+        Activity.moving_time > 0,
+    ).all()
+    if len(durations) >= 3:
+        vals = sorted([float(d[0]) for d in durations])
+        mid = len(vals) // 2
+        return vals[mid]
+    return None
+
+
 @celery_app.task(name="tasks.post_sync_processing", bind=True, max_retries=0)
 def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
     """
@@ -1118,10 +1172,10 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
         except Exception as e:
             print(f"Warning [post-sync] Heat adjustment failed: {e}")
 
-        # 5. Living Fingerprint: extract and store run_shape for new activities
+        # 5. Living Fingerprint: extract shape + generate sentence
         try:
             from services.shape_extractor import (
-                extract_shape, PaceProfile,
+                extract_shape, generate_shape_sentence, PaceProfile,
                 pace_profile_from_training_paces, pace_profile_from_rpi,
             )
             from models import AthleteTrainingPaceProfile
@@ -1132,30 +1186,9 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
             ).all()
 
             if acts_needing_shape:
-                pace_prof = None
-                profile_row = db.query(AthleteTrainingPaceProfile).filter(
-                    AthleteTrainingPaceProfile.athlete_id == athlete.id,
-                ).order_by(AthleteTrainingPaceProfile.created_at.desc()).first()
+                pace_prof = _resolve_pace_profile(athlete, db)
 
-                if profile_row and profile_row.paces:
-                    pace_prof = pace_profile_from_training_paces(profile_row.paces)
-
-                if not pace_prof and athlete.threshold_pace_per_km:
-                    thr_sec_km = float(athlete.threshold_pace_per_km)
-                    if thr_sec_km < 30:
-                        thr_sec_km = thr_sec_km * 60
-                    thr_v = 1000.0 / thr_sec_km
-                    thr_sec_mi = 1609.34 / thr_v if thr_v > 0 else 450
-                    pace_prof = PaceProfile(
-                        easy_sec=int(thr_sec_mi * 1.35),
-                        marathon_sec=int(thr_sec_mi * 1.10),
-                        threshold_sec=int(thr_sec_mi),
-                        interval_sec=int(thr_sec_mi * 0.88),
-                        repetition_sec=int(thr_sec_mi * 0.80),
-                    )
-
-                if not pace_prof and athlete.rpi:
-                    pace_prof = pace_profile_from_rpi(float(athlete.rpi))
+                median_dur = _get_median_duration(athlete.id, db)
 
                 shaped = 0
                 for act in acts_needing_shape:
@@ -1168,11 +1201,20 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
                     shape = extract_shape(stream.stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj)
                     if shape:
                         act.run_shape = shape.to_dict()
+                        total_dist = float(act.distance) if act.distance else 0
+                        total_dur = float(act.moving_time or act.elapsed_time or 0)
+                        use_km = getattr(athlete, 'preferred_units', 'imperial') == 'metric'
+                        act.shape_sentence = generate_shape_sentence(
+                            shape, total_dist, total_dur,
+                            pace_profile=pace_prof,
+                            median_duration_s=median_dur,
+                            use_km=use_km,
+                        )
                         shaped += 1
 
                 if shaped:
                     db.flush()
-                    print(f"DEBUG [post-sync] Shape extracted for {shaped} activities")
+                    print(f"DEBUG [post-sync] Shape + sentence for {shaped} activities")
         except Exception as e:
             print(f"Warning [post-sync] Shape extraction failed: {e}")
 

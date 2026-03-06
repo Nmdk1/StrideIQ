@@ -437,47 +437,33 @@ def _ingest_activity_detail_item(
 
     activity.stream_fetch_status = "success"
 
-    # Living Fingerprint: extract and store run_shape after stream ingestion
+    # Living Fingerprint: extract shape + generate sentence
     if samples and stream_data:
         try:
             from services.shape_extractor import (
-                extract_shape, PaceProfile,
+                extract_shape, generate_shape_sentence,
                 pace_profile_from_training_paces, pace_profile_from_rpi,
             )
-            from models import AthleteTrainingPaceProfile, Athlete as _AthModel
+            from models import Athlete as _AthModel
+            from tasks.strava_tasks import _resolve_pace_profile, _get_median_duration
 
-            pace_prof = None
-            profile_row = (
-                db.query(AthleteTrainingPaceProfile)
-                .filter(AthleteTrainingPaceProfile.athlete_id == athlete_id)
-                .order_by(AthleteTrainingPaceProfile.created_at.desc())
-                .first()
-            )
-            if profile_row and profile_row.paces:
-                pace_prof = pace_profile_from_training_paces(profile_row.paces)
-
-            if not pace_prof:
-                ath = db.query(_AthModel).filter(_AthModel.id == athlete_id).first()
-                if ath and ath.threshold_pace_per_km:
-                    thr_sec_km = float(ath.threshold_pace_per_km)
-                    if thr_sec_km < 30:
-                        thr_sec_km = thr_sec_km * 60
-                    thr_v = 1000.0 / thr_sec_km
-                    thr_sec_mi = 1609.34 / thr_v if thr_v > 0 else 450
-                    pace_prof = PaceProfile(
-                        easy_sec=int(thr_sec_mi * 1.35),
-                        marathon_sec=int(thr_sec_mi * 1.10),
-                        threshold_sec=int(thr_sec_mi),
-                        interval_sec=int(thr_sec_mi * 0.88),
-                        repetition_sec=int(thr_sec_mi * 0.80),
-                    )
-                if not pace_prof and ath and ath.rpi:
-                    pace_prof = pace_profile_from_rpi(float(ath.rpi))
+            ath = db.query(_AthModel).filter(_AthModel.id == athlete_id).first()
+            pace_prof = _resolve_pace_profile(ath, db) if ath else None
 
             heat_adj = float(activity.heat_adjustment_pct) if activity.heat_adjustment_pct else None
             shape = extract_shape(stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj)
             if shape:
                 activity.run_shape = shape.to_dict()
+                total_dist = float(activity.distance) if activity.distance else 0
+                total_dur = float(activity.moving_time or activity.elapsed_time or 0)
+                median_dur = _get_median_duration(athlete_id, db)
+                use_km = getattr(ath, 'preferred_units', 'imperial') == 'metric' if ath else False
+                activity.shape_sentence = generate_shape_sentence(
+                    shape, total_dist, total_dur,
+                    pace_profile=pace_prof,
+                    median_duration_s=median_dur,
+                    use_km=use_km,
+                )
         except Exception as shape_exc:
             logger.warning("Garmin shape extraction failed for %s: %s", garmin_activity_id_int, shape_exc)
 

@@ -32,7 +32,7 @@ sys.path.insert(0, str(api_root))
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-EXPECTED_HEADS = {"lfp_004_layer"}
+EXPECTED_HEADS = {"lfp_005_sentence"}
 MAX_ROOTS = 2  # main chain root + phase chain root (readiness_score_001)
 
 

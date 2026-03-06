@@ -30,6 +30,51 @@ MIN_PHASE_DURATION_S = 60
 MIN_ACCELERATION_DURATION_S = 8
 MAX_VELOCITY_MPS = 11.0  # 25 mph
 STOPPED_VELOCITY_THRESHOLD = 0.5  # m/s
+WALKING_THRESHOLD_SEC = 1200  # 20:00/mi — slower is walking, not easy
+ZONE_HALF_WIDTH = 10  # ±10 sec per mile around each zone center
+
+
+@dataclass
+class ZoneBand:
+    """A discrete training zone band. Anything between bands is gray area."""
+    name: str
+    center_sec: int
+    half_width: int = ZONE_HALF_WIDTH
+    floor_override: Optional[int] = None
+
+    @property
+    def floor(self) -> int:
+        if self.floor_override is not None:
+            return self.floor_override
+        return self.center_sec - self.half_width
+
+    @property
+    def ceiling(self) -> int:
+        return self.center_sec + self.half_width
+
+    def contains(self, pace_sec: float) -> bool:
+        return self.floor <= pace_sec <= self.ceiling
+
+
+def build_zone_bands(centers: Dict[str, int], half_width: int = ZONE_HALF_WIDTH) -> List[ZoneBand]:
+    """Build non-overlapping zone bands ordered fastest to slowest.
+
+    When two bands would overlap, the slower zone's floor shrinks to
+    1 second above the faster zone's ceiling.
+    """
+    ordered = ['repetition', 'interval', 'threshold', 'marathon']
+    bands = []
+    for name in ordered:
+        if name not in centers:
+            continue
+        band = ZoneBand(name=name, center_sec=centers[name], half_width=half_width)
+        if bands:
+            prev = bands[-1]
+            if band.floor <= prev.ceiling:
+                band.floor_override = prev.ceiling + 1
+        bands.append(band)
+    bands.append(ZoneBand(name='easy', center_sec=centers.get('easy', 600), half_width=half_width))
+    return bands
 
 
 @dataclass
@@ -40,28 +85,43 @@ class PaceProfile:
     threshold_sec: int = 450
     interval_sec: int = 400
     repetition_sec: int = 360
+    _bands: Optional[List[ZoneBand]] = field(default=None, repr=False)
+
+    def __post_init__(self):
+        self._bands = build_zone_bands({
+            'repetition': self.repetition_sec,
+            'interval': self.interval_sec,
+            'threshold': self.threshold_sec,
+            'marathon': self.marathon_sec,
+            'easy': self.easy_sec,
+        })
 
     def classify_pace(self, pace_sec_per_mile: float) -> str:
         if pace_sec_per_mile <= 0:
             return 'stopped'
-        rep_int = (self.repetition_sec + self.interval_sec) // 2
-        int_thr = (self.interval_sec + self.threshold_sec) // 2
-        thr_mar = (self.threshold_sec + self.marathon_sec) // 2
-        mar_easy = (self.marathon_sec + self.easy_sec) // 2
-        if pace_sec_per_mile <= rep_int:
-            return 'repetition'
-        elif pace_sec_per_mile <= int_thr:
-            return 'interval'
-        elif pace_sec_per_mile <= thr_mar:
-            return 'threshold'
-        elif pace_sec_per_mile <= mar_easy:
-            return 'marathon'
-        else:
+        if pace_sec_per_mile >= WALKING_THRESHOLD_SEC:
+            return 'walking'
+        for band in self._bands:
+            if band.name == 'easy':
+                continue
+            if band.contains(pace_sec_per_mile):
+                return band.name
+        if pace_sec_per_mile >= self._easy_ceiling():
             return 'easy'
+        return 'gray'
+
+    def _easy_ceiling(self) -> int:
+        """Easy has no floor — only a ceiling (the fast edge)."""
+        easy_band = next((b for b in self._bands if b.name == 'easy'), None)
+        if easy_band:
+            return easy_band.floor
+        return self.easy_sec - ZONE_HALF_WIDTH
 
     def is_at_least_marathon(self, pace_sec_per_mile: float) -> bool:
-        mar_easy = (self.marathon_sec + self.easy_sec) // 2
-        return 0 < pace_sec_per_mile <= mar_easy
+        mar_band = next((b for b in self._bands if b.name == 'marathon'), None)
+        if mar_band:
+            return 0 < pace_sec_per_mile <= mar_band.ceiling
+        return 0 < pace_sec_per_mile <= self.marathon_sec + ZONE_HALF_WIDTH
 
     def is_significant_acceleration(self, pace_sec_per_mile: float) -> bool:
         """True if pace is meaningfully faster than easy — at least 20% faster.
@@ -225,8 +285,10 @@ def extract_shape(
     altitude = _pad(altitude, n)
     distance = _pad(distance, n)
 
-    if pace_profile is None:
-        pace_profile = _derive_profile_from_stream(velocity)
+    unzoned = pace_profile is None
+    if unzoned:
+        logger.warning("No pace profile available — unzoned single-phase output")
+        pace_profile = PaceProfile()
 
     # Step 1: Smooth and compute per-point metrics
     # Heavy smoothing (30s) for stable phase detection
@@ -253,11 +315,21 @@ def extract_shape(
     # Step 3: Merge micro-phases
     merged_blocks = _merge_micro_phases(raw_blocks, MIN_PHASE_DURATION_S)
 
-    # Step 3b: Pace-similarity merge — adjacent phases within 20 sec/mi
+    # Step 3b: Same-zone consolidation — adjacent phases in same zone always merge
+    merged_blocks = _consolidate_same_zone(merged_blocks)
+
+    # Step 3c: Pace-similarity merge — adjacent phases within 20 sec/mi
     # of each other get combined even if zones differ (GPS noise at boundaries)
     merged_blocks = _merge_similar_pace_blocks(
         merged_blocks, phase_pace, threshold_sec_mi=20,
     )
+
+    # Step 3d: Final same-zone consolidation after pace merge
+    merged_blocks = _consolidate_same_zone(merged_blocks)
+
+    # If unzoned (no pace profile), collapse to single phase
+    if unzoned and len(merged_blocks) > 1:
+        merged_blocks = [(merged_blocks[0][0], merged_blocks[-1][1], 'easy')]
 
     # Step 4: Classify phase types and compute metrics
     phases = _build_phases(
@@ -285,7 +357,7 @@ def extract_shape(
     is_anomaly = _check_anomaly(velocity, time, phases)
     summary.workout_classification = _derive_classification(
         phases, accelerations, summary, total_distance, pace_profile,
-        is_anomaly=is_anomaly,
+        is_anomaly=is_anomaly, unzoned=unzoned,
     )
 
     return RunShape(phases=phases, accelerations=accelerations, summary=summary)
@@ -350,29 +422,10 @@ def _compute_total_distance(
     return total
 
 
-def _derive_profile_from_stream(velocity: List) -> PaceProfile:
-    """Fallback: derive pace zones from stream velocity percentiles."""
-    valid = [v for v in velocity if v is not None and v >= STOPPED_VELOCITY_THRESHOLD]
-    if len(valid) < 30:
-        return PaceProfile()
 
-    valid.sort()
-    n = len(valid)
-    p90 = valid[int(n * 0.90)]
-    p75 = valid[int(n * 0.75)]
-    p50 = valid[int(n * 0.50)]
-    p25 = valid[int(n * 0.25)]
-
-    def v_to_pace(v):
-        return int(METERS_PER_MILE / v) if v > 0 else 900
-
-    return PaceProfile(
-        easy_sec=v_to_pace(p25),
-        marathon_sec=v_to_pace(p50),
-        threshold_sec=v_to_pace(p75),
-        interval_sec=v_to_pace(p90),
-        repetition_sec=v_to_pace(valid[int(n * 0.95)]) if n > 20 else v_to_pace(p90) - 30,
-    )
+# _derive_profile_from_stream REMOVED — stream-relative zones produce garbage
+# for steady-effort runs. Suppression over hallucination: if no profile exists,
+# the extractor produces an unzoned single-phase shape with accelerations.
 
 
 # ═══════════════════════════════════════════════════════
@@ -620,9 +673,9 @@ def _classify_phase_type(
     pct_of_run = duration / total_time if total_time > 0 else 0
 
     # Position-based overrides
-    if idx == 0 and zone in ('easy', 'recovery', 'stopped') and pct_of_run < 0.25:
+    if idx == 0 and zone in ('easy', 'gray', 'walking', 'stopped') and pct_of_run < 0.25:
         return 'warmup'
-    if idx == total_phases - 1 and zone in ('easy', 'recovery', 'stopped') and pct_of_run < 0.25:
+    if idx == total_phases - 1 and zone in ('easy', 'gray', 'walking', 'stopped') and pct_of_run < 0.25:
         return 'cooldown'
 
     # Elevation-based
@@ -630,25 +683,25 @@ def _classify_phase_type(
         return 'hill_effort'
 
     # Effort-based refinements
-    if zone == 'threshold' and duration > 240:
+    if zone == 'threshold' and duration > 180:
         return 'threshold'
     if zone in ('interval', 'repetition') and duration > 10:
         return 'interval_work'
 
     # Recovery between quality
-    if zone in ('easy', 'recovery') and prev_phases:
+    if zone in ('easy', 'gray', 'walking') and prev_phases:
         last_type = prev_phases[-1].phase_type
         if last_type in ('interval_work', 'threshold'):
             return 'interval_recovery'
 
-    # Default to zone name
     zone_to_type = {
         'easy': 'easy',
-        'recovery': 'recovery_jog',
+        'gray': 'steady',
         'marathon': 'steady',
         'threshold': 'tempo',
         'interval': 'interval_work',
         'repetition': 'interval_work',
+        'walking': 'easy',
         'stopped': 'recovery_jog',
     }
     return zone_to_type.get(zone, zone)
@@ -1191,10 +1244,13 @@ def _derive_classification(
     total_distance: float,
     pace_profile: PaceProfile,
     is_anomaly: bool = False,
+    unzoned: bool = False,
 ) -> Optional[str]:
     """Derive an optional workout classification from shape structure."""
     if is_anomaly:
         return 'anomaly'
+    if unzoned:
+        return None
 
     n_phases = summary.total_phases
     n_accels = summary.acceleration_count
@@ -1202,17 +1258,12 @@ def _derive_classification(
     effort_phases = [p for p in phases if p.phase_type not in
                      ('warmup', 'cooldown', 'interval_recovery', 'recovery_jog')]
 
-    # Easy run / recovery run: all phases easy, few accelerations, low pace CV
-    all_easy = all(p.pace_zone in ('easy', 'recovery') for p in effort_phases)
-    if all_easy and n_accels < 2:
-        avg_cv = sum(p.pace_cv for p in effort_phases) / len(effort_phases) if effort_phases else 0
-        if avg_cv < 0.15:
-            if total_distance > 20000:
-                return 'long_run'
-            all_recovery_zone = all(p.pace_zone == 'recovery' for p in effort_phases)
-            if total_distance < 8000 and all_recovery_zone:
-                return 'recovery_run'
-            return 'easy_run'
+    # Hill repeats: 3+ accels with significant grade
+    hill_accels = [a for a in accelerations if a.avg_cadence is not None]
+    if n_accels >= 3:
+        hill_efforts_from_phases = [p for p in effort_phases if p.phase_type == 'hill_effort']
+        if len(hill_efforts_from_phases) >= 3:
+            return 'hill_repeats'
 
     # Strides: end-loaded accelerations at meaningful pace
     if (3 <= n_accels <= 8 and
@@ -1220,42 +1271,33 @@ def _derive_classification(
         main_body = [p for p in effort_phases
                      if p.end_time_s < accelerations[0].start_time_s]
         body_all_easy = (not main_body or
-                         all(p.pace_zone in ('easy', 'recovery') for p in main_body))
+                         all(p.pace_zone in ('easy', 'gray', 'walking') for p in main_body))
         if body_all_easy:
             accel_durations = [a.duration_s for a in accelerations]
             if all(8 <= d <= 60 for d in accel_durations):
                 fast_enough = all(
-                    a.pace_zone in ('interval', 'repetition', 'threshold', 'marathon')
+                    a.pace_zone in ('interval', 'repetition', 'threshold', 'marathon', 'gray')
                     or (a.cadence_delta is not None and a.cadence_delta >= MIN_CADENCE_SPIKE_SPM)
                     for a in accelerations
                 )
                 if fast_enough:
-                    if total_distance > 20000:
-                        return 'long_run_with_strides'
                     return 'strides'
 
-    # Fartlek: scattered accelerations with variable duration
-    if (n_accels >= 3 and
-            summary.acceleration_clustering == 'scattered'):
-        return 'fartlek'
-
-    # Tempo: single sustained threshold/marathon phase with warmup/cooldown
+    # Tempo: contains 1 threshold phase > 12 min
     tempo_phases = [p for p in effort_phases
-                    if p.phase_type in ('threshold', 'steady') and p.duration_s > 720]
-    if len(tempo_phases) == 1 and (summary.has_warmup or summary.has_cooldown):
+                    if p.pace_zone == 'threshold' and p.duration_s > 720]
+    if len(tempo_phases) == 1:
         return 'tempo'
 
     # Threshold intervals: 2-5 threshold phases with recovery between
     threshold_work = [p for p in effort_phases
-                      if p.phase_type == 'threshold' and p.duration_s >= 240]
+                      if p.pace_zone == 'threshold' and p.duration_s >= 180]
     if 2 <= len(threshold_work) <= 5:
-        recovery_between = any(p.phase_type == 'interval_recovery' for p in phases)
-        if recovery_between:
-            return 'threshold_intervals'
+        return 'threshold_intervals'
 
     # Track intervals: 4+ interval/rep phases with similar duration
     interval_work = [p for p in effort_phases
-                     if p.phase_type == 'interval_work']
+                     if p.pace_zone in ('interval', 'repetition')]
     if len(interval_work) >= 4:
         durations = [p.duration_s for p in interval_work]
         avg_dur = sum(durations) / len(durations)
@@ -1267,15 +1309,28 @@ def _derive_classification(
             except statistics.StatisticsError:
                 pass
 
-    # Progression: successive phases getting faster with meaningful pace drop
+    # Progression: 3+ phases, each ≥15 sec/mi faster than previous
+    if len(effort_phases) >= 3:
+        paces = [p.avg_pace_sec_per_mile for p in effort_phases if p.avg_pace_sec_per_mile > 0]
+        if len(paces) >= 3:
+            all_progressing = all(
+                paces[i] - paces[i + 1] >= 15
+                for i in range(len(paces) - 1)
+            )
+            if all_progressing:
+                return 'progression'
+
+    # Progression fallback: 2+ phases with clear building pattern
     if len(effort_phases) >= 2 and summary.pace_progression == 'building':
-        last_zone = effort_phases[-1].pace_zone
         first_pace = effort_phases[0].avg_pace_sec_per_mile
         last_pace = effort_phases[-1].avg_pace_sec_per_mile
-        if (last_zone in ('marathon', 'threshold', 'interval', 'repetition')
-                and first_pace > 0 and last_pace > 0
-                and first_pace - last_pace > 15):
+        if first_pace > 0 and last_pace > 0 and first_pace - last_pace > 30:
             return 'progression'
+
+    # Fartlek: 3+ scattered accelerations
+    if (n_accels >= 3 and
+            summary.acceleration_clustering == 'scattered'):
+        return 'fartlek'
 
     # Over/under: alternating above/below marathon pace
     if len(effort_phases) >= 4:
@@ -1292,20 +1347,21 @@ def _derive_classification(
         if alternating:
             return 'over_under'
 
-    # Hill repeats
-    hill_efforts = [p for p in effort_phases if p.phase_type == 'hill_effort']
-    if len(hill_efforts) >= 3:
-        return 'hill_repeats'
+    # Easy run: all phases easy/gray/walking, ≤3 effort phases, few accels
+    all_easy_or_gray = all(p.pace_zone in ('easy', 'gray', 'walking') for p in effort_phases)
+    if all_easy_or_gray and n_accels <= 1 and len(effort_phases) <= 3:
+        return 'easy_run'
 
-    # Long run with tempo
-    if total_distance > 20000:
-        embedded_tempo = [p for p in effort_phases
-                          if p.phase_type == 'threshold' and p.duration_s > 600]
-        if embedded_tempo:
-            return 'long_run_with_tempo'
-        if n_accels >= 3 and summary.acceleration_clustering == 'end_loaded':
-            return 'long_run_with_strides'
-        return 'long_run'
+    # Gray zone run: primary phase is gray, no structured work
+    if effort_phases and n_accels <= 1:
+        gray_duration = sum(p.duration_s for p in effort_phases if p.pace_zone == 'gray')
+        total_effort = sum(p.duration_s for p in effort_phases)
+        if total_effort > 0 and gray_duration / total_effort > 0.5:
+            return 'gray_zone_run'
+
+    # Fallback easy for quiet runs
+    if n_accels <= 1 and len(effort_phases) <= 3:
+        return 'easy_run'
 
     return None
 
@@ -1329,3 +1385,222 @@ def _check_anomaly(
             unrealistic_count += 1
 
     return gaps > 0 and (unrealistic_count > 0 or gaps >= 3)
+
+
+# ═══════════════════════════════════════════════════════
+#  Shape Sentence Generator
+# ═══════════════════════════════════════════════════════
+
+def generate_shape_sentence(
+    shape: RunShape,
+    total_distance_m: float,
+    total_duration_s: float,
+    pace_profile: Optional[PaceProfile] = None,
+    median_duration_s: Optional[float] = None,
+    use_km: bool = False,
+) -> Optional[str]:
+    """Generate a natural language sentence from a RunShape.
+
+    Returns None when suppression rules apply (classification is null,
+    unzoned, anomaly, too short, or too many phases).
+    """
+    cls = shape.summary.workout_classification
+    phases = shape.phases
+    accels = shape.accelerations
+
+    if _should_suppress(shape, total_distance_m, total_duration_s):
+        return None
+
+    dist_str = _format_distance(total_distance_m, use_km)
+    is_long = _is_long_run(total_duration_s, median_duration_s)
+    is_medium_long = _is_medium_long(total_duration_s, median_duration_s)
+
+    effort_phases = [p for p in phases if p.phase_type not in
+                     ('warmup', 'cooldown', 'interval_recovery', 'recovery_jog')]
+
+    if cls == 'strides' or (is_long and cls == 'strides'):
+        n = len(accels)
+        fastest = min(accels, key=lambda a: a.avg_pace_sec_per_mile) if accels else None
+        fast_str = f" (fastest {_fmt_pace(fastest.avg_pace_sec_per_mile, use_km)})" if fastest else ""
+        prefix = f"{dist_str} long run" if is_long else f"{dist_str} easy"
+        return f"{prefix} with {n} strides{fast_str}"
+
+    if cls == 'tempo':
+        tempo_ph = [p for p in effort_phases if p.pace_zone == 'threshold']
+        if tempo_ph:
+            tp = tempo_ph[0]
+            dur_min = tp.duration_s // 60
+            pace_str = _fmt_pace(tp.avg_pace_sec_per_mile, use_km)
+            tp_dist = tp.distance_m
+            clean_miles = tp_dist / METERS_PER_MILE
+            if abs(clean_miles - round(clean_miles)) < 0.15 and round(clean_miles) >= 1:
+                return f"{dist_str} with {int(round(clean_miles))} at tempo ({pace_str})"
+            return f"{dist_str} with {dur_min}-min tempo at {pace_str}"
+        return f"{dist_str} tempo"
+
+    if cls == 'threshold_intervals':
+        work_phases = [p for p in effort_phases if p.pace_zone == 'threshold']
+        if work_phases:
+            n = len(work_phases)
+            avg_dur = sum(p.duration_s for p in work_phases) // (n * 60)
+            avg_pace = sum(p.avg_pace_sec_per_mile for p in work_phases) / n
+            return f"{dist_str} with {n}x{avg_dur}min at threshold ({_fmt_pace(avg_pace, use_km)})"
+        return f"{dist_str} threshold intervals"
+
+    if cls == 'track_intervals':
+        work_phases = [p for p in effort_phases if p.pace_zone in ('interval', 'repetition')]
+        if work_phases:
+            n = len(work_phases)
+            avg_dist_m = sum(p.distance_m for p in work_phases) / n
+            avg_pace = sum(p.avg_pace_sec_per_mile for p in work_phases) / n
+            rep_str = _format_rep_distance(avg_dist_m)
+            return f"{dist_str} with {n}x{rep_str} at {_fmt_pace(avg_pace, use_km)}"
+        return f"{dist_str} intervals"
+
+    if cls == 'progression':
+        if len(effort_phases) >= 2:
+            start_pace = effort_phases[0].avg_pace_sec_per_mile
+            end_pace = effort_phases[-1].avg_pace_sec_per_mile
+            if start_pace > 0 and end_pace > 0:
+                return f"{dist_str} building from {_fmt_pace(start_pace, use_km)} to {_fmt_pace(end_pace, use_km)}"
+        return f"{dist_str} progression"
+
+    if cls == 'hill_repeats':
+        hill_count = len([a for a in accels if a.avg_cadence is not None])
+        if hill_count < 3:
+            hill_count = len([p for p in effort_phases if p.phase_type == 'hill_effort'])
+        return f"{dist_str} with {hill_count} hill repeats" if hill_count >= 3 else f"{dist_str} hills"
+
+    if cls == 'fartlek':
+        n = len(accels)
+        avg_pace = sum(a.avg_pace_sec_per_mile for a in accels) / n if n > 0 else 0
+        if n >= 3:
+            return f"{dist_str} with {n} surges"
+        return f"{dist_str} fartlek"
+
+    if cls == 'long_run_with_tempo':
+        tempo_ph = [p for p in effort_phases if p.pace_zone == 'threshold' and p.duration_s > 600]
+        if tempo_ph:
+            tp = tempo_ph[0]
+            dur_min = tp.duration_s // 60
+            pace_str = _fmt_pace(tp.avg_pace_sec_per_mile, use_km)
+            return f"{dist_str} long run with {dur_min} minutes at tempo ({pace_str})"
+        return f"{dist_str} long run with tempo"
+
+    if cls == 'long_run_with_strides':
+        n = len(accels)
+        return f"{dist_str} long run with {n} strides"
+
+    if cls == 'gray_zone_run':
+        avg_pace = _overall_avg_pace(effort_phases)
+        if avg_pace > 0:
+            return f"{dist_str} at {_fmt_pace(avg_pace, use_km)}"
+        return f"{dist_str} run"
+
+    if cls == 'over_under':
+        return f"{dist_str} over/unders"
+
+    if cls == 'easy_run':
+        if is_long:
+            avg_pace = _overall_avg_pace(effort_phases)
+            if avg_pace > 0 and pace_profile:
+                easy_ceil = pace_profile._easy_ceiling()
+                if avg_pace < easy_ceil:
+                    return f"{dist_str} long run at {_fmt_pace(avg_pace, use_km)}"
+            return f"{dist_str} long run"
+        if is_medium_long:
+            avg_pace = _overall_avg_pace(effort_phases)
+            if avg_pace > 0:
+                return f"{dist_str} medium-long at {_fmt_pace(avg_pace, use_km)}"
+            return f"{dist_str} medium-long"
+        avg_pace = _overall_avg_pace(effort_phases)
+        if avg_pace > 0:
+            return f"{dist_str} easy at {_fmt_pace(avg_pace, use_km)}"
+        return f"{dist_str} easy"
+
+    if cls == 'long_run':
+        avg_pace = _overall_avg_pace(effort_phases)
+        if avg_pace > 0:
+            return f"{dist_str} long run at {_fmt_pace(avg_pace, use_km)}"
+        return f"{dist_str} long run"
+
+    if cls == 'medium_long_run':
+        avg_pace = _overall_avg_pace(effort_phases)
+        if avg_pace > 0:
+            return f"{dist_str} medium-long at {_fmt_pace(avg_pace, use_km)}"
+        return f"{dist_str} medium-long"
+
+    return None
+
+
+def _should_suppress(shape: RunShape, total_dist_m: float, total_dur_s: float) -> bool:
+    """Return True when the sentence should be suppressed."""
+    cls = shape.summary.workout_classification
+    if cls is None:
+        return True
+    if cls == 'anomaly':
+        return True
+    if total_dist_m < METERS_PER_MILE * 0.9 or total_dur_s < 480:
+        return True
+    if shape.summary.total_phases > 8:
+        return True
+    return False
+
+
+def _is_long_run(duration_s: float, median_s: Optional[float]) -> bool:
+    if median_s and median_s > 0:
+        return duration_s > 2.0 * median_s
+    return duration_s > 5400  # 90 min fallback
+
+def _is_medium_long(duration_s: float, median_s: Optional[float]) -> bool:
+    if median_s and median_s > 0:
+        return 1.65 * median_s < duration_s <= 2.0 * median_s
+    return 3600 < duration_s <= 5400
+
+
+def _format_distance(meters: float, use_km: bool = False) -> str:
+    if use_km:
+        km = meters / 1000.0
+        if abs(km - round(km)) < 0.15:
+            return f"{int(round(km))} km"
+        return f"{round(km * 2) / 2:.1f} km".rstrip('0').rstrip('.')
+    miles = meters / METERS_PER_MILE
+    if abs(miles - round(miles)) < 0.15:
+        return f"{int(round(miles))} mile{'s' if round(miles) != 1 else ''}"
+    half = round(miles * 2) / 2
+    if half == int(half):
+        return f"{int(half)} miles"
+    return f"{half} miles"
+
+
+def _fmt_pace(sec_per_mile: float, use_km: bool = False) -> str:
+    if use_km:
+        sec_per_km = sec_per_mile / 1.60934
+        m, s = divmod(int(sec_per_km), 60)
+        return f"{m}:{s:02d}/km"
+    m, s = divmod(int(sec_per_mile), 60)
+    return f"{m}:{s:02d}"
+
+
+def _format_rep_distance(meters: float) -> str:
+    """Format rep distance to nearest standard track distance."""
+    standards = [(200, "200m"), (400, "400m"), (600, "600m"), (800, "800m"),
+                 (1000, "1000m"), (1200, "1200m"), (1600, "mile")]
+    for std_m, label in standards:
+        if abs(meters - std_m) < std_m * 0.15:
+            return label
+    if meters > 1400:
+        miles = meters / METERS_PER_MILE
+        return f"{round(miles * 2) / 2:.1f}mi".rstrip('0').rstrip('.')
+    return f"{int(round(meters / 100) * 100)}m"
+
+
+def _overall_avg_pace(effort_phases: List[Phase]) -> float:
+    total_time = sum(p.duration_s for p in effort_phases if p.duration_s > 0)
+    total_dist = sum(p.distance_m for p in effort_phases if p.distance_m > 0)
+    if total_dist > 0 and total_time > 0:
+        avg_velocity = total_dist / total_time
+        if avg_velocity > 0:
+            return METERS_PER_MILE / avg_velocity
+    paces = [p.avg_pace_sec_per_mile for p in effort_phases if p.avg_pace_sec_per_mile > 0]
+    return sum(paces) / len(paces) if paces else 0

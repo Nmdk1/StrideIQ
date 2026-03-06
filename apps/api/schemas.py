@@ -92,6 +92,7 @@ class ActivityResponse(BaseModel):
     performance_percentage_national: Optional[float] = None  # Age-graded performance % (National standard)
     is_race_candidate: Optional[bool] = None
     race_confidence: Optional[float] = None
+    shape_sentence: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
