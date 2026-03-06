@@ -1197,7 +1197,7 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
                     if not stream or not stream.stream_data:
                         continue
                     heat_adj = float(act.heat_adjustment_pct) if act.heat_adjustment_pct else None
-                    shape = extract_shape(stream.stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj)
+                    shape = extract_shape(stream.stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj, median_duration_s=median_dur)
                     if shape:
                         act.run_shape = shape.to_dict()
                         total_dist = float(act.distance_m) if act.distance_m else 0

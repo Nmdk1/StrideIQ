@@ -249,6 +249,7 @@ def extract_shape(
     stream_data: Dict[str, List],
     pace_profile: Optional[PaceProfile] = None,
     heat_adjustment_pct: Optional[float] = None,
+    median_duration_s: Optional[float] = None,
 ) -> Optional[RunShape]:
     """Extract the RunShape from per-second stream data.
 
@@ -259,6 +260,7 @@ def extract_shape(
         pace_profile: Athlete's training pace zones. Falls back to
             stream-relative percentiles if None.
         heat_adjustment_pct: If provided, computes heat-adjusted pace for each phase.
+        median_duration_s: 30-day rolling median activity duration for long run detection.
 
     Returns:
         RunShape or None if insufficient data.
@@ -358,6 +360,8 @@ def extract_shape(
     summary.workout_classification = _derive_classification(
         phases, accelerations, summary, total_distance, pace_profile,
         is_anomaly=is_anomaly, unzoned=unzoned,
+        total_duration_s=float(total_time),
+        median_duration_s=median_duration_s,
     )
 
     return RunShape(phases=phases, accelerations=accelerations, summary=summary)
@@ -672,10 +676,11 @@ def _classify_phase_type(
     """Classify a phase by zone, position, grade, and context."""
     pct_of_run = duration / total_time if total_time > 0 else 0
 
-    # Position-based overrides
-    if idx == 0 and zone in ('easy', 'gray', 'walking', 'stopped') and pct_of_run < 0.25:
+    # Position-based overrides (only for 3+ phase runs to avoid consuming
+    # the start of a 2-phase progression)
+    if idx == 0 and total_phases >= 3 and zone in ('easy', 'gray', 'walking', 'stopped') and pct_of_run < 0.25:
         return 'warmup'
-    if idx == total_phases - 1 and zone in ('easy', 'gray', 'walking', 'stopped') and pct_of_run < 0.25:
+    if idx == total_phases - 1 and total_phases >= 3 and zone in ('easy', 'gray', 'walking', 'stopped') and pct_of_run < 0.25:
         return 'cooldown'
 
     # Elevation-based
@@ -1245,6 +1250,8 @@ def _derive_classification(
     pace_profile: PaceProfile,
     is_anomaly: bool = False,
     unzoned: bool = False,
+    total_duration_s: float = 0.0,
+    median_duration_s: Optional[float] = None,
 ) -> Optional[str]:
     """Derive an optional workout classification from shape structure."""
     if is_anomaly:
@@ -1258,12 +1265,27 @@ def _derive_classification(
     effort_phases = [p for p in phases if p.phase_type not in
                      ('warmup', 'cooldown', 'interval_recovery', 'recovery_jog')]
 
+    is_long = _is_long_run(total_duration_s, median_duration_s)
+    is_medium_long = _is_medium_long(total_duration_s, median_duration_s)
+
+    all_easy_or_gray = all(p.pace_zone in ('easy', 'gray', 'walking') for p in effort_phases) if effort_phases else True
+
     # Hill repeats: 3+ accels with significant grade
-    hill_accels = [a for a in accelerations if a.avg_cadence is not None]
     if n_accels >= 3:
         hill_efforts_from_phases = [p for p in effort_phases if p.phase_type == 'hill_effort']
         if len(hill_efforts_from_phases) >= 3:
             return 'hill_repeats'
+
+    # Progression (3+ phases, each ≥15 sec/mi faster — clear structural pattern)
+    if len(effort_phases) >= 3:
+        paces = [p.avg_pace_sec_per_mile for p in effort_phases if p.avg_pace_sec_per_mile > 0]
+        if len(paces) >= 3:
+            all_progressing = all(
+                paces[i] - paces[i + 1] >= 15
+                for i in range(len(paces) - 1)
+            )
+            if all_progressing:
+                return 'progression'
 
     # Strides: end-loaded accelerations at meaningful pace
     if (3 <= n_accels <= 8 and
@@ -1283,9 +1305,19 @@ def _derive_classification(
                 if fast_enough:
                     return 'strides'
 
-    # Tempo: contains 1 threshold phase > 12 min
+    # Progression fallback: 2+ phases with clear building pattern
+    # Excluded when there are end-loaded accelerations (those are strides, not progressions)
+    has_stride_pattern = (n_accels >= 3 and summary.acceleration_clustering == 'end_loaded')
+    if (len(effort_phases) >= 2 and summary.pace_progression == 'building'
+            and not has_stride_pattern):
+        first_pace = effort_phases[0].avg_pace_sec_per_mile
+        last_pace = effort_phases[-1].avg_pace_sec_per_mile
+        if first_pace > 0 and last_pace > 0 and first_pace - last_pace > 30:
+            return 'progression'
+
+    # Tempo: contains 1 threshold or sustained marathon phase > 12 min
     tempo_phases = [p for p in effort_phases
-                    if p.pace_zone == 'threshold' and p.duration_s > 720]
+                    if p.pace_zone in ('threshold', 'marathon') and p.duration_s > 720]
     if len(tempo_phases) == 1:
         return 'tempo'
 
@@ -1309,27 +1341,21 @@ def _derive_classification(
             except statistics.StatisticsError:
                 pass
 
-    # Progression: 3+ phases, each ≥15 sec/mi faster than previous
-    if len(effort_phases) >= 3:
-        paces = [p.avg_pace_sec_per_mile for p in effort_phases if p.avg_pace_sec_per_mile > 0]
-        if len(paces) >= 3:
-            all_progressing = all(
-                paces[i] - paces[i + 1] >= 15
-                for i in range(len(paces) - 1)
-            )
-            if all_progressing:
-                return 'progression'
+    # Long run: duration >= 2× median, base effort is easy/gray
+    # Checked before fartlek to prevent hilly long runs from being fartlek
+    if is_long and all_easy_or_gray:
+        return 'long_run'
 
-    # Progression fallback: 2+ phases with clear building pattern
-    if len(effort_phases) >= 2 and summary.pace_progression == 'building':
-        first_pace = effort_phases[0].avg_pace_sec_per_mile
-        last_pace = effort_phases[-1].avg_pace_sec_per_mile
-        if first_pace > 0 and last_pace > 0 and first_pace - last_pace > 30:
-            return 'progression'
+    # Medium-long run: 1.65× to 2× median
+    if is_medium_long and all_easy_or_gray:
+        return 'medium_long_run'
 
-    # Fartlek: 3+ scattered accelerations
+    # Fartlek: 3+ scattered accelerations (but NOT if base effort is steady
+    # and qualifies as long/medium-long — those go to long_run above)
     if (n_accels >= 3 and
             summary.acceleration_clustering == 'scattered'):
+        if is_long:
+            return 'long_run'
         return 'fartlek'
 
     # Over/under: alternating above/below marathon pace
@@ -1348,7 +1374,6 @@ def _derive_classification(
             return 'over_under'
 
     # Easy run: all phases easy/gray/walking, ≤3 effort phases, few accels
-    all_easy_or_gray = all(p.pace_zone in ('easy', 'gray', 'walking') for p in effort_phases)
     if all_easy_or_gray and n_accels <= 1 and len(effort_phases) <= 3:
         return 'easy_run'
 

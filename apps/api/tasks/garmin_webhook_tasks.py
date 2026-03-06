@@ -451,7 +451,8 @@ def _ingest_activity_detail_item(
             pace_prof = _resolve_pace_profile(ath, db) if ath else None
 
             heat_adj = float(activity.heat_adjustment_pct) if activity.heat_adjustment_pct else None
-            shape = extract_shape(stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj)
+            median_dur = _get_median_duration(athlete_id, db)
+            shape = extract_shape(stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj, median_duration_s=median_dur)
             if shape:
                 activity.run_shape = shape.to_dict()
                 total_dist = float(activity.distance_m) if activity.distance_m else 0
