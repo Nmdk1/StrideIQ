@@ -88,7 +88,9 @@ def _cleanup_stale_version_entries() -> None:
         cur = conn.cursor()
         cur.execute(
             "DELETE FROM alembic_version "
-            "WHERE version_num IN ('readiness_score_001', 'self_regulation_001')"
+            "WHERE version_num IN ("
+            "'readiness_score_001', 'self_regulation_001', 'phase1c_001'"
+            ")"
         )
         deleted = cur.rowcount
         conn.commit()
@@ -131,9 +133,6 @@ def main():
     _cleanup_stale_version_entries()
 
     # Production rule: always apply migrations.
-    # Use "heads" (plural) because the project has two branches:
-    # - main chain (a1b2c3d4e5f7)
-    # - phase chain (readiness_score_001 -> self_regulation_001 -> narration_001)
     try:
         alembic_upgrade_heads()
         print("Migrations completed successfully!")
