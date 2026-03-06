@@ -1087,13 +1087,12 @@ def _resolve_pace_profile(athlete, db):
 def _get_median_duration(athlete_id, db) -> Optional[float]:
     """Get 30-day rolling median activity duration for long run detection."""
     from datetime import datetime, timedelta
-    from sqlalchemy import func
     cutoff = datetime.utcnow() - timedelta(days=30)
-    durations = db.query(Activity.moving_time).filter(
+    durations = db.query(Activity.duration_s).filter(
         Activity.athlete_id == athlete_id,
         Activity.start_time >= cutoff,
-        Activity.moving_time.isnot(None),
-        Activity.moving_time > 0,
+        Activity.duration_s.isnot(None),
+        Activity.duration_s > 0,
     ).all()
     if len(durations) >= 3:
         vals = sorted([float(d[0]) for d in durations])
@@ -1201,8 +1200,8 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
                     shape = extract_shape(stream.stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj)
                     if shape:
                         act.run_shape = shape.to_dict()
-                        total_dist = float(act.distance) if act.distance else 0
-                        total_dur = float(act.moving_time or act.elapsed_time or 0)
+                        total_dist = float(act.distance_m) if act.distance_m else 0
+                        total_dur = float(act.duration_s or 0)
                         use_km = getattr(athlete, 'preferred_units', 'imperial') == 'metric'
                         act.shape_sentence = generate_shape_sentence(
                             shape, total_dist, total_dur,

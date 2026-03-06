@@ -454,8 +454,8 @@ def _ingest_activity_detail_item(
             shape = extract_shape(stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj)
             if shape:
                 activity.run_shape = shape.to_dict()
-                total_dist = float(activity.distance) if activity.distance else 0
-                total_dur = float(activity.moving_time or activity.elapsed_time or 0)
+                total_dist = float(activity.distance_m) if activity.distance_m else 0
+                total_dur = float(activity.duration_s or 0)
                 median_dur = _get_median_duration(athlete_id, db)
                 use_km = getattr(ath, 'preferred_units', 'imperial') == 'metric' if ath else False
                 activity.shape_sentence = generate_shape_sentence(
