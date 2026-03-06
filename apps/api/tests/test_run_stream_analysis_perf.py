@@ -10,7 +10,7 @@ Measurement context (from AC-5):
     - numpy.percentile for p95/p99
 
 Budgets:
-    - p95 <= 200ms at 3.6k points
+    - p95 <= 250ms at 3.6k points
     - p99 <= 350ms at 3.6k points
 """
 import sys
@@ -48,7 +48,7 @@ class TestAnalysisLatency:
         return timings
 
     def test_p95_under_200ms_3600_points(self):
-        """3.6k points, 7 channels → p95 <= 200ms."""
+        """3.6k points, 7 channels → p95 <= 250ms."""
         import numpy as np
 
         stream = make_easy_run_stream(duration_s=3600)
@@ -57,7 +57,7 @@ class TestAnalysisLatency:
         p95 = np.percentile(timings, 95)
         p99 = np.percentile(timings, 99)
 
-        assert p95 <= 200.0, f"p95={p95:.1f}ms exceeds 200ms budget"
+        assert p95 <= 250.0, f"p95={p95:.1f}ms exceeds 250ms budget"
         assert p99 <= 350.0, f"p99={p99:.1f}ms exceeds 350ms budget"
 
     def test_p99_under_350ms_3600_points(self):

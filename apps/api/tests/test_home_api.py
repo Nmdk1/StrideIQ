@@ -274,6 +274,7 @@ class TestGenerateYesterdayInsight:
     
     def test_efficiency_insight_positive(self):
         activity = MagicMock()
+        activity.shape_sentence = None
         activity.efficiency_score = 3.5
         activity.avg_hr = 145
         activity.distance_m = 10000
@@ -286,6 +287,7 @@ class TestGenerateYesterdayInsight:
     
     def test_efficiency_insight_negative(self):
         activity = MagicMock()
+        activity.shape_sentence = None
         activity.efficiency_score = -2.1
         activity.avg_hr = 160
         activity.distance_m = 10000
@@ -298,6 +300,7 @@ class TestGenerateYesterdayInsight:
     
     def test_low_hr_insight(self):
         activity = MagicMock()
+        activity.shape_sentence = None
         activity.efficiency_score = None
         activity.avg_hr = 135
         activity.distance_m = 10000
@@ -311,6 +314,7 @@ class TestGenerateYesterdayInsight:
     
     def test_high_hr_insight(self):
         activity = MagicMock()
+        activity.shape_sentence = None
         activity.efficiency_score = None
         activity.avg_hr = 170
         activity.distance_m = 10000
@@ -323,6 +327,7 @@ class TestGenerateYesterdayInsight:
     
     def test_fallback_to_distance_pace(self):
         activity = MagicMock()
+        activity.shape_sentence = None
         activity.efficiency_score = None
         activity.avg_hr = 150  # Neither low nor high
         activity.distance_m = 8046.72  # 5 miles

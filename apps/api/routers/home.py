@@ -1700,10 +1700,11 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
             for a in recent:
                 day = a.start_time.strftime("%a") if a.start_time else "?"
                 lines.append(f"- {day}: {a.shape_sentence}")
-            sections.append(
-                "--- This Week's Training (auto-detected from stream data) ---\n"
-                + "\n".join(lines)
-            )
+            if lines:
+                sections.append(
+                    "--- This Week's Training (auto-detected from stream data) ---\n"
+                    + "\n".join(lines)
+                )
     except Exception as e:
         logger.debug(f"Activity shapes failed for home briefing ({athlete_id}): {e}")
 

@@ -723,10 +723,10 @@ class TestStreamIngestionTask:
         from tasks.garmin_webhook_tasks import process_garmin_activity_detail_task
         mock_db = _make_mock_db()
 
-        # First query: find Activity by garmin_activity_id
         mock_db.query.return_value.filter.return_value.first.side_effect = [
-            activity,  # Activity lookup
-            None,      # ActivityStream lookup (no existing stream)
+            activity,      # Activity lookup
+            None,          # ActivityStream lookup (no existing stream)
+            MagicMock(),   # Athlete lookup (shape extraction)
         ]
 
         with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db):
@@ -808,9 +808,10 @@ class TestStreamIngestionTask:
         payload_b = {**_DETAIL_PAYLOAD, "activityId": 9999000001}
 
         # Activity lookups interleaved: a found, no stream; b found, no stream
+        # Shape extraction adds an Athlete query per item via .first()
         mock_db.query.return_value.filter.return_value.first.side_effect = [
-            activity_a, None,   # item 1: activity found, no stream
-            activity_b, None,   # item 2: activity found, no stream
+            activity_a, None, MagicMock(),  # item 1: activity, stream, athlete (shape)
+            activity_b, None, MagicMock(),  # item 2: activity, stream, athlete (shape)
         ]
 
         with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db):
