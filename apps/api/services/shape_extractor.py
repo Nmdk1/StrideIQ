@@ -1381,7 +1381,7 @@ def _check_anomaly(
             gaps += 1
 
     for v in velocity:
-        if v > MAX_VELOCITY_MPS:
+        if v is not None and v > MAX_VELOCITY_MPS:
             unrealistic_count += 1
 
     return gaps > 0 and (unrealistic_count > 0 or gaps >= 3)
