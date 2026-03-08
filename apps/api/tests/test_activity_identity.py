@@ -278,10 +278,22 @@ class TestPutTitleEndpoint:
 
     def test_wrong_athlete_403(self, setup):
         from core.security import create_access_token
+        from core.database import SessionLocal
+        from models import Athlete
         from uuid import uuid4
 
+        db2 = SessionLocal()
+        other = Athlete(
+            email=f"test_other_{uuid4()}@example.com",
+            display_name="Other Athlete",
+            subscription_tier="free",
+        )
+        db2.add(other)
+        db2.commit()
+        db2.refresh(other)
+
         other_token = create_access_token(
-            data={"sub": str(uuid4()), "email": "other@example.com", "role": "athlete"}
+            data={"sub": str(other.id), "email": other.email, "role": "athlete"}
         )
         resp = setup["client"].put(
             f"/v1/activities/{setup['activity'].id}/title",
@@ -289,6 +301,10 @@ class TestPutTitleEndpoint:
             headers={"Authorization": f"Bearer {other_token}"},
         )
         assert resp.status_code == 403
+
+        db2.delete(other)
+        db2.commit()
+        db2.close()
 
     def test_not_found_404(self, setup):
         from uuid import uuid4
