@@ -357,7 +357,7 @@ class TestForceEnqueueBehavior:
             result = enqueue_briefing_refresh(athlete_id, force=False)
 
         assert result is False, "force=False + cooldown must skip enqueue"
-        mock_task.delay.assert_not_called()
+        mock_task.apply_async.assert_not_called()
 
     def test_force_true_with_cooldown_enqueues(self):
         """Test 7: force=True bypasses cooldown when circuit is closed."""
@@ -373,7 +373,7 @@ class TestForceEnqueueBehavior:
             result = enqueue_briefing_refresh(athlete_id, force=True)
 
         assert result is True, "force=True + closed circuit must allow enqueue"
-        mock_task.delay.assert_called_once_with(athlete_id)
+        mock_task.apply_async.assert_called_once_with(args=[athlete_id], queue="briefing")
 
     def test_force_true_with_open_circuit_blocks(self):
         """Test 8: force=True is still blocked when circuit is open."""
@@ -390,7 +390,7 @@ class TestForceEnqueueBehavior:
             result = enqueue_briefing_refresh(athlete_id, force=True)
 
         assert result is False, "force=True + open circuit must still block enqueue"
-        mock_task.delay.assert_not_called()
+        mock_task.apply_async.assert_not_called()
 
     def test_force_probe_with_open_circuit_enqueues(self):
         """force + probe mode bypasses open circuit for data-change recovery."""
@@ -410,7 +410,7 @@ class TestForceEnqueueBehavior:
             )
 
         assert result is True
-        mock_task.delay.assert_called_once_with(athlete_id)
+        mock_task.apply_async.assert_called_once_with(args=[athlete_id], queue="briefing")
 
     def test_force_true_sets_cooldown_after_enqueue(self):
         """Test 7b: force path sets cooldown after enqueuing (prevents burst)."""
