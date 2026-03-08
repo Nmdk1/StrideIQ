@@ -1356,7 +1356,11 @@ def _derive_classification(
             summary.acceleration_clustering == 'scattered'):
         if is_long:
             return 'long_run'
-        return 'fartlek'
+        # On hilly terrain, pace variation from elevation isn't intentional fartlek
+        if summary.elevation_profile in ('hilly', 'net_uphill', 'net_downhill', 'out_and_back'):
+            pass  # fall through to easy/progression/gray checks below
+        else:
+            return 'fartlek'
 
     # Over/under: alternating above/below marathon pace
     if len(effort_phases) >= 4:

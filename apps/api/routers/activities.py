@@ -137,6 +137,7 @@ def list_activities(
             "performance_percentage_national": activity.performance_percentage_national,
             "is_race_candidate": activity.is_race_candidate,
             "race_confidence": activity.race_confidence,
+            "shape_sentence": activity.shape_sentence,
         }
         
         # Calculate pace if we have speed
@@ -369,6 +370,9 @@ def get_activity(
         
         # Narrative context (ADR-033)
         "narrative": narrative,
+        
+        # Shape sentence (Living Fingerprint)
+        "shape_sentence": activity.shape_sentence,
     }
     
     return result
