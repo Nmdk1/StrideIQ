@@ -101,7 +101,7 @@ def test_checkout_and_portal_endpoints(monkeypatch):
 
 
 def test_stripe_webhook_requires_signature_header():
-    resp = client.post("/v1/billing/webhooks/stripe", data=b"{}")
+    resp = client.post("/v1/billing/webhooks/stripe", content=b"{}")
     assert resp.status_code == 400
 
 
@@ -132,12 +132,12 @@ def test_webhook_idempotency_and_entitlement_update(monkeypatch):
     monkeypatch.setattr(ss.StripeService, "construct_event", _construct)
 
     # First delivery processes
-    resp = client.post("/v1/billing/webhooks/stripe", data=b"{}", headers={"Stripe-Signature": "sig"})
+    resp = client.post("/v1/billing/webhooks/stripe", content=b"{}", headers={"Stripe-Signature": "sig"})
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
 
     # Second delivery is idempotent
-    resp2 = client.post("/v1/billing/webhooks/stripe", data=b"{}", headers={"Stripe-Signature": "sig"})
+    resp2 = client.post("/v1/billing/webhooks/stripe", content=b"{}", headers={"Stripe-Signature": "sig"})
     assert resp2.status_code == 200
 
     db = SessionLocal()

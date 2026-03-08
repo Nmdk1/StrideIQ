@@ -16,7 +16,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from database import SessionLocal  # noqa: E402
+from core.database import SessionLocal  # noqa: E402
 
 
 def main() -> None:

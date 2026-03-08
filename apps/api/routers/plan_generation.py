@@ -13,7 +13,7 @@ Endpoints for:
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import date, datetime, timedelta
@@ -1811,8 +1811,7 @@ class TuneUpRace(BaseModel):
     name: Optional[str] = Field(None, description="Race name")
     purpose: str = Field("tune_up", description="Purpose: tune_up, threshold, sharpening, fitness_check")
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ModelDrivenPlanRequest(BaseModel):

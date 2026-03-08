@@ -6,7 +6,7 @@ from sqlalchemy import func
 # When running from /app/scripts/verify_data.py, parent is /app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database import SessionLocal
+from core.database import SessionLocal
 from models import ActivitySplit
 
 def run_check():

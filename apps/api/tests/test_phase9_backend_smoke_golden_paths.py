@@ -106,7 +106,7 @@ def test_stripe_webhook_rejects_invalid_signature(monkeypatch):
     ts = int(datetime.now(timezone.utc).timestamp())
     bad_sig = _stripe_sig_header(secret="whsec_wrong_" + ("y" * 24), payload=payload, timestamp=ts)
 
-    resp = client.post("/v1/billing/webhooks/stripe", data=payload, headers={"Stripe-Signature": bad_sig})
+    resp = client.post("/v1/billing/webhooks/stripe", content=payload, headers={"Stripe-Signature": bad_sig})
     assert resp.status_code == 400, resp.text
 
     db = SessionLocal()
@@ -139,7 +139,7 @@ def test_stripe_webhook_accepts_valid_signature_and_records_event(monkeypatch):
     ts = int(datetime.now(timezone.utc).timestamp())
     sig = _stripe_sig_header(secret=webhook_secret, payload=payload, timestamp=ts)
 
-    resp = client.post("/v1/billing/webhooks/stripe", data=payload, headers={"Stripe-Signature": sig})
+    resp = client.post("/v1/billing/webhooks/stripe", content=payload, headers={"Stripe-Signature": sig})
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body.get("ok") is True

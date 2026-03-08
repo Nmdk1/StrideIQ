@@ -4,7 +4,7 @@ Test script for Performance Physics Engine features.
 Tests age category classification and derived signals calculation.
 """
 import sys
-from database import SessionLocal
+from core.database import SessionLocal
 from models import Athlete
 from services.performance_engine import get_age_category, calculate_age_at_date
 from services.athlete_metrics import calculate_athlete_derived_signals

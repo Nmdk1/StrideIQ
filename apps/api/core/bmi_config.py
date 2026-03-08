@@ -4,7 +4,7 @@ BMI Configuration
 Backend-configurable settings for BMI correlation analysis and display.
 Allows adjustment of correlation thresholds and display logic without code changes.
 """
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 
@@ -32,9 +32,7 @@ class BMIConfig(BaseSettings):
     # Default: False (user must opt-in)
     bmi_toggle_default_on: bool = False
     
-    class Config:
-        env_prefix = "BMI_"
-        case_sensitive = False
+    model_config = SettingsConfigDict(env_prefix="BMI_", case_sensitive=False)
 
 
 # Global config instance

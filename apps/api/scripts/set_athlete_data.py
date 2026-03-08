@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database import SessionLocal
+from core.database import SessionLocal
 from models import Athlete
 from datetime import date
 

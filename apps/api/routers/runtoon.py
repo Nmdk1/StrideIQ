@@ -27,7 +27,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
@@ -66,8 +66,7 @@ class PhotoResponse(BaseModel):
     signed_url: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RuntoonResponse(BaseModel):
@@ -81,8 +80,7 @@ class RuntoonResponse(BaseModel):
     caption_text: Optional[str] = None
     has_nine_sixteen: bool = True   # Always available if Runtoon exists
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DownloadResponse(BaseModel):

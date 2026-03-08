@@ -81,7 +81,7 @@ app = FastAPI(
 async def backfill_missing_rpi():
     """Backfill RPI for athletes who have PBs but missing RPI."""
     try:
-        from database import SessionLocal
+        from core.database import SessionLocal
         from services.personal_best import backfill_rpi_from_pbs
         
         db = SessionLocal()

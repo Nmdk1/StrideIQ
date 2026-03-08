@@ -282,7 +282,7 @@ def test_cache_hit():
             total_findings=0, confirmed_findings=0, emerging_findings=0, checkin_count=0,
         ),
     )
-    from database import get_db
+    from core.database import get_db
     from routers.auth import get_current_user
 
     app.dependency_overrides[get_db] = lambda: MagicMock()

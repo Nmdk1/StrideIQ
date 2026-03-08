@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from database import get_db
+from core.database import get_db
 from models import Athlete, Activity, DailyCheckin, CorrelationFinding, TrainingPlan
 from routers.auth import get_current_user
 from core.cache import get_cache, set_cache as _set_cache, invalidate_pattern

@@ -17,7 +17,7 @@ from uuid import UUID
 from sqlalchemy import func
 
 # Use the app's database session
-from database import SessionLocal
+from core.database import SessionLocal
 from models import Athlete, Activity
 from services.training_load import (
     TrainingLoadCalculator,
