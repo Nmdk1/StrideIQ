@@ -133,7 +133,7 @@ export function ActivityCard({
             </Tooltip>
           )}
           <div>
-            <h3 className="font-semibold text-lg">{activity.name}</h3>
+            <h3 className="font-semibold text-lg">{activity.resolved_title ?? activity.name}</h3>
             <p className="text-sm text-slate-400">
               {formattedDate} at {formattedTime}
             </p>

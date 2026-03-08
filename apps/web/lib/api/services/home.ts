@@ -113,6 +113,9 @@ export interface LastRun {
   pace_per_km?: number | null;  // Derived from distance/time (s/km)
   provider?: string | null;  // 'strava' | 'garmin' | 'manual'
   device_name?: string | null;  // Garmin device name, e.g. 'forerunner965'
+  shape_sentence?: string | null;
+  athlete_title?: string | null;
+  resolved_title?: string | null;
 }
 
 export type BriefingState = 'fresh' | 'stale' | 'missing' | 'refreshing' | 'consent_required';

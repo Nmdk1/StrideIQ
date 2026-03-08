@@ -159,7 +159,7 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
           <p className="text-sm text-slate-400">
             <span className="text-slate-500">{formatRelativeTime(lastRun.start_time)}</span>
             <span className="mx-1.5 text-slate-600">&middot;</span>
-            {lastRun.name}
+            {lastRun.resolved_title ?? lastRun.name}
             <span className="mx-1.5 text-slate-600">&middot;</span>
             {formatDistance(lastRun.distance_m)}
             <span className="mx-1.5 text-slate-600">&middot;</span>
@@ -195,7 +195,7 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
       <div className="px-4 py-4 space-y-2">
         {/* Title row */}
         <div>
-          <p className="text-sm font-semibold text-white">{lastRun.name}</p>
+          <p className="text-sm font-semibold text-white">{lastRun.resolved_title ?? lastRun.name}</p>
           <p className="text-xs text-slate-400">{formatRelativeTime(lastRun.start_time)}</p>
         </div>
 

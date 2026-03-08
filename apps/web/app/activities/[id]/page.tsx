@@ -19,10 +19,10 @@
  *   9. "Compare to Similar" (existing link)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { API_CONFIG } from '@/lib/api/config';
@@ -69,6 +69,11 @@ interface Activity {
   
   // ADR-033: Narrative context
   narrative: string | null;
+
+  // Activity Identity
+  shape_sentence: string | null;
+  athlete_title: string | null;
+  resolved_title: string | null;
 }
 
 import type { Split } from '@/lib/types/splits';
@@ -123,6 +128,63 @@ export default function ActivityDetailPage() {
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
   const [showSecondaryMetrics, setShowSecondaryMetrics] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+
+  // Title editing
+  const queryClient = useQueryClient();
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitleValue, setEditTitleValue] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
+
+  const titleMutation = useMutation({
+    mutationFn: async (newTitle: string | null) => {
+      const res = await fetch(
+        `${API_CONFIG.baseURL}/v1/activities/${activityId}/title`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ title: newTitle }),
+        }
+      );
+      if (!res.ok) throw new Error('Failed to update title');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activity', activityId] });
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+      queryClient.invalidateQueries({ queryKey: ['home'] });
+      setIsEditingTitle(false);
+    },
+  });
+
+  const displayTitle = activity?.resolved_title ?? activity?.name ?? 'Run';
+
+  const handleStartEdit = () => {
+    setEditTitleValue(displayTitle);
+    setIsEditingTitle(true);
+  };
+
+  const handleSaveTitle = () => {
+    const trimmed = editTitleValue.trim();
+    titleMutation.mutate(trimmed || null);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingTitle(false);
+  };
+
+  const handleResetTitle = () => {
+    titleMutation.mutate(null);
+  };
 
   // Redirect if not authenticated (after auth loading is done)
   React.useEffect(() => {
@@ -236,7 +298,58 @@ export default function ActivityDetailPage() {
             Back
           </button>
           
-          <h1 className="text-3xl font-bold text-white mb-1">{activity.name}</h1>
+          {isEditingTitle ? (
+            <div className="mb-1">
+              <input
+                ref={titleInputRef}
+                type="text"
+                value={editTitleValue}
+                onChange={(e) => setEditTitleValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveTitle();
+                  if (e.key === 'Escape') handleCancelEdit();
+                }}
+                maxLength={200}
+                className="w-full text-2xl font-bold bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500"
+              />
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  onClick={handleSaveTitle}
+                  disabled={titleMutation.isPending}
+                  className="px-3 py-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors disabled:opacity-50"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-3 py-1 text-sm text-slate-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                {activity.athlete_title && activity.shape_sentence && (
+                  <button
+                    onClick={handleResetTitle}
+                    className="px-3 py-1 text-sm text-slate-500 hover:text-emerald-400 transition-colors ml-auto"
+                  >
+                    Reset to auto-detected
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="group flex items-center gap-2 mb-1">
+              <h1 className="text-3xl font-bold text-white">{displayTitle}</h1>
+              <button
+                onClick={handleStartEdit}
+                className="text-slate-500 hover:text-emerald-400 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                aria-label="Edit title"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </button>
+            </div>
+          )}
           <p className="text-slate-400 text-sm">
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
           </p>

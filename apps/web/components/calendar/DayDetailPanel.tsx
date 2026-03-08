@@ -498,7 +498,7 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="font-semibold text-white group-hover:text-emerald-400 transition-colors">
-                            {activity.name || 'Run'}
+                            {activity.resolved_title ?? activity.name ?? 'Run'}
                           </div>
                           <div className="text-slate-500 group-hover:text-emerald-400 transition-colors text-sm flex items-center gap-1">
                             View Details
