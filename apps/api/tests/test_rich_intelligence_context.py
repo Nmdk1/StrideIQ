@@ -154,7 +154,8 @@ class TestRichContextAllEmpty:
              patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine, \
              patch("services.coach_tools.get_wellness_trends", return_value={"narrative": "No wellness data available."}), \
              patch("services.coach_tools.get_pb_patterns", return_value={"narrative": ""}), \
-             patch("services.coach_tools.compare_training_periods", return_value={"narrative": ""}):
+             patch("services.coach_tools.compare_training_periods", return_value={"narrative": ""}), \
+             patch("services.fingerprint_context.build_fingerprint_prompt_section", return_value=None):
 
             mock_engine.return_value.evaluate.return_value = mock_result
             result = _build_rich_intelligence_context(_athlete_id(), _make_db())

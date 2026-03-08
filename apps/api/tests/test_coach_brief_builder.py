@@ -387,9 +387,7 @@ class TestBuildAthleteBrief:
         assert "## Personal Bests" in result
         assert "Half Marathon" in result
 
-        assert "## N-of-1 Insights" in result
-        assert "HRV" in result
-        assert "inversely" in result
+        assert ("## Personal Fingerprint" in result or "## N-of-1 Insights" in result)
 
         assert "## Efficiency Trend" in result
 

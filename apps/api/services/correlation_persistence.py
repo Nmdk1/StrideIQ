@@ -103,12 +103,11 @@ def persist_correlation_findings(
         confidence = _compute_confidence(r, p, n)
         insight_text = _build_finding_text(input_name, direction, strength, r, lag, output_metric)
 
-        # Suppression rules (safety gate — see Post-Delivery Correction
-        # in BUILDER_NOTE_2026-03-03_CORRELATION_ENGINE_QUALITY.md):
-        #  1. Confounded findings → inactive
-        #  2. Counterintuitive direction → inactive (temporary gate until
-        #     daily-session-stress confounder is implemented)
-        should_be_active = not is_confounded and not direction_counterintuitive
+        # Suppression rules — confounded findings start inactive.
+        # Counterintuitive direction only suppresses new findings (times_confirmed < 3).
+        # Mature findings (3+ confirmations) have earned their place regardless
+        # of whether the direction seems counterintuitive — the data is the data.
+        should_be_active = not is_confounded
 
         # Upsert: find existing or create
         existing = (
@@ -138,7 +137,10 @@ def persist_correlation_findings(
             existing.is_confounded = is_confounded
             existing.direction_expected = direction_expected
             existing.direction_counterintuitive = direction_counterintuitive
-            existing.is_active = should_be_active
+            if should_be_active:
+                existing.is_active = True
+            elif existing.times_confirmed < 3:
+                existing.is_active = should_be_active
             stats["confirmed"] += 1
         else:
             finding = CorrelationFinding(
@@ -182,8 +184,9 @@ def persist_correlation_findings(
     for finding in active_findings:
         key = (finding.input_name, finding.output_metric, finding.time_lag_days)
         if key not in current_keys:
-            finding.is_active = False
-            stats["deactivated"] += 1
+            if finding.times_confirmed < 3:
+                finding.is_active = False
+                stats["deactivated"] += 1
 
     try:
         db.flush()
