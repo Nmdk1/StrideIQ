@@ -267,7 +267,13 @@ def test_counterintuitive_and_confounded_deactivated():
 # ---------------------------------------------------------------------------
 
 
-def test_counterintuitive_direction_alone_suppresses():
+def test_counterintuitive_direction_alone_does_not_suppress():
+    """Counterintuitive direction without confounding is NOT suppressed.
+
+    The data is the data — if a pattern is statistically significant and
+    not explained by a confounder, the athlete's physiology may simply
+    work differently than the textbook expectation.
+    """
     db = _mock_db()
     result = _make_analysis_result(
         direction="negative",
@@ -281,7 +287,7 @@ def test_counterintuitive_direction_alone_suppresses():
     persist_correlation_findings(ATHLETE_ID, result, db, "efficiency")
 
     added = db.add.call_args[0][0]
-    assert added.is_active is False
+    assert added.is_active is True
     assert added.direction_counterintuitive is True
     assert added.is_confounded is False
 

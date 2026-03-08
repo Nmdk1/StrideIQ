@@ -137,10 +137,10 @@ def persist_correlation_findings(
             existing.is_confounded = is_confounded
             existing.direction_expected = direction_expected
             existing.direction_counterintuitive = direction_counterintuitive
-            if should_be_active:
+            if is_confounded:
+                existing.is_active = False
+            else:
                 existing.is_active = True
-            elif existing.times_confirmed < 3:
-                existing.is_active = should_be_active
             stats["confirmed"] += 1
         else:
             finding = CorrelationFinding(
