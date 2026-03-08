@@ -3737,28 +3737,48 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
     except Exception as e:
         logger.debug(f"Brief: personal bests failed: {e}")
 
-    # ── 10. N-OF-1 INSIGHTS (Correlations) ───────────────────────────
+    # ── 10. PERSONAL FINGERPRINT (confirmed patterns with layer intelligence) ──
     try:
-        corr = get_correlations(db, athlete_id, days=90)
-        if corr.get("ok"):
-            corr_data = corr.get("data", {})
-            correlations = corr_data.get("correlations", []) if isinstance(corr_data, dict) else []
-            if isinstance(correlations, list) and correlations:
-                lines = []
-                for c in correlations[:5]:
-                    input_name = c.get("input_name", "?")
-                    output_name = c.get("output_name", "?")
-                    r = c.get("correlation_coefficient", 0)
-                    n = c.get("sample_size", 0)
-                    direction = "positively" if r > 0 else "inversely"
-                    lines.append(
-                        f"  {input_name} {direction} correlates with {output_name} "
-                        f"(r={r:.2f}, n={n})"
-                    )
-                if lines:
-                    sections.append("## N-of-1 Insights (Correlations)\n" + "\n".join(lines))
+        from services.fingerprint_context import build_fingerprint_prompt_section
+        fp_section = build_fingerprint_prompt_section(athlete_id, db, verbose=False, max_findings=10)
+        if fp_section:
+            sections.append("## Personal Fingerprint\n" + fp_section)
+        else:
+            corr = get_correlations(db, athlete_id, days=90)
+            if corr.get("ok"):
+                corr_data = corr.get("data", {})
+                correlations = corr_data.get("correlations", []) if isinstance(corr_data, dict) else []
+                if isinstance(correlations, list) and correlations:
+                    lines = []
+                    for c in correlations[:5]:
+                        input_name = c.get("input_name", "?")
+                        output_name = c.get("output_name", "?")
+                        r = c.get("correlation_coefficient", 0)
+                        n = c.get("sample_size", 0)
+                        direction = "positively" if r > 0 else "inversely"
+                        lines.append(
+                            f"  {input_name} {direction} correlates with {output_name} "
+                            f"(r={r:.2f}, n={n})"
+                        )
+                    if lines:
+                        sections.append("## N-of-1 Insights (Correlations)\n" + "\n".join(lines))
     except Exception as e:
-        logger.debug(f"Brief: correlations failed: {e}")
+        logger.debug(f"Brief: personal fingerprint failed: {e}")
+
+    # ── 10b. INVESTIGATION FINDINGS (race input analysis) ──
+    try:
+        from services.finding_persistence import get_active_findings
+        stored = get_active_findings(athlete_id, db)
+        if stored:
+            lines = [
+                "(Investigation findings — what the system discovered about this athlete's training patterns.)"
+            ]
+            for f in stored[:8]:
+                conf_label = f"confidence: {f.confidence}" if f.confidence else ""
+                lines.append(f"  [{f.investigation_name}] {f.sentence} ({conf_label})")
+            sections.append("## Training Discoveries\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: investigation findings failed: {e}")
 
     # ── 11. EFFICIENCY TREND ─────────────────────────────────────────
     try:

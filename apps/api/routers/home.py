@@ -1311,6 +1311,14 @@ def generate_coach_home_briefing(
         "- NEVER quote raw metrics like TSB numbers, form scores, or load ratios to the athlete. Translate into plain coaching language.",
         "- Be direct and honest, not sycophantic. The athlete trusts data, not flattery.",
         "",
+        "PERSONAL FINGERPRINT CONTRACT:",
+        "- When the DEEP INTELLIGENCE section contains confirmed patterns, reference them by evidence count.",
+        "- Use threshold values to give specific advice ('your sleep cliff is at 6.2h — last night was 5.5').",
+        "- Use asymmetry ratios to convey magnitude ('bad sleep hurts you 3x more than good sleep helps').",
+        "- Use decay timing for forward-looking advice ('the effect peaks tomorrow based on your 2-day half-life').",
+        "- NEVER reference a pattern without its confirmation count. This builds athlete trust.",
+        "- If no confirmed patterns exist, do not mention the fingerprint — coach from the other data.",
+        "",
         "TRUST-SAFETY CONSTRAINTS (enforced by post-generation validator):",
         "- Do NOT use sycophantic words: incredible, amazing, phenomenal, extraordinary, fantastic, wonderful, awesome, brilliant, magnificent, outstanding, superb, stellar, remarkable, spectacular.",
         "- Do NOT make causal claims: avoid 'because you', 'caused by', 'due to your'.",
@@ -1518,6 +1526,46 @@ def compute_coach_noticed(
     except Exception as e:
         logger.debug(f"Coach noticed correlation lookup failed: {e}")
 
+    # 1b. Recently confirmed fingerprint finding (persisted, not volatile)
+    try:
+        from uuid import UUID as _UUID
+        from models import CorrelationFinding as _CF
+        _cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        recent_finding = (
+            db.query(_CF)
+            .filter(
+                _CF.athlete_id == _UUID(athlete_id),
+                _CF.is_active == True,  # noqa: E712
+                _CF.times_confirmed >= 3,
+                _CF.last_confirmed_at >= _cutoff,
+            )
+            .order_by(_CF.last_confirmed_at.desc())
+            .first()
+        )
+        if recent_finding:
+            f = recent_finding
+            finding_text = f.insight_text or (
+                f"{f.input_name.replace('_', ' ').title()} {f.direction}ly "
+                f"affects your {f.output_metric.replace('_', ' ')}"
+            )
+            detail_parts = [f"confirmed {f.times_confirmed}x"]
+            if f.threshold_value is not None:
+                detail_parts.append(f"threshold at {f.threshold_value:.1f}")
+            if f.asymmetry_ratio is not None:
+                detail_parts.append(f"{f.asymmetry_ratio:.1f}x asymmetry")
+
+            text = f"{finding_text} ({', '.join(detail_parts)})."
+            return CoachNoticed(
+                text=text,
+                source="fingerprint",
+                ask_coach_query=(
+                    f"Tell me more about how {f.input_name.replace('_', ' ')} "
+                    f"affects my {f.output_metric.replace('_', ' ')}"
+                ),
+            )
+    except Exception as e:
+        logger.debug("Fingerprint finding for coach_noticed failed: %s", e)
+
     # 2. Top signal from home_signals
     try:
         from services.home_signals import aggregate_signals
@@ -1710,6 +1758,15 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
                 )
     except Exception as e:
         logger.debug(f"Activity shapes failed for home briefing ({athlete_id}): {e}")
+
+    # 8. Personal Fingerprint — confirmed, persisted correlation findings with layer data
+    try:
+        from services.fingerprint_context import build_fingerprint_prompt_section
+        fp_section = build_fingerprint_prompt_section(athlete_uuid, db, verbose=True, max_findings=8)
+        if fp_section:
+            sections.append(fp_section)
+    except Exception as e:
+        logger.debug("Personal fingerprint failed for home briefing (%s): %s", athlete_id, e)
 
     if not sections:
         return ""

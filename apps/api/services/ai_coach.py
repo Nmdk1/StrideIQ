@@ -995,7 +995,26 @@ COMMUNICATION:
 - Be conservative with injury-related advice
 - Do NOT repeat yourself or give the same response multiple times
 
+PERSONAL FINGERPRINT:
+- The ATHLETE BRIEF below may contain a "Personal Fingerprint" section with confirmed patterns.
+- These patterns have been individually validated for THIS athlete — they are not population statistics.
+- When relevant to the athlete's question, reference confirmed patterns by evidence count.
+- Use threshold values for specific recommendations (e.g., "your data shows a sleep cliff at 6.2 hours").
+- Use asymmetry data to convey magnitude (e.g., "bad sleep hurts you 3x more than good sleep helps").
+- Use decay timing for forward-looking advice (e.g., "the effect typically peaks after 2 days for you").
+- NEVER reference a pattern without its confirmation count. This is how the athlete trusts the system.
+- If no fingerprint data exists, coach from the other brief sections normally.
+- You still have tools — use them for data NOT in the brief. But prefer the brief for confirmed patterns.
+
 If you need more data to answer well, call the tools. That's why they're there."""
+
+        try:
+            from services.coach_tools import build_athlete_brief
+            brief = build_athlete_brief(self.db, athlete_id)
+            if brief:
+                system_prompt += f"\n\nATHLETE BRIEF (pre-computed, confirmed patterns):\n{brief}"
+        except Exception:
+            pass
         
         try:
             total_input_tokens = 0
@@ -1459,6 +1478,16 @@ COMMUNICATION STYLE:
 - Use the athlete's preferred units (check the brief).
 - If the athlete is venting, empathize briefly, then offer data-backed perspective.
 - Never recommend medical advice — refer to healthcare professionals.
+
+PERSONAL FINGERPRINT:
+- The ATHLETE BRIEF may contain a "Personal Fingerprint" section with confirmed patterns.
+- These patterns have been individually validated for THIS athlete — they are not population statistics.
+- When relevant, reference confirmed patterns by evidence count.
+- Use threshold values for specific recommendations (e.g., "your data shows a sleep cliff at 6.2 hours").
+- Use asymmetry data to convey magnitude (e.g., "bad sleep hurts you 3x more than good sleep helps").
+- Use decay timing for forward-looking advice (e.g., "the effect typically peaks after 2 days for you").
+- NEVER reference a pattern without its confirmation count. This is how the athlete trusts the system.
+- If no fingerprint data exists, coach from the other brief sections normally.
 
 WEEK BOUNDARY AWARENESS:
 - Current week data is PARTIAL — the brief marks it clearly. Do NOT treat partial week totals as complete weeks.
