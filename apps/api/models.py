@@ -443,6 +443,7 @@ class Activity(Base):
     # --- ACTIVITY SHAPE (Living Fingerprint) ---
     run_shape = Column(JSONB, nullable=True)  # RunShape.to_dict() — phases, accelerations, summary
     shape_sentence = Column(Text, nullable=True)  # Natural language shape description
+    athlete_title = Column(Text, nullable=True)  # Athlete-edited display title (overrides shape_sentence)
 
     # --- INGESTION PROGRESS MARKERS ---
     # Strava only returns `best_efforts` when an activity sets PRs; we still need a

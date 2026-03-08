@@ -171,6 +171,9 @@ class LastRun(BaseModel):
     pace_per_km: Optional[float] = None  # Derived from distance/time (s/km)
     provider: Optional[str] = None  # 'strava' | 'garmin' | 'manual'
     device_name: Optional[str] = None  # Garmin device name, e.g. 'forerunner965'
+    shape_sentence: Optional[str] = None
+    athlete_title: Optional[str] = None
+    resolved_title: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -1882,6 +1885,9 @@ def compute_last_run(
     stream_status = getattr(latest, "stream_fetch_status", None)
 
     # Base last_run (metrics-only card when stream not ready)
+    from routers.activities import resolve_activity_title
+    resolved = resolve_activity_title(latest)
+
     last_run = LastRun(
         activity_id=str(latest.id),
         name=latest.name or "Run",
@@ -1893,6 +1899,9 @@ def compute_last_run(
         pace_per_km=pace_per_km,
         provider=getattr(latest, "provider", None),
         device_name=getattr(latest, "device_name", None),
+        shape_sentence=getattr(latest, "shape_sentence", None),
+        athlete_title=getattr(latest, "athlete_title", None),
+        resolved_title=resolved,
     )
 
     # Enrich with stream analysis data when available — serve from cache

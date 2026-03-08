@@ -94,8 +94,19 @@ class ActivitySummary(BaseModel):
     avg_hr: Optional[int] = None
     workout_type: Optional[str] = None
     intensity_score: Optional[float] = None
+    shape_sentence: Optional[str] = None
+    athlete_title: Optional[str] = None
+    resolved_title: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+def _activity_summary(a) -> ActivitySummary:
+    """Build ActivitySummary with computed resolved_title."""
+    from routers.activities import resolve_activity_title
+    s = ActivitySummary.model_validate(a)
+    s.resolved_title = resolve_activity_title(a)
+    return s
 
 
 class InsightResponse(BaseModel):
@@ -782,7 +793,7 @@ def get_calendar(
             day_of_week=current.weekday(),
             day_name=get_day_name(current),
             planned_workout=PlannedWorkoutResponse.model_validate(planned) if planned else None,
-            activities=[ActivitySummary.model_validate(a) for a in day_activities],
+            activities=[_activity_summary(a) for a in day_activities],
             status=status,
             notes=[CalendarNoteResponse.model_validate(n) for n in day_notes],
             insights=[InsightResponse.model_validate(i) for i in day_insights],
@@ -911,7 +922,7 @@ def get_calendar_day(
         day_of_week=calendar_date.weekday(),
         day_name=get_day_name(calendar_date),
         planned_workout=PlannedWorkoutResponse.model_validate(planned) if planned else None,
-        activities=[ActivitySummary.model_validate(a) for a in activities],
+        activities=[_activity_summary(a) for a in activities],
         status=status,
         notes=[CalendarNoteResponse.model_validate(n) for n in notes],
         insights=[InsightResponse.model_validate(i) for i in insights],
@@ -1314,7 +1325,7 @@ def get_calendar_week(
             day_of_week=planned.scheduled_date.weekday(),
             day_name=get_day_name(planned.scheduled_date),
             planned_workout=PlannedWorkoutResponse.model_validate(planned),
-            activities=[ActivitySummary.model_validate(a) for a in day_activities],
+            activities=[_activity_summary(a) for a in day_activities],
             status=status,
             notes=[],
             insights=[],

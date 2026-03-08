@@ -202,8 +202,13 @@ def _format_activity_context(activity, training_context: Optional[dict] = None) 
     if activity.workout_type:
         lines.append(f"Workout type: {activity.workout_type}")
 
-    if getattr(activity, 'name', None):
-        lines.append(f"Activity name: {activity.name}")
+    resolved = (
+        getattr(activity, 'athlete_title', None)
+        or getattr(activity, 'shape_sentence', None)
+        or getattr(activity, 'name', None)
+    )
+    if resolved:
+        lines.append(f"Activity name: {resolved}")
 
     is_race = getattr(activity, 'is_race_candidate', False)
     if is_race:

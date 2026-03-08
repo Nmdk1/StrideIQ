@@ -93,6 +93,8 @@ class ActivityResponse(BaseModel):
     is_race_candidate: Optional[bool] = None
     race_confidence: Optional[float] = None
     shape_sentence: Optional[str] = None
+    athlete_title: Optional[str] = None
+    resolved_title: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

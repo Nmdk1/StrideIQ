@@ -348,6 +348,8 @@ def _run_generation(
         "start_time": activity.start_time,
         "workout_type": activity.workout_type,
         "name": getattr(activity, 'name', None),
+        "shape_sentence": getattr(activity, 'shape_sentence', None),
+        "athlete_title": getattr(activity, 'athlete_title', None),
         "is_race_candidate": getattr(activity, 'is_race_candidate', False),
     }
 
