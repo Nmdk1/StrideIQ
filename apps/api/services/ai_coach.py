@@ -1,7 +1,7 @@
 """
 AI Coach Service
 
-Gemini 2.5 Flash handles bulk coaching queries.
+Gemini 3 Flash handles bulk coaching queries.
 High-stakes queries route to Claude Opus for maximum reasoning quality.
 
 Features:
@@ -111,7 +111,7 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     logger.info("Anthropic not installed - high-stakes queries will use GPT-4o fallback")
 
-# Check if Google GenAI is available (for Gemini 2.5 Flash bulk queries)
+# Check if Google GenAI is available (for Gemini 3 Flash coaching queries)
 try:
     from google import genai
     from google.genai import types as genai_types
@@ -151,7 +151,7 @@ from services.coach_modules import (
 
 class AICoach:
     """
-    AI Coach powered by Gemini 2.5 Flash (bulk) and Claude Opus (high-stakes).
+    AI Coach powered by Gemini 3 Flash (standard) and Claude Opus (high-stakes).
     
     Provides:
     - Persistent conversation sessions (PostgreSQL-backed)
@@ -265,7 +265,7 @@ Policy:
     # Model tiers (ADR-061: Hybrid architecture with cost caps)
     # 95% of queries use Gemini 3.1 Flash Lite (cost-efficient, 1M context)
     # 5% high-stakes queries use Claude Opus 4.6 (maximum reasoning quality)
-    MODEL_DEFAULT = "gemini-2.5-flash"      # Standard coaching (95%)
+    MODEL_DEFAULT = "gemini-3-flash-preview"  # Standard coaching (95%) — March 2026 upgrade
     MODEL_HIGH_STAKES = "claude-opus-4-6"  # Injury/recovery/load decisions (5%)
     
     # Legacy aliases for backward compatibility
@@ -303,7 +303,7 @@ Policy:
             google_key = os.getenv("GOOGLE_AI_API_KEY")
             if google_key:
                 self.gemini_client = genai.Client(api_key=google_key)
-                logger.info("Gemini 2.5 Flash initialized for bulk coaching queries")
+                logger.info("Gemini 3 Flash initialized for coaching queries")
             else:
                 self.gemini_client = None
         else:
@@ -521,8 +521,8 @@ Policy:
                 # Opus: $5/1M input, $25/1M output
                 cost_cents = int((input_tokens * 0.5 + output_tokens * 2.5) / 100)
             elif "gemini" in model.lower():
-                # Gemini 2.5 Flash: $0.30/1M input, $2.50/1M output (Feb 2026)
-                cost_cents = int((input_tokens * 0.03 + output_tokens * 0.25) / 100)
+                # Gemini 3 Flash: $0.50/1M input, $3.00/1M output (Mar 2026)
+                cost_cents = int((input_tokens * 0.05 + output_tokens * 0.30) / 100)
             elif "gpt-4o-mini" in model:
                 # GPT-4o-mini: $0.15/1M input, $0.60/1M output
                 cost_cents = int((input_tokens * 0.015 + output_tokens * 0.06) / 100)
@@ -1141,7 +1141,7 @@ If you need more data to answer well, call the tools. That's why they're there."
         conversation_context: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         """
-        Query Gemini 2.5 Flash for bulk coaching queries (Feb 2026 migration).
+        Query Gemini 3 Flash for coaching queries (Mar 2026 upgrade).
         
         Replaces GPT-4o-mini for 95% of queries. Benefits:
         - 1M context window (no more aggressive pruning)
@@ -1529,7 +1529,7 @@ ATHLETE BRIEF:
             
             # Send message with tools
             response = self.gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=self.MODEL_DEFAULT,
                 contents=contents,
                 config=config,
             )
@@ -1580,7 +1580,7 @@ ATHLETE BRIEF:
                 
                 # Send function results back
                 response = self.gemini_client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model=self.MODEL_DEFAULT,
                     contents=contents,
                     config=config,
                 )
@@ -2278,12 +2278,29 @@ ATHLETE BRIEF:
         if not self.high_stakes_routing_enabled:
             return self.MODEL_DEFAULT, False
         
-        # Free users always get GPT-4o-mini (no Opus for unpaid)
+        # Free users always get Gemini (no Opus for unpaid)
         if athlete_id:
             athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
             if athlete and not getattr(athlete, "has_active_subscription", False):
                 return self.MODEL_DEFAULT, False
-        
+
+        # Founder always gets Opus — no keyword gating
+        if athlete_id and self._is_founder(athlete_id):
+            if self.anthropic_client:
+                logger.info(f"Routing to Opus: founder_bypass")
+                return self.MODEL_HIGH_STAKES, True
+            return self.MODEL_DEFAULT, False
+
+        # VIP athletes always get Opus (budget checked but not keyword-gated)
+        if athlete_id and self.is_athlete_vip(athlete_id):
+            allowed, reason = self.check_budget(athlete_id, is_opus=True, is_vip=True)
+            if allowed and self.anthropic_client:
+                logger.info(f"Routing to Opus: vip_always, athlete={athlete_id}")
+                return self.MODEL_HIGH_STAKES, True
+            else:
+                logger.info(f"VIP Opus fallback: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
+                return self.MODEL_DEFAULT, False
+
         # Determine if query needs Opus (high-stakes OR high-complexity)
         is_high_stakes = is_high_stakes_query(message)
         complexity = self.classify_query_complexity(message)
@@ -2308,7 +2325,7 @@ ATHLETE BRIEF:
                 logger.info(f"Opus fallback to Gemini: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
                 return self.MODEL_DEFAULT, False
         
-        # Default: Gemini 2.5 Flash
+        # Default: Gemini 3 Flash
         return self.MODEL_DEFAULT, False
     
     def get_model_for_query_legacy(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> str:
@@ -2719,7 +2736,7 @@ ATHLETE BRIEF:
                 opus_result["thread_id"] = thread_id
                 return opus_result
 
-            # Route default queries to Gemini 2.5 Flash (Feb 2026 migration)
+            # Route default queries to Gemini 3 Flash (Mar 2026 upgrade)
             if model == self.MODEL_DEFAULT and self.gemini_client:
                 # ADR-16: Brief is now built inside query_gemini() — no separate athlete_state needed
                 athlete_state = ""  # Legacy param, brief is injected in query_gemini
