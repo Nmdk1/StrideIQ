@@ -55,7 +55,7 @@ RUNTOON_TEMPERATURE = 0.9          # Higher temp = more creative/varied output
 RUNTOON_TIMEOUT_SECONDS = 55       # Hard timeout before task soft_time_limit (60s)
 RUNTOON_COST_USD_PER_IMAGE = 0.067  # 1K resolution estimate
 
-CAPTION_MODEL = "gemini-2.5-flash"  # Text-only for caption generation
+CAPTION_MODEL = "gemini-3.1-flash-lite"  # Text-only for caption generation
 CAPTION_TEMPERATURE = 0.8
 CAPTION_MAX_TOKENS = 80
 

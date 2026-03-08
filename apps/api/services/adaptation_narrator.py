@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-NARRATOR_MODEL = "gemini-2.5-flash"
+NARRATOR_MODEL = "gemini-3.1-flash-lite"
 NARRATOR_TEMPERATURE = 0.3          # Low temp for factual accuracy
 NARRATOR_MAX_TOKENS = 200           # 2-3 sentences max
 NARRATION_MIN_SCORE = 0.67          # Below this → suppress (at least 2/3 criteria pass)

@@ -856,7 +856,7 @@ class TestCeleryTask:
                 from tasks.home_briefing_tasks import generate_home_briefing_task
                 result = generate_home_briefing_task(athlete_id=str(uuid4()))
             mock_gemini.assert_called_once()
-            assert result["model"] == "gemini-2.5-flash"
+            assert result["model"] == "gemini-3.1-flash-lite"
 
     def test_celery_task_uses_opus_when_key_present(self, fake_redis):
         """Test 31: with ANTHROPIC_API_KEY set, task tries Opus first and uses it on success."""

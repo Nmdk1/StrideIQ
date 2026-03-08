@@ -1033,7 +1033,7 @@ def _call_gemini_briefing_sync(
     for attempt in (1, 2):
         try:
             resp = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.1-flash-lite",
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     max_output_tokens=4000,
