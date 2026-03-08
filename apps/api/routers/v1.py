@@ -163,9 +163,6 @@ def update_current_athlete(
     
     Athletes can update their own profile information.
     """
-    # Track onboarding completion transition for auto-provisioning.
-    was_completed = bool(getattr(current_user, "onboarding_completed", False))
-
     # Update fields if provided
     if athlete_update.display_name is not None:
         current_user.display_name = athlete_update.display_name
@@ -215,30 +212,6 @@ def update_current_athlete(
     
     db.commit()
     db.refresh(current_user)
-
-    # Trust fix: once onboarding is marked complete, ensure the athlete immediately has
-    # a starter plan (so the calendar isn't empty even before visiting /calendar).
-    try:
-        now_completed = bool(getattr(current_user, "onboarding_completed", False))
-        if (not was_completed) and now_completed:
-            enabled = True
-            try:
-                from services.plan_framework.feature_flags import FeatureFlagService
-
-                svc = FeatureFlagService(db)
-                flag = svc.get_flag("onboarding.auto_starter_plan_v1")
-                enabled = True if not flag else svc.is_enabled("onboarding.auto_starter_plan_v1", current_user.id)
-            except Exception:
-                enabled = True
-
-            if enabled:
-                from services.starter_plan import ensure_starter_plan
-
-                ensure_starter_plan(db, athlete=current_user)
-                # If plan creation succeeded, it will have committed. If not, it's best-effort.
-    except Exception:
-        # Do not block profile updates; calendar still has lazy provisioning as fallback.
-        pass
     
     # Calculate age category if birthdate updated
     from services.performance_engine import calculate_age_at_date, get_age_category

@@ -12,10 +12,9 @@ from models import Athlete, IntakeQuestionnaire, TrainingPlan
 client = TestClient(app)
 
 
-def test_marking_onboarding_complete_auto_creates_starter_plan():
+def test_marking_onboarding_complete_does_not_create_starter_plan():
     """
-    Regression guard: a brand-new athlete who completes onboarding should not end up
-    with an empty calendar (no plan/workouts).
+    Regression guard: onboarding completion alone must never create a plan.
     """
     email = f"auto_plan_{uuid4()}@example.com"
     password = "SecureP@ss123"
@@ -47,13 +46,13 @@ def test_marking_onboarding_complete_auto_creates_starter_plan():
         )
         db.commit()
 
-        # Mark onboarding complete via API (this should auto-provision starter plan).
+        # Mark onboarding complete via API. This must not create a plan.
         r = client.put("/v1/athletes/me", json={"onboarding_stage": "complete", "onboarding_completed": True}, headers=headers)
         assert r.status_code == 200, r.text
 
-        # DB: plan exists
-        plan = db.query(TrainingPlan).filter(TrainingPlan.athlete_id == athlete.id, TrainingPlan.status == "active").first()
-        assert plan is not None
+        # DB: no plan should be created by side effect.
+        plan = db.query(TrainingPlan).filter(TrainingPlan.athlete_id == athlete.id).first()
+        assert plan is None
     finally:
         try:
             # Cleanup best-effort
