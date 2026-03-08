@@ -311,7 +311,7 @@ export function useAdminInvites(params?: { active_only?: boolean; limit?: number
 export function useCreateInvite() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (params: { email: string; note?: string | null; grant_tier?: 'free' | 'pro' | null }) =>
+    mutationFn: (params: { email: string; note?: string | null; grant_tier?: string | null }) =>
       adminService.createInvite(params),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: adminKeys.invites() });

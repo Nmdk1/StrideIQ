@@ -109,7 +109,7 @@ class InviteRevokeRequest(BaseModel):
 
 
 class CompAccessRequest(BaseModel):
-    tier: Literal["free", "pro"] = Field(..., description="Subscription tier to set (free|pro)")
+    tier: Literal["free", "pro", "guided", "premium", "elite"] = Field(..., description="Subscription tier to set")
     reason: Optional[str] = Field(default=None, description="Why this comp was granted (audited)")
 
 

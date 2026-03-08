@@ -138,8 +138,15 @@ class ApiClient {
             // Response is not JSON
           }
 
+          const detail = errorData?.detail;
+          const message = typeof detail === 'string'
+            ? detail
+            : detail
+              ? JSON.stringify(detail)
+              : `HTTP ${response.status}: ${response.statusText}`;
+
           throw new ApiClientError(
-            errorData?.detail || `HTTP ${response.status}: ${response.statusText}`,
+            message,
             response.status,
             errorData
           );
