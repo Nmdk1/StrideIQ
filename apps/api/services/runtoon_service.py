@@ -202,11 +202,8 @@ def _format_activity_context(activity, training_context: Optional[dict] = None) 
     if activity.workout_type:
         lines.append(f"Workout type: {activity.workout_type}")
 
-    resolved = (
-        getattr(activity, 'athlete_title', None)
-        or getattr(activity, 'shape_sentence', None)
-        or getattr(activity, 'name', None)
-    )
+    from routers.activities import resolve_activity_title
+    resolved = resolve_activity_title(activity)
     if resolved:
         lines.append(f"Activity name: {resolved}")
 

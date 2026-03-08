@@ -19,17 +19,59 @@ from schemas import ActivityResponse
 router = APIRouter(prefix="/v1/activities", tags=["activities"])
 
 
+_STRAVA_AUTO_NAMES = frozenset({
+    "morning run", "afternoon run", "evening run", "night run", "lunch run",
+    "morning walk", "afternoon walk", "evening walk", "lunch walk",
+    "morning ride", "afternoon ride", "evening ride", "lunch ride",
+    "long run", "race",
+})
+
+_GARMIN_AUTO_SUFFIXES = (" Running", " Walking", " Cycling", " Hiking")
+
+
+def _is_auto_generated_name(name: Optional[str], provider: Optional[str]) -> bool:
+    """Return True if the activity name is platform-generated, not athlete-authored."""
+    if not name or not name.strip():
+        return True
+    if provider == "demo":
+        return True
+    if name.strip().lower() in _STRAVA_AUTO_NAMES:
+        return True
+    if provider == "garmin":
+        for suffix in _GARMIN_AUTO_SUFFIXES:
+            if name.endswith(suffix):
+                return True
+    return False
+
+
 def resolve_activity_title(activity) -> Optional[str]:
     """Single source of truth for activity display title.
 
-    Priority: athlete_title > shape_sentence > name.
-    Used by activity list, detail, home, calendar, Runtoon, and compare.
+    Priority:
+      1. athlete_title  — edited in StrideIQ, always wins
+      2. race name      — athlete's title for a race is sacred
+      3. authored name  — non-auto Strava/Garmin title beats shape_sentence
+      4. shape_sentence — system's structural understanding
+      5. name           — fallback (auto-generated platform title)
     """
-    return (
-        getattr(activity, 'athlete_title', None)
-        or getattr(activity, 'shape_sentence', None)
-        or getattr(activity, 'name', None)
+    if getattr(activity, 'athlete_title', None):
+        return activity.athlete_title
+
+    name = getattr(activity, 'name', None)
+    sentence = getattr(activity, 'shape_sentence', None)
+    provider = getattr(activity, 'provider', None) or ''
+    is_race = (
+        getattr(activity, 'user_verified_race', False)
+        or getattr(activity, 'is_race_candidate', False)
     )
+
+    if is_race and name:
+        return name
+
+    if name and not _is_auto_generated_name(name, provider):
+        return name
+
+    return sentence or name
 
 
 class ActivityTitleUpdate(BaseModel):
