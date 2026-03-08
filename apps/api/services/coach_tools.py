@@ -190,17 +190,18 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
                 "distance_km": round(distance_km, 2) if distance_km is not None else None,
                 "duration_s": int(a.duration_s) if a.duration_s is not None else None,
                 "avg_hr": int(a.avg_hr) if a.avg_hr is not None else None,
-                "max_hr": int(a.max_hr) if a.max_hr is not None else None,  # Phase 3
+                "max_hr": int(a.max_hr) if a.max_hr is not None else None,
                 "pace_per_km": _pace_str(a.duration_s, a.distance_m),
                 "pace_per_mile": pace_mi,
                 "workout_type": a.workout_type,
                 "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
-                # Phase 3: Environmental context
                 "elevation_gain_m": round(elevation_gain_m, 1) if elevation_gain_m is not None else None,
                 "elevation_gain_ft": int(elevation_gain_ft) if elevation_gain_ft is not None else None,
                 "temperature_f": round(float(a.temperature_f), 1) if a.temperature_f is not None else None,
                 "humidity_pct": round(float(a.humidity_pct), 0) if a.humidity_pct is not None else None,
                 "weather_condition": a.weather_condition,
+                "shape_sentence": a.shape_sentence,
+                "is_race": bool(getattr(a, "user_verified_race", False) or getattr(a, "is_race_candidate", False)),
             }
         )
 
@@ -3634,25 +3635,47 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
     except Exception as e:
         logger.debug(f"Brief: volume trajectory failed: {e}")
 
-    # ── 6. RECENT RUNS ───────────────────────────────────────────────
+    # ── 6. RECENT RUNS (grouped by date for multi-activity days) ────
     try:
         recent = get_recent_runs(db, athlete_id, days=14)
         if recent.get("ok"):
             runs = recent.get("data", {}).get("runs", [])
             if runs:
-                lines = [f"Last {len(runs)} runs (14 days):"]
-                for run in runs[:10]:  # cap at 10
+                from collections import OrderedDict
+                by_date: OrderedDict[str, list] = OrderedDict()
+                for run in runs[:10]:
                     run_date = (run.get("start_time") or "")[:10]
-                    name = run.get("name", "Run")
-                    dist = run.get("distance_mi", 0)
-                    pace = run.get("pace_per_mile", "N/A")
-                    hr = run.get("avg_hr", "")
-                    hr_str = f" | HR {hr}" if hr else ""
+                    by_date.setdefault(run_date, []).append(run)
+
+                lines = [f"Last {len(runs)} runs (14 days):"]
+                for run_date, day_runs in by_date.items():
                     try:
-                        _run_rel = " " + _relative_date(date.fromisoformat(run_date), today)
+                        _day_rel = " " + _relative_date(date.fromisoformat(run_date), today)
                     except (ValueError, TypeError):
-                        _run_rel = ""
-                    lines.append(f"  {run_date}{_run_rel}: {name} — {dist:.1f}mi @ {pace}{hr_str}")
+                        _day_rel = ""
+
+                    if len(day_runs) > 1:
+                        day_dist = sum(r.get("distance_mi", 0) for r in day_runs)
+                        has_race = any(r.get("is_race") for r in day_runs)
+                        label = "Race day" if has_race else f"{len(day_runs)} activities"
+                        lines.append(f"  {run_date}{_day_rel} — {label} ({day_dist:.1f}mi total):")
+                        for run in day_runs:
+                            name = run.get("shape_sentence") or run.get("name", "Run")
+                            dist = run.get("distance_mi", 0)
+                            pace = run.get("pace_per_mile", "N/A")
+                            hr = run.get("avg_hr", "")
+                            hr_str = f" | HR {hr}" if hr else ""
+                            tag = " [race]" if run.get("is_race") else ""
+                            lines.append(f"    • {name} — {dist:.1f}mi @ {pace}{hr_str}{tag}")
+                    else:
+                        run = day_runs[0]
+                        name = run.get("name", "Run")
+                        dist = run.get("distance_mi", 0)
+                        pace = run.get("pace_per_mile", "N/A")
+                        hr = run.get("avg_hr", "")
+                        hr_str = f" | HR {hr}" if hr else ""
+                        lines.append(f"  {run_date}{_day_rel}: {name} — {dist:.1f}mi @ {pace}{hr_str}")
+
                 sections.append("## Recent Runs\n" + "\n".join(lines))
     except Exception as e:
         logger.debug(f"Brief: recent runs failed: {e}")
