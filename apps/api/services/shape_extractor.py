@@ -147,6 +147,8 @@ class Acceleration:
     position_in_run: float
     recovery_after_s: Optional[int]
     hr_recovery_rate: Optional[float] = None
+    avg_grade: Optional[float] = None
+    elevation_gain_m: Optional[float] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -329,6 +331,12 @@ def extract_shape(
     # Step 3d: Final same-zone consolidation after pace merge
     merged_blocks = _consolidate_same_zone(merged_blocks)
 
+    # Step 3e: Anti-oscillation merge — collapse easy↔gray GPS boundary noise
+    merged_blocks = _merge_easy_gray_oscillation(
+        merged_blocks, phase_pace, cadence, time, pace_profile,
+    )
+    merged_blocks = _consolidate_same_zone(merged_blocks)
+
     # If unzoned (no pace profile), collapse to single phase
     if unzoned and len(merged_blocks) > 1:
         merged_blocks = [(merged_blocks[0][0], merged_blocks[-1][1], 'easy')]
@@ -346,7 +354,8 @@ def extract_shape(
     # Step 5: Detect accelerations (uses light smoothing to catch short bursts)
     accelerations = _detect_accelerations(
         time, accel_v, accel_pace, zone_per_point,
-        heartrate, cadence, phases, pace_profile,
+        heartrate, cadence, grade, altitude,
+        phases, pace_profile,
         total_time, total_distance, heat_adjustment_pct,
     )
 
@@ -580,6 +589,95 @@ def _merge_similar_pace_blocks(
     return result
 
 
+def _merge_easy_gray_oscillation(
+    blocks: List[Tuple[int, int, str]],
+    pace_per_point: List[float],
+    cadence: List,
+    time: List,
+    pace_profile: PaceProfile,
+) -> List[Tuple[int, int, str]]:
+    """Absorb short gray blocks between easy blocks when they're GPS boundary noise.
+
+    Targets the specific easy→gray→easy oscillation pattern caused by GPS
+    pace noise near the easy zone ceiling. All six conditions must be true
+    for absorption — genuine gray effort is preserved.
+    """
+    if len(blocks) < 3:
+        return blocks
+
+    easy_ceiling = pace_profile._easy_ceiling()
+    # Proportional thresholds: at slow paces, same GPS noise in m/s produces
+    # larger sec/mi deltas due to the non-linear velocity→pace conversion.
+    proximity_threshold = max(25, int(pace_profile.easy_sec * 0.06))
+    near_ceiling_margin = max(30, int(pace_profile.easy_sec * 0.06))
+
+    def _avg_pace_for_block(start: int, end: int) -> float:
+        paces = [p for p in pace_per_point[start:end + 1] if p > 0]
+        return sum(paces) / len(paces) if paces else 0
+
+    def _block_duration(start: int, end: int) -> float:
+        if start < len(time) and end < len(time):
+            return time[end] - time[start]
+        return end - start
+
+    result = list(blocks)
+    changed = True
+    while changed:
+        changed = False
+        new_result = []
+        i = 0
+        while i < len(result):
+            if i + 2 < len(result):
+                prev_s, prev_e, prev_z = result[i]
+                gray_s, gray_e, gray_z = result[i + 1]
+                next_s, next_e, next_z = result[i + 2]
+
+                if prev_z == 'easy' and gray_z == 'gray' and next_z == 'easy':
+                    gray_dur = _block_duration(gray_s, gray_e)
+                    gray_pace = _avg_pace_for_block(gray_s, gray_e)
+                    prev_pace = _avg_pace_for_block(prev_s, prev_e)
+                    next_pace = _avg_pace_for_block(next_s, next_e)
+
+                    if gray_dur < 90 and gray_pace > 0 and prev_pace > 0 and next_pace > 0:
+                        close_to_prev = abs(gray_pace - prev_pace) < proximity_threshold
+                        close_to_next = abs(gray_pace - next_pace) < proximity_threshold
+                        near_ceiling = gray_pace >= (easy_ceiling - near_ceiling_margin)
+
+                        has_speed_work = pace_profile.is_significant_acceleration(
+                            min(p for p in pace_per_point[gray_s:gray_e + 1] if p > 0)
+                        ) if any(p > 0 for p in pace_per_point[gray_s:gray_e + 1]) else False
+
+                        cad_stable = True
+                        cad_no_spike = True
+                        boundary_start = max(0, gray_s - 15)
+                        boundary_end = min(len(cadence) - 1, gray_e + 15)
+                        boundary_cads = [c for c in cadence[boundary_start:boundary_end + 1]
+                                         if c is not None and c > 0]
+                        if len(boundary_cads) >= 5:
+                            cad_mean = sum(boundary_cads) / len(boundary_cads)
+                            if cad_mean > 0:
+                                cad_std = (sum((c - cad_mean) ** 2 for c in boundary_cads) / len(boundary_cads)) ** 0.5
+                                cad_stable = (cad_std / cad_mean) < 0.15
+                            gray_cads = [c for c in cadence[gray_s:gray_e + 1]
+                                         if c is not None and c > 0]
+                            if gray_cads and boundary_cads:
+                                cad_no_spike = max(gray_cads) - cad_mean < MIN_CADENCE_SPIKE_SPM
+
+                        if (close_to_prev and close_to_next and near_ceiling
+                                and cad_stable and cad_no_spike and not has_speed_work):
+                            new_result.append((prev_s, gray_e, 'easy'))
+                            i += 2
+                            changed = True
+                            continue
+
+            new_result.append(result[i])
+            i += 1
+
+        result = new_result
+
+    return result
+
+
 # ═══════════════════════════════════════════════════════
 #  Step 4: Build phases with metrics
 # ═══════════════════════════════════════════════════════
@@ -733,6 +831,7 @@ def _last_valid(lst: List, start: int, end: int):
 def _detect_accelerations(
     time: List, velocity: List[float], pace: List[float],
     zones: List[str], heartrate: List, cadence: List,
+    grade: List, altitude: List,
     phases: List[Phase],
     pace_profile: PaceProfile,
     total_time: int, total_distance: float,
@@ -774,13 +873,13 @@ def _detect_accelerations(
     baseline_v = statistics.median(easy_vels)
 
     vel_accels = _detect_velocity_accelerations(
-        time, velocity, pace, heartrate, cadence,
+        time, velocity, pace, heartrate, cadence, grade, altitude,
         baseline_v, excluded_ranges, pace_profile,
         total_time, heat_adj_pct, n,
     )
 
     cad_accels = _detect_cadence_accelerations(
-        time, velocity, pace, heartrate, cadence,
+        time, velocity, pace, heartrate, cadence, grade, altitude,
         baseline_v, excluded_ranges, pace_profile,
         total_time, heat_adj_pct, n,
     )
@@ -798,6 +897,7 @@ def _detect_accelerations(
 def _detect_velocity_accelerations(
     time: List, velocity: List[float], pace: List[float],
     heartrate: List, cadence: List,
+    grade: List, altitude: List,
     baseline_v: float, excluded_ranges: set,
     pace_profile: PaceProfile,
     total_time: int, heat_adj_pct: Optional[float],
@@ -843,6 +943,7 @@ def _detect_velocity_accelerations(
 
             accel = _build_acceleration(
                 time, velocity, pace, heartrate, cadence,
+                grade, altitude,
                 accel_start, accel_end, baseline_v, pace_profile,
                 total_time, heat_adj_pct, n,
             )
@@ -861,6 +962,7 @@ MIN_CADENCE_SPIKE_SPM = 15
 def _detect_cadence_accelerations(
     time: List, velocity: List[float], pace: List[float],
     heartrate: List, cadence: List,
+    grade: List, altitude: List,
     baseline_v: float, excluded_ranges: set,
     pace_profile: PaceProfile,
     total_time: int, heat_adj_pct: Optional[float],
@@ -914,6 +1016,7 @@ def _detect_cadence_accelerations(
 
             accel = _build_acceleration(
                 time, velocity, pace, heartrate, cadence,
+                grade, altitude,
                 accel_start, accel_end, baseline_v, pace_profile,
                 total_time, heat_adj_pct, n,
             )
@@ -930,6 +1033,7 @@ def _detect_cadence_accelerations(
 def _build_acceleration(
     time: List, velocity: List[float], pace: List[float],
     heartrate: List, cadence: List,
+    grade: List, altitude: List,
     start_idx: int, end_idx: int,
     baseline_v: float, pace_profile: PaceProfile,
     total_time: int, heat_adj_pct: Optional[float],
@@ -981,6 +1085,21 @@ def _build_acceleration(
     if heat_adj_pct and heat_adj_pct > 0 and avg_pace_val > 0:
         heat_adj_pace_val = round(avg_pace_val / (1 + heat_adj_pct), 1)
 
+    accel_grades = [g for g in grade[start_idx:end_idx + 1]
+                    if g is not None]
+    accel_avg_grade = sum(accel_grades) / len(accel_grades) if accel_grades else None
+
+    accel_elev_gain = None
+    alts = altitude[start_idx:end_idx + 1]
+    valid_alts = [(i, a) for i, a in enumerate(alts) if a is not None]
+    if len(valid_alts) >= 2:
+        gain = 0.0
+        for j in range(1, len(valid_alts)):
+            diff = valid_alts[j][1] - valid_alts[j - 1][1]
+            if diff > 0:
+                gain += diff
+        accel_elev_gain = round(gain, 1)
+
     return Acceleration(
         start_time_s=time[start_idx],
         end_time_s=time[end_idx],
@@ -995,6 +1114,8 @@ def _build_acceleration(
         cadence_delta=cad_delta,
         position_in_run=round(position, 3),
         recovery_after_s=recovery_s,
+        avg_grade=round(accel_avg_grade, 2) if accel_avg_grade is not None else None,
+        elevation_gain_m=accel_elev_gain,
     )
 
 
@@ -1270,11 +1391,18 @@ def _derive_classification(
 
     all_easy_or_gray = all(p.pace_zone in ('easy', 'gray', 'walking') for p in effort_phases) if effort_phases else True
 
-    # Hill repeats: 3+ accels with significant grade
+    # Hill repeats: 3+ hill efforts from phases OR 3+ graded accelerations
     if n_accels >= 3:
         hill_efforts_from_phases = [p for p in effort_phases if p.phase_type == 'hill_effort']
         if len(hill_efforts_from_phases) >= 3:
             return 'hill_repeats'
+
+        if summary.elevation_profile not in ('flat',):
+            hill_accels = [a for a in accelerations
+                           if a.avg_grade is not None and a.avg_grade > 4.0
+                           and a.elevation_gain_m is not None and a.elevation_gain_m > 0]
+            if len(hill_accels) >= 3:
+                return 'hill_repeats'
 
     # Progression (3+ phases, each ≥15 sec/mi faster — clear structural pattern)
     if len(effort_phases) >= 3:
@@ -1398,22 +1526,43 @@ def _derive_classification(
 def _check_anomaly(
     velocity: List[float], time: List, phases: List[Phase],
 ) -> bool:
-    """GPS gaps > 30s AND (unrealistic velocity > 25 mph OR 3+ separate gaps).
-    A single tunnel/pause is not an anomaly."""
-    gaps = 0
-    unrealistic_count = 0
+    """Hybrid anomaly detection: unrealistic velocity, single huge gap,
+    proportion-based corruption, and severity on short runs."""
     n = len(time)
+    total_duration = time[-1] - time[0] if n >= 2 else 0
+    if total_duration <= 0:
+        return True
+
+    total_gap_time = 0
+    gap_count = 0
+    max_single_gap = 0
+    unrealistic_count = 0
 
     for i in range(1, n):
         dt = time[i] - time[i - 1]
         if dt > 30:
-            gaps += 1
+            gap_count += 1
+            total_gap_time += dt
+            max_single_gap = max(max_single_gap, dt)
 
     for v in velocity:
         if v is not None and v > MAX_VELOCITY_MPS:
             unrealistic_count += 1
 
-    return gaps > 0 and (unrealistic_count > 0 or gaps >= 3)
+    if unrealistic_count > 0:
+        return True
+
+    if max_single_gap > 300:
+        return True
+
+    corruption_pct = total_gap_time / total_duration
+    if corruption_pct > 0.05:
+        return True
+
+    if gap_count >= 3 and total_duration < 1800:
+        return True
+
+    return False
 
 
 # ═══════════════════════════════════════════════════════
@@ -1495,9 +1644,12 @@ def generate_shape_sentence(
         return f"{dist_str} progression"
 
     if cls == 'hill_repeats':
-        hill_count = len([a for a in accels if a.avg_cadence is not None])
+        hill_accels = [a for a in accels
+                       if a.avg_grade is not None and a.avg_grade > 4.0]
+        hill_phases = [p for p in effort_phases if p.phase_type == 'hill_effort']
+        hill_count = max(len(hill_accels), len(hill_phases))
         if hill_count < 3:
-            hill_count = len([p for p in effort_phases if p.phase_type == 'hill_effort'])
+            hill_count = len(accels)
         return f"{dist_str} with {hill_count} hill repeats" if hill_count >= 3 else f"{dist_str} hills"
 
     if cls == 'fartlek':

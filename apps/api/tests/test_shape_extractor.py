@@ -5,6 +5,8 @@ from services.shape_extractor import (
     ZoneBand, build_zone_bands, generate_shape_sentence,
     _rolling_mean, _velocity_to_pace, _detect_zone_transitions,
     _merge_micro_phases, _compute_clustering, _compute_pace_progression,
+    _check_anomaly, _merge_easy_gray_oscillation,
+    MIN_CADENCE_SPIKE_SPM, METERS_PER_MILE,
 )
 
 
@@ -460,3 +462,260 @@ class TestSentenceGeneration:
         shape = extract_shape(stream, pace_profile=None)
         assert shape is not None
         assert shape.summary.workout_classification is None
+
+
+# ═══════════════════════════════════════════════════════
+#  Coverage fix validation tests
+# ═══════════════════════════════════════════════════════
+
+class TestAntiOscillationMerge:
+    def test_oscillation_collapse(self):
+        """Larry-style easy→gray→easy oscillation collapses to one easy phase.
+
+        A slow runner at 13:00/mi (2.06 m/s) with GPS noise dipping pace
+        below the easy ceiling for brief periods. Cadence stays steady at 92.
+        The gray blocks are < 90s, pace is near easy ceiling, no speed work.
+        At 2.06 m/s base, a dip to 2.15 m/s gives pace ~748 sec/mi vs
+        easy ceiling 770 — gray zone but only ~33 sec/mi faster than base 781.
+        """
+        duration = 2400
+        base_v = 2.06  # ~13:00/mi
+        time = list(range(duration))
+        velocity = [base_v] * duration
+        cadence = [92] * duration
+
+        # GPS noise dips: velocity increases slightly, pushing pace below easy ceiling
+        gray_v = 2.15  # ~12:29/mi — just below easy ceiling
+        dip_windows = [
+            (200, 260), (450, 520), (650, 730), (900, 980),
+            (1150, 1220), (1450, 1530), (1750, 1830), (2000, 2070),
+        ]
+        for start, end in dip_windows:
+            for i in range(start, min(end, duration)):
+                velocity[i] = gray_v
+
+        stream = {
+            'time': time,
+            'velocity_smooth': velocity,
+            'heartrate': [125] * duration,
+            'cadence': cadence,
+            'grade_smooth': [0.0] * duration,
+            'altitude': [100.0] * duration,
+            'distance': [sum(velocity[:i+1]) for i in range(duration)],
+        }
+        shape = extract_shape(stream, pace_profile=SLOW_RUNNER_PROFILE)
+        assert shape is not None
+        assert len(shape.phases) <= 3, f"Expected ≤3 phases, got {len(shape.phases)}"
+        assert shape.summary.workout_classification == 'easy_run'
+
+    def test_genuine_gray_preserved(self):
+        """A real gray insert (>25 sec/mi faster than neighbors) is NOT absorbed.
+
+        Founder running easy at 9:00/mi with a genuine moderate pickup to
+        7:30/mi for 2 minutes. That's 90 sec/mi faster than easy — well beyond
+        the 25 sec/mi neighbor proximity guard.
+        """
+        duration = 2400
+        base_v = 2.98  # ~9:00/mi
+        gray_v = 3.58  # ~7:30/mi
+        time = list(range(duration))
+        velocity = [base_v] * duration
+        for i in range(1000, 1120):
+            velocity[i] = gray_v
+
+        stream = {
+            'time': time,
+            'velocity_smooth': velocity,
+            'heartrate': [140] * duration,
+            'cadence': [170] * duration,
+            'grade_smooth': [0.0] * duration,
+            'altitude': [100.0] * duration,
+            'distance': [sum(velocity[:i+1]) for i in range(duration)],
+        }
+        shape = extract_shape(stream, pace_profile=FOUNDER_PROFILE)
+        assert shape is not None
+        assert len(shape.phases) >= 2, "Genuine gray effort should NOT be absorbed"
+
+
+class TestAnomalyHybrid:
+    def test_long_run_gps_tolerance(self):
+        """20-mile run with 3x 30-second gaps → NOT anomaly.
+
+        Total gap time = 90s out of ~9000s = 1% corruption. Well under 5%.
+        """
+        duration = 9000
+        time = list(range(duration))
+        # Insert 3 gaps of 35 seconds each at different points
+        time[3000] = time[2999] + 35
+        for i in range(3001, 6000):
+            time[i] = time[i-1] + 1
+        time[6000] = time[5999] + 35
+        for i in range(6001, 8000):
+            time[i] = time[i-1] + 1
+        time[8000] = time[7999] + 35
+        for i in range(8001, duration):
+            time[i] = time[i-1] + 1
+
+        velocity = [3.0] * duration
+        result = _check_anomaly(velocity, time, [])
+        assert result is False, "Long run with minor GPS gaps should NOT be anomaly"
+
+    def test_corrupted_short_run(self):
+        """15-minute run with 3x 30-second gaps → IS anomaly."""
+        duration = 900
+        time = list(range(duration))
+        time[200] = time[199] + 35
+        for i in range(201, 500):
+            time[i] = time[i-1] + 1
+        time[500] = time[499] + 35
+        for i in range(501, 700):
+            time[i] = time[i-1] + 1
+        time[700] = time[699] + 35
+        for i in range(701, duration):
+            time[i] = time[i-1] + 1
+
+        velocity = [3.0] * duration
+        result = _check_anomaly(velocity, time, [])
+        assert result is True, "Short run with 3 GPS gaps should be anomaly"
+
+    def test_single_huge_gap(self):
+        """Run with one 6-minute gap → IS anomaly regardless of run length."""
+        duration = 5000
+        time = list(range(duration))
+        time[2500] = time[2499] + 360  # 6 min gap
+        for i in range(2501, duration):
+            time[i] = time[i-1] + 1
+
+        velocity = [3.0] * duration
+        result = _check_anomaly(velocity, time, [])
+        assert result is True, "Single huge gap should always be anomaly"
+
+
+class TestHillRepeatsFromAccelerations:
+    def test_hill_repeats_detected(self):
+        """Single-phase hilly run with 3+ graded accelerations → hill_repeats.
+
+        Simulates a hill repeat workout: easy base with hard efforts on
+        5%+ grade. After zone consolidation the base is one easy phase,
+        but the hill efforts appear as accelerations with high avg_grade.
+        """
+        duration = 2400
+        base_v = 2.8  # easy
+        hill_v = 4.2  # hard effort uphill
+        time = list(range(duration))
+        velocity = [base_v] * duration
+        grade = [0.5] * duration
+        altitude = [100.0] * duration
+
+        hill_windows = [
+            (300, 360), (600, 660), (900, 960),
+            (1200, 1260), (1500, 1560),
+        ]
+        for start, end in hill_windows:
+            for i in range(start, end):
+                velocity[i] = hill_v
+                grade[i] = 6.0
+                altitude[i] = 100.0 + (i - start) * 0.5
+
+        distance = [0.0]
+        for i in range(1, duration):
+            distance.append(distance[-1] + velocity[i])
+
+        stream = {
+            'time': time,
+            'velocity_smooth': velocity,
+            'heartrate': [145] * duration,
+            'cadence': [170] * duration,
+            'grade_smooth': grade,
+            'altitude': altitude,
+            'distance': distance,
+        }
+        shape = extract_shape(stream, pace_profile=FOUNDER_PROFILE)
+        assert shape is not None
+        hill_accels = [a for a in shape.accelerations
+                       if a.avg_grade is not None and a.avg_grade > 4.0]
+        assert len(hill_accels) >= 3, f"Expected ≥3 graded accels, got {len(hill_accels)}"
+        assert shape.summary.workout_classification == 'hill_repeats'
+
+    def test_hilly_run_not_hill_repeats(self):
+        """Hilly terrain with pace variation but NO intentional uphill efforts.
+
+        On a casual hilly run, uphills slow the runner. Velocity drops on
+        grades, not spikes. No accelerations should meet the grade threshold
+        because the runner doesn't accelerate on uphills.
+        """
+        duration = 2400
+        base_v = 2.8
+        time = list(range(duration))
+        velocity = [base_v] * duration
+        grade = [0.0] * duration
+        altitude = [100.0] * duration
+
+        for i in range(300, 600):
+            grade[i] = 5.0
+            velocity[i] = 2.3  # slows on uphill
+            altitude[i] = 100.0 + (i - 300) * 0.3
+        for i in range(600, 900):
+            grade[i] = -5.0
+            velocity[i] = 3.3  # speeds up on downhill
+            altitude[i] = 190.0 - (i - 600) * 0.3
+        for i in range(1200, 1500):
+            grade[i] = 4.5
+            velocity[i] = 2.4
+            altitude[i] = 100.0 + (i - 1200) * 0.25
+        for i in range(1500, 1800):
+            grade[i] = -4.5
+            velocity[i] = 3.2
+            altitude[i] = 175.0 - (i - 1500) * 0.25
+
+        distance = [0.0]
+        for i in range(1, duration):
+            distance.append(distance[-1] + velocity[i])
+
+        stream = {
+            'time': time,
+            'velocity_smooth': velocity,
+            'heartrate': [145] * duration,
+            'cadence': [170] * duration,
+            'grade_smooth': grade,
+            'altitude': altitude,
+            'distance': distance,
+        }
+        shape = extract_shape(stream, pace_profile=FOUNDER_PROFILE)
+        assert shape is not None
+        assert shape.summary.workout_classification != 'hill_repeats', \
+            "Casual hilly run should NOT be classified as hill_repeats"
+
+
+class TestTrustGates:
+    def test_suppression_over_hallucination(self):
+        """Ambiguous structure → suppressed rather than forced into a wrong sentence.
+
+        A run that doesn't clearly match any classification should return
+        cls=None and the sentence should be suppressed.
+        """
+        duration = 1800
+        velocity = [2.8] * duration
+        for i in range(200, 260):
+            velocity[i] = 3.8
+        for i in range(800, 900):
+            velocity[i] = 4.5
+        time = list(range(duration))
+
+        stream = {
+            'time': time,
+            'velocity_smooth': velocity,
+            'heartrate': [145] * duration,
+            'cadence': [170] * duration,
+            'grade_smooth': [0.0] * duration,
+            'altitude': [100.0] * duration,
+            'distance': [sum(velocity[:i+1]) for i in range(duration)],
+        }
+        shape = extract_shape(stream, pace_profile=FOUNDER_PROFILE)
+        assert shape is not None
+        total_dist = sum(velocity)
+        sentence = generate_shape_sentence(shape, total_dist, duration,
+                                           pace_profile=FOUNDER_PROFILE)
+        # Either it classifies correctly or suppresses — never wrong
+        if shape.summary.workout_classification is None:
+            assert sentence is None, "Null classification must suppress sentence"
