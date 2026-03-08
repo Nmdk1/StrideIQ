@@ -3,6 +3,9 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Privacy Policy',
   description: 'Privacy policy for StrideIQ - compliant with GDPR, Strava API, and Garmin Connect requirements',
+  alternates: {
+    canonical: 'https://strideiq.run/privacy',
+  },
 }
 
 export default function PrivacyPolicyPage() {

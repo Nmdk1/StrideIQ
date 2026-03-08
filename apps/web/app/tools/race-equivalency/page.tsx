@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   },
 }
 
-const CONVERSIONS = [
+const FEATURED_CONVERSIONS = [
   {
     slug: '5k-to-marathon',
     title: '5K → Marathon Equivalency',
@@ -32,6 +32,24 @@ const CONVERSIONS = [
     inputLabel: '10K',
     outputLabel: 'Half Marathon',
   },
+]
+
+const ALL_CONVERSIONS = [
+  { slug: 'mile-to-5k', label: 'Mile → 5K' },
+  { slug: 'mile-to-10k', label: 'Mile → 10K' },
+  { slug: 'mile-to-half-marathon', label: 'Mile → Half Marathon' },
+  { slug: 'mile-to-marathon', label: 'Mile → Marathon' },
+  { slug: '5k-to-10k', label: '5K → 10K' },
+  { slug: '5k-to-half-marathon', label: '5K → Half Marathon' },
+  { slug: '5k-to-marathon', label: '5K → Marathon' },
+  { slug: '10k-to-half-marathon', label: '10K → Half Marathon' },
+  { slug: '10k-to-marathon', label: '10K → Marathon' },
+  { slug: 'half-marathon-to-marathon', label: 'Half → Marathon' },
+  { slug: 'marathon-to-5k', label: 'Marathon → 5K' },
+  { slug: 'marathon-to-10k', label: 'Marathon → 10K' },
+  { slug: 'marathon-to-half-marathon', label: 'Marathon → Half' },
+  { slug: '800m-to-mile', label: '800m → Mile' },
+  { slug: '800m-to-5k', label: '800m → 5K' },
 ]
 
 const faqItems = [
@@ -105,11 +123,11 @@ export default function RaceEquivalencyHubPage() {
           </p>
         </div>
 
-        {/* Conversion links */}
+        {/* Featured conversion links */}
         <section className="mb-12">
           <h2 className="text-2xl font-bold mb-6">Distance conversion tables</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {CONVERSIONS.map((c) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {FEATURED_CONVERSIONS.map((c) => (
               <Link
                 key={c.slug}
                 href={`/tools/race-equivalency/${c.slug}`}
@@ -127,6 +145,18 @@ export default function RaceEquivalencyHubPage() {
                 <div className="mt-4 text-orange-400 text-sm font-medium">
                   View table →
                 </div>
+              </Link>
+            ))}
+          </div>
+          <h3 className="text-lg font-semibold text-slate-200 mb-3">All distance conversions</h3>
+          <div className="flex flex-wrap gap-2">
+            {ALL_CONVERSIONS.map((c) => (
+              <Link
+                key={c.slug}
+                href={`/tools/race-equivalency/${c.slug}`}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-300 hover:text-orange-300 transition-colors"
+              >
+                {c.label}
               </Link>
             ))}
           </div>

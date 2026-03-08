@@ -4,6 +4,10 @@ import ageDemoData from '@/data/age-gender-tables.json'
 import equivalencyData from '@/data/equivalency-tables.json'
 import bqData from '@/data/bq-tables.json'
 
+const STORY_SLUGS = [
+  'father-son-state-age-group-records',
+]
+
 const BASE_URL = 'https://strideiq.run'
 const NOW = new Date()
 
@@ -64,11 +68,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
     .filter((k) => k !== '_meta')
     .map((slug) => entry(`/tools/boston-qualifying/${slug}`, 0.75))
 
+  // ---- Story pages ----
+  const storyPages = STORY_SLUGS
+    .map((slug) => entry(`/stories/${slug}`, 0.8, 'weekly'))
+
   return [
     ...staticPages,
     ...goalPages,
     ...demoPages,
     ...equivPages,
     ...bqPages,
+    ...storyPages,
   ]
 }

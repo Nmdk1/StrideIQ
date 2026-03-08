@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import WMACalculator from '@/app/components/tools/WMACalculator'
 import { JsonLd } from '@/components/seo/JsonLd'
+import ageDemoData from '@/data/age-gender-tables.json'
 
 export const metadata: Metadata = {
   title: 'Age-Grading Calculator - WMA Age Graded Running Performance',
@@ -123,6 +124,42 @@ export default function AgeGradingCalculatorPage() {
             <Link href="/tools/age-grading-calculator/good-half-marathon-times-by-age" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">Good Half Marathon Times by Age →</Link>
             <Link href="/tools/age-grading-calculator/good-marathon-times-by-age" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">Good Marathon Times by Age →</Link>
           </div>
+        </section>
+
+        {/* Demographic pages — internal links to pSEO pages */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-4">Running times by age group and gender</h2>
+          <p className="text-slate-400 mb-4">Detailed WMA-benchmarked performance tables by decade, gender, and distance.</p>
+          {(['5k', '10k', 'half-marathon', 'marathon'] as const).map((dist) => {
+            const prefix = dist === '5k' ? '5k-times' : dist === '10k' ? '10k-times' : dist === 'half-marathon' ? 'half-marathon-times' : 'marathon-times'
+            const demos = Object.keys(ageDemoData)
+              .filter((k) => k !== '_meta' && k.startsWith(prefix))
+              .sort()
+            if (!demos.length) return null
+            const heading = dist === '5k' ? '5K' : dist === '10k' ? '10K' : dist === 'half-marathon' ? 'Half Marathon' : 'Marathon'
+            return (
+              <div key={dist} className="mb-4">
+                <h3 className="text-lg font-semibold text-slate-200 mb-2">{heading}</h3>
+                <div className="flex flex-wrap gap-2">
+                  {demos.map((slug) => {
+                    const label = slug
+                      .replace(prefix + '-', '')
+                      .replace(/-/g, ' ')
+                      .replace(/\b\w/g, (c) => c.toUpperCase())
+                    return (
+                      <Link
+                        key={slug}
+                        href={`/tools/age-grading-calculator/demographics/${slug}`}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-300 hover:text-orange-300 transition-colors"
+                      >
+                        {label}
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
         </section>
 
         {/* Related FAQs */}

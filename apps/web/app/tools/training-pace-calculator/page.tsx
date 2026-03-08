@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import TrainingPaceCalculator from '@/app/components/tools/TrainingPaceCalculator'
 import { JsonLd } from '@/components/seo/JsonLd'
+import goalPaceData from '@/data/goal-pace-tables.json'
 
 export const metadata: Metadata = {
   title: 'Training Pace Calculator - Running Pace Zones from Race Time',
@@ -123,6 +124,35 @@ export default function TrainingPaceCalculatorPage() {
             <Link href="/tools/training-pace-calculator/half-marathon-training-paces" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">Half Marathon Training Paces →</Link>
             <Link href="/tools/training-pace-calculator/marathon-training-paces" className="px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">Marathon Training Paces →</Link>
           </div>
+        </section>
+
+        {/* Goal pace tables — internal links to pSEO pages */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-4">Training paces for specific goal times</h2>
+          <p className="text-slate-400 mb-4">See the exact easy, threshold, interval, and marathon training paces for your goal time — no calculator needed.</p>
+          {(['5k', '10k', 'half-marathon', 'marathon'] as const).map((dist) => {
+            const goals = Object.entries(goalPaceData)
+              .filter(([k, v]) => k !== '_meta' && (v as { slug: string }).slug.endsWith(dist))
+              .map(([k, v]) => ({ slug: k, label: (v as { label: string }).label }))
+            if (!goals.length) return null
+            const heading = dist === '5k' ? '5K' : dist === '10k' ? '10K' : dist === 'half-marathon' ? 'Half Marathon' : 'Marathon'
+            return (
+              <div key={dist} className="mb-4">
+                <h3 className="text-lg font-semibold text-slate-200 mb-2">{heading} Goals</h3>
+                <div className="flex flex-wrap gap-2">
+                  {goals.map((g) => (
+                    <Link
+                      key={g.slug}
+                      href={`/tools/training-pace-calculator/goals/${g.slug}`}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-300 hover:text-orange-300 transition-colors"
+                    >
+                      {g.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
         </section>
 
         {/* Related FAQs */}

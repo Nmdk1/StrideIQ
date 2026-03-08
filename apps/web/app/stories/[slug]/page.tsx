@@ -53,6 +53,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
+export function generateStaticParams() {
+  return Object.keys(STORIES).map((slug) => ({ slug }))
+}
+
 export default function StoryPage({ params }: Props) {
   const story = STORIES[params.slug]
   if (!story) notFound()

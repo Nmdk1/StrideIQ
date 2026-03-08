@@ -116,11 +116,61 @@ export default function ToolsPage() {
             </CardContent>
           </Card>
 
-          {/* Critical Speed Predictor - HIDDEN
-             Reason: Redundant with Training Pace Calculator, less accurate, confusing UX.
-             Backend service (critical_speed.py) retained for potential future pivot to insight-only.
-             See ADR-017 for details.
-          */}
+          {/* Race Equivalency */}
+          <Card className="bg-slate-800 border-slate-700 shadow-xl hover:border-slate-600 transition-colors">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-orange-500/20 rounded-xl ring-1 ring-orange-500/30">
+                    <BarChart3 className="w-6 h-6 text-orange-500" />
+                  </div>
+                  <CardTitle className="text-xl text-white">Race Equivalency</CardTitle>
+                </div>
+                <Link href="/tools/race-equivalency" className="text-xs text-orange-400 hover:text-orange-300 transition-colors shrink-0">
+                  View tables →
+                </Link>
+              </div>
+              <CardDescription className="text-slate-400">
+                Predict your race potential at any distance from an existing result.
+                Based on the Daniels/Gilbert oxygen cost equation.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                <Link href="/tools/race-equivalency/5k-to-marathon" className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-slate-300 transition-colors">5K → Marathon</Link>
+                <Link href="/tools/race-equivalency/10k-to-half-marathon" className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-slate-300 transition-colors">10K → Half</Link>
+                <Link href="/tools/race-equivalency/half-marathon-to-marathon" className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-slate-300 transition-colors">Half → Marathon</Link>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Boston Qualifying */}
+          <Card className="bg-slate-800 border-slate-700 shadow-xl hover:border-slate-600 transition-colors">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-orange-500/20 rounded-xl ring-1 ring-orange-500/30">
+                    <Zap className="w-6 h-6 text-orange-500" />
+                  </div>
+                  <CardTitle className="text-xl text-white">Boston Qualifying</CardTitle>
+                </div>
+                <Link href="/tools/boston-qualifying" className="text-xs text-orange-400 hover:text-orange-300 transition-colors shrink-0">
+                  All age groups →
+                </Link>
+              </div>
+              <CardDescription className="text-slate-400">
+                2026 BAA qualifying standards with training paces for every age group.
+                See what fitness level your BQ standard requires.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                <Link href="/tools/boston-qualifying/boston-qualifying-time-men-18-34" className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-slate-300 transition-colors">Men 18–34</Link>
+                <Link href="/tools/boston-qualifying/boston-qualifying-time-women-18-34" className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-slate-300 transition-colors">Women 18–34</Link>
+                <Link href="/tools/boston-qualifying/boston-qualifying-time-men-50-54" className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-slate-300 transition-colors">Men 50–54</Link>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Pro Tip for authenticated users */}
