@@ -716,15 +716,29 @@ class TestTriggers:
             assert result["athlete_id"] == str(athlete_id)
             mock_db.commit.assert_called_once()
 
-    def test_enqueue_calls_delay_on_celery_task(self, fake_redis):
-        """Test 25c: enqueue_briefing_refresh invokes .delay() on the Celery task (behavioral)."""
+    def test_enqueue_calls_apply_async_on_celery_task(self, fake_redis):
+        """Test 25c: enqueue_briefing_refresh invokes .apply_async() on the Celery task."""
         with patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
-            mock_task.delay = MagicMock()
+            mock_task.apply_async = MagicMock()
             from tasks.home_briefing_tasks import enqueue_briefing_refresh
             athlete_id = str(uuid4())
             result = enqueue_briefing_refresh(athlete_id)
             assert result is True
-            mock_task.delay.assert_called_once_with(athlete_id)
+            mock_task.apply_async.assert_called_once_with(
+                args=[athlete_id], queue="briefing"
+            )
+
+    def test_enqueue_high_priority_routes_to_high_queue(self, fake_redis):
+        """High priority routes to briefing_high queue for live page loads."""
+        with patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+            mock_task.apply_async = MagicMock()
+            from tasks.home_briefing_tasks import enqueue_briefing_refresh
+            athlete_id = str(uuid4())
+            result = enqueue_briefing_refresh(athlete_id, priority="high")
+            assert result is True
+            mock_task.apply_async.assert_called_once_with(
+                args=[athlete_id], queue="briefing_high"
+            )
 
 
 class TestAdminRefreshEndpoint:

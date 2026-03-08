@@ -793,9 +793,11 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
 
             # --- Cross-provider dedup: skip if Garmin already owns this run ---
             from datetime import timedelta as td
+            from services.activity_deduplication import match_activities
+
             window_start = start_time - td(seconds=3600)
             window_end = start_time + td(seconds=3600)
-            garmin_match = (
+            garmin_candidates = (
                 db.query(Activity)
                 .filter(
                     Activity.athlete_id == athlete.id,
@@ -803,19 +805,32 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                     Activity.start_time >= window_start,
                     Activity.start_time <= window_end,
                 )
-                .first()
+                .all()
             )
-            if garmin_match:
-                dist_strava = a.get("distance") or 0
-                dist_garmin = garmin_match.distance_m or 0
-                if dist_garmin > 0 and dist_strava > 0:
-                    diff_pct = abs(dist_strava - dist_garmin) / max(dist_strava, dist_garmin)
-                    if diff_pct <= 0.05:
-                        logger.info(
-                            "Strava dedup: skipping %s — Garmin activity %s already exists (dist diff %.1f%%)",
-                            external_activity_id, garmin_match.id, diff_pct * 100
-                        )
-                        continue
+
+            strava_dedup_dict = {
+                "start_time": start_time,
+                "distance_m": a.get("distance"),
+                "avg_hr": a.get("average_heartrate"),
+            }
+
+            skip_strava = False
+            for garmin_candidate in garmin_candidates:
+                candidate_dict = {
+                    "start_time": garmin_candidate.start_time,
+                    "distance_m": float(garmin_candidate.distance_m) if garmin_candidate.distance_m is not None else None,
+                    "avg_hr": garmin_candidate.avg_hr,
+                }
+                if match_activities(strava_dedup_dict, candidate_dict):
+                    logger.info(
+                        "Strava dedup: skipping %s — Garmin activity %s already exists",
+                        external_activity_id, garmin_candidate.id,
+                    )
+                    skip_strava = True
+                    break
+
+            if skip_strava:
+                continue
 
             # Create new activity
             print(f"DEBUG: Creating new activity {strava_activity_id} - {a.get('name')}")

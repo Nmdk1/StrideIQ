@@ -115,9 +115,29 @@ services:
     volumes:
       - ./.uploads:/uploads
       - ./books:/books
-    command: celery -A tasks worker --loglevel=info -B --pool=solo
+    command: celery -A tasks worker --loglevel=info --pool=gevent --concurrency=16 -Q briefing_high,briefing,default
     stop_signal: SIGTERM
     stop_grace_period: 30s
+
+  beat:
+    build:
+      context: ./apps/api
+    container_name: strideiq_beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A tasks beat --loglevel=info
+    stop_signal: SIGTERM
+    stop_grace_period: 10s
 
   web:
     build:

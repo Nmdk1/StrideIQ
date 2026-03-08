@@ -2382,7 +2382,7 @@ async def get_home_data(
 
                 if b_state in (BriefingState.STALE, BriefingState.MISSING):
                     try:
-                        enqueue_briefing_refresh(str(current_user.id))
+                        enqueue_briefing_refresh(str(current_user.id), priority="high")
                     except Exception as enq_err:
                         logger.warning(
                             "Home briefing enqueue failed (non-blocking): %s", enq_err

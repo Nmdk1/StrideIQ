@@ -6,11 +6,19 @@ Root cause (SEV-1, Feb 23 2026):
   strava_tasks.py was checking for existing activities using provider=strava
   only, so it never saw Garmin-sourced rows and created duplicates.
 
+Regression (SEV-2, Mar 08 2026):
+  The dedup used .first() to find a single Garmin candidate. When an athlete
+  had a 1-mile warmup AND a 10-mile race within the ±1h window, .first()
+  could return the warmup, the distance check would fail (90% diff), and a
+  duplicate Strava activity was created. Fixed by using .all() + iterating
+  with match_activities() — mirroring the Garmin webhook pattern.
+
 Fix location:
-  apps/api/tasks/strava_tasks.py — cross-provider dedup block added before
-  "Create new activity" (after the existing-Strava-activity update path).
+  apps/api/tasks/strava_tasks.py — cross-provider dedup block uses .all()
+  and services.activity_deduplication.match_activities().
 
 See: docs/BUILDER_NOTE_2026-02-23_STRAVA_DEDUP_FIX.md
+     docs/BUILDER_INSTRUCTIONS_2026-03-08_WORKER_AND_DEDUP.md
 """
 
 from datetime import datetime, timedelta, timezone
@@ -20,13 +28,14 @@ from uuid import uuid4
 import pytest
 
 from models import Activity
+from services.activity_deduplication import match_activities
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _garmin_activity(athlete_id, start_time: datetime, distance_m: float) -> Activity:
+def _garmin_activity(athlete_id, start_time: datetime, distance_m: float, avg_hr=None) -> Activity:
     """Return a minimal Activity mock representing a Garmin-sourced run."""
     a = MagicMock(spec=Activity)
     a.id = uuid4()
@@ -34,6 +43,7 @@ def _garmin_activity(athlete_id, start_time: datetime, distance_m: float) -> Act
     a.provider = "garmin"
     a.start_time = start_time
     a.distance_m = distance_m
+    a.avg_hr = avg_hr
     return a
 
 
@@ -55,154 +65,143 @@ STRAVA_ACTIVITY = {
 
 
 # ---------------------------------------------------------------------------
-# Unit: cross-provider dedup logic (pure mocks, no DB required)
+# Unit: cross-provider dedup logic using match_activities
 # ---------------------------------------------------------------------------
 
 class TestCrossProviderDedupLogic:
     """
-    Test the dedup block added to strava_tasks.py.
-    These tests operate without a real DB by mocking the SQLAlchemy query chain.
+    Test the dedup logic using match_activities() — the shared dedup service
+    that strava_tasks.py now delegates to.
     """
 
-    def _make_mock_db(self, garmin_activity=None):
-        """
-        Return a mock db that returns garmin_activity (or None) when the
-        Garmin filter query is executed.
-        """
-        mock_db = MagicMock()
-        # Chain: db.query(...).filter(...).first() → garmin_activity
-        mock_db.query.return_value.filter.return_value.first.return_value = garmin_activity
-        return mock_db
-
     def test_skip_when_garmin_match_within_time_window_and_distance_tolerance(self):
-        """
-        When a Garmin activity exists within ±1 h and ≤5% distance, the
-        dedup block must short-circuit and NOT call db.add() for the Strava row.
-        """
         garmin_act = _garmin_activity(ATHLETE_ID, RUN_START, 8054.0)
-        mock_db = self._make_mock_db(garmin_act)
-
-        dist_strava = 8054.0 * 1.02
-        dist_garmin = 8054.0
-        diff_pct = abs(dist_strava - dist_garmin) / max(dist_strava, dist_garmin)
-
-        assert diff_pct <= 0.05, "sanity: strava dist is within 5% of garmin"
-
-        # Simulate the dedup check from strava_tasks.py
-        window_start = RUN_START - timedelta(seconds=3600)
-        window_end = RUN_START + timedelta(seconds=3600)
-
-        # Reproduce the query the fix performs
-        garmin_match = (
-            mock_db.query(Activity)
-            .filter(
-                Activity.athlete_id == str(ATHLETE_ID),
-                Activity.provider == "garmin",
-                Activity.start_time >= window_start,
-                Activity.start_time <= window_end,
-            )
-            .first()
+        strava_dict = {
+            "start_time": RUN_START,
+            "distance_m": 8054.0 * 1.02,
+            "avg_hr": None,
+        }
+        garmin_dict = {
+            "start_time": garmin_act.start_time,
+            "distance_m": float(garmin_act.distance_m),
+            "avg_hr": garmin_act.avg_hr,
+        }
+        assert match_activities(strava_dict, garmin_dict), (
+            "2% distance diff within 1h window must match"
         )
-
-        assert garmin_match is garmin_act, "query must return the seeded Garmin activity"
-
-        # Verify dedup decision
-        should_skip = False
-        if garmin_match:
-            dist_s = dist_strava
-            dist_g = garmin_match.distance_m
-            if dist_g > 0 and dist_s > 0:
-                pct = abs(dist_s - dist_g) / max(dist_s, dist_g)
-                if pct <= 0.05:
-                    should_skip = True
-
-        assert should_skip, "dedup must decide to skip the Strava activity"
 
     def test_do_not_skip_when_distance_exceeds_tolerance(self):
-        """
-        When Garmin and Strava distances differ by more than 5%, treat as
-        different activities (e.g., GPS drift, indoor vs outdoor).
-        """
         garmin_act = _garmin_activity(ATHLETE_ID, RUN_START, 8054.0)
-        dist_strava = 8054.0 * 1.10  # 10% larger — different enough to keep
-
-        diff_pct = abs(dist_strava - garmin_act.distance_m) / max(dist_strava, garmin_act.distance_m)
-        assert diff_pct > 0.05, "sanity: 10% diff exceeds threshold"
-
-        should_skip = False
-        if garmin_act:
-            dist_g = garmin_act.distance_m
-            dist_s = dist_strava
-            if dist_g > 0 and dist_s > 0:
-                pct = abs(dist_s - dist_g) / max(dist_s, dist_g)
-                if pct <= 0.05:
-                    should_skip = True
-
-        assert not should_skip, "10% distance diff must NOT trigger dedup skip"
-
-    def test_do_not_skip_when_no_garmin_match(self):
-        """
-        When no Garmin activity exists in the time window, Strava activity
-        should be created normally.
-        """
-        mock_db = self._make_mock_db(garmin_activity=None)
-
-        garmin_match = (
-            mock_db.query(Activity)
-            .filter()
-            .first()
+        strava_dict = {
+            "start_time": RUN_START,
+            "distance_m": 8054.0 * 1.10,
+            "avg_hr": None,
+        }
+        garmin_dict = {
+            "start_time": garmin_act.start_time,
+            "distance_m": float(garmin_act.distance_m),
+            "avg_hr": garmin_act.avg_hr,
+        }
+        assert not match_activities(strava_dict, garmin_dict), (
+            "10% distance diff must NOT match"
         )
 
-        should_skip = False
-        if garmin_match:
-            should_skip = True  # (distance check would follow in real code)
-
-        assert not should_skip, "no Garmin match must not skip the Strava activity"
+    def test_do_not_skip_when_no_garmin_candidates(self):
+        candidates = []
+        strava_dict = {
+            "start_time": RUN_START,
+            "distance_m": 8054.0,
+            "avg_hr": None,
+        }
+        skip = any(
+            match_activities(strava_dict, {
+                "start_time": c.start_time,
+                "distance_m": float(c.distance_m) if c.distance_m else None,
+                "avg_hr": c.avg_hr,
+            })
+            for c in candidates
+        )
+        assert not skip, "empty candidate list must not trigger dedup"
 
     def test_do_not_skip_when_garmin_distance_is_zero(self):
+        strava_dict = {
+            "start_time": RUN_START,
+            "distance_m": 8054.0,
+            "avg_hr": None,
+        }
+        garmin_dict = {
+            "start_time": RUN_START,
+            "distance_m": 0.0,
+            "avg_hr": None,
+        }
+        assert not match_activities(strava_dict, garmin_dict), (
+            "zero-distance Garmin must not match"
+        )
+
+    def test_warmup_plus_race_matches_correct_activity(self):
         """
-        Garmin match with distance_m=None/0 must not trigger dedup (no basis
-        for comparison).
+        The critical bug: two Garmin activities in the window — a 1-mile
+        warmup and a 10-mile race. The Strava 10-mile race must match the
+        Garmin race, not the warmup.
         """
-        garmin_act = _garmin_activity(ATHLETE_ID, RUN_START, 0.0)
+        warmup_start = RUN_START - timedelta(minutes=26)
+        race_start = RUN_START
 
-        dist_strava = 8054.0
-        dist_garmin = garmin_act.distance_m  # 0.0
+        warmup = _garmin_activity(ATHLETE_ID, warmup_start, 1609.0)
+        race = _garmin_activity(ATHLETE_ID, race_start, 16093.0)
+        candidates = [warmup, race]
 
-        should_skip = False
-        if garmin_act:
-            if dist_garmin > 0 and dist_strava > 0:
-                pct = abs(dist_strava - dist_garmin) / max(dist_strava, dist_garmin)
-                if pct <= 0.05:
-                    should_skip = True
+        strava_dict = {
+            "start_time": race_start,
+            "distance_m": 16093.0 * 1.01,
+            "avg_hr": 165,
+        }
 
-        assert not should_skip, "zero-distance Garmin row must not trigger dedup"
+        matched = None
+        for c in candidates:
+            c_dict = {
+                "start_time": c.start_time,
+                "distance_m": float(c.distance_m) if c.distance_m is not None else None,
+                "avg_hr": c.avg_hr,
+            }
+            if match_activities(strava_dict, c_dict):
+                matched = c
+                break
+
+        assert matched is race, (
+            "Strava 10mi race must match the Garmin 10mi race, not the 1mi warmup"
+        )
+
+    def test_warmup_does_not_match_race(self):
+        """The warmup (1mi) must NOT match the race (10mi)."""
+        strava_dict = {
+            "start_time": RUN_START,
+            "distance_m": 16093.0,
+            "avg_hr": None,
+        }
+        warmup_dict = {
+            "start_time": RUN_START - timedelta(minutes=26),
+            "distance_m": 1609.0,
+            "avg_hr": None,
+        }
+        assert not match_activities(strava_dict, warmup_dict), (
+            "10mi Strava race must not match 1mi Garmin warmup"
+        )
 
     def test_time_window_boundary_exactly_one_hour_apart(self):
-        """
-        Activity exactly 3600 s apart — boundary is inclusive, so it should
-        still match (window_start <= time <= window_end).
-        """
         garmin_time = RUN_START
         strava_start = RUN_START + timedelta(seconds=3600)
-
         window_start = strava_start - timedelta(seconds=3600)
         window_end = strava_start + timedelta(seconds=3600)
-
         assert window_start <= garmin_time <= window_end, (
             "1-hour-apart activity must fall within the dedup window"
         )
 
     def test_time_window_outside_does_not_match(self):
-        """
-        Activity more than 1 hour apart must NOT be caught by the time window.
-        """
         garmin_time = RUN_START
-        strava_start = RUN_START + timedelta(seconds=3601)  # just outside
-
+        strava_start = RUN_START + timedelta(seconds=3601)
         window_start = strava_start - timedelta(seconds=3600)
         window_end = strava_start + timedelta(seconds=3600)
-
         assert not (window_start <= garmin_time <= window_end), (
             "3601 s apart must fall outside the dedup window"
         )
@@ -214,50 +213,45 @@ class TestCrossProviderDedupLogic:
 
 class TestStravaTasksCrossProviderDedup:
     """
-    Verify the dedup block was actually inserted into strava_tasks.py and
-    produces the expected log message when a match is found.
+    Verify the dedup block structure in strava_tasks.py.
     """
 
     def test_dedup_block_is_present_in_strava_tasks(self):
-        """Ensure the cross-provider dedup code actually exists in the module."""
         import inspect
         import tasks.strava_tasks as mod
         source = inspect.getsource(mod)
-        assert "Cross-provider dedup" in source, (
-            "Cross-provider dedup block must be in strava_tasks.py"
+        assert "Cross-provider dedup" in source
+        assert "provider == 'garmin'" in source or 'provider == "garmin"' in source
+
+    def test_uses_all_not_first(self):
+        """The dedup must use .all() to find ALL Garmin candidates, not .first()."""
+        import inspect
+        import tasks.strava_tasks as mod
+        source = inspect.getsource(mod)
+        dedup_start = source.index("Cross-provider dedup")
+        dedup_block = source[dedup_start:dedup_start + 1200]
+        assert ".all()" in dedup_block, (
+            "Dedup block must use .all() to find all Garmin candidates"
         )
-        assert "provider == 'garmin'" in source or "provider == \"garmin\"" in source, (
-            "Garmin provider filter must be present in dedup block"
+        assert ".first()" not in dedup_block, (
+            "Dedup block must NOT use .first() — causes warmup/race bug"
         )
+
+    def test_uses_match_activities(self):
+        """The dedup must delegate to match_activities(), not inline distance checks."""
+        import inspect
+        import tasks.strava_tasks as mod
+        source = inspect.getsource(mod)
+        dedup_start = source.index("Cross-provider dedup")
+        dedup_block = source[dedup_start:dedup_start + 1200]
+        assert "match_activities" in dedup_block
 
     def test_time_window_constant_matches_deduplication_service(self):
-        """
-        strava_tasks.py dedup uses 3600 s. Confirm this matches the
-        TIME_WINDOW_S constant in activity_deduplication.py (source of truth).
-        """
         from services.activity_deduplication import TIME_WINDOW_S
-        assert TIME_WINDOW_S == 3600, (
-            f"TIME_WINDOW_S is {TIME_WINDOW_S}; strava_tasks.py dedup uses 3600 s — keep in sync"
-        )
-
-    def test_distance_tolerance_matches_deduplication_service(self):
-        """
-        strava_tasks.py dedup uses 5% (0.05). Confirm this matches the
-        DISTANCE_TOLERANCE constant in activity_deduplication.py.
-        """
-        from services.activity_deduplication import DISTANCE_TOLERANCE
-        assert DISTANCE_TOLERANCE == 0.05, (
-            f"DISTANCE_TOLERANCE is {DISTANCE_TOLERANCE}; strava_tasks.py dedup uses 0.05 — keep in sync"
-        )
+        assert TIME_WINDOW_S == 3600
 
     def test_dedup_logs_skip_with_correct_format(self):
-        """
-        When a Garmin match is found, a logger.info call with the Strava
-        external_activity_id and Garmin activity id must be emitted.
-        """
-        import tasks.strava_tasks as mod
         import inspect
+        import tasks.strava_tasks as mod
         source = inspect.getsource(mod)
-        assert "Strava dedup: skipping" in source, (
-            "Dedup skip log message must be in strava_tasks.py"
-        )
+        assert "Strava dedup: skipping" in source

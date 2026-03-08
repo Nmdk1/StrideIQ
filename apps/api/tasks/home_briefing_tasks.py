@@ -29,8 +29,11 @@ from sqlalchemy.orm import Session
 
 from tasks import celery_app
 from core.database import get_db_sync
+from core.cache import get_redis_client
 from services.home_briefing_cache import (
+    BriefingState,
     acquire_task_lock,
+    read_briefing_cache,
     record_task_failure,
     release_task_lock,
     reset_circuit,
@@ -414,6 +417,23 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
 
         fingerprint = _build_data_fingerprint(athlete_id, db)
 
+        cached_payload, cached_state = read_briefing_cache(athlete_id)
+        if cached_state in (BriefingState.FRESH, BriefingState.STALE) and cached_payload:
+            r = get_redis_client()
+            if r:
+                try:
+                    raw = r.get(f"home_briefing:{athlete_id}")
+                    if raw:
+                        entry = json.loads(raw)
+                        if entry.get("data_fingerprint") == fingerprint:
+                            logger.info(
+                                "Home briefing fingerprint unchanged for %s — skipping LLM call",
+                                athlete_id,
+                            )
+                            return {"status": "skipped", "reason": "fingerprint_unchanged"}
+                except (json.JSONDecodeError, TypeError, Exception):
+                    pass
+
         prompt_result = _build_briefing_prompt(athlete_id, db)
         if prompt_result is None:
             # Normal skip — briefing was already cached under the old cache key
@@ -597,6 +617,7 @@ def enqueue_briefing_refresh(
     athlete_id: str,
     force: bool = False,
     allow_circuit_probe: bool = False,
+    priority: str = "normal",
 ) -> bool:
     """
     Fire-and-forget enqueue for home briefing refresh.
@@ -606,11 +627,8 @@ def enqueue_briefing_refresh(
                 allow_circuit_probe=True.
     allow_circuit_probe=True: for real data-change events, enqueue one
                 probe even if circuit is open so a stuck athlete can recover.
-                Use only for high-priority triggers (check-in) where the athlete
-                explicitly submitted new data and must see a fresh briefing.
-
-    Called by triggers (check-in, activity sync, plan change, etc.)
-    and by the /v1/home endpoint when cache is stale/missing.
+    priority="high": route to briefing_high queue (live page loads).
+    priority="normal": route to briefing queue (background pre-warm).
     """
     from services.home_briefing_cache import (
         should_enqueue_refresh,
@@ -619,8 +637,6 @@ def enqueue_briefing_refresh(
     )
 
     if force:
-        # Bypass cooldown, but block on open circuit unless caller explicitly
-        # allows one probe enqueue for a real data-change event.
         if is_circuit_open(athlete_id) and not allow_circuit_probe:
             logger.debug("Home briefing force-enqueue blocked (circuit open): %s", athlete_id)
             return False
@@ -634,9 +650,10 @@ def enqueue_briefing_refresh(
             return False
 
     set_enqueue_cooldown(athlete_id)
-    generate_home_briefing_task.delay(athlete_id)
+    queue = "briefing_high" if priority == "high" else "briefing"
+    generate_home_briefing_task.apply_async(args=[athlete_id], queue=queue)
     logger.info(
-        "Home briefing refresh enqueued for %s (force=%s, probe=%s)",
-        athlete_id, force, allow_circuit_probe,
+        "Home briefing refresh enqueued for %s (force=%s, probe=%s, queue=%s)",
+        athlete_id, force, allow_circuit_probe, queue,
     )
     return True
