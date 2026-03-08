@@ -1506,18 +1506,18 @@ def _derive_classification(
             return 'over_under'
 
     # Easy run: all phases easy/gray/walking, ≤3 effort phases, few accels
-    if all_easy_or_gray and n_accels <= 1 and len(effort_phases) <= 3:
+    if all_easy_or_gray and n_accels <= 2 and len(effort_phases) <= 3:
         return 'easy_run'
 
     # Gray zone run: primary phase is gray, no structured work
-    if effort_phases and n_accels <= 1:
+    if effort_phases and n_accels <= 2:
         gray_duration = sum(p.duration_s for p in effort_phases if p.pace_zone == 'gray')
         total_effort = sum(p.duration_s for p in effort_phases)
         if total_effort > 0 and gray_duration / total_effort > 0.5:
             return 'gray_zone_run'
 
     # Fallback easy for quiet runs
-    if n_accels <= 1 and len(effort_phases) <= 3:
+    if n_accels <= 2 and len(effort_phases) <= 3:
         return 'easy_run'
 
     return None
