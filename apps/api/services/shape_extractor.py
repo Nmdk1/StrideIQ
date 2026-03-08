@@ -1516,9 +1516,36 @@ def _derive_classification(
         if total_effort > 0 and gray_duration / total_effort > 0.5:
             return 'gray_zone_run'
 
-    # Fallback easy for quiet runs
+    # Fallback easy for quiet runs with ≤3 effort phases
     if n_accels <= 2 and len(effort_phases) <= 3:
         return 'easy_run'
+
+    # Quiet mixed easy/gray boundary runs (4-7 effort phases)
+    # GPS noise at the easy ceiling creates easy↔gray oscillation that
+    # survived the anti-oscillation merge but is still fundamentally easy.
+    if 4 <= len(effort_phases) <= 7 and n_accels <= 1:
+        easy_ceiling = pace_profile._easy_ceiling()
+        non_easy_gray = [p for p in effort_phases
+                         if p.pace_zone not in ('easy', 'gray', 'walking')]
+        gray_phases = [p for p in effort_phases if p.pace_zone == 'gray']
+        total_effort_dur = sum(p.duration_s for p in effort_phases)
+        gray_dur = sum(p.duration_s for p in gray_phases)
+        gray_pct = gray_dur / total_effort_dur if total_effort_dur > 0 else 0
+
+        gray_near_ceiling = all(
+            p.avg_pace_sec_per_mile >= (easy_ceiling - 50)
+            for p in gray_phases
+        ) if gray_phases else True
+
+        short_blip_only = (
+            len(non_easy_gray) == 0
+            or (len(non_easy_gray) == 1 and non_easy_gray[0].duration_s <= 90)
+        )
+
+        if (0.10 <= gray_pct <= 0.49
+                and gray_near_ceiling
+                and short_blip_only):
+            return 'easy_run'
 
     return None
 

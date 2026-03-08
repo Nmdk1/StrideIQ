@@ -687,6 +687,138 @@ class TestHillRepeatsFromAccelerations:
             "Casual hilly run should NOT be classified as hill_repeats"
 
 
+class TestQuietMixedBoundaryRuns:
+    """Regression tests for Larry's cls_none suppressions.
+
+    These simulate the exact production patterns: easy runs where GPS noise
+    at the easy ceiling creates 4-7 phases of alternating easy/gray zones
+    with no accelerations. The new fallback classifier catches these.
+    """
+
+    # Larry's profile: easy=750, easy ceiling=740
+    LARRY_PROFILE = PaceProfile(
+        easy_sec=750, marathon_sec=612, threshold_sec=577,
+        interval_sec=498, repetition_sec=456,
+    )
+
+    def test_feb26_quiet_4phase_easy_gray(self):
+        """Feb 26 pattern: 4 phases, 0 accels, all easy/gray, gray 43.7%.
+        Gray paces 17-19s past ceiling (720-722 vs ceiling 740)."""
+        duration = 914
+        time = list(range(duration))
+        velocity = [2.06] * duration  # ~781 sec/mi = easy
+        # Phase structure: easy 142s, gray 85s, easy 373s, gray 314s
+        gray1_v = 2.23  # ~721 sec/mi, ~19s past ceiling
+        gray2_v = 2.23  # ~723 sec/mi, ~17s past ceiling
+        for i in range(142, 227):
+            velocity[i] = gray1_v
+        for i in range(600, 914):
+            velocity[i] = gray2_v
+
+        stream = {
+            'time': time, 'velocity_smooth': velocity,
+            'heartrate': [125] * duration, 'cadence': [92] * duration,
+            'grade_smooth': [0.0] * duration, 'altitude': [100.0] * duration,
+            'distance': [sum(velocity[:i+1]) for i in range(duration)],
+        }
+        shape = extract_shape(stream, pace_profile=self.LARRY_PROFILE)
+        assert shape is not None
+        assert shape.summary.workout_classification == 'easy_run', \
+            f"Expected easy_run, got {shape.summary.workout_classification} with {len(shape.phases)} phases"
+
+    def test_feb13_classic_6phase_oscillation(self):
+        """Feb 13 pattern: 6 phases, 0 accels, all easy/gray, gray 26.2%.
+        Gray paces 5-14s past ceiling — textbook boundary oscillation."""
+        duration = 1334
+        time = list(range(duration))
+        velocity = [2.13] * duration  # ~755 sec/mi = easy
+        # Simulate 3 gray insertions of varying length
+        gray_v = 2.20  # ~731 sec/mi, ~9s past ceiling
+        for i in range(675, 769):    # 94s gray
+            velocity[i] = gray_v
+        for i in range(1016, 1172):  # 156s gray
+            velocity[i] = gray_v
+        for i in range(1235, 1334):  # 99s gray
+            velocity[i] = gray_v
+
+        stream = {
+            'time': time, 'velocity_smooth': velocity,
+            'heartrate': [125] * duration, 'cadence': [92] * duration,
+            'grade_smooth': [0.0] * duration, 'altitude': [100.0] * duration,
+            'distance': [sum(velocity[:i+1]) for i in range(duration)],
+        }
+        shape = extract_shape(stream, pace_profile=self.LARRY_PROFILE)
+        assert shape is not None
+        assert shape.summary.workout_classification == 'easy_run', \
+            f"Expected easy_run, got {shape.summary.workout_classification} with {len(shape.phases)} phases"
+
+    def test_feb12_easy_with_short_threshold_blip(self):
+        """Feb 12 pattern: mostly easy/gray with one short threshold insertion.
+        The threshold blip is ≤90s and buried mid-run, so the fallback
+        allows easy_run via the single-blip allowance. Gray share ~17%."""
+        duration = 3672
+        time = list(range(duration))
+        velocity = [2.16] * duration  # ~745 sec/mi = easy
+
+        # Gray insertions matching real Feb 12 proportions (~17% gray)
+        gray_v = 2.22  # ~725 sec/mi
+        for i in range(600, 779):     # 179s gray
+            velocity[i] = gray_v
+        # Short threshold blip mid-run (70s) — not at end to avoid progression
+        for i in range(1400, 1470):
+            velocity[i] = 2.76        # ~583 sec/mi = threshold
+        for i in range(2100, 2226):   # 126s gray
+            velocity[i] = gray_v
+        for i in range(2800, 3107):   # 307s deeper gray
+            velocity[i] = 2.33        # ~691 sec/mi
+
+        stream = {
+            'time': time, 'velocity_smooth': velocity,
+            'heartrate': [125] * duration, 'cadence': [92] * duration,
+            'grade_smooth': [0.0] * duration, 'altitude': [100.0] * duration,
+            'distance': [sum(velocity[:i+1]) for i in range(duration)],
+        }
+        shape = extract_shape(stream, pace_profile=self.LARRY_PROFILE)
+        assert shape is not None
+        assert shape.summary.workout_classification == 'easy_run', \
+            f"Expected easy_run, got {shape.summary.workout_classification} with {len(shape.phases)} phases"
+
+    def test_genuine_gray_zone_not_absorbed(self):
+        """A multi-phase run with >50% gray should NOT be captured by the
+        quiet mixed boundary fallback. Needs 4+ effort phases to test the
+        new fallback specifically (existing easy_run handles ≤3 phases)."""
+        duration = 3000
+        time = list(range(duration))
+        velocity = [2.25] * duration  # gray (~715 sec/mi, below ceiling 740)
+
+        # Alternate between gray and easy to create 5 effort phases
+        for i in range(0, 200):       # easy start
+            velocity[i] = 2.10
+        for i in range(700, 900):     # easy island
+            velocity[i] = 2.10
+        for i in range(1500, 1650):   # easy island
+            velocity[i] = 2.10
+        for i in range(2200, 2350):   # easy island
+            velocity[i] = 2.10
+        for i in range(2800, 3000):   # easy end
+            velocity[i] = 2.10
+
+        stream = {
+            'time': time, 'velocity_smooth': velocity,
+            'heartrate': [125] * duration, 'cadence': [92] * duration,
+            'grade_smooth': [0.0] * duration, 'altitude': [100.0] * duration,
+            'distance': [sum(velocity[:i+1]) for i in range(duration)],
+        }
+        shape = extract_shape(stream, pace_profile=self.LARRY_PROFILE)
+        assert shape is not None
+        # The gray_pct should be >50%, which means the new fallback's
+        # 0.10-0.49 guard blocks it. gray_zone_run or None is correct.
+        assert shape.summary.workout_classification != 'easy_run' or \
+            len([p for p in shape.phases if p.phase_type not in
+                 ('warmup', 'cooldown', 'interval_recovery', 'recovery_jog')]) <= 3, \
+            "Majority gray 4+ phase run should NOT be classified easy_run by fallback"
+
+
 class TestTrustGates:
     def test_suppression_over_hallucination(self):
         """Ambiguous structure → suppressed rather than forced into a wrong sentence.
