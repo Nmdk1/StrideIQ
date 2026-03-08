@@ -15,6 +15,8 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
 )
 
+from celerybeat_schedule import beat_schedule  # noqa: E402
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
@@ -25,6 +27,7 @@ celery_app.conf.update(
     task_time_limit=30 * 60,  # 30 minutes max per task
     task_soft_time_limit=25 * 60,  # 25 minutes soft limit
     worker_prefetch_multiplier=1,  # Solo pool: grab one task at a time from Redis
+    beat_schedule=beat_schedule,
 )
 
 # Import tasks to register them
