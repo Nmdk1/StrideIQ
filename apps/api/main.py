@@ -30,14 +30,13 @@ from sqlalchemy import text
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# Initialize Sentry for error tracking (production)
-if settings.SENTRY_DSN:
-    try:
-        import sentry_sdk
+try:
+    import sentry_sdk
+    if settings.SENTRY_DSN:
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
         from sentry_sdk.integrations.redis import RedisIntegration
-        
+
         sentry_sdk.init(
             dsn=settings.SENTRY_DSN,
             environment=settings.ENVIRONMENT,
@@ -48,16 +47,14 @@ if settings.SENTRY_DSN:
                 SqlalchemyIntegration(),
                 RedisIntegration(),
             ],
-            # Don't send PII
             send_default_pii=False,
-            # Filter sensitive data
             before_send=lambda event, hint: _filter_sensitive_data(event),
         )
         logger.info(f"Sentry initialized for environment: {settings.ENVIRONMENT}")
-    except ImportError:
-        logger.warning("sentry-sdk not installed, error tracking disabled")
-    except Exception as e:
-        logger.error(f"Failed to initialize Sentry: {e}")
+    else:
+        sentry_sdk.init(dsn="")
+except ImportError:
+    pass
 
 
 def _filter_sensitive_data(event):
