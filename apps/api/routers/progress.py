@@ -796,7 +796,7 @@ def _generate_progress_headline(
 
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 max_output_tokens=2000,
@@ -1105,7 +1105,7 @@ def _generate_progress_cards(
 
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 max_output_tokens=2200,
@@ -1705,7 +1705,7 @@ def _generate_narrative_llm(visual_snapshot: Dict[str, Any]) -> Optional[Dict[st
         from google import genai
 
         response = gemini_client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 max_output_tokens=3000,
@@ -2213,7 +2213,7 @@ Rules:
 - Suppress over hallucinate — if uncertain, omit"""
 
         result = gemini_client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 max_output_tokens=1500,

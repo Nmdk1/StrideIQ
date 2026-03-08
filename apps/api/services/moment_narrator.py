@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-NARRATOR_MODEL = "gemini-3.1-flash-lite"
+NARRATOR_MODEL = "gemini-2.5-flash"
 NARRATOR_TEMPERATURE = 0.5
 NARRATOR_MAX_TOKENS = 1000
 NARRATOR_TIMEOUT_S = 10  # Hard cap — enrichment, not critical path

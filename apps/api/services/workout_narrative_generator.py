@@ -34,7 +34,7 @@ except ImportError:
 # Configuration
 # ---------------------------------------------------------------------------
 
-NARRATIVE_MODEL = "gemini-3.1-flash-lite"
+NARRATIVE_MODEL = "gemini-2.5-flash"
 NARRATIVE_TEMPERATURE = 0.6  # slightly higher than adaptation narration for variety
 NARRATIVE_MAX_TOKENS = 250
 SIMILARITY_THRESHOLD = 0.50  # suppress if >50% token overlap with recent

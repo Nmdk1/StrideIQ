@@ -962,7 +962,7 @@ def _call_opus_briefing_sync(
     try:
         client = Anthropic(api_key=api_key, timeout=timeout_s)
         response = client.messages.create(
-            model="claude-sonnet-4-6-20250514",
+            model="claude-opus-4-6",
             system=system_prompt,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
@@ -983,7 +983,7 @@ def _call_opus_briefing_sync(
 
         result = _json.loads(text)
         logger.info(
-            f"Home briefing generated via Sonnet "
+            f"Home briefing generated via Opus "
             f"(input={response.usage.input_tokens}, output={response.usage.output_tokens})"
         )
         return result
@@ -1033,7 +1033,7 @@ def _call_gemini_briefing_sync(
     for attempt in (1, 2):
         try:
             resp = client.models.generate_content(
-                model="gemini-3.1-flash-lite",
+                model="gemini-2.5-flash",
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     max_output_tokens=4000,

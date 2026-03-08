@@ -265,7 +265,7 @@ Policy:
     # Model tiers (ADR-061: Hybrid architecture with cost caps)
     # 95% of queries use Gemini 3.1 Flash Lite (cost-efficient, 1M context)
     # 5% high-stakes queries use Claude Opus 4.6 (maximum reasoning quality)
-    MODEL_DEFAULT = "gemini-3.1-flash-lite"      # Standard coaching (95%)
+    MODEL_DEFAULT = "gemini-2.5-flash"      # Standard coaching (95%)
     MODEL_HIGH_STAKES = "claude-opus-4-6"  # Injury/recovery/load decisions (5%)
     
     # Legacy aliases for backward compatibility
@@ -1500,7 +1500,7 @@ ATHLETE BRIEF:
             
             # Send message with tools
             response = self.gemini_client.models.generate_content(
-                model="gemini-3.1-flash-lite",
+                model="gemini-2.5-flash",
                 contents=contents,
                 config=config,
             )
@@ -1551,7 +1551,7 @@ ATHLETE BRIEF:
                 
                 # Send function results back
                 response = self.gemini_client.models.generate_content(
-                    model="gemini-3.1-flash-lite",
+                    model="gemini-2.5-flash",
                     contents=contents,
                     config=config,
                 )

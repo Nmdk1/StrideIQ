@@ -432,8 +432,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
 
         prompt, schema_fields, required_fields, checkin_data, race_data, garmin_sleep_h = prompt_result
 
-        use_anthropic = bool(os.getenv("ANTHROPIC_API_KEY"))
-        source_model = "claude-sonnet-4-6-20250514" if use_anthropic else "gemini-3.1-flash-lite"
+        use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
+        source_model = "claude-opus-4-6" if use_opus else "gemini-2.5-flash"
         result = _call_llm_for_briefing(prompt, schema_fields, required_fields)
 
         if result is None:
