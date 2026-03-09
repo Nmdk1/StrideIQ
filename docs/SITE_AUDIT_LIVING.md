@@ -1,14 +1,29 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
-**Last updated:** March 5, 2026
-**Last updated by:** Builder session — Living Fingerprint complete (4 capabilities, 9,486 lines, 55 tests)
+**Last updated:** March 9, 2026
+**Last updated by:** Builder session — Ledger P0 + Path A Home Surfaces + Activity Intelligence (commits `5d53e70`, `02e2a26`, `ac986eb`)
 
 ---
 
-## 0. Delta Since Last Audit (Feb 25 -> Mar 5)
+## 0. Delta Since Last Audit (Mar 5 -> Mar 9)
 
 Shipped and now live in product/system behavior:
+
+- **Ledger P0 Fixes (Mar 9, 2026)**: (1) Removed live `analyze_correlations()` from Home request path — replaced with persisted `CorrelationFinding` lookup (`is_active=True`, `times_confirmed >= 3`), coaching language formatting. (2) Fixed 5 broken frontend links: removed dead `/lab-results` CTA from EmptyStates, changed `/plans` to `/plans/create` in insights, added `id="ai-powered-insights"` anchor on privacy page, added `id="runtoon"` anchor on settings page. (3) Deleted dead `apps/api/routers/lab_results.py` backend router. (4) Tightened `morning_voice` schema to one paragraph/2-3 sentences/no restatement, added warning telemetry at >240 chars (fail-close >280 unchanged). (5) Fixed ledger script to strip anchor fragments before route matching. Ledger P0 count = 0. Commit: `5d53e70`.
+- **Home Page Intelligence Surfaces (Mar 9, 2026)**: (1) `heat_adjustment_pct` added to `LastRun` model and populated from activity data — frontend shows weather-adjusted pace context on home when >3%. (2) `HomeFinding` typed model with `finding: Optional[HomeFinding]` and `has_correlations: bool` on `HomeResponse`. Day-based rotation across top active confirmed findings. (3) Cold-start state on home: `<10` activities → "Getting started", `10-30` → "Patterns forming", `30+` with no confirmed finding → "Analysis in progress". (4) Activity detail response now includes `dew_point_f` and `heat_adjustment_pct`; frontend renders weather context when >3%. Commit: `02e2a26`.
+- **Activity Intelligence + Navigation Gating + Daily Intelligence (Mar 9, 2026)**: (1) New `GET /v1/activities/{id}/findings` endpoint returns top 3 active confirmed `CorrelationFinding` entries as annotation cards. Frontend renders below Runtoon card. (2) `has_correlations` added to `/v1/auth/me` payload — Discovery and Fingerprint nav items in `Navigation.tsx` and `BottomTabs.tsx` only shown when `has_correlations=True`. (3) `TodayIntelligenceSection` wired into Insights page, fetching from `GET /v1/intelligence/today` — tier-safe (hides silently on 403), renders nothing if empty. Commit: `ac986eb`.
+- **Founder/VIP Always-Opus Routing (Mar 8, 2026)**: `get_model_for_query()` now routes founder (`OWNER_ATHLETE_ID`) and VIP (`is_coach_vip = True`) athletes to Opus for ALL coach queries — no keyword gating. Previously, founder/VIP status only affected budget caps, not routing. `OWNER_ATHLETE_ID` set in production `.env`. Belle Vignes set as VIP. Larry was already VIP. Commit: `35b27ad`.
+- **Gemini 2.5 Flash → Gemini 3 Flash Upgrade (Mar 8, 2026)**: Standard coaching model upgraded from `gemini-2.5-flash` to `gemini-3-flash-preview`. GPQA Diamond: 90.4% (was 82.8%). Improved tool calling with stricter validation. Two hardcoded model strings in `query_gemini()` replaced with `self.MODEL_DEFAULT` to prevent drift. Cost calculation updated ($0.50/$3.00 per 1M tokens). Gemini 3.1 Flash Lite was evaluated and rejected — it's optimized for bulk classification, not reasoning-heavy coaching. Commit: `35b27ad`.
+- **Fingerprint Intelligence Wiring (Mar 8, 2026)**: All three narrative wiring tasks deployed. (1) Morning voice (`_build_rich_intelligence_context()`) now includes confirmed `CorrelationFinding` with layer data. (2) Coach brief (`build_athlete_brief()`) now injects "Personal Fingerprint" section (confirmed findings with layer data) and "Training Discoveries" section (`AthleteFinding`). Opus prompt in `_call_opus()` receives the full brief. (3) `compute_coach_noticed()` has a priority level surfacing recent confirmed fingerprint findings. 8 active patterns now visible to coach (2 STRONG at 7x/17x confirmed, 6 EMERGING at 1-2x). **Note:** Original "Personal Fingerprint Contract" prompt (which mandated citing confirmation counts) was removed in Intelligence Lanes fix (`1df7eb6`). System-speak instructions replaced with coaching language mandate.
+- **Correlation Persistence Regression Fix (Mar 8, 2026)**: Mature findings (`times_confirmed >= 3`) no longer deactivated on a single sweep miss. Previously, any finding absent from one sweep was killed regardless of confirmation count. Confounded findings (`is_confounded = True`) always deactivate. Reactivated 2 findings (readiness 16x→17x, TSB 7x). Commit: `c3c3c57`.
+- **Activity Identity Surface (Mar 7-8, 2026)**: `resolve_activity_title()` implements priority: athlete_title (editable) > shape_sentence (when auto-generated name detected) > original name. Auto-generated name detection covers Strava patterns ("Morning Run", "Afternoon Run"), Garmin location patterns ("{City} Running"), and demo titles. Race guard: `user_verified_race` or `is_race_candidate` → athlete name always wins. `PUT /v1/activities/{id}/title` endpoint for athlete editing. Title flows to Runtoon via `_ActivityProxy`. 34 tests. Spec: `docs/specs/ACTIVITY_IDENTITY_SURFACE_SPEC.md`. Commits: `e93a400`, `ee1171f`.
+- **Home Page Intelligence Lanes (Mar 9, 2026)**: Structural fix for system-speak, finding repetition, and source redundancy in home briefing. (1) System-speak banned: removed prompt instructions mandating confirmation counts; added explicit ban on `confirmed N`, `r=`, `p-value`, `times_confirmed` in athlete-facing text. `fingerprint_context.py` header now says "Translate to coaching language." (2) Per-field lane injection: 6 pre-formatted context snippets (`fingerprint_summary`, `coach_noticed_source`, `today_summary`, `checkin_summary`, `race_summary`, `week_context`) bound to schema fields via `YOUR DATA FOR THIS FIELD:`. `morning_voice` = fingerprint findings only; `coach_noticed` = daily rules/wellness/signals; other fields have dedicated sources. (3) Live correlation path removed from `compute_coach_noticed` — was recomputing full correlation engine on every call with `r=` formatting. Persisted findings gate tightened from `times_confirmed >= 1` to `>= 3`. Daily rotation across top 5 findings. Coaching language formatting: threshold→"cliff", asymmetry→"downside Nx stronger", decay→"effect peaks within N days". (4) Source 1 (`generate_n1_insights`) removed from `_build_rich_intelligence_context` — redundant with persisted fingerprint context. (5) `_validate_briefing_diversity()` added (monitor mode): detects cross-lane fingerprint term leakage across fields. 6 new tests + 3 updated. Diagnostic: `docs/HOME_PAGE_INTELLIGENCE_DIAGNOSTIC.md`. Commit: `1df7eb6`.
+- **Campaign Detection Fix (Mar 9, 2026)**: Replaced naive `detect_campaign()` in training story engine (merged all adaptation dates into single arc, producing wrong "27-week campaign" for injury-split history) with `_get_campaign_from_events()` that reads from real campaign detector output in `PerformanceEvent.campaign_data`. Returns None (silence) if no campaign data. Regression test added. Commit: `e27e204`.
+- **Deprecation Cleanup (Mar 8, 2026)**: Three tracks resolved. (1) Pydantic v2: `class Config` → `ConfigDict`/`SettingsConfigDict` in 4 files. (2) DB imports: `from database import` → `from core.database import` across all API files. (3) HTTPX: raw `data=payload` → `content=payload` in 2 test files.
+- **CI Hardening (Mar 8, 2026)**: Sentry atexit noise silenced in CI (explicit `init(dsn="")` when no DSN). `CODECOV_TOKEN` param added to Codecov action. `test_wrong_athlete_403` creates a real athlete record so auth returns 403 not 401. Commit: `6487e8a`.
+
+### Previous delta (Feb 25 -> Mar 5)
 
 - **Living Fingerprint — Full Build (Mar 3-5, 2026)**: 9,486 lines across 35 files. Four capabilities: (1) **Weather Normalization** — `heat_adjustment.py` (Magnus formula dew point + combined value heat model, cross-validated against TypeScript implementation). `dew_point_f` and `heat_adjustment_pct` columns on Activity. All pace comparisons in investigations now use heat-adjusted pace. `investigate_heat_tax` refactored to personal heat resilience score. Migration `lfp_001_heat`. (2) **Activity Shape Extraction** — `shape_extractor.py` (1,331 lines pure computation, no DB/IO). Extracts phases, accelerations, shape summary, and classification from per-second stream data. Dual-channel detection: velocity (GPS) + cadence (watch accelerometer) merged with deduplication. HR recovery rate computed per acceleration. Classifications: `easy_run`, `progression`, `tempo`, `fartlek`, `strides`, `threshold_intervals`, `speed_intervals`, `hill_repeats`, `long_run`, `anomaly`, `null`. `run_shape` JSONB column on Activity. Migration `lfp_002_shape`. Gate L passed: founder's progression, Larry's strides (cadence channel), BHL's tempo, easy run suppression — all correct. (3) **Investigation Registry** — `@investigation` decorator with `InvestigationSpec`, `INVESTIGATION_REGISTRY`, signal coverage checking, honest gap reporting. 15 registered investigations (10 original + 5 shape-aware). Legacy investigations wrapped with error handling. Migration `lfp_003_registry`. (4) **Shape-Aware Investigations** — 5 new: stride progression, cruise interval quality, interval recovery trend (cardiac recovery rate bpm/s), workout variety effect (RPI-normalized), progressive run execution. Migration `lfp_004_layer`. **Integration:** Strava post-sync runs weather→shape→findings chain. Garmin webhook runs shape extraction. Daily Celery beat refresh at 06:00 UTC. Finding persistence with supersession logic (one active per investigation×type pair). Coach fast path reads stored `AthleteFinding`. Training story reads from stored findings. **Quality:** `investigate_interval_recovery_trend` tracks HR bpm/s drop rate (not just pace recovery). `investigate_workout_variety_effect` uses `rpi_at_event` (eliminates cross-distance confound). Cadence-based stride detection works for all runner speeds. `MIN_ACCELERATION_DURATION_S = 8`. 55 tests. 9 commits from `0f066d6` to `189a53e`. CI all green. Production deployed and healthy.
 - **Correlation Engine Layers 1–4 (Mar 3, 2026)**: Four second-pass analyses on confirmed correlation findings during the daily sweep. New file `services/correlation_layers.py` with four functions: (1) `detect_threshold()` — finds the input value where the correlation changes character (split-point scan, min 5 per segment, min |Δr| 0.2). (2) `detect_asymmetry()` — regression-slope comparison on each side of median baseline to detect whether bad inputs hurt more than good inputs help (t-test p < 0.1 gate). (3) `compute_decay_curve()` — full lag profile (0–7 days), classified as exponential (monotonic decay, half-life computed), sustained (4+ significant lags), or complex (non-monotonic). (4) `detect_mediators()` — cascade detection via existing `compute_partial_correlation()`, mediation ratio > 0.4, full mediation when partial_r < 0.3. New `CorrelationMediator` table for mediator rows. 14 new nullable columns on `CorrelationFinding` (6 threshold, 5 asymmetry, 3 decay). Migration `correlation_layers_001`. Second pass wired into `correlation_tasks.py` — runs after first pass for each athlete, only on confirmed findings (is_active AND times_confirmed >= 3). Fire-and-forget: layer failures logged but never break the sweep. 25 new tests in `test_correlation_layers.py` (all passing). Production: migration applied, all 14 columns verified, `CorrelationMediator` table created. Founder has 7 active findings (max 2x confirmed) — layers will activate as findings cross the 3x confirmation gate via daily sweeps. Commit: `085a878`.
@@ -271,9 +286,9 @@ InsightLog → Adaptation Narrator → Narrated to athlete
 |-------|---------|--------|
 | `/home` | Morning command center: run shape + compact PMC (visual pair), coach briefing, workout, check-in, race countdown | Working — compact PMC added Mar 1, moved to pos 2 |
 | `/activities` | Activity list with mini charts | Working |
-| `/activities/[id]` | Activity detail: Run Shape Canvas, Runtoon (above the fold), splits, analysis | Working — needs narrative moments |
+| `/activities/[id]` | Activity detail: Run Shape Canvas, Runtoon (above the fold), splits, weather context, finding annotations, analysis | Working — weather context + finding annotations shipped Mar 9 |
 | `/calendar` | Training calendar with plan overlay | Working |
-| `/coach` | AI coach chat interface | Strongest surface in the product |
+| `/coach` | AI coach chat interface | Strongest surface — founder/VIP always Opus, standard users Gemini 3 Flash |
 | `/progress` | D3 force-directed correlation web, expandable proved facts, coach-voice hero — replaces old card grid | Working |
 | `/analytics` | Efficiency trends, correlations, load→response | Working |
 | `/training-load` | PMC chart, N=1 zones, daily stress | Working |
@@ -282,7 +297,7 @@ InsightLog → Adaptation Narrator → Narrated to athlete
 | `/settings` | Strava/Garmin integration, preferences | Working |
 | `/tools` | Pace calculator, age grading, heat adjustment | Working |
 | `/nutrition` | Quick nutrition logging | Minimal/placeholder |
-| `/insights` | Insight feed | Needs deduplication (noisy) |
+| `/insights` | Insight feed + Today's Intelligence section (tier-gated) | Today's Intelligence shipped Mar 9; feed still needs deduplication |
 
 ### Data Fetching
 
@@ -326,13 +341,14 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - **Garmin production-access process still pending final completion** — evaluation environment is active; endpoint compliance and submission package are in progress with Partner Services.
 - **Garmin physiology coverage is underfed for connected athletes** — monitor now exists (`/v1/admin/ops/ingestion/garmin-health`) and currently indicates sparse sleep/HRV population for some athletes.
 - ~~**Email deliverability wiring remains operationally sensitive**~~ — **RESOLVED (Feb 28, 2026).** Production email is live: `smtp.gmail.com:587`, sender `noreply@strideiq.run` via `michael@strideiq.run`. Password reset E2E verified by Codex. DNS hardening (SPF/DKIM/DMARC) still needed at Porkbun.
-- **Coach has no Garmin Health API data in context (Mar 2, 2026):** `build_context()` in `ai_coach.py` only queries `DailyCheckin` (athlete self-report). It never queries `GarminDay` — Garmin watch-measured sleep, HRV, stress, resting HR are invisible to the coach. When asked about watch data, coach returns only Activity API metrics. This blocks Garmin partner compliance screenshots (Marc Lussi requested Health API evidence). Builder note: `docs/BUILDER_NOTE_2026-03-02_COACH_QUALITY.md`.
-- **Coach hallucinations (Mar 2, 2026):** Coach referenced shin soreness that doesn't exist (check-in = None), a 15-mile Saturday run (actual = 10), and "cutting runs short this week" on Monday morning before any runs. Builder note tracks this.
-- **Home briefing `coach_noticed` staleness (Mar 2, 2026):** Same "efficiency improved 4.4%" insight repeated for 4 days despite significant new training. No insight rotation or cooldown mechanism. Builder note tracks this.
-- **Coach context distances in km (cosmetic):** `build_context()` internally formats distances in km before passing to LLM. Coach output is in miles (LLM converts), but feeding km into prompt risks occasional km in responses.
+- **Coach quality audit scoped (Mar 8, 2026):** Full audit of 11 failure patterns documented in `docs/COACH_QUALITY_AUDIT.md`. Covers: A-I-A template rigidity, reflexive conservatism, hallucinated external facts, math errors, sycophantic recovery, lecturing experienced athletes, not using tools, ignoring prior context. Fixes scoped: deterministic pre-checks (race day, recent activity, weather), system prompt rewrites, routing expansion for standard users. Queued behind current work.
+- **Campaign detection wired but post-sync path lacks behavioral test:** `services/campaign_detection.py` wired into `refresh_living_fingerprint` and `post_sync_processing_task`. Refresh path has behavioral CI guard. Post-sync path has best-effort `try/except` but only source-level test coverage. Builder instructions: `docs/BUILDER_INSTRUCTIONS_2026-03-09_CAMPAIGN_WIRING_AND_REGRESSION_TEST.md`.
 - **Insights feed noise:** `/insights` Active Insights section has duplicate volume alerts and low-quality achievement cards — needs deduplication and quality filter
 - **Activity detail moments:** some key moments still show raw metrics that need stronger narrative translation
-- **Home page dual voice:** `compute_coach_noticed` and `morning_voice` still overlap; unify into one coherent briefing voice
+- **Home page dual voice:** RESOLVED (Mar 9). `morning_voice` now draws from fingerprint findings; `coach_noticed` draws from daily rules/wellness/signals. Per-field lane injection prevents overlap. Commit: `1df7eb6`.
+- **No findings regression test:** RESOLVED (Mar 9). `test_findings_regression.py` asserts mature findings survive sweeps, surfacing threshold, and campaign wiring. Commit: `e27e204`.
+- **Broken frontend links:** RESOLVED (Mar 9). All 5 broken links fixed. Dead `/lab-results` CTA removed. Lab-results backend router deleted. Ledger script fixed to handle anchor fragments. `broken_link_count = 0`. Commit: `5d53e70`.
+- **Live `analyze_correlations()` in Home path:** RESOLVED (Mar 9). Replaced with persisted `CorrelationFinding` lookup. Commit: `5d53e70`.
 
 ### Technical Debt (Tracked, Not Blocking)
 - 8 services with local efficiency polarity assumptions — migrate to `OutputMetricMeta` registry
@@ -340,6 +356,11 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - Sleep weight = 0.00 in readiness score — excluded until correlation engine proves individual relationship
 
 ### Resolved Issues
+- **Coach Garmin Health API data (Mar 2 → resolved Mar 2, 2026):** `build_context()` now queries `GarminDay` for last 7 days. Sleep, HRV, RHR, stress, body battery in coach context with "source: Garmin Health API" attribution.
+- **Coach hallucinations (Mar 2 → resolved Mar 2, 2026):** Soreness null → prompt says "not reported today — do NOT claim any soreness." Week run count grounded with explicit count and fabrication ban.
+- **Coach noticed staleness (Mar 2 → resolved Mar 2, 2026):** 48h rotation via Redis persistence + ROTATION CONSTRAINT in prompt.
+- **Coach context distances in km (Mar 2 → resolved Mar 2, 2026):** All distances normalized to miles, `_format_pace` outputs `/mi`.
+- **Founder/VIP Opus routing broken (discovered Mar 8 → resolved Mar 8, 2026):** `OWNER_ATHLETE_ID` was never set in production env, so `_is_founder()` always returned False. Budget bypass was dead code. Fixed: env var set, routing logic updated to route ALL founder/VIP queries to Opus. Commit: `35b27ad`.
 - **Chart date labels shifted by one day in US timezones (Mar 1, 2026)** — All Recharts date axes now use UTC methods (`getUTCMonth()`, `getUTCDate()`, `timeZone: 'UTC'`) to prevent local-timezone date shift. Fixed in `training-load/page.tsx` (PMC + Daily TSS charts, 4 locations) and `LoadResponseChart.tsx`, `AgeGradedChart.tsx`, `EfficiencyChart.tsx` (3 locations). 7 locations total.
 - **Monetization v1 closure (Feb 26, 2026)** — 4-tier purchase and entitlement surfaces now shipped end-to-end (pricing/settings/checkout/locked-pace UX/register carry-through).
 - **PDF plan export shipped (Feb 26, 2026)** — entitlement-gated download endpoint and full backend generation path live.
@@ -445,10 +466,10 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 
 ## 12. Alembic Migration Chain
 
-Current head: `lfp_004_layer` (chains off `lfp_003_registry` ← `lfp_002_shape` ← `lfp_001_heat` ← `phase1c_001` ← ...)
+Current head: `lfp_005_sentence` (chains off `lfp_004_layer` ← `lfp_003_registry` ← `lfp_002_shape` ← `lfp_001_heat` ← `phase1c_001` ← ...)
 
 CI enforces single-head integrity via `.github/scripts/ci_alembic_heads_check.py`.
-`EXPECTED_HEADS = {"lfp_004_layer"}`.
+`EXPECTED_HEADS = {"lfp_005_sentence"}`.
 
 When adding a new migration: **must chain off the current head** — update `down_revision` and `EXPECTED_HEADS` in the CI script.
 
@@ -492,7 +513,7 @@ Non-negotiable operating rules:
 
 Current code scan snapshot:
 - SQLAlchemy model classes in `apps/api/models.py`: **60**
-- Router modules in `apps/api/routers/`: **61** files
+- Router modules in `apps/api/routers/`: **60** files (lab_results.py removed Mar 9)
 - Service modules in `apps/api/services/`: **152** files
 - Task modules in `apps/api/tasks/`: **14** files
 - API test files in `apps/api/tests/`: **176** files
