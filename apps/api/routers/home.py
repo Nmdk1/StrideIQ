@@ -748,7 +748,7 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
       1. Ban-list — sycophantic/hyperbolic language
       2. Causal language — no pseudo-causal claims
       3. Numeric grounding — at least one number present
-      4. Length — between 40 and 280 characters
+      4. Length — minimum 40 characters (no upper cap; structure is controlled by prompt)
 
     Returns:
         {"valid": True} or {"valid": False, "reason": str, "fallback": str}
@@ -797,24 +797,13 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
             "fallback": _VOICE_FALLBACK,
         }
 
-    # 4. Length check — only enforced for fields with strict character limits.
-    # coach_noticed is 1-2 sentences with no fixed character budget.
+    # 4. Length check — minimum only; no upper cap.
+    # Structure (one paragraph, 2-3 sentences) is enforced by the prompt.
     if field in ("morning_voice", "workout_why"):
         if len(text) < 40:
             return {
                 "valid": False,
                 "reason": f"length:too_short({len(text)})",
-                "fallback": _VOICE_FALLBACK,
-            }
-        if field == "morning_voice" and len(text) > 240:
-            logger.warning(
-                "morning_voice drift warning: %d chars (threshold 240, fail-close 280)",
-                len(text),
-            )
-        if len(text) > 280:
-            return {
-                "valid": False,
-                "reason": f"length:too_long({len(text)})",
                 "fallback": _VOICE_FALLBACK,
             }
 
@@ -1381,7 +1370,7 @@ def generate_coach_home_briefing(
         "- Do NOT use sycophantic words: incredible, amazing, phenomenal, extraordinary, fantastic, wonderful, awesome, brilliant, magnificent, outstanding, superb, stellar, remarkable, spectacular.",
         "- Do NOT make causal claims: avoid 'because you', 'caused by', 'due to your'.",
         "- morning_voice MUST contain at least one specific number from the data.",
-        "- morning_voice must be 40-280 characters.",
+        "- morning_voice must be ONE paragraph only. No sentence count limit — say what needs to be said.",
         "- workout_why must be a single sentence explaining why today's workout matters.",
         "- ABSOLUTE BAN on quoting these to the athlete: CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. These appear in the brief for YOUR reasoning only. If you quote them, the output will be rejected.",
         "",
@@ -1560,10 +1549,16 @@ def generate_coach_home_briefing(
 
     race_summary = ""
     if race_data:
-        race_summary = (
-            f"Race: {race_data.get('name', '?')} on {race_data.get('date', '?')}, "
-            f"distance: {race_data.get('distance', '?')}"
-        )
+        race_parts = [
+            f"Race: {race_data.get('name', '?')} on {race_data.get('date', '?')}",
+            f"distance: {race_data.get('distance', '?')}",
+            f"{race_data.get('days_remaining', '?')} days away",
+        ]
+        if race_data.get("goal_time"):
+            race_parts.append(f"goal: {race_data['goal_time']}")
+        if race_data.get("goal_pace"):
+            race_parts.append(f"goal pace: {race_data['goal_pace']}")
+        race_summary = ", ".join(race_parts)
 
     def _lane(snippet: str) -> str:
         if snippet:
@@ -1576,7 +1571,7 @@ def generate_coach_home_briefing(
         "week_assessment": f"Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.{_lane('')}",
         "checkin_reaction": f"Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.{_lane(checkin_summary)}",
         "race_assessment": f"Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.{_lane(race_summary)}",
-        "morning_voice": f"ONE paragraph, 2-3 sentences max, 40-280 characters. No second paragraph. No restatement of a prior sentence. Give your athlete's data a voice by connecting a personal fingerprint pattern to today's context. Example of GOOD: '6.8 hours of sleep last night. Your body tends to run easier the day after 7+ hours — today might not get that boost, so keep the effort honest.' Example of BAD: '38.3 miles through 5 runs this week. Your pacing has been consistent.' Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. NEVER say 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
+        "morning_voice": f"This is the most important surface in the product — the first thing the athlete reads every morning, updated after every activity. Give their data a voice by connecting a personal fingerprint pattern to today's context. Say what needs to be said — no arbitrary length limit. ONE paragraph only (no second paragraph). No restatement of a prior sentence. Example of GOOD: '6.8 hours of sleep last night. Your body tends to run easier the day after 7+ hours — today might not get that boost, so keep the effort honest.' Example of BAD: '38.3 miles through 5 runs this week. Your pacing has been consistent.' Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. NEVER say 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
         "workout_why": f"One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.{_lane(today_summary)}",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
@@ -1849,6 +1844,23 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
         "=== DEEP INTELLIGENCE (what the athlete CANNOT know from looking at their data) ===\n\n"
         + "\n\n".join(sections)
     )
+
+
+def _format_race_distance(plan) -> str:
+    """Human-readable race distance from plan's goal_race_distance_m."""
+    dist_m = getattr(plan, "goal_race_distance_m", None)
+    if not dist_m:
+        return "unknown distance"
+    miles = dist_m / 1609.344
+    if abs(miles - 26.2) < 0.5:
+        return "marathon"
+    if abs(miles - 13.1) < 0.3:
+        return "half marathon"
+    if abs(miles - 6.2) < 0.2:
+        return "10K"
+    if abs(miles - 3.1) < 0.2:
+        return "5K"
+    return f"{miles:.1f} miles"
 
 
 def compute_race_countdown(
@@ -2562,9 +2574,13 @@ async def get_home_data(
                 race_data_dict = None
                 if race_countdown:
                     race_data_dict = {
-                        "race_name": race_countdown.race_name,
+                        "name": race_countdown.race_name,
+                        "date": race_countdown.race_date,
                         "days_remaining": race_countdown.days_remaining,
+                        "distance": _format_race_distance(active_plan),
                         "goal_time": race_countdown.goal_time,
+                        "goal_pace": race_countdown.goal_pace,
+                        "predicted_time": race_countdown.predicted_time,
                     }
 
                 checkin_data_dict = None

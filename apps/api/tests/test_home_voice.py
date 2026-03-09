@@ -68,16 +68,15 @@ class TestValidateVoiceOutput:
         assert "numeric" in result.get("reason", "")
 
     def test_length_enforced(self):
-        """morning_voice must be between 40 and 280 characters."""
+        """morning_voice must be at least 40 characters; no upper cap."""
         validate = self._get_validator()
 
         too_short = "Run 5 mi."  # < 40 chars
         assert validate(too_short)["valid"] is False
         assert "length" in validate(too_short).get("reason", "")
 
-        too_long = "You ran 5 miles today " * 20  # > 280 chars, has number
-        assert validate(too_long)["valid"] is False
-        assert "length" in validate(too_long).get("reason", "")
+        long_but_valid = "You ran 5 miles today " * 20  # > 280 chars, has number — no upper cap
+        assert validate(long_but_valid)["valid"] is True
 
     def test_valid_text_passes(self):
         """Clean, grounded text passes all checks."""
@@ -508,26 +507,19 @@ class TestInsightLogAggregation:
 class TestMorningVoiceSchemaConstraints:
     """Schema field text must enforce one-paragraph / no-restatement rules."""
 
-    def test_schema_contains_one_paragraph_constraint(self):
-        """morning_voice schema description enforces ONE paragraph."""
+    def test_schema_contains_paragraph_constraint(self):
+        """morning_voice schema description enforces single paragraph, no restatement, no sentence count."""
         import inspect
         from routers.home import generate_coach_home_briefing
         src = inspect.getsource(generate_coach_home_briefing)
         assert "ONE paragraph" in src
-        assert "No second paragraph" in src
+        assert "no second paragraph" in src.lower()
         assert "No restatement" in src
+        assert "2-3 sentences" not in src
 
-    def test_warning_at_240_chars(self):
-        """Validator warns at >240 chars without failing."""
+    def test_long_morning_voice_passes(self):
+        """No upper character limit — morning voice can breathe."""
         from routers.home import validate_voice_output
-        text = "A" * 241 + " ran 5 miles today"  # > 240, < 280, has digit
+        text = "A" * 400 + " ran 5 miles today"  # 400+ chars, has digit
         result = validate_voice_output(text, field="morning_voice")
         assert result["valid"] is True
-
-    def test_fail_close_at_280_chars(self):
-        """Validator still fail-closes at >280 chars."""
-        from routers.home import validate_voice_output
-        text = "A" * 281 + " ran 5 miles"  # > 280, has digit
-        result = validate_voice_output(text, field="morning_voice")
-        assert result["valid"] is False
-        assert "too_long" in result.get("reason", "")
