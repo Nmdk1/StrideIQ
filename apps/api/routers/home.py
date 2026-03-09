@@ -1066,6 +1066,53 @@ def _call_gemini_briefing_sync(
     return None
 
 
+# Fingerprint-related terms that should only appear in morning_voice
+_FINGERPRINT_TERMS = [
+    "sleep cliff", "asymmetry", "half-life", "decay", "threshold",
+    "fingerprint", "pattern", "efficiency tends", "correlat",
+]
+
+
+def _validate_briefing_diversity(fields: dict, athlete_id: str = "") -> dict:
+    """
+    Monitor mode: detect when fingerprint-derived language leaks from
+    morning_voice into 2+ other fields (cross-lane repetition).
+
+    Logs a warning but returns payload unchanged.
+    """
+    if not fields:
+        return fields
+
+    morning = (fields.get("morning_voice") or "").lower()
+    if not morning:
+        return fields
+
+    morning_terms = [t for t in _FINGERPRINT_TERMS if t in morning]
+    if not morning_terms:
+        return fields
+
+    other_fields = ["coach_noticed", "week_assessment", "checkin_reaction",
+                    "race_assessment", "today_context"]
+    leaking = []
+    for fname in other_fields:
+        text = (fields.get(fname) or "").lower()
+        if not text:
+            continue
+        for term in morning_terms:
+            if term in text:
+                leaking.append(fname)
+                break
+
+    if len(leaking) >= 2:
+        logger.warning(
+            "Briefing diversity violation for %s: fingerprint terms %s leaked "
+            "from morning_voice into %s",
+            athlete_id, morning_terms, leaking,
+        )
+
+    return fields
+
+
 def _fetch_llm_briefing_sync(
     prompt: str,
     schema_fields: dict,
@@ -1179,6 +1226,9 @@ def _fetch_llm_briefing_sync(
                         result[_field_name] = None
         except Exception as _e:
             logger.debug("Relative-time validation failed (non-blocking): %s", _e)
+
+    # --- Post-generation diversity monitor (monitor mode — log only) ---
+    result = _validate_briefing_diversity(result, athlete_id)
 
     # Cache for 30 minutes
     try:
@@ -1312,12 +1362,11 @@ def generate_coach_home_briefing(
         "- Be direct and honest, not sycophantic. The athlete trusts data, not flattery.",
         "",
         "PERSONAL FINGERPRINT CONTRACT:",
-        "- When the DEEP INTELLIGENCE section contains confirmed patterns, reference them by evidence count.",
         "- Use threshold values to give specific advice ('your sleep cliff is at 6.2h — last night was 5.5').",
         "- Use asymmetry ratios to convey magnitude ('bad sleep hurts you 3x more than good sleep helps').",
         "- Use decay timing for forward-looking advice ('the effect peaks tomorrow based on your 2-day half-life').",
-        "- NEVER reference a pattern without its confirmation count. This builds athlete trust.",
         "- If no confirmed patterns exist, do not mention the fingerprint — coach from the other data.",
+        "- ABSOLUTE BAN on athlete-facing stats: never say 'confirmed N times', 'r=', 'p-value', 'times_confirmed', 'correlation coefficient', 'observations'. Translate into coaching language.",
         "",
         "TRUST-SAFETY CONSTRAINTS (enforced by post-generation validator):",
         "- Do NOT use sycophantic words: incredible, amazing, phenomenal, extraordinary, fantastic, wonderful, awesome, brilliant, magnificent, outstanding, superb, stellar, remarkable, spectacular.",
@@ -1352,10 +1401,10 @@ def generate_coach_home_briefing(
         parts.extend([
             rich_context,
             "",
-            "CRITICAL INSTRUCTION: The DEEP INTELLIGENCE section above contains findings",
-            "the athlete CANNOT derive from looking at their own data. Your morning_voice",
-            "and coach_noticed MUST draw from this section. If you ignore it and produce",
-            "generic observations like weekly mileage totals, your output will be rejected.",
+            "DEEP INTELLIGENCE is reasoning context for you, not a script to copy.",
+            "Each output field below has its own YOUR DATA FOR THIS FIELD lane —",
+            "draw from that lane first. Only morning_voice may reference fingerprint",
+            "findings directly. Other fields must NOT repeat fingerprint themes.",
             "",
         ])
     elif coach_noticed_intel:
@@ -1459,14 +1508,67 @@ def generate_coach_home_briefing(
 
     prompt = "\n".join(parts)
 
+    # --- Build per-field lane snippets (structural separation) ---
+    fingerprint_summary = ""
+    try:
+        from services.fingerprint_context import build_fingerprint_prompt_section
+        from uuid import UUID as _lane_UUID
+        fp = build_fingerprint_prompt_section(
+            _lane_UUID(athlete_id), db, verbose=False, max_findings=3,
+        )
+        if fp:
+            fingerprint_summary = fp
+    except Exception:
+        pass
+
+    coach_noticed_source = ""
+    if coach_noticed_intel:
+        coach_noticed_source = coach_noticed_intel.text
+    elif insight_context:
+        coach_noticed_source = insight_context
+
+    today_summary = ""
+    if today_completed:
+        c = today_completed
+        today_summary = (
+            f"Completed: {c.get('name')}, {c.get('distance_mi')}mi, "
+            f"pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}"
+        )
+    elif planned_workout and planned_workout.get("has_workout"):
+        w = planned_workout
+        today_summary = (
+            f"Planned: {w.get('title') or w.get('workout_type')}, "
+            f"{w.get('distance_mi', '?')}mi"
+        )
+
+    checkin_summary = ""
+    if checkin_data:
+        checkin_summary = (
+            f"Readiness: {checkin_data.get('readiness_label', '?')}, "
+            f"Sleep: {checkin_data.get('sleep_label', '?')}, "
+            f"Soreness: {checkin_data.get('soreness_label') or 'not reported'}"
+        )
+
+    race_summary = ""
+    if race_data:
+        race_summary = (
+            f"Race: {race_data.get('name', '?')} on {race_data.get('date', '?')}, "
+            f"distance: {race_data.get('distance', '?')}"
+        )
+
+    def _lane(snippet: str) -> str:
+        if snippet:
+            return f" YOUR DATA FOR THIS FIELD: {snippet}"
+        return " YOUR DATA FOR THIS FIELD: Use the athlete brief and today context above."
+
     schema_fields = {
-        "coach_noticed": "The single most important coaching observation the athlete doesn't already know. Draw from the DEEP INTELLIGENCE personal patterns section. Surface the finding most relevant to TODAY. If a daily intelligence rule fired, lead with that. The athlete should read this and think 'I didn't know that.' Example of GOOD: 'Your efficiency tends to improve within 2 days of higher sleep — last night's 5.5 hours may blunt tomorrow's gains.' Example of BAD: 'You ran two 10-mile runs this week showing consistent volume.' 1-2 sentences. NEVER quote internal metrics.",
-        "today_context": "Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.",
-        "week_assessment": "Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.",
-        "checkin_reaction": "Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.",
-        "race_assessment": "Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.",
-        "morning_voice": "One paragraph that gives your athlete's data a voice. 40-280 characters. PRIORITIZE insights from the DEEP INTELLIGENCE section — these are things the athlete cannot derive from their own runs. A good morning voice connects a personal pattern to today's context. Example of GOOD: '6.8 hours of sleep last night. Your body tends to run easier the day after 7+ hours — today might not get that boost, so keep the effort honest.' Example of BAD: '38.3 miles through 5 runs this week. Your pacing has been consistent.' Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score.",
-        "workout_why": "One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.",
+        "coach_noticed": f"The single most important coaching observation the athlete doesn't already know. If a daily intelligence rule fired, lead with that. Otherwise draw from wellness trends, training load signals, or recent activity patterns. The athlete should read this and think 'I didn't know that.' 1-2 sentences. NEVER quote internal metrics (r=, confirmed, p-value, observations).{_lane(coach_noticed_source)}",
+        "today_context": f"Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.{_lane(today_summary)}",
+        "week_assessment": f"Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.{_lane('')}",
+        "checkin_reaction": f"Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.{_lane(checkin_summary)}",
+        "race_assessment": f"Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.{_lane(race_summary)}",
+        "morning_voice": f"One paragraph that gives your athlete's data a voice. 40-280 characters. Connect a personal fingerprint pattern to today's context. Example of GOOD: '6.8 hours of sleep last night. Your body tends to run easier the day after 7+ hours — today might not get that boost, so keep the effort honest.' Example of BAD: '38.3 miles through 5 runs this week. Your pacing has been consistent.' Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. NEVER say 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
+        "workout_why": f"One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.{_lane(today_summary)}",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
     if checkin_data:
@@ -1486,83 +1588,65 @@ def compute_coach_noticed(
     ADR-17 Phase 2: Build the single most important coaching insight.
 
     Priority waterfall:
-    1. Strong correlation (|r| >= 0.5, n >= 15)
+    1. Persisted fingerprint finding (times_confirmed >= 3, daily rotation)
     2. Top signal from home_signals
     3. Top insight feed card summary
     4. Hero narrative fallback
-    """
-    # 1. Strong correlation (skip findings in cooldown)
-    try:
-        from services.correlation_engine import analyze_correlations
-        result = analyze_correlations(athlete_id, days=60, db=db)
-        for corr in result.get("correlations", []):
-            if not corr.get("is_significant"):
-                continue
-            r = corr.get("correlation_coefficient", 0)
-            n = corr.get("sample_size", 0)
-            if abs(r) >= 0.5 and n >= 15:
-                input_name = corr.get("input_name", "factor")
-                output_metric = corr.get("output_metric", "efficiency")
-                if _is_finding_in_cooldown(athlete_id, input_name, output_metric):
-                    continue
-                direction = "positively" if r > 0 else "negatively"
-                lag_days = int(corr.get("time_lag_days", 0) or 0)
-                if lag_days == 0:
-                    lag_phrase = "same day"
-                elif lag_days == 1:
-                    lag_phrase = "the following day"
-                else:
-                    lag_phrase = f"within {lag_days} days"
-                text = (
-                    f"{input_name.replace('_', ' ').title()} {direction} correlates "
-                    f"with your efficiency (r={r:.2f}, {n} observations). "
-                    f"Timing signal: effect usually appears {lag_phrase}."
-                )
-                return CoachNoticed(
-                    text=text,
-                    source="correlation",
-                    ask_coach_query=f"Tell me more about how {input_name.replace('_', ' ')} affects my running",
-                )
-    except Exception as e:
-        logger.debug(f"Coach noticed correlation lookup failed: {e}")
 
-    # 1b. Recently confirmed fingerprint finding (persisted, not volatile)
+    No live analyze_correlations — all correlation data comes from persisted
+    CorrelationFinding rows (populated by the daily fingerprint refresh).
+    """
+    # 1. Persisted fingerprint finding (trust-gated, rotated daily)
     try:
         from uuid import UUID as _UUID
         from models import CorrelationFinding as _CF
-        _cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-        recent_finding = (
+        eligible = (
             db.query(_CF)
             .filter(
                 _CF.athlete_id == _UUID(athlete_id),
                 _CF.is_active == True,  # noqa: E712
-                _CF.times_confirmed >= 1,
-                _CF.last_confirmed_at >= _cutoff,
+                _CF.times_confirmed >= 3,
             )
-            .order_by(_CF.times_confirmed.desc())
-            .first()
+            .order_by(_CF.times_confirmed.desc(), _CF.last_confirmed_at.desc())
+            .limit(5)
+            .all()
         )
-        if recent_finding:
-            f = recent_finding
-            finding_text = f.insight_text or (
-                f"{f.input_name.replace('_', ' ').title()} {f.direction}ly "
-                f"affects your {f.output_metric.replace('_', ' ')}"
-            )
-            detail_parts = [f"confirmed {f.times_confirmed}x"]
-            if f.threshold_value is not None:
-                detail_parts.append(f"threshold at {f.threshold_value:.1f}")
-            if f.asymmetry_ratio is not None:
-                detail_parts.append(f"{f.asymmetry_ratio:.1f}x asymmetry")
-
-            text = f"{finding_text} ({', '.join(detail_parts)})."
-            return CoachNoticed(
-                text=text,
-                source="fingerprint",
-                ask_coach_query=(
-                    f"Tell me more about how {f.input_name.replace('_', ' ')} "
-                    f"affects my {f.output_metric.replace('_', ' ')}"
-                ),
-            )
+        if eligible:
+            # deterministic daily rotation across top findings
+            idx = date.today().toordinal() % len(eligible)
+            f = eligible[idx]
+            if not _is_finding_in_cooldown(athlete_id, f.input_name, f.output_metric):
+                finding_text = f.insight_text or (
+                    f"{f.input_name.replace('_', ' ').title()} {f.direction}ly "
+                    f"affects your {f.output_metric.replace('_', ' ')}"
+                )
+                detail_parts = []
+                if f.threshold_value is not None:
+                    detail_parts.append(
+                        f"your {f.input_name.replace('_', ' ')} cliff is around "
+                        f"{f.threshold_value:.1f}"
+                    )
+                if f.asymmetry_ratio is not None and f.asymmetry_ratio > 1.5:
+                    detail_parts.append(
+                        f"the downside is {f.asymmetry_ratio:.1f}x stronger "
+                        f"than the upside"
+                    )
+                if f.decay_half_life_days is not None:
+                    detail_parts.append(
+                        f"effect peaks within {f.decay_half_life_days:.0f} day(s)"
+                    )
+                text = finding_text
+                if detail_parts:
+                    text += " — " + ", ".join(detail_parts)
+                text += "."
+                return CoachNoticed(
+                    text=text,
+                    source="fingerprint",
+                    ask_coach_query=(
+                        f"Tell me more about how {f.input_name.replace('_', ' ')} "
+                        f"affects my {f.output_metric.replace('_', ' ')}"
+                    ),
+                )
     except Exception as e:
         logger.debug("Fingerprint finding for coach_noticed failed: %s", e)
 
@@ -1612,48 +1696,29 @@ def compute_coach_noticed(
 
 def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
     """
-    Assemble deep intelligence from five sources into a single prompt section.
+    Assemble deep intelligence from multiple sources into a single prompt section.
 
     Each source runs in its own try/except — any failure is logged and skipped.
     If all sources return nothing, returns "".
 
-    Sources (in order of insertion into prompt):
-    1. N=1 insights (Bonferroni-corrected personal patterns)
-    2. Daily intelligence rules that fired today
-    3. Wellness trends (28-day check-in aggregation)
-    4. PB patterns (training conditions preceding personal bests)
-    5. This block vs previous block (28-day period comparison)
+    Sources:
+    1. Daily intelligence rules that fired today
+    2. Wellness trends (28-day check-in aggregation)
+    3. PB patterns
+    4. This block vs previous block (28-day period comparison)
+    5. Training Story (race attribution + adaptation)
+    6. Activity shapes
+    7. Personal Fingerprint (persisted CorrelationFinding)
+
+    N=1 insights (generate_n1_insights) removed — redundant with persisted
+    fingerprint (Source 7) which is already Bonferroni-corrected and persisted.
     """
     from uuid import UUID as _UUID
     athlete_uuid = _UUID(athlete_id)
 
     sections: list[str] = []
 
-    # 1. N=1 personal patterns — crown jewels (skip cooled-down findings)
-    try:
-        from services.n1_insight_generator import generate_n1_insights
-        n1_insights = generate_n1_insights(athlete_uuid, db, max_insights=5)
-        if n1_insights:
-            filtered = []
-            for ins in n1_insights:
-                inp = ins.evidence.get("input_name", "")
-                out = ins.evidence.get("output_metric", "efficiency")
-                if inp and _is_finding_in_cooldown(athlete_id, inp, out):
-                    continue
-                filtered.append(ins)
-            if filtered:
-                lines = [
-                    f"- {ins.text} (confidence: {ins.confidence:.2f})"
-                    for ins in filtered
-                ]
-                sections.append(
-                    "--- Personal Patterns (N=1, statistically validated) ---\n"
-                    + "\n".join(lines)
-                )
-    except Exception as e:
-        logger.warning(f"N=1 insights failed for home briefing ({athlete_id}): {e}")
-
-    # 2. Daily intelligence rules that fired today
+    # 1. Daily intelligence rules that fired today
     try:
         from services.daily_intelligence import DailyIntelligenceEngine, InsightMode
         intel_result = DailyIntelligenceEngine().evaluate(athlete_uuid, date.today(), db)

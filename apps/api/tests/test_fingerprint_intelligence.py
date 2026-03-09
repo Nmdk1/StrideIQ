@@ -169,26 +169,35 @@ class TestCoachNoticedFingerprint:
         )
 
         mock_db = MagicMock()
-        mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = f
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = [f]
+        mock_db.query.return_value = query_chain
 
-        with patch("services.correlation_engine.analyze_correlations", return_value={"correlations": []}):
+        with patch("routers.home._is_finding_in_cooldown", return_value=False):
             result = compute_coach_noticed(str(ATHLETE_ID), mock_db)
 
         assert result is not None
         assert result.source == "fingerprint"
-        assert "confirmed 15x" in result.text
-        assert "threshold at 6.2" in result.text
+        # No stats language — coach-speak only
+        assert "confirmed" not in result.text.lower()
+        assert "r=" not in result.text
+        assert "cliff" in result.text or "sleep" in result.text.lower()
 
     def test_fingerprint_requires_recent_confirmation(self):
         from routers.home import compute_coach_noticed
 
         mock_db = MagicMock()
-        chain = mock_db.query.return_value.filter.return_value.order_by.return_value
-        chain.first.return_value = None
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = []
+        mock_db.query.return_value = query_chain
 
-        with patch("services.correlation_engine.analyze_correlations", return_value={"correlations": []}), \
-             patch("services.home_signals.aggregate_signals", side_effect=Exception("skip")), \
+        with patch("services.home_signals.aggregate_signals", side_effect=Exception("skip")), \
              patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("skip")):
             result = compute_coach_noticed(str(ATHLETE_ID), mock_db)
 
@@ -198,11 +207,14 @@ class TestCoachNoticedFingerprint:
         from routers.home import compute_coach_noticed
 
         mock_db = MagicMock()
-        chain = mock_db.query.return_value.filter.return_value.order_by.return_value
-        chain.first.return_value = None
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = []
+        mock_db.query.return_value = query_chain
 
-        with patch("services.correlation_engine.analyze_correlations", return_value={"correlations": []}), \
-             patch("services.home_signals.aggregate_signals", side_effect=Exception("skip")), \
+        with patch("services.home_signals.aggregate_signals", side_effect=Exception("skip")), \
              patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("skip")):
             result = compute_coach_noticed(str(ATHLETE_ID), mock_db)
 

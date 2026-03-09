@@ -122,9 +122,10 @@ def build_fingerprint_prompt_section(
     if verbose:
         header = (
             "--- Personal Fingerprint (data-proven patterns) ---\n"
-            "STRONG/CONFIRMED = proven by repeated confirmation — state as fact.\n"
-            "EMERGING = pattern forming, promising but not yet proven — hedge appropriately.\n"
-            "Cite the confirmation count. Use threshold/decay data for specific advice.\n"
+            "STRONG/CONFIRMED = proven — state as fact in coaching language.\n"
+            "EMERGING = pattern forming — hedge appropriately ('your data suggests').\n"
+            "Translate to coaching language; do not expose statistical internals to the athlete.\n"
+            "Use threshold/decay data for specific advice.\n"
         )
     else:
         header = (
