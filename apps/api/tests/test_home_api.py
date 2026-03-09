@@ -404,54 +404,64 @@ class TestWeekDayModel:
 class TestComputeCoachNoticed:
     """Tests for ADR-17 Phase 2 coach_noticed waterfall."""
 
-    @patch("services.correlation_engine.analyze_correlations")
-    def test_coach_noticed_picks_strong_correlation(self, mock_corr):
-        """Priority 1: strong correlation (|r| >= 0.5, n >= 15)."""
-        mock_corr.return_value = {
-            "correlations": [
-                {
-                    "is_significant": True,
-                    "correlation_coefficient": 0.65,
-                    "sample_size": 20,
-                    "input_name": "sleep_hours",
-                    "time_lag_days": 2,
-                }
-            ]
-        }
+    def test_coach_noticed_picks_fingerprint_finding(self):
+        """Priority 1: persisted fingerprint finding (times_confirmed >= 3)."""
+        from uuid import uuid4 as _uuid4
+
+        finding = MagicMock()
+        finding.input_name = "sleep_hours"
+        finding.output_metric = "efficiency"
+        finding.direction = "positive"
+        finding.times_confirmed = 8
+        finding.insight_text = "More sleep improves your next-day efficiency"
+        finding.threshold_value = 6.2
+        finding.asymmetry_ratio = 3.1
+        finding.decay_half_life_days = 2.0
+
         db = MagicMock()
-        result = compute_coach_noticed("athlete-1", db)
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = [finding]
+        db.query.return_value = query_chain
+
+        with patch("routers.home._is_finding_in_cooldown", return_value=False):
+            result = compute_coach_noticed(str(_uuid4()), db)
         assert result is not None
-        assert result.source == "correlation"
-        assert "Sleep Hours" in result.text
-        assert "Timing signal: effect usually appears within 2 days." in result.text
-        assert "r=0.65, 20 observations" in result.text
+        assert result.source == "fingerprint"
+        assert "sleep" in result.text.lower()
         assert result.ask_coach_query
 
-    @patch("services.home_signals.aggregate_signals", side_effect=Exception("disabled"))
-    @patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("disabled"))
-    @patch("services.correlation_engine.analyze_correlations")
-    def test_coach_noticed_skips_weak_correlation(self, mock_corr, _mock_feed, _mock_sig):
-        """Weak correlations (|r| < 0.5) don't qualify for Priority 1."""
-        mock_corr.return_value = {
-            "correlations": [
-                {
-                    "is_significant": True,
-                    "correlation_coefficient": 0.3,
-                    "sample_size": 25,
-                    "input_name": "sleep_hours",
-                }
-            ]
-        }
+    def test_coach_noticed_skips_immature_findings(self):
+        """Findings with times_confirmed < 3 are not surfaced."""
+        from uuid import uuid4 as _uuid4
+
         db = MagicMock()
-        result = compute_coach_noticed("athlete-1", db, hero_narrative=None)
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = []
+        db.query.return_value = query_chain
+
+        with patch("services.home_signals.aggregate_signals", side_effect=Exception("skip")), \
+             patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("skip")):
+            result = compute_coach_noticed(str(_uuid4()), db, hero_narrative=None)
         assert result is None
 
     @patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("nope"))
     @patch("services.home_signals.aggregate_signals", side_effect=Exception("nope"))
-    @patch("services.correlation_engine.analyze_correlations", side_effect=Exception("nope"))
-    def test_coach_noticed_fallback_to_narrative(self, _c, _s, _f):
+    def test_coach_noticed_fallback_to_narrative(self, _s, _f):
         """Priority 4: hero_narrative fallback when nothing else available."""
         db = MagicMock()
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = []
+        db.query.return_value = query_chain
+
         result = compute_coach_noticed(
             "athlete-1", db, hero_narrative="Your fitness is building steadily."
         )
@@ -461,10 +471,16 @@ class TestComputeCoachNoticed:
 
     @patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("nope"))
     @patch("services.home_signals.aggregate_signals", side_effect=Exception("nope"))
-    @patch("services.correlation_engine.analyze_correlations", side_effect=Exception("nope"))
-    def test_coach_noticed_returns_none_when_nothing(self, _c, _s, _f):
+    def test_coach_noticed_returns_none_when_nothing(self, _s, _f):
         """No data at all → None."""
         db = MagicMock()
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = []
+        db.query.return_value = query_chain
+
         result = compute_coach_noticed("athlete-1", db, hero_narrative=None)
         assert result is None
 

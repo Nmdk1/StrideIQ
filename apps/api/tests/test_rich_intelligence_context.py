@@ -28,47 +28,41 @@ def _athlete_id():
 
 
 # ---------------------------------------------------------------------------
-# 1. N=1 insights appear in output
+# 1. Personal Fingerprint appears in output (replaced N=1 insights)
 # ---------------------------------------------------------------------------
 
-class TestRichContextN1Insights:
-    def test_rich_context_includes_n1_insights(self):
-        """N=1 insight text and confidence appear under Personal Patterns header."""
+class TestRichContextFingerprintSource:
+    def test_rich_context_includes_fingerprint(self):
+        """Fingerprint section appears under Personal Fingerprint header."""
         from routers.home import _build_rich_intelligence_context
-        from services.n1_insight_generator import N1Insight
 
-        insights = [
-            N1Insight(text="Sleep > 7h correlates with faster pacing next day", confidence=0.82),
-            N1Insight(text="Higher easy-run volume precedes efficiency gains", confidence=0.71),
-            N1Insight(text="Midweek rest improves weekend long run HR", confidence=0.65),
-        ]
+        fp_section = (
+            "--- Personal Fingerprint (data-proven patterns) ---\n"
+            "STRONG/CONFIRMED = proven.\n"
+            "[STRONG 12x] sleep_hours → efficiency: positive (r=0.62, strength: strong)"
+        )
 
-        with patch("services.n1_insight_generator.generate_n1_insights", return_value=insights), \
-             patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine, \
+        with patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine, \
              patch("services.coach_tools.get_wellness_trends", return_value={"narrative": ""}), \
              patch("services.coach_tools.get_pb_patterns", return_value={"narrative": ""}), \
-             patch("services.coach_tools.compare_training_periods", return_value={"narrative": ""}):
+             patch("services.coach_tools.compare_training_periods", return_value={"narrative": ""}), \
+             patch("services.fingerprint_context.build_fingerprint_prompt_section", return_value=fp_section):
 
             mock_engine.return_value.evaluate.return_value = MagicMock(insights=[])
             result = _build_rich_intelligence_context(_athlete_id(), _make_db())
 
-        assert "Personal Patterns" in result
-        assert "Sleep > 7h correlates with faster pacing next day" in result
-        assert "Higher easy-run volume precedes efficiency gains" in result
-        assert "Midweek rest improves weekend long run HR" in result
-        assert "0.82" in result
-        assert "0.71" in result
-        assert "0.65" in result
+        assert "Personal Fingerprint" in result
+        assert "sleep_hours" in result
         assert "DEEP INTELLIGENCE" in result
 
 
 # ---------------------------------------------------------------------------
-# 2. Function survives N=1 failure (non-blocking)
+# 2. Function survives fingerprint failure (non-blocking)
 # ---------------------------------------------------------------------------
 
-class TestRichContextN1Failure:
-    def test_rich_context_survives_n1_failure(self):
-        """If generate_n1_insights raises, function continues and returns other data."""
+class TestRichContextFingerprintFailure:
+    def test_rich_context_survives_fingerprint_failure(self):
+        """If fingerprint source raises, function continues and returns other data."""
         from routers.home import _build_rich_intelligence_context
         from services.daily_intelligence import InsightMode
 
@@ -80,18 +74,16 @@ class TestRichContextN1Failure:
         mock_result = MagicMock()
         mock_result.insights = [mock_insight]
 
-        with patch("services.n1_insight_generator.generate_n1_insights", side_effect=Exception("DB timeout")), \
-             patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine, \
+        with patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine, \
              patch("services.coach_tools.get_wellness_trends", return_value={"narrative": "Sleep avg 6.8h (trend: stable)."}), \
              patch("services.coach_tools.get_pb_patterns", return_value={"narrative": ""}), \
-             patch("services.coach_tools.compare_training_periods", return_value={"narrative": ""}):
+             patch("services.coach_tools.compare_training_periods", return_value={"narrative": ""}), \
+             patch("services.fingerprint_context.build_fingerprint_prompt_section", side_effect=Exception("DB timeout")):
 
             mock_engine.return_value.evaluate.return_value = mock_result
             result = _build_rich_intelligence_context(_athlete_id(), _make_db())
 
-        # Must not raise; must return a string
         assert isinstance(result, str)
-        # Other sources should still appear
         assert "LOAD_SPIKE" in result or "Sleep avg 6.8h" in result
 
 
@@ -119,8 +111,7 @@ class TestRichContextDailyIntelligence:
         mock_result = MagicMock()
         mock_result.insights = [inform1, inform2, log_insight]
 
-        with patch("services.n1_insight_generator.generate_n1_insights", return_value=[]), \
-             patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine, \
+        with patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine, \
              patch("services.coach_tools.get_wellness_trends", return_value={"narrative": ""}), \
              patch("services.coach_tools.get_pb_patterns", return_value={"narrative": ""}), \
              patch("services.coach_tools.compare_training_periods", return_value={"narrative": ""}):
@@ -150,8 +141,7 @@ class TestRichContextAllEmpty:
         mock_result = MagicMock()
         mock_result.insights = []
 
-        with patch("services.n1_insight_generator.generate_n1_insights", return_value=[]), \
-             patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine, \
+        with patch("services.daily_intelligence.DailyIntelligenceEngine") as mock_engine, \
              patch("services.coach_tools.get_wellness_trends", return_value={"narrative": "No wellness data available."}), \
              patch("services.coach_tools.get_pb_patterns", return_value={"narrative": ""}), \
              patch("services.coach_tools.compare_training_periods", return_value={"narrative": ""}), \
