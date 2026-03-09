@@ -175,6 +175,13 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
           </p>
           <ArrowRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
         </div>
+        {lastRun.heat_adjustment_pct != null && lastRun.heat_adjustment_pct > 3 && (
+          <div className="px-4 pb-1">
+            <p className="text-xs text-amber-400/80">
+              🌡️ Heat slowed this run ~{lastRun.heat_adjustment_pct.toFixed(1)}% — your effort was better than the pace shows
+            </p>
+          </div>
+        )}
         {lastRun.provider === 'garmin' && (
           <div className="px-4 pb-2.5">
             <GarminBadge deviceName={lastRun.device_name} />
@@ -208,6 +215,12 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
             <MetricsPill label="Avg HR" value={`${Math.round(lastRun.average_hr)} bpm`} />
           )}
         </div>
+
+        {lastRun.heat_adjustment_pct != null && lastRun.heat_adjustment_pct > 3 && (
+          <p className="text-xs text-amber-400/80">
+            🌡️ Heat slowed this run ~{lastRun.heat_adjustment_pct.toFixed(1)}% — your effort was better than the pace shows
+          </p>
+        )}
 
         {lastRun.provider === 'garmin' && (
           <GarminBadge deviceName={lastRun.device_name} />

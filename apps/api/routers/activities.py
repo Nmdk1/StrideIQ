@@ -438,6 +438,8 @@ def get_activity(
         "temperature_f": activity.temperature_f,
         "humidity_pct": activity.humidity_pct,
         "weather_condition": activity.weather_condition,
+        "dew_point_f": activity.dew_point_f,
+        "heat_adjustment_pct": activity.heat_adjustment_pct,
         
         # Narrative context (ADR-033)
         "narrative": narrative,

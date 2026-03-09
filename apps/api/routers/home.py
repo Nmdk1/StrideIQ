@@ -174,6 +174,17 @@ class LastRun(BaseModel):
     shape_sentence: Optional[str] = None
     athlete_title: Optional[str] = None
     resolved_title: Optional[str] = None
+    heat_adjustment_pct: Optional[float] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HomeFinding(BaseModel):
+    """A single confirmed correlation finding surfaced on Home."""
+    text: str
+    confidence_tier: str
+    domain: str
+    times_confirmed: int
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -201,6 +212,9 @@ class HomeResponse(BaseModel):
     briefing_state: Optional[str] = None  # ADR-065: fresh | stale | missing | refreshing
     # --- RSI Layer 1 ---
     last_run: Optional[LastRun] = None  # Most recent run within 96h for hero canvas
+    # --- Path A surfaces ---
+    finding: Optional[HomeFinding] = None
+    has_correlations: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -2019,6 +2033,7 @@ def compute_last_run(
         shape_sentence=getattr(latest, "shape_sentence", None),
         athlete_title=getattr(latest, "athlete_title", None),
         resolved_title=resolved,
+        heat_adjustment_pct=getattr(latest, "heat_adjustment_pct", None),
     )
 
     # Enrich with stream analysis data when available — serve from cache
@@ -2609,6 +2624,45 @@ async def get_home_data(
         except Exception as e:
             logger.warning(f"Last run computation failed: {type(e).__name__}: {e}")
 
+    # --- Path A: Finding + correlations flag ---
+    home_finding = None
+    has_correlations = False
+    try:
+        from models import CorrelationFinding as _CF
+        active_count = (
+            db.query(_CF)
+            .filter(
+                _CF.athlete_id == current_user.id,
+                _CF.is_active.is_(True),
+                _CF.times_confirmed >= 3,
+            )
+            .count()
+        )
+        has_correlations = active_count > 0
+        if active_count > 0:
+            eligible = (
+                db.query(_CF)
+                .filter(
+                    _CF.athlete_id == current_user.id,
+                    _CF.is_active.is_(True),
+                    _CF.times_confirmed >= 3,
+                )
+                .order_by(_CF.times_confirmed.desc())
+                .limit(5)
+                .all()
+            )
+            idx = date.today().toordinal() % len(eligible)
+            f = eligible[idx]
+            tier = "strong" if f.times_confirmed >= 8 else "confirmed"
+            home_finding = HomeFinding(
+                text=f.insight_text or f"{f.input_name.replace('_', ' ')} affects your {f.output_metric}",
+                confidence_tier=tier,
+                domain=f.output_metric,
+                times_confirmed=f.times_confirmed,
+            )
+    except Exception as e:
+        logger.warning(f"Home finding computation failed: {type(e).__name__}: {e}")
+
     return HomeResponse(
         today=today_workout,
         yesterday=yesterday_insight,
@@ -2629,6 +2683,8 @@ async def get_home_data(
         coach_briefing=coach_briefing,
         briefing_state=briefing_state,
         last_run=last_run,
+        finding=home_finding,
+        has_correlations=has_correlations,
     )
 
 

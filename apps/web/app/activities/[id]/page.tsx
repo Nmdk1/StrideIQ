@@ -51,6 +51,8 @@ interface Activity {
   total_elevation_gain_m: number | null;
   average_temp_c: number | null;
   temperature_f: number | null;
+  dew_point_f: number | null;
+  heat_adjustment_pct: number | null;
   strava_activity_id: string | null;
   provider: string | null;
   device_name: string | null;
@@ -437,6 +439,12 @@ export default function ActivityDetailPage() {
             </div>
           )}
           {/* Garmin attribution is shown above the fold in the header — not repeated here */}
+
+          {activity.heat_adjustment_pct != null && activity.heat_adjustment_pct > 3 && (
+            <p className="text-xs text-amber-400/80 mt-2">
+              🌡️ Heat slowed this run ~{activity.heat_adjustment_pct.toFixed(1)}% — your effort was better than the pace shows
+            </p>
+          )}
         </div>
 
         {/* ── 6. Runtoon (always visible — CTA drives discovery for new users) ── */}

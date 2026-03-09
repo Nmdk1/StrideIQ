@@ -116,6 +116,14 @@ export interface LastRun {
   shape_sentence?: string | null;
   athlete_title?: string | null;
   resolved_title?: string | null;
+  heat_adjustment_pct?: number | null;
+}
+
+export interface HomeFinding {
+  text: string;
+  confidence_tier: string;
+  domain: string;
+  times_confirmed: number;
 }
 
 export type BriefingState = 'fresh' | 'stale' | 'missing' | 'refreshing' | 'consent_required';
@@ -156,6 +164,9 @@ export interface HomeData {
   last_run?: LastRun | null;
   // Async briefing state machine — drives polling and pending UI
   briefing_state?: BriefingState | null;
+  // Path A surfaces
+  finding?: HomeFinding | null;
+  has_correlations?: boolean;
 }
 
 // --- API Functions ---
