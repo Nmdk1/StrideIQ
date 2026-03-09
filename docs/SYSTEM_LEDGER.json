@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at_utc": "2026-03-09T21:11:29.053707+00:00",
+    "generated_at_utc": "2026-03-09T22:02:25.857666+00:00",
     "scope": "backend routes, frontend pages, frontend hooks, link/path validity",
     "owner_policy": {
       "backend_routes": "backend",
@@ -18,8 +18,8 @@
     ]
   },
   "summary": {
-    "backend_route_count": 328,
-    "backend_runtime_registered_count": 328,
+    "backend_route_count": 329,
+    "backend_runtime_registered_count": 329,
     "backend_broken_unregistered_count": 0,
     "backend_frontend_wired_count": 163,
     "frontend_page_count": 57,
@@ -719,6 +719,18 @@
       "path": "/v1/admin/classify-all-athletes",
       "file": "apps/api/routers/admin.py",
       "function": "admin_classify_all",
+      "runtime_registered": true,
+      "frontend_consumed": false,
+      "status": "backend_only_or_unwired",
+      "failure_reason": "No direct frontend consumer detected; may be internal/admin/webhook.",
+      "owner": "backend",
+      "fix_priority": "P3"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/ops/race-forecast",
+      "file": "apps/api/routers/admin.py",
+      "function": "set_race_forecast",
       "runtime_registered": true,
       "frontend_consumed": false,
       "status": "backend_only_or_unwired",

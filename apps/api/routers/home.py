@@ -1504,6 +1504,13 @@ def generate_coach_home_briefing(
         "have anything new, just coach today's session. Don't fill space."
     )
 
+    if race_data and race_data.get("days_remaining", 99) <= 7:
+        forecast = _get_race_forecast(athlete_id)
+        if forecast:
+            weather_section = _build_race_weather_context(athlete_id, db, forecast, race_data)
+            if weather_section:
+                parts.extend([weather_section, ""])
+
     prompt = "\n".join(parts)
 
     # --- Build per-field lane snippets (structural separation) ---
@@ -1844,6 +1851,155 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
         "=== DEEP INTELLIGENCE (what the athlete CANNOT know from looking at their data) ===\n\n"
         + "\n\n".join(sections)
     )
+
+
+def _get_race_forecast(athlete_id: str) -> Optional[dict]:
+    """Load admin-set race forecast from Redis. Returns None on miss or error."""
+    from core.cache import get_redis_client
+    import json as _json
+    try:
+        client = get_redis_client()
+        if not client:
+            return None
+        raw = client.get(f"race_forecast:{athlete_id}")
+        if not raw:
+            return None
+        return _json.loads(raw)
+    except Exception:
+        return None
+
+
+def _get_personal_heat_multiplier(athlete_id: str, db: Session) -> float:
+    """Derive personal heat multiplier from AthleteFinding heat_resilience data.
+
+    Priority:
+    1. Valid resilience_ratio from finding receipts -> bounded ratio-derived multiplier
+    2. Classification label -> default multiplier
+    3. Fallback -> 1.0 (no personalization)
+
+    Bounded to [0.70, 1.30].
+    """
+    from uuid import UUID as _UUID
+    from models import AthleteFinding
+
+    try:
+        finding = (
+            db.query(AthleteFinding)
+            .filter(
+                AthleteFinding.athlete_id == _UUID(athlete_id),
+                AthleteFinding.finding_type == "heat_resilience",
+                AthleteFinding.is_active == True,  # noqa: E712
+            )
+            .order_by(AthleteFinding.last_confirmed_at.desc())
+            .first()
+        )
+    except Exception:
+        return 1.0
+
+    if not finding:
+        return 1.0
+
+    receipts = finding.receipts or {}
+    classification = receipts.get("classification", "average")
+
+    resilience_ratio = receipts.get("resilience_ratio")
+    if resilience_ratio is not None:
+        try:
+            ratio = float(resilience_ratio)
+            multiplier = 1.0 / max(ratio, 0.5)
+            return max(0.70, min(multiplier, 1.30))
+        except (ValueError, TypeError):
+            pass
+
+    classification_map = {"resilient": 0.85, "average": 1.00, "sensitive": 1.15}
+    return classification_map.get(classification, 1.0)
+
+
+def _build_race_weather_context(
+    athlete_id: str, db: Session, forecast: dict, race_data: dict,
+) -> Optional[str]:
+    """Build a RACE WEEK WEATHER context block for the LLM prompt.
+
+    Returns None if forecast data is incomplete.
+    """
+    from uuid import UUID as _UUID
+    from models import Activity
+    from services.heat_adjustment import calculate_heat_adjustment_pct
+
+    temp_f = forecast.get("temp_f")
+    dew_point_f = forecast.get("dew_point_f")
+    if temp_f is None or dew_point_f is None:
+        return None
+
+    generic_adj = calculate_heat_adjustment_pct(temp_f, dew_point_f)
+    personal_multiplier = _get_personal_heat_multiplier(athlete_id, db)
+    personal_adj_pct = generic_adj * personal_multiplier
+    personal_adj_pct = max(0.0, min(personal_adj_pct, 0.15))
+
+    similar_count = 0
+    similar_avg_adj = None
+    try:
+        athlete_uuid = _UUID(athlete_id)
+        temp_tol = 8.0
+        dp_tol = 8.0
+        similar_runs = (
+            db.query(Activity)
+            .filter(
+                Activity.athlete_id == athlete_uuid,
+                Activity.sport.ilike("run"),
+                Activity.is_duplicate == False,  # noqa: E712
+                Activity.temperature_f.isnot(None),
+                Activity.dew_point_f.isnot(None),
+                Activity.distance_m >= 5000,
+                Activity.temperature_f.between(temp_f - temp_tol, temp_f + temp_tol),
+                Activity.dew_point_f.between(dew_point_f - dp_tol, dew_point_f + dp_tol),
+            )
+            .all()
+        )
+        similar_count = len(similar_runs)
+        adj_vals = [r.heat_adjustment_pct for r in similar_runs if r.heat_adjustment_pct]
+        if adj_vals:
+            similar_avg_adj = sum(adj_vals) / len(adj_vals)
+    except Exception:
+        pass
+
+    description = forecast.get("description", "")
+    race_name = race_data.get("name", "your race")
+    days_remaining = race_data.get("days_remaining", "?")
+
+    parts = [
+        "=== RACE WEEK WEATHER ===",
+        f"Race: {race_name} in {days_remaining} days.",
+        f"Forecast: {temp_f:.0f}°F, humidity {forecast.get('humidity_pct', '?')}%.",
+    ]
+    if description:
+        parts.append(f"Conditions: {description}.")
+
+    if personal_adj_pct > 0.02:
+        pct_display = personal_adj_pct * 100
+        parts.append(
+            f"Based on this athlete's heat history, expect roughly {pct_display:.0f}% "
+            f"pace slowdown in these conditions."
+        )
+
+    if similar_count > 0:
+        parts.append(
+            f"This athlete has {similar_count} previous run(s) in similar conditions."
+        )
+        if similar_avg_adj is not None:
+            avg_display = similar_avg_adj * 100
+            parts.append(f"Their average heat impact in similar weather: {avg_display:.1f}%.")
+
+    parts.extend([
+        "",
+        "COACHING RULE: Use this to set realistic pace expectations for race day. "
+        "Speak in coaching language — do NOT expose numeric adjustment percentages, "
+        "resilience ratios, or internal metric names to the athlete. "
+        "Instead say things like 'the heat may slow you by a minute or two' or "
+        "'conditions are favorable for a strong effort'.",
+    ])
+
+    return "\n".join(parts)
 
 
 def _format_race_distance(plan) -> str:

@@ -4,8 +4,8 @@ Canonical source: `docs/SYSTEM_LEDGER.json`.
 
 ## Summary
 
-- Backend routes: `328`
-- Runtime-registered backend routes: `328`
+- Backend routes: `329`
+- Runtime-registered backend routes: `329`
 - Broken unregistered backend routes: `0`
 - Backend routes with frontend consumers: `163`
 - Frontend pages: `57`

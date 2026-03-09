@@ -2317,3 +2317,60 @@ async def admin_classify_all(
         "total_unclassified_before": len(activities),
     }
 
+
+# --- Race-Week Weather Forecast (Manual Admin-Set) ---
+
+class RaceForecastRequest(BaseModel):
+    athlete_id: UUID
+    temp_f: float = Field(..., ge=-20, le=120)
+    humidity_pct: float = Field(..., ge=0, le=100)
+    description: Optional[str] = Field(None, max_length=240)
+
+
+@router.post("/ops/race-forecast", dependencies=[Depends(require_owner)])
+def set_race_forecast(
+    body: RaceForecastRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Set a race-day weather forecast for an athlete. Stored in Redis with 14-day TTL."""
+    import json
+    from core.cache import get_redis_client
+
+    client = get_redis_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="Cache unavailable")
+
+    from services.heat_adjustment import calculate_dew_point_f
+    dew_point_f = calculate_dew_point_f(body.temp_f, body.humidity_pct)
+
+    payload = {
+        "temp_f": body.temp_f,
+        "humidity_pct": body.humidity_pct,
+        "dew_point_f": round(dew_point_f, 1),
+        "description": body.description,
+        "set_by": str(current_user.id),
+        "set_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    key = f"race_forecast:{body.athlete_id}"
+    client.setex(key, timedelta(days=14), json.dumps(payload))
+
+    try:
+        from services.admin_audit import record_admin_audit_event
+        record_admin_audit_event(
+            db,
+            request=http_request,
+            actor=current_user,
+            action="set_race_forecast",
+            target_type="athlete",
+            target_id=str(body.athlete_id),
+            before={},
+            after=payload,
+        )
+    except Exception:
+        logger.warning("Failed to record admin audit for race forecast (non-blocking)")
+
+    return {"status": "ok", "key": key, "payload": payload}
+
