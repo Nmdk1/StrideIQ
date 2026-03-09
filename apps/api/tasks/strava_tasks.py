@@ -1248,6 +1248,40 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
             except Exception:
                 pass
 
+        # 6b. Campaign detection — find training arcs and link to races
+        try:
+            from services.campaign_detection import (
+                detect_inflection_points,
+                build_campaigns,
+                store_campaign_data_on_events,
+            )
+            from models import PerformanceEvent
+
+            inflection_points = detect_inflection_points(athlete.id, db)
+            if inflection_points:
+                confirmed_events = (
+                    db.query(PerformanceEvent)
+                    .filter(
+                        PerformanceEvent.athlete_id == athlete.id,
+                        PerformanceEvent.user_confirmed == True,  # noqa: E712
+                    )
+                    .all()
+                )
+                campaigns = build_campaigns(athlete.id, inflection_points, confirmed_events, db)
+                if campaigns:
+                    updated = store_campaign_data_on_events(athlete.id, campaigns, db)
+                    db.commit()
+                    logger.info(
+                        "Campaign detection [post-sync] for %s: %d campaigns, %d events updated",
+                        athlete.id, len(campaigns), updated,
+                    )
+        except Exception as e:
+            logger.error("Campaign detection [post-sync] failed for %s: %s", athlete.id, e)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
         # ADR-065: trigger home briefing refresh after sync
         try:
             from services.home_briefing_cache import mark_briefing_dirty

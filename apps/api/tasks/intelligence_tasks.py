@@ -529,6 +529,38 @@ def refresh_living_fingerprint(self: Task) -> Dict:
                 if findings:
                     store_all_findings(aid, findings, db)
                     db.commit()
+
+                # Campaign detection — find training arcs and link to races
+                try:
+                    from services.campaign_detection import (
+                        detect_inflection_points,
+                        build_campaigns,
+                        store_campaign_data_on_events,
+                    )
+                    from models import PerformanceEvent
+
+                    inflection_points = detect_inflection_points(aid, db)
+                    if inflection_points:
+                        confirmed_events = (
+                            db.query(PerformanceEvent)
+                            .filter(
+                                PerformanceEvent.athlete_id == aid,
+                                PerformanceEvent.user_confirmed == True,  # noqa: E712
+                            )
+                            .all()
+                        )
+                        campaigns = build_campaigns(aid, inflection_points, confirmed_events, db)
+                        if campaigns:
+                            updated = store_campaign_data_on_events(aid, campaigns, db)
+                            db.commit()
+                            logger.info(
+                                "Campaign detection for %s: %d inflections, %d campaigns, %d events updated",
+                                aid, len(inflection_points), len(campaigns), updated,
+                            )
+                except Exception as e:
+                    db.rollback()
+                    logger.error("Campaign detection failed for %s: %s", aid, e)
+
                 results.append({
                     'athlete_id': str(aid),
                     'findings': len(findings),
