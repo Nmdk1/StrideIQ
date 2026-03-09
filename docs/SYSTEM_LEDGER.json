@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at_utc": "2026-03-09T20:52:31.378975+00:00",
+    "generated_at_utc": "2026-03-09T21:11:29.053707+00:00",
     "scope": "backend routes, frontend pages, frontend hooks, link/path validity",
     "owner_policy": {
       "backend_routes": "backend",

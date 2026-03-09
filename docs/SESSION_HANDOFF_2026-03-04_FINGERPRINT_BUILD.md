@@ -80,9 +80,7 @@ rendering. Those are Phase 2 under a separate spec.
 
 ## What Was Done Today (Context)
 
-Today's session was deep product design work — no code was written.
-What happened:
-
+**Design phase (advisor):**
 - Extensive research into the existing codebase: models, services,
   race detection, training load computation, dedup logic, effort
   classification, personal bests, performance engine
@@ -99,6 +97,26 @@ What happened:
 - The builder spec was written, then reviewed by a Codex advisor who
   found 2 HIGH, 3 MEDIUM, 3 LOW issues — all fixed before handoff
 
+**Pre-Work build (builder — completed, deployed, verified):**
+
+All four pre-work tasks are done. Commits on main, deployed to
+production, verified against the founder's account.
+
+| Task | Commit | What it did |
+|------|--------|-------------|
+| P1 Duplicate Detection | `4a143f9` | `is_duplicate` + `duplicate_of_id` on Activity. `scan_and_mark_duplicates()` service. Dedup filters in training_load, correlation_engine, athlete_metrics. 12 tests. |
+| P4 Race Detection | `3960a12` | `detect_race_candidate()` expanded from 4→8 distances. Hard HR gate removed (HR now 35% weighted signal). Name-based detection added (15% weight, 15 regex patterns). `strava_workout_type_raw` column. 19 tests. |
+| P3 Single-Pass EMA | `13ced08` | `compute_training_state_history()` — single-pass EMA from first activity to last. Eliminates 60-day cold-start. 6 tests. |
+| P2 Batch Classification | `ec48501` | `POST /v1/admin/classify-all-athletes` endpoint. 3 tests. |
+
+Production verification results:
+- P1: 0 duplicates found (ingestion-time dedup was effective)
+- P2: 97.2% activities classified after batch run
+- P3: CTL values plausible for historical dates
+- P4: 4 high-confidence races (Strava tags) + 3 candidates via name detection. All 7 confirmed as real races by founder. Many 2024 races still missed due to null activity names — expected, confirms need for manual curation.
+
+**Gate A: PASSED.** Pre-work is complete. Builder starts at Phase 1A.
+
 ---
 
 ## Critical Things to Know
@@ -113,28 +131,46 @@ promised afterward. Read the full description in the product spec
 before building the frontend.
 
 **2. Gates are hard stops.**
-You cannot begin Phase 1A until all four pre-work verifications pass
-in production. You cannot begin Phase 1B until Phase 1A tests pass
-and the founder's account shows correct PerformanceEvents. Each gate
-has specific verification commands in the builder spec. Run them.
-Paste the output. Do not proceed on assertion alone.
+Gate A (pre-work) is already passed — do not repeat it. You cannot
+begin Phase 1B until Phase 1A tests pass and the founder's account
+shows correct PerformanceEvents. Each gate has specific verification
+commands in the builder spec. Run them. Paste the output. Do not
+proceed on assertion alone.
 
 **3. The founder's data is the test case.**
 The founder (mbshaf@gmail.com) has ~15+ races across 2 years. The
-system currently detects 4. Known races include: multiple 5Ks in
-the first year back running, a 16K Bellhaven Hills Classic, two 25K
-trail races (Scorpion Trail, Ivy Trek), a 10K or two, two half
-marathons (Nov 29 2025, Nov 30 2024), and more. If Phase 1A produces
-PerformanceEvents that match reality, the data quality work succeeded.
+system currently detects 4 via Strava race tags; 3 more via race-like
+activity names. Known races include: multiple 5Ks in the first year
+back running, a 16K Bellhaven Hills Classic, two 25K trail races
+(Scorpion Trail, Ivy Trek), a 10K or two, two half marathons
+(Nov 29 2025, Nov 30 2024 Stennis Space Center — 1st Masters), and
+more. If Phase 1A produces PerformanceEvents that match reality, the
+data quality work succeeded.
 
-**4. Statistical rigor matters.**
+**4. 2024 activity names are ALL null — the curation flow must handle
+this.**
+Every Strava activity from the founder's entire 2024 (first year back
+running) has `name = NULL`. Name-based race detection cannot help for
+this period. The Nov 30, 2024 Stennis Space Center Half Marathon (1st
+Masters, 4:26/km, HR=156) is in the database as a nameless 21184m
+activity — indistinguishable from a training long run. The same is
+true for every 2024 race. There are 11 half-marathon-distance
+activities total; only 1 has a race tag. The Tier 3 browse in the
+curation flow must be designed for this reality: athletes scanning
+unlabeled activities by date, pace, and distance to identify races
+the algorithm has no hope of finding. The card design must make this
+possible — show pace prominently (a 4:26/km half is obviously faster
+than a 5:34/km training long run), show day of week (Saturday morning
+= more likely a race), and let the athlete filter by date range.
+
+**5. Statistical rigor matters.**
 The quality gate in Phase 1B uses two layers: automated (effect size,
 sample size, p-value thresholds) then human (founder validates). The
 spec defines when statistical tests are valid (>= 3 per group for
 comparison layers) and when to fall back to descriptive statistics.
 Do not produce p-values from N=1 vs N=1 comparisons.
 
-**5. No acronyms in athlete-facing text.**
+**6. No acronyms in athlete-facing text.**
 Never CTL, ATL, TSB, RPI, TPP, EMA. A coach says "your fitness" not
 "your CTL." This is a non-negotiable narrative principle.
 
@@ -142,28 +178,30 @@ Never CTL, ATL, TSB, RPI, TPP, EMA. A coach says "your fitness" not
 
 ## Current State of the Codebase
 
-- **Tree:** Clean (no uncommitted production changes relevant to this
-  feature)
-- **Tests:** Green (existing test suite passes)
+- **Tree:** Clean (pre-work + 1A commits on main, deployed)
+- **Tests:** 172 passing, 0 failing
 - **Production:** Healthy at https://strideiq.run
-- **No code for this feature exists yet.** The PerformanceEvent table,
-  the fingerprint analysis service, the curation API — all new.
-- **Existing services to modify:** `training_load.py` (lookback fix),
-  `performance_engine.py` (race detection expansion),
-  `strava_tasks.py` (preserve raw workout type), `models.py` (new
-  models and fields)
+- **Pre-work (P1-P4):** Done. Commits `4a143f9`, `3960a12`, `13ced08`,
+  `ec48501`. Gate A passed.
+- **Phase 1A:** Done. Commits `105f6cd`, `4fa0cd2`. Review fixes in
+  `45b8a8c`. Gate B passed. 53 PerformanceEvents on founder's account.
+  Strip pins filter to `user_confirmed == True` only. N+1 fixed.
+  `fitness_relative_performance` nulled (deferred to 8+ confirmed races).
+- **Phase 1B code does not exist yet.** The fingerprint analysis service,
+  findings table, and quality gate — all new.
 
 ---
 
 ## How to Start
 
-1. Read documents 1-6 above.
-2. Start with Pre-Work. P1-P4 are independent — work them in any
-   order.
-3. For each pre-work task, write the code, write the tests, run the
-   tests, deploy, run the verification command, paste the output.
-4. When all four pass, move to Phase 1A.
-5. When Gate B passes, move to Phase 1B.
+1. Read documents 1-7 above.
+2. Pre-Work (P1-P4) is DONE. Gate A is PASSED. Do not repeat it.
+3. Phase 1A is DONE. Gate B is PASSED. Do not repeat it.
+4. Begin Phase 1B in the builder spec. The three tasks are:
+   - 1B.1: Pattern extraction service (`services/fingerprint_analysis.py`)
+   - 1B.2: Automated quality gate
+   - 1B.3: Finding storage (model + migration + wire to endpoint)
+5. Write tests, run tests, deploy, run Gate C1 verification.
 6. When Gate C1 (automated) passes, present findings to the founder
    for Gate C2 (human validation).
 7. STOP after Gate C.

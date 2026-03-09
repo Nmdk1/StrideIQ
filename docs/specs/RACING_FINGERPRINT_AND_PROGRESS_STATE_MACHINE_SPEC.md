@@ -683,6 +683,10 @@ causes:
   5k - 1st Grandmaster") — are not used by the detection algorithm
 - Strava race tags applied after initial sync don't flow back to
   StrideIQ
+- All 2024 Strava activities have `name = NULL` — an entire year of
+  racing history invisible to name-based detection. The Nov 30, 2024
+  Stennis Space Center Half Marathon (1st Masters) is a nameless
+  21184m activity with HR=156, missed by all heuristics.
 
 **2. Activity duplication from Strava + Garmin.**
 
@@ -766,10 +770,21 @@ here are the ones we might have missed. Help us get this right and
 we'll show you something you've never seen about your own racing."
 
 **Each candidate race is a card the athlete recognizes, not a row in
-a table.** Distance, date, time of day, location if available, pace,
-name if it exists. Enough context that the athlete remembers the day.
-The confirmation is a moment of reconnecting with a race they ran,
-not a data entry task.
+a table.** Distance, date, day of week, time of day, location if
+available, pace, HR if available, name if it exists. Enough context
+that the athlete remembers the day. The confirmation is a moment of
+reconnecting with a race they ran, not a data entry task.
+
+**Many activities have no name.** Production data shows the founder's
+entire 2024 history has `name = NULL` on every Strava activity. The
+Nov 30, 2024 Stennis Space Center Half Marathon (1st Masters, 4:26/km,
+HR=156) sits in the database as a nameless 21184m activity —
+indistinguishable from a training long run without the athlete's help.
+For nameless activities, the card must make pace, day of week, and HR
+the primary recognition triggers. A 4:26/km half on a Saturday
+morning is obviously a race; a 5:34/km half on a Tuesday is not.
+Sort Tier 3 browse by pace (fastest first within each distance) to
+surface race efforts at the top.
 
 The system presents three tiers:
 
@@ -867,6 +882,27 @@ building.
 **No surface is built until the findings are validated against
 reality.** Don't design visuals for findings that haven't been
 confirmed to be true and meaningful.
+
+#### Validation Result (March 4, 2026)
+
+**PASSED.** 17 confirmed races. Three findings produced and validated:
+
+1. **Long run correlation:** Best races preceded by 16 mi long runs vs
+   14 mi before weaker races. True — founder's peak blocks reach
+   18-22 mi long runs.
+
+2. **Race-day uplift:** Races meaningfully outperform training. True —
+   founder races deep into pain, producing uplift training alone
+   wouldn't predict.
+
+3. **Taper pattern:** Short taper (2 weeks) correlates with best races.
+   What looks like a 5-week taper before weaker races is actually
+   injury-forced rest, not intentional taper. **This finding is the
+   canonical example of the product's core loop:** the system surfaces
+   a true pattern from data; the athlete provides context the data
+   cannot see; the sentence improves. Future work: distinguish
+   intentional taper from unplanned volume loss (injury detection
+   from training load discontinuities).
 
 ---
 

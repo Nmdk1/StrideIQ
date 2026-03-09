@@ -21,15 +21,26 @@ non-negotiable. Violating any of them costs trust immediately.
    to every session, every agent, every feature.
 
 3. **Read order for new sessions:**
+
+   **VISION DOCUMENTS (1-6): MANDATORY. Read ALL before proposing ANY feature or architecture.**
+   Agents who propose features without having read these will build the wrong thing.
+   If you cannot reference specific content from these docs in your proposal, you haven't read them.
+
    1. `docs/FOUNDER_OPERATING_CONTRACT.md` (how to work — non-negotiable)
-   2. `docs/PRODUCT_MANIFESTO.md` (the soul — what this product IS)
-   3. `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` (how every screen should feel, what's agreed, what's rejected — DO NOT re-propose rejected decisions)
-   4. `docs/RUN_SHAPE_VISION.md` (the visual vision for run data)
-   5. `docs/SITE_AUDIT_2026-02-15.md` (honest assessment of current state)
-   6. `docs/BUILD_SPEC_HOME_AND_ACTIVITY.md` (active build spec if working on home/activity pages)
-   7. `docs/TRAINING_PLAN_REBUILD_PLAN.md` (what to build)
-   8. `docs/AGENT_WORKFLOW.md` (build loop mechanics)
-   9. Latest `docs/SESSION_HANDOFF_*.md` (current state)
+   2. `docs/PRODUCT_MANIFESTO.md` (the soul — what this product IS. "The chart makes you open the app. The intelligence makes you trust it. The voice makes you need it.")
+   3. `docs/PRODUCT_STRATEGY_2026-03-03.md` (the moat — 10 priority-ranked product concepts. The Pre-Race Fingerprint, Proactive Coach, Injury Fingerprint, Personal Operating Manual. Every feature flows from the correlation engine producing true, specific, actionable findings about a single human. If you skip this document, you WILL propose something that already exists in a better form here.)
+   4. `docs/specs/CORRELATION_ENGINE_ROADMAP.md` (the 12-layer roadmap for the scientific instrument at the heart of the product. Layers 1-4 are built. Know what exists before proposing what to build next.)
+   5. `docs/FINGERPRINT_VISIBILITY_ROADMAP.md` (how the built backend intelligence connects to the product strategy — what's surfaceable now, what needs more engine layers, phased plan from surface to deep product)
+   6. `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` (how every screen should feel, what's agreed, what's rejected — DO NOT re-propose rejected decisions)
+
+   **CONTEXT DOCUMENTS (7-12): Read as needed for current work.**
+
+   7. `docs/RUN_SHAPE_VISION.md` (the visual vision for run data)
+   8. `docs/SITE_AUDIT_LIVING.md` (honest assessment of current state)
+   9. `docs/BUILD_SPEC_HOME_AND_ACTIVITY.md` (active build spec if working on home/activity pages)
+   10. `docs/TRAINING_PLAN_REBUILD_PLAN.md` (what to build)
+   11. `docs/AGENT_WORKFLOW.md` (build loop mechanics)
+   12. Latest `docs/SESSION_HANDOFF_*.md` (current state)
 
 4. **Show evidence, not claims.** Paste test output. Paste deploy logs.
 
@@ -42,4 +53,8 @@ non-negotiable. Violating any of them costs trust immediately.
 
 8. **Scoped commits only.** Never `git add -A`.
 
-9. **Tree clean, tests green, production healthy** at end of every session.
+9. **CI first, local second.** Always check CI (`gh run view`) before
+   debugging locally. CI is the source of truth — it has Postgres and
+   the full migration chain. If CI is green, the code is correct.
+
+10. **Tree clean, tests green, production healthy** at end of every session.

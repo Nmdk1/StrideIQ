@@ -403,30 +403,54 @@ misinterpretation:
 
 ## Reference Documents (Read Order)
 
-For a new session, read in this order:
+### VISION DOCUMENTS — MANDATORY FOR ALL AGENTS
 
-1. **`docs/PRODUCT_MANIFESTO.md`** — the soul of the product. What StrideIQ
-   IS and what "done" looks like. Read this first, every time.
+These six documents define what the product IS, why it exists, and where
+it's going. Every agent must read ALL six before proposing any feature,
+any architecture, or any prioritization. If you cannot cite specific
+content from these documents in your proposal, you haven't read them
+and your proposal will be wrong.
+
+The founder invested more time and resources in the Living Fingerprint
+and Correlation Engine than in the rest of the site combined. Agents
+who skip these documents will propose ideas the founder documented
+better months ago, waste cycles on solved problems, and lose trust
+immediately.
+
+1. **`docs/PRODUCT_MANIFESTO.md`** — the soul of the product. What
+   StrideIQ IS and what "done" looks like. "The chart makes you open the
+   app. The intelligence makes you trust it. The voice makes you need it."
 2. **This document** — operating contract (how to work)
-3. **`docs/PRODUCT_STRATEGY_2026-03-03.md`** — the moat. Why the correlation
-   engine is the root of everything. Every feature, every acquisition hook,
-   every retention mechanism flows from the engine producing true, specific,
-   actionable findings about a single human. If you don't understand this
-   document, you will build the wrong thing.
+3. **`docs/PRODUCT_STRATEGY_2026-03-03.md`** — the moat. 10 priority-ranked
+   product concepts: Pre-Race Fingerprint, Proactive Coach, Injury
+   Fingerprint, Deep Backfill, Personal Operating Manual, and more. Every
+   feature, every acquisition hook, every retention mechanism flows from
+   the engine producing true, specific, actionable findings about a single
+   human. If you don't understand this document, you will build the wrong
+   thing.
 4. **`docs/specs/CORRELATION_ENGINE_ROADMAP.md`** — the 12-layer roadmap
-   for the engine. From threshold detection to cohort intelligence. This is
-   the build sequence for the scientific instrument at the heart of the
-   product.
-5. **`docs/TRAINING_PLAN_REBUILD_PLAN.md`** — north star build plan (what
-   to build and why)
-6. **`docs/AGENT_WORKFLOW.md`** — build loop mechanics, testing commands,
-   phase execution plan (how to build)
+   for the scientific instrument at the heart of the product. From
+   threshold detection to cohort intelligence. Layers 1-4 are built. Know
+   what exists before proposing what to build next.
+5. **`docs/FINGERPRINT_VISIBILITY_ROADMAP.md`** — how the built backend
+   intelligence connects to the product strategy. Maps built capabilities
+   to strategy priorities. Phased plan from surface visibility through
+   Pre-Race Fingerprint, Proactive Coach, and Personal Operating Manual.
+   What's buildable now vs. what needs more engine layers.
+6. **`docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md`** — how every screen
+   should feel, what's agreed, what's rejected. DO NOT re-propose rejected
+   decisions without discussing with the founder first.
+
+### CONTEXT DOCUMENTS — Read as needed for current work
+
 7. **`docs/RUN_SHAPE_VISION.md`** — vision doc for Run Shape Intelligence
-   (read if working on this feature)
-8. **Latest `docs/SESSION_HANDOFF_*.md`** — what happened in the last
-   session (current state)
-9. **Latest `docs/SESSION_HANDOFF_*_BUILDER_NOTE.md`** — specific
-   assignment for the new agent (if one exists)
+8. **`docs/SITE_AUDIT_LIVING.md`** — honest assessment of current state
+9. **`docs/BUILD_SPEC_HOME_AND_ACTIVITY.md`** — active build spec if
+   working on home/activity pages
+10. **`docs/TRAINING_PLAN_REBUILD_PLAN.md`** — north star build plan (what
+    to build and why)
+11. **`docs/AGENT_WORKFLOW.md`** — build loop mechanics
+12. **Latest `docs/SESSION_HANDOFF_*.md`** — current state
 
 ### Key Codebase References
 
@@ -487,6 +511,27 @@ These are real mistakes from real sessions. Learn from them.
    the infrastructure constraints or the code it was modifying before
    writing. **Research the code you're touching AND the infrastructure
    it runs on.** Every time.
+
+8. **Proposing product direction without reading the vision documents.**
+   An advisor proposed a "phased visibility plan" for the Living
+   Fingerprint — surface it, make it interactive, make it predictive,
+   tell the story. The founder's Product Strategy document, written
+   months earlier, already contained a more specific, more ambitious
+   version of every idea: Pre-Race Fingerprint (full block signature
+   matching), Proactive Coach (reaches out at the right moment), Injury
+   Fingerprint (continuous background monitor), Personal Operating
+   Manual (living document that grows). The advisor's proposals were
+   pale echoes of the founder's documented thinking. **Read the vision
+   documents before proposing anything.** The founder has spent months
+   thinking about this product. Respect that work by reading it first.
+
+9. **Deploying model names without verifying they exist.** An advisor
+   batch-replaced `gemini-2.5-flash` with `gemini-3.1-flash-lite` and
+   `claude-opus-4-6` with `claude-sonnet-4-6-20250514` across 9 files
+   without testing a single API call. Both model names returned 404.
+   Every LLM-powered feature in the system was dead — briefings,
+   narrators, coach, runtoons. **Verify external API identifiers with
+   a live call before deploying across the codebase.**
 
 ---
 

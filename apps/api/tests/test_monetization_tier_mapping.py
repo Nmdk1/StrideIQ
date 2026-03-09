@@ -149,18 +149,22 @@ def _cleanup(*objs):
         for pid in purchase_ids:
             db.execute(text("DELETE FROM plan_purchases WHERE id = :id"), {"id": pid})
         for plan_id in plan_ids:
+            db.execute(text("DELETE FROM plan_modification_log WHERE plan_id = :pid"), {"pid": plan_id})
             db.execute(text("DELETE FROM plan_purchases WHERE plan_snapshot_id = :pid"), {"pid": plan_id})
-            db.execute(text("DELETE FROM planned_workout WHERE plan_id = :pid::uuid"), {"pid": plan_id})
-            db.execute(text("DELETE FROM training_plan WHERE id = :pid::uuid"), {"pid": plan_id})
+            db.execute(text("DELETE FROM planned_workout WHERE plan_id = :pid"), {"pid": plan_id})
+            db.execute(text("DELETE FROM training_plan WHERE id = :pid"), {"pid": plan_id})
         for aid in athlete_ids:
+            db.execute(text("""
+                DELETE FROM plan_modification_log
+                WHERE athlete_id = :aid
+            """), {"aid": aid})
             db.execute(text("""
                 DELETE FROM planned_workout pw
                 USING training_plan tp
-                WHERE pw.plan_id = tp.id AND tp.athlete_id = :aid::uuid
+                WHERE pw.plan_id = tp.id AND tp.athlete_id = :aid
             """), {"aid": aid})
-            db.execute(text("DELETE FROM plan_purchases WHERE athlete_id = :aid::uuid"), {"aid": aid})
-            db.execute(text("DELETE FROM training_plan WHERE athlete_id = :aid::uuid"), {"aid": aid})
-            db.execute(text("DELETE FROM athlete WHERE id = :aid::uuid"), {"aid": aid})
+            db.execute(text("DELETE FROM plan_purchases WHERE athlete_id = :aid"), {"aid": aid})
+            db.execute(text("DELETE FROM training_plan WHERE athlete_id = :aid"), {"aid": aid})
         db.commit()
     except Exception:
         db.rollback()

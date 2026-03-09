@@ -867,14 +867,29 @@ async def get_race_candidates(
     Tier 3 - "Browse history": Activities at standard distances
       that don't have a PerformanceEvent yet (for adding missed
       races). Return as cards with: name, date, distance, pace,
-      duration, start_lat/start_lng (for location context).
+      duration, day of week, start_lat/start_lng (for location).
       Paginated: limit (default 50) and offset (default 0) query
-      params. Athletes can have hundreds of activities at standard
+      params. Filterable by date range and distance category.
+      Athletes can have hundreds of activities at standard
       distances — don't return them all.
 
+    **Critical: many activities have no name.** The founder's
+    entire 2024 history (first year back running) has name=NULL
+    on every Strava activity. The Nov 30, 2024 Stennis Space
+    Center Half Marathon (1st Masters, 4:26/km, HR=156) is a
+    nameless 21184m activity — indistinguishable from a training
+    long run without the athlete's help. For nameless activities,
+    the card must show enough context to trigger recognition
+    without a name: pace (a 4:26/km half is obviously a race
+    effort vs a 5:34/km training long run), day of week (Saturday
+    morning = more likely a race), HR intensity, and date. Sort
+    browse results by pace (fastest first within each distance)
+    to surface race efforts at the top.
+
     Each item includes enough context for the athlete to
-    recognize the day: name, date, time of day, pace, distance,
-    location if available.
+    recognize the day: name (if available), date, time of day,
+    day of week, pace, distance, HR if available, location if
+    available.
     """
 
 
@@ -1056,15 +1071,23 @@ PerformanceEvent.
 **Block signature:** Call `compute_block_signature()` from 1A.2.
 Store as JSONB on PerformanceEvent.
 
-**Fitness-relative performance:** For each PerformanceEvent:
-- `rpi_at_event` = `calculate_rpi_from_race_time(distance_meters,
-  time_seconds)` from `services/rpi_calculator.py`
-- `predicted_rpi` = derived from `ctl_at_event` using the
-  CTL-to-predicted-performance relationship (this is a simple linear
-  model calibrated from the athlete's own race data, or a population
-  default if < 3 races)
+**Fitness-relative performance:** This column is `None` until the
+athlete has 8+ confirmed races with both `rpi_at_event` and
+`ctl_at_event`. At that point, fit a simple linear regression
+(CTL → predicted RPI) from the athlete's own data:
+- `predicted_rpi` = linear model output for `ctl_at_event`
 - `fitness_relative_performance` = `rpi_at_event / predicted_rpi`
   (values > 1.0 = outperformance)
+- If < 8 confirmed races: leave `None`. Do not use a population
+  default — different athletes at different fitness levels make
+  a population model meaningless.
+- The pipeline should check this threshold on every race
+  confirmation and backfill the column when it becomes available.
+
+**Why 8:** You need enough variance in both CTL and RPI to fit
+a non-degenerate line. With 3-5 points clustered at similar
+fitness, the model produces nonsense slopes. 8 is conservative
+but safe.
 
 ---
 
@@ -1347,8 +1370,16 @@ def _layer4_fitness_relative(
     vs underperformers (< 1.0). Correlate with block signature
     dimensions to find what predicts outperformance.
 
-    Minimum: 6 PerformanceEvents with valid CTL (3 per group)
-    for statistical comparison. 4-5: descriptive only. < 4: skip.
+    **Activation gate:** This layer requires `fitness_relative_performance`
+    to be non-null, which requires 8+ confirmed races with CTL and RPI.
+    If the column is null on all events, skip this layer entirely and
+    return an empty list. Do not attempt to compute fitness-relative
+    values inline — they come from the pipeline's linear model.
+
+    When active:
+    Minimum: 6 PerformanceEvents with valid fitness_relative_performance
+    (3 per group) for statistical comparison. 4-5: descriptive only.
+    < 4: skip.
 
     Findings: what training patterns produce outperformance.
     """
@@ -1578,6 +1609,34 @@ under a separate spec.
   qualifies as a PerformanceEvent)
 
 **Do not proceed to Phase 2 if the findings are wrong or trivial.**
+
+---
+
+### Gate C2 Result (March 4, 2026)
+
+**PASSED.** Three findings validated by the founder (17 confirmed races):
+
+1. **Long run correlation (TRUE):** Best races preceded by longer long
+   runs (16 vs 14 mi). Founder context: peak training blocks reach
+   18-22 mi long runs at ~70 mi/week.
+
+2. **Race-day uplift (TRUE):** Races outperform training by a
+   meaningful margin. Founder context: "I race hard — willing to hurt
+   bad and deep into race." The mile was an outlier (one-off effort).
+
+3. **Taper length (TRUE WITH CONTEXT):** System detected short taper
+   (2 weeks) correlates with better races, long taper (5 weeks) with
+   weaker races. Founder context: "I never taper 5 weeks — that's
+   injury, not strategy. I only do short tapers." The system correctly
+   detected the pattern but the causal interpretation needs nuance:
+   what looks like a long taper is actually forced rest from injury.
+
+   **This is the canonical example of why the athlete provides context
+   the data cannot.** The system should eventually distinguish between
+   intentional taper and unplanned volume loss. Until then, the
+   sentence should describe the pattern without asserting causation:
+   "Your best races follow short, sharp tapers. When volume drops
+   earlier, those races don't go as well."
 
 ---
 
