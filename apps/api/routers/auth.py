@@ -77,6 +77,8 @@ class UserResponse(BaseModel):
     trial_source: Optional[str] = None
     # Derived entitlement signal (includes trials)
     has_active_subscription: bool = False
+    # Nav gating — lightweight signal for frontend
+    has_correlations: bool = False
 
     model_config = ConfigDict(from_attributes=True)
     
@@ -326,10 +328,19 @@ def login(
 
 @router.get("/me", response_model=UserResponse)
 def get_current_user_info(
-    current_user: Athlete = Depends(get_current_user)
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Get current authenticated user information."""
-    return current_user
+    from models import CorrelationFinding as _CF
+    has_corr = db.query(_CF).filter(
+        _CF.athlete_id == current_user.id,
+        _CF.is_active.is_(True),
+        _CF.times_confirmed >= 3,
+    ).limit(1).count() > 0
+    resp = UserResponse.model_validate(current_user)
+    resp.has_correlations = has_corr
+    return resp
 
 
 @router.post("/refresh", response_model=TokenResponse)

@@ -537,3 +537,56 @@ def get_activity_attribution(
     
     return run_attribution_to_dict(result)
 
+
+class FindingAnnotation(BaseModel):
+    """A correlation finding relevant to a specific activity."""
+    text: str
+    domain: str
+    confidence_tier: str
+    evidence_summary: Optional[str] = None
+
+
+@router.get("/{activity_id}/findings", response_model=List[FindingAnnotation])
+def get_activity_findings(
+    activity_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return up to 3 relevant active findings for this activity.
+    """
+    from models import CorrelationFinding as _CF
+
+    activity = db.query(Activity).filter(
+        Activity.id == activity_id,
+        Activity.athlete_id == current_user.id,
+    ).first()
+
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    findings = (
+        db.query(_CF)
+        .filter(
+            _CF.athlete_id == current_user.id,
+            _CF.is_active.is_(True),
+            _CF.times_confirmed >= 3,
+        )
+        .order_by(_CF.times_confirmed.desc())
+        .limit(3)
+        .all()
+    )
+
+    result = []
+    for f in findings:
+        tier = "strong" if f.times_confirmed >= 8 else "confirmed"
+        text = f.insight_text or f"{f.input_name.replace('_', ' ')} affects your {f.output_metric}"
+        evidence = f"Confirmed {f.times_confirmed} times" if f.times_confirmed else None
+        result.append(FindingAnnotation(
+            text=text,
+            domain=f.output_metric,
+            confidence_tier=tier,
+            evidence_summary=evidence,
+        ))
+
+    return result

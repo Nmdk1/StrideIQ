@@ -100,6 +100,10 @@ export default function Navigation() {
     { href: '/nutrition', label: 'Nutrition', icon: '🥗' },
     { href: '/checkin', label: 'Check-in', icon: '✅' },
     { href: '/tools', label: 'Tools', icon: '🧮' },
+    ...(user?.has_correlations ? [
+      { href: '/discovery', label: 'Discovery', icon: '🔬' },
+      { href: '/fingerprint', label: 'Fingerprint', icon: '🧬' },
+    ] : []),
   ];
 
   const isMoreActive =

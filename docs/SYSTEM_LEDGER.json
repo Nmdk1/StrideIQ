@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at_utc": "2026-03-09T20:30:01.645293+00:00",
+    "generated_at_utc": "2026-03-09T20:52:31.378975+00:00",
     "scope": "backend routes, frontend pages, frontend hooks, link/path validity",
     "owner_policy": {
       "backend_routes": "backend",
@@ -18,8 +18,8 @@
     ]
   },
   "summary": {
-    "backend_route_count": 327,
-    "backend_runtime_registered_count": 327,
+    "backend_route_count": 328,
+    "backend_runtime_registered_count": 328,
     "backend_broken_unregistered_count": 0,
     "backend_frontend_wired_count": 163,
     "frontend_page_count": 57,
@@ -77,6 +77,18 @@
       "failure_reason": "Has frontend consumer.",
       "owner": "backend",
       "fix_priority": "P4"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/activities/{activity_id}/findings",
+      "file": "apps/api/routers/activities.py",
+      "function": "get_activity_findings",
+      "runtime_registered": true,
+      "frontend_consumed": false,
+      "status": "backend_only_or_unwired",
+      "failure_reason": "No direct frontend consumer detected; may be internal/admin/webhook.",
+      "owner": "backend",
+      "fix_priority": "P3"
     },
     {
       "method": "GET",
@@ -4120,7 +4132,7 @@
       "route": "/discovery",
       "file": "apps/web/app/discovery/page.tsx",
       "inbound_links": 0,
-      "in_navigation": false,
+      "in_navigation": true,
       "status": "hidden_or_orphan",
       "failure_reason": "No inbound href/router.push detected.",
       "owner": "frontend",
@@ -4130,7 +4142,7 @@
       "route": "/fingerprint",
       "file": "apps/web/app/fingerprint/page.tsx",
       "inbound_links": 0,
-      "in_navigation": false,
+      "in_navigation": true,
       "status": "hidden_or_orphan",
       "failure_reason": "No inbound href/router.push detected.",
       "owner": "frontend",

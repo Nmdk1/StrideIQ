@@ -193,6 +193,7 @@ export interface Athlete {
   durability_index?: number;
   recovery_half_life_hours?: number;
   consistency_index?: number;
+  has_correlations?: boolean;
 }
 
 export interface LoginRequest {

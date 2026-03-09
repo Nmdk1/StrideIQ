@@ -124,6 +124,19 @@ export default function ActivityDetailPage() {
     enabled: !authLoading && !!token && !!activityId,
   });
 
+  const { data: findings } = useQuery<{ text: string; domain: string; confidence_tier: string; evidence_summary?: string | null }[]>({
+    queryKey: ['activity-findings', activityId],
+    queryFn: async () => {
+      const res = await fetch(
+        `${API_CONFIG.baseURL}/v1/activities/${activityId}/findings`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !authLoading && !!token && !!activityId,
+  });
+
   // --- Stream analysis data (for coachable moments + plan comparison) ---
   // Must be called before any conditional returns (React hooks rules)
   const streamAnalysis = useStreamAnalysis(activityId);
@@ -451,6 +464,25 @@ export default function ActivityDetailPage() {
         <div className="mb-6">
           <RuntoonCard activityId={activityId} />
         </div>
+
+        {/* ── Finding annotations ── */}
+        {findings && findings.length > 0 && (
+          <div className="mb-6 space-y-2">
+            {findings.map((f, i) => (
+              <div key={i} className="rounded-lg border border-slate-700/30 bg-slate-800/20 px-4 py-3">
+                <div className="flex items-start gap-2">
+                  <span className="text-sm flex-shrink-0">🔬</span>
+                  <div>
+                    <p className="text-sm text-slate-300">{f.text}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {f.confidence_tier === 'strong' ? 'Strong' : 'Confirmed'} · {f.domain.replace(/_/g, ' ')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ── A6: Collapsible details (Plan Comparison through Narrative Context) ── */}
         <div className="mb-6">

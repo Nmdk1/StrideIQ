@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Home,
   MessageSquare,
@@ -10,6 +10,7 @@ import {
   TrendingUp,
   MoreHorizontal,
 } from "lucide-react";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 const TABS = [
   { href: "/home", label: "Home", icon: Home, accent: false },
@@ -18,7 +19,7 @@ const TABS = [
   { href: "/progress", label: "Progress", icon: TrendingUp, accent: false },
 ] as const;
 
-const MORE_ITEMS = [
+const BASE_MORE_ITEMS = [
   { href: "/activities", label: "Activities" },
   { href: "/nutrition", label: "Nutrition" },
   { href: "/checkin", label: "Check-in" },
@@ -44,6 +45,18 @@ export default function BottomTabs() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuth();
+
+  const MORE_ITEMS = useMemo(() => {
+    const items = [...BASE_MORE_ITEMS];
+    if (user?.has_correlations) {
+      items.push(
+        { href: "/discovery", label: "Discovery" },
+        { href: "/fingerprint", label: "Fingerprint" },
+      );
+    }
+    return items;
+  }, [user?.has_correlations]);
 
   // Close sheet on route change
   useEffect(() => {

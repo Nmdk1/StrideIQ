@@ -623,6 +623,52 @@ function AthleteIntelligenceSection() {
   );
 }
 
+function TodayIntelligenceSection() {
+  const { user } = useAuth();
+  const [data, setData] = React.useState<any>(null);
+  const [hidden, setHidden] = React.useState(false);
+
+  React.useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('strideiq_token') : null;
+    if (!token) { setHidden(true); return; }
+
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/v1/intelligence/today`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (res.status === 403 || res.status === 401) { setHidden(true); return null; }
+        if (!res.ok) { setHidden(true); return null; }
+        return res.json();
+      })
+      .then((json) => { if (json) setData(json); })
+      .catch(() => setHidden(true));
+  }, []);
+
+  if (hidden || !data || !data.insights || data.insights.length === 0) return null;
+
+  return (
+    <div className="mb-8">
+      <h2 className="text-xl font-bold mb-4">Today&apos;s Intelligence</h2>
+      <div className="space-y-3">
+        {data.insights.map((rule: any, i: number) => {
+          const style = INSIGHT_STYLES[rule.insight_type] || INSIGHT_STYLES.trend_alert;
+          return (
+            <div key={rule.id || i} className={`rounded-lg border p-4 ${style.bg} ${style.border}`}>
+              <div className="flex items-start gap-2.5">
+                <span className="text-lg">{style.icon}</span>
+                <div>
+                  <p className="text-sm font-medium text-white">{rule.title || rule.rule_id}</p>
+                  <p className="text-sm text-slate-300 mt-0.5">{rule.content || rule.text}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function InsightsPage() {
   return (
     <ProtectedRoute>
@@ -636,6 +682,9 @@ export default function InsightsPage() {
             </p>
           </div>
           
+          {/* Today's Intelligence — tier-gated, hidden silently if forbidden */}
+          <TodayIntelligenceSection />
+
           {/* Three sections */}
           <div className="space-y-12">
             {/* Section 0: Ranked feed */}
