@@ -876,87 +876,66 @@ def detect_connections(
 
 
 # ═══════════════════════════════════════════════════════
-#  Step 5: Campaign Detection
+#  Step 5: Campaign Detection (reads from real campaign_detection.py output)
 # ═══════════════════════════════════════════════════════
 
-def detect_campaign(
-    findings: List[RaceInputFinding],
-    date_ranges: List[DateRange],
-    connections: List[Connection],
+def _get_campaign_from_events(
     race_stories: List[RaceStory],
+    events: List["PerformanceEvent"],
 ) -> Optional[Dict]:
     """
-    Detect a multi-month training arc when enough connected findings
-    span a long period with compounding adaptations.
+    Read campaign data from PerformanceEvent.campaign_data (populated by
+    the real campaign detector in campaign_detection.py).
+
+    Returns the most recent campaign that has linked races, or None.
+    If no campaign_data exists yet, returns None — silence is better
+    than a wrong narrative.
     """
-    adaptation_ranges = []
-    for i, f in enumerate(findings):
-        if FINDING_ROLES.get(f.finding_type) == 'adaptation':
-            dr = date_ranges[i]
-            if not dr.is_timeless and dr.start and dr.end:
-                adaptation_ranges.append((i, dr))
+    campaigns_seen: Dict[tuple, Dict] = {}
+    for ev in events:
+        if ev.campaign_data and isinstance(ev.campaign_data, dict):
+            start = ev.campaign_data.get('start_date')
+            end = ev.campaign_data.get('end_date')
+            if not start or not end:
+                continue
+            key = (start, end)
+            record = campaigns_seen.get(key)
+            if record is None:
+                campaigns_seen[key] = {
+                    'campaign': ev.campaign_data,
+                    'latest_linked_race_date': ev.event_date,
+                }
+            else:
+                if ev.event_date and (
+                    record['latest_linked_race_date'] is None
+                    or ev.event_date > record['latest_linked_race_date']
+                ):
+                    record['latest_linked_race_date'] = ev.event_date
 
-    if len(adaptation_ranges) < 2:
+    if not campaigns_seen:
         return None
 
-    all_starts = [dr.start for _, dr in adaptation_ranges]
-    all_ends = [dr.end for _, dr in adaptation_ranges]
-    campaign_start = min(all_starts)
-    raw_end = max(all_ends)
-
-    # Cap campaign end at last race + 4 weeks, not at last data point
-    race_dates_in_window = [
-        rs.race_date for rs in race_stories
-        if rs.race_date and rs.race_date >= campaign_start
-    ]
-    if race_dates_in_window:
-        campaign_end = min(
-            raw_end,
-            max(race_dates_in_window) + timedelta(days=28),
-        )
-    else:
-        campaign_end = raw_end
-
-    span_weeks = (campaign_end - campaign_start).days // 7
-
-    if span_weeks < 12:
-        return None
-
-    compounding_count = sum(
-        1 for c in connections if c.connection_type == 'compounding'
+    latest_record = max(
+        campaigns_seen.values(),
+        key=lambda r: r.get('latest_linked_race_date') or date.min,
     )
-    if compounding_count < 1:
-        return None
+    latest = latest_record['campaign']
 
-    adaptation_types = list(set(
-        findings[i].finding_type for i, _ in adaptation_ranges
-    ))
-    pb_stories = [rs for rs in race_stories if rs.is_pb]
+    span_weeks = latest.get('total_weeks', 0)
+    end_reason = latest.get('end_reason', 'unknown')
 
-    races_in_window = [
-        rs for rs in race_stories
-        if campaign_start <= rs.race_date <= campaign_end + timedelta(days=28)
-    ]
-
-    summary = (
-        f"{span_weeks}-week training arc ({campaign_start} to {campaign_end}) "
-        f"with {len(adaptation_types)} simultaneous adaptations"
-    )
-    if pb_stories:
-        pb_list = ", ".join(
-            f"{rs.distance} {rs.time_display}" for rs in pb_stories
-        )
-        summary += f" producing {pb_list}"
+    summary = f"{span_weeks}-week training arc"
+    if end_reason == 'disruption':
+        summary += " (ended by disruption)"
+    elif end_reason == 'ongoing':
+        summary += " (ongoing)"
 
     return {
-        'start_date': campaign_start.isoformat(),
-        'end_date': campaign_end.isoformat(),
+        'start_date': latest.get('start_date'),
+        'end_date': latest.get('end_date'),
         'span_weeks': span_weeks,
-        'adaptation_count': len(adaptation_types),
-        'adaptation_types': adaptation_types,
-        'compounding_connections': compounding_count,
-        'races_in_window': len(races_in_window),
-        'pb_count': len(pb_stories),
+        'end_reason': end_reason,
+        'phases': latest.get('phases', []),
         'summary': summary,
     }
 
@@ -1044,7 +1023,7 @@ def synthesize_training_story(
 
     connections = detect_connections(findings, date_ranges, race_stories)
 
-    campaign = detect_campaign(findings, date_ranges, connections, race_stories)
+    campaign = _get_campaign_from_events(race_stories, events)
 
     gaps = identify_gaps(findings, ALL_INVESTIGATION_NAMES)
 
