@@ -70,7 +70,7 @@ interface RuntoonShareViewProps {
 // ---------------------------------------------------------------------------
 
 const POLL_INTERVAL = 5_000;
-const POLL_TIMEOUT = 120_000; // 2 min — generation takes ~15-20s, allow buffer
+const SLOW_GENERATION_THRESHOLD_MS = 120_000; // Show "slow" UX, keep polling in background
 const PER_ACTIVITY_CAP = 3;
 
 async function authedFetch(url: string, token: string, opts: RequestInit = {}) {
@@ -180,7 +180,6 @@ export function RuntoonShareView({
     },
     refetchInterval: (query) => {
       if (query.state.data) return false;
-      if (Date.now() - pollStart.current > POLL_TIMEOUT) return false;
       return POLL_INTERVAL;
     },
     enabled: !!token,
@@ -189,7 +188,10 @@ export function RuntoonShareView({
 
   // When image arrives, stop generating spinner
   useEffect(() => {
-    if (runtoon) setGenerating(false);
+    if (runtoon) {
+      setGenerating(false);
+      setGenTimedOut(false);
+    }
   }, [runtoon]);
 
   // Timeout detection
@@ -197,7 +199,7 @@ export function RuntoonShareView({
     if (!generating) return;
     const t = setTimeout(() => {
       if (!runtoon) setGenTimedOut(true);
-    }, POLL_TIMEOUT);
+    }, SLOW_GENERATION_THRESHOLD_MS);
     return () => clearTimeout(t);
   }, [generating, runtoon]);
 
@@ -380,8 +382,8 @@ export function RuntoonShareView({
 
   const renderTimedOut = () => (
     <div className="flex flex-col items-center justify-center flex-1 px-6 py-12 text-center">
-      <p className="text-base text-slate-300 mb-2">Runtoon unavailable for this run.</p>
-      <p className="text-sm text-slate-500">Generation took too long. Try again from the activity page.</p>
+      <p className="text-base text-slate-300 mb-2">Runtoon is taking longer than usual.</p>
+      <p className="text-sm text-slate-500">Still generating in the background. You can wait here or close and check back shortly.</p>
       <button
         onClick={onClose}
         className="mt-6 text-sm text-orange-400 hover:text-orange-300"

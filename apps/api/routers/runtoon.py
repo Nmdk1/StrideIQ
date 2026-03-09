@@ -429,7 +429,11 @@ def trigger_regeneration(
     # Enqueue
     try:
         from tasks.runtoon_tasks import generate_runtoon_for_activity
-        generate_runtoon_for_activity.delay(str(current_user.id), str(activity_id))
+        # Manual generation is user-blocking UX; route to high-priority worker queue.
+        generate_runtoon_for_activity.apply_async(
+            args=[str(current_user.id), str(activity_id)],
+            queue="briefing_high",
+        )
         logger.info("Runtoon regen queued: athlete=%s activity=%s", current_user.id, activity_id)
     except Exception as e:
         logger.warning("Failed to queue Runtoon regen: %s", e)
