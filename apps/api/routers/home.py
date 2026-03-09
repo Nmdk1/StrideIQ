@@ -241,55 +241,45 @@ def get_correlation_context(
     db: Session
 ) -> Optional[tuple[str, str]]:
     """
-    Get correlation-based context for today's workout.
+    Get correlation-based context for today's workout from persisted findings.
 
-    Checks athlete's stored correlations and returns relevant context
-    if a correlation applies to today's workout type.
-
-    Only returns context when it's ACTIONABLE and clear.
-    Plain language — no percentages or stats jargon.
+    Looks up active, confirmed CorrelationFinding rows (is_active=True,
+    times_confirmed >= 3). Produces a short coaching-language sentence
+    using the finding's domain, direction, and time lag.
 
     Returns:
-        (context_string, source) or (None, None) if no relevant correlation
-
-    Tone: Sparse, plain language. Self-explanatory.
+        (context_string, source) or (None, None) if no eligible finding
     """
     try:
-        from services.correlation_engine import analyze_correlations
+        from models import CorrelationFinding as _CF
 
-        # Get recent correlations (cached in production)
-        result = analyze_correlations(athlete_id, days=60, db=db)
+        finding = (
+            db.query(_CF)
+            .filter(
+                _CF.athlete_id == athlete_id,
+                _CF.is_active.is_(True),
+                _CF.times_confirmed >= 3,
+            )
+            .order_by(_CF.times_confirmed.desc())
+            .first()
+        )
 
-        if 'error' in result or not result.get('correlations'):
+        if not finding:
             return None, None
 
-        correlations = result.get('correlations', [])
+        inp = finding.input_name.replace("_", " ")
+        direction = "better" if finding.direction == "positive" else "harder"
+        lag = finding.time_lag_days
 
-        # Find the strongest significant correlation with strong effect
-        for corr in correlations:
-            if not corr.get('is_significant'):
-                continue
+        sentence = f"Your data shows {inp} affects your {direction} runs"
+        if lag and lag > 0:
+            sentence += f" with a {lag}-day lag"
+        sentence += "."
 
-            input_name = corr.get('input_name', '')
-            r = corr.get('correlation_coefficient', 0)
+        if finding.threshold_value is not None:
+            sentence += f" The cliff is around {finding.threshold_value:.1f}."
 
-            # Only show if effect is strong (|r| > 0.5)
-            if abs(r) < 0.5:
-                continue
-
-            # Generate plain-language context
-            if 'sleep' in input_name and r > 0:
-                return "Your runs tend to be better after good sleep.", "correlation"
-            elif 'hrv' in input_name and r > 0:
-                return "You perform better when your morning HRV is higher.", "correlation"
-            elif 'stress' in input_name and r < 0:
-                return "High work stress days correlate with harder runs for you.", "correlation"
-            elif 'protein' in input_name and r > 0:
-                return "Higher protein days tend to precede your better runs.", "correlation"
-            elif 'resting_hr' in input_name and r < 0:
-                return "Lower resting HR days correlate with your better performances.", "correlation"
-
-        return None, None
+        return sentence, "correlation"
 
     except Exception as e:
         logger.warning(f"Correlation context lookup failed: {type(e).__name__}: {e}")
@@ -802,6 +792,11 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
                 "reason": f"length:too_short({len(text)})",
                 "fallback": _VOICE_FALLBACK,
             }
+        if field == "morning_voice" and len(text) > 240:
+            logger.warning(
+                "morning_voice drift warning: %d chars (threshold 240, fail-close 280)",
+                len(text),
+            )
         if len(text) > 280:
             return {
                 "valid": False,
@@ -1567,7 +1562,7 @@ def generate_coach_home_briefing(
         "week_assessment": f"Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.{_lane('')}",
         "checkin_reaction": f"Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.{_lane(checkin_summary)}",
         "race_assessment": f"Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.{_lane(race_summary)}",
-        "morning_voice": f"One paragraph that gives your athlete's data a voice. 40-280 characters. Connect a personal fingerprint pattern to today's context. Example of GOOD: '6.8 hours of sleep last night. Your body tends to run easier the day after 7+ hours — today might not get that boost, so keep the effort honest.' Example of BAD: '38.3 miles through 5 runs this week. Your pacing has been consistent.' Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. NEVER say 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
+        "morning_voice": f"ONE paragraph, 2-3 sentences max, 40-280 characters. No second paragraph. No restatement of a prior sentence. Give your athlete's data a voice by connecting a personal fingerprint pattern to today's context. Example of GOOD: '6.8 hours of sleep last night. Your body tends to run easier the day after 7+ hours — today might not get that boost, so keep the effort honest.' Example of BAD: '38.3 miles through 5 runs this week. Your pacing has been consistent.' Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. NEVER say 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
         "workout_why": f"One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.{_lane(today_summary)}",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]

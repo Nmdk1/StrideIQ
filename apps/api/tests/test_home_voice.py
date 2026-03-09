@@ -499,3 +499,35 @@ class TestInsightLogAggregation:
         source = inspect.getsource(generate_coach_home_briefing)
         # Should filter out mode='log' — e.g., filter(InsightLog.mode != 'log')
         assert "log" in source.lower(), "Must filter out LOG mode insights"
+
+
+# ---------------------------------------------------------------------------
+# 6. Morning voice schema constraints
+# ---------------------------------------------------------------------------
+
+class TestMorningVoiceSchemaConstraints:
+    """Schema field text must enforce one-paragraph / no-restatement rules."""
+
+    def test_schema_contains_one_paragraph_constraint(self):
+        """morning_voice schema description enforces ONE paragraph."""
+        import inspect
+        from routers.home import generate_coach_home_briefing
+        src = inspect.getsource(generate_coach_home_briefing)
+        assert "ONE paragraph" in src
+        assert "No second paragraph" in src
+        assert "No restatement" in src
+
+    def test_warning_at_240_chars(self):
+        """Validator warns at >240 chars without failing."""
+        from routers.home import validate_voice_output
+        text = "A" * 241 + " ran 5 miles today"  # > 240, < 280, has digit
+        result = validate_voice_output(text, field="morning_voice")
+        assert result["valid"] is True
+
+    def test_fail_close_at_280_chars(self):
+        """Validator still fail-closes at >280 chars."""
+        from routers.home import validate_voice_output
+        text = "A" * 281 + " ran 5 miles"  # > 280, has digit
+        result = validate_voice_output(text, field="morning_voice")
+        assert result["valid"] is False
+        assert "too_long" in result.get("reason", "")

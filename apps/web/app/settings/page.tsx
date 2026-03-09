@@ -632,7 +632,7 @@ function SettingsPageContent() {
                 </div>
 
                 {/* Runtoon Photos */}
-                <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                <div id="runtoon" className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
                   <div className="flex items-center gap-2 mb-3">
                     <Sparkles className="w-4 h-4 text-orange-400" />
                     <p className="font-medium text-slate-200">Runtoon Photos</p>

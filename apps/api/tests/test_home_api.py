@@ -168,49 +168,82 @@ class TestGenerateWhyContext:
 
 
 class TestGetCorrelationContext:
-    """Tests for correlation-based context (ADR-020)."""
-    
+    """Tests for persisted-finding correlation context."""
+
     @pytest.fixture
     def mock_db(self):
         return MagicMock()
-    
-    def test_returns_none_on_no_correlations(self, mock_db):
-        """Returns None when no correlations exist."""
-        with patch('services.correlation_engine.analyze_correlations') as mock_analyze:
-            mock_analyze.return_value = {'error': 'Insufficient data'}
-            
-            context, source = get_correlation_context("test-id", "easy", mock_db)
-            
-            assert context is None
-            assert source is None
-    
+
+    def test_returns_finding_from_persisted_data(self, mock_db):
+        """Returns coaching-language sentence from persisted CorrelationFinding."""
+        finding = MagicMock()
+        finding.input_name = "sleep_hours"
+        finding.output_metric = "efficiency"
+        finding.direction = "positive"
+        finding.time_lag_days = 1
+        finding.times_confirmed = 5
+        finding.threshold_value = None
+
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.first.return_value = finding
+        mock_db.query.return_value = query_chain
+
+        context, source = get_correlation_context("test-id", "easy", mock_db)
+
+        assert context is not None
+        assert "sleep" in context.lower()
+        assert source == "correlation"
+
+    def test_returns_none_when_no_eligible_finding(self, mock_db):
+        """Returns (None, None) when no active confirmed finding exists."""
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.first.return_value = None
+        mock_db.query.return_value = query_chain
+
+        context, source = get_correlation_context("test-id", "easy", mock_db)
+
+        assert context is None
+        assert source is None
+
     def test_returns_none_on_exception(self, mock_db):
-        """Returns None gracefully on exception."""
-        with patch('services.correlation_engine.analyze_correlations') as mock_analyze:
-            mock_analyze.side_effect = Exception("DB error")
-            
-            context, source = get_correlation_context("test-id", "easy", mock_db)
-            
-            assert context is None
-            assert source is None
-    
-    def test_returns_sleep_correlation_context(self, mock_db):
-        """Returns context for significant sleep correlation."""
-        with patch('services.correlation_engine.analyze_correlations') as mock_analyze:
-            mock_analyze.return_value = {
-                'correlations': [{
-                    'input_name': 'sleep_hours',
-                    'correlation_coefficient': 0.6,
-                    'is_significant': True,
-                    'p_value': 0.02
-                }]
-            }
-            
-            context, source = get_correlation_context("test-id", "easy", mock_db)
-            
-            assert context is not None
-            assert "sleep" in context.lower() or "efficiency" in context.lower()
-            assert source == "correlation"
+        """Returns (None, None) gracefully on exception."""
+        mock_db.query.side_effect = Exception("DB error")
+
+        context, source = get_correlation_context("test-id", "easy", mock_db)
+
+        assert context is None
+        assert source is None
+
+    def test_includes_threshold_when_present(self, mock_db):
+        """Sentence includes cliff language when threshold_value is set."""
+        finding = MagicMock()
+        finding.input_name = "sleep_hours"
+        finding.output_metric = "efficiency"
+        finding.direction = "positive"
+        finding.time_lag_days = 0
+        finding.times_confirmed = 8
+        finding.threshold_value = 6.5
+
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.first.return_value = finding
+        mock_db.query.return_value = query_chain
+
+        context, source = get_correlation_context("test-id", "easy", mock_db)
+
+        assert "6.5" in context
+        assert source == "correlation"
+
+    def test_no_analyze_correlations_import(self):
+        """analyze_correlations must not be imported in get_correlation_context."""
+        import inspect
+        src = inspect.getsource(get_correlation_context)
+        assert "from services.correlation_engine" not in src
 
 
 class TestGetTSBContext:

@@ -366,7 +366,7 @@ function BuildStatusSection() {
           Start a training plan to see KPIs, trajectory, and phase context.
         </p>
         <a 
-          href="/plans" 
+          href="/plans/create" 
           className="inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors"
         >
           Browse Plans

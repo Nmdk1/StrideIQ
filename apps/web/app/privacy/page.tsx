@@ -156,7 +156,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </section>
 
-          <section>
+          <section id="ai-powered-insights">
             <h2 className="text-2xl font-semibold mb-4">6. AI-Powered Insights</h2>
             <p className="text-slate-300 mb-4">
               StrideIQ uses third-party AI services to generate personalized coaching insights, including

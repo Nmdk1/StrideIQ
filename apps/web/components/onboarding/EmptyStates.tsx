@@ -104,30 +104,6 @@ export function EmptyActivitiesState({ className = '' }: EmptyStateProps) {
   );
 }
 
-export function EmptyLabResultsState({ className = '' }: EmptyStateProps) {
-  return (
-    <div className={`bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 text-center ${className}`}>
-      <div className="text-4xl mb-4">🧪</div>
-      <h3 className="text-lg font-semibold text-slate-200 mb-2">
-        No lab results yet
-      </h3>
-      <p className="text-slate-400 text-sm mb-4 max-w-md mx-auto">
-        Add your blood work to find patterns like:
-        <span className="text-orange-400"> &quot;Your efficiency dropped when ferritin fell below 50.&quot;</span>
-      </p>
-      <p className="text-slate-500 text-xs mb-4">
-        We track: ferritin, vitamin D, hemoglobin, thyroid, and more.
-      </p>
-      <Link
-        href="/lab-results"
-        className="inline-block px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors"
-      >
-        Add lab results
-      </Link>
-    </div>
-  );
-}
-
 /**
  * Data Quality Indicator
  * Shows athletes how complete their data is and what they're missing
