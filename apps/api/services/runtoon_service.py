@@ -65,6 +65,51 @@ CAPTION_BLOCKLIST = frozenset([
     "nigger", "faggot", "retard", "slut", "whore",
 ])
 
+_STRAVA_AUTO_NAMES = frozenset({
+    "morning run", "afternoon run", "evening run", "night run", "lunch run",
+    "morning walk", "afternoon walk", "evening walk", "lunch walk",
+    "morning ride", "afternoon ride", "evening ride", "lunch ride",
+    "long run", "race",
+})
+
+_GARMIN_AUTO_SUFFIXES = (" Running", " Walking", " Cycling", " Hiking")
+
+
+def _is_auto_generated_name(name: Optional[str], provider: Optional[str]) -> bool:
+    """Return True if activity name is platform-generated, not athlete-authored."""
+    if not name or not name.strip():
+        return True
+    if provider == "demo":
+        return True
+    if name.strip().lower() in _STRAVA_AUTO_NAMES:
+        return True
+    if provider == "garmin":
+        for suffix in _GARMIN_AUTO_SUFFIXES:
+            if name.endswith(suffix):
+                return True
+    return False
+
+
+def _resolve_activity_title(activity) -> Optional[str]:
+    """Local title resolver to avoid importing API routers inside worker tasks."""
+    athlete_title = getattr(activity, "athlete_title", None)
+    if athlete_title:
+        return athlete_title
+
+    name = getattr(activity, "name", None)
+    sentence = getattr(activity, "shape_sentence", None)
+    provider = getattr(activity, "provider", None) or ""
+    is_race = (
+        getattr(activity, "user_verified_race", False)
+        or getattr(activity, "is_race_candidate", False)
+    )
+
+    if is_race and name:
+        return name
+    if name and not _is_auto_generated_name(name, provider):
+        return name
+    return sentence or name
+
 # ---------------------------------------------------------------------------
 # Style anchor (Layer 1) — hardcoded brand constant
 # ---------------------------------------------------------------------------
@@ -202,8 +247,7 @@ def _format_activity_context(activity, training_context: Optional[dict] = None) 
     if activity.workout_type:
         lines.append(f"Workout type: {activity.workout_type}")
 
-    from routers.activities import resolve_activity_title
-    resolved = resolve_activity_title(activity)
+    resolved = _resolve_activity_title(activity)
     if resolved:
         lines.append(f"Activity name: {resolved}")
 
