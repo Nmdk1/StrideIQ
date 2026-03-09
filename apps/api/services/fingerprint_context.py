@@ -19,10 +19,14 @@ logger = logging.getLogger(__name__)
 def get_confirmed_findings(
     athlete_id: UUID,
     db: Session,
-    min_confirmed: int = 3,
-    limit: int = 8,
+    min_confirmed: int = 1,
+    limit: int = 12,
 ):
-    """Return confirmed, active CorrelationFinding rows ordered by evidence weight."""
+    """Return active CorrelationFinding rows ordered by evidence weight.
+
+    Includes both confirmed (3+) and emerging (1-2) findings so the LLM
+    has the full picture the Progress page shows.
+    """
     from models import CorrelationFinding as CF
 
     return (
@@ -40,11 +44,17 @@ def get_confirmed_findings(
 
 def format_finding_line(f, verbose: bool = False) -> str:
     """Format a single CorrelationFinding into a prompt-ready string."""
+    if f.times_confirmed >= 6:
+        tier = "STRONG"
+    elif f.times_confirmed >= 3:
+        tier = "CONFIRMED"
+    else:
+        tier = "EMERGING"
+
     entry = (
-        f"{f.input_name} → {f.output_metric}: "
+        f"[{tier} {f.times_confirmed}x] {f.input_name} → {f.output_metric}: "
         f"{f.insight_text or f.direction} "
-        f"(confirmed {f.times_confirmed}x, r={f.correlation_coefficient:.2f}, "
-        f"strength: {f.strength})"
+        f"(r={f.correlation_coefficient:.2f}, strength: {f.strength})"
     )
 
     details = []
@@ -106,17 +116,21 @@ def build_fingerprint_prompt_section(
 
     lines = [format_finding_line(f, verbose=verbose) for f in findings]
 
+    confirmed = [f for f in findings if f.times_confirmed >= 3]
+    emerging = [f for f in findings if f.times_confirmed < 3]
+
     if verbose:
         header = (
-            "--- Personal Fingerprint (confirmed patterns with evidence counts) ---\n"
-            "IMPORTANT: When referencing these patterns, cite the confirmation count. "
-            "Use threshold values for specific recommendations. "
-            "Use decay timing for forward-looking advice.\n"
+            "--- Personal Fingerprint (data-proven patterns) ---\n"
+            "STRONG/CONFIRMED = proven by repeated confirmation — state as fact.\n"
+            "EMERGING = pattern forming, promising but not yet proven — hedge appropriately.\n"
+            "Cite the confirmation count. Use threshold/decay data for specific advice.\n"
         )
     else:
         header = (
-            "(These are confirmed personal patterns — cite evidence counts when referencing them. "
-            "Use layer data for specific, grounded recommendations.)"
+            f"({len(confirmed)} confirmed, {len(emerging)} emerging patterns. "
+            "Treat STRONG/CONFIRMED as fact. Hedge EMERGING as 'your data suggests' or 'early pattern shows'."
+            ")"
         )
 
     return header + "\n" + "\n".join(lines)

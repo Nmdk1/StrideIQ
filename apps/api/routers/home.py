@@ -1536,10 +1536,10 @@ def compute_coach_noticed(
             .filter(
                 _CF.athlete_id == _UUID(athlete_id),
                 _CF.is_active == True,  # noqa: E712
-                _CF.times_confirmed >= 3,
+                _CF.times_confirmed >= 1,
                 _CF.last_confirmed_at >= _cutoff,
             )
-            .order_by(_CF.last_confirmed_at.desc())
+            .order_by(_CF.times_confirmed.desc())
             .first()
         )
         if recent_finding:

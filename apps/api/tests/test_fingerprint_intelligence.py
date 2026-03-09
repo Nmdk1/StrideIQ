@@ -103,14 +103,14 @@ class TestFormatFindingLine:
             time_lag_days=0,
         )
         line = format_finding_line(f, verbose=False)
-        assert "confirmed 12x" in line
+        assert "STRONG 12x" in line
         assert "cliff" not in line
         assert "Asymmetry" not in line
 
     def test_includes_confirmation_count(self):
         f = _make_finding(times_confirmed=47)
         line = format_finding_line(f, verbose=False)
-        assert "confirmed 47x" in line
+        assert "STRONG 47x" in line
 
 
 # ---------------------------------------------------------------------------
@@ -131,14 +131,15 @@ class TestBuildFingerprintPromptSection:
         db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [f]
         result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=True)
         assert "Personal Fingerprint" in result
-        assert "IMPORTANT" in result
+        assert "STRONG/CONFIRMED" in result
 
     def test_compact_section_has_instruction(self):
         f = _make_finding()
         db = MagicMock()
         db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [f]
         result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=False)
-        assert "confirmed personal patterns" in result
+        assert "confirmed" in result
+        assert "STRONG/CONFIRMED" in result
 
     def test_limits_findings(self):
         findings = [_make_finding(times_confirmed=50 - i) for i in range(12)]
@@ -146,7 +147,7 @@ class TestBuildFingerprintPromptSection:
         db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = findings[:8]
         result = build_fingerprint_prompt_section(ATHLETE_ID, db, max_findings=8)
         assert result is not None
-        assert result.count("confirmed") == 8 + 1  # 8 findings + 1 in header instruction
+        assert result.count("→") == 8  # 8 finding lines, each with "→"
 
 
 # ---------------------------------------------------------------------------
