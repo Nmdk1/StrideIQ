@@ -494,7 +494,7 @@ class TestBackfill:
         assert count_after_first == count_after_second
 
     def test_backfill_resume_from_chat_id(self, db_session, test_athlete):
-        """#16: strict tuple resume skips exactly up-to resume chat."""
+        """#16: strict tuple resume skips everything at or before the resume point."""
         from models import CoachChat
         from sqlalchemy import or_, and_
 
@@ -510,7 +510,9 @@ class TestBackfill:
             db_session.refresh(c)
             chats.append(c)
 
-        resume_chat = chats[2]
+        # Sort by (created_at, id) — the actual deterministic backfill order
+        sorted_chats = sorted(chats, key=lambda c: (c.created_at, c.id))
+        resume_chat = sorted_chats[2]
 
         query = (
             db_session.query(CoachChat)
@@ -529,9 +531,14 @@ class TestBackfill:
         )
         remaining = query.all()
         remaining_ids = {c.id for c in remaining}
+
+        # Resume chat and everything before it in sorted order must be excluded
         assert resume_chat.id not in remaining_ids
-        for c in chats[:3]:
+        for c in sorted_chats[:3]:
             assert c.id not in remaining_ids
+        # Everything after resume point must be included
+        for c in sorted_chats[3:]:
+            assert c.id in remaining_ids
 
     def test_backfill_resume_handles_same_timestamp_chats(self, db_session, test_athlete):
         """#17: deterministic ordering by (created_at, id) for same-timestamp chats."""
