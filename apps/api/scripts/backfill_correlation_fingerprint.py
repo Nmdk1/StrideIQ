@@ -19,7 +19,7 @@ Usage (on production server):
     docker exec -w /app strideiq_api python scripts/backfill_correlation_fingerprint.py
 
     # Specific athlete only:
-    docker exec -w /app strideiq_api python scripts/backfill_correlation_fingerprint.py --athlete user@example.com
+    docker exec -w /app strideiq_api python scripts/backfill_correlation_fingerprint.py --athlete <email>
 
     # Dry run (show what would run, don't persist):
     docker exec -w /app strideiq_api python scripts/backfill_correlation_fingerprint.py --dry-run
