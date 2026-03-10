@@ -1504,6 +1504,42 @@ def generate_coach_home_briefing(
             "",
         ])
 
+    # --- Athlete fact injection (coach memory layer 1) ---
+    try:
+        from models import AthleteFact as _AF
+        MAX_INJECTED_FACTS = 15
+        active_facts = (
+            db.query(_AF)
+            .filter(
+                _AF.athlete_id == athlete_id,
+                _AF.is_active == True,  # noqa: E712
+            )
+            .order_by(
+                _AF.confirmed_by_athlete.desc(),
+                _AF.extracted_at.desc(),
+            )
+            .limit(MAX_INJECTED_FACTS)
+            .all()
+        )
+        if active_facts:
+            facts_section = "=== ATHLETE-STATED FACTS (from coach conversations) ===\n"
+            for f in active_facts:
+                facts_section += f"- {f.fact_key}: {f.fact_value} (stated {f.extracted_at.strftime('%b %d')})\n"
+            facts_section += (
+                "\nRULES FOR USING THESE FACTS:\n"
+                "- Use these facts to INFORM your reasoning, connections, and interpretations.\n"
+                "- Do NOT recite facts back to the athlete. They already know their own weight, "
+                "their own deadlift max, their own T-score. Telling them what they told you is not coaching.\n"
+                "- DO use facts to CONNECT and CONTEXTUALIZE. Example: 'Your scale discrepancy is "
+                "explained by your bone density' uses two facts together to produce an insight "
+                "without parroting either number.\n"
+                "- The athlete should feel the system THINKS with what they shared, not that it "
+                "memorized and repeated it.\n"
+            )
+            parts.append(facts_section)
+    except Exception as fe:
+        logger.warning(f"Fact injection into morning voice skipped: {fe}")
+
     parts.append("=== TODAY ===")
 
     if today_completed:

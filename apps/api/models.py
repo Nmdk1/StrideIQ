@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, Boolean, CheckConstraint, Float, Date, DateTime, ForeignKey, Numeric, Text, String, Index, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, Boolean, CheckConstraint, Float, Date, DateTime, ForeignKey, Numeric, Text, String, Index, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
@@ -1648,7 +1648,10 @@ class CoachChat(Base):
     
     # Session status
     is_active = Column(Boolean, default=True, nullable=False)
-    
+
+    # Fact extraction tracking — how many messages have already been processed
+    last_extracted_msg_count = Column(Integer, nullable=True, default=0)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -2750,6 +2753,49 @@ class NarrativeFeedback(Base):
 
     __table_args__ = (
         Index("ix_narrative_feedback_athlete_created", "athlete_id", "created_at"),
+    )
+
+
+class AthleteFact(Base):
+    """
+    Permanent memory: structured facts extracted from coach conversations.
+
+    Layer 1 is athlete-stated only — facts the athlete explicitly told the coach.
+    Supersession: same (athlete_id, fact_key) with a new value deactivates the old row.
+
+    Governance: medical-adjacent facts acceptable during founder-only beta.
+    Before public launch, add retention policy (max age, athlete-triggered deletion,
+    access audit logging).
+    """
+    __tablename__ = "athlete_fact"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+
+    fact_type = Column(Text, nullable=False)
+    fact_key = Column(Text, nullable=False)
+    fact_value = Column(Text, nullable=False)
+    numeric_value = Column(Float, nullable=True)
+
+    confidence = Column(Text, nullable=False, server_default="athlete_stated")
+    source_chat_id = Column(UUID(as_uuid=True), ForeignKey("coach_chat.id"), nullable=False)
+    source_excerpt = Column(Text, nullable=False)
+
+    confirmed_by_athlete = Column(Boolean, nullable=False, default=False)
+
+    extracted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    superseded_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        Index("ix_athlete_fact_athlete_active", "athlete_id", "is_active"),
+        Index("ix_athlete_fact_key_lookup", "athlete_id", "fact_key"),
+        Index(
+            "uq_athlete_fact_active_key",
+            "athlete_id", "fact_key",
+            unique=True,
+            postgresql_where=text("is_active = true"),
+        ),
     )
 
 

@@ -1015,7 +1015,32 @@ If you need more data to answer well, call the tools. That's why they're there."
                 system_prompt += f"\n\nATHLETE BRIEF (pre-computed, confirmed patterns):\n{brief}"
         except Exception:
             pass
-        
+
+        # Inject athlete-stated facts from coach memory layer 1 (Opus path)
+        try:
+            from models import AthleteFact as _AF
+            _MAX_FACTS = 15
+            _facts = (
+                self.db.query(_AF)
+                .filter(_AF.athlete_id == athlete_id, _AF.is_active == True)  # noqa: E712
+                .order_by(_AF.confirmed_by_athlete.desc(), _AF.extracted_at.desc())
+                .limit(_MAX_FACTS)
+                .all()
+            )
+            if _facts:
+                _fc = "\n\nKNOWN ATHLETE FACTS (from previous conversations):\n"
+                for _f in _facts:
+                    _fc += f"- {_f.fact_key}: {_f.fact_value}\n"
+                _fc += (
+                    "\nYou already know these facts. Do not ask the athlete to repeat them. "
+                    "Do not recite them back — the athlete knows their own body. "
+                    "Use them to reason, connect patterns, and provide context the athlete "
+                    "could not produce on their own.\n"
+                )
+                system_prompt += _fc
+        except Exception:
+            pass
+
         try:
             total_input_tokens = 0
             total_output_tokens = 0
@@ -1496,6 +1521,31 @@ WEEK BOUNDARY AWARENESS:
 ATHLETE BRIEF:
 {athlete_brief}"""
 
+        # Inject athlete-stated facts from coach memory layer 1
+        try:
+            from models import AthleteFact as _AF
+            _MAX_FACTS = 15
+            _facts = (
+                self.db.query(_AF)
+                .filter(_AF.athlete_id == athlete_id, _AF.is_active == True)  # noqa: E712
+                .order_by(_AF.confirmed_by_athlete.desc(), _AF.extracted_at.desc())
+                .limit(_MAX_FACTS)
+                .all()
+            )
+            if _facts:
+                _fc = "\n\nKNOWN ATHLETE FACTS (from previous conversations):\n"
+                for _f in _facts:
+                    _fc += f"- {_f.fact_key}: {_f.fact_value}\n"
+                _fc += (
+                    "\nYou already know these facts. Do not ask the athlete to repeat them. "
+                    "Do not recite them back — the athlete knows their own body. "
+                    "Use them to reason, connect patterns, and provide context the athlete "
+                    "could not produce on their own.\n"
+                )
+                system_instruction += _fc
+        except Exception:
+            pass
+
         # Build conversation contents (last 5 exchanges = 10 messages)
         contents = []
         if conversation_context:
@@ -1762,6 +1812,13 @@ ATHLETE BRIEF:
             from sqlalchemy.orm.attributes import flag_modified
             flag_modified(chat, "messages")
             self.db.commit()
+
+            # Fire-and-forget fact extraction (async, non-blocking)
+            try:
+                from tasks.fact_extraction_task import extract_athlete_facts
+                extract_athlete_facts.delay(str(athlete_id), str(chat.id))
+            except Exception as fe:
+                logger.warning(f"Failed to enqueue fact extraction: {fe}")
         except Exception as e:
             self.db.rollback()
             logger.warning(f"Failed to save coach chat messages: {e}")

@@ -1,7 +1,7 @@
 """
 Daily Production Experience Guardrail — Core Assertion Engine.
 
-Runs 24 assertions across 6 categories against live athlete-facing data,
+Runs 25 assertions across 6 categories against live athlete-facing data,
 cross-referencing API responses against database ground truth.
 
 Categories:
@@ -10,7 +10,7 @@ Categories:
   3. Structural Integrity (#12-#16)
   4. Temporal Consistency (#17-#19)
   5. Cross-Endpoint Consistency (#20-#22)
-  6. Trust Integrity (#23-#24)
+  6. Trust Integrity (#23-#25)
 """
 import json
 import re
@@ -22,7 +22,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from models import (
-    Activity, AthleteFinding, CorrelationFinding,
+    Activity, AthleteFact, AthleteFinding, CorrelationFinding,
     DailyCheckin, GarminDay, TrainingPlan,
 )
 
@@ -255,6 +255,8 @@ class ExperienceGuardrail:
                 detail="No run_shape or shape_sentence on most recent activity",
                 endpoint="activity", severity="high",
             ))
+
+        self._assert_no_superseded_athlete_facts(all_coach_texts)
 
     def run_tier2(self, endpoint_responses: dict):
         """Run language hygiene assertions (#8-#11) against Tier 2 endpoints."""
@@ -1047,6 +1049,75 @@ class ExperienceGuardrail:
             passed=passed, skipped=False,
             detail=detail,
             endpoint="activity", severity="high",
+        ))
+
+    # ------------------------------------------------------------------
+    # Assertion #25: No superseded athlete facts in coach output
+    # ------------------------------------------------------------------
+
+    def _assert_no_superseded_athlete_facts(self, coach_texts: list):
+        from uuid import UUID as _UUID
+        aid = _UUID(self.athlete_id) if isinstance(self.athlete_id, str) else self.athlete_id
+
+        superseded = (
+            self.db.query(AthleteFact)
+            .filter(
+                AthleteFact.athlete_id == aid,
+                AthleteFact.is_active == False,  # noqa: E712
+                AthleteFact.superseded_at.isnot(None),
+            )
+            .all()
+        )
+
+        if not superseded:
+            self.results.append(AssertionResult(
+                id=25, name="no_superseded_facts_in_coach",
+                category="trust_integrity", passed=True, skipped=True,
+                detail="No superseded athlete facts to check",
+                endpoint="coach_briefing", severity="high",
+            ))
+            return
+
+        for fact in superseded:
+            current = (
+                self.db.query(AthleteFact)
+                .filter(
+                    AthleteFact.athlete_id == aid,
+                    AthleteFact.fact_key == fact.fact_key,
+                    AthleteFact.is_active == True,  # noqa: E712
+                )
+                .first()
+            )
+            if not current or current.fact_value == fact.fact_value:
+                continue
+
+            key_friendly = fact.fact_key.replace("_", " ").replace("1rm", "").replace("lbs", "").strip()
+            old_val = str(fact.fact_value).strip()
+            cur_val = str(current.fact_value).strip()
+            # Numeric token boundary: (?<!\d) and (?!\d) prevent 315 matching inside 1315
+            old_pat = re.compile(rf"(?<!\d){re.escape(old_val)}(?!\d)")
+            cur_pat = re.compile(rf"(?<!\d){re.escape(cur_val)}(?!\d)")
+
+            for text in coach_texts:
+                text_lower = text.lower()
+                key_pos = text_lower.find(key_friendly.lower())
+                if key_pos == -1:
+                    continue
+                window = text_lower[max(0, key_pos - 50):key_pos + len(key_friendly) + 50]
+                if old_pat.search(window) and not cur_pat.search(window):
+                    self.results.append(AssertionResult(
+                        id=25, name="no_superseded_facts_in_coach",
+                        category="trust_integrity", passed=False, skipped=False,
+                        detail=f"Superseded {fact.fact_key}={fact.fact_value} found near key mention; current is {current.fact_value}",
+                        endpoint="coach_briefing", severity="high",
+                    ))
+                    return
+
+        self.results.append(AssertionResult(
+            id=25, name="no_superseded_facts_in_coach",
+            category="trust_integrity", passed=True, skipped=False,
+            detail="No superseded fact values found in coach output",
+            endpoint="coach_briefing", severity="high",
         ))
 
     # ------------------------------------------------------------------
