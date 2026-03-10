@@ -22,7 +22,7 @@ def test_onboarding_full_flow_register_stage_progression_and_intake_persists():
     """
 
     email = f"onboarding_flow_{uuid4()}@example.com"
-    password = "password123"
+    password = "SecureP@ss123"
     token = None
     db = SessionLocal()
     try:

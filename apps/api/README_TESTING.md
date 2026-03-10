@@ -9,13 +9,13 @@
 pytest
 
 # Run specific test file
-pytest tests/test_vdot_calculator.py
+pytest tests/test_rpi_calculator.py
 
 # Run with coverage
 pytest --cov=. --cov-report=html
 
 # Run specific test
-pytest tests/test_vdot_calculator.py::TestVDOTCalculation::test_5k_20_minutes
+pytest tests/test_rpi_calculator.py::TestRPICalculation::test_5k_20_minutes
 
 # Verbose output
 pytest -v
@@ -43,7 +43,7 @@ npm run test:coverage
 
 ### Backend Tests (`apps/api/tests/`)
 
-- `test_vdot_calculator.py` - VDOT/Training Pace Calculator tests
+- `test_rpi_calculator.py` - RPI/Training Pace Calculator tests
 - `test_age_grading.py` - WMA Age-Grading Calculator tests
 - `test_heat_adjusted_pace.py` - Heat-Adjusted Pace Calculator tests
 - `test_api_endpoints.py` - API endpoint integration tests
@@ -57,7 +57,7 @@ npm run test:coverage
 ## What's Tested
 
 ### Calculator Logic
-- ✅ VDOT calculation from race times
+- ✅ RPI calculation from race times
 - ✅ Training pace calculations (E/M/T/I/R)
 - ✅ Equivalent race time calculations
 - ✅ Age-grading percentage calculations

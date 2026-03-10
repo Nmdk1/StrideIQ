@@ -4,6 +4,7 @@ Activities API Router
 Provides endpoints for activity management with proper filtering, pagination, and authentication.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, asc
 from typing import Optional, List
@@ -16,6 +17,74 @@ from models import Activity, Athlete, ActivitySplit
 from schemas import ActivityResponse
 
 router = APIRouter(prefix="/v1/activities", tags=["activities"])
+
+
+_STRAVA_AUTO_NAMES = frozenset({
+    "morning run", "afternoon run", "evening run", "night run", "lunch run",
+    "morning walk", "afternoon walk", "evening walk", "lunch walk",
+    "morning ride", "afternoon ride", "evening ride", "lunch ride",
+    "long run", "race",
+})
+
+_GARMIN_AUTO_SUFFIXES = (" Running", " Walking", " Cycling", " Hiking")
+
+
+def _is_auto_generated_name(name: Optional[str], provider: Optional[str]) -> bool:
+    """Return True if the activity name is platform-generated, not athlete-authored."""
+    if not name or not name.strip():
+        return True
+    if provider == "demo":
+        return True
+    if name.strip().lower() in _STRAVA_AUTO_NAMES:
+        return True
+    if provider == "garmin":
+        for suffix in _GARMIN_AUTO_SUFFIXES:
+            if name.endswith(suffix):
+                return True
+    return False
+
+
+def resolve_activity_title(activity) -> Optional[str]:
+    """Single source of truth for activity display title.
+
+    Priority:
+      1. athlete_title  — edited in StrideIQ, always wins
+      2. race name      — athlete's title for a race is sacred
+      3. authored name  — non-auto Strava/Garmin title beats shape_sentence
+      4. shape_sentence — system's structural understanding
+      5. name           — fallback (auto-generated platform title)
+    """
+    if getattr(activity, 'athlete_title', None):
+        return activity.athlete_title
+
+    name = getattr(activity, 'name', None)
+    sentence = getattr(activity, 'shape_sentence', None)
+    provider = getattr(activity, 'provider', None) or ''
+    is_race = (
+        getattr(activity, 'user_verified_race', False)
+        or getattr(activity, 'is_race_candidate', False)
+    )
+
+    if is_race and name:
+        return name
+
+    if name and not _is_auto_generated_name(name, provider):
+        return name
+
+    return sentence or name
+
+
+class ActivityTitleUpdate(BaseModel):
+    title: Optional[str] = None
+
+    @field_validator('title')
+    @classmethod
+    def normalize_empty(cls, v):
+        if v is not None and v.strip() == '':
+            return None
+        if v and len(v) > 200:
+            raise ValueError('Title must be 200 characters or fewer')
+        return v.strip() if v else v
 
 
 @router.get("", response_model=List[ActivityResponse])
@@ -137,6 +206,9 @@ def list_activities(
             "performance_percentage_national": activity.performance_percentage_national,
             "is_race_candidate": activity.is_race_candidate,
             "race_confidence": activity.race_confidence,
+            "shape_sentence": activity.shape_sentence,
+            "athlete_title": activity.athlete_title,
+            "resolved_title": resolve_activity_title(activity),
         }
         
         # Calculate pace if we have speed
@@ -344,7 +416,9 @@ def get_activity(
         "average_cadence": derived_avg_cadence,
         "total_elevation_gain_m": float(activity.total_elevation_gain) if activity.total_elevation_gain else None,
         "average_temp_c": float(activity.temperature_f - 32) * 5/9 if activity.temperature_f else None,
+        "provider": activity.provider,
         "strava_activity_id": activity.external_activity_id if activity.provider == "strava" else None,
+        "device_name": activity.device_name,
         
         # Workout classification
         "workout_type": activity.workout_type,
@@ -364,12 +438,56 @@ def get_activity(
         "temperature_f": activity.temperature_f,
         "humidity_pct": activity.humidity_pct,
         "weather_condition": activity.weather_condition,
+        "dew_point_f": activity.dew_point_f,
+        "heat_adjustment_pct": activity.heat_adjustment_pct,
         
         # Narrative context (ADR-033)
         "narrative": narrative,
+        
+        # Shape sentence (Living Fingerprint)
+        "shape_sentence": activity.shape_sentence,
+        "athlete_title": activity.athlete_title,
+        "resolved_title": resolve_activity_title(activity),
     }
     
     return result
+
+
+@router.put("/{activity_id}/title")
+def update_activity_title(
+    activity_id: UUID,
+    body: ActivityTitleUpdate,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update the athlete's custom title for an activity."""
+    activity = db.query(Activity).filter(
+        Activity.id == activity_id,
+    ).first()
+
+    if not activity:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Activity not found",
+        )
+
+    if activity.athlete_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not your activity",
+        )
+
+    activity.athlete_title = body.title
+    db.commit()
+    db.refresh(activity)
+
+    return {
+        "id": str(activity.id),
+        "name": activity.name,
+        "shape_sentence": activity.shape_sentence,
+        "athlete_title": activity.athlete_title,
+        "resolved_title": resolve_activity_title(activity),
+    }
 
 
 @router.get("/{activity_id}/attribution")
@@ -419,3 +537,56 @@ def get_activity_attribution(
     
     return run_attribution_to_dict(result)
 
+
+class FindingAnnotation(BaseModel):
+    """A correlation finding relevant to a specific activity."""
+    text: str
+    domain: str
+    confidence_tier: str
+    evidence_summary: Optional[str] = None
+
+
+@router.get("/{activity_id}/findings", response_model=List[FindingAnnotation])
+def get_activity_findings(
+    activity_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return up to 3 relevant active findings for this activity.
+    """
+    from models import CorrelationFinding as _CF
+
+    activity = db.query(Activity).filter(
+        Activity.id == activity_id,
+        Activity.athlete_id == current_user.id,
+    ).first()
+
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    findings = (
+        db.query(_CF)
+        .filter(
+            _CF.athlete_id == current_user.id,
+            _CF.is_active.is_(True),
+            _CF.times_confirmed >= 3,
+        )
+        .order_by(_CF.times_confirmed.desc())
+        .limit(3)
+        .all()
+    )
+
+    result = []
+    for f in findings:
+        tier = "strong" if f.times_confirmed >= 8 else "confirmed"
+        text = f.insight_text or f"{f.input_name.replace('_', ' ')} affects your {f.output_metric}"
+        evidence = f"Confirmed {f.times_confirmed} times" if f.times_confirmed else None
+        result.append(FindingAnnotation(
+            text=text,
+            domain=f.output_metric,
+            confidence_tier=tier,
+            evidence_summary=evidence,
+        ))
+
+    return result

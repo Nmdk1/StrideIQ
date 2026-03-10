@@ -44,15 +44,19 @@ def _token_expired(user: Athlete) -> str:
 
 
 def _token_tampered(valid_token: str) -> str:
-    # Flip one character in the signature segment; structure stays JWT-like but verification must fail.
+    # Flip a character in the middle of the signature segment to ensure verification fails.
+    # Changing the last character may not affect decoded bytes due to base64 padding.
     parts = valid_token.split(".")
     assert len(parts) == 3, "Expected JWT with 3 segments"
     sig = parts[2]
-    if not sig:
-        parts[2] = "x"
+    if not sig or len(sig) < 5:
+        parts[2] = "x" * 10
     else:
-        last = sig[-1]
-        parts[2] = sig[:-1] + ("A" if last != "A" else "B")
+        # Change a character in the middle of the signature (avoid padding issues)
+        mid = len(sig) // 2
+        mid_char = sig[mid]
+        new_char = "X" if mid_char != "X" else "Y"
+        parts[2] = sig[:mid] + new_char + sig[mid + 1:]
     return ".".join(parts)
 
 

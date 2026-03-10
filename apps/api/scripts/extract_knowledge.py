@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.database import get_db_sync
 from models import CoachingKnowledgeEntry
 from services.knowledge_extraction_ai import (
-    extract_vdot_formula,
+    extract_rpi_formula,
     extract_periodization_principles,
     extract_general_principles
 )
@@ -34,24 +34,24 @@ def extract_and_store(text: str, source: str, methodology: str, source_type: str
     """
     db = get_db_sync()
     try:
-        # Extract VDOT formula if relevant
-        if "vdot" in text.lower() or "daniels" in methodology.lower():
-            print(f"Extracting VDOT formula from {source}...")
-            vdot_data = extract_vdot_formula(text)
-            if vdot_data:
-                print(f"✅ Extracted VDOT formula")
+        # Extract RPI formula if relevant
+        if "rpi" in text.lower() or "daniels" in methodology.lower():
+            print(f"Extracting RPI formula from {source}...")
+            rpi_data = extract_rpi_formula(text)
+            if rpi_data:
+                print(f"✅ Extracted RPI formula")
                 # Store in knowledge base
                 entry = CoachingKnowledgeEntry(
                     source=source,
                     methodology=methodology,
                     source_type=source_type,
                     text_chunk=text[:1000],  # Store first 1000 chars
-                    extracted_principles=json.dumps(vdot_data),
-                    principle_type="vdot_formula"
+                    extracted_principles=json.dumps(rpi_data),
+                    principle_type="rpi_formula"
                 )
                 db.add(entry)
                 db.commit()
-                print(f"✅ Stored VDOT formula entry: {entry.id}")
+                print(f"✅ Stored RPI formula entry: {entry.id}")
         
         # Extract periodization principles
         if "periodization" in text.lower() or "phase" in text.lower():

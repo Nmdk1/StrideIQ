@@ -33,6 +33,9 @@ interface RunAnalysisData {
     hrv_7_day_avg: number | null;
     resting_hr_today: number | null;
     resting_hr_7_day_avg: number | null;
+    garmin_stress_score: number | null;
+    garmin_stress_qualifier: string | null;
+    garmin_filled_fields: string[];
     days_since_last_run: number | null;
     runs_this_week: number | null;
     volume_this_week_km: number | null;
@@ -314,50 +317,66 @@ export default function RunContextAnalysis({ activityId }: RunContextAnalysisPro
           Pre-Run State Details
         </summary>
         <div className="p-4 pt-0 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <InputItem 
-            label="Sleep (last night)" 
-            value={analysis.inputs.sleep_last_night} 
+          <InputItem
+            label="Sleep (last night)"
+            value={analysis.inputs.sleep_last_night}
             unit="h"
             compare={analysis.inputs.sleep_7_day_avg}
+            source={analysis.inputs.garmin_filled_fields.includes('sleep_last_night') ? 'device' : 'self-reported'}
           />
-          <InputItem 
-            label="Stress" 
-            value={analysis.inputs.stress_today} 
-            unit="/5"
-            compare={analysis.inputs.stress_3_day_avg}
-            invertComparison
-          />
-          <InputItem 
-            label="Soreness" 
-            value={analysis.inputs.soreness_today} 
+          {/* Manual stress (1-5 self-report) takes priority; device qualifier shown only when absent */}
+          {analysis.inputs.stress_today !== null ? (
+            <InputItem
+              label="Stress"
+              value={analysis.inputs.stress_today}
+              unit="/5"
+              compare={analysis.inputs.stress_3_day_avg}
+              invertComparison
+              source="self-reported"
+            />
+          ) : analysis.inputs.garmin_stress_qualifier !== null ? (
+            <InputItem
+              label="Stress (device)"
+              value={analysis.inputs.garmin_stress_qualifier?.replace('_', ' ') ?? null}
+              source="device"
+            />
+          ) : (
+            <InputItem label="Stress" value={null} />
+          )}
+          <InputItem
+            label="Soreness"
+            value={analysis.inputs.soreness_today}
             unit="/5"
             compare={analysis.inputs.soreness_3_day_avg}
             invertComparison
+            source={analysis.inputs.soreness_today !== null ? 'self-reported' : undefined}
           />
-          <InputItem 
-            label="HRV" 
-            value={analysis.inputs.hrv_today} 
+          <InputItem
+            label="HRV"
+            value={analysis.inputs.hrv_today}
             unit="ms"
             compare={analysis.inputs.hrv_7_day_avg}
+            source={analysis.inputs.garmin_filled_fields.includes('hrv_today') ? 'device' : (analysis.inputs.hrv_today !== null ? 'self-reported' : undefined)}
           />
-          <InputItem 
-            label="Resting HR" 
-            value={analysis.inputs.resting_hr_today} 
+          <InputItem
+            label="Resting HR"
+            value={analysis.inputs.resting_hr_today}
             unit="bpm"
             compare={analysis.inputs.resting_hr_7_day_avg}
             invertComparison
+            source={analysis.inputs.garmin_filled_fields.includes('resting_hr_today') ? 'device' : (analysis.inputs.resting_hr_today !== null ? 'self-reported' : undefined)}
           />
-          <InputItem 
-            label="Days Since Last Run" 
-            value={analysis.inputs.days_since_last_run} 
+          <InputItem
+            label="Days Since Last Run"
+            value={analysis.inputs.days_since_last_run}
             unit="d"
           />
-          <InputItem 
-            label="Runs This Week" 
-            value={analysis.inputs.runs_this_week} 
+          <InputItem
+            label="Runs This Week"
+            value={analysis.inputs.runs_this_week}
           />
-          <InputItem 
-            label="Volume This Week" 
+          <InputItem
+            label="Volume This Week"
             value={analysis.inputs.volume_this_week_km ? formatDistance(analysis.inputs.volume_this_week_km * 1000, 1) : null}
           />
         </div>
@@ -439,18 +458,20 @@ function TrendCard({
 }
 
 
-function InputItem({ 
-  label, 
-  value, 
-  unit = '', 
+function InputItem({
+  label,
+  value,
+  unit = '',
   compare,
-  invertComparison = false
-}: { 
-  label: string; 
+  invertComparison = false,
+  source,
+}: {
+  label: string;
   value: number | string | null | undefined;
   unit?: string;
   compare?: number | null;
   invertComparison?: boolean;
+  source?: 'self-reported' | 'device';
 }) {
   if (value === null || value === undefined) {
     return (
@@ -464,12 +485,12 @@ function InputItem({
   const getComparisonIndicator = () => {
     if (!compare || typeof value !== 'number') return null;
     const diff = value - compare;
-    const threshold = compare * 0.1; // 10% threshold
-    
+    const threshold = compare * 0.1;
+
     if (Math.abs(diff) < threshold) return null;
-    
+
     const isGood = invertComparison ? diff < 0 : diff > 0;
-    
+
     return (
       <span className={`text-xs ml-1 ${isGood ? 'text-green-500' : 'text-orange-500'}`}>
         {diff > 0 ? '▲' : '▼'}
@@ -485,6 +506,11 @@ function InputItem({
         <span className="text-slate-500 text-sm">{unit}</span>
         {getComparisonIndicator()}
       </p>
+      {source && (
+        <p className={`text-xs mt-0.5 ${source === 'device' ? 'text-blue-400/70' : 'text-slate-600'}`}>
+          {source === 'device' ? 'from device' : 'self-reported'}
+        </p>
+      )}
     </div>
   );
 }

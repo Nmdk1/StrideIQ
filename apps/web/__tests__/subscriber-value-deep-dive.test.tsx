@@ -3,6 +3,12 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+// Mock scrollIntoView for JSDOM (not implemented)
+beforeAll(() => {
+  Element.prototype.scrollIntoView = jest.fn();
+  window.requestAnimationFrame = (cb) => { cb(0); return 0; };
+});
+
 // `react-markdown` is ESM-only; Jest in this repo runs in CJS mode.
 // For UI smoke, a simple passthrough renderer is sufficient.
 jest.mock('react-markdown', () => ({
@@ -16,6 +22,12 @@ import CoachPage from '@/app/coach/page';
 
 jest.mock('@/components/auth/ProtectedRoute', () => ({
   ProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  usePathname: () => '/insights',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 // AuthContext is used by Insights (AthleteIntelligenceSection)
@@ -178,7 +190,12 @@ describe('Subscriber value deep-dive (Insights + PBs + Coach evidence)', () => {
     });
     coachGetSuggestionsMock.mockResolvedValue({ suggestions: [] });
 
-    render(<CoachPage />);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <CoachPage />
+      </QueryClientProvider>
+    );
 
     expect(await screen.findByText('Coach')).toBeInTheDocument();
 

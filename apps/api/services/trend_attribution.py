@@ -20,6 +20,7 @@ from enum import Enum
 from uuid import UUID
 import math
 import logging
+from scipy.stats import t as t_dist
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
@@ -163,28 +164,17 @@ def pearson_correlation(x: List[float], y: List[float]) -> Tuple[float, float]:
     denominator = math.sqrt(sum_sq_x * sum_sq_y)
     r = numerator / denominator if denominator != 0 else 0.0
     
-    # Calculate p-value using t-test approximation
+    # Exact two-tailed p-value from t-distribution (scipy)
     if abs(r) >= 0.9999 or n <= 2:
         p_value = 0.0001 if abs(r) >= 0.9999 else 1.0
     else:
         try:
             t_stat = r * math.sqrt((n - 2) / (1 - r ** 2))
-            # Simplified p-value approximation
-            p_value = 2 * _approx_p_from_t(abs(t_stat), n - 2)
+            p_value = float(2 * t_dist.sf(abs(t_stat), n - 2))
         except (ValueError, ZeroDivisionError):
             p_value = 1.0
     
     return r, max(0.0001, min(1.0, p_value))
-
-
-def _approx_p_from_t(t: float, df: int) -> float:
-    """Approximate p-value from t-statistic."""
-    if t > 6:
-        return 0.0001
-    if t < 0.5:
-        return 0.4
-    # Simple approximation
-    return max(0.0001, min(0.5, 0.5 * math.exp(-0.5 * t)))
 
 
 def classify_confidence(
@@ -319,46 +309,28 @@ def collect_factor_data(
         # and avoid 500s from missing columns.
         #
         # Current model fields include: sleep_h, stress_1_5, soreness_1_5, rpe_1_10,
-        # hrv_rmssd/hrv_sdnn, resting_hr, overnight_avg_hr, enjoyment_1_5, confidence_1_5, motivation_1_5.
+        # hrv_rmssd/hrv_sdnn, resting_hr, overnight_avg_hr, enjoyment_1_5, confidence_1_5, readiness_1_5.
         #
         # We only include factors that we can measure reliably from stored columns.
 
-        sleep_duration = getattr(checkin, "sleep_h", None)
-        if sleep_duration is None:
-            sleep_duration = getattr(checkin, "sleep_hours", None)  # legacy
-        if sleep_duration is not None:
-            factor_data.setdefault("sleep_duration", []).append((d, float(sleep_duration)))
+        if checkin.sleep_h is not None:
+            factor_data.setdefault("sleep_duration", []).append((d, float(checkin.sleep_h)))
 
-        hrv = getattr(checkin, "hrv_rmssd", None)
-        if hrv is None:
-            hrv = getattr(checkin, "hrv_sdnn", None)
-        if hrv is None:
-            hrv = getattr(checkin, "hrv", None)  # legacy
+        hrv = checkin.hrv_rmssd if checkin.hrv_rmssd is not None else checkin.hrv_sdnn
         if hrv is not None:
             factor_data.setdefault("hrv", []).append((d, float(hrv)))
 
-        resting_hr = getattr(checkin, "resting_hr", None)
-        if resting_hr is not None:
-            factor_data.setdefault("resting_hr", []).append((d, float(resting_hr)))
+        if checkin.resting_hr is not None:
+            factor_data.setdefault("resting_hr", []).append((d, float(checkin.resting_hr)))
 
-        stress = getattr(checkin, "stress_1_5", None)
-        if stress is None:
-            stress = getattr(checkin, "stress_level", None)  # legacy
-        if stress is not None:
-            factor_data.setdefault("stress", []).append((d, float(stress)))
+        if checkin.stress_1_5 is not None:
+            factor_data.setdefault("stress", []).append((d, float(checkin.stress_1_5)))
 
-        soreness = getattr(checkin, "soreness_1_5", None)
-        if soreness is None:
-            soreness = getattr(checkin, "soreness", None)  # legacy
-        if soreness is not None:
-            factor_data.setdefault("soreness", []).append((d, float(soreness)))
+        if checkin.soreness_1_5 is not None:
+            factor_data.setdefault("soreness", []).append((d, float(checkin.soreness_1_5)))
 
-        # Optional proxy for fatigue when no explicit fatigue field exists.
-        fatigue = getattr(checkin, "rpe_1_10", None)
-        if fatigue is None:
-            fatigue = getattr(checkin, "fatigue", None)  # legacy
-        if fatigue is not None:
-            factor_data.setdefault("fatigue", []).append((d, float(fatigue)))
+        if checkin.rpe_1_10 is not None:
+            factor_data.setdefault("fatigue", []).append((d, float(checkin.rpe_1_10)))
     
     # Collect from BodyComposition
     body_comps = db.query(BodyComposition).filter(

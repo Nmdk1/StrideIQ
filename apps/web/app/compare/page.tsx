@@ -139,7 +139,7 @@ function ActivityRow({
               )}
             </div>
             <div className="font-medium truncate text-white">
-              {activity.name || 'Untitled Run'}
+              {activity.resolved_title ?? activity.name ?? 'Untitled Run'}
             </div>
           </div>
           

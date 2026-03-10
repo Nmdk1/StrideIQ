@@ -109,17 +109,19 @@ def build_insight_feed_cards(
 
                 # Rough confidence: more activities -> more stable weekly signal
                 lr_conf = "high" if activity_count >= 5 else "moderate" if activity_count >= 3 else "low"
-                lr_priority = 85 if load_type == "harmful" else 70 if load_type in ("productive", "wasted") else 55
+                # Neutral labels — efficiency (pace/HR) is directionally ambiguous.
+                # See Athlete Trust Safety Contract in n1_insight_generator.py.
+                lr_priority = 70 if load_type in ("adaptation_signal", "load_signal") else 55
 
-                if load_type == "productive":
-                    lr_summary = "Your load looks productive (efficiency improved vs prior week)."
-                    lr_actions = [{"label": "Keep build steady", "href": "/calendar"}]
-                elif load_type == "wasted":
-                    lr_summary = "You added load but efficiency didn’t improve. Consider sharpening intent."
-                    lr_actions = [{"label": "Review week structure", "href": "/calendar"}]
-                elif load_type == "harmful":
-                    lr_summary = "Efficiency regressed vs prior week at this load. This can signal fatigue or poor recovery."
-                    lr_actions = [{"label": "See drilldown", "href": "/training-load"}]
+                if load_type == "adaptation_signal":
+                    lr_summary = "Your efficiency ratio shifted this week. Tap to explore what changed."
+                    lr_actions = [{"label": "See details", "href": "/training-load"}]
+                elif load_type == "load_signal":
+                    lr_summary = "Your efficiency ratio shifted this week. Check recovery context."
+                    lr_actions = [{"label": "See details", "href": "/training-load"}]
+                elif load_type == "stable":
+                    lr_summary = "Efficiency ratio was stable week over week."
+                    lr_actions = [{"label": "Open Training Load", "href": "/training-load"}]
                 else:
                     lr_summary = "Load response is neutral this week."
                     lr_actions = [{"label": "Open Training Load", "href": "/training-load"}]

@@ -120,14 +120,14 @@ class TestAnalyzeEfficiencyTrend:
         assert result.sample_size == 3
     
     def test_clear_improving_trend(self):
-        """Clear improving trend (decreasing EF) should be detected."""
-        # Generate 20 data points with clear downward trend
+        """Clear improving trend (increasing EF) should be detected."""
+        # Generate 20 data points with clear upward trend
         base_date = datetime(2026, 1, 1)
         time_series = []
         for i in range(20):
             date = base_date + timedelta(days=i * 3)
-            # EF decreasing from 12 to 10 (lower = better)
-            ef = 12.0 - (i * 0.1)
+            # EF increasing from 10 to 12 (higher = better)
+            ef = 10.0 + (i * 0.1)
             time_series.append({
                 "date": date.isoformat(),
                 "efficiency_factor": ef
@@ -137,18 +137,18 @@ class TestAnalyzeEfficiencyTrend:
         
         assert result.direction == TrendDirection.IMPROVING
         assert result.confidence in [TrendConfidence.HIGH, TrendConfidence.MODERATE]
-        assert result.slope_per_week < 0  # Negative = improving
+        assert result.slope_per_week > 0  # Positive = improving
         assert result.p_value < 0.05
         assert result.is_actionable
     
     def test_clear_declining_trend(self):
-        """Clear declining trend (increasing EF) should be detected."""
+        """Clear declining trend (decreasing EF) should be detected."""
         base_date = datetime(2026, 1, 1)
         time_series = []
         for i in range(20):
             date = base_date + timedelta(days=i * 3)
-            # EF increasing from 10 to 12 (higher = worse)
-            ef = 10.0 + (i * 0.1)
+            # EF decreasing from 12 to 10 (lower = worse)
+            ef = 12.0 - (i * 0.1)
             time_series.append({
                 "date": date.isoformat(),
                 "efficiency_factor": ef
@@ -157,7 +157,7 @@ class TestAnalyzeEfficiencyTrend:
         result = analyze_efficiency_trend(time_series)
         
         assert result.direction == TrendDirection.DECLINING
-        assert result.slope_per_week > 0  # Positive = declining
+        assert result.slope_per_week < 0  # Negative = declining
         assert result.p_value < 0.05
     
     def test_stable_no_trend(self):
@@ -190,8 +190,8 @@ class TestAnalyzeEfficiencyTrend:
         time_series = []
         for i in range(30):
             date = base_date + timedelta(days=i * 2)
-            # Clear downward trend with noise
-            ef = 12.0 - (i * 0.05) + random.uniform(-0.3, 0.3)
+            # Clear upward trend with noise
+            ef = 10.0 + (i * 0.05) + random.uniform(-0.3, 0.3)
             time_series.append({
                 "date": date.isoformat(),
                 "efficiency_factor": ef
@@ -200,7 +200,7 @@ class TestAnalyzeEfficiencyTrend:
         result = analyze_efficiency_trend(time_series)
         
         assert result.direction == TrendDirection.IMPROVING
-        assert result.slope_per_week < 0
+        assert result.slope_per_week > 0
         assert result.sample_size == 30
     
     def test_handles_missing_efficiency_factor(self):
@@ -225,8 +225,8 @@ class TestAnalyzeEfficiencyTrend:
         time_series = []
         for i in range(10):
             date = base_date + timedelta(days=i * 7)
-            # EF from 12 to 10 = ~17% improvement
-            ef = 12.0 - (i * 0.22)
+            # EF from 10 to 12 = ~20% improvement
+            ef = 10.0 + (i * 0.22)
             time_series.append({
                 "date": date.isoformat(),
                 "efficiency_factor": ef
@@ -235,7 +235,7 @@ class TestAnalyzeEfficiencyTrend:
         result = analyze_efficiency_trend(time_series)
         
         assert result.change_percent is not None
-        assert result.change_percent < 0  # Negative = improvement
+        assert result.change_percent > 0  # Positive = improvement
 
 
 class TestTrendConfidenceClassification:
@@ -291,7 +291,7 @@ class TestEfficiencyPercentile:
     
     def test_best_efficiency(self):
         """Best efficiency should be high percentile."""
-        current_ef = 9.5  # Lower is better
+        current_ef = 13.0  # Higher is better
         historical = [10.0, 10.5, 11.0, 11.5, 12.0, 10.2, 10.8]
         
         percentile = calculate_efficiency_percentile(current_ef, historical)
@@ -300,7 +300,7 @@ class TestEfficiencyPercentile:
     
     def test_worst_efficiency(self):
         """Worst efficiency should be low percentile."""
-        current_ef = 13.0  # Higher is worse
+        current_ef = 9.0  # Lower is worse
         historical = [10.0, 10.5, 11.0, 11.5, 12.0]
         
         percentile = calculate_efficiency_percentile(current_ef, historical)
@@ -314,9 +314,9 @@ class TestEfficiencyPercentile:
         
         percentile = calculate_efficiency_percentile(current_ef, historical)
         
-        # 4 values are worse (higher), 2 are better (lower)
-        # percentile = 4/7 * 100 ≈ 57.1%
-        assert 50 < percentile < 65
+        # 2 values are worse (lower), 4 are better (higher), 1 equal
+        # percentile = 2/7 * 100 ≈ 28.6%
+        assert 25 < percentile < 35
     
     def test_insufficient_history(self):
         """Should return None with less than 5 historical points."""
@@ -334,8 +334,8 @@ class TestDaysToPREfficiency:
     def test_improving_trend(self):
         """Should estimate days when improving."""
         current_ef = 11.0
-        pr_ef = 10.0
-        slope_per_week = -0.2  # Improving 0.2 EF per week
+        pr_ef = 12.0
+        slope_per_week = 0.2  # Improving 0.2 EF per week
         
         days = estimate_days_to_pr_efficiency(current_ef, pr_ef, slope_per_week)
         
@@ -346,8 +346,8 @@ class TestDaysToPREfficiency:
     def test_not_improving(self):
         """Should return None when not improving."""
         current_ef = 11.0
-        pr_ef = 10.0
-        slope_per_week = 0.1  # Declining
+        pr_ef = 12.0
+        slope_per_week = -0.1  # Declining
         
         days = estimate_days_to_pr_efficiency(current_ef, pr_ef, slope_per_week)
         
@@ -355,9 +355,9 @@ class TestDaysToPREfficiency:
     
     def test_already_at_pr(self):
         """Should return 0 when at or better than PR."""
-        current_ef = 9.5
-        pr_ef = 10.0
-        slope_per_week = -0.1
+        current_ef = 12.5
+        pr_ef = 12.0
+        slope_per_week = 0.1
         
         days = estimate_days_to_pr_efficiency(current_ef, pr_ef, slope_per_week)
         
@@ -365,9 +365,9 @@ class TestDaysToPREfficiency:
     
     def test_too_far_out(self):
         """Should return None if > 365 days away."""
-        current_ef = 15.0
-        pr_ef = 10.0
-        slope_per_week = -0.01  # Very slow improvement
+        current_ef = 10.0
+        pr_ef = 15.0
+        slope_per_week = 0.01  # Very slow improvement
         
         days = estimate_days_to_pr_efficiency(current_ef, pr_ef, slope_per_week)
         
@@ -383,7 +383,7 @@ class TestToDict:
         time_series = []
         for i in range(15):
             date = base_date + timedelta(days=i * 3)
-            ef = 12.0 - (i * 0.1)
+            ef = 10.0 + (i * 0.1)
             time_series.append({
                 "date": date.isoformat(),
                 "efficiency_factor": ef
@@ -417,7 +417,7 @@ class TestInsightGeneration:
         time_series = []
         for i in range(25):
             date = base_date + timedelta(days=i * 3)
-            ef = 12.0 - (i * 0.1)
+            ef = 10.0 + (i * 0.1)
             time_series.append({
                 "date": date.isoformat(),
                 "efficiency_factor": ef
@@ -434,7 +434,7 @@ class TestInsightGeneration:
         time_series = []
         for i in range(20):
             date = base_date + timedelta(days=i * 3)
-            ef = 10.0 + (i * 0.12)
+            ef = 12.0 - (i * 0.12)
             time_series.append({
                 "date": date.isoformat(),
                 "efficiency_factor": ef

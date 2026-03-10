@@ -78,7 +78,7 @@ interface ConstraintAwarePlanResponse {
       ctl: number;
       atl: number;
     };
-    best_vdot: number;
+    best_rpi: number;
     races: RacePerformance[];
     tau1: number;
     tau2: number;
@@ -184,7 +184,7 @@ db_plan = TrainingPlan(
     plan_start_date=plan.weeks[0].start_date,
     plan_end_date=plan.race_date,
     total_weeks=plan.total_weeks,
-    baseline_vdot=fb.best_vdot,
+    baseline_rpi=fb.best_rpi,
     baseline_weekly_volume_km=fb.peak_weekly_miles * 1.609,
     plan_type="marathon",
     generation_method="constraint_aware",  # NEW: Distinguishes from template

@@ -7,7 +7,7 @@ routers, and configuration for production use.
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, coach_actions, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, diagnostics, plan_generation, home, plan_export, onboarding, billing
+from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, activity_reflection, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, coach_actions, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, diagnostics, plan_generation, home, plan_export, onboarding, billing, progress, daily_intelligence, stream_analysis, consent, fingerprint
 from routers import imports as provider_imports
 try:
     from routers import garmin
@@ -30,14 +30,13 @@ from sqlalchemy import text
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# Initialize Sentry for error tracking (production)
-if settings.SENTRY_DSN:
-    try:
-        import sentry_sdk
+try:
+    import sentry_sdk
+    if settings.SENTRY_DSN:
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
         from sentry_sdk.integrations.redis import RedisIntegration
-        
+
         sentry_sdk.init(
             dsn=settings.SENTRY_DSN,
             environment=settings.ENVIRONMENT,
@@ -48,16 +47,14 @@ if settings.SENTRY_DSN:
                 SqlalchemyIntegration(),
                 RedisIntegration(),
             ],
-            # Don't send PII
             send_default_pii=False,
-            # Filter sensitive data
             before_send=lambda event, hint: _filter_sensitive_data(event),
         )
         logger.info(f"Sentry initialized for environment: {settings.ENVIRONMENT}")
-    except ImportError:
-        logger.warning("sentry-sdk not installed, error tracking disabled")
-    except Exception as e:
-        logger.error(f"Failed to initialize Sentry: {e}")
+    else:
+        sentry_sdk.init(dsn="")
+except ImportError:
+    pass
 
 
 def _filter_sensitive_data(event):
@@ -81,21 +78,21 @@ app = FastAPI(
 
 
 @app.on_event("startup")
-async def backfill_missing_vdot():
-    """Backfill VDOT for athletes who have PBs but missing VDOT."""
+async def backfill_missing_rpi():
+    """Backfill RPI for athletes who have PBs but missing RPI."""
     try:
-        from database import SessionLocal
-        from services.personal_best import backfill_vdot_from_pbs
+        from core.database import SessionLocal
+        from services.personal_best import backfill_rpi_from_pbs
         
         db = SessionLocal()
         try:
-            result = backfill_vdot_from_pbs(db)
+            result = backfill_rpi_from_pbs(db)
             if result['updated'] > 0:
-                logger.info(f"VDOT backfill complete: {result}")
+                logger.info(f"RPI backfill complete: {result}")
         finally:
             db.close()
     except Exception as e:
-        logger.warning(f"VDOT backfill failed (non-critical): {e}")
+        logger.warning(f"RPI backfill failed (non-critical): {e}")
 
 
 # CORS middleware
@@ -219,27 +216,26 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 async def health():
     """
-    Simple health check for load balancers and uptime monitors.
-    
-    Returns:
-        - 200: Core systems operational
-        - 503: Critical dependency unavailable
+    Readiness probe — confirms API can serve requests (DB + Redis reachable).
+    Returns 200 with degraded status on partial failures; 503 on total failure.
     """
-    db_healthy = check_db_connection()
-    
-    if not db_healthy:
+    from core.cache import get_redis_client as _get_redis
+    try:
+        db_ok = check_db_connection()
+        redis_client = _get_redis()
+        redis_ok = False
+        if redis_client is not None:
+            try:
+                redis_ok = bool(redis_client.ping())
+            except Exception:
+                redis_ok = False
+        overall = "ok" if (db_ok and redis_ok) else "degraded"
+        return {"status": overall, "db": db_ok, "redis": redis_ok}
+    except Exception:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "status": "unhealthy",
-                "database": "unavailable",
-            }
+            content={"status": "unhealthy"},
         )
-    
-    return {
-        "status": "healthy",
-        "timestamp": time.time(),
-    }
 
 
 @app.get("/health/detailed")
@@ -297,10 +293,10 @@ async def health_detailed():
 @app.get("/ping")
 async def ping():
     """
-    Minimal ping endpoint for uptime monitors.
-    No dependencies checked - just confirms the API is responding.
+    Liveness probe — confirms API process is alive.
+    No DB, no auth, no rate limit. Used for Docker healthcheck restarts.
     """
-    return {"pong": True}
+    return {"status": "alive"}
 
 
 @app.get("/debug")
@@ -380,7 +376,9 @@ app.include_router(body_composition.router)
 app.include_router(nutrition.router)
 app.include_router(work_pattern.router)
 app.include_router(activity_analysis.router)
+app.include_router(stream_analysis.router)
 app.include_router(activity_feedback.router)
+app.include_router(activity_reflection.router)
 app.include_router(training_availability.router)
 app.include_router(run_delivery.router)
 app.include_router(activities.router)
@@ -413,7 +411,19 @@ app.include_router(plan_export.router)
 app.include_router(onboarding.router)
 app.include_router(coach_actions.router)
 app.include_router(billing.router)
+app.include_router(progress.router)
+app.include_router(daily_intelligence.router)
+app.include_router(consent.router)
+app.include_router(fingerprint.router)
 app.include_router(provider_imports.router)
+
+# Runtoon — AI-generated personalized run images (feature-flagged)
+try:
+    from routers import runtoon as runtoon_router
+    app.include_router(runtoon_router.router)
+    app.include_router(runtoon_router.activity_router)
+except ImportError as e:
+    logger.warning(f"Could not include Runtoon router: {e}")
 
 # GDPR endpoints
 try:
@@ -429,21 +439,26 @@ try:
 except ImportError:
     pass  # Public tools router not available yet
 
-# Garmin router (if available)
-# TEMPORARILY DISABLED: Garmin username/password auth blocked by Garmin (Jan 2026)
-# Will re-enable when official OAuth flow is implemented post-launch
-# if GARMIN_AVAILABLE:
-#     try:
-#         app.include_router(garmin.router)
-#     except Exception as e:
-#         logger.warning(f"Could not include Garmin router: {e}")
+# Garmin OAuth router (D2: auth-url, callback, status, disconnect)
+if GARMIN_AVAILABLE:
+    try:
+        app.include_router(garmin.router)
+    except Exception as e:
+        logger.warning(f"Could not include Garmin OAuth router: {e}")
 
-# VDOT Calculator (free tool)
+# Garmin webhook router (D4: per-type push webhook endpoints)
 try:
-    from routers import vdot
-    app.include_router(vdot.router)
+    from routers import garmin_webhooks
+    app.include_router(garmin_webhooks.router)
+except ImportError as e:
+    logger.warning(f"Could not include Garmin webhook router: {e}")
+
+# RPI Calculator (free tool)
+try:
+    from routers import rpi
+    app.include_router(rpi.router)
 except ImportError:
-    pass  # VDOT router not available yet
+    pass  # RPI router not available yet
 
 # Knowledge Base Query API (Tier 3+)
 try:

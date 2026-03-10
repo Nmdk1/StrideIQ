@@ -1,11 +1,14 @@
 """
 Email Service
 
-Handles sending emails for scheduled digests and notifications.
-Uses SMTP for now, can be swapped for SendGrid/Mailgun later.
+Handles sending transactional emails (password reset, email change verification).
+Transport: Google Workspace SMTP via smtp.gmail.com:587 (STARTTLS).
+Configured via settings: SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD,
+FROM_EMAIL, FROM_NAME, EMAIL_ENABLED.
 """
 
 import smtplib
+import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Optional
@@ -16,63 +19,70 @@ logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    """Service for sending emails"""
-    
+    """Service for sending transactional emails."""
+
     def __init__(self):
-        self.smtp_server = getattr(settings, 'SMTP_SERVER', 'localhost')
-        self.smtp_port = getattr(settings, 'SMTP_PORT', 587)
-        self.smtp_username = getattr(settings, 'SMTP_USERNAME', None)
-        self.smtp_password = getattr(settings, 'SMTP_PASSWORD', None)
-        self.from_email = getattr(settings, 'FROM_EMAIL', 'noreply@performancefocused.com')
-        self.from_name = getattr(settings, 'FROM_NAME', 'Performance Focused')
-        self.enabled = getattr(settings, 'EMAIL_ENABLED', False)
-    
+        self.smtp_server = settings.SMTP_SERVER
+        self.smtp_port = settings.SMTP_PORT
+        self.smtp_username = settings.SMTP_USERNAME
+        self.smtp_password = settings.SMTP_PASSWORD
+        self.smtp_timeout_seconds = settings.SMTP_TIMEOUT_SECONDS
+        self.from_email = settings.FROM_EMAIL
+        self.from_name = settings.FROM_NAME
+        self.enabled = settings.EMAIL_ENABLED
+
     def send_email(
         self,
         to_email: str,
         subject: str,
         html_content: str,
-        text_content: Optional[str] = None
+        text_content: Optional[str] = None,
     ) -> bool:
         """
-        Send an email.
-        
+        Send an email via SMTP (STARTTLS).
+
         Returns True if sent successfully, False otherwise.
+        Logs and returns False on any failure without raising.
         """
         if not self.enabled:
-            logger.info(f"Email disabled, would send to {to_email}: {subject}")
+            logger.info("Email disabled — skipping send to %s: %s", to_email, subject)
             return False
-        
+
+        if not self.smtp_username or not self.smtp_password:
+            logger.warning(
+                "EMAIL_ENABLED=True but SMTP credentials not configured — "
+                "cannot send to %s: %s",
+                to_email,
+                subject,
+            )
+            return False
+
         try:
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = subject
-            msg['From'] = f"{self.from_name} <{self.from_email}>"
-            msg['To'] = to_email
-            
-            # Add text and HTML parts
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = f"{self.from_name} <{self.from_email}>"
+            msg["To"] = to_email
+
             if text_content:
-                text_part = MIMEText(text_content, 'plain')
-                msg.attach(text_part)
-            
-            html_part = MIMEText(html_content, 'html')
-            msg.attach(html_part)
-            
-            # Send email
-            if self.smtp_username and self.smtp_password:
-                server = smtplib.SMTP(self.smtp_server, self.smtp_port)
-                server.starttls()
+                msg.attach(MIMEText(text_content, "plain"))
+            msg.attach(MIMEText(html_content, "html"))
+
+            with smtplib.SMTP(
+                self.smtp_server,
+                self.smtp_port,
+                timeout=self.smtp_timeout_seconds,
+            ) as server:
+                server.ehlo()
+                server.starttls(context=ssl.create_default_context())
+                server.ehlo()
                 server.login(self.smtp_username, self.smtp_password)
                 server.send_message(msg)
-                server.quit()
-            else:
-                # Local development - just log
-                logger.info(f"Would send email to {to_email}: {subject}")
-                logger.debug(f"Content: {html_content[:200]}...")
-            
+
+            logger.info("Email sent to %s: %s", to_email, subject)
             return True
-            
-        except Exception as e:
-            logger.error(f"Error sending email to {to_email}: {str(e)}")
+
+        except Exception as exc:
+            logger.error("Failed to send email to %s (%s): %s", to_email, subject, exc)
             return False
     
     def send_digest(
@@ -123,7 +133,7 @@ class EmailService:
             html_parts.append("</ul>")
         
         html_parts.append("<p>Keep going.</p>")
-        html_parts.append("<p>— Performance Focused</p>")
+        html_parts.append("<p>— StrideIQ</p>")
         
         html_content = "\n".join(html_parts)
         
@@ -155,7 +165,7 @@ class EmailService:
                     f"Statistically significant."
                 )
         
-        text_parts.append("\nKeep going.\n— Performance Focused")
+        text_parts.append("\nKeep going.\n— StrideIQ")
         text_content = "\n".join(text_parts)
         
         return self.send_email(to_email, subject, html_content, text_content)
@@ -164,4 +174,30 @@ class EmailService:
 # Singleton instance
 email_service = EmailService()
 
+
+def send_email(
+    to_email: str,
+    subject: str,
+    html_content: str,
+    text_content: Optional[str] = None
+) -> bool:
+    """
+    Module-level convenience function for sending emails.
+    Delegates to the singleton EmailService instance.
+    
+    Args:
+        to_email: Recipient email address
+        subject: Email subject line
+        html_content: HTML body of the email
+        text_content: Optional plain text version
+        
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    return email_service.send_email(
+        to_email=to_email,
+        subject=subject,
+        html_content=html_content,
+        text_content=text_content
+    )
 

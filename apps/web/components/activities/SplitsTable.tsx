@@ -2,21 +2,12 @@
 
 import React from 'react';
 import { useUnits } from '@/lib/context/UnitsContext';
-
-type Split = {
-  split_number: number;
-  distance: number | null; // meters
-  elapsed_time: number | null; // seconds
-  moving_time: number | null; // seconds
-  average_heartrate: number | null;
-  max_heartrate: number | null;
-  average_cadence: number | null;
-  gap_seconds_per_mile: number | null;
-};
+import type { Split } from '@/lib/types/splits';
+import { GarminBadge } from '@/components/integrations/GarminBadge';
 
 const MILES_TO_KM = 1.60934;
 
-function normalizeCadenceToSpm(raw: number | null | undefined): number | null {
+export function normalizeCadenceToSpm(raw: number | null | undefined): number | null {
   if (raw === null || raw === undefined) return null;
   const v = Number(raw);
   if (!isFinite(v) || v <= 0) return null;
@@ -44,26 +35,41 @@ function gapSecondsPerKmFromPerMile(gapSecondsPerMile: number | null | undefined
   return gapSecondsPerMile / MILES_TO_KM;
 }
 
-export function SplitsTable({ splits }: { splits: Split[] }) {
+export interface SplitsTableProps {
+  splits: Split[];
+  /** Data source: 'garmin' | 'strava' | null */
+  provider?: string | null;
+  /** Device model for Garmin attribution (e.g. "forerunner165"). Optional — logo alone is shown if absent. */
+  deviceName?: string | null;
+  /** Optional: callback when mouse enters a split row (index into splits array) */
+  onRowHover?: (index: number | null) => void;
+  /** Optional: ref map for direct DOM manipulation of row highlights */
+  rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
+}
+
+export function SplitsTable({ splits, provider, deviceName, onRowHover, rowRefs }: SplitsTableProps) {
   const { formatDistance, formatPace } = useUnits();
 
   if (!splits?.length) return null;
 
+  let cumulativeTime = 0;
   const rows = splits
     .map((s) => {
-      const time = s.moving_time ?? s.elapsed_time ?? null;
-      const paceSecKm = paceSecondsPerKm(time, s.distance);
+      const splitTime = s.moving_time ?? s.elapsed_time ?? null;
+      if (splitTime) cumulativeTime += splitTime;
+      const paceSecKm = paceSecondsPerKm(splitTime, s.distance);
       const gapSecKm = gapSecondsPerKmFromPerMile(s.gap_seconds_per_mile);
       const cadenceSpm = normalizeCadenceToSpm(s.average_cadence);
       return {
         ...s,
-        time,
+        splitTime,
+        cumulativeTime: splitTime ? cumulativeTime : null,
         paceSecKm,
         gapSecKm,
         cadenceSpm,
       };
     })
-    .filter((r) => r.time !== null && r.distance !== null);
+    .filter((r) => r.splitTime !== null && r.distance !== null);
 
   const bestPace = rows
     .map((r) => r.paceSecKm)
@@ -89,10 +95,16 @@ export function SplitsTable({ splits }: { splits: Split[] }) {
             {rows.map((r) => {
               const isBest = typeof r.paceSecKm === 'number' && isFinite(r.paceSecKm) && r.paceSecKm === bestPace;
               return (
-                <tr key={r.split_number} className="text-slate-200">
+                <tr
+                  key={r.split_number}
+                  className="text-slate-200 transition-colors duration-75"
+                  ref={(el) => { if (el && rowRefs) rowRefs.current.set(r.split_number - 1, el); }}
+                  onMouseEnter={() => onRowHover?.(r.split_number - 1)}
+                  onMouseLeave={() => onRowHover?.(null)}
+                >
                   <td className="px-3 py-2 whitespace-nowrap">{r.split_number}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatDistance(r.distance, 2)}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{formatDuration(r.time)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{formatDuration(r.cumulativeTime)}</td>
                   <td className={`px-3 py-2 whitespace-nowrap ${isBest ? 'font-semibold text-white' : ''}`}>
                     {formatPace(r.paceSecKm)}
                   </td>
@@ -107,9 +119,18 @@ export function SplitsTable({ splits }: { splits: Split[] }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-slate-500">
-        Splits are sourced from Strava laps (auto-laps or manual laps/intervals). Pace is computed from split distance/time.
-      </p>
+      <div className="mt-2 text-xs text-slate-500">
+        {provider === 'garmin' ? (
+          <span className="flex items-center gap-1.5 flex-wrap">
+            <GarminBadge deviceName={deviceName} size="sm" />
+            <span>· Pace is computed from split distance/time.</span>
+          </span>
+        ) : (
+          <span>
+            Splits are sourced from Strava laps (auto-laps or manual laps/intervals). Pace is computed from split distance/time.
+          </span>
+        )}
+      </div>
     </div>
   );
 }

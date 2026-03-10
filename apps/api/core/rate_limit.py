@@ -32,6 +32,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/v1/admin": 50,  # Admin endpoints: 50 per minute
             "/v1/analytics/efficiency-trends": 30,  # 30 per minute
             "/v1/analytics/diagnostic-report": 4,  # 4 per minute (compute-intensive, cached 1hr)
+            # Garmin webhook endpoints — D4 (per-IP, generous for push bursts)
+            # Primary rate limiting is in WebhookRateLimiter (garmin_webhook_auth.py).
+            # This provides a Redis-backed secondary layer for multi-worker deployments.
+            "/v1/garmin/webhook": 120,  # 120 per minute per IP across all webhook routes
         }
     
     async def dispatch(self, request: Request, call_next):

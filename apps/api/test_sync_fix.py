@@ -4,7 +4,7 @@ Simple test script to verify the sync fix works correctly.
 This resets last_strava_sync to None and then runs the sync.
 """
 import sys
-from database import SessionLocal
+from core.database import SessionLocal
 from models import Athlete
 from routers.strava import strava_sync
 

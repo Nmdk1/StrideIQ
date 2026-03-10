@@ -69,11 +69,10 @@ class VolumeTierClassifier:
         # Get thresholds for this distance
         thresholds = VOLUME_TIER_THRESHOLDS.get(distance, {})
         
-        # Find appropriate tier
+        # Find appropriate tier (highest first — a 90mpw runner is ELITE, not HIGH)
+        # Tier boundaries are universal across distances; only peak volume varies.
         for tier in [VolumeTier.ELITE, VolumeTier.HIGH, VolumeTier.MID, VolumeTier.LOW, VolumeTier.BUILDER]:
             tier_config = thresholds.get(tier)
-            # Some distances (e.g., half/10k/5k) don't define all tiers (like ELITE).
-            # If a tier is not defined for this distance, skip it (never "match all" with defaults).
             if not isinstance(tier_config, dict) or not tier_config:
                 continue
             min_mpw = tier_config.get("min", 0)
@@ -150,17 +149,21 @@ class VolumeTierClassifier:
         distance: str,
         starting_volume: float,
         plan_weeks: int,
-        taper_weeks: int = 2
+        taper_weeks: int = 2,
+        cutback_frequency_override: int = None,
     ) -> list:
         """
         Calculate week-by-week volume targets.
         
         Returns list of target weekly volumes.
         Uses safe progression: max 10% increase week-over-week.
+        
+        cutback_frequency_override: If provided (from athlete_plan_profile),
+            overrides the tier default cutback frequency.
         """
         params = self.get_tier_params(tier, distance)
         peak_volume = params["peak_weekly_miles"]
-        cutback_freq = params["cutback_frequency"]
+        cutback_freq = cutback_frequency_override or params["cutback_frequency"]
         cutback_reduction = params["cutback_reduction"]
         
         # Build weeks (excluding taper)
@@ -171,24 +174,31 @@ class VolumeTierClassifier:
         current = starting_volume
         
         for week in range(1, plan_weeks + 1):
-            # Taper phase
+            # Taper phase — taper from ACTUAL achieved peak (max of build
+            # weeks so far), not the config ceiling.  Builder tier may
+            # never reach the config peak; tapering from it produces a
+            # volume that's paradoxically close to or above the actual peak.
             if week > build_weeks:
+                actual_peak = max(volumes) if volumes else peak_volume
                 taper_week = week - build_weeks
                 if taper_week == 1:
-                    # First taper week: 60% of peak
-                    volumes.append(peak_volume * 0.6)
+                    # First taper week: 60% of actual peak
+                    volumes.append(round(actual_peak * 0.6, 1))
                 else:
-                    # Race week: 40% of peak
-                    volumes.append(peak_volume * 0.4)
+                    # Race week: 40% of actual peak
+                    volumes.append(round(actual_peak * 0.4, 1))
             # Cutback week
             elif week % cutback_freq == 0:
                 # Cutback week: reduce volume, but avoid extreme swings in the weekly targets.
                 # (We still reduce intensity separately via workout selection/scaling.)
-                # For BUILDER: prefer a "recovery week" via reduced intensity, not a big volume dip.
-                # Early durability is built by consistent frequency/volume.
+                # For BUILDER: use a gentle cutback (10%) — enough for the validation
+                # framework to detect recovery structure, while still prioritizing the
+                # consistent frequency/volume that builds early durability.
                 if tier == VolumeTier.BUILDER:
-                    cutback_volume = current
+                    cutback_volume = current * 0.90
+                    cutback_volume = math.floor(cutback_volume * 10) / 10.0
                     volumes.append(cutback_volume)
+                    current = cutback_volume
                     continue
 
                 effective_reduction = cutback_reduction

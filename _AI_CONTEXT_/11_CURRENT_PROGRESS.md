@@ -79,10 +79,10 @@
 - ✅ `apps/api/services/ai_coaching_engine.py` - Client-facing explanation
 - ✅ `_AI_CONTEXT_/21_RUNNER_ROAD_MAGIC_INTEGRATION.md` - Complete documentation
 
-### Major Milestone: VDOT Calculator Enhanced to Match vdoto2.com
+### Major Milestone: RPI Calculator Enhanced to Match rpio2.com
 
-**Enhanced VDOT Calculator:**
-- ✅ Created `vdot_enhanced.py` service matching vdoto2.com functionality
+**Enhanced RPI Calculator:**
+- ✅ Created `rpi_enhanced.py` service matching rpio2.com functionality
 - ✅ **Race Paces Tab**: Shows paces for 5K, 1Mi, 1K, 800M, 400M
 - ✅ **Training Tab**: Comprehensive training paces with:
   - Per mile/km paces (Easy with range ~, Marathon, Threshold, Interval, Repetition)
@@ -91,7 +91,7 @@
 - ✅ **Equivalent Tab**: Equivalent race times for all standard distances
 - ✅ Complete frontend rewrite with three-tab interface
 - ✅ Easy pace displayed as range (e.g., "8:16 ~ 9:06") based on Daniels' guidance
-- ✅ User-friendly explanations added (VDOT and Age-Grading info tooltips)
+- ✅ User-friendly explanations added (RPI and Age-Grading info tooltips)
 - ✅ Professional aesthetic maintained
 
 **Age-Grading Calculator Enhancement:**
@@ -109,8 +109,8 @@
 
 **World-Class Public Landing Page:**
 - ✅ Built complete landing page with Hero, Free Tools, How It Works, Pricing, Footer sections
-- ✅ Integrated VDOT Calculator, WMA Age-Grading Calculator, and Efficiency Estimator
-- ✅ Connected to public API endpoints (`/v1/public/vdot/calculate`, `/v1/public/age-grade/calculate`)
+- ✅ Integrated RPI Calculator, WMA Age-Grading Calculator, and Efficiency Estimator
+- ✅ Connected to public API endpoints (`/v1/public/rpi/calculate`, `/v1/public/age-grade/calculate`)
 - ✅ Styled with Tailwind CSS (v3.4.1) - dark mode, modern UI
 - ✅ Production build configured and deployed
 - ✅ Branding updated: "Performance Focused Coaching System" (replaced "Performance Physics Engine")
@@ -149,9 +149,9 @@
 - ✅ Added task status endpoint (`/sync/status/{task_id}`)
 - ✅ Worker configured to import tasks from API
 
-### 2. VDOT Calculator
-- ✅ Built comprehensive VDOT calculator service
-- ✅ Created API endpoint (`/vdot/calculate`)
+### 2. RPI Calculator
+- ✅ Built comprehensive RPI calculator service
+- ✅ Created API endpoint (`/rpi/calculate`)
 - ✅ Supports calculation from race time OR pace (reverse)
 - ✅ Returns training paces (Easy, Marathon, Threshold, Interval, Repetition, Fast Reps) in both mi and km
 - ✅ Returns equivalent race performances for all standard distances
@@ -219,7 +219,7 @@
   - Text chunking and storage (`store_text_chunks.py`)
   - Training plan extraction (`extract_training_plans.py`)
   - Principle extraction (`extract_principles_direct.py`)
-- 📋 Extract VDOT formula (exact from books) - in progress
+- 📋 Extract RPI formula (exact from books) - in progress
 - 📋 Extract periodization principles - in progress
 - 📋 Extract load progression rules - in progress
 
@@ -246,12 +246,12 @@
    - ✅ Extraction pipeline operational
    - ✅ 10 methodologies extracted (240 entries, including Runner Road Magic)
    - 📋 Continue extracting from additional sources
-   - 📋 Extract exact VDOT formula from Daniels text
+   - 📋 Extract exact RPI formula from Daniels text
    - 📋 Extract periodization principles from Pfitzinger
    - 📋 Extract load progression rules
 
-2. **Refine VDOT Calculator**
-   - Extract exact VDOT formula from books (using knowledge base)
+2. **Refine RPI Calculator**
+   - Extract exact RPI formula from books (using knowledge base)
    - Update calculator with accurate formulas
    - Test against reference calculator
 
@@ -271,22 +271,22 @@
    - Protect API endpoints
 
 6. ✅ **Landing Page** - COMPLETE
-   - ✅ Built landing page with VDOT calculator
-   - ✅ Free tools section (VDOT, WMA Age-Grading, Efficiency Estimator)
+   - ✅ Built landing page with RPI calculator
+   - ✅ Free tools section (RPI, WMA Age-Grading, Efficiency Estimator)
    - ✅ Conversion funnel (Hero → Tools → Pricing)
 
 ## Known Issues
 
-1. **VDOT Formulas:** Current formulas are approximations. Need exact formulas from books (extraction in progress).
+1. **RPI Formulas:** Current formulas are approximations. Need exact formulas from books (extraction in progress).
 2. **AI Extraction:** Direct text analysis working well. External AI APIs (ANTHROPIC_API_KEY or OPENAI_API_KEY) optional for enhanced extraction.
 3. **Knowledge Base:** Continue expanding with more sources and refining extraction quality.
 
 ## Testing Status
 
-- ✅ VDOT endpoint working (tested with 5K in 20:00)
+- ✅ RPI endpoint working (tested with 5K in 20:00)
 - ✅ API responding correctly
 - ✅ Database models importing successfully
-- ⚠️ VDOT formulas need refinement (expected - will fix when books extracted)
+- ⚠️ RPI formulas need refinement (expected - will fix when books extracted)
 
 ## Architecture Status
 
@@ -298,7 +298,7 @@
 - Knowledge base models ✅
 
 **Features:** ✅ Core System Complete
-- VDOT calculator ✅ (accurate lookup tables, matches vdoto2.com)
+- RPI calculator ✅ (accurate lookup tables, matches rpio2.com)
 - Knowledge base extraction ✅ **COMPLETE** (240 entries, 20 plans, 10 methodologies including Runner Road Magic)
 - AI coaching engine ✅ **PRODUCTION-READY** (plan generation working)
   - Methodology opacity ✅
@@ -313,7 +313,7 @@
 
 The system is ready to:
 1. Extract knowledge from books (when content available)
-2. Build landing page with VDOT calculator
+2. Build landing page with RPI calculator
 3. Continue infrastructure improvements
 4. Start building diagnostic signals
 

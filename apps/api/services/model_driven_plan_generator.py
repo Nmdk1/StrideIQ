@@ -42,7 +42,7 @@ from services.race_predictor import (
     RacePredictor,
     RacePrediction
 )
-from services.vdot_calculator import calculate_training_paces
+from services.rpi_calculator import calculate_training_paces
 
 logger = logging.getLogger(__name__)
 
@@ -1078,28 +1078,28 @@ class ModelDrivenPlanGenerator:
         distance_m: int
     ) -> Dict[str, str]:
         """
-        Get training paces from VDOT or goal time.
+        Get training paces from RPI or goal time.
         
         Returns dict with keys: e_pace, m_pace, t_pace, i_pace, r_pace
         Values are formatted as "M:SS/mi"
         """
-        from services.vdot_calculator import calculate_vdot_from_race_time
+        from services.rpi_calculator import calculate_rpi_from_race_time
         
         if goal_time:
-            vdot = calculate_vdot_from_race_time(distance_m, goal_time)
+            rpi = calculate_rpi_from_race_time(distance_m, goal_time)
         else:
             # Estimate from recent races
             predictor = RacePredictor(self.db)
-            current_vdot = predictor._get_current_vdot(athlete_id)
-            vdot = current_vdot if current_vdot else 45.0  # Default
+            current_rpi = predictor._get_current_rpi(athlete_id)
+            rpi = current_rpi if current_rpi else 45.0  # Default
         
-        raw_paces = calculate_training_paces(vdot)
+        raw_paces = calculate_training_paces(rpi)
         
         if not raw_paces:
             return self._default_paces()
         
-        # Convert from vdot_calculator format to our expected format
-        # vdot_calculator returns: {"easy": {"mi": "7:57", "km": "4:56"}, ...}
+        # Convert from rpi_calculator format to our expected format
+        # rpi_calculator returns: {"easy": {"mi": "7:57", "km": "4:56"}, ...}
         # We need: {"e_pace": "7:57/mi", "m_pace": "6:39/mi", ...}
         def extract_pace(key: str) -> str:
             pace_dict = raw_paces.get(key, {})

@@ -53,7 +53,7 @@ Calculates the athlete's **proven capabilities**:
 | `peak_weekly_miles` | Highest sustainable weekly volume |
 | `peak_long_run_miles` | Longest long run completed |
 | `peak_mp_long_run_miles` | Longest MP portion in a long run |
-| `best_vdot` | Best race performance (VDOT) |
+| `best_rpi` | Best race performance (RPI) |
 | `tau1` / `tau2` | Individual response time constants |
 | `experience_level` | Beginner / Intermediate / Experienced / Elite |
 | `constraint_type` | None / Injury / Time / Detrained |
@@ -64,7 +64,7 @@ from services.fitness_bank import get_fitness_bank
 
 bank = get_fitness_bank(athlete_id, db)
 print(f"Peak: {bank.peak_weekly_miles}mpw")
-print(f"Best VDOT: {bank.best_vdot}")
+print(f"Best RPI: {bank.best_rpi}")
 print(f"τ1: {bank.tau1}d")
 ```
 
@@ -151,7 +151,7 @@ Orchestrates the full plan generation:
   "plan_id": "uuid",
   "fitness_bank": {
     "peak": { "weekly_miles": 71, "long_run": 22, "mp_long_run": 18 },
-    "best_vdot": 53.2,
+    "best_rpi": 53.2,
     "tau1": 25,
     "tau2": 18,
     "experience": "elite",
@@ -178,7 +178,7 @@ Preview Fitness Bank without generating full plan.
 | Column | Type | Description |
 |--------|------|-------------|
 | `generation_method` | Text | "constraint_aware" |
-| `baseline_vdot` | Float | Best VDOT at plan creation |
+| `baseline_rpi` | Float | Best RPI at plan creation |
 | `baseline_weekly_volume_km` | Float | Peak weekly volume |
 
 ### PlannedWorkout
@@ -201,7 +201,7 @@ docker-compose exec api pytest tests/test_fitness_bank_framework.py -v
 ```
 
 17 tests covering:
-- VDOT calculation
+- RPI calculation
 - Pace zone calculation
 - Theme alternation
 - Injury protection
@@ -233,7 +233,7 @@ For an athlete with:
 - Peak: 71mpw, 22mi long, 18@MP
 - Current: 16mpw (injury return)
 - τ1: 25 days, τ2: 18 days
-- Best race: 39:10 10K (VDOT 53)
+- Best race: 39:10 10K (RPI 53)
 - Goal: Marathon March 15, 10-mile tune-up March 7
 
 **Generated Plan:**

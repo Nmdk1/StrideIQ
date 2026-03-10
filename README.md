@@ -235,9 +235,9 @@ Note: You'll need PostgreSQL and Redis running separately if running services in
 
 ### Public Tools (No Authentication Required)
 - `POST /api/public/age-grade` - Calculate WMA age-grading percentage
-- `POST /api/public/vdot/calculate` - Calculate fitness score from race time
-- `POST /api/public/vdot/race-paces` - Get training paces and equivalent race times
-- `POST /api/public/vdot/equivalents` - Calculate equivalent race times
+- `POST /api/public/rpi/calculate` - Calculate fitness score from race time
+- `POST /api/public/rpi/race-paces` - Get training paces and equivalent race times
+- `POST /api/public/rpi/equivalents` - Calculate equivalent race times
 
 ### Athlete Management (`/v1`)
 - `POST /v1/athletes` - Create a new athlete
@@ -464,7 +464,7 @@ pytest
 pytest --cov=.
 
 # Run specific test file
-pytest tests/test_vdot_calculator.py
+pytest tests/test_rpi_calculator.py
 ```
 
 See `apps/api/README_TESTING.md` for detailed testing documentation.

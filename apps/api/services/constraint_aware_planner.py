@@ -358,10 +358,10 @@ class ConstraintAwarePlanner:
         return weeks
     
     def _estimate_race_pace(self, bank: FitnessBank, distance: str) -> str:
-        """Estimate race pace for a distance from VDOT."""
-        from services.workout_prescription import calculate_paces_from_vdot, format_pace
+        """Estimate race pace for a distance from RPI."""
+        from services.workout_prescription import calculate_paces_from_rpi, format_pace
         
-        paces = calculate_paces_from_vdot(bank.best_vdot)
+        paces = calculate_paces_from_rpi(bank.best_rpi)
         
         # Shorter distances = faster than marathon pace
         adjustments = {
@@ -435,7 +435,7 @@ class ConstraintAwarePlanner:
             cond = f" ({r.conditions})" if r.conditions else ""
             notes.append(
                 f"Your {r.distance} at {int(r.pace_per_mile)}:{int((r.pace_per_mile % 1) * 60):02d}/mi{cond} "
-                f"proves VDOT {bank.best_vdot:.0f}. Paces are based on YOUR data."
+                f"proves RPI {bank.best_rpi:.0f}. Paces are based on YOUR data."
             )
         
         return notes
@@ -444,15 +444,15 @@ class ConstraintAwarePlanner:
                       goal_time: Optional[str]) -> tuple:
         """Predict race time based on fitness bank."""
         
-        from services.fitness_bank import vdot_equivalent_time
+        from services.fitness_bank import rpi_equivalent_time
         
         distance_m = {
             "5k": 5000, "10k": 10000, "10_mile": 16093,
             "half": 21097, "marathon": 42195
         }.get(distance, 42195)
         
-        # Predict from best VDOT
-        predicted_sec = vdot_equivalent_time(bank.best_vdot, distance_m)
+        # Predict from best RPI
+        predicted_sec = rpi_equivalent_time(bank.best_rpi, distance_m)
         
         hours = predicted_sec // 3600
         minutes = (predicted_sec % 3600) // 60

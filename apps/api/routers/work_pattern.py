@@ -11,6 +11,7 @@ from uuid import UUID
 from decimal import Decimal
 
 from core.database import get_db
+from core.auth import get_current_user
 from models import Athlete, WorkPattern
 from schemas import WorkPatternCreate, WorkPatternResponse
 
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/v1", tags=["work_pattern"])
 @router.post("/work-patterns", response_model=WorkPatternResponse, status_code=201)
 def create_work_pattern(
     work_pattern: WorkPatternCreate,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -28,14 +30,9 @@ def create_work_pattern(
     Tracks work type, hours worked, and stress level for correlation analysis.
     Used to identify correlations between work patterns and performance/recovery.
     """
-    # Verify athlete exists
-    athlete = db.query(Athlete).filter(Athlete.id == work_pattern.athlete_id).first()
-    if not athlete:
-        raise HTTPException(status_code=404, detail="Athlete not found")
-    
     # Check for existing entry on this date
     existing = db.query(WorkPattern).filter(
-        WorkPattern.athlete_id == work_pattern.athlete_id,
+        WorkPattern.athlete_id == current_user.id,
         WorkPattern.date == work_pattern.date
     ).first()
     
@@ -53,9 +50,9 @@ def create_work_pattern(
                 detail="stress_level must be between 1 and 5"
             )
     
-    # Create work pattern entry
+    # Create work pattern entry (use authenticated user's ID)
     db_entry = WorkPattern(
-        athlete_id=work_pattern.athlete_id,
+        athlete_id=current_user.id,
         date=work_pattern.date,
         work_type=work_pattern.work_type,
         hours_worked=Decimal(str(work_pattern.hours_worked)) if work_pattern.hours_worked else None,
@@ -72,17 +69,17 @@ def create_work_pattern(
 
 @router.get("/work-patterns", response_model=List[WorkPatternResponse])
 def get_work_patterns(
-    athlete_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     db: Session = Depends(get_db)
 ):
     """
-    Get work pattern entries for an athlete.
+    Get work pattern entries for the authenticated user.
     
     Can filter by date range.
     """
-    query = db.query(WorkPattern).filter(WorkPattern.athlete_id == athlete_id)
+    query = db.query(WorkPattern).filter(WorkPattern.athlete_id == current_user.id)
     
     if start_date:
         query = query.filter(WorkPattern.date >= start_date)
@@ -96,12 +93,16 @@ def get_work_patterns(
 @router.get("/work-patterns/{id}", response_model=WorkPatternResponse)
 def get_work_pattern_by_id(
     id: UUID,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get a specific work pattern entry by ID."""
     entry = db.query(WorkPattern).filter(WorkPattern.id == id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Work pattern entry not found")
+    # Verify ownership
+    if entry.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return entry
 
 
@@ -109,6 +110,7 @@ def get_work_pattern_by_id(
 def update_work_pattern(
     id: UUID,
     work_pattern: WorkPatternCreate,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -118,10 +120,9 @@ def update_work_pattern(
     if not db_entry:
         raise HTTPException(status_code=404, detail="Work pattern entry not found")
     
-    # Verify athlete exists
-    athlete = db.query(Athlete).filter(Athlete.id == work_pattern.athlete_id).first()
-    if not athlete:
-        raise HTTPException(status_code=404, detail="Athlete not found")
+    # Verify ownership
+    if db_entry.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
     
     # Validate stress_level if provided
     if work_pattern.stress_level is not None:
@@ -131,8 +132,7 @@ def update_work_pattern(
                 detail="stress_level must be between 1 and 5"
             )
     
-    # Update fields
-    db_entry.athlete_id = work_pattern.athlete_id
+    # Update fields (keep athlete_id unchanged)
     db_entry.date = work_pattern.date
     db_entry.work_type = work_pattern.work_type
     db_entry.hours_worked = Decimal(str(work_pattern.hours_worked)) if work_pattern.hours_worked else None
@@ -148,6 +148,7 @@ def update_work_pattern(
 @router.delete("/work-patterns/{id}", status_code=204)
 def delete_work_pattern(
     id: UUID,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete a work pattern entry."""
@@ -155,7 +156,10 @@ def delete_work_pattern(
     if not db_entry:
         raise HTTPException(status_code=404, detail="Work pattern entry not found")
     
+    # Verify ownership
+    if db_entry.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     db.delete(db_entry)
     db.commit()
     return None
-

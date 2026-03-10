@@ -40,9 +40,9 @@ DISTANCE_BUCKETS = {
     'ultra_long': (35000, None)  # 35K+ (marathon+)
 }
 
-# VDOT equivalency ratios (from Jack Daniels)
+# RPI equivalency ratios (from Jack Daniels)
 # If you're balanced, your race performances should follow these ratios
-VDOT_RATIOS = {
+RPI_RATIOS = {
     '5K_to_10K': 1.06,      # 10K should be ~1.06x 5K pace
     '10K_to_HM': 1.035,     # HM should be ~1.035x 10K pace
     'HM_to_M': 1.045,       # Marathon should be ~1.045x HM pace

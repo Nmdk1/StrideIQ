@@ -10,15 +10,18 @@ Supported formats:
 This gives athletes confidence that their plan data is portable.
 """
 
+import io
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import Optional
 
 from core.database import get_db
 from core.auth import get_current_user
-from models import Athlete
+from models import Athlete, TrainingPlan, PlannedWorkout
 from services.plan_export import (
     export_plan_to_csv,
     export_plan_to_json,
@@ -30,6 +33,75 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/plans", tags=["plan-export"])
+
+
+@router.get("/{plan_id}/pdf")
+def export_plan_pdf(
+    plan_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Export a training plan as a PDF file.
+
+    Access rules (mirrors pace-access entitlement):
+    - 404  plan missing or not owned by this athlete
+    - 403  owned but paces not unlocked (free tier, no purchase)
+    - 200  one-time purchaser, guided, or premium
+
+    Returns a streaming application/pdf response.
+    """
+    from core.pace_access import can_access_plan_paces
+    from services.plan_pdf import generate_plan_pdf, sanitize_pdf_filename
+
+    # 404 for missing / non-owned
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_id,
+        TrainingPlan.athlete_id == current_user.id,
+    ).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    # 403 for owned-but-not-entitled
+    if not can_access_plan_paces(current_user, plan_id, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Unlock this plan to export as PDF. Visit the plan page to purchase access.",
+        )
+
+    # Fetch workouts ordered for consistent rendering
+    workouts = (
+        db.query(PlannedWorkout)
+        .filter(PlannedWorkout.plan_id == plan_id)
+        .order_by(PlannedWorkout.week_number, PlannedWorkout.day_of_week)
+        .all()
+    )
+
+    try:
+        pdf_bytes = generate_plan_pdf(plan, workouts, current_user)
+    except RuntimeError as exc:
+        logger.error("PDF generation failed for plan=%s: %s", plan_id, exc)
+        raise HTTPException(status_code=503, detail="PDF generation is temporarily unavailable.")
+    except Exception as exc:
+        logger.exception("Unexpected PDF generation error for plan=%s", plan_id)
+        raise HTTPException(status_code=500, detail="Failed to generate PDF.")
+
+    safe_name = sanitize_pdf_filename(plan.name or "training_plan")
+    filename = f"{safe_name}_{date.today().strftime('%Y%m%d')}.pdf"
+
+    logger.info(
+        "PDF export: user=%s plan=%s bytes=%d",
+        current_user.id, plan_id, len(pdf_bytes),
+    )
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )
 
 
 @router.get("/{plan_id}/export/csv")

@@ -101,7 +101,7 @@ class TestWorkoutClassifierFromName:
             resting_hr=50,
             threshold_hr=165,
             threshold_pace_per_km=270.0,  # 4:30/km
-            vdot=50.0,
+            rpi=50.0,
             marathon_pace_per_km=300.0,  # 5:00/km
             easy_pace_per_km=360.0  # 6:00/km
         )

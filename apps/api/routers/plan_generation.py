@@ -13,7 +13,7 @@ Endpoints for:
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import date, datetime, timedelta
@@ -128,7 +128,7 @@ class PlanPreview(BaseModel):
     volume_tier: str
     days_per_week: int
     
-    vdot: Optional[float]
+    rpi: Optional[float]
     
     start_date: Optional[date]
     end_date: Optional[date]
@@ -230,13 +230,14 @@ async def classify_volume_tier(
 @router.post("/standard/preview", response_model=PlanPreview)
 async def preview_standard_plan(
     request: StandardPlanRequest,
+    athlete: Optional[Athlete] = Depends(get_current_athlete_optional),
     db: Session = Depends(get_db),
 ):
     """
     Generate a preview of a standard plan.
-    
-    This is a public endpoint - no auth required.
-    Returns full plan structure for review.
+
+    Public endpoint — no auth required.  Paces are blurred for unauthenticated
+    users and free-tier athletes.  Guided/Premium athletes see full paces.
     """
     # Validate inputs
     try:
@@ -256,6 +257,7 @@ async def preview_standard_plan(
         )
     
     # Generate plan
+    from core.tier_utils import tier_satisfies as _ts
     generator = PlanGenerator(db)
     plan = generator.generate_standard(
         distance=request.distance,
@@ -264,8 +266,16 @@ async def preview_standard_plan(
         days_per_week=request.days_per_week,
         start_date=request.start_date,
     )
-    
-    return _plan_to_preview(plan)
+
+    show_paces = (
+        athlete is not None
+        and (
+            getattr(athlete, "role", None) in ("admin", "owner")
+            or getattr(athlete, "has_active_subscription", False)
+            or _ts(getattr(athlete, "subscription_tier", None), "guided")
+        )
+    )
+    return _plan_to_preview(plan, show_paces=show_paces)
 
 
 @router.post("/standard", response_model=Dict[str, Any])
@@ -305,10 +315,13 @@ async def preview_semi_custom_plan(
 ):
     """
     Generate a preview of a semi-custom plan.
-    
+
     Includes personalized paces if race time provided.
-    Authentication optional for preview.
+    Authentication optional. Paces shown only for Guided/Premium athletes;
+    blurred for free/unauthenticated users.
     """
+    from core.tier_utils import tier_satisfies as _ts
+
     # Calculate duration from race date
     today = date.today()
     if request.race_date <= today:
@@ -329,8 +342,16 @@ async def preview_semi_custom_plan(
         recent_race_time_seconds=request.recent_race_time_seconds,
         athlete_id=athlete.id if athlete else None,
     )
-    
-    return _plan_to_preview(plan)
+
+    show_paces = (
+        athlete is not None
+        and (
+            getattr(athlete, "role", None) in ("admin", "owner")
+            or getattr(athlete, "has_active_subscription", False)
+            or _ts(getattr(athlete, "subscription_tier", None), "guided")
+        )
+    )
+    return _plan_to_preview(plan, show_paces=show_paces)
 
 
 @router.post("/semi-custom", response_model=Dict[str, Any])
@@ -384,7 +405,7 @@ async def create_semi_custom_plan(
         "success": True,
         "plan_id": str(saved_plan.id),
         "message": f"Created personalized {duration_weeks}-week {request.distance} plan",
-        "vdot": plan.vdot,
+        "rpi": plan.rpi,
     }
 
 
@@ -444,7 +465,7 @@ async def create_custom_plan(
         "success": True,
         "plan_id": str(saved_plan.id),
         "message": f"Created fully custom {plan.duration_weeks}-week {request.distance} plan",
-        "vdot": plan.vdot,
+        "rpi": plan.rpi,
         "detected_weekly_miles": plan.weekly_volumes[0] if plan.weekly_volumes else None,
         "peak_miles": plan.peak_volume,
     }
@@ -485,15 +506,20 @@ async def get_plan_options():
 
 # ============ Helper Functions ============
 
-def _plan_to_preview(plan: GeneratedPlan) -> PlanPreview:
-    """Convert GeneratedPlan to preview response."""
+def _plan_to_preview(plan: GeneratedPlan, show_paces: bool = False) -> PlanPreview:
+    """Convert GeneratedPlan to preview response.
+
+    ``show_paces`` controls whether pace_description is included in workout
+    dicts.  Defaults to False (blurred) — callers must explicitly opt in by
+    checking the athlete's tier or purchase status.
+    """
     return PlanPreview(
         plan_tier=plan.plan_tier.value,
         distance=plan.distance,
         duration_weeks=plan.duration_weeks,
         volume_tier=plan.volume_tier,
         days_per_week=plan.days_per_week,
-        vdot=plan.vdot,
+        rpi=plan.rpi,
         start_date=plan.start_date,
         end_date=plan.end_date,
         race_date=plan.race_date,
@@ -519,7 +545,7 @@ def _plan_to_preview(plan: GeneratedPlan) -> PlanPreview:
                 "phase_name": w.phase_name,
                 "distance_miles": w.distance_miles,
                 "duration_minutes": w.duration_minutes,
-                "pace_description": w.pace_description,
+                "pace_description": w.pace_description if show_paces else None,
                 "segments": w.segments,
                 "option": w.option,
                 "has_option_b": w.option_b is not None,
@@ -568,7 +594,7 @@ def _save_plan(
         plan_start_date=plan.start_date,
         plan_end_date=plan.end_date or plan.race_date,
         total_weeks=plan.duration_weeks,
-        baseline_vdot=plan.vdot,
+        baseline_rpi=plan.rpi,
         baseline_weekly_volume_km=(plan.weekly_volumes[0] * 1.609) if plan.weekly_volumes else None,
         plan_type=plan.distance,
         generation_method="framework_v2",
@@ -646,7 +672,7 @@ def _save_model_driven_plan(
         plan_start_date=plan.weeks[0].start_date if plan.weeks else None,
         plan_end_date=plan.race_date,
         total_weeks=plan.total_weeks,
-        baseline_vdot=plan.prediction.projected_vdot if plan.prediction else None,
+        baseline_rpi=plan.prediction.projected_rpi if plan.prediction else None,
         plan_type=plan.race_distance,
         generation_method="model_driven",
     )
@@ -985,9 +1011,14 @@ async def get_plan(
 ):
     """
     Get full plan details.
-    
-    Returns the plan with all weeks and workouts.
+
+    Returns the plan with all weeks and workouts.  Pace target fields
+    (coach_notes) are nulled for free athletes who have not purchased this
+    plan.  Plan structure (workout type, title, description, distance) is
+    always returned.
     """
+    from core.pace_access import can_access_plan_paces
+
     plan = db.query(TrainingPlan).filter(
         TrainingPlan.id == plan_id,
         TrainingPlan.athlete_id == athlete.id,
@@ -995,6 +1026,8 @@ async def get_plan(
     
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
+
+    show_paces = can_access_plan_paces(athlete, plan_id, db)
     
     # Get all workouts grouped by week
     workouts = db.query(PlannedWorkout).filter(
@@ -1019,7 +1052,7 @@ async def get_plan(
             "phase": w.phase,
             "target_distance_km": w.target_distance_km,
             "target_duration_minutes": w.target_duration_minutes,
-            "coach_notes": w.coach_notes,
+            "coach_notes": w.coach_notes if show_paces else None,
             "completed": w.completed,
             "skipped": w.skipped,
         })
@@ -1033,7 +1066,8 @@ async def get_plan(
         "total_weeks": plan.total_weeks,
         "start_date": plan.plan_start_date.isoformat() if plan.plan_start_date else None,
         "end_date": plan.plan_end_date.isoformat() if plan.plan_end_date else None,
-        "baseline_vdot": plan.baseline_vdot,
+        "baseline_rpi": plan.baseline_rpi,
+        "paces_locked": not show_paces,
         "weeks": weeks,
     }
 
@@ -1297,10 +1331,14 @@ async def get_week_workouts(
     if not workouts:
         raise HTTPException(status_code=404, detail=f"Week {week_number} not found")
     
+    from core.pace_access import can_access_plan_paces
+    show_paces = can_access_plan_paces(athlete, plan_id, db)
+
     return {
         "plan_id": str(plan_id),
         "week_number": week_number,
         "phase": workouts[0].phase if workouts else None,
+        "paces_locked": not show_paces,
         "workouts": [
             {
                 "id": str(w.id),
@@ -1312,7 +1350,7 @@ async def get_week_workouts(
                 "description": w.description,
                 "target_distance_km": w.target_distance_km,
                 "target_duration_minutes": w.target_duration_minutes,
-                "coach_notes": w.coach_notes,
+                "coach_notes": w.coach_notes if show_paces else None,
                 "completed": w.completed,
                 "skipped": w.skipped,
             }
@@ -1324,18 +1362,26 @@ async def get_week_workouts(
 # ============ Full Workout Control (Paid Tier) ============
 
 def _check_paid_tier(athlete: Athlete, db: Session) -> bool:
-    """Check if athlete has paid tier access for plan modifications."""
-    # Check subscription tier
-    if athlete.subscription_tier in ("pro", "elite", "premium", "guided", "subscription"):
+    """Check if athlete has paid tier access for plan modifications (guided+).
+
+    Uses the canonical tier hierarchy from core.tier_utils so that legacy tier
+    names (pro, elite, subscription) are normalised correctly.  Falls back to a
+    DB check for athletes who paid for a semi-custom/custom plan before the
+    subscription model existed.
+    """
+    from core.tier_utils import tier_satisfies
+
+    if tier_satisfies(athlete.subscription_tier, "guided"):
         return True
-    
-    # Check if they have any paid plans (semi-custom or custom)
+
+    # Legacy fallback: athletes who bought a semi-custom or custom plan
+    # before the subscription model existed retain workout-control access.
     from models import TrainingPlan
     paid_plan = db.query(TrainingPlan).filter(
         TrainingPlan.athlete_id == athlete.id,
         TrainingPlan.generation_method.in_(["semi_custom", "custom", "framework_v2"]),
     ).first()
-    
+
     return paid_plan is not None
 
 
@@ -1765,8 +1811,7 @@ class TuneUpRace(BaseModel):
     name: Optional[str] = Field(None, description="Race name")
     purpose: str = Field("tune_up", description="Purpose: tune_up, threshold, sharpening, fitness_check")
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ModelDrivenPlanRequest(BaseModel):
@@ -2107,7 +2152,7 @@ def _save_constraint_aware_plan(
         plan_start_date=plan.weeks[0].start_date if plan.weeks else None,
         plan_end_date=plan.race_date,
         total_weeks=plan.total_weeks,
-        baseline_vdot=fb.get("best_vdot") if isinstance(fb, dict) else None,
+        baseline_rpi=fb.get("best_rpi") if isinstance(fb, dict) else None,
         baseline_weekly_volume_km=round(fb.get("peak", {}).get("weekly_miles", 0) * 1.609, 1) if isinstance(fb, dict) else None,
         plan_type=plan.race_distance,
         generation_method="constraint_aware",
@@ -2195,7 +2240,7 @@ async def create_constraint_aware_plan(
     Key Features:
     - Respects your detected training patterns (Sunday long runs, Thursday quality)
     - Injury-aware: protects first 2-3 weeks if returning from break
-    - Personal paces from YOUR race performances (VDOT)
+    - Personal paces from YOUR race performances (RPI)
     - Counter-conventional insights based on individual τ values
     """
     import logging

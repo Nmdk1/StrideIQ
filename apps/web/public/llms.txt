@@ -1,0 +1,37 @@
+# StrideIQ
+
+> StrideIQ is an evidence-based AI running intelligence platform that turns athlete data into decisions — training paces, trend signals, and coaching that adapts to the individual. Free running calculators available with no signup.
+
+## Free Tools
+
+- [Training Pace Calculator](https://strideiq.run/tools/training-pace-calculator): Calculate personalized Easy, Marathon, Threshold, Interval, and Repetition training paces from any race result using the Daniels/Gilbert oxygen cost equations.
+- [Age-Grading Calculator](https://strideiq.run/tools/age-grading-calculator): Compare running performance to WMA (World Masters Athletics) world-standard benchmarks by age and sex. Returns age-graded percentage, equivalent open-age performance, and classification.
+- [Heat-Adjusted Pace Calculator](https://strideiq.run/tools/heat-adjusted-pace): Adjust training and racing paces for temperature and humidity to maintain equivalent physiological effort in hot conditions.
+
+## How It Works
+
+- Syncs with Garmin Connect and Strava to analyze run splits, pace, heart rate, and elevation.
+- Correlates self-reported sleep and nutrition check-ins with performance outcomes.
+- Builds N=1 (individual) response curves from the athlete's own data, not population averages.
+- Every insight cites the underlying evidence: dates, run labels, key values. The athlete can verify every claim.
+
+## Methodology
+
+- Training paces derived from the Daniels/Gilbert oxygen cost equations (peer-reviewed exercise physiology, 1979).
+- Age-grading uses Alan Jones 2025 WMA Road Age-Grading Tables, approved by USATF Masters Long Distance Running Council.
+- Heat adjustment uses temperature and dew point to estimate physiological cost increase from heat stress.
+- All calculations use physics-based formulas, not static lookup tables.
+
+## What StrideIQ Does Not Do
+
+- Does not override the athlete. The system informs; the athlete decides.
+- Does not use population averages as ground truth. Population norms are cold-start heuristics, not rules.
+- Does not generate template narratives. Every insight is contextual to the individual athlete's data, or nothing is shown.
+- Does not claim causal relationships without statistical significance (p < 0.05, |r| >= 0.3, n >= 10).
+- Does not assume any metric is directionally good or bad without per-athlete evidence.
+
+## Key Information
+
+- Website: https://strideiq.run
+- Free tools require no signup or account.
+- Paid tiers provide daily adaptation intelligence, N=1 trend analysis, and AI coaching.

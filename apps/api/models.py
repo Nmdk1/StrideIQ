@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, Boolean, Float, Date, DateTime, ForeignKey, Numeric, Text, String, Index, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, Boolean, CheckConstraint, Float, Date, DateTime, ForeignKey, Numeric, Text, String, Index, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
@@ -21,6 +21,11 @@ class Athlete(Base):
     birthdate = Column(Date, nullable=True)
     sex = Column(Text, nullable=True)
     subscription_tier = Column(Text, default="free", nullable=False)
+
+    # --- DEMO ACCOUNTS ---
+    # Demo accounts are shared credentials for prospects.  They must NOT link
+    # real Strava/Garmin accounts or store real athlete data.
+    is_demo = Column(Boolean, default=False, nullable=False)
 
     # --- PAYMENTS / ENTITLEMENTS (Phase 6-ready) ---
     # Pre-Phase-6: may be null for all users.
@@ -78,11 +83,16 @@ class Athlete(Base):
     strava_athlete_id = Column(Integer, nullable=True)
     strava_access_token = Column(Text, nullable=True)  # Encrypted
     strava_refresh_token = Column(Text, nullable=True)  # Encrypted
+    strava_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # When access token expires
     last_strava_sync = Column(DateTime(timezone=True), nullable=True)
+    timezone = Column(Text, nullable=True)  # IANA timezone from Strava (e.g. "America/New_York")
     
-    # Garmin Connect Integration
-    garmin_username = Column(Text, nullable=True)  # For login (not encrypted - username only)
-    garmin_password_encrypted = Column(Text, nullable=True)  # Encrypted password (for python-garminconnect)
+    # Garmin Connect Integration — OAuth 2.0 (official API)
+    # Tokens encrypted at rest using the same pattern as Strava tokens.
+    garmin_oauth_access_token = Column(Text, nullable=True)   # Encrypted
+    garmin_oauth_refresh_token = Column(Text, nullable=True)  # Encrypted
+    garmin_oauth_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+    garmin_user_id = Column(Text, nullable=True)              # Garmin's stable user identifier
     garmin_connected = Column(Boolean, default=False, nullable=False)
     last_garmin_sync = Column(DateTime(timezone=True), nullable=True)
     garmin_sync_enabled = Column(Boolean, default=True, nullable=False)
@@ -103,7 +113,7 @@ class Athlete(Base):
     resting_hr = Column(Integer, nullable=True)  # Resting heart rate (bpm)
     threshold_pace_per_km = Column(Float, nullable=True)  # Lactate threshold pace (seconds/km)
     threshold_hr = Column(Integer, nullable=True)  # Lactate threshold heart rate (bpm)
-    vdot = Column(Float, nullable=True)  # Current VDOT (from recent race or test)
+    rpi = Column('vdot', Float, nullable=True)  # Current RPI (DB column: vdot for backward compat)
     
     # --- RUNNER TYPING (McMillan-inspired) ---
     # Automatically calculated from race history
@@ -115,6 +125,23 @@ class Athlete(Base):
     current_streak_weeks = Column(Integer, default=0)  # Consecutive weeks meeting targets
     longest_streak_weeks = Column(Integer, default=0)  # All-time best streak
     last_streak_update = Column(DateTime(timezone=True), nullable=True)
+
+    # --- AI CONSENT (Phase 1: Consent Infrastructure) ---
+    # Explicit opt-in required before any LLM dispatch. Default deny.
+    # See docs/PHASE1_CONSENT_INFRASTRUCTURE_AC.md for full spec.
+    ai_consent = Column(Boolean, default=False, nullable=False)
+    ai_consent_granted_at = Column(DateTime(timezone=True), nullable=True)
+    ai_consent_revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    # --- RELATIONSHIPS ---
+    # Required for SQLAlchemy unit-of-work to know about the FK dependency
+    # from Activity → Athlete. Without this, delete ordering is arbitrary
+    # and can cause ForeignKeyViolation when both are deleted in one flush.
+    # lazy="dynamic" prevents auto-loading (returns query, no perf impact).
+    activities = relationship("Activity", back_populates="athlete", lazy="dynamic")
+    garmin_days = relationship("GarminDay", back_populates="athlete", lazy="dynamic")
+    athlete_photos = relationship("AthletePhoto", back_populates="athlete", lazy="dynamic")
+    runtoon_images = relationship("RuntoonImage", back_populates="athlete", lazy="dynamic")
 
 
 class InviteAllowlist(Base):
@@ -201,6 +228,42 @@ class StripeEvent(Base):
 
     __table_args__ = (
         Index("ix_stripe_events_event_type", "event_type"),
+    )
+
+
+class PlanPurchase(Base):
+    """One-time race-plan unlock purchase record.
+
+    Created when a checkout.session.completed webhook arrives with mode=payment
+    and purchase_type=plan_onetime in the session metadata.
+
+    Entitlement key: (athlete_id, plan_snapshot_id). Cross-athlete reuse is
+    blocked at checkout time (billing router ownership check) and here by design
+    — the athlete_id is written from the session's client_reference_id, not from
+    user input post-purchase.
+
+    plan_snapshot_id is an immutable reference to a specific plan artifact.
+    It must NOT change if the plan is later mutated; use a stable snapshot/version
+    identifier once the plan artifact system is in place.
+    """
+
+    __tablename__ = "plan_purchases"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    plan_snapshot_id = Column(Text, nullable=False, index=True)
+
+    stripe_session_id = Column(Text, nullable=True)
+    stripe_payment_intent_id = Column(Text, nullable=True, unique=True, index=True)
+
+    purchased_at = Column(DateTime(timezone=True), nullable=False)
+    amount_cents = Column(Integer, nullable=True)  # populated if available from Stripe event
+
+    __table_args__ = (
+        # One purchase per athlete+plan artifact.
+        UniqueConstraint("athlete_id", "plan_snapshot_id", name="uq_plan_purchases_athlete_snapshot"),
+        Index("ix_plan_purchases_athlete_id", "athlete_id"),
+        Index("ix_plan_purchases_plan_snapshot_id", "plan_snapshot_id"),
     )
 
 
@@ -355,6 +418,7 @@ class Activity(Base):
     # --- INGESTION CONTRACT COLUMNS ---
     provider = Column(Text, index=True)
     external_activity_id = Column(Text, index=True)
+    strava_workout_type_raw = Column(Integer, nullable=True)
     is_race_candidate = Column(Boolean, default=False)
     race_confidence = Column(Float, nullable=True)
     user_verified_race = Column(Boolean, nullable=True)
@@ -373,19 +437,103 @@ class Activity(Base):
     temperature_f = Column(Float, nullable=True)  # Temperature at start
     humidity_pct = Column(Float, nullable=True)  # Humidity percentage
     weather_condition = Column(Text, nullable=True)  # e.g., 'clear', 'cloudy', 'rain'
+    dew_point_f = Column(Float, nullable=True)  # Dew point in °F (Magnus formula from temp+humidity)
+    heat_adjustment_pct = Column(Float, nullable=True)  # Pace slowdown fraction from Temp+DewPoint model
+
+    # --- ACTIVITY SHAPE (Living Fingerprint) ---
+    run_shape = Column(JSONB, nullable=True)  # RunShape.to_dict() — phases, accelerations, summary
+    shape_sentence = Column(Text, nullable=True)  # Natural language shape description
+    athlete_title = Column(Text, nullable=True)  # Athlete-edited display title (overrides shape_sentence)
 
     # --- INGESTION PROGRESS MARKERS ---
     # Strava only returns `best_efforts` when an activity sets PRs; we still need a
     # deterministic marker for "details fetched and extraction attempted".
     best_efforts_extracted_at = Column(DateTime(timezone=True), nullable=True)
 
+    # --- STREAM FETCH LIFECYCLE (ADR-063) ---
+    # Six-state machine: pending → fetching → success/failed/deferred/unavailable
+    # See docs/adr/ADR-063-activity-stream-storage-and-fetch-lifecycle.md
+    stream_fetch_status = Column(Text, nullable=False, default="pending", server_default="pending")
+    stream_fetch_attempted_at = Column(DateTime(timezone=True), nullable=True)
+    stream_fetch_error = Column(Text, nullable=True)
+    stream_fetch_retry_count = Column(Integer, nullable=False, default=0, server_default="0")
+    stream_fetch_deferred_until = Column(DateTime(timezone=True), nullable=True)
+
+    # --- GARMIN ACTIVITY OFFICIAL FIELDS (D3 / garmin_004) ---
+    # From the official ClientActivity JSON schema (portal verified Feb 2026).
+    # garmin_activity_id is Garmin's native int64 — different from summaryId
+    # stored in external_activity_id. Used to link summary → detail payloads.
+    garmin_activity_id = Column(BigInteger, nullable=True)
+    avg_pace_min_per_km = Column(Float, nullable=True)
+    max_pace_min_per_km = Column(Float, nullable=True)
+    steps = Column(Integer, nullable=True)          # per-activity step count
+    device_name = Column(Text, nullable=True)
+    start_lat = Column(Float, nullable=True)
+    start_lng = Column(Float, nullable=True)
+
+    # --- GARMIN RUNNING DYNAMICS (D1.2) ---
+    # Columns present in DB (nullable) but NOT populated by Tier 1 adapter.
+    # Running dynamics exist only in FIT files, not in the JSON Activity API.
+    # The D4.3 live webhook capture will confirm if any appear in push payloads.
+    avg_cadence = Column(Integer, nullable=True)
+    max_cadence = Column(Integer, nullable=True)
+    avg_stride_length_m = Column(Float, nullable=True)
+    avg_ground_contact_ms = Column(Float, nullable=True)
+    avg_ground_contact_balance_pct = Column(Float, nullable=True)
+    avg_vertical_oscillation_cm = Column(Float, nullable=True)
+    avg_vertical_ratio_pct = Column(Float, nullable=True)
+
+    # --- GARMIN POWER ---
+    avg_power_w = Column(Integer, nullable=True)
+    max_power_w = Column(Integer, nullable=True)
+
+    # --- GARMIN EFFORT / GRADE ---
+    avg_gap_min_per_mile = Column(Float, nullable=True)
+    total_descent_m = Column(Float, nullable=True)
+
+    # --- GARMIN TRAINING EFFECT ---
+    # INFORMATIONAL ONLY — never use in training load calculations.
+    # These are Garmin's proprietary model outputs. StrideIQ uses its own
+    # load model. Storing for display only.
+    garmin_aerobic_te = Column(Float, nullable=True)
+    garmin_anaerobic_te = Column(Float, nullable=True)
+    garmin_te_label = Column(Text, nullable=True)
+
+    # --- GARMIN SELF-EVALUATION (low-fidelity — [L3]) ---
+    # Athletes frequently click through post-activity ratings without genuine
+    # engagement. Import if present; display with caveat; never use in
+    # load or readiness calculations.
+    garmin_feel = Column(Text, nullable=True)
+    garmin_perceived_effort = Column(Integer, nullable=True)
+
+    # --- GARMIN WELLNESS CROSSOVER ---
+    garmin_body_battery_impact = Column(Integer, nullable=True)
+
+    # --- TIMING / ENERGY ---
+    moving_time_s = Column(Integer, nullable=True)
+    max_speed = Column(Float, nullable=True)
+    active_kcal = Column(Integer, nullable=True)
+
+    # --- RUNTOON SHARE FLOW ---
+    share_dismissed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # --- DUPLICATE DETECTION (Racing Fingerprint Pre-Work P1) ---
+    is_duplicate = Column(Boolean, default=False, nullable=False, server_default="false", index=True)
+    duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=True)
+
     # --- THE ARMOR: Unique Constraint prevents duplicates at the DB level ---
     __table_args__ = (
         UniqueConstraint('provider', 'external_activity_id', name='uq_activity_provider_external_id'),
+        CheckConstraint(
+            "stream_fetch_status IN ('pending', 'fetching', 'success', 'failed', 'deferred', 'unavailable')",
+            name='ck_activity_stream_fetch_status',
+        ),
     )
     
     # --- RELATIONSHIPS ---
+    athlete = relationship("Athlete", back_populates="activities")
     splits = relationship("ActivitySplit", back_populates="activity", lazy="dynamic", order_by="ActivitySplit.split_number")
+    stream = relationship("ActivityStream", back_populates="activity", uselist=False)
 
     @property
     def pace_per_mile(self) -> Optional[float]:
@@ -396,6 +544,98 @@ class Activity(Base):
         if self.average_speed is None or float(self.average_speed) == 0:
             return None
         return 26.8224 / float(self.average_speed)
+
+
+class PerformanceEvent(Base):
+    __tablename__ = "performance_event"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"),
+                        nullable=False, index=True)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"),
+                         nullable=False, index=True)
+
+    distance_category = Column(Text, nullable=False)
+    event_date = Column(Date, nullable=False, index=True)
+    event_type = Column(Text, nullable=False)
+
+    # Performance
+    time_seconds = Column(Integer, nullable=False)
+    chip_time_seconds = Column(Integer, nullable=True)
+    pace_per_mile = Column(Float, nullable=True)
+    rpi_at_event = Column(Float, nullable=True)
+    performance_percentage = Column(Float, nullable=True)
+    is_personal_best = Column(Boolean, default=False)
+
+    # Training state at event
+    ctl_at_event = Column(Float, nullable=True)
+    atl_at_event = Column(Float, nullable=True)
+    tsb_at_event = Column(Float, nullable=True)
+    fitness_relative_performance = Column(Float, nullable=True)
+
+    # Block signature (the fingerprint)
+    block_signature = Column(JSONB, nullable=True)
+
+    # Campaign data (replaces fixed-window block_signature for analysis)
+    campaign_data = Column(JSONB, nullable=True)
+
+    @property
+    def effective_time_seconds(self) -> int:
+        """Chip time if available, otherwise GPS time."""
+        return self.chip_time_seconds or self.time_seconds
+
+    # Wellness state
+    pre_event_wellness = Column(JSONB, nullable=True)
+
+    # Classification
+    race_role = Column(Text, nullable=True)
+    user_classified_role = Column(Text, nullable=True)
+    cycle_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Source / verification
+    detection_source = Column(Text, nullable=False, default='algorithm')
+    detection_confidence = Column(Float, nullable=True)
+    user_confirmed = Column(Boolean, nullable=True)
+
+    # Metadata
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(),
+                        onupdate=func.now())
+    computation_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        UniqueConstraint('athlete_id', 'activity_id',
+                         name='uq_performance_event_athlete_activity'),
+        Index('ix_performance_event_athlete_date',
+              'athlete_id', 'event_date'),
+    )
+
+    athlete = relationship("Athlete")
+    activity = relationship("Activity")
+
+
+class AthleteFinding(Base):
+    """Persistent store for investigation findings (Living Fingerprint).
+
+    Keeps tablename 'fingerprint_finding' for migration continuity.
+    Supersession logic: one active finding per (investigation_name, finding_type).
+    """
+    __tablename__ = "fingerprint_finding"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"),
+                        nullable=False, index=True)
+    investigation_name = Column(Text, nullable=False)
+    finding_type = Column(Text, nullable=False)
+    layer = Column(Text, nullable=False, server_default='B')
+    sentence = Column(Text, nullable=False)
+    receipts = Column(JSONB, nullable=False)
+    confidence = Column(Text, nullable=False)  # 'table_stakes', 'genuine', 'suggestive'
+    computation_version = Column(Integer, nullable=False, default=2)
+    first_detected_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_confirmed_at = Column(DateTime(timezone=True), server_default=func.now())
+    superseded_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
 
 
 class ActivitySplit(Base):
@@ -419,6 +659,55 @@ class ActivitySplit(Base):
     __table_args__ = (
         Index("ix_activity_split_activity_id", "activity_id"),
         UniqueConstraint('activity_id', 'split_number', name='uq_activity_split_number'),
+    )
+
+
+class ActivityStream(Base):
+    """
+    Per-second resolution stream data for an activity (ADR-063).
+
+    Stores raw time-series from Strava (or Garmin) as a single JSONB blob
+    containing all channels.  One row per activity.  The frontend reads the
+    entire blob for chart rendering; the coach tool reads it for stream
+    analysis.
+
+    Example stream_data:
+        {
+            "time": [0, 1, 2, ...],
+            "distance": [0.0, 2.8, 5.6, ...],
+            "heartrate": [140, 141, 142, ...],
+            "velocity_smooth": [3.1, 3.2, 3.1, ...],
+            "altitude": [100.5, 100.7, 101.0, ...],
+            "grade_smooth": [0.0, 0.2, 0.5, ...],
+            "cadence": [88, 89, 88, ...],
+            "latlng": [[38.60, -122.86], [38.61, -122.87], ...]
+        }
+    """
+    __tablename__ = "activity_stream"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False)
+
+    # Dict of channel_name → array of values
+    stream_data = Column(JSONB, nullable=False)
+
+    # Which channels are present (cheap filtering without parsing JSONB)
+    channels_available = Column(JSONB, nullable=False, default=list)
+
+    # Number of data points (length of time array)
+    point_count = Column(Integer, nullable=False)
+
+    # Provenance
+    source = Column(Text, nullable=False, default="strava")
+    fetched_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    # --- RELATIONSHIPS ---
+    activity = relationship("Activity", back_populates="stream")
+
+    # --- THE ARMOR: One stream row per activity ---
+    __table_args__ = (
+        UniqueConstraint("activity_id", name="uq_activity_stream_activity_id"),
+        Index("ix_activity_stream_activity_id", "activity_id"),
     )
 
 
@@ -508,7 +797,8 @@ class DailyCheckin(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
     date = Column(Date, nullable=False)
-    sleep_h = Column(Numeric, nullable=True)  # Total sleep duration (time asleep only)
+    sleep_h = Column(Numeric, nullable=True)  # Total sleep duration in hours (explicit athlete input)
+    sleep_quality_1_5 = Column(Integer, nullable=True)  # Sleep quality 1-5 (1=poor, 5=great)
     stress_1_5 = Column(Integer, nullable=True)
     soreness_1_5 = Column(Integer, nullable=True)
     rpe_1_10 = Column(Integer, nullable=True)
@@ -527,7 +817,7 @@ class DailyCheckin(Base):
     # --- MINDSET TRACKING (Snow-inspired) ---
     # "The mind is the limiter of performance"
     confidence_1_5 = Column(Integer, nullable=True)  # 1=doubtful, 5=unstoppable
-    motivation_1_5 = Column(Integer, nullable=True)  # 1=forcing myself, 5=fired up
+    readiness_1_5 = Column(Integer, nullable=True)   # 1=poor, 5=high (morning readiness)
 
     __table_args__ = (
         Index("uq_athlete_date", "athlete_id", "date", unique=True),
@@ -976,6 +1266,60 @@ class ActivityFeedback(Base):
     )
 
 
+class ActivityReflection(Base):
+    """
+    RSI Layer 2 — Simplified post-run reflection.
+    
+    Three-option prompt: harder | expected | easier.
+    Replaces the heavier PerceptionPrompt on the activity detail page.
+    One reflection per activity. No free text in v1.
+    """
+    __tablename__ = "activity_reflection"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    response = Column(Text, nullable=False)  # 'harder' | 'expected' | 'easier'
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_activity_reflection_activity_id", "activity_id"),
+        Index("ix_activity_reflection_athlete_id", "athlete_id"),
+        UniqueConstraint('activity_id', name='uq_activity_reflection_activity'),
+        CheckConstraint("response IN ('harder', 'expected', 'easier')", name='ck_reflection_response_enum'),
+    )
+
+
+class CachedStreamAnalysis(Base):
+    """
+    RSI — Cached StreamAnalysisResult for an activity.
+
+    Spec decision (locked 2026-02-14): "Cache full StreamAnalysisResult in DB.
+    Compute once at ingest time, serve on every Home + Activity page load.
+    Recompute only on: new stream payload, analysis version bump, manual reprocess."
+
+    The result_json column stores the full asdict(StreamAnalysisResult) so both
+    /v1/home and /v1/activities/{id}/stream-analysis can serve without re-computing.
+    """
+    __tablename__ = "cached_stream_analysis"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=False, unique=True)
+
+    # Full StreamAnalysisResult as JSON (segments, drift, moments, etc.)
+    result_json = Column(JSONB, nullable=False)
+
+    # Deterministic invalidation: bump when analysis logic changes
+    analysis_version = Column(Integer, nullable=False, default=1)
+
+    # Provenance
+    computed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_cached_stream_analysis_activity_id", "activity_id"),
+    )
+
+
 class InsightFeedback(Base):
     """
     User feedback on insights to refine correlation engine thresholds.
@@ -1035,7 +1379,7 @@ class TrainingPlan(Base):
     total_weeks = Column(Integer, nullable=False)
     
     # Current fitness baseline (at plan creation)
-    baseline_vdot = Column(Float, nullable=True)
+    baseline_rpi = Column('baseline_vdot', Float, nullable=True)  # DB column: baseline_vdot for backward compat
     baseline_weekly_volume_km = Column(Float, nullable=True)
     
     # Plan generation metadata
@@ -1098,7 +1442,14 @@ class PlannedWorkout(Base):
     completed_activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=True)
     skipped = Column(Boolean, default=False, nullable=False)
     skip_reason = Column(Text, nullable=True)
-    
+
+    # Phase 2B: Self-regulation tracking
+    # What the athlete actually did (may differ from plan)
+    actual_workout_type = Column(Text, nullable=True)          # What they actually did (e.g., "tempo_run" when "easy" was planned)
+    planned_vs_actual_delta = Column(JSONB, nullable=True)     # {distance_delta_km, pace_delta_s, intensity_delta, type_changed}
+    readiness_at_execution = Column(Float, nullable=True)      # Readiness score when workout was done
+    execution_state = Column(Text, nullable=True)              # SCHEDULED, COMPLETED, SKIPPED, MODIFIED_BY_ATHLETE
+
     # Notes
     coach_notes = Column(Text, nullable=True)  # AI-generated guidance
     athlete_notes = Column(Text, nullable=True)  # Athlete's own notes
@@ -1297,7 +1648,10 @@ class CoachChat(Base):
     
     # Session status
     is_active = Column(Boolean, default=True, nullable=False)
-    
+
+    # Fact extraction tracking — how many messages have already been processed
+    last_extracted_msg_count = Column(Integer, nullable=True, default=0)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -1396,6 +1750,29 @@ class FeatureFlag(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class ConsentAuditLog(Base):
+    """
+    Immutable audit trail for AI processing consent actions.
+
+    Every grant or revoke of ai_processing consent writes one row here,
+    even if the action is idempotent (already granted / already revoked).
+    This provides a complete chronological record for compliance purposes.
+
+    consent_type is extensible — currently only 'ai_processing' is used.
+    source tracks where the consent action originated.
+    """
+    __tablename__ = "consent_audit_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    consent_type = Column(Text, nullable=False)   # e.g. "ai_processing"
+    action = Column(Text, nullable=False)          # "granted" or "revoked"
+    ip_address = Column(Text, nullable=True)
+    user_agent = Column(Text, nullable=True)
+    source = Column(Text, nullable=True)           # "onboarding" | "settings" | "consent_prompt" | "admin"
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Purchase(Base):
@@ -1829,4 +2206,617 @@ class RacePromoCode(Base):
     __table_args__ = (
         Index("ix_race_promo_code_code", "code"),
         Index("ix_race_promo_code_is_active", "is_active"),
+    )
+
+
+# =========================================================================
+# Phase 2A: Readiness Score Models
+# =========================================================================
+
+class DailyReadiness(Base):
+    """
+    Daily readiness computation result.
+
+    Stores the composite readiness score and per-signal breakdown.
+    One row per athlete per day. The score is a SIGNAL — what fires from it
+    is governed by per-athlete thresholds, not hardcoded constants.
+    """
+    __tablename__ = "daily_readiness"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False)
+    score = Column(Float, nullable=False)                    # 0-100 composite
+    components = Column(JSONB, nullable=True)                # Per-signal breakdown
+    signals_available = Column(Integer, nullable=False, default=0)
+    signals_total = Column(Integer, nullable=False, default=5)
+    confidence = Column(Float, nullable=False, default=0.0)  # 0-1
+    weights_used = Column(JSONB, nullable=True)              # Weights at time of computation
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "date", name="uq_daily_readiness_athlete_date"),
+        Index("ix_daily_readiness_athlete_date", "athlete_id", "date"),
+    )
+
+
+class AthleteAdaptationThresholds(Base):
+    """
+    Per-athlete adaptation thresholds.
+
+    Cold-start defaults are conservative (system rarely intervenes early on).
+    Over time, calibrated from outcome data using the same pattern as the
+    HRV correlation engine: collect, study, report, then act.
+    """
+    __tablename__ = "athlete_adaptation_thresholds"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, unique=True, index=True)
+
+    # Readiness thresholds — parameters, not constants
+    swap_quality_threshold = Column(Float, nullable=False, default=35.0)
+    reduce_volume_threshold = Column(Float, nullable=False, default=25.0)
+    skip_day_threshold = Column(Float, nullable=False, default=15.0)
+    increase_volume_threshold = Column(Float, nullable=False, default=80.0)
+
+    # Calibration metadata
+    calibration_data_points = Column(Integer, nullable=False, default=0)
+    last_calibrated_at = Column(DateTime(timezone=True), nullable=True)
+    calibration_confidence = Column(Float, nullable=True)  # 0-1, None until first calibration
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class ThresholdCalibrationLog(Base):
+    """
+    Logs every readiness-at-decision + outcome pair.
+
+    This is the data that feeds the per-athlete threshold calibration process.
+    Pattern: every workout → log readiness + scheduled type + outcome.
+    When N >= 30: estimate per-athlete thresholds from outcome data.
+    """
+    __tablename__ = "threshold_calibration_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    workout_id = Column(UUID(as_uuid=True), ForeignKey("planned_workout.id"), nullable=True)
+
+    # State at decision point
+    readiness_score = Column(Float, nullable=False)
+    workout_type_scheduled = Column(Text, nullable=True)
+
+    # Outcome
+    outcome = Column(Text, nullable=True)                  # "completed", "skipped", "modified"
+    efficiency_delta = Column(Float, nullable=True)        # Next-day efficiency change
+    subjective_feel = Column(Integer, nullable=True)       # From check-in if available (1-5)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_threshold_cal_log_athlete_date", "athlete_id", "created_at"),
+    )
+
+
+# =========================================================================
+# Phase 2B: Self-Regulation + Intelligence Logging
+# =========================================================================
+
+class SelfRegulationLog(Base):
+    """
+    Records every planned ≠ actual delta as first-class data.
+
+    When an athlete deviates from the plan — running quality instead of easy,
+    cutting a long run short, adding an unplanned session — the delta is
+    logged here with the outcome tracked over the following days.
+
+    This data feeds:
+    - Self-regulation pattern recognition ("you override easy → quality well")
+    - Threshold calibration (readiness at decision → outcome)
+    - Intelligence engine SUGGEST mode (personal patterns from outcome data)
+    """
+    __tablename__ = "self_regulation_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    workout_id = Column(UUID(as_uuid=True), ForeignKey("planned_workout.id"), nullable=True)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=True)
+
+    # What was planned
+    planned_type = Column(Text, nullable=True)                  # e.g., "easy"
+    planned_distance_km = Column(Float, nullable=True)
+    planned_intensity = Column(Text, nullable=True)             # e.g., "easy_pace"
+
+    # What actually happened
+    actual_type = Column(Text, nullable=True)                   # e.g., "tempo_run"
+    actual_distance_km = Column(Float, nullable=True)
+    actual_intensity = Column(Text, nullable=True)              # e.g., "threshold_pace"
+
+    # Delta classification
+    delta_type = Column(Text, nullable=False)                   # "type_change", "distance_change", "intensity_change", "unplanned", "skipped"
+    delta_direction = Column(Text, nullable=True)               # "upgraded" (easy→quality), "downgraded" (quality→easy), "shortened", "extended"
+
+    # Context at time of decision
+    readiness_at_decision = Column(Float, nullable=True)        # Readiness score
+    trigger_date = Column(Date, nullable=False)
+
+    # Outcome tracking (populated asynchronously, next day or later)
+    outcome_efficiency_delta = Column(Float, nullable=True)     # Next-day efficiency change
+    outcome_subjective = Column(Integer, nullable=True)         # From check-in if available (1-5)
+    outcome_classification = Column(Text, nullable=True)        # "positive", "neutral", "negative" (set by outcome analysis)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_self_reg_log_athlete_date", "athlete_id", "trigger_date"),
+    )
+
+
+class InsightLog(Base):
+    """
+    Records every intelligence insight produced by the daily engine.
+
+    Every INFORM, SUGGEST, FLAG, ASK, and LOG insight is persisted here.
+    This provides:
+    - Audit trail of what the system told the athlete
+    - Data for measuring insight accuracy over time
+    - Input for the narration trust scoring system (Phase 3)
+    """
+    __tablename__ = "insight_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+
+    # Insight identity
+    rule_id = Column(Text, nullable=False)                      # e.g., "LOAD_SPIKE", "SELF_REG_DELTA"
+    mode = Column(Text, nullable=False)                         # "inform", "suggest", "flag", "ask", "log"
+    message = Column(Text, nullable=True)                       # Human-readable insight text
+    data_cited = Column(JSONB, nullable=True)                   # Evidence backing the insight
+
+    # Context
+    trigger_date = Column(Date, nullable=False)
+    readiness_score = Column(Float, nullable=True)              # Readiness at time of insight
+    confidence = Column(Float, nullable=True)                   # 0-1 confidence in the insight
+
+    # Athlete response tracking
+    athlete_seen = Column(Boolean, default=False, nullable=False)
+    athlete_response = Column(Text, nullable=True)              # "acknowledged", "dismissed", "acted_on"
+    athlete_response_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Phase 3A: Coach narration attached to this insight
+    narrative = Column(Text, nullable=True)                      # AI-generated explanation of this insight
+    narrative_score = Column(Float, nullable=True)               # 0-1 score from narration scorer
+    narrative_contradicts = Column(Boolean, nullable=True)       # True if narration contradicted engine
+
+    __table_args__ = (
+        Index("ix_insight_log_athlete_date", "athlete_id", "trigger_date"),
+        Index("ix_insight_log_rule_id", "rule_id"),
+    )
+
+
+class NarrationLog(Base):
+    """
+    Records every narration scoring evaluation.
+
+    Each time the coach generates a narration for an intelligence insight,
+    the narration is scored against the engine's ground truth on 3 binary
+    criteria. Results stored here feed the Phase 3B gate (90% for 4 weeks).
+
+    This is the AUDIT TRAIL for coach narration quality.
+    """
+    __tablename__ = "narration_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    insight_log_id = Column(UUID(as_uuid=True), ForeignKey("insight_log.id"), nullable=True)
+
+    # The narration
+    trigger_date = Column(Date, nullable=False)
+    rule_id = Column(Text, nullable=False)                       # Which rule was narrated
+    narration_text = Column(Text, nullable=True)                 # The generated narration
+    prompt_used = Column(Text, nullable=True)                    # The prompt sent to the LLM (for debugging)
+
+    # Ground truth
+    ground_truth = Column(JSONB, nullable=True)                  # Engine data at narration time
+
+    # 3 binary scoring criteria
+    factually_correct = Column(Boolean, nullable=True)
+    no_raw_metrics = Column(Boolean, nullable=True)
+    actionable_language = Column(Boolean, nullable=True)
+    criteria_passed = Column(Integer, nullable=True)             # 0-3
+    score = Column(Float, nullable=True)                         # 0.0-1.0
+
+    # Contradiction detection
+    contradicts_engine = Column(Boolean, default=False, nullable=False)
+    contradiction_detail = Column(Text, nullable=True)
+
+    # Quality gate
+    suppressed = Column(Boolean, default=False, nullable=False)  # True if narration quality too low → hidden
+    suppression_reason = Column(Text, nullable=True)             # Why it was suppressed
+
+    # LLM metadata
+    model_used = Column(Text, nullable=True)                     # e.g., "gemini-2.5-flash"
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_narration_log_athlete_date", "athlete_id", "trigger_date"),
+        Index("ix_narration_log_score", "score"),
+    )
+
+
+class CorrelationFinding(Base):
+    """
+    Persists significant correlation discoveries for each athlete.
+
+    When the correlation engine finds a significant relationship (e.g.,
+    "sleep > 7h → efficiency +8% two days later"), it is recorded here.
+    Each subsequent confirmation of the same pattern increments
+    times_confirmed, building reproducibility weight.
+
+    Only reproducible findings (times_confirmed >= SURFACING_THRESHOLD)
+    are eligible to be narrated to the athlete.  The coach speaks only
+    when the pattern is real — not after a single lucky coincidence.
+
+    Lifecycle:
+        1. Correlation engine discovers a significant (p < 0.05, |r| >= 0.3)
+           relationship between an input (e.g. sleep_hours) and an output
+           metric (e.g. efficiency).
+        2. persist_correlation_findings() upserts the row:
+           - New finding → times_confirmed = 1.
+           - Existing finding → times_confirmed += 1, stats updated.
+        3. If a previously-significant finding drops below threshold in a
+           later run, is_active is set to False (patterns can fade).
+        4. Daily intelligence checks for reproducible findings
+           (times_confirmed >= 3, is_active) and emits InsightLog entries
+           with rule_id = "CORRELATION_CONFIRMED".
+    """
+    __tablename__ = "correlation_finding"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+
+    # --- What was correlated ---
+    input_name = Column(Text, nullable=False)          # e.g. "sleep_hours", "soreness_1_5"
+    output_metric = Column(Text, nullable=False)       # e.g. "efficiency", "pace_easy"
+    direction = Column(Text, nullable=False)           # "positive" or "negative"
+    time_lag_days = Column(Integer, default=0, nullable=False)
+
+    # --- Statistical strength (most recent computation) ---
+    correlation_coefficient = Column(Float, nullable=False)
+    p_value = Column(Float, nullable=False)
+    sample_size = Column(Integer, nullable=False)
+    strength = Column(Text, nullable=False)            # "weak", "moderate", "strong"
+
+    # --- Reproducibility tracking ---
+    times_confirmed = Column(Integer, default=1, nullable=False)
+    first_detected_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_confirmed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_surfaced_at = Column(DateTime(timezone=True), nullable=True)
+
+    # --- Human-readable insight text ---
+    insight_text = Column(Text, nullable=True)
+
+    # --- Categorization ---
+    category = Column(Text, nullable=False)            # "what_works", "what_doesnt", "pattern"
+    confidence = Column(Float, nullable=False)         # 0.0-1.0
+
+    # --- Lifecycle ---
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    # --- Confounder control (Phase 1) ---
+    partial_correlation_coefficient = Column(Float, nullable=True)
+    confounder_variable = Column(Text, nullable=True)
+    is_confounded = Column(Boolean, default=False, nullable=False)
+    direction_expected = Column(Text, nullable=True)
+    direction_counterintuitive = Column(Boolean, default=False, nullable=False)
+
+    # --- Layer 1: Threshold Detection ---
+    threshold_value = Column(Float, nullable=True)
+    threshold_direction = Column(Text, nullable=True)
+    r_below_threshold = Column(Float, nullable=True)
+    r_above_threshold = Column(Float, nullable=True)
+    n_below_threshold = Column(Integer, nullable=True)
+    n_above_threshold = Column(Integer, nullable=True)
+
+    # --- Layer 2: Asymmetric Response ---
+    asymmetry_ratio = Column(Float, nullable=True)
+    asymmetry_direction = Column(Text, nullable=True)
+    effect_below_baseline = Column(Float, nullable=True)
+    effect_above_baseline = Column(Float, nullable=True)
+    baseline_value = Column(Float, nullable=True)
+
+    # --- Layer 4: Decay Curves ---
+    lag_profile = Column(JSONB, nullable=True)
+    decay_half_life_days = Column(Float, nullable=True)
+    decay_type = Column(Text, nullable=True)
+
+    __table_args__ = (
+        # One row per unique (athlete, input, output, lag) combination.
+        Index(
+            "uq_corr_finding_natural_key",
+            "athlete_id", "input_name", "output_metric", "time_lag_days",
+            unique=True,
+        ),
+        Index("ix_corr_finding_active", "athlete_id", "is_active"),
+    )
+
+
+class CorrelationMediator(Base):
+    """
+    Mediator variables detected for confirmed correlation findings (Layer 3).
+
+    When A→C is confirmed, mediation analysis tests whether B explains
+    the relationship (A→B→C).  Each row represents one mediator for one
+    finding.
+    """
+    __tablename__ = "correlation_mediator"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    finding_id = Column(UUID(as_uuid=True), ForeignKey("correlation_finding.id"), nullable=False, index=True)
+    mediator_variable = Column(Text, nullable=False)
+    direct_effect = Column(Float, nullable=False)
+    indirect_effect = Column(Float, nullable=False)
+    mediation_ratio = Column(Float, nullable=False)
+    is_full_mediation = Column(Boolean, default=False, nullable=False)
+    detected_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class GarminDay(Base):
+    """
+    Unified daily wellness row. One row per (athlete_id, calendar_date).
+
+    Architecture decision 3D: all Garmin daily data lives here — no
+    separate GarminSleep or GarminHRV tables.
+
+    CALENDAR DATE RULE (L1): calendar_date is the WAKEUP DAY (morning),
+    not the night before. A run on Saturday that follows Friday night sleep
+    will have calendar_date = Saturday. All correlation queries must join
+    on garmin_day.calendar_date = activity.start_time::date.
+
+    Upsert pattern: INSERT ... ON CONFLICT (athlete_id, calendar_date) DO UPDATE
+    """
+    __tablename__ = "garmin_day"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id", ondelete="CASCADE"), nullable=False)
+    calendar_date = Column(Date, nullable=False)
+
+    # --- Daily Summary ---
+    resting_hr = Column(Integer, nullable=True)
+    avg_stress = Column(Integer, nullable=True)              # -1 = insufficient data
+    max_stress = Column(Integer, nullable=True)
+    stress_qualifier = Column(Text, nullable=True)           # calm/balanced/stressful/very_stressful
+    steps = Column(Integer, nullable=True)
+    active_time_s = Column(Integer, nullable=True)
+    active_kcal = Column(Integer, nullable=True)
+    moderate_intensity_s = Column(Integer, nullable=True)
+    vigorous_intensity_s = Column(Integer, nullable=True)
+    min_hr = Column(Integer, nullable=True)
+    max_hr = Column(Integer, nullable=True)
+
+    # --- Sleep Summary ---
+    sleep_total_s = Column(Integer, nullable=True)
+    sleep_deep_s = Column(Integer, nullable=True)
+    sleep_light_s = Column(Integer, nullable=True)
+    sleep_rem_s = Column(Integer, nullable=True)
+    sleep_awake_s = Column(Integer, nullable=True)
+    sleep_score = Column(Integer, nullable=True)             # 0–100
+    sleep_score_qualifier = Column(Text, nullable=True)      # EXCELLENT/GOOD/FAIR/POOR
+    sleep_validation = Column(Text, nullable=True)
+
+    # --- HRV Summary ---
+    hrv_overnight_avg = Column(Integer, nullable=True)       # ms
+    hrv_5min_high = Column(Integer, nullable=True)           # ms
+
+    # --- User Metrics ---
+    vo2max = Column(Float, nullable=True)                    # updates infrequently
+
+    # --- Body Battery (from Stress Detail) ---
+    body_battery_end = Column(Integer, nullable=True)        # end-of-day value
+
+    # --- Raw JSONB (Tier 2 computed fields deferred) ---
+    stress_samples = Column(JSONB, nullable=True)            # TimeOffsetStressLevelValues
+    body_battery_samples = Column(JSONB, nullable=True)      # TimeOffsetBodyBatteryValues
+
+    # --- Deduplication ---
+    garmin_daily_summary_id = Column(Text, nullable=True)
+    garmin_sleep_summary_id = Column(Text, nullable=True)
+    garmin_hrv_summary_id = Column(Text, nullable=True)
+
+    # --- Audit ---
+    inserted_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    # --- Relationships ---
+    athlete = relationship("Athlete", back_populates="garmin_days")
+
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "calendar_date", name="uq_garmin_day_athlete_date"),
+        Index("ix_garmin_day_athlete_id", "athlete_id"),
+        Index("ix_garmin_day_calendar_date", "calendar_date"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Runtoon MVP Models
+# ---------------------------------------------------------------------------
+
+class AthletePhoto(Base):
+    """
+    Reference photos uploaded by the athlete for Runtoon generation.
+
+    Privacy invariant: storage_key is an R2 object key, NEVER a public URL.
+    All access is via signed URLs generated server-side (15-min TTL).
+
+    Consent is required before any photo is accepted. consent_at records
+    when the athlete agreed; consent_version records which policy they agreed to.
+    """
+    __tablename__ = "athlete_photo"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id", ondelete="CASCADE"), nullable=False, index=True)
+    storage_key = Column(Text, nullable=False)          # R2 object key — never a public URL
+    photo_type = Column(Text, nullable=False)            # "face" | "running" | "full_body" | "additional"
+    mime_type = Column(Text, nullable=False)             # "image/jpeg" | "image/png" | "image/webp"
+    size_bytes = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    # Consent tracking (required for biometric-adjacent data)
+    consent_at = Column(DateTime(timezone=True), nullable=False)
+    consent_version = Column(Text, nullable=False, default="1.0")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    athlete = relationship("Athlete", back_populates="athlete_photos")
+
+    __table_args__ = (
+        Index("ix_athlete_photo_athlete_id", "athlete_id"),
+    )
+
+
+class RuntoonImage(Base):
+    """
+    AI-generated personalized caricature image for a run.
+
+    Idempotency: UniqueConstraint on (activity_id, attempt_number) prevents
+    duplicate auto-generation from concurrent Strava + Garmin sync hooks.
+    attempt_number=1 is auto-generated; 2-3 are manual regenerations.
+
+    Privacy invariant: storage_key is an R2 object key, NEVER a public URL.
+    All access is via signed URLs generated server-side (15-min TTL).
+
+    caption_text and stats_text are stored at generation time so the 9:16
+    Pillow recompose can re-render them in the extended canvas without a
+    second API call.
+    """
+    __tablename__ = "runtoon_image"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id", ondelete="CASCADE"), nullable=False, index=True)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    storage_key = Column(Text, nullable=False)          # R2 object key — never a public URL
+    prompt_hash = Column(Text, nullable=True)            # SHA256 of assembled prompt (for debugging)
+    generation_time_ms = Column(Integer, nullable=True)
+    cost_usd = Column(Numeric(6, 4), nullable=True)      # e.g., 0.0670
+    model_version = Column(Text, nullable=False, default="gemini-3.1-flash-image-preview")
+    attempt_number = Column(Integer, nullable=False, default=1)  # 1=auto, 2-3=regeneration
+    is_visible = Column(Boolean, default=True, nullable=False)
+
+    # Stored at generation time — required for 9:16 Pillow recompose
+    caption_text = Column(Text, nullable=True)           # AI-generated caption baked into image
+    stats_text = Column(Text, nullable=True)             # Formatted stats line (e.g., "13.0 mi • 7:28/mi • 1:37:00")
+
+    # --- Share tracking (set by POST /v1/runtoon/{id}/shared) ---
+    # share_target is best-effort telemetry only — Web Share API does not
+    # reliably report the selected app. Nullable, defaults to "unknown".
+    # No logic should depend on this value.
+    shared_at = Column(DateTime(timezone=True), nullable=True)
+    share_format = Column(Text, nullable=True)            # "1:1" or "9:16"
+    share_target = Column(Text, nullable=True)            # best-effort only; "unknown" if not reported
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    athlete = relationship("Athlete", back_populates="runtoon_images")
+    activity = relationship("Activity")
+
+    __table_args__ = (
+        UniqueConstraint("activity_id", "attempt_number", name="uq_runtoon_activity_attempt"),
+        Index("ix_runtoon_image_athlete_id", "athlete_id"),
+        Index("ix_runtoon_image_activity_id", "activity_id"),
+    )
+
+
+class NarrativeFeedback(Base):
+    """
+    Athlete feedback on the progress narrative page.
+
+    Tracks whether the narrative resonated, felt off, or prompted
+    a coach conversation. Used for future narrative quality calibration.
+    """
+    __tablename__ = "narrative_feedback"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    feedback_type = Column(Text, nullable=False)       # "positive", "negative", "coach"
+    feedback_detail = Column(Text, nullable=True)       # Optional detail for "negative" sub-options
+
+    __table_args__ = (
+        Index("ix_narrative_feedback_athlete_created", "athlete_id", "created_at"),
+    )
+
+
+class AthleteFact(Base):
+    """
+    Permanent memory: structured facts extracted from coach conversations.
+
+    Layer 1 is athlete-stated only — facts the athlete explicitly told the coach.
+    Supersession: same (athlete_id, fact_key) with a new value deactivates the old row.
+
+    Governance: medical-adjacent facts acceptable during founder-only beta.
+    Before public launch, add retention policy (max age, athlete-triggered deletion,
+    access audit logging).
+    """
+    __tablename__ = "athlete_fact"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+
+    fact_type = Column(Text, nullable=False)
+    fact_key = Column(Text, nullable=False)
+    fact_value = Column(Text, nullable=False)
+    numeric_value = Column(Float, nullable=True)
+
+    confidence = Column(Text, nullable=False, server_default="athlete_stated")
+    source_chat_id = Column(UUID(as_uuid=True), ForeignKey("coach_chat.id"), nullable=False)
+    source_excerpt = Column(Text, nullable=False)
+
+    confirmed_by_athlete = Column(Boolean, nullable=False, default=False)
+
+    extracted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    superseded_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        Index("ix_athlete_fact_athlete_active", "athlete_id", "is_active"),
+        Index("ix_athlete_fact_key_lookup", "athlete_id", "fact_key"),
+        Index(
+            "uq_athlete_fact_active_key",
+            "athlete_id", "fact_key",
+            unique=True,
+            postgresql_where=text("is_active = true"),
+        ),
+    )
+
+
+class ExperienceAuditLog(Base):
+    """Permanent log of daily production experience guardrail runs."""
+    __tablename__ = "experience_audit_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    run_date = Column(Date, nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    tier = Column(Text, nullable=False)
+    passed = Column(Boolean, nullable=False)
+    total_assertions = Column(Integer, nullable=False)
+    passed_count = Column(Integer, nullable=False)
+    failed_count = Column(Integer, nullable=False)
+    skipped_count = Column(Integer, nullable=False, server_default='0')
+    results = Column(JSONB, nullable=False)
+    summary = Column(Text, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('athlete_id', 'run_date', 'tier', name='uq_audit_athlete_date_tier'),
     )

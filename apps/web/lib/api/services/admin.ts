@@ -213,7 +213,7 @@ export interface Invite {
   email: string;
   is_active: boolean;
   note: string | null;
-  grant_tier: 'free' | 'pro' | null;
+  grant_tier: string | null;
   invited_at: string | null;
   revoked_at: string | null;
   used_at: string | null;
@@ -233,7 +233,7 @@ export interface InviteCreateResponse {
     email: string;
     is_active: boolean;
     used_at: string | null;
-    grant_tier: 'free' | 'pro' | null;
+    grant_tier: string | null;
   };
 }
 
@@ -447,7 +447,7 @@ export const adminService = {
   /**
    * Create a new invite
    */
-  async createInvite(params: { email: string; note?: string | null; grant_tier?: 'free' | 'pro' | null }): Promise<InviteCreateResponse> {
+  async createInvite(params: { email: string; note?: string | null; grant_tier?: string | null }): Promise<InviteCreateResponse> {
     return apiClient.post<InviteCreateResponse>('/v1/admin/invites', params);
   },
 

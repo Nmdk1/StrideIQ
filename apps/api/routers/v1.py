@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from core.database import get_db
 from core.auth import get_current_user, require_admin
-from models import Athlete, Activity, DailyCheckin, ActivitySplit, AthleteTrainingPaceProfile, AthleteRaceResultAnchor
+from models import Athlete, Activity, ActivityStream, DailyCheckin, ActivitySplit, AthleteTrainingPaceProfile, AthleteRaceResultAnchor
 from schemas import (
     AthleteCreate,
     AthleteUpdate,
@@ -24,8 +24,11 @@ router = APIRouter(prefix="/v1", tags=["v1"])
 
 
 @router.get("/athletes", response_model=List[AthleteResponse])
-def get_athletes(db: Session = Depends(get_db)):
-    """Get all athletes"""
+def get_athletes(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Get all athletes (admin only)."""
     athletes = db.query(Athlete).all()
     result = []
     from services.performance_engine import calculate_age_at_date, get_age_category
@@ -109,8 +112,14 @@ def get_current_athlete_profile(
 
 
 @router.get("/athletes/{id}", response_model=AthleteResponse)
-def get_athlete(id: UUID, db: Session = Depends(get_db)):
-    """Get an athlete by ID with Performance Physics Engine metrics"""
+def get_athlete(
+    id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get an athlete by ID with Performance Physics Engine metrics (auth + ownership or admin)."""
+    if current_user.id != id and getattr(current_user, "role", "athlete") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Forbidden")
     from services.performance_engine import calculate_age_at_date, get_age_category
     from datetime import datetime
     
@@ -154,9 +163,6 @@ def update_current_athlete(
     
     Athletes can update their own profile information.
     """
-    # Track onboarding completion transition for auto-provisioning.
-    was_completed = bool(getattr(current_user, "onboarding_completed", False))
-
     # Update fields if provided
     if athlete_update.display_name is not None:
         current_user.display_name = athlete_update.display_name
@@ -167,17 +173,38 @@ def update_current_athlete(
     if athlete_update.height_cm is not None:
         current_user.height_cm = athlete_update.height_cm
     if athlete_update.email is not None:
-        # Check if email is already taken by another user
-        existing = db.query(Athlete).filter(
-            Athlete.email == athlete_update.email,
-            Athlete.id != current_user.id
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already in use"
+        # Security: Email changes require verification (see H6 in Security Audit)
+        # Don't change email directly - initiate verification flow instead
+        new_email = athlete_update.email.lower().strip()
+        
+        # Skip if email is the same
+        if new_email != current_user.email:
+            # Check if email is already taken by another user
+            existing = db.query(Athlete).filter(
+                Athlete.email == new_email,
+                Athlete.id != current_user.id
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already in use"
+                )
+            
+            # Generate verification token and send email
+            from services.email_verification import initiate_email_change
+            verification_sent = initiate_email_change(
+                db=db,
+                athlete=current_user,
+                new_email=new_email
             )
-        current_user.email = athlete_update.email
+            
+            if verification_sent:
+                # Return a message that verification is required
+                # The email will NOT be changed until verified
+                raise HTTPException(
+                    status_code=status.HTTP_202_ACCEPTED,
+                    detail=f"Verification email sent to {new_email}. Please click the link to confirm your email change."
+                )
     if athlete_update.onboarding_stage is not None:
         current_user.onboarding_stage = athlete_update.onboarding_stage
     if athlete_update.onboarding_completed is not None:
@@ -185,30 +212,6 @@ def update_current_athlete(
     
     db.commit()
     db.refresh(current_user)
-
-    # Trust fix: once onboarding is marked complete, ensure the athlete immediately has
-    # a starter plan (so the calendar isn't empty even before visiting /calendar).
-    try:
-        now_completed = bool(getattr(current_user, "onboarding_completed", False))
-        if (not was_completed) and now_completed:
-            enabled = True
-            try:
-                from services.plan_framework.feature_flags import FeatureFlagService
-
-                svc = FeatureFlagService(db)
-                flag = svc.get_flag("onboarding.auto_starter_plan_v1")
-                enabled = True if not flag else svc.is_enabled("onboarding.auto_starter_plan_v1", current_user.id)
-            except Exception:
-                enabled = True
-
-            if enabled:
-                from services.starter_plan import ensure_starter_plan
-
-                ensure_starter_plan(db, athlete=current_user)
-                # If plan creation succeeded, it will have committed. If not, it's best-effort.
-    except Exception:
-        # Do not block profile updates; calendar still has lazy provisioning as fallback.
-        pass
     
     # Calculate age category if birthdate updated
     from services.performance_engine import calculate_age_at_date, get_age_category
@@ -257,7 +260,7 @@ def get_my_training_pace_profile(
 
     Trust contract:
     - This profile is computed from a race/time-trial anchor (not inferred from training).
-    - Stored separately from Athlete.vdot/threshold fields to avoid unintended plan changes.
+    - Stored separately from Athlete.rpi/threshold fields to avoid unintended plan changes.
     """
     prof = db.query(AthleteTrainingPaceProfile).filter(AthleteTrainingPaceProfile.athlete_id == current_user.id).first()
     if not prof:
@@ -300,13 +303,50 @@ def format_duration(seconds: Optional[int]) -> Optional[str]:
 
 
 @router.post("/activities", response_model=ActivityResponse, status_code=201)
-def create_activity(activity: ActivityCreate, db: Session = Depends(get_db)):
-    """Create a new activity"""
-    db_activity = Activity(**activity.dict())
+def create_activity(
+    activity: ActivityCreate,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new activity (auth required; athlete_id from auth context only)."""
+    data = activity.model_dump() if hasattr(activity, "model_dump") else activity.dict()
+    data.pop("athlete_id", None)
+    db_activity = Activity(athlete_id=current_user.id, **data)
     db.add(db_activity)
     db.commit()
     db.refresh(db_activity)
-    return db_activity
+    from core.cache import invalidate_athlete_cache
+    invalidate_athlete_cache(str(current_user.id))
+    activity_name = db_activity.name or f"{db_activity.sport.title()} Activity"
+    activity_dict = {
+        "id": str(db_activity.id),
+        "strava_id": None,
+        "name": activity_name,
+        "distance": float(db_activity.distance_m) if db_activity.distance_m else 0.0,
+        "moving_time": db_activity.duration_s or 0,
+        "start_date": db_activity.start_time.isoformat(),
+        "average_speed": float(db_activity.average_speed) if db_activity.average_speed else 0.0,
+        "max_hr": db_activity.max_hr,
+        "average_heartrate": db_activity.avg_hr,
+        "average_cadence": None,
+        "total_elevation_gain": float(db_activity.total_elevation_gain) if db_activity.total_elevation_gain else None,
+        "pace_per_mile": None,
+        "duration_formatted": None,
+        "splits": None,
+        "performance_percentage": db_activity.performance_percentage,
+        "performance_percentage_national": db_activity.performance_percentage_national,
+        "is_race_candidate": db_activity.is_race_candidate,
+        "race_confidence": db_activity.race_confidence,
+    }
+    if db_activity.average_speed and float(db_activity.average_speed) > 0:
+        pace_per_mile = 26.8224 / float(db_activity.average_speed)
+        minutes = int(pace_per_mile)
+        seconds = int(round((pace_per_mile - minutes) * 60))
+        activity_dict["pace_per_mile"] = f"{minutes}:{seconds:02d}/mi"
+    if db_activity.duration_s:
+        h, m, s = db_activity.duration_s // 3600, (db_activity.duration_s % 3600) // 60, db_activity.duration_s % 60
+        activity_dict["duration_formatted"] = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
+    return ActivityResponse(**activity_dict)
 
 
 @router.get("/activities/{activity_id}/splits", response_model=List[ActivitySplitResponse])
@@ -332,12 +372,72 @@ def get_activity_splits(
     return splits
 
 
+@router.get("/activities/{activity_id}/streams")
+def get_activity_streams(
+    activity_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get per-second stream data for a specific activity (ADR-063).
+
+    Returns stream_data (dict of channel → array), channels_available,
+    point_count, and fetch status. Auth + ownership enforced.
+
+    Response contract:
+        404 — activity not found or not owned by current user
+        200 — always returned when activity exists, with `status` field:
+              "success"     → stream_data populated
+              "pending"     → fetch not yet attempted (frontend: show spinner)
+              "fetching"    → fetch in progress (frontend: show spinner)
+              "failed"      → fetch failed, may retry (frontend: show retry hint)
+              "deferred"    → rate limited, will auto-retry (frontend: show spinner)
+              "unavailable" → manual activity, no streams exist (frontend: hide panel)
+    """
+    # Verify activity exists AND belongs to the authenticated user
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id, Activity.athlete_id == current_user.id)
+        .first()
+    )
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    stream = db.query(ActivityStream).filter(
+        ActivityStream.activity_id == activity_id
+    ).first()
+
+    if not stream:
+        return {
+            "activity_id": str(activity_id),
+            "status": activity.stream_fetch_status,
+            "stream_data": None,
+            "channels_available": [],
+            "point_count": 0,
+        }
+
+    return {
+        "activity_id": str(activity_id),
+        "status": "success",
+        "stream_data": stream.stream_data,
+        "channels_available": stream.channels_available,
+        "point_count": stream.point_count,
+        "source": stream.source,
+        "fetched_at": stream.fetched_at.isoformat() if stream.fetched_at else None,
+    }
+
+
 @router.post("/athletes/{id}/calculate-metrics")
-def calculate_athlete_metrics(id: UUID, db: Session = Depends(get_db)):
+def calculate_athlete_metrics(
+    id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Calculate Performance Physics Engine derived signals for an athlete.
     This implements Manifesto Section 4: Derived Signals.
     """
+    if current_user.id != id and getattr(current_user, "role", "athlete") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Forbidden")
     from services.athlete_metrics import calculate_athlete_derived_signals
     
     athlete = db.query(Athlete).filter(Athlete.id == id).first()
@@ -355,8 +455,14 @@ def calculate_athlete_metrics(id: UUID, db: Session = Depends(get_db)):
 
 
 @router.get("/athletes/{id}/personal-bests", response_model=List[PersonalBestResponse])
-def get_personal_bests_endpoint(id: UUID, db: Session = Depends(get_db)):
-    """Get all personal bests for an athlete"""
+def get_personal_bests_endpoint(
+    id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all personal bests for an athlete (auth + ownership or admin)."""
+    if current_user.id != id and getattr(current_user, "role", "athlete") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Forbidden")
     from services.personal_best import get_personal_bests as get_pbs_service
     
     athlete = db.query(Athlete).filter(Athlete.id == id).first()
@@ -368,15 +474,23 @@ def get_personal_bests_endpoint(id: UUID, db: Session = Depends(get_db)):
 
 
 @router.post("/athletes/{id}/recalculate-pbs")
-def recalculate_pbs_endpoint(id: UUID, db: Session = Depends(get_db)):
+def recalculate_pbs_endpoint(
+    id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
-    Regenerate personal bests from stored BestEffort records.
+    Recalculate personal bests from ALL sources (activities + BestEffort).
     
-    This is an instant aggregation - no external API calls.
-    Best efforts are populated during Strava sync.
+    Two-step process:
+    1. Scan all activities for whole-distance PBs (covers Garmin, manual imports, etc.)
+    2. Merge with Strava BestEffort data (sub-activity segments like fastest mile within a 10K)
     
-    Use /athletes/{id}/sync-best-efforts to fetch new best efforts from Strava.
+    The fastest time per distance wins, regardless of source.
     """
+    if current_user.id != id and getattr(current_user, "role", "athlete") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from services.personal_best import recalculate_all_pbs
     from services.best_effort_service import regenerate_personal_bests
     from models import BestEffort
 
@@ -384,24 +498,36 @@ def recalculate_pbs_endpoint(id: UUID, db: Session = Depends(get_db)):
     if not athlete:
         raise HTTPException(status_code=404, detail="Athlete not found")
 
-    # Count stored best efforts
+    # Step 1: Rebuild PBs from ALL activities (Garmin, Strava, manual, etc.)
+    activity_result = recalculate_all_pbs(athlete, db, preserve_strava_pbs=False)
+
+    # Step 2: Merge in Strava BestEffort data (keeps whichever is faster)
     effort_count = db.query(BestEffort).filter(BestEffort.athlete_id == athlete.id).count()
-    
-    # Regenerate PBs from BestEffort table (instant aggregation)
-    result = regenerate_personal_bests(athlete, db)
+    merge_result = regenerate_personal_bests(athlete, db)
 
     return {
         "status": "success",
         "athlete_id": str(athlete.id),
+        "activity_pbs": activity_result.get('created', 0) + activity_result.get('updated', 0),
         "efforts_in_db": effort_count,
-        "pbs_created": result.get('created', 0),
-        "categories": result.get('categories', []),
-        "message": f"Regenerated {result.get('created', 0)} PBs from {effort_count} stored efforts"
+        "merged_from_efforts": merge_result.get('created', 0) + merge_result.get('updated', 0),
+        "kept_existing": merge_result.get('kept', 0),
+        "categories": merge_result.get('categories', []),
+        "message": (
+            f"Rebuilt {activity_result.get('total', 0)} PBs from activities, "
+            f"merged {merge_result.get('created', 0) + merge_result.get('updated', 0)} from {effort_count} Strava efforts, "
+            f"kept {merge_result.get('kept', 0)} existing (faster)"
+        ),
     }
 
 
 @router.post("/athletes/{id}/sync-best-efforts")
-def sync_best_efforts_endpoint(id: UUID, limit: int = 50, db: Session = Depends(get_db)):
+def sync_best_efforts_endpoint(
+    id: UUID,
+    limit: int = 50,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Sync best efforts from Strava API into the BestEffort table.
     
@@ -410,6 +536,8 @@ def sync_best_efforts_endpoint(id: UUID, limit: int = 50, db: Session = Depends(
     
     Best efforts are also synced automatically during regular Strava sync.
     """
+    if current_user.id != id and getattr(current_user, "role", "athlete") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Forbidden")
     from services.strava_pbs import sync_strava_best_efforts
 
     athlete = db.query(Athlete).filter(Athlete.id == id).first()
@@ -502,6 +630,10 @@ def get_best_efforts_status(
 def get_task_status(task_id: str, current_user: Athlete = Depends(get_current_user)):
     """
     Generic Celery task status endpoint (used by web polling).
+
+    Security: result payload is redacted to prevent cross-user data leakage.
+    The frontend only needs status; detailed results are fetched via
+    athlete-scoped endpoints after task completion.
     """
     from tasks import celery_app
 
@@ -511,8 +643,8 @@ def get_task_status(task_id: str, current_user: Athlete = Depends(get_current_us
     if task.state == "STARTED":
         return {"task_id": task_id, "status": "started"}
     if task.state == "SUCCESS":
-        return {"task_id": task_id, "status": "success", "result": task.result}
-    return {"task_id": task_id, "status": "error", "error": str(task.info) if task.info else "Unknown error"}
+        return {"task_id": task_id, "status": "success"}
+    return {"task_id": task_id, "status": "error"}
 
 
 @router.post("/athletes/{id}/strava/ingest-activity/{strava_activity_id}")
@@ -575,7 +707,12 @@ def queue_strava_activity_index_backfill(
 
 
 @router.post("/activities/{activity_id}/mark-race")
-def mark_activity_as_race(activity_id: UUID, is_race: bool = True, db: Session = Depends(get_db)):
+def mark_activity_as_race(
+    activity_id: UUID,
+    is_race: bool = True,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Manually mark/unmark an activity as a race.
     This allows users to override the automatic race detection.
@@ -583,6 +720,10 @@ def mark_activity_as_race(activity_id: UUID, is_race: bool = True, db: Session =
     activity = db.query(Activity).filter(Activity.id == activity_id).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
+    
+    # SECURITY: Only allow users to modify their own activities
+    if activity.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot modify another user's activity")
     
     activity.user_verified_race = is_race
     activity.is_race_candidate = is_race  # Also update the candidate flag
@@ -602,7 +743,11 @@ def mark_activity_as_race(activity_id: UUID, is_race: bool = True, db: Session =
 
 
 @router.post("/activities/{activity_id}/backfill-splits")
-def backfill_activity_splits(activity_id: UUID, db: Session = Depends(get_db)):
+def backfill_activity_splits(
+    activity_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Backfill splits for an activity that is missing them.
     Fetches lap data from Strava API and creates split records.
@@ -611,12 +756,16 @@ def backfill_activity_splits(activity_id: UUID, db: Session = Depends(get_db)):
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
     
+    # SECURITY: Only allow users to backfill their own activities
+    if activity.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot modify another user's activity")
+    
     if not activity.provider == "strava" or not activity.external_activity_id:
         raise HTTPException(status_code=400, detail="Activity is not from Strava or missing external ID")
     
-    athlete = db.query(Athlete).filter(Athlete.id == activity.athlete_id).first()
-    if not athlete or not athlete.strava_access_token:
-        raise HTTPException(status_code=404, detail="Athlete not found or missing Strava token")
+    # Use the authenticated user's Strava token
+    if not current_user.strava_access_token:
+        raise HTTPException(status_code=400, detail="Missing Strava token")
     
     from services.strava_service import get_activity_laps, get_activity_details
     from routers.strava import _coerce_int
@@ -689,11 +838,11 @@ def backfill_activity_splits(activity_id: UUID, db: Session = Depends(get_db)):
             return out
         
         strava_activity_id = int(activity.external_activity_id)
-        details = get_activity_details(athlete, int(strava_activity_id), allow_rate_limit_sleep=True) or {}
+        details = get_activity_details(current_user, int(strava_activity_id), allow_rate_limit_sleep=True) or {}
         mile_splits = _extract_strava_mile_splits_from_details(details)
 
         # Prefer laps as the segmentation source if present (matches Strava "Laps" tab / user-defined laps).
-        laps = get_activity_laps(athlete, strava_activity_id) or []
+        laps = get_activity_laps(current_user, strava_activity_id) or []
         mile_map = {}
         for ms in mile_splits:
             try:
@@ -824,10 +973,24 @@ def backfill_activity_splits(activity_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.post("/checkins", response_model=DailyCheckinResponse, status_code=201)
-def create_checkin(checkin: DailyCheckinCreate, db: Session = Depends(get_db)):
-    """Create a new daily checkin"""
-    db_checkin = DailyCheckin(**checkin.dict())
+def create_checkin(
+    checkin: DailyCheckinCreate,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new daily checkin (auth required; athlete_id from auth context only)."""
+    data = checkin.model_dump() if hasattr(checkin, "model_dump") else checkin.dict()
+    data.pop("athlete_id", None)
+    db_checkin = DailyCheckin(athlete_id=current_user.id, **data)
     db.add(db_checkin)
     db.commit()
     db.refresh(db_checkin)
+
+    # ADR-065: trigger home briefing refresh on check-in
+    try:
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        enqueue_briefing_refresh(str(current_user.id))
+    except Exception:
+        pass
+
     return db_checkin

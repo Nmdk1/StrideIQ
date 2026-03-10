@@ -48,7 +48,7 @@ export function LoadResponseChart({ data, className = '' }: LoadResponseChartPro
     if (!hasData) return [];
     return data.map((week) => ({
       weekStart: week.week_start,
-      week: new Date(week.week_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      week: new Date(week.week_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
       // API returns miles, convert to meters for formatDistance
       distanceMeters: week.total_distance_miles * 1609.34,
       efficiencyDelta: week.efficiency_delta || 0,
@@ -161,7 +161,7 @@ export function LoadResponseChart({ data, className = '' }: LoadResponseChartPro
             <p className="text-xs text-slate-400 mt-2">
               Selected:{' '}
               <span className="text-slate-200 font-medium">
-                {new Date(selectedWeekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                {new Date(selectedWeekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
               </span>
             </p>
           ) : null}
@@ -261,7 +261,7 @@ export function LoadResponseChart({ data, className = '' }: LoadResponseChartPro
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-sm text-slate-300 font-semibold">
-                Week of {new Date(selected.weekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                Week of {new Date(selected.weekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
               </div>
               <div className="text-xs text-slate-500 mt-1">
                 Click a different bar to compare weeks.

@@ -284,7 +284,7 @@ apps/api/services/
 ├── optimal_load_calculator.py        # Week-by-week TSS trajectory
 ├── model_driven_plan_generator.py    # Workout prescription
 ├── race_predictor.py                 # Performance predictions
-├── vdot_calculator.py                # Pace calculations
+├── rpi_calculator.py                # Pace calculations
 └── training_load.py                  # CTL/ATL/TSB calculations
 
 docs/adr/

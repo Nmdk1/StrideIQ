@@ -36,7 +36,7 @@ We will calibrate prescriptive training paces **only** from a user-provided **mo
 - Store the anchor and computed paces in dedicated tables:
   - `AthleteRaceResultAnchor` (source-of-truth performance anchor)
   - `AthleteTrainingPaceProfile` (derived paces with provenance)
-- Critical safety invariant: **do not mutate existing `Athlete.vdot` / `Athlete.threshold_pace_per_km`** in this implementation. This prevents unintended changes to existing plans or other computations.
+- Critical safety invariant: **do not mutate existing `Athlete.rpi` / `Athlete.threshold_pace_per_km`** in this implementation. This prevents unintended changes to existing plans or other computations.
 
 4) **Immediate user value (“value artifact”)**
 - After the Goals stage is saved:
@@ -50,7 +50,7 @@ We will calibrate prescriptive training paces **only** from a user-provided **mo
 ## Considered Options (Rejected)
 - **Infer paces from training data (Strava activities)**: rejected for trust/correctness; too noisy for prescriptive ranges and encourages false precision.
 - **Always compute an estimate**: rejected; violates “no appeasement with bad data.”
-- **Overwrite `Athlete.vdot` / pace columns**: rejected for safety; could silently change existing athlete experience and plan generation behavior.
+- **Overwrite `Athlete.rpi` / pace columns**: rejected for safety; could silently change existing athlete experience and plan generation behavior.
 
 ## Consequences
 ### Positive

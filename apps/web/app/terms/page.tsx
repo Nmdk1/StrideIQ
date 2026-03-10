@@ -3,6 +3,9 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Terms of Service',
   description: 'Terms of service for StrideIQ - compliant with Strava API and Garmin Connect requirements',
+  alternates: {
+    canonical: 'https://strideiq.run/terms',
+  },
 }
 
 export default function TermsOfServicePage() {

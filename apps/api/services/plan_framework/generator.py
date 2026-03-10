@@ -79,7 +79,7 @@ class GeneratedPlan:
     
     # Athlete info (if personalized)
     athlete_id: Optional[UUID]
-    vdot: Optional[float]
+    rpi: Optional[float]
     
     # Plan dates
     start_date: Optional[date]
@@ -118,7 +118,7 @@ class GeneratedPlan:
             "volume_tier": self.volume_tier,
             "days_per_week": self.days_per_week,
             "athlete_id": str(self.athlete_id) if self.athlete_id else None,
-            "vdot": self.vdot,
+            "rpi": self.rpi,
             "start_date": self.start_date.isoformat() if self.start_date else None,
             "end_date": self.end_date.isoformat() if self.end_date else None,
             "race_date": self.race_date.isoformat() if self.race_date else None,
@@ -217,14 +217,30 @@ class PlanGenerator:
         duration_weeks: int,
         tier: str,
         days_per_week: int,
-        start_date: date = None
+        start_date: date = None,
+        recent_race_distance: str = None,
+        recent_race_time_seconds: int = None,
     ) -> GeneratedPlan:
         """
         Generate a standard (free) training plan.
         
-        No personalization - uses effort descriptions, not paces.
+        If the athlete has race data (from signup or Strava), calculated
+        training paces are injected.  Otherwise falls back to effort-based
+        descriptions.  Paces are expected — they are not a differentiator.
+        N=1 intelligence and daily adaptation are the paid differentiators.
         """
         logger.info(f"Generating standard plan: {distance} {duration_weeks}w {tier} {days_per_week}d")
+        
+        # Calculate paces from race data when available (Resolved Decision #1)
+        paces = None
+        rpi = None
+        if recent_race_distance and recent_race_time_seconds:
+            paces = self.pace_engine.calculate_from_race(
+                distance=recent_race_distance,
+                time_seconds=recent_race_time_seconds
+            )
+            if paces:
+                rpi = paces.rpi
         
         # Get tier parameters
         tier_params = self.tier_classifier.get_tier_params(
@@ -257,7 +273,7 @@ class PlanGenerator:
             phases=phases,
             weekly_volumes=weekly_volumes,
             start_date=start_date,
-            paces=None,  # No paces for standard plans
+            paces=paces,
             athlete_id=None,
             current_weekly_miles=None,
         )
@@ -265,7 +281,8 @@ class PlanGenerator:
         # Calculate totals
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
-            "threshold", "threshold_intervals", "intervals", "long_mp"
+            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp",
+            "repetitions"
         ]])
         
         return GeneratedPlan(
@@ -275,7 +292,7 @@ class PlanGenerator:
             volume_tier=tier,
             days_per_week=days_per_week,
             athlete_id=None,
-            vdot=None,
+            rpi=rpi,
             start_date=start_date,
             end_date=start_date + timedelta(weeks=duration_weeks) if start_date else None,
             race_date=start_date + timedelta(weeks=duration_weeks - 1, days=6) if start_date else None,
@@ -318,14 +335,14 @@ class PlanGenerator:
         
         # Calculate paces if race time provided
         paces = None
-        vdot = None
+        rpi = None
         if recent_race_distance and recent_race_time_seconds:
             paces = self.pace_engine.calculate_from_race(
                 distance=recent_race_distance,
                 time_seconds=recent_race_time_seconds
             )
             if paces:
-                vdot = paces.vdot
+                rpi = paces.rpi
         
         # Calculate start date from race date
         start_date = race_date - timedelta(weeks=duration_weeks - 1, days=6)
@@ -363,7 +380,8 @@ class PlanGenerator:
         # Calculate totals
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
-            "threshold", "threshold_intervals", "intervals", "long_mp"
+            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp",
+            "repetitions"
         ]])
         
         return GeneratedPlan(
@@ -373,7 +391,7 @@ class PlanGenerator:
             volume_tier=tier.value,
             days_per_week=days_per_week,
             athlete_id=athlete_id,
-            vdot=vdot,
+            rpi=rpi,
             start_date=start_date,
             end_date=race_date,
             race_date=race_date,
@@ -398,12 +416,14 @@ class PlanGenerator:
         """
         Generate a fully custom plan using all athlete data.
         
-        This is the premium tier - uses:
-        - User-provided race time (priority 1) OR auto-detected from Strava
-        - Auto-detected volume from Strava history
-        - Training history patterns
-        - Athlete preferences
-        - Dynamic adaptation capability
+        Uses athlete_plan_profile (Phase 1C) to derive N=1 overrides:
+        - Volume tier from actual training history (not questionnaire)
+        - Long run baseline from duration-gated identification
+        - Recovery half-life → cutback frequency
+        - Quality session tolerance
+        
+        Falls back to tier defaults when data is insufficient (cold_start).
+        Transparency: profile.disclosures tells the athlete what's estimated.
         
         Args:
             recent_race_distance: User-provided race distance (e.g., "5k", "half_marathon")
@@ -417,50 +437,35 @@ class PlanGenerator:
         from models import Activity, Athlete
         from sqlalchemy import func
         from datetime import timedelta as td
+        from services.athlete_plan_profile import AthletePlanProfileService
         
         # Get athlete
         athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
             raise ValueError(f"Athlete not found: {athlete_id}")
         
-        # Auto-detect current weekly volume from last 4 weeks
-        four_weeks_ago = race_date - td(weeks=30)  # Look back further for baseline
-        recent_activities = self.db.query(Activity).filter(
-            Activity.athlete_id == athlete_id,
-            Activity.distance_m >= 1000,  # At least 1km - filters out non-runs
-            Activity.start_time >= four_weeks_ago
-        ).all()
-        
-        # Calculate average weekly miles over last 4 complete weeks
-        weekly_totals = {}
-        for activity in recent_activities:
-            week_start = activity.start_time.date() - td(days=activity.start_time.weekday())
-            week_key = week_start.isoformat()
-            if week_key not in weekly_totals:
-                weekly_totals[week_key] = 0
-            weekly_totals[week_key] += (activity.distance_m or 0) / 1609.344
-        
-        if weekly_totals:
-            # Use median of last 4 weeks for stability
-            recent_volumes = sorted(weekly_totals.values())[-4:]
-            current_weekly_miles = sum(recent_volumes) / len(recent_volumes) if recent_volumes else 30
-        else:
-            current_weekly_miles = 30  # Default if no data
-        
-        logger.info(f"Detected weekly volume: {current_weekly_miles:.1f} miles")
-        
-        # Classify tier
-        tier = self.tier_classifier.classify(
-            current_weekly_miles=current_weekly_miles,
+        # --- N=1 Profile Derivation (Phase 1C) ---
+        profile_service = AthletePlanProfileService()
+        profile = profile_service.derive_profile(
+            athlete_id=athlete_id,
+            db=self.db,
             goal_distance=distance,
-            athlete_id=athlete_id
+        )
+        
+        current_weekly_miles = profile.current_weekly_miles or 30
+        tier = profile.volume_tier
+        
+        logger.info(
+            f"N=1 profile: {profile.data_sufficiency} data, "
+            f"tier={tier.value}, volume={current_weekly_miles:.1f}mpw, "
+            f"LR confidence={profile.long_run_confidence:.2f}"
         )
         
         # Calculate paces with priority:
         # 1. User-provided race time (allows aspirational paces)
         # 2. Strava race activities
         # 3. Strava training estimate (conservative)
-        vdot = None
+        rpi = None
         paces = None
         pace_source = None
         
@@ -471,9 +476,9 @@ class PlanGenerator:
                 time_seconds=recent_race_time_seconds
             )
             if paces:
-                vdot = paces.vdot
+                rpi = paces.rpi
                 pace_source = "user_input"
-                logger.info(f"Calculated VDOT from user input: {vdot:.1f}")
+                logger.info(f"Calculated RPI from user input: {rpi:.1f}")
         
         # Priority 2: Strava race activities
         if not paces:
@@ -494,9 +499,9 @@ class PlanGenerator:
                         time_seconds=race_time
                     )
                     if paces:
-                        vdot = paces.vdot
+                        rpi = paces.rpi
                         pace_source = "strava_race"
-                        logger.info(f"Calculated VDOT from Strava race: {vdot:.1f}")
+                        logger.info(f"Calculated RPI from Strava race: {rpi:.1f}")
         
         # Priority 3: Strava training estimate (conservative)
         if not paces and recent_activities:
@@ -507,9 +512,9 @@ class PlanGenerator:
                     time_seconds=best_run.moving_time_s
                 )
                 if paces:
-                    vdot = paces.vdot * 0.95  # Conservative estimate from training
+                    rpi = paces.rpi * 0.95  # Conservative estimate from training
                     pace_source = "strava_training"
-                    logger.info(f"Estimated VDOT from Strava training: {vdot:.1f}")
+                    logger.info(f"Estimated RPI from Strava training: {rpi:.1f}")
         
         if pace_source:
             logger.info(f"Pace source for plan: {pace_source}")
@@ -522,20 +527,79 @@ class PlanGenerator:
         # Calculate start date
         start_date = race_date - td(weeks=duration_weeks - 1, days=6)
         
-        # Build phases
+        # --- Personalized Taper (Phase 1D) ---
+        from services.taper_calculator import TaperCalculator
+        from services.pre_race_fingerprinting import derive_pre_race_taper_pattern
+        from services.individual_performance_model import get_or_calibrate_model
+
+        taper_calc = TaperCalculator()
+
+        # Gather taper signals
+        observed_taper = None
+        banister_model_obj = None
+
+        try:
+            # Signal 1: Observed taper history from race data
+            all_activities = self.db.query(Activity).filter(
+                Activity.athlete_id == athlete_id,
+                Activity.start_time >= race_date - td(days=730),  # 2 years
+            ).order_by(Activity.start_time).all()
+
+            from sqlalchemy import or_
+            race_activities = self.db.query(Activity).filter(
+                Activity.athlete_id == athlete_id,
+                or_(
+                    Activity.user_verified_race == True,
+                    Activity.workout_type == 'race',
+                    Activity.is_race_candidate == True,
+                ),
+            ).order_by(Activity.start_time).all()
+
+            if race_activities:
+                observed_taper = derive_pre_race_taper_pattern(
+                    activities=all_activities,
+                    races=race_activities,
+                )
+
+            # Signal 3: Banister model (if calibrated)
+            banister_model_obj = get_or_calibrate_model(athlete_id, self.db)
+        except Exception as e:
+            logger.warning(f"Non-critical: taper signal gathering failed: {e}")
+
+        taper_rec = taper_calc.calculate(
+            distance=distance,
+            profile=profile,
+            banister_model=banister_model_obj,
+            observed_taper=observed_taper,
+        )
+
+        taper_days = taper_rec.taper_days
+        taper_weeks_for_vol = self.phase_builder._taper_days_to_weeks(taper_days)
+
+        logger.info(
+            f"Taper recommendation: {taper_days} days ({taper_rec.source}, "
+            f"confidence={taper_rec.confidence:.2f})"
+        )
+
+        # Build phases with personalized taper
         phases = self.phase_builder.build_phases(
             distance=distance,
             duration_weeks=duration_weeks,
-            tier=tier.value
+            tier=tier.value,
+            taper_days=taper_days,
         )
         
-        # Calculate volume progression
+        # Calculate volume progression with N=1 cutback frequency
         weekly_volumes = self.tier_classifier.calculate_volume_progression(
             tier=tier,
             distance=distance,
             starting_volume=current_weekly_miles,
             plan_weeks=duration_weeks,
-            taper_weeks=2
+            taper_weeks=taper_weeks_for_vol,
+            cutback_frequency_override=(
+                profile.suggested_cutback_frequency
+                if profile.recovery_confidence >= 0.4 else None
+            ),
         )
         
         # Generate workouts
@@ -555,7 +619,8 @@ class PlanGenerator:
         # Calculate totals
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
-            "threshold", "threshold_intervals", "intervals", "long_mp"
+            "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp",
+            "repetitions"
         ]])
         
         return GeneratedPlan(
@@ -565,7 +630,7 @@ class PlanGenerator:
             volume_tier=tier.value,
             days_per_week=days_per_week,
             athlete_id=athlete_id,
-            vdot=vdot,
+            rpi=rpi,
             start_date=start_date,
             end_date=race_date,
             race_date=race_date,
@@ -646,8 +711,9 @@ class PlanGenerator:
         # Get weekly structure
         structure = self.WEEKLY_STRUCTURES.get(days_per_week, self.WEEKLY_STRUCTURES[6])
         
-        # Track MP long run weeks for progressive loading
+        # Track MP/HMP long run weeks for progressive loading
         mp_long_run_count = 0
+        hmp_long_run_count = 0
         
         for week in range(1, duration_weeks + 1):
             # Get phase for this week
@@ -662,11 +728,21 @@ class PlanGenerator:
             cutback_freq = self.tier_classifier.get_tier_params(tier_enum, distance).get("cutback_frequency", 4)
             is_cutback = week % cutback_freq == 0 and week < duration_weeks - 2
             
-            if is_cutback:
-                weekly_volume *= 0.75  # Reduce volume for cutback
+            # NOTE: Do NOT multiply weekly_volume here — calculate_volume_progression()
+            # already applies tier-specific cutback reductions for cutback weeks.
+            # The is_cutback flag is used for INTENSITY decisions (easy long, no
+            # secondary quality) but the VOLUME is already correct from the progression.
             
-            # Check if this week will have an MP long run (for tracking)
+            # Check if this week will have an MP long run (marathon)
             will_have_mp_long = self._will_week_have_mp_long(
+                phase=phase,
+                week_in_phase=week_in_phase,
+                is_cutback=is_cutback,
+                distance=distance
+            )
+            
+            # Check if this week will have an HMP long run (half marathon)
+            will_have_hmp_long = self._will_week_have_hmp_long(
                 phase=phase,
                 week_in_phase=week_in_phase,
                 is_cutback=is_cutback,
@@ -675,12 +751,16 @@ class PlanGenerator:
             
             if will_have_mp_long:
                 mp_long_run_count += 1
+            if will_have_hmp_long:
+                hmp_long_run_count += 1
             
             # Generate each day
             week_workouts = self._generate_week(
                 week=week,
                 phase=phase,
                 week_in_phase=week_in_phase,
+                is_mp_long_week=will_have_mp_long,
+                is_hmp_long_week=will_have_hmp_long,
                 weekly_volume=weekly_volume,
                 tier=tier,
                 distance=distance,
@@ -720,25 +800,51 @@ class PlanGenerator:
         
         return False
     
+    def _will_week_have_hmp_long(
+        self,
+        phase: TrainingPhase,
+        week_in_phase: int,
+        is_cutback: bool,
+        distance: str
+    ) -> bool:
+        """Determine if this week will have an HMP long run (half marathon)."""
+        if is_cutback:
+            return False
+        
+        if distance != "half_marathon":
+            return False
+        
+        phase_type = phase.phase_type.value
+        
+        if phase_type == "race_specific":
+            # Alternating: HMP long, then easy long
+            if week_in_phase % 2 == 1:
+                return True
+        
+        return False
+    
     def _generate_week(
         self,
         week: int,
         phase: TrainingPhase,
         week_in_phase: int,
-        weekly_volume: float,
-        tier: str,
-        distance: str,
-        days_per_week: int,
-        structure: Dict[int, str],
-        start_date: Optional[date],
-        paces: Optional[TrainingPaces],
-        is_cutback: bool,
+        is_mp_long_week: bool = False,
+        is_hmp_long_week: bool = False,
+        weekly_volume: float = 0,
+        tier: str = "mid",
+        distance: str = "marathon",
+        days_per_week: int = 6,
+        structure: Dict[int, str] = None,
+        start_date: Optional[date] = None,
+        paces: Optional[TrainingPaces] = None,
+        is_cutback: bool = False,
         mp_week: int = 1,
         athlete_ctx: Optional[Dict[str, Any]] = None,
     ) -> List[GeneratedWorkout]:
         """Generate workouts for a single week."""
         week_workouts = []
         athlete_ctx = athlete_ctx or {"experienced_high_volume": False}
+        structure = structure or {}
         
         for day in range(7):
             day_name = self.DAY_NAMES[day]
@@ -777,6 +883,8 @@ class PlanGenerator:
                 phase=phase,
                 week_in_phase=week_in_phase,
                 is_cutback=is_cutback,
+                is_mp_long_week=is_mp_long_week,
+                is_hmp_long_week=is_hmp_long_week,
                 week=week,
                 distance=distance,
                 weekly_volume=weekly_volume,
@@ -844,6 +952,29 @@ class PlanGenerator:
             
             week_workouts.append(workout)
         
+        # --- Volume Fill: scale easy runs to hit weekly volume target ---
+        # Quality and long-run distances are set by the scaler based on
+        # coaching rules.  Easy runs absorb the remainder so the actual
+        # weekly total matches the plan target.  This prevents long runs
+        # from being disproportionately large as a % of actual volume
+        # (especially on 5-day schedules where fewer easy slots exist).
+        easy_types = {"easy", "easy_strides", "recovery", "medium_long"}
+        non_easy_miles = sum(
+            w.distance_miles or 0 for w in week_workouts
+            if w.workout_type not in easy_types
+        )
+        easy_workouts = [w for w in week_workouts if w.workout_type in easy_types
+                         and (w.distance_miles or 0) > 0]
+        if easy_workouts:
+            remaining = weekly_volume - non_easy_miles
+            remaining = max(remaining, len(easy_workouts) * 3)  # min 3mi per easy run
+            per_easy = round(remaining / len(easy_workouts), 1)
+            per_easy = max(per_easy, 3.0)
+            per_easy = min(per_easy, 12.0)  # cap single easy run at 12mi
+            for ew in easy_workouts:
+                ew.distance_miles = per_easy
+                ew.duration_minutes = int(per_easy * 9.5)
+        
         return week_workouts
     
     def _get_workout_for_day(
@@ -852,6 +983,8 @@ class PlanGenerator:
         phase: TrainingPhase,
         week_in_phase: int,
         is_cutback: bool,
+        is_mp_long_week: bool,
+        is_hmp_long_week: bool,
         week: int,
         distance: str,
         weekly_volume: float,
@@ -862,8 +995,12 @@ class PlanGenerator:
         
         This is where StrideIQ methodology is applied:
         - Quality sessions vary by phase
-        - Long runs get MP work in later phases
+        - Long runs get MP/HMP work in later phases
         - Cutback weeks reduce intensity
+        - Alternation rule (marathon): MP-long weeks have NO threshold (KB Source B)
+        - Half marathon: HMP long weeks KEEP threshold (HMP portion is moderate,
+          threshold is the primary emphasis — removing it defeats the purpose)
+        - Quality day limit: max 2 quality sessions per week
         """
         if structure_type == "rest":
             return "rest"
@@ -882,6 +1019,15 @@ class PlanGenerator:
             # If the phase calls for 2 quality sessions and the athlete can handle it,
             # convert the mid-week medium long to the "touch" session.
             # This is the focus+touch model: the second session is a touch, not another sledgehammer.
+            #
+            # ALTERNATION RULE (Source B): MP long run weeks get NO threshold.
+            # The MP long IS the second quality — adding threshold creates overload.
+            if is_mp_long_week:
+                return "medium_long"  # Keep as easy-ish volume, not another quality session
+            # HMP long weeks: the HMP long is one quality session, the threshold
+            # slot is the other. Don't add a THIRD quality via secondary.
+            if is_hmp_long_week:
+                return "medium_long"
             if phase.quality_sessions >= 2 and not is_cutback and weekly_volume >= 55:
                 return self._get_secondary_quality(phase, distance, week_in_phase, weekly_volume, athlete_ctx)
             return "medium_long"
@@ -890,9 +1036,23 @@ class PlanGenerator:
             return self._get_long_run_type(phase, week_in_phase, is_cutback, distance)
         
         if structure_type == "quality":
+            # ALTERNATION RULE (Source B): On MP long run weeks, the MP long
+            # IS the quality session.  The mid-week quality slot becomes
+            # easy with strides (neuromuscular touch without adding load).
+            if is_mp_long_week:
+                return "easy_strides"
+            # Half marathon HMP weeks: threshold STAYS as the quality session.
+            # HMP long run is moderate, threshold is primary emphasis — don't kill it.
             return self._get_quality_workout(phase, week_in_phase, is_cutback, distance, weekly_volume, athlete_ctx)
         
         if structure_type == "quality_or_easy":
+            # ALTERNATION RULE: MP long run weeks already have quality via the MP long.
+            # Don't add another quality session — keep this as easy.
+            if is_mp_long_week:
+                return "easy"
+            # HMP long weeks already have 2 quality (threshold + HMP long).
+            if is_hmp_long_week:
+                return "easy"
             # Second quality only in certain phases
             if phase.quality_sessions >= 2 and not is_cutback:
                 return self._get_secondary_quality(phase, distance, week_in_phase, weekly_volume, athlete_ctx)
@@ -907,31 +1067,29 @@ class PlanGenerator:
         is_cutback: bool,
         distance: str
     ) -> str:
-        """Determine long run type based on phase."""
+        """Determine long run type based on phase and goal distance."""
         if is_cutback:
             return "long"  # Easy long run on cutback
         
-        if distance != "marathon":
-            return "long"  # Non-marathon distances don't need MP longs
-        
         phase_type = phase.phase_type.value
         
-        if phase_type == "base_speed":
+        # --- Marathon: MP long runs in specific phases ---
+        if distance == "marathon":
+            if phase_type in ["marathon_specific", "race_specific"]:
+                # Alternating: MP long, then easy long
+                if week_in_phase % 2 == 1:
+                    return "long_mp"
             return "long"
         
-        if phase_type == "threshold":
-            # Occasional easy long run
+        # --- Half marathon: HMP long runs in race-specific phase ---
+        if distance == "half_marathon":
+            if phase_type == "race_specific":
+                # Alternating: HMP long, then easy long
+                if week_in_phase % 2 == 1:
+                    return "long_hmp"
             return "long"
         
-        if phase_type in ["marathon_specific", "race_specific"]:
-            # Alternating: MP long, then easy long
-            if week_in_phase % 2 == 1:
-                return "long_mp"
-            return "long"
-        
-        if phase_type == "taper":
-            return "long"  # Easy in taper
-        
+        # --- 10K / 5K: easy long runs only (quality comes from intervals) ---
         return "long"
     
     def _get_quality_workout(
@@ -943,29 +1101,58 @@ class PlanGenerator:
         weekly_volume: float,
         athlete_ctx: Dict[str, Any],
     ) -> str:
-        """Determine quality workout based on phase."""
+        """Determine quality workout based on phase and distance."""
         phase_type = phase.phase_type.value
         
         if is_cutback:
             # Lighter quality on cutback
-            return "strides" if phase_type == "base_speed" else "threshold"
+            if phase_type == "base_speed":
+                return "strides"
+            # 5K cutback: reps maintain neuromuscular pattern without aerobic load.
+            if distance == "5k":
+                return "repetitions"
+            # 10K cutback: strides for neuromuscular touch without adding quality load.
+            if distance == "10k":
+                return "strides"
+            return "threshold"
         
         if phase_type == "base_speed":
-            # Base speed: strides/hills most weeks.
+            # --- 5K / 10K base: strides, hills, AND reps (inverted model) ---
+            # Speed/neuromuscular work on fresh legs, low injury risk.
+            # Reps here are neuromuscular tool-building, not race simulation.
+            if distance in ("5k", "10k"):
+                cycle = week_in_phase % 3
+                if cycle == 0:
+                    return "repetitions"  # neuromuscular reps on fresh legs
+                elif cycle == 2:
+                    return "hills"
+                return "easy_strides"
+            # Marathon / Half marathon base: strides/hills.
             # For high-mileage, experienced athletes, include periodic VO2 touches early.
-            # Note: short plans may only have 1-2 base_speed weeks; ensure at least one VO2 touch.
             if athlete_ctx.get("experienced_high_volume") and weekly_volume >= 60 and week_in_phase % 2 == 0:
                 return "intervals"
             return "hills" if week_in_phase % 2 == 0 else "easy_strides"
         
         if phase_type == "threshold":
-            # T-block progression
+            # --- Inverted model: threshold dominant in build for ALL distances ---
+            # LT is the limiting factor for most runners (Source A).
+            # Building the threshold floor first means the athlete clears lactate
+            # faster between race-specific intervals, making VO2max phase more productive.
+            # T-block progression: intervals format → continuous
             if week_in_phase <= 2:
                 return "threshold_intervals"
             return "threshold"
         
         if phase_type in ["marathon_specific", "race_specific"]:
-            # Maintain threshold
+            # --- 5K race-specific: VO2max intervals arrive HERE ---
+            # The threshold base is built. Now sharpen with 5K-pace work.
+            if distance == "5k":
+                return "intervals"
+            # --- 10K race-specific: VO2max sharpening on threshold base ---
+            # Structure closer to half marathon than 5K (Source A: LT #1 for >30 min).
+            if distance == "10k":
+                return "intervals"
+            # --- Marathon / Half marathon: maintain threshold ---
             return "threshold_intervals" if week_in_phase % 2 == 0 else "threshold"
         
         if phase_type == "taper":
@@ -984,14 +1171,36 @@ class PlanGenerator:
         weekly_volume: float,
         athlete_ctx: Dict[str, Any],
     ) -> str:
-        """Determine secondary quality workout."""
-        # For shorter races, secondary quality is often VO2.
-        if distance in ["5k", "10k"]:
+        """
+        Determine secondary quality workout (complement of primary).
+
+        Only fires when quality_sessions >= 2 (race-specific phases).
+        Build phases use quality_sessions=1 for 5K/10K (inverted model),
+        so secondary is not called during the threshold-dominant build.
+        """
+        phase_type = phase.phase_type.value
+
+        # --- 5K race-specific: reps alongside VO2max primary ---
+        # Goal-pace reps practice the effort pattern under fatigue.
+        # Occasional threshold for aerobic maintenance.
+        if distance == "5k":
+            if week_in_phase % 3 == 0:
+                return "threshold"      # aerobic maintenance every 3rd week
+            return "repetitions"        # goal-pace reps
+
+        # --- 10K race-specific: threshold maintenance alongside VO2max primary ---
+        # The threshold floor built in the build phase must be maintained
+        # while VO2max sharpening takes the primary slot.
+        if distance == "10k":
+            return "threshold"
+
+        # Half marathon: threshold is PRIMARY, so secondary is VO2max
+        # (1000m/1200m intervals for economy — not primary VO2 development).
+        if distance == "half_marathon":
             return "intervals"
 
-        # For HM/Marathon, secondary quality is usually a "touch" session.
+        # For Marathon, secondary quality is usually a "touch" session.
         # Use VO2 touches early in the specific block for experienced high-volume athletes.
-        phase_type = phase.phase_type.value
         if athlete_ctx.get("experienced_high_volume") and weekly_volume >= 60 and phase_type == "marathon_specific":
             # Every other week early in MP integration (touch only).
             if week_in_phase <= 2 and week_in_phase % 2 == 1:

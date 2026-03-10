@@ -49,7 +49,7 @@ Already had mobile hamburger menu - no changes needed.
 - Replaced generic algorithm with archetype-based system
 - Loads `marathon_mid_6d_18w.json` for marathon plans
 - Proper periodization, T-block progression, MP work timing
-- Paces calculated from VDOT
+- Paces calculated from RPI
 
 ### 5. Plan Template System Documentation
 - Created `_AI_CONTEXT_/OPERATIONS/04_PLAN_TEMPLATE_SYSTEM.md`

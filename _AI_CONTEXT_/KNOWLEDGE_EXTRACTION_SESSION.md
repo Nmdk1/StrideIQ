@@ -36,7 +36,7 @@
 From the extracted books/sources, the system already has:
 
 **From Daniels:**
-- VDOT formula and pace tables (E, M, T, I, R paces)
+- RPI formula and pace tables (E, M, T, I, R paces)
 - Training principles and laws
 - Periodization model
 

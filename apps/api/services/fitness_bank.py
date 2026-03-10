@@ -33,7 +33,7 @@ class RacePerformance:
     distance_m: float
     finish_time_seconds: int
     pace_per_mile: float
-    vdot: float
+    rpi: float
     conditions: Optional[str] = None  # "limping", "hot", "hilly", "perfect"
     confidence: float = 1.0           # Weight for this performance
     name: Optional[str] = None
@@ -44,7 +44,7 @@ class RacePerformance:
             "distance": self.distance,
             "finish_time": self.finish_time_seconds,
             "pace_per_mile": round(self.pace_per_mile, 2),
-            "vdot": round(self.vdot, 1),
+            "rpi": round(self.rpi, 1),
             "conditions": self.conditions
         }
 
@@ -83,7 +83,7 @@ class FitnessBank:
     
     # Proven race performances
     race_performances: List[RacePerformance]
-    best_vdot: float
+    best_rpi: float
     best_race: Optional[RacePerformance]
     
     # Current state
@@ -134,7 +134,7 @@ class FitnessBank:
                 "long_run": round(self.current_long_run_miles, 1),
                 "avg_long_run": round(self.average_long_run_miles, 1)
             },
-            "best_vdot": round(self.best_vdot, 1),
+            "best_rpi": round(self.best_rpi, 1),
             "races": [r.to_dict() for r in self.race_performances[:5]],
             "tau1": round(self.tau1, 1),
             "tau2": round(self.tau2, 1),
@@ -153,12 +153,12 @@ class FitnessBank:
 
 
 # =============================================================================
-# VDOT CALCULATION
+# RPI CALCULATION
 # =============================================================================
 
-def calculate_vdot(distance_m: float, time_seconds: int) -> float:
+def calculate_rpi(distance_m: float, time_seconds: int) -> float:
     """
-    Calculate VDOT from race performance.
+    Calculate RPI from race performance.
     
     Uses Daniels' formula approximation.
     """
@@ -183,34 +183,134 @@ def calculate_vdot(distance_m: float, time_seconds: int) -> float:
     import math
     pct_vo2max = 0.8 + 0.1894393 * math.exp(-0.012778 * t) + 0.2989558 * math.exp(-0.1932605 * t)
     
-    # VDOT = VO2 / %VO2max
+    # RPI = VO2 / %VO2max
     if pct_vo2max > 0:
-        vdot = vo2 / pct_vo2max
+        rpi = vo2 / pct_vo2max
     else:
-        vdot = 0.0
+        rpi = 0.0
     
-    return max(20.0, min(85.0, vdot))  # Clamp to reasonable range
+    return max(20.0, min(85.0, rpi))  # Clamp to reasonable range
 
 
-def vdot_equivalent_time(vdot: float, distance_m: float) -> int:
-    """Calculate equivalent time for a distance given VDOT."""
+def rpi_equivalent_time(rpi: float, distance_m: float) -> int:
+    """Calculate equivalent time for a distance given RPI."""
     import math
     
-    # Binary search for time that gives this VDOT at this distance
+    # Binary search for time that gives this RPI at this distance
     low, high = 60, 36000  # 1 min to 10 hours
     
     for _ in range(50):
         mid = (low + high) // 2
-        calc_vdot = calculate_vdot(distance_m, mid)
+        calc_rpi = calculate_rpi(distance_m, mid)
         
-        if abs(calc_vdot - vdot) < 0.1:
+        if abs(calc_rpi - rpi) < 0.1:
             return mid
-        elif calc_vdot > vdot:
+        elif calc_rpi > rpi:
             low = mid
         else:
             high = mid
     
     return mid
+
+
+# =============================================================================
+# CACHE ROUND-TRIP HELPERS
+# =============================================================================
+
+def _fitness_bank_to_dict(bank: "FitnessBank") -> dict:
+    """Serialize FitnessBank to a JSON-safe dict for Redis caching."""
+    def _race(r: "RacePerformance") -> dict:
+        return {
+            "date": r.date.isoformat() if r.date else None,
+            "distance": r.distance,
+            "distance_m": r.distance_m,
+            "finish_time_seconds": r.finish_time_seconds,
+            "pace_per_mile": r.pace_per_mile,
+            "rpi": r.rpi,
+            "conditions": r.conditions,
+            "confidence": r.confidence,
+            "name": r.name,
+        }
+
+    return {
+        "athlete_id": bank.athlete_id,
+        "peak_weekly_miles": bank.peak_weekly_miles,
+        "peak_monthly_miles": bank.peak_monthly_miles,
+        "peak_long_run_miles": bank.peak_long_run_miles,
+        "peak_mp_long_run_miles": bank.peak_mp_long_run_miles,
+        "peak_threshold_miles": bank.peak_threshold_miles,
+        "peak_ctl": bank.peak_ctl,
+        "race_performances": [_race(r) for r in bank.race_performances],
+        "best_rpi": bank.best_rpi,
+        "best_race": _race(bank.best_race) if bank.best_race else None,
+        "current_weekly_miles": bank.current_weekly_miles,
+        "current_ctl": bank.current_ctl,
+        "current_atl": bank.current_atl,
+        "weeks_since_peak": bank.weeks_since_peak,
+        "current_long_run_miles": bank.current_long_run_miles,
+        "average_long_run_miles": bank.average_long_run_miles,
+        "tau1": bank.tau1,
+        "tau2": bank.tau2,
+        "experience_level": bank.experience_level.value,
+        "constraint_type": bank.constraint_type.value,
+        "constraint_details": bank.constraint_details,
+        "is_returning_from_break": bank.is_returning_from_break,
+        "typical_long_run_day": bank.typical_long_run_day,
+        "typical_quality_day": bank.typical_quality_day,
+        "typical_rest_days": bank.typical_rest_days,
+        "weeks_to_80pct_ctl": bank.weeks_to_80pct_ctl,
+        "weeks_to_race_ready": bank.weeks_to_race_ready,
+        "sustainable_peak_weekly": bank.sustainable_peak_weekly,
+    }
+
+
+def _fitness_bank_from_dict(d: dict) -> "FitnessBank":
+    """Reconstruct FitnessBank from a cached dict."""
+    def _race(r: dict) -> "RacePerformance":
+        raw_date = r.get("date")
+        race_date = date.fromisoformat(raw_date) if raw_date else date.today()
+        return RacePerformance(
+            date=race_date,
+            distance=r.get("distance", ""),
+            distance_m=float(r.get("distance_m", 0)),
+            finish_time_seconds=int(r.get("finish_time_seconds", 0)),
+            pace_per_mile=float(r.get("pace_per_mile", 0)),
+            rpi=float(r.get("rpi", 0)),
+            conditions=r.get("conditions"),
+            confidence=float(r.get("confidence", 1.0)),
+            name=r.get("name"),
+        )
+
+    return FitnessBank(
+        athlete_id=d["athlete_id"],
+        peak_weekly_miles=float(d["peak_weekly_miles"]),
+        peak_monthly_miles=float(d["peak_monthly_miles"]),
+        peak_long_run_miles=float(d["peak_long_run_miles"]),
+        peak_mp_long_run_miles=float(d["peak_mp_long_run_miles"]),
+        peak_threshold_miles=float(d["peak_threshold_miles"]),
+        peak_ctl=float(d["peak_ctl"]),
+        race_performances=[_race(r) for r in d.get("race_performances", [])],
+        best_rpi=float(d["best_rpi"]),
+        best_race=_race(d["best_race"]) if d.get("best_race") else None,
+        current_weekly_miles=float(d["current_weekly_miles"]),
+        current_ctl=float(d["current_ctl"]),
+        current_atl=float(d["current_atl"]),
+        weeks_since_peak=int(d["weeks_since_peak"]),
+        current_long_run_miles=float(d["current_long_run_miles"]),
+        average_long_run_miles=float(d["average_long_run_miles"]),
+        tau1=float(d["tau1"]),
+        tau2=float(d["tau2"]),
+        experience_level=ExperienceLevel(d["experience_level"]),
+        constraint_type=ConstraintType(d["constraint_type"]),
+        constraint_details=d.get("constraint_details"),
+        is_returning_from_break=bool(d["is_returning_from_break"]),
+        typical_long_run_day=d.get("typical_long_run_day"),
+        typical_quality_day=d.get("typical_quality_day"),
+        typical_rest_days=d.get("typical_rest_days", []),
+        weeks_to_80pct_ctl=int(d["weeks_to_80pct_ctl"]),
+        weeks_to_race_ready=int(d["weeks_to_race_ready"]),
+        sustainable_peak_weekly=float(d["sustainable_peak_weekly"]),
+    )
 
 
 # =============================================================================
@@ -244,7 +344,17 @@ class FitnessBankCalculator:
     def calculate(self, athlete_id: UUID) -> FitnessBank:
         """
         Build complete fitness bank from athlete history.
+        Cached in Redis for 15 minutes. Invalidated on activity write.
         """
+        from core.cache import get_cache, set_cache
+        _cache_key = f"fitness_bank:{athlete_id}"
+        _cached = get_cache(_cache_key)
+        if _cached is not None:
+            try:
+                return _fitness_bank_from_dict(_cached)
+            except Exception:
+                pass  # Cache corruption — recompute
+
         from models import Activity
         from services.individual_performance_model import get_or_calibrate_model
         from services.training_load import TrainingLoadCalculator
@@ -293,7 +403,7 @@ class FitnessBankCalculator:
         
         # Extract race performances
         races = self._extract_race_performances(activities)
-        best_vdot, best_race = self._find_best_race(races)
+        best_rpi, best_race = self._find_best_race(races)
         
         # Calculate current weekly volume
         current_weekly = self._calculate_current_weekly(activities)
@@ -326,7 +436,7 @@ class FitnessBankCalculator:
         # Calculate current and average long run (ADR-038: N=1 long run progression)
         current_long, average_long = self._calculate_current_long_run(activities)
         
-        return FitnessBank(
+        result = FitnessBank(
             athlete_id=str(athlete_id),
             peak_weekly_miles=peaks["peak_weekly"],
             peak_monthly_miles=peaks["peak_monthly"],
@@ -335,7 +445,7 @@ class FitnessBankCalculator:
             peak_threshold_miles=peaks["peak_threshold"],
             peak_ctl=peaks["peak_ctl"],
             race_performances=races,
-            best_vdot=best_vdot,
+            best_rpi=best_rpi,
             best_race=best_race,
             current_weekly_miles=current_weekly,
             current_ctl=current_ctl,
@@ -356,6 +466,11 @@ class FitnessBankCalculator:
             weeks_to_race_ready=weeks_to_race,
             sustainable_peak_weekly=sustainable
         )
+        try:
+            set_cache(_cache_key, _fitness_bank_to_dict(result), ttl=900)
+        except Exception:
+            pass  # Non-critical — cache write failure must not break the response
+        return result
     
     def _calculate_peak_capabilities(self, activities: List) -> Dict:
         """Calculate peak capabilities from all activities."""
@@ -486,7 +601,7 @@ class FitnessBankCalculator:
                 conditions = "hilly"
             
             if is_race and distance_type:
-                vdot = calculate_vdot(a.distance_m, duration_sec)
+                rpi = calculate_rpi(a.distance_m, duration_sec)
                 
                 # Adjust confidence based on conditions
                 confidence = 1.0
@@ -503,7 +618,7 @@ class FitnessBankCalculator:
                     distance_m=a.distance_m,
                     finish_time_seconds=duration_sec,
                     pace_per_mile=pace,
-                    vdot=vdot,
+                    rpi=rpi,
                     conditions=conditions,
                     confidence=confidence,
                     name=a.name
@@ -528,7 +643,7 @@ class FitnessBankCalculator:
             return "marathon"
     
     def _find_best_race(self, races: List[RacePerformance]) -> Tuple[float, Optional[RacePerformance]]:
-        """Find best VDOT from races, weighted by confidence and recency."""
+        """Find best RPI from races, weighted by confidence and recency."""
         if not races:
             return 45.0, None
         
@@ -540,18 +655,18 @@ class FitnessBankCalculator:
             days_ago = (today - r.date).days
             recency_weight = max(0.5, 1.0 - (days_ago / 365))  # Decay over year
             
-            # Adjust VDOT by confidence (limping = actual fitness higher)
-            adjusted_vdot = r.vdot * r.confidence
+            # Adjust RPI by confidence (limping = actual fitness higher)
+            adjusted_rpi = r.rpi * r.confidence
             
-            weighted_races.append((adjusted_vdot * recency_weight, r))
+            weighted_races.append((adjusted_rpi * recency_weight, r))
         
-        # Sort by weighted VDOT
+        # Sort by weighted RPI
         weighted_races.sort(key=lambda x: x[0], reverse=True)
         
         best_race = weighted_races[0][1]
         
-        # Return the actual (unadjusted) best VDOT from recent good races
-        return best_race.vdot * best_race.confidence, best_race
+        # Return the actual (unadjusted) best RPI from recent good races
+        return best_race.rpi * best_race.confidence, best_race
     
     def _calculate_current_weekly(self, activities: List) -> float:
         """Calculate current weekly mileage (last 4 weeks average)."""
@@ -780,7 +895,7 @@ class FitnessBankCalculator:
             peak_threshold_miles=5.0,
             peak_ctl=40.0,
             race_performances=[],
-            best_vdot=40.0,
+            best_rpi=40.0,
             best_race=None,
             current_weekly_miles=0.0,
             current_ctl=30.0,

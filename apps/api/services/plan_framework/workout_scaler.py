@@ -18,6 +18,7 @@ Usage:
     )
 """
 
+import math
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
@@ -118,11 +119,17 @@ class WorkoutScaler:
         elif workout_type in ["long_mp", "marathon_pace_long"]:
             return self._scale_mp_long_run(weekly_volume, tier, distance, week_in_phase, mp_week)
         
+        elif workout_type in ["long_hmp", "half_marathon_pace_long"]:
+            return self._scale_hmp_long_run(weekly_volume, tier, distance, week_in_phase)
+        
         elif workout_type in ["medium_long", "medium_long_mp"]:
             return self._scale_medium_long(weekly_volume, tier, week_in_phase)
         
         elif workout_type in ["interval", "intervals", "vo2max"]:
-            return self._scale_intervals(weekly_volume, tier, phase, athlete_ctx=athlete_ctx, plan_week=plan_week)
+            return self._scale_intervals(weekly_volume, tier, phase, athlete_ctx=athlete_ctx, plan_week=plan_week, distance=distance)
+        
+        elif workout_type in ["repetitions", "reps"]:
+            return self._scale_repetitions(weekly_volume, tier, phase, plan_week=plan_week)
         
         elif workout_type in ["strides"]:
             return self._scale_strides()
@@ -190,7 +197,6 @@ class WorkoutScaler:
         if (distance or "").strip().lower() in ("marathon",) and weekly_volume >= 60:
             pct = 0.30
         target = min(weekly_volume * pct, peak)
-        target = max(target, 10)  # Minimum 10 miles
         
         return ScaledWorkout(
             workout_type="long_run",
@@ -240,9 +246,15 @@ class WorkoutScaler:
             # Reduce volume
             reps = max(2, int(max_t_minutes / duration))
         
+        # Hard cap: t_miles must not exceed Source B 10% limit.
+        # Floor the cap to prevent rounding from pushing over the threshold.
+        t_miles = round(reps * duration * 0.17, 1)
+        t_miles_cap = math.floor(max_t_miles * 10) / 10.0
+        t_miles = min(t_miles, t_miles_cap)
         segments = [
             {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-            {"type": "intervals", "reps": reps, "duration_min": duration, "rest_min": 2, "pace": "threshold"},
+            {"type": "intervals", "reps": reps, "duration_min": duration, "rest_min": 2,
+             "pace": "threshold", "distance_miles": t_miles},
             {"type": "cooldown", "distance_miles": 1.5, "pace": "easy"},
         ]
         
@@ -273,7 +285,10 @@ class WorkoutScaler:
         base = 15
         progression = min(week_in_phase * 5, 20)  # Max +20 min
         tempo_duration = min(base + progression, max_t_minutes)
-        tempo_duration = max(tempo_duration, 15)  # Min 15 min
+        # Floor: 15 min for effective stimulus, but defer to the 10% cap
+        # when weekly volume is too low to support 15 min of threshold work.
+        min_duration = max(10, min(15, max_t_minutes))
+        tempo_duration = max(tempo_duration, min_duration)
         
         total_distance = 3 + (tempo_duration * 0.17)  # WU/CD + tempo
         
@@ -286,7 +301,8 @@ class WorkoutScaler:
             duration_minutes=int(25 + tempo_duration),
             segments=[
                 {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-                {"type": "threshold", "duration_min": int(tempo_duration), "pace": "threshold"},
+                {"type": "threshold", "duration_min": int(tempo_duration), "pace": "threshold",
+                 "distance_miles": min(round(tempo_duration * 0.17, 1), math.floor(max_t_miles * 10) / 10.0)},
                 {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
             ],
             pace_description="comfortably hard, sustainable for the full duration",
@@ -390,6 +406,69 @@ class WorkoutScaler:
             option="B"
         )
     
+    def _scale_hmp_long_run(
+        self,
+        weekly_volume: float,
+        tier: str,
+        distance: str,
+        week_in_phase: int,
+    ) -> ScaledWorkout:
+        """
+        Scale half-marathon-pace long run.
+
+        HMP long run structure (Phase 1E):
+        - Last portion of the long run at half marathon pace (HMP)
+        - Progression: 3-4mi @ HMP → 5-6mi @ HMP → 6-8mi @ HMP
+        - Different from marathon MP longs: shorter race-pace portion,
+          higher intensity, introduced in late build / race-specific phase
+
+        The total long run distance stays appropriate for the tier;
+        only the HMP segment grows through the phase.
+        """
+        try:
+            dist = Distance(distance)
+            vol_tier = VolumeTier(tier)
+        except ValueError:
+            dist = Distance.HALF_MARATHON
+            vol_tier = VolumeTier.MID
+
+        # Total long run distance from tier peaks
+        peak_long = LONG_RUN_PEAKS.get(dist, {}).get(vol_tier, 14)
+        base_long = min(weekly_volume * 0.28, peak_long)
+        total_miles = max(10, round(base_long, 0))
+
+        # HMP segment progression within the phase
+        if week_in_phase <= 1:
+            hmp_miles = min(3, total_miles * 0.3)
+        elif week_in_phase == 2:
+            hmp_miles = min(4, total_miles * 0.35)
+        elif week_in_phase == 3:
+            hmp_miles = min(6, total_miles * 0.45)
+        else:
+            hmp_miles = min(8, total_miles * 0.55)
+
+        hmp_miles = round(hmp_miles, 0)
+        easy_warmup = round(total_miles - hmp_miles, 0)
+
+        return ScaledWorkout(
+            workout_type="long_hmp",
+            category=WorkoutCategory.RACE_PACE,
+            title=f"Long Run with HMP: last {int(hmp_miles)} mi @ HMP",
+            description=(
+                f"{int(total_miles)} miles total. Easy for the first "
+                f"{int(easy_warmup)} miles, then {int(hmp_miles)} miles "
+                f"at half marathon pace."
+            ),
+            total_distance_miles=total_miles,
+            duration_minutes=int(total_miles * 8.5),
+            segments=[
+                {"type": "easy", "distance_miles": easy_warmup, "pace": "easy"},
+                {"type": "half_marathon_pace", "distance_miles": hmp_miles, "pace": "HMP"},
+            ],
+            pace_description="half marathon race pace — comfortably hard, faster than threshold",
+            option="A",
+        )
+
     def _scale_medium_long(
         self,
         weekly_volume: float,
@@ -428,8 +507,17 @@ class WorkoutScaler:
         *,
         athlete_ctx: Optional[Dict[str, Any]] = None,
         plan_week: Optional[int] = None,
+        distance: str = "marathon",
     ) -> ScaledWorkout:
-        """Scale VO2max intervals."""
+        """
+        Scale VO2max intervals.
+
+        For 10K (Phase 1F): VO2max progression through the plan:
+            Early build (plan_week 1-4): 400m
+            Mid build (plan_week 5-7): 800m
+            Late build (plan_week 8-10): 1000m
+            Race specific (plan_week 11+): 1200m at 10K pace
+        """
         # Max interval volume (8%)
         max_i_miles = weekly_volume * self.limits["interval_pct"]
 
@@ -437,6 +525,18 @@ class WorkoutScaler:
 
         athlete_ctx = athlete_ctx or {}
         experienced_high_volume = bool(athlete_ctx.get("experienced_high_volume"))
+
+        # --- 5K VO2max progression (Phase 1G): caps at 1000m ---
+        if distance == "5k":
+            return self._scale_5k_intervals(
+                weekly_volume, max_i_miles, phase_norm, plan_week
+            )
+
+        # --- 10K VO2max progression (Phase 1F) ---
+        if distance == "10k":
+            return self._scale_10k_intervals(
+                weekly_volume, max_i_miles, phase_norm, plan_week
+            )
 
         # For high-volume contexts early in cycle, short reps are a safer VO2 “touch”
         # while still delivering meaningful ceiling work.
@@ -454,7 +554,8 @@ class WorkoutScaler:
                 duration_minutes=int(30 + reps * 2),
                 segments=[
                     {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-                    {"type": "intervals", "reps": reps, "distance_m": 400, "rest_m": 200, "pace": "interval"},
+                    {"type": "intervals", "reps": reps, "distance_m": 400, "rest_m": 200,
+                     "pace": "interval", "distance_miles": round(reps * 400 / 1609.344, 1)},
                     {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
                 ],
                 pace_description="hard effort, controlled — smooth mechanics, not a sprint",
@@ -473,13 +574,217 @@ class WorkoutScaler:
             duration_minutes=int(30 + reps * 6),
             segments=[
                 {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-                {"type": "intervals", "reps": reps, "distance_m": 1000, "rest_min": 2.5, "pace": "interval"},
+                {"type": "intervals", "reps": reps, "distance_m": 1000, "rest_min": 2.5,
+                 "pace": "interval", "distance_miles": round(reps * 1000 / 1609.344, 1)},
                 {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
             ],
             pace_description="hard effort, controlled - NOT all-out",
             option="A",
         )
     
+    def _scale_10k_intervals(
+        self,
+        weekly_volume: float,
+        max_i_miles: float,
+        phase: str,
+        plan_week: Optional[int],
+    ) -> ScaledWorkout:
+        """
+        10K-specific VO2max progression (Phase 1F).
+
+        Progression: 400m -> 800m -> 1000m -> 1200m
+        - Early build: short reps, high neuromuscular demand
+        - Late build: longer reps, sustained VO2 power
+        - Race specific: race-simulation length at 10K pace
+        """
+        pw = plan_week or 1
+
+        if phase == "race_specific" or pw >= 10:
+            # 1200m reps at 10K pace with shorter rest
+            rep_m = 1200
+            rep_miles = 1200 / 1609.344
+            reps = min(6, max(4, int(max_i_miles / rep_miles)))
+            rest_desc = "90 sec jog recovery"
+            rest_val = 1.5  # minutes
+            pace_desc = "10K race pace — controlled, sustainable for all reps"
+            pace_label = "10K_pace"
+        elif pw >= 7:
+            # 1000m classic VO2
+            rep_m = 1000
+            rep_miles = 1000 / 1609.344
+            reps = min(6, max(4, int(max_i_miles / rep_miles)))
+            rest_desc = "2-3 min jog recovery"
+            rest_val = 2.5
+            pace_desc = "hard effort, controlled — NOT all-out"
+            pace_label = "interval"
+        elif pw >= 4:
+            # 800m VO2 development
+            rep_m = 800
+            rep_miles = 800 / 1609.344
+            reps = min(8, max(5, int(max_i_miles / rep_miles)))
+            rest_desc = "2 min jog recovery"
+            rest_val = 2.0
+            pace_desc = "hard effort, smooth mechanics"
+            pace_label = "interval"
+        else:
+            # 400m neuromuscular + VO2 touch
+            rep_m = 400
+            rep_miles = 400 / 1609.344
+            reps = min(12, max(8, int(max_i_miles / rep_miles)))
+            rest_desc = "200m jog recovery"
+            rest_val = 1.0
+            pace_desc = "hard effort, controlled — smooth mechanics, not a sprint"
+            pace_label = "interval"
+
+        total_interval_miles = round(reps * rep_m / 1609.344, 1)
+        total_distance = round(3 + total_interval_miles, 1)
+
+        return ScaledWorkout(
+            workout_type="intervals",
+            category=WorkoutCategory.INTERVAL,
+            title=f"Intervals: {reps}x{rep_m}m",
+            description=f"{reps}x{rep_m}m with {rest_desc}",
+            total_distance_miles=total_distance,
+            duration_minutes=int(30 + reps * (rep_m / 1000 * 4 + rest_val)),
+            segments=[
+                {"type": "warmup", "distance_miles": 2, "pace": "easy"},
+                {"type": "intervals", "reps": reps, "distance_m": rep_m,
+                 "rest_min": rest_val, "pace": pace_label,
+                 "distance_miles": total_interval_miles},
+                {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
+            ],
+            pace_description=pace_desc,
+            option="A",
+        )
+
+    def _scale_5k_intervals(
+        self,
+        weekly_volume: float,
+        max_i_miles: float,
+        phase: str,
+        plan_week: Optional[int],
+    ) -> ScaledWorkout:
+        """
+        5K-specific VO2max progression (Phase 1G).
+
+        Progression: 400m -> 800m -> 1000m (caps at 1000m, unlike 10K's 1200m).
+        5K VO2max intervals are shorter and faster than 10K's race-simulation
+        intervals. The goal is ceiling development, not race-pace simulation.
+        """
+        pw = plan_week or 1
+
+        if phase == "race_specific" or pw >= 9:
+            # 1000m at VO2max — sustained power, peak VO2 development
+            rep_m = 1000
+            rep_miles = 1000 / 1609.344
+            reps = min(6, max(4, int(max_i_miles / rep_miles)))
+            rest_desc = "2-3 min jog recovery"
+            rest_val = 2.5
+            pace_desc = "hard effort, controlled — peak VO2max development"
+        elif pw >= 5:
+            # 800m classic VO2
+            rep_m = 800
+            rep_miles = 800 / 1609.344
+            reps = min(8, max(5, int(max_i_miles / rep_miles)))
+            rest_desc = "2 min jog recovery"
+            rest_val = 2.0
+            pace_desc = "hard effort, smooth mechanics"
+        else:
+            # 400m neuromuscular + VO2 touch
+            rep_m = 400
+            rep_miles = 400 / 1609.344
+            reps = min(12, max(8, int(max_i_miles / rep_miles)))
+            rest_desc = "200m jog recovery"
+            rest_val = 1.0
+            pace_desc = "hard effort, controlled — smooth mechanics, not a sprint"
+
+        total_interval_miles = round(reps * rep_m / 1609.344, 1)
+        total_distance = round(3 + total_interval_miles, 1)
+
+        return ScaledWorkout(
+            workout_type="intervals",
+            category=WorkoutCategory.INTERVAL,
+            title=f"Intervals: {reps}x{rep_m}m",
+            description=f"{reps}x{rep_m}m with {rest_desc}",
+            total_distance_miles=total_distance,
+            duration_minutes=int(30 + reps * (rep_m / 1000 * 4 + rest_val)),
+            segments=[
+                {"type": "warmup", "distance_miles": 2, "pace": "easy"},
+                {"type": "intervals", "reps": reps, "distance_m": rep_m,
+                 "rest_min": rest_val, "pace": "interval",
+                 "distance_miles": total_interval_miles},
+                {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
+            ],
+            pace_description=pace_desc,
+            option="A",
+        )
+
+    def _scale_repetitions(
+        self,
+        weekly_volume: float,
+        tier: str,
+        phase: str,
+        *,
+        plan_week: Optional[int] = None,
+    ) -> ScaledWorkout:
+        """
+        Scale repetition workout (Phase 1G: 5K neuromuscular economy).
+
+        Repetitions: 200m/300m at faster-than-5K pace.
+        Purpose: neuromuscular recruitment, running economy, fast-twitch activation.
+        Recovery: full (200m jog or 90s between reps).
+
+        Progression:
+        - Early build: 200m x 8-10 (fast, neuromuscular pattern)
+        - Late build: 300m x 6-8 (longer reps, maintain economy)
+        - Race specific: 300m x 6-8 (race-simulation speed)
+        """
+        pw = plan_week or 1
+        phase_norm = (phase or "").strip().lower()
+
+        if phase_norm == "race_specific" or pw >= 9:
+            # 300m at faster-than-5K pace — race sharpening
+            rep_m = 300
+            reps = min(8, max(6, int(weekly_volume * 0.04 / (300 / 1609.344))))
+            rest_desc = "200m jog recovery (full recovery)"
+            rest_val = 1.5  # minutes
+            pace_desc = "faster than 5K pace — quick, powerful, controlled"
+        elif pw >= 5:
+            # 300m building volume
+            rep_m = 300
+            reps = min(7, max(5, int(weekly_volume * 0.04 / (300 / 1609.344))))
+            rest_desc = "200m jog recovery"
+            rest_val = 1.5
+            pace_desc = "faster than 5K pace — smooth, quick turnover"
+        else:
+            # 200m early introduction
+            rep_m = 200
+            reps = min(10, max(8, int(weekly_volume * 0.04 / (200 / 1609.344))))
+            rest_desc = "200m jog recovery (full recovery)"
+            rest_val = 1.0
+            pace_desc = "fast and controlled — not a sprint, smooth mechanics"
+
+        total_rep_miles = round(reps * rep_m / 1609.344, 1)
+        total_distance = round(3 + total_rep_miles, 1)
+
+        return ScaledWorkout(
+            workout_type="repetitions",
+            category=WorkoutCategory.SPEED,
+            title=f"Reps: {reps}x{rep_m}m",
+            description=f"{reps}x{rep_m}m with {rest_desc}",
+            total_distance_miles=total_distance,
+            duration_minutes=int(30 + reps * (rep_m / 1000 * 3 + rest_val)),
+            segments=[
+                {"type": "warmup", "distance_miles": 2, "pace": "easy"},
+                {"type": "repetitions", "reps": reps, "distance_m": rep_m,
+                 "rest_min": rest_val, "pace": "repetition",
+                 "distance_miles": total_rep_miles},
+                {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
+            ],
+            pace_description=pace_desc,
+            option="A",
+        )
+
     def _scale_strides(self) -> ScaledWorkout:
         """Scale strides workout."""
         return ScaledWorkout(

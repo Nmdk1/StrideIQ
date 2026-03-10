@@ -4,6 +4,9 @@ import Link from 'next/link'
 export const metadata: Metadata = {
   title: 'Support',
   description: 'Get help with StrideIQ - contact us, FAQs, and troubleshooting',
+  alternates: {
+    canonical: 'https://strideiq.run/support',
+  },
 }
 
 export default function SupportPage() {

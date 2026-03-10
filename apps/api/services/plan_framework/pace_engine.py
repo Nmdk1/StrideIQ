@@ -1,7 +1,7 @@
 """
 Pace Engine
 
-Integrates with Training Pace Calculator (VDOT) to populate
+Integrates with Training Pace Calculator (RPI) to populate
 training plans with personalized paces.
 
 Usage:
@@ -22,8 +22,8 @@ from dataclasses import dataclass
 class TrainingPaces:
     """All training paces for an athlete."""
     
-    # VDOT source
-    vdot: float
+    # RPI source
+    rpi: float
     race_distance: str
     race_time_seconds: int
     
@@ -62,6 +62,11 @@ class TrainingPaces:
         elif workout_type in ["marathon", "mp", "marathon_pace", "long_mp"]:
             pace = f"{self._format_pace(self.marathon_pace)}/mi"
             return f"{pace} (goal race pace)"
+        elif workout_type in ["long_hmp"]:
+            # HMP long run: progression finish at half marathon effort.
+            # Pace sits between marathon and threshold.
+            pace = f"{self._format_pace(self.threshold_pace)}-{self._format_pace(self.marathon_pace)}/mi"
+            return f"{pace} (half marathon effort)"
         # Canonical: "threshold" is Training Pace Calculator threshold (T pace).
         # We do not use the ambiguous term "tempo" in athlete-facing outputs.
         elif workout_type in ["threshold", "t_run", "threshold_intervals"]:
@@ -70,7 +75,7 @@ class TrainingPaces:
         elif workout_type in ["interval", "vo2max", "i_run", "intervals"]:
             pace = f"{self._format_pace(self.interval_pace)}/mi"
             return f"{pace} (hard effort)"
-        elif workout_type in ["repetition", "reps", "strides"]:
+        elif workout_type in ["repetition", "repetitions", "reps", "strides"]:
             pace = f"{self._format_pace(self.repetition_pace)}/mi"
             return f"{pace} (quick, controlled)"
         elif workout_type in ["hills"]:
@@ -89,7 +94,7 @@ class TrainingPaces:
 class PaceEngine:
     """
     Calculate training paces from race performances.
-    Uses VDOT methodology from the existing calculator.
+    Uses RPI methodology from the existing calculator.
     """
     
     def calculate_from_race(
@@ -107,8 +112,8 @@ class PaceEngine:
         Returns:
             TrainingPaces object with all pace zones
         """
-        # Import the VDOT calculator
-        from services.vdot_calculator import calculate_vdot_from_race_time, calculate_training_paces
+        # Import the RPI calculator
+        from services.rpi_calculator import calculate_rpi_from_race_time, calculate_training_paces
         
         try:
             # Convert distance to meters
@@ -123,21 +128,21 @@ class PaceEngine:
             if not distance_meters:
                 return None
             
-            # Calculate VDOT
-            vdot = calculate_vdot_from_race_time(distance_meters, time_seconds)
+            # Calculate RPI
+            rpi = calculate_rpi_from_race_time(distance_meters, time_seconds)
             
-            if vdot is None:
+            if rpi is None:
                 return None
             
             # Get training paces
-            paces = calculate_training_paces(vdot)
+            paces = calculate_training_paces(rpi)
             
             if not paces:
                 return None
             
             # Convert to our format
             return TrainingPaces(
-                vdot=vdot,
+                rpi=rpi,
                 race_distance=distance,
                 race_time_seconds=time_seconds,
                 
@@ -162,20 +167,20 @@ class PaceEngine:
             logging.warning(f"Pace calculation failed: {e}")
             return None
     
-    def calculate_from_vdot(self, vdot: float) -> Optional[TrainingPaces]:
+    def calculate_from_rpi(self, rpi: float) -> Optional[TrainingPaces]:
         """
-        Calculate training paces from VDOT directly.
+        Calculate training paces from RPI directly.
         """
-        from services.vdot_calculator import get_training_paces
+        from services.rpi_calculator import get_training_paces
         
         try:
-            paces = get_training_paces(vdot)
+            paces = get_training_paces(rpi)
             
             if not paces:
                 return None
             
             return TrainingPaces(
-                vdot=vdot,
+                rpi=rpi,
                 race_distance="estimated",
                 race_time_seconds=0,
                 
@@ -195,7 +200,7 @@ class PaceEngine:
             )
         except Exception as e:
             import logging
-            logging.warning(f"Pace calculation from VDOT failed: {e}")
+            logging.warning(f"Pace calculation from RPI failed: {e}")
             return None
     
     def get_effort_description(self, workout_type: str) -> str:
@@ -208,10 +213,14 @@ class PaceEngine:
             "recovery": "Very easy, slower than normal easy pace",
             "long": "Easy effort, building endurance through time on feet",
             "marathon_pace": "Goal marathon race pace - comfortably hard",
+            "long_mp": "Goal marathon race pace - comfortably hard",
+            "long_hmp": "Half marathon effort - between marathon pace and threshold",
             "threshold": "Comfortably hard - can speak in short sentences",
             "interval": "Hard effort, short recovery between reps",
+            "intervals": "Hard effort, short recovery between reps",
             "vo2max": "Near-maximum effort, very hard breathing",
             "repetition": "Fast and controlled, with full recovery",
+            "repetitions": "Fast and controlled, with full recovery",
             "strides": "Quick turnover, not all-out, focus on form",
             "hills": "Strong effort uphill, controlled descent",
         }

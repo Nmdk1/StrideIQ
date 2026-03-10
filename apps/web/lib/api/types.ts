@@ -53,6 +53,9 @@ export interface Activity {
   performance_percentage_national?: number;
   is_race_candidate?: boolean;
   race_confidence?: number;
+  shape_sentence?: string | null;
+  athlete_title?: string | null;
+  resolved_title?: string | null;
   // Workout classification
   workout_type?: string;           // The type/structure of the workout (easy_run, tempo_run, etc.)
   workout_zone?: string;           // INTERNAL USE ONLY - not shown to athletes. See 01_INTENSITY_PHILOSOPHY.md
@@ -190,6 +193,7 @@ export interface Athlete {
   durability_index?: number;
   recovery_half_life_hours?: number;
   consistency_index?: number;
+  has_correlations?: boolean;
 }
 
 export interface LoginRequest {

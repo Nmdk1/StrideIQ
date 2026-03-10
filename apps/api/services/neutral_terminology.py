@@ -207,7 +207,7 @@ def strip_methodology_references(text: str) -> str:
             rf"following {method}'s?",
             rf"using {method}'s?",
             rf"per {method}'s?",
-            rf"{method}'s? (?:VDOT|threshold|tempo|interval)",
+            rf"{method}'s? (?:RPI|threshold|tempo|interval)",
             # Catch blended contexts: "Blended X with Y" or "combines X with Y"
             rf"\b(?:blended|combines?|mixes?|uses?)\s+{method}'s?\s+(?:with|and)",
             rf"{method}'s?\s+(?:with|and)",

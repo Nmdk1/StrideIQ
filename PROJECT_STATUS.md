@@ -28,7 +28,7 @@
 
 #### Backend (API) - Version 2.0.0
 - FastAPI application with public tools endpoints
-- VDOT/Training Pace calculator with lookup tables
+- RPI/Training Pace calculator with lookup tables
 - WMA Age-Grading calculator (2023 standards)
 - Efficiency Context Checker (heat, elevation adjustments)
 - Heat-Adjusted Pace Calculator

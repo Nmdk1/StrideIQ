@@ -64,7 +64,7 @@ export default function AdminPage() {
   const revokeInvite = useRevokeInvite();
   const [newInviteEmail, setNewInviteEmail] = useState('');
   const [newInviteNote, setNewInviteNote] = useState('');
-  const [newInviteGrantTier, setNewInviteGrantTier] = useState<'free' | 'pro' | ''>('');
+  const [newInviteGrantTier, setNewInviteGrantTier] = useState<string>('');
   const [inviteFilter, setInviteFilter] = useState<'all' | 'pending' | 'used'>('all');
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -430,6 +430,9 @@ export default function AdminPage() {
                             >
                               <option value="free">free</option>
                               <option value="pro">pro</option>
+                              <option value="guided">guided</option>
+                              <option value="premium">premium</option>
+                              <option value="elite">elite</option>
                             </select>
                             <button
                               onClick={() =>
@@ -1423,11 +1426,14 @@ export default function AdminPage() {
                   />
                   <select
                     value={newInviteGrantTier}
-                    onChange={(e) => setNewInviteGrantTier(e.target.value as 'free' | 'pro' | '')}
+                    onChange={(e) => setNewInviteGrantTier(e.target.value as string)}
                     className="px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white"
                   >
                     <option value="">Standard (free tier)</option>
-                    <option value="pro">Grant Pro Access</option>
+                    <option value="pro">Pro</option>
+                    <option value="guided">Guided</option>
+                    <option value="premium">Premium</option>
+                    <option value="elite">Elite</option>
                   </select>
                   <button
                     onClick={async () => {

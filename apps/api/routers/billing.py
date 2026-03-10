@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from core.auth import get_current_active_user
 from core.database import get_db
+from core.tier_utils import normalize_tier
 from models import Athlete, Subscription
 from services.stripe_service import StripeService, process_stripe_event
 
@@ -25,18 +27,15 @@ def start_trial(
     current_user: Athlete = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Start a time-bound free trial (Phase 6).
+    """Start a time-bound free trial (Phase 6).
 
     Policy:
-    - One trial per athlete (trial_started_at is immutable once set)
-    - Cannot start a trial if already paid via Stripe or already has paid tier
+    - One trial per athlete (trial_started_at is immutable once set).
+    - Cannot start a trial if already paid via Stripe or already has paid tier.
     """
-    # Already used a trial
     if getattr(current_user, "trial_started_at", None) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Trial already used")
 
-    # Already paid (either via current tier or Stripe mirror)
     if getattr(current_user, "subscription_tier", "free") in getattr(Athlete, "PAID_TIERS", set()):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already has paid access")
 
@@ -62,39 +61,120 @@ def start_trial(
 
 
 class CheckoutRequest(BaseModel):
-    billing_period: str = Field(default="annual", description="'annual' ($149/yr) or 'monthly' ($14.99/mo)")
+    """Checkout request — backward-compatible with old clients.
+
+    Old shape (still accepted):
+        {"billing_period": "annual"}
+
+    New shape:
+        {"tier": "guided", "billing_period": "monthly"}
+        {"tier": "premium", "billing_period": "annual"}
+
+    If ``tier`` is omitted, defaults to "premium" to preserve existing behavior.
+    """
+    billing_period: str = Field(
+        default="annual",
+        description="'annual' or 'monthly'",
+    )
+    tier: Optional[str] = Field(
+        default=None,
+        description="'guided' or 'premium'. Defaults to 'premium' if omitted.",
+    )
 
 
 @router.post("/checkout")
 def create_checkout(
     request: CheckoutRequest = None,
-    current_user: Athlete = Depends(get_current_active_user)
+    current_user: Athlete = Depends(get_current_active_user),
 ):
-    """
-    Create a Stripe Checkout Session.
-    
-    Default is annual ($149/yr) - the primary offer.
-    Pass billing_period="monthly" for $14.99/mo.
+    """Create a Stripe Checkout Session for a subscription tier.
+
+    Backward-compatible: old clients sending only ``billing_period`` receive
+    a premium checkout session (unchanged behavior).
     """
     billing_period = (request.billing_period if request else "annual") or "annual"
     if billing_period not in ("annual", "monthly"):
         raise HTTPException(status_code=400, detail="billing_period must be 'annual' or 'monthly'")
-    
+
+    raw_tier = (request.tier if request else None) or "premium"
+    canonical_tier = normalize_tier(raw_tier)
+    if canonical_tier not in ("guided", "premium"):
+        raise HTTPException(
+            status_code=400,
+            detail="tier must be 'guided' or 'premium'",
+        )
+
     try:
-        url = StripeService().create_checkout_session(athlete=current_user, billing_period=billing_period)
+        url = StripeService().create_checkout_session(
+            athlete=current_user,
+            tier=canonical_tier,
+            billing_period=billing_period,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to create checkout session")
+
+    return {"url": url, "tier": canonical_tier, "billing_period": billing_period}
+
+
+class PlanCheckoutRequest(BaseModel):
+    """Request body for a one-time race-plan unlock checkout."""
+    plan_snapshot_id: str = Field(
+        ...,
+        description="Stable, immutable identifier for the plan artifact being unlocked.",
+    )
+
+
+@router.post("/checkout/plan")
+def create_plan_checkout(
+    request: PlanCheckoutRequest,
+    current_user: Athlete = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Create a Stripe Checkout Session for a one-time race-plan unlock ($5).
+
+    The athlete must own the target plan artifact (plan_snapshot_id bound to
+    their account). Cross-athlete unlock attempts are rejected with 403.
+    """
+    plan_snapshot_id = (request.plan_snapshot_id or "").strip()
+    if not plan_snapshot_id:
+        raise HTTPException(status_code=400, detail="plan_snapshot_id is required")
+
+    # Ownership validation: verify the plan artifact belongs to this athlete.
+    _verify_plan_ownership(db, athlete_id=current_user.id, plan_snapshot_id=plan_snapshot_id)
+
+    # Build plan-specific success URL so the athlete lands back on their plan
+    # page (not the generic settings page) after completing the $5 unlock.
+    try:
+        from core.config import get_settings as _get_settings
+        _base = getattr(_get_settings(), "WEB_APP_BASE_URL", "https://strideiq.run").rstrip("/")
+    except Exception:
+        _base = "https://strideiq.run"
+    plan_success_url = f"{_base}/plans/{plan_snapshot_id}?unlocked=1"
+
+    try:
+        url = StripeService().create_one_time_checkout_session(
+            athlete=current_user,
+            plan_snapshot_id=plan_snapshot_id,
+            success_url=plan_success_url,
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to create checkout session")
-    return {"url": url, "billing_period": billing_period}
+        raise HTTPException(status_code=500, detail="Failed to create plan checkout session")
+
+    return {"url": url, "plan_snapshot_id": plan_snapshot_id, "purchase_type": "plan_onetime"}
 
 
 @router.post("/portal")
-def create_portal(current_user: Athlete = Depends(get_current_active_user), db: Session = Depends(get_db)):
-    """
-    Create a Stripe Customer Portal Session.
-    Returns a hosted URL.
-    """
+def create_portal(
+    current_user: Athlete = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Create a Stripe Customer Portal Session. Returns a hosted URL."""
     try:
         svc = StripeService()
         svc.best_effort_sync_customer_subscription(db, athlete=current_user)
@@ -110,8 +190,7 @@ def create_portal(current_user: Athlete = Depends(get_current_active_user), db: 
 
 @router.post("/webhooks/stripe")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
-    """
-    Stripe webhook endpoint.
+    """Stripe webhook endpoint.
 
     Verifies signature and processes events idempotently.
     """
@@ -123,9 +202,36 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     try:
         event = StripeService().construct_event(payload=payload, sig_header=sig)
     except Exception:
-        # Signature verification errors should return 400 so Stripe can retry appropriately.
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
     result = process_stripe_event(db, event=event)
     return {"ok": True, "result": result}
 
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _verify_plan_ownership(db: Session, *, athlete_id, plan_snapshot_id: str) -> None:
+    """Verify that plan_snapshot_id belongs to athlete_id.
+
+    Raises HTTPException 403 if the plan does not belong to this athlete,
+    or 404 if the plan does not exist at all.
+
+    This is the cross-athlete unlock guard per the non-negotiable contract.
+    """
+    from models import TrainingPlan  # local import to avoid circular deps
+
+    plan = db.query(TrainingPlan).filter(
+        TrainingPlan.id == plan_snapshot_id
+    ).first()
+
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    plan_athlete_id = getattr(plan, "athlete_id", None)
+    if str(plan_athlete_id) != str(athlete_id):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to purchase an unlock for this plan",
+        )

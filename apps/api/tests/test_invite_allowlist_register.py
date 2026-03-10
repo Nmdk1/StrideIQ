@@ -15,7 +15,7 @@ def test_register_allows_without_invite_when_flag_disabled():
     email = f"no_invite_{uuid4()}@example.com"
     resp = client.post(
         "/v1/auth/register",
-        json={"email": email, "password": "password123", "display_name": "Test"},
+        json={"email": email, "password": "SecureP@ss123", "display_name": "Test"},
     )
     assert resp.status_code == 201
     body = resp.json()
@@ -47,7 +47,7 @@ def test_register_requires_invite_when_flag_enabled():
 
         resp = client.post(
             "/v1/auth/register",
-            json={"email": email, "password": "password123", "display_name": "Test"},
+            json={"email": email, "password": "SecureP@ss123", "display_name": "Test"},
         )
         assert resp.status_code == 403
         assert resp.json().get("detail") == "Invite required"
@@ -76,7 +76,7 @@ def test_register_with_invite_marks_used():
 
         resp = client.post(
             "/v1/auth/register",
-            json={"email": email, "password": "password123", "display_name": "Invited"},
+            json={"email": email, "password": "SecureP@ss123", "display_name": "Invited"},
         )
         assert resp.status_code == 201
         body = resp.json()
@@ -116,7 +116,7 @@ def test_register_with_grant_tier_applies_pro():
 
         resp = client.post(
             "/v1/auth/register",
-            json={"email": email, "password": "password123", "display_name": "Beta Tester"},
+            json={"email": email, "password": "SecureP@ss123", "display_name": "Beta Tester"},
         )
         assert resp.status_code == 201
         body = resp.json()
@@ -161,7 +161,7 @@ def test_register_without_grant_tier_defaults_to_free():
 
         resp = client.post(
             "/v1/auth/register",
-            json={"email": email, "password": "password123", "display_name": "Regular User"},
+            json={"email": email, "password": "SecureP@ss123", "display_name": "Regular User"},
         )
         assert resp.status_code == 201
         
@@ -212,7 +212,7 @@ def test_register_with_revoked_invite_blocked_when_required():
 
         resp = client.post(
             "/v1/auth/register",
-            json={"email": email, "password": "password123", "display_name": "Revoked User"},
+            json={"email": email, "password": "SecureP@ss123", "display_name": "Revoked User"},
         )
         # Should be blocked because invite is not active
         assert resp.status_code == 403
@@ -268,7 +268,7 @@ def test_register_with_already_used_invite_blocked_when_required():
 
         resp = client.post(
             "/v1/auth/register",
-            json={"email": email, "password": "password123", "display_name": "Used Invite User"},
+            json={"email": email, "password": "SecureP@ss123", "display_name": "Used Invite User"},
         )
         # Should be blocked because invite is already used
         assert resp.status_code == 403

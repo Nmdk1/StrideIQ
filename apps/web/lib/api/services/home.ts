@@ -63,17 +63,110 @@ export interface WeekProgress {
   load_trend?: 'up' | 'stable' | 'down';  // ADR-020: Load direction
 }
 
+// --- ADR-17 Phase 2 Types ---
+
+export interface CoachNoticed {
+  text: string;
+  source: 'correlation' | 'signal' | 'insight_feed' | 'narrative';
+  ask_coach_query: string;
+}
+
+export interface RaceCountdown {
+  race_name?: string;
+  race_date: string;
+  days_remaining: number;
+  goal_time?: string;
+  goal_pace?: string;
+  predicted_time?: string;
+}
+
+export interface StravaStatusDetail {
+  connected: boolean;
+  last_sync?: string;
+  needs_reconnect: boolean;
+}
+
+// --- RSI Layer 1 Types ---
+
+export interface LastRunSegment {
+  type: string;
+  start_time_s: number;
+  end_time_s: number;
+  duration_s: number;
+  avg_pace_s_km?: number | null;
+}
+
+export interface LastRun {
+  activity_id: string;
+  name: string;
+  start_time: string;  // ISO datetime
+  distance_m?: number | null;
+  moving_time_s?: number | null;
+  average_hr?: number | null;
+  stream_status?: 'success' | 'pending' | 'fetching' | 'unavailable' | null;
+  effort_intensity?: number[] | null;  // Only when stream_status === 'success'
+  pace_stream?: number[] | null;  // LTTB-downsampled pace (s/km) per point
+  elevation_stream?: number[] | null;  // LTTB-downsampled altitude (m) per point
+  tier_used?: string | null;
+  confidence?: number | null;
+  segments?: LastRunSegment[] | null;
+  pace_per_km?: number | null;  // Derived from distance/time (s/km)
+  provider?: string | null;  // 'strava' | 'garmin' | 'manual'
+  device_name?: string | null;  // Garmin device name, e.g. 'forerunner965'
+  shape_sentence?: string | null;
+  athlete_title?: string | null;
+  resolved_title?: string | null;
+  heat_adjustment_pct?: number | null;
+}
+
+export interface HomeFinding {
+  text: string;
+  confidence_tier: string;
+  domain: string;
+  times_confirmed: number;
+}
+
+export type BriefingState = 'fresh' | 'stale' | 'missing' | 'refreshing' | 'consent_required';
+
 export interface HomeData {
   today: TodayWorkout;
   yesterday: YesterdayInsight;
   week: WeekProgress;
   hero_narrative?: string;  // ADR-033: Personalized hero sentence
   strava_connected: boolean;
+  garmin_connected: boolean;
   has_any_activities: boolean;
   total_activities: number;
   last_sync?: string;
   ingestion_state?: Record<string, any> | null;
   ingestion_paused?: boolean;
+  // ADR-17 Phase 2
+  coach_noticed?: CoachNoticed | null;
+  race_countdown?: RaceCountdown | null;
+  checkin_needed: boolean;
+  today_checkin?: {
+    readiness_label?: string | null;
+    sleep_label?: string | null;
+    soreness_label?: string | null;
+  } | null;
+  strava_status?: StravaStatusDetail | null;
+  coach_briefing?: {
+    coach_noticed?: string;
+    checkin_reaction?: string;
+    today_context?: string;
+    week_assessment?: string;
+    race_assessment?: string;
+    // Voice fields — "Give the Data a Voice"
+    morning_voice?: string;
+    workout_why?: string;
+  } | null;
+  // RSI Layer 1
+  last_run?: LastRun | null;
+  // Async briefing state machine — drives polling and pending UI
+  briefing_state?: BriefingState | null;
+  // Path A surfaces
+  finding?: HomeFinding | null;
+  has_correlations?: boolean;
 }
 
 // --- API Functions ---

@@ -8,7 +8,7 @@ Expected:
 - Injury constraint: first 2-3 weeks rebuild
 - Week themes: alternating T/MP with recovery
 - Specific workouts: "2x3mi @ T", not "threshold work"
-- Personal paces from VDOT 53
+- Personal paces from RPI 53
 - 70+ mpw peak weeks for elite experience
 """
 

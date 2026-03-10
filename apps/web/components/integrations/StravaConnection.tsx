@@ -48,18 +48,28 @@ export function StravaConnection() {
     }
   }, [syncStatus?.status, refetchStatus]);
 
-  // Timeout safeguard: if sync is "pending" for over 2 minutes, assume stale
-  // This is a backup in case Redis tracking fails
+  // Timeout safeguard: if sync is in an active state for over 2 minutes, assume stale.
+  // Uses setInterval so it fires even when syncStatus stays unchanged (stuck progress).
   useEffect(() => {
-    if (syncTaskId && syncStartTime && syncStatus?.status === 'pending') {
-      const elapsed = Date.now() - syncStartTime;
-      if (elapsed > 120000) {
-        // Task is likely stale
+    if (!syncTaskId || !syncStartTime) return;
+
+    const check = () => {
+      const isActive =
+        syncStatus?.status === 'pending' ||
+        syncStatus?.status === 'started' ||
+        syncStatus?.status === 'progress';
+
+      if (isActive && Date.now() - syncStartTime > 120_000) {
         setSyncTaskId(null);
         setSyncStartTime(null);
         refetchStatus();
       }
-    }
+    };
+
+    // Check immediately + every 10s
+    check();
+    const id = setInterval(check, 10_000);
+    return () => clearInterval(id);
   }, [syncTaskId, syncStartTime, syncStatus?.status, refetchStatus]);
 
   useEffect(() => {
@@ -81,7 +91,7 @@ export function StravaConnection() {
       // Strava OAuth can fail for external reasons (e.g., app capacity). Surface a clear message.
       if (reason === 'capacity') {
         setConnectError(
-          "Strava connect is temporarily unavailable (app capacity reached). Upload Garmin for now, or try again later."
+          "Strava connect is temporarily unavailable (app capacity reached). Upload via Garmin Connect for now, or try again later."
         );
       } else {
         setConnectError('Strava connection failed. Please try again.');
@@ -243,11 +253,7 @@ export function StravaConnection() {
                   </div>
                 </div>
               )}
-              {syncStatus.result && (
-                <div className="text-xs text-slate-400 mt-2">
-                  {JSON.stringify(syncStatus.result, null, 2)}
-                </div>
-              )}
+              {/* Result payload intentionally omitted — task endpoint returns status only */}
             </div>
           )}
 

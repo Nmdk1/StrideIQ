@@ -30,7 +30,7 @@ Build a **Constraint-Aware Planning Layer** that:
 1. **Respects detected patterns** (Sunday long runs, Thursday quality, Monday rest)
 2. **Protects constraints** (injury ramp, dual race coordination)
 3. **Alternates themes** (T-emphasis → MP-emphasis → Recovery)
-4. **Prescribes concretely** from personal VDOT/efficiency, not templates
+4. **Prescribes concretely** from personal RPI/efficiency, not templates
 
 ### Architecture Choice: Rule-Based vs ML
 
@@ -77,14 +77,14 @@ class WeekTheme(Enum):
 
 ### 2. WorkoutPrescriptionGenerator
 
-Generates specific workout structures with paces from personal VDOT.
+Generates specific workout structures with paces from personal RPI.
 
-**Pace Zones (from VDOT):**
+**Pace Zones (from RPI):**
 ```
-Easy:      VDOT - 30%
-Marathon:  VDOT race pace for marathon
-Threshold: VDOT - 12%
-Interval:  VDOT + 3%
+Easy:      RPI - 30%
+Marathon:  RPI race pace for marathon
+Threshold: RPI - 12%
+Interval:  RPI + 3%
 ```
 
 **Structure Templates by Experience:**
@@ -284,7 +284,7 @@ Total: 65 miles, 2 quality sessions, specific prescriptions
 
 ### Integration Tests
 - `test_full_plan_michael`: Generate for real data
-- `test_workout_paces_from_vdot`: Paces match personal VDOT
+- `test_workout_paces_from_rpi`: Paces match personal RPI
 - `test_volume_ramp_injury`: 16mpw → 70mpw in 7 weeks
 
 ---

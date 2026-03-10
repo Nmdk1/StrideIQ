@@ -22,10 +22,18 @@ class _DummyStripeConfig:
     def __init__(self):
         self.secret_key = "sk_test_dummy"
         self.webhook_secret = "whsec_dummy"
-        self.pro_monthly_price_id = "price_dummy"
         self.checkout_success_url = "http://localhost:3000/settings?success=1"
         self.checkout_cancel_url = "http://localhost:3000/settings?canceled=1"
         self.portal_return_url = "http://localhost:3000/settings"
+        # Price IDs required by build_price_to_tier.
+        # price_dummy maps through the legacy pro slot so the webhook test
+        # can verify that a subscription.updated event grants the correct tier.
+        self.price_guided_monthly_id = None
+        self.price_guided_annual_id = None
+        self.price_premium_monthly_id = None
+        self.price_premium_annual_id = None
+        self.price_legacy_pro_monthly_id = "price_dummy"
+        self.price_plan_onetime_id = None
 
 
 class _DummyEvent:
@@ -62,7 +70,7 @@ def test_checkout_and_portal_endpoints(monkeypatch):
     from services import stripe_service as ss
 
     monkeypatch.setattr(ss, "_get_stripe_config", lambda: _DummyStripeConfig())
-    monkeypatch.setattr(ss.StripeService, "create_checkout_session", lambda self, athlete: "https://stripe.test/checkout")
+    monkeypatch.setattr(ss.StripeService, "create_checkout_session", lambda self, athlete, billing_period="annual": "https://stripe.test/checkout")
     monkeypatch.setattr(ss.StripeService, "create_portal_session", lambda self, athlete: "https://stripe.test/portal")
     monkeypatch.setattr(ss.StripeService, "best_effort_sync_customer_subscription", lambda self, db, athlete: None)
 
@@ -93,7 +101,7 @@ def test_checkout_and_portal_endpoints(monkeypatch):
 
 
 def test_stripe_webhook_requires_signature_header():
-    resp = client.post("/v1/billing/webhooks/stripe", data=b"{}")
+    resp = client.post("/v1/billing/webhooks/stripe", content=b"{}")
     assert resp.status_code == 400
 
 
@@ -124,19 +132,19 @@ def test_webhook_idempotency_and_entitlement_update(monkeypatch):
     monkeypatch.setattr(ss.StripeService, "construct_event", _construct)
 
     # First delivery processes
-    resp = client.post("/v1/billing/webhooks/stripe", data=b"{}", headers={"Stripe-Signature": "sig"})
+    resp = client.post("/v1/billing/webhooks/stripe", content=b"{}", headers={"Stripe-Signature": "sig"})
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
 
     # Second delivery is idempotent
-    resp2 = client.post("/v1/billing/webhooks/stripe", data=b"{}", headers={"Stripe-Signature": "sig"})
+    resp2 = client.post("/v1/billing/webhooks/stripe", content=b"{}", headers={"Stripe-Signature": "sig"})
     assert resp2.status_code == 200
 
     db = SessionLocal()
     try:
         updated = db.query(Athlete).filter(Athlete.email.like("stripe_evt_%@example.com")).first()
         assert updated is not None
-        assert updated.subscription_tier == "pro"
+        assert updated.subscription_tier == "premium"
 
         ev_count = db.query(StripeEvent).filter(StripeEvent.event_id == "evt_1").count()
         assert ev_count == 1

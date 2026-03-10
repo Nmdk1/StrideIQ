@@ -14,7 +14,7 @@ import json
 
 from core.database import get_db
 from core.auth import get_current_athlete
-from models import Athlete
+from models import Athlete, CoachChat
 from services.ai_coach import AICoach
 
 router = APIRouter(prefix="/v1/coach", tags=["AI Coach"])
@@ -104,46 +104,69 @@ async def chat_with_coach_stream(
     - Deliver the final answer in chunks so UI can render progressively.
     """
 
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
+    COACH_STREAM_TIMEOUT_S = 120  # hard ceiling for LLM + tool calls
+
     coach = AICoach(db)
 
     async def _gen() -> AsyncIterator[bytes]:
-        # Start the work in the background so we can emit heartbeats meanwhile.
-        task = asyncio.create_task(
-            coach.chat(athlete_id=athlete.id, message=request.message, include_context=request.include_context)
-        )
+        try:
+            task = asyncio.create_task(
+                coach.chat(athlete_id=athlete.id, message=request.message, include_context=request.include_context)
+            )
 
-        # Initial event.
-        yield b"event: meta\ndata: " + json.dumps({"type": "meta"}).encode("utf-8") + b"\n\n"
+            yield b"event: meta\ndata: " + json.dumps({"type": "meta"}).encode("utf-8") + b"\n\n"
 
-        # Heartbeat loop until completion or timeout.
-        while True:
-            done, _pending = await asyncio.wait({task}, timeout=2.0)
-            if done:
-                break
-            yield b"event: heartbeat\ndata: " + json.dumps({"type": "heartbeat"}).encode("utf-8") + b"\n\n"
+            elapsed = 0.0
+            while True:
+                done, _pending = await asyncio.wait({task}, timeout=2.0)
+                if done:
+                    break
+                elapsed += 2.0
+                if elapsed >= COACH_STREAM_TIMEOUT_S:
+                    task.cancel()
+                    _log.warning("Coach stream timed out after %ss for athlete %s", COACH_STREAM_TIMEOUT_S, athlete.id)
+                    yield b"event: delta\ndata: " + json.dumps({
+                        "type": "delta",
+                        "delta": "\n\nSorry — thinking took too long. Please try again or simplify your question.",
+                    }).encode("utf-8") + b"\n\n"
+                    yield b"event: done\ndata: " + json.dumps({"type": "done", "timed_out": True}).encode("utf-8") + b"\n\n"
+                    return
+                yield b"event: heartbeat\ndata: " + json.dumps({"type": "heartbeat"}).encode("utf-8") + b"\n\n"
 
-        result = await task
-        text = (result.get("response") or "").strip()
-        timed_out = bool(result.get("timed_out", False))
+            result = await task
+            text = (result.get("response") or "").strip()
+            timed_out = bool(result.get("timed_out", False))
 
-        # Stream the final text in chunks (best-effort "token-like" UX).
-        chunk_size = 220
-        for i in range(0, len(text), chunk_size):
-            delta = text[i : i + chunk_size]
-            yield b"event: delta\ndata: " + json.dumps({"type": "delta", "delta": delta}).encode("utf-8") + b"\n\n"
-            await asyncio.sleep(0)  # let the event loop flush
+            chunk_size = 220
+            for i in range(0, len(text), chunk_size):
+                delta = text[i : i + chunk_size]
+                yield b"event: delta\ndata: " + json.dumps({"type": "delta", "delta": delta}).encode("utf-8") + b"\n\n"
+                await asyncio.sleep(0)
 
-        yield b"event: done\ndata: " + json.dumps(
-            {
-                "type": "done",
-                "timed_out": timed_out,
-                "thread_id": result.get("thread_id"),
-                "history_thin": bool(result.get("history_thin", False)),
-                "used_baseline": bool(result.get("used_baseline", False)),
-                "baseline_needed": bool(result.get("baseline_needed", False)),
-                "rebuild_plan_prompt": bool(result.get("rebuild_plan_prompt", False)),
-            }
-        ).encode("utf-8") + b"\n\n"
+            yield b"event: done\ndata: " + json.dumps(
+                {
+                    "type": "done",
+                    "timed_out": timed_out,
+                    "thread_id": result.get("thread_id"),
+                    "history_thin": bool(result.get("history_thin", False)),
+                    "used_baseline": bool(result.get("used_baseline", False)),
+                    "baseline_needed": bool(result.get("baseline_needed", False)),
+                    "rebuild_plan_prompt": bool(result.get("rebuild_plan_prompt", False)),
+                }
+            ).encode("utf-8") + b"\n\n"
+
+        except asyncio.CancelledError:
+            yield b"event: done\ndata: " + json.dumps({"type": "done", "timed_out": True}).encode("utf-8") + b"\n\n"
+        except Exception as exc:
+            _log.exception("Coach stream generator crashed: %s", exc)
+            yield b"event: error\ndata: " + json.dumps({
+                "type": "error",
+                "error": "An unexpected error occurred. Please try again.",
+            }).encode("utf-8") + b"\n\n"
+            yield b"event: done\ndata: " + json.dumps({"type": "done", "timed_out": True}).encode("utf-8") + b"\n\n"
 
     return StreamingResponse(
         _gen(),
@@ -163,12 +186,17 @@ async def new_conversation(
     db: Session = Depends(get_db),
 ):
     """
-    Clear the stored coach thread for the athlete.
+    Start a new coach conversation.
 
-    Next chat message will create a new conversation thread.
+    Marks existing open chat sessions as inactive.
+    Next chat message will create a new conversation.
     """
-    athlete.coach_thread_id = None
-    db.add(athlete)
+    # Mark all active open sessions as inactive
+    db.query(CoachChat).filter(
+        CoachChat.athlete_id == athlete.id,
+        CoachChat.context_type == "open",
+        CoachChat.is_active == True,
+    ).update({"is_active": False})
     db.commit()
     return NewConversationResponse(ok=True)
 
@@ -196,7 +224,9 @@ async def get_suggested_questions(
     db: Session = Depends(get_db),
 ):
     """
-    Get suggested questions based on current athlete state.
+    Get structured suggested questions based on current athlete state.
+    
+    Returns list of {title, description, prompt} objects with real data.
     """
     coach = AICoach(db)
     suggestions = coach.get_dynamic_suggestions(athlete.id)

@@ -8,10 +8,10 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { StravaConnection } from '@/components/integrations/StravaConnection';
-import { GarminFileImport } from '@/components/integrations/GarminFileImport';
+import { GarminConnection } from '@/components/integrations/GarminConnection';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -19,25 +19,86 @@ import { API_CONFIG } from '@/lib/api/config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight } from 'lucide-react';
+import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight, BrainCircuit, ChevronUp, Sparkles } from 'lucide-react';
+import { RuntoonPhotoUpload } from '@/components/settings/RuntoonPhotoUpload';
 import { authService } from '@/lib/api/services/auth';
+import { useConsent } from '@/lib/context/ConsentContext';
 
-export default function SettingsPage() {
+// Map legacy/raw tier values to canonical 3-tier model.
+// Trial users have subscription_tier='free' with has_active_subscription=true;
+// we treat them as 'free' so the upgrade panel still shows.
+type CanonicalTier = 'free' | 'guided' | 'premium';
+function canonicalizeTier(raw: string, hasActiveSub: boolean): CanonicalTier {
+  const t = (raw || '').toLowerCase();
+  if (t === 'guided' && hasActiveSub) return 'guided';
+  if (['premium', 'pro', 'elite', 'subscription'].includes(t)) return 'premium';
+  return 'free';
+}
+
+const TIER_LABELS: Record<CanonicalTier, string> = {
+  free: 'Free',
+  guided: 'Guided',
+  premium: 'Premium',
+};
+
+const TIER_PRICES = {
+  guided:  { monthly: '$15/mo', annual: '$150/yr', savingsNote: 'Save $30/yr on annual' },
+  premium: { monthly: '$25/mo', annual: '$250/yr', savingsNote: 'Save $50/yr on annual' },
+};
+
+function SettingsPageContent() {
   const { user } = useAuth();
   const { units, setUnits } = useUnits();
+  const { aiConsent, loading: consentLoading, grantConsent, revokeConsent } = useConsent();
+  const membershipRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [billingLoading, setBillingLoading] = useState<'checkout' | 'portal' | 'trial' | null>(null);
+  const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const [billingLoading, setBillingLoading] = useState<string | null>(null);
   const [paceProfileStatus, setPaceProfileStatus] = useState<'loading' | 'computed' | 'missing' | 'error'>('loading');
   const [paceProfile, setPaceProfile] = useState<any | null>(null);
 
-  // Phase 6: paid access can come from Stripe OR an active trial.
+  // Upgrade panel state — pre-seeded from ?upgrade= and ?period= URL params (e.g. from Pricing page CTA).
+  // Uses window.location.search instead of useSearchParams to avoid Next.js Suspense boundary requirement.
+  const [urlUpgradeTier, setUrlUpgradeTier] = useState<'guided' | 'premium' | null>(null);
+  const [upgradePeriod, setUpgradePeriod] = useState<'monthly' | 'annual'>('annual');
+  const [upgradePanel, setUpgradePanel] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const tier = params.get('upgrade') as 'guided' | 'premium' | null;
+    const period = params.get('period') as 'monthly' | 'annual' | null;
+    if (tier === 'guided' || tier === 'premium') {
+      setUrlUpgradeTier(tier);
+      setUpgradePanel(true);
+    }
+    if (period === 'monthly') setUpgradePeriod('monthly');
+  }, []);
+
+  // Canonical tier derived from user data.
   const rawTier = (user?.subscription_tier || 'free').toLowerCase();
-  const hasPaidAccess = !!user?.has_active_subscription || rawTier !== 'free';
-  const displayTier = hasPaidAccess ? 'pro' : 'free';
+  // has_active_subscription=true can also be set during a free trial — only consider
+  // it in combination with a non-free subscription_tier to avoid promoting trial
+  // users to 'premium' tier incorrectly.
+  const hasActiveSub = !!user?.has_active_subscription && rawTier !== 'free';
+  const canonicalTier = canonicalizeTier(rawTier, hasActiveSub);
+  const displayTier = TIER_LABELS[canonicalTier];
+
+  // Trial state
   const trialUsed = !!user?.trial_started_at;
   const trialEndsAt = user?.trial_ends_at ? new Date(user.trial_ends_at) : null;
   const trialActive = !!trialEndsAt && trialEndsAt.getTime() > Date.now();
+
+  // Scroll membership card into view when opened via Pricing page deep link.
+  useEffect(() => {
+    if (urlUpgradeTier && membershipRef.current) {
+      setTimeout(() => {
+        membershipRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 400);
+    }
+  }, [urlUpgradeTier]);
 
   useEffect(() => {
     let mounted = true;
@@ -92,6 +153,29 @@ export default function SettingsPage() {
     }
   };
 
+  const handleConsentToggle = async (enable: boolean) => {
+    if (!enable) {
+      setShowRevokeConfirm(true);
+      return;
+    }
+    setConsentSaving(true);
+    try {
+      await grantConsent();
+    } finally {
+      setConsentSaving(false);
+    }
+  };
+
+  const handleRevokeConfirmed = async () => {
+    setShowRevokeConfirm(false);
+    setConsentSaving(true);
+    try {
+      await revokeConsent();
+    } finally {
+      setConsentSaving(false);
+    }
+  };
+
   const handleDeleteAccount = async () => {
     const token = localStorage.getItem('auth_token');
     try {
@@ -109,13 +193,15 @@ export default function SettingsPage() {
     }
   };
 
-  const handleUpgrade = async () => {
-    setBillingLoading('checkout');
+  const handleUpgrade = async (tier: 'guided' | 'premium', period: 'monthly' | 'annual') => {
+    const key = `checkout_${tier}_${period}`;
+    setBillingLoading(key);
     try {
       const token = localStorage.getItem('auth_token');
       const resp = await fetch(`${API_CONFIG.baseURL}/v1/billing/checkout`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier, billing_period: period }),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || !data?.url) return;
@@ -190,7 +276,7 @@ export default function SettingsPage() {
               <CardContent className="space-y-4">
                 <StravaConnection />
 
-                <GarminFileImport />
+                <GarminConnection />
               </CardContent>
             </Card>
 
@@ -231,42 +317,48 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
-            {/* Subscription */}
-            <Card className="bg-slate-800 border-slate-700">
+            {/* Membership */}
+            <Card ref={membershipRef} className={`bg-slate-800 border-slate-700 ${urlUpgradeTier ? 'ring-1 ring-orange-500/50' : ''}`}>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-purple-500" />
                   Membership
                 </CardTitle>
-                <CardDescription>Free vs Pro</CardDescription>
+                <CardDescription>Your current plan and upgrade options</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+
+                {/* Current tier row */}
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <div className="font-medium flex items-center gap-2">
-                        {displayTier.toUpperCase()} Plan
-                        <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Active</Badge>
-                      </div>
-                      <p className="text-sm text-slate-400">
-                        {trialActive ? (
-                          <>
-                            Trial ends{' '}
-                            <span className="text-slate-200">
-                              {trialEndsAt?.toLocaleDateString()}
-                            </span>
-                            . Upgrade anytime to keep Pro.
-                          </>
-                        ) : (
-                          <>Pro unlocks the full planning and intelligence stack.</>
-                        )}
-                      </p>
+                  <div>
+                    <div className="font-medium flex items-center gap-2">
+                      {displayTier} Plan
+                      <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Active</Badge>
                     </div>
+                    <p className="text-sm text-slate-400 mt-0.5">
+                      {canonicalTier === 'free' && !trialActive && 'Basic tools and plan previews. Upgrade for coaching that adapts.'}
+                      {canonicalTier === 'free' && trialActive && (
+                        <>Trial ends <span className="text-slate-200">{trialEndsAt?.toLocaleDateString()}</span>. Upgrade to keep full access.</>
+                      )}
+                      {canonicalTier === 'guided' && 'Daily adaptation, readiness score, and all 7 intelligence rules.'}
+                      {canonicalTier === 'premium' && 'Full coaching stack — narratives, advisory mode, conversational AI.'}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!hasPaidAccess ? (
+                  <div className="flex items-center gap-2 shrink-0">
+                    {canonicalTier === 'premium' ? (
+                      <Button
+                        className="bg-slate-700 hover:bg-slate-600"
+                        onClick={user?.stripe_customer_id ? handleManageSubscription : () => handleUpgrade('premium', upgradePeriod)}
+                        disabled={billingLoading !== null}
+                        title={!user?.stripe_customer_id ? 'No billing profile yet — start Premium billing to enable portal' : undefined}
+                      >
+                        {billingLoading === 'portal' ? <LoadingSpinner size="sm" /> : (
+                          <>{user?.stripe_customer_id ? 'Manage subscription' : 'Start Premium billing'} <ArrowUpRight className="w-4 h-4 ml-1" /></>
+                        )}
+                      </Button>
+                    ) : (
                       <>
-                        {!trialUsed ? (
+                        {canonicalTier === 'free' && !trialUsed && (
                           <Button
                             className="bg-slate-700 hover:bg-slate-600"
                             onClick={handleStartTrial}
@@ -275,31 +367,127 @@ export default function SettingsPage() {
                           >
                             {billingLoading === 'trial' ? <LoadingSpinner size="sm" /> : 'Start 7-day trial'}
                           </Button>
-                        ) : null}
-                        <Button className="bg-orange-600 hover:bg-orange-500" onClick={handleUpgrade} disabled={billingLoading !== null}>
-                          {billingLoading === 'checkout' ? <LoadingSpinner size="sm" /> : (
-                            <>
-                              Upgrade to Pro <ArrowUpRight className="w-4 h-4 ml-1" />
-                            </>
+                        )}
+                        <Button
+                          variant="ghost"
+                          className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10"
+                          onClick={() => setUpgradePanel(p => !p)}
+                          disabled={billingLoading !== null}
+                        >
+                          {upgradePanel ? (
+                            <><ChevronUp className="w-4 h-4 mr-1" /> Hide upgrade</>
+                          ) : (
+                            <><ArrowUpRight className="w-4 h-4 mr-1" /> Upgrade</>
                           )}
                         </Button>
                       </>
-                    ) : (
-                      <Button
-                        className="bg-slate-700 hover:bg-slate-600"
-                        onClick={user?.stripe_customer_id ? handleManageSubscription : handleUpgrade}
-                        disabled={billingLoading !== null}
-                        title={!user?.stripe_customer_id ? 'No billing profile linked yet — start Pro billing to enable portal' : undefined}
-                      >
-                        {billingLoading === 'portal' ? <LoadingSpinner size="sm" /> : (
-                          <>
-                            {user?.stripe_customer_id ? 'Manage subscription' : 'Start Pro billing'} <ArrowUpRight className="w-4 h-4 ml-1" />
-                          </>
-                        )}
-                      </Button>
                     )}
                   </div>
                 </div>
+
+                {/* Upgrade panel — visible for free/guided users when panel is open */}
+                {upgradePanel && canonicalTier !== 'premium' && (
+                  <div className="border border-slate-700 rounded-xl p-4 space-y-4 bg-slate-900/40">
+
+                    {/* Period toggle */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-slate-400">Billing period</span>
+                      <div className="inline-flex items-center bg-slate-800 border border-slate-700 rounded-lg p-0.5 gap-0.5">
+                        <button
+                          onClick={() => setUpgradePeriod('monthly')}
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                            upgradePeriod === 'monthly' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Monthly
+                        </button>
+                        <button
+                          onClick={() => setUpgradePeriod('annual')}
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                            upgradePeriod === 'annual' ? 'bg-orange-600 text-white' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Annual
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tier buttons */}
+                    <div className={`grid gap-3 ${canonicalTier === 'free' ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
+
+                      {/* Guided — show for free users only */}
+                      {canonicalTier === 'free' && (
+                        <div className="border border-orange-500/40 rounded-xl p-4 bg-orange-500/5">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-semibold text-orange-300">Guided</span>
+                            <span className="text-sm font-bold">{TIER_PRICES.guided[upgradePeriod]}</span>
+                          </div>
+                          <p className="text-xs text-slate-400 mb-3">{TIER_PRICES.guided.savingsNote}</p>
+                          <ul className="text-xs text-slate-400 space-y-1 mb-4">
+                            <li>✓ Daily adaptation engine</li>
+                            <li>✓ Readiness score at 5 AM</li>
+                            <li>✓ All 7 intelligence rules</li>
+                            <li>✓ Continuous plan generation</li>
+                          </ul>
+                          <Button
+                            className="w-full bg-orange-600 hover:bg-orange-500 text-white"
+                            onClick={() => handleUpgrade('guided', upgradePeriod)}
+                            disabled={billingLoading !== null}
+                          >
+                            {billingLoading === `checkout_guided_${upgradePeriod}` ? (
+                              <LoadingSpinner size="sm" />
+                            ) : (
+                              <>Start Guided <ArrowUpRight className="w-4 h-4 ml-1" /></>
+                            )}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Premium */}
+                      <div className="border border-purple-500/40 rounded-xl p-4 bg-purple-500/5">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-semibold text-purple-300">Premium</span>
+                          <span className="text-sm font-bold">{TIER_PRICES.premium[upgradePeriod]}</span>
+                        </div>
+                        <p className="text-xs text-slate-400 mb-3">{TIER_PRICES.premium.savingsNote}</p>
+                        <ul className="text-xs text-slate-400 space-y-1 mb-4">
+                          {canonicalTier === 'free' ? (
+                            <>
+                              <li>✓ Everything in Guided</li>
+                              <li>✓ Contextual workout narratives</li>
+                              <li>✓ AI advisory mode</li>
+                              <li>✓ Conversational AI coach</li>
+                            </>
+                          ) : (
+                            <>
+                              <li>✓ Contextual workout narratives</li>
+                              <li>✓ AI advisory mode — coach proposes, you approve</li>
+                              <li>✓ Full conversational AI coach</li>
+                              <li>✓ Multi-race planning</li>
+                            </>
+                          )}
+                        </ul>
+                        <Button
+                          className="w-full bg-purple-700 hover:bg-purple-600 text-white"
+                          onClick={() => handleUpgrade('premium', upgradePeriod)}
+                          disabled={billingLoading !== null}
+                        >
+                          {billingLoading === `checkout_premium_${upgradePeriod}` ? (
+                            <LoadingSpinner size="sm" />
+                          ) : (
+                            <>{canonicalTier === 'guided' ? 'Upgrade to Premium' : 'Start Premium'} <ArrowUpRight className="w-4 h-4 ml-1" /></>
+                          )}
+                        </Button>
+                      </div>
+
+                    </div>
+
+                    <p className="text-xs text-slate-500 text-center">
+                      Cancel anytime via the customer portal. Annual plans billed upfront.
+                    </p>
+                  </div>
+                )}
+
               </CardContent>
             </Card>
 
@@ -361,6 +549,57 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* AI Processing */}
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BrainCircuit className="w-5 h-5 text-orange-500" />
+                  AI Processing
+                </CardTitle>
+                <CardDescription>Control how StrideIQ uses AI to personalise your coaching</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between p-4 bg-slate-700/30 rounded-lg border border-slate-600">
+                  <div className="flex-1 min-w-0 pr-4">
+                    <p className="font-medium">Allow AI-powered insights</p>
+                    <p className="text-sm text-slate-400 mt-0.5">
+                      {aiConsent
+                        ? 'AI coaching is active — briefings, narratives, and progress analysis are enabled.'
+                        : 'AI coaching is off. Charts, metrics, and training data still work fully.'}
+                    </p>
+                  </div>
+                  <div className="flex-shrink-0">
+                    {consentLoading ? (
+                      <div className="w-11 h-6 bg-slate-600 rounded-full animate-pulse" />
+                    ) : (
+                      <button
+                        role="switch"
+                        aria-checked={aiConsent === true}
+                        onClick={() => handleConsentToggle(!(aiConsent === true))}
+                        disabled={consentSaving}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:opacity-50 ${
+                          aiConsent ? 'bg-orange-600' : 'bg-slate-600'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                            aiConsent ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-3">
+                  Your data is sent to Google Gemini and Anthropic Claude for AI processing.
+                  Neither provider trains models on your data.{' '}
+                  <a href="/privacy#ai-powered-insights" className="text-orange-400 hover:text-orange-300 underline">
+                    Privacy policy
+                  </a>
+                </p>
+              </CardContent>
+            </Card>
+
             {/* Data Management */}
             <Card className="bg-slate-800 border-slate-700">
               <CardHeader>
@@ -392,6 +631,18 @@ export default function SettingsPage() {
                   </Button>
                 </div>
 
+                {/* Runtoon Photos */}
+                <div id="runtoon" className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-4 h-4 text-orange-400" />
+                    <p className="font-medium text-slate-200">Runtoon Photos</p>
+                  </div>
+                  <p className="text-sm text-slate-400 mb-4">
+                    Upload 3+ reference photos so StrideIQ can generate a personalized caricature after each run.
+                  </p>
+                  <RuntoonPhotoUpload />
+                </div>
+
                 {/* Delete Account */}
                 <div className="flex items-center justify-between p-4 bg-red-900/20 rounded-lg border border-red-900/50">
                   <div>
@@ -413,6 +664,46 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Revoke AI Consent Confirmation Modal */}
+          {showRevokeConfirm && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+              <Card className="bg-slate-800 border-slate-700 max-w-md mx-4">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-orange-400">
+                    <BrainCircuit className="w-5 h-5" />
+                    Disable AI Insights?
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-slate-300 mb-2">This will immediately stop all AI processing of your data. The following will stop working:</p>
+                  <ul className="text-sm text-slate-400 list-disc list-inside mb-6 space-y-1">
+                    <li>Morning coach briefing</li>
+                    <li>Activity narratives and moments</li>
+                    <li>Progress headlines and coaching cards</li>
+                    <li>Coach chat</li>
+                  </ul>
+                  <p className="text-sm text-slate-500 mb-6">Charts, metrics, calendar, splits, and training load are unaffected. You can re-enable AI at any time.</p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleRevokeConfirmed}
+                      className="flex-1 bg-orange-600 hover:bg-orange-700"
+                    >
+                      Disable AI Insights
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowRevokeConfirm(false)}
+                      className="border-slate-600 hover:bg-slate-700"
+                    >
+                      <X className="w-4 h-4 mr-1.5" />
+                      Cancel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Delete Confirmation Modal */}
           {showDeleteConfirm && (
@@ -452,5 +743,13 @@ export default function SettingsPage() {
         </div>
       </div>
     </ProtectedRoute>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageContent />
+    </Suspense>
   );
 }

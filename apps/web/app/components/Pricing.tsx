@@ -1,99 +1,221 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
+import { useAuth } from '@/lib/hooks/useAuth';
+
+// ─── Tier data ──────────────────────────────────────────────────────────────
+
+const FREE_FEATURES = [
+  'Training Pace Calculator (RPI)',
+  'WMA Age-Grading',
+  'Heat-Adjusted Pace',
+  'Race Equivalency Tool',
+  'Plan structure preview (phases, weeks, distances)',
+];
+
+const ONETIME_FEATURES = [
+  'Everything in Free',
+  'Full race plan — all 4 distances',
+  'Calculated training paces (Easy / Threshold / Interval / MP)',
+  'Inverted-periodisation structure',
+  'Single plan, no time limit',
+];
+
+const GUIDED_FEATURES = [
+  'Everything in One-Time',
+  'Daily adaptation engine — plan adjusts to what you actually do',
+  'Readiness score at 5 AM every day',
+  'All 7 intelligence rules (load, efficiency, self-regulation)',
+  'Intelligence bank — N=1 personalised insights',
+  'Continuous plan generation for every race cycle',
+];
+
+const PREMIUM_FEATURES = [
+  'Everything in Guided',
+  'Contextual workout narratives (Phase 3B — accruing)',
+  'AI advisory mode — coach proposes, you approve',
+  'Full conversational AI coach access',
+  'Multi-race planning with tune-up race integration',
+  'Intelligence bank dashboard',
+];
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Pricing() {
+  const [period, setPeriod] = useState<'monthly' | 'annual'>('annual');
+  const { isAuthenticated } = useAuth();
+
+  const guidedLabel  = period === 'annual' ? '$150/yr' : '$15/mo';
+  const premiumLabel = period === 'annual' ? '$250/yr' : '$25/mo';
+  const guidedSub    = period === 'annual' ? 'Billed annually — save $30' : 'Billed monthly';
+  const premiumSub   = period === 'annual' ? 'Billed annually — save $50' : 'Billed monthly';
+
+  // Authenticated users go straight to Settings upgrade panel.
+  // New users go to /register; they upgrade in Settings after onboarding.
+  const guidedHref  = isAuthenticated
+    ? `/settings?upgrade=guided&period=${period}`
+    : `/register?tier=guided&period=${period}`;
+  const premiumHref = isAuthenticated
+    ? `/settings?upgrade=premium&period=${period}`
+    : `/register?tier=premium&period=${period}`;
+
   return (
     <section id="pricing" className="py-20 bg-slate-800 scroll-mt-16">
       <div className="max-w-7xl mx-auto px-6">
-        <div className="text-center mb-12">
+
+        {/* Header */}
+        <div className="text-center mb-10">
           <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            Transparent Pricing
+            Coaching that fits your commitment
           </h2>
-          <p className="text-xl text-slate-300 max-w-3xl mx-auto">
-            Start free. Upgrade to Elite when you&apos;re ready for more.
+          <p className="text-xl text-slate-300 max-w-2xl mx-auto">
+            Start free. Unlock paces for $5. Subscribe when you want a coach that evolves with you.
           </p>
         </div>
 
-        {/* Pricing Grid Container */}
-        <div className="w-full">
-          {/* Power couple: centered Free vs Elite */}
-          <div className="max-w-4xl mx-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
-          {/* Free Tier */}
-          <div className="bg-slate-900 rounded-lg p-6 border border-slate-700/50">
-            <h3 className="text-xl font-bold mb-2">Free</h3>
-            <div className="text-3xl font-bold mb-4">$0</div>
-            <ul className="space-y-2 text-sm text-slate-400 mb-6">
-              <li>✓ Training Pace Calculator</li>
-              <li>✓ WMA Age-Grading</li>
-              <li>✓ Heat-Adjusted Pace</li>
-              <li>✓ Basic insights</li>
+        {/* Monthly / Annual toggle */}
+        <div className="flex justify-center mb-10">
+          <div className="inline-flex items-center bg-slate-900 border border-slate-700 rounded-xl p-1 gap-1">
+            <button
+              onClick={() => setPeriod('monthly')}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+                period === 'monthly'
+                  ? 'bg-slate-700 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setPeriod('annual')}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                period === 'annual'
+                  ? 'bg-orange-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Annual
+              {period !== 'annual' && (
+                <span className="text-xs bg-emerald-600/30 text-emerald-400 px-1.5 py-0.5 rounded">
+                  Save up to $50
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* 4-tier grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+
+          {/* ── Free ── */}
+          <div className="bg-slate-900 rounded-2xl p-6 border border-slate-700/50 flex flex-col">
+            <div className="mb-5">
+              <h3 className="text-lg font-bold mb-1">Free</h3>
+              <div className="text-3xl font-bold">$0</div>
+              <p className="text-xs text-slate-500 mt-1">Always free</p>
+            </div>
+            <ul className="space-y-2 text-sm text-slate-400 flex-1 mb-6">
+              {FREE_FEATURES.map(f => (
+                <li key={f} className="flex items-start gap-2">
+                  <span className="text-slate-600 mt-0.5 shrink-0">✓</span>
+                  {f}
+                </li>
+              ))}
             </ul>
-            <Link href="/register" className="block w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition-colors text-sm text-center">
-              Get Started
+            <Link
+              href="/register"
+              className="block w-full text-center bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg transition-colors text-sm font-medium"
+            >
+              Get started free
             </Link>
           </div>
 
-          {/* Elite Subscription (single paid tier) */}
-          <div className="bg-gradient-to-br from-orange-900/40 to-slate-900 rounded-lg p-6 border-2 border-orange-500 relative md:shadow-xl md:shadow-orange-500/20">
-            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-orange-500 text-white px-3 py-1 text-xs font-semibold rounded-full whitespace-nowrap">
-              ELITE
+          {/* ── One-Time ($5) ── */}
+          <div className="bg-sky-950/50 rounded-2xl p-6 border border-sky-700/40 flex flex-col">
+            <div className="mb-5">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-lg font-bold">Race Plan Unlock</h3>
+                <span className="text-xs bg-sky-600/30 text-sky-400 px-2 py-0.5 rounded-full font-medium">One-time</span>
+              </div>
+              <div className="text-3xl font-bold">$5</div>
+              <p className="text-xs text-sky-400/70 mt-1">Per race plan, no subscription</p>
             </div>
-            <h3 className="text-xl font-bold mb-2 mt-2">Elite</h3>
-            <div className="text-3xl font-bold mb-1">
-              $149<span className="text-base">/year</span>
-            </div>
-            <p className="text-sm text-slate-400 mb-3">or $14.99/month</p>
-            <p className="text-xs text-orange-300 mb-4">Full product access • Adaptive insights</p>
-            <ul className="space-y-2 text-sm text-slate-300 mb-6">
-              <li>✓ Everything in Free</li>
-              <li>✓ <strong>Adaptive updates</strong></li>
-              <li>✓ <strong>Efficiency analysis</strong></li>
-              <li>✓ <strong>Performance diagnostics</strong></li>
-              <li>✓ Strava integration</li>
-              <li>✓ <strong>AI-powered</strong></li>
+            <ul className="space-y-2 text-sm text-slate-300 flex-1 mb-6">
+              {ONETIME_FEATURES.map(f => (
+                <li key={f} className="flex items-start gap-2">
+                  <span className="text-sky-500 mt-0.5 shrink-0">✓</span>
+                  {f}
+                </li>
+              ))}
             </ul>
-            <Link href="/register" className="block w-full bg-orange-600 hover:bg-orange-700 text-white py-2 rounded-lg transition-colors font-semibold text-sm shadow-lg shadow-orange-600/30 text-center">
-              Start Elite
+            <Link
+              href="/register"
+              className="block w-full text-center bg-sky-700 hover:bg-sky-600 text-white py-2.5 rounded-lg transition-colors text-sm font-medium"
+            >
+              Get a plan — $5
             </Link>
           </div>
-        </div>
-        </div>
+
+          {/* ── Guided (most popular) ── */}
+          <div className="relative bg-gradient-to-br from-orange-900/50 to-slate-900 rounded-2xl p-6 border-2 border-orange-500 flex flex-col shadow-xl shadow-orange-500/10">
+            <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-orange-500 text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-wide whitespace-nowrap">
+              Most Popular
+            </div>
+            <div className="mb-5 mt-2">
+              <h3 className="text-lg font-bold mb-1">Guided</h3>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold">{guidedLabel}</span>
+              </div>
+              <p className="text-xs text-orange-300/80 mt-1">{guidedSub}</p>
+            </div>
+            <ul className="space-y-2 text-sm text-slate-300 flex-1 mb-6">
+              {GUIDED_FEATURES.map(f => (
+                <li key={f} className="flex items-start gap-2">
+                  <span className="text-orange-400 mt-0.5 shrink-0">✓</span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href={guidedHref}
+              className="block w-full text-center bg-orange-600 hover:bg-orange-500 text-white py-2.5 rounded-lg transition-colors text-sm font-semibold shadow-md shadow-orange-600/30"
+            >
+              Start Guided — {guidedLabel}
+            </Link>
+          </div>
+
+          {/* ── Premium ── */}
+          <div className="bg-gradient-to-br from-purple-900/30 to-slate-900 rounded-2xl p-6 border border-purple-700/40 flex flex-col">
+            <div className="mb-5">
+              <h3 className="text-lg font-bold mb-1">Premium</h3>
+              <div className="text-3xl font-bold">{premiumLabel}</div>
+              <p className="text-xs text-purple-400/70 mt-1">{premiumSub}</p>
+            </div>
+            <ul className="space-y-2 text-sm text-slate-300 flex-1 mb-6">
+              {PREMIUM_FEATURES.map(f => (
+                <li key={f} className="flex items-start gap-2">
+                  <span className="text-purple-400 mt-0.5 shrink-0">✓</span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href={premiumHref}
+              className="block w-full text-center bg-purple-700 hover:bg-purple-600 text-white py-2.5 rounded-lg transition-colors text-sm font-medium"
+            >
+              Start Premium — {premiumLabel}
+            </Link>
+          </div>
+
         </div>
 
-        {/* Detailed Elite Section - Aligned with Pricing Grid */}
-        <div className="mt-8 w-full">
-          <div className="bg-gradient-to-r from-orange-900/30 to-slate-900 rounded-lg p-6 border border-orange-500/50">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4">
-              <div>
-                <h3 className="text-2xl font-bold mb-1">Why Elite?</h3>
-                <p className="text-sm text-slate-400">Elite-level guidance, accessible to everyone</p>
-              </div>
-              <a
-                href="#tools"
-                className="mt-4 md:mt-0 px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg transition-colors text-sm"
-              >
-                Try Training Calculators
-              </a>
-            </div>
-            <div className="grid md:grid-cols-2 gap-4 text-sm text-slate-300">
-              <div className="space-y-2">
-                <p>✓ <strong>Encyclopedic knowledge:</strong> Decades of proven principles</p>
-                <p>✓ <strong>Never sleeps:</strong> Continuous optimization</p>
-                <p>✓ <strong>Learns from YOU:</strong> Personal response curves</p>
-              </div>
-              <div className="space-y-2">
-                <p>✓ <strong>Always available:</strong> 24/7 analysis</p>
-                <p>✓ <strong>Accessible everywhere:</strong> NYC to rural Montana</p>
-                <p>✓ <strong>Affordable:</strong> $14.99/month vs. $50-$300 for coaches</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Footer note */}
+        <p className="text-center text-xs text-slate-500 mt-8">
+          No commitments on monthly plans. Annual plans billed upfront. Cancel anytime via the customer portal.
+        </p>
+
       </div>
     </section>
   );
 }
-

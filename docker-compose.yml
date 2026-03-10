@@ -59,8 +59,7 @@ services:
 
   worker:
     build:
-      context: ./apps/worker
-      dockerfile: Dockerfile
+      context: ./apps/api
     container_name: running_app_worker
     env_file:
       - .env
@@ -77,9 +76,8 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./apps/worker:/app
-      - ./apps/api:/api  # Mount API code so worker can import tasks
       - ./.uploads:/uploads
+    command: celery -A tasks worker --loglevel=info -B
 
   web:
     build:

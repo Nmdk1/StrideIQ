@@ -36,7 +36,7 @@ Since books are available on the web and Grok was able to read them, we can:
    - Other sources?
 
 2. **Start Extraction:**
-   - Begin with core principles (VDOT formula, periodization)
+   - Begin with core principles (RPI formula, periodization)
    - Use AI to extract from web-accessible content
    - Store in knowledge base
 

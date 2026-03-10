@@ -98,10 +98,10 @@ Implemented a complete principle-based plan generation system with flexible dura
 - Quality session allocation
 - Long run inclusion logic
 
-#### `synthesize_workout_from_principles(slot_type, phase, methodologies, vdot, week_num)`
+#### `synthesize_workout_from_principles(slot_type, phase, methodologies, rpi, week_num)`
 - Queries KB for phase-specific principles
 - Generates workout prescriptions
-- VDOT-based pace calculations
+- RPI-based pace calculations
 - Fallback workouts when principles not found
 
 #### `generate_principle_based_plan(...)`
@@ -131,7 +131,7 @@ Implemented a complete principle-based plan generation system with flexible dura
 **Parameters:**
 - `athlete_id` - Athlete identifier
 - `goal_distance` - Target race distance
-- `current_fitness` - VDOT, recent race times
+- `current_fitness` - RPI, recent race times
 - `diagnostic_signals` - Efficiency, recovery, durability
 - `athlete_profile` - Volume tolerance, speed background, injury history
 - `weeks_to_race` - 4-18 weeks (enables abbreviated builds)
@@ -158,7 +158,7 @@ Implemented a complete principle-based plan generation system with flexible dura
 ✅ Generate plans from 4-18 weeks  
 ✅ Adapt phase allocation to time available  
 ✅ Synthesize workouts from KB principles  
-✅ Apply VDOT-based pace prescriptions  
+✅ Apply RPI-based pace prescriptions  
 ✅ Validate plan safety and coherence  
 ✅ Deliver client-facing plans with neutral terminology  
 ✅ Track blending rationale internally  
@@ -215,7 +215,7 @@ Implemented a complete principle-based plan generation system with flexible dura
 - ✅ Validation catches unsafe configurations
 - ✅ No methodology leaks in client output
 - ✅ Blending rationale tracked internally
-- ✅ VDOT-based prescriptions working
+- ✅ RPI-based prescriptions working
 - ✅ Phase allocation adapts to time constraints
 
 ## Notes

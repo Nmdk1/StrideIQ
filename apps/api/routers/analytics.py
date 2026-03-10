@@ -49,6 +49,7 @@ def get_efficiency_trends_endpoint(
     cache_key_str = cache_key(
         "efficiency_trends",
         str(current_user.id),
+        ef_contract="speed_hr_v1",
         days=days,
         include_stability=include_stability,
         include_load_response=include_load_response,

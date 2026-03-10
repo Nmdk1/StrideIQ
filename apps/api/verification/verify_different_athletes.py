@@ -34,7 +34,7 @@ def create_mock_bank(
         peak_threshold_miles=8.0,
         peak_ctl=peak_weekly * 1.5,
         race_performances=[],
-        best_vdot=50.0,
+        best_rpi=50.0,
         best_race=None,
         current_weekly_miles=current_weekly,
         current_ctl=current_weekly * 1.2,

@@ -40,6 +40,7 @@ export function ComparisonBasket() {
                   <span className="max-w-[100px] truncate">
                     {activity.name || new Date(activity.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </span>
+
                   <button
                     onClick={() => removeFromSelection(activity.id)}
                     className="text-slate-400 hover:text-white ml-1"

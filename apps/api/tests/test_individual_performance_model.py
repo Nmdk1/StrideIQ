@@ -88,12 +88,12 @@ def sample_performance_markers():
     # Simulate improving fitness
     for i, day_offset in enumerate([30, 60, 90, 120, 150]):
         marker_date = base_date + timedelta(days=day_offset)
-        # VDOT improves over time
-        vdot = 48 + (i * 0.5)
+        # RPI improves over time
+        rpi = 48 + (i * 0.5)
         
         markers.append(PerformanceMarker(
             date=marker_date,
-            performance_value=vdot,
+            performance_value=rpi,
             source="race",
             weight=1.5
         ))
@@ -365,7 +365,7 @@ class TestRacePredictor:
     
     def test_prediction_returns_valid_time(self, mock_db):
         """Test that prediction returns a valid race time."""
-        with patch.object(RacePredictor, '_get_current_vdot', return_value=50.0):
+        with patch.object(RacePredictor, '_get_current_rpi', return_value=50.0):
             with patch.object(RacePredictor, '_get_current_ctl', return_value=60):
                 with patch.object(RacePredictor, '_project_race_day_fitness', return_value=(65, 50)):
                     with patch('services.race_predictor.get_or_calibrate_model') as mock_model:
@@ -399,8 +399,8 @@ class TestRacePredictor:
         mock_model.k2 = 2.0
         
         with patch('services.race_predictor.get_or_calibrate_model', return_value=mock_model):
-            with patch.object(RacePredictor, '_get_current_vdot', return_value=None):
-                with patch.object(RacePredictor, '_estimate_vdot_from_training', return_value=None):
+            with patch.object(RacePredictor, '_get_current_rpi', return_value=None):
+                with patch.object(RacePredictor, '_estimate_rpi_from_training', return_value=None):
                     predictor = RacePredictor(mock_db)
                     
                     prediction = predictor.predict(
@@ -461,7 +461,7 @@ class TestModelDrivenPlanGenerator:
                                     confidence_interval_seconds=180,
                                     confidence_interval_formatted="±3:00",
                                     prediction_confidence="moderate",
-                                    projected_vdot=50,
+                                    projected_rpi=50,
                                     projected_ctl=65,
                                     projected_tsb=15,
                                     factors=[],

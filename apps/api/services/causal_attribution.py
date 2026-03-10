@@ -35,6 +35,7 @@ from uuid import UUID
 from enum import Enum
 import statistics
 import math
+from scipy.stats import t as t_dist
 from decimal import Decimal
 
 from sqlalchemy import func, and_, text
@@ -330,77 +331,11 @@ def pearson_correlation(x: List[float], y: List[float]) -> Tuple[float, float]:
     
     t_stat = r * math.sqrt((n - 2) / (1 - r ** 2))
     
-    # Approximate p-value using t-distribution
-    # Using a simple approximation for the CDF
+    # Exact two-tailed p-value from t-distribution (scipy)
     df = n - 2
-    p_value = _t_to_pvalue(abs(t_stat), df)
+    p_value = float(2 * t_dist.sf(abs(t_stat), df))
     
     return r, p_value
-
-
-def _t_to_pvalue(t: float, df: int) -> float:
-    """
-    Approximate two-tailed p-value from t-statistic.
-    Uses a simple approximation that's reasonably accurate for df > 5.
-    """
-    # Approximation for t-distribution p-value
-    # More accurate than a simple formula, less complex than scipy
-    x = df / (df + t * t)
-    
-    # Beta function approximation
-    if x > 0.5:
-        # Use reflection
-        p = 1.0 - 0.5 * _beta_incomplete(df / 2, 0.5, 1 - x)
-    else:
-        p = 0.5 * _beta_incomplete(df / 2, 0.5, x)
-    
-    return 2 * min(p, 1 - p)  # Two-tailed
-
-
-def _beta_incomplete(a: float, b: float, x: float) -> float:
-    """
-    Incomplete beta function approximation.
-    """
-    if x < 0 or x > 1:
-        return 0.0
-    
-    # Simple continued fraction approximation
-    # Sufficient for our p-value needs
-    if x > (a + 1) / (a + b + 2):
-        return 1.0 - _beta_incomplete(b, a, 1 - x)
-    
-    # Continued fraction
-    result = 0.0
-    term = 1.0
-    
-    for n in range(1, 100):  # Max iterations
-        if n == 1:
-            num = 1.0
-        elif n % 2 == 0:
-            m = n // 2
-            num = m * (b - m) * x / ((a + 2 * m - 1) * (a + 2 * m))
-        else:
-            m = (n - 1) // 2
-            num = -((a + m) * (a + b + m) * x) / ((a + 2 * m) * (a + 2 * m + 1))
-        
-        term *= num
-        result += term
-        
-        if abs(term) < 1e-10:
-            break
-    
-    # Normalize
-    beta_factor = math.exp(
-        a * math.log(x) + b * math.log(1 - x) - 
-        math.log(a) - _log_beta(a, b)
-    )
-    
-    return beta_factor * (1 + result)
-
-
-def _log_beta(a: float, b: float) -> float:
-    """Log of beta function using gamma function."""
-    return math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
 
 
 def granger_causality_test(
@@ -512,18 +447,12 @@ def _calculate_rss(y: List[float], x_features: List[List[float]]) -> float:
     return rss
 
 
-def _f_to_pvalue(f: float, df1: int, df2: int) -> float:
-    """
-    Approximate p-value from F-statistic.
-    """
-    if f <= 0 or df1 <= 0 or df2 <= 0:
+def _f_to_pvalue(f_val: float, df1: int, df2: int) -> float:
+    """Exact p-value from F-statistic (scipy)."""
+    if f_val <= 0 or df1 <= 0 or df2 <= 0:
         return 1.0
-    
-    # Use beta function approximation
-    x = df2 / (df2 + df1 * f)
-    p = _beta_incomplete(df2 / 2, df1 / 2, x)
-    
-    return min(1.0, max(0.0, p))
+    from scipy.stats import f as f_dist
+    return float(f_dist.sf(f_val, df1, df2))
 
 
 # =============================================================================
@@ -709,7 +638,7 @@ class CausalAttributionEngine:
             pace_per_km = a.duration_s / (a.distance_m / 1000)
             
             if metric == "efficiency" and a.avg_hr and a.avg_hr > 0:
-                # Efficiency = pace / HR (lower is better)
+                # pace/HR ratio (directionally ambiguous — see OutputMetricMeta)
                 efficiency = pace_per_km / a.avg_hr
                 dates.append(a.activity_date)
                 values.append(efficiency)
@@ -775,7 +704,7 @@ class CausalAttributionEngine:
             if pos_dir == 0:
                 effect_direction = ImpactDirection.NEUTRAL
             elif (corr_r > 0 and pos_dir > 0) or (corr_r < 0 and pos_dir < 0):
-                # Positive input -> negative correlation with efficiency (lower = better)
+                # Positive input -> correlation aligns with positive_direction config
                 effect_direction = ImpactDirection.POSITIVE
             else:
                 effect_direction = ImpactDirection.NEGATIVE
@@ -1399,7 +1328,7 @@ class CausalAttributionEngine:
         for a in activities:
             if a.distance_m and a.duration_s and a.avg_hr and a.avg_hr > 0:
                 pace = a.duration_s / (a.distance_m / 1000)
-                efficiency = pace / a.avg_hr  # Lower is better
+                efficiency = pace / a.avg_hr  # pace/HR ratio (directionally ambiguous)
                 runs_with_efficiency.append({
                     "id": str(a.id),
                     "date": a.start_time.date(),

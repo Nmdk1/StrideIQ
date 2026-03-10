@@ -7,7 +7,11 @@ import os
 import json
 import logging
 from typing import Dict, List, Optional
-from openai import OpenAI
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
 from anthropic import Anthropic
 
 logger = logging.getLogger(__name__)
@@ -70,27 +74,27 @@ def _call_ai(prompt: str, model_preference: str = "claude") -> Optional[str]:
     return None
 
 
-def extract_vdot_formula(text: str) -> Optional[Dict]:
+def extract_rpi_formula(text: str) -> Optional[Dict]:
     """
-    Extract VDOT formula and pace tables from text.
+    Extract RPI formula and pace tables from text.
     
     Returns:
-        Dictionary with VDOT formula, pace tables, and training zones
+        Dictionary with RPI formula, pace tables, and training zones
     """
-    prompt = f"""Extract VDOT (Jack Daniels' Running Formula) information from this text.
+    prompt = f"""Extract RPI (Jack Daniels' Running Formula) information from this text.
 
 Focus on:
-1. VDOT calculation formula
+1. RPI calculation formula
 2. Training pace tables (E, M, T, I, R paces)
-3. VDOT-to-pace conversion tables
+3. RPI-to-pace conversion tables
 4. Training zone definitions
 
 Return as JSON with structure:
 {{
-    "vdot_formula": "formula description",
+    "rpi_formula": "formula description",
     "pace_tables": {{"E": "...", "M": "...", "T": "...", "I": "...", "R": "..."}},
     "training_zones": {{"description": "...", "heart_rate_ranges": "..."}},
-    "vdot_to_pace": "conversion method"
+    "rpi_to_pace": "conversion method"
 }}
 
 Text excerpt:
@@ -111,7 +115,7 @@ Text excerpt:
         else:
             return {"extracted_text": response}
     except Exception as e:
-        logger.error(f"Error parsing VDOT extraction: {e}")
+        logger.error(f"Error parsing RPI extraction: {e}")
         return {"extracted_text": response}
 
 
@@ -235,3 +239,26 @@ def chunk_text_for_extraction(text: str, chunk_size: int = 10000) -> List[str]:
         chunks.append(current_chunk.strip())
     
     return chunks
+
+
+class KnowledgeExtractionAI:
+    """
+    Admin-only AI-powered knowledge extraction from coaching text.
+
+    This is an internal admin tool, not athlete-facing AI processing.
+    Consent gating (Phase 1) applies only to features that process an
+    individual athlete's personal training data through third-party AI
+    providers on their behalf.  This class does not require athlete opt-in.
+    """
+
+    def __init__(self, model_preference: str = "claude"):
+        self.model_preference = model_preference
+
+    def extract(self, text: str) -> Optional[Dict]:
+        """Extract coaching principles from text using the configured AI model."""
+        return _call_ai(text, model_preference=self.model_preference)
+
+    def extract_from_chunks(self, text: str, chunk_size: int = 4000) -> List[Optional[Dict]]:
+        """Extract from large documents by chunking first."""
+        chunks = chunk_text(text, chunk_size=chunk_size)
+        return [self.extract(chunk) for chunk in chunks]

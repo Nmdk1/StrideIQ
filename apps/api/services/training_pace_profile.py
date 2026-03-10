@@ -3,11 +3,11 @@ Training Pace Profile
 
 Goal:
 - Compute prescriptive training paces ONLY from a race/time-trial performance anchor.
-- Use the existing Training Pace Calculator formulas (vdot_calculator.py).
+- Use the existing Training Pace Calculator formulas (rpi_calculator.py).
 - Avoid "appeasement" from noisy training-run data.
 
 UI note:
-- We avoid surfacing "VDOT" branding in product UI. This module uses the existing
+- We avoid surfacing "RPI" branding in product UI. This module uses the existing
   internal naming because the calculator file does.
 """
 
@@ -143,7 +143,7 @@ def _resolve_distance_meters(distance_key: str, distance_meters: Optional[int]) 
             return None
         return m if m > 0 else None
 
-    from services.vdot_calculator import STANDARD_DISTANCES
+    from services.rpi_calculator import STANDARD_DISTANCES
 
     m = STANDARD_DISTANCES.get(key)
     if m is None:
@@ -167,13 +167,13 @@ def compute_training_pace_profile(anchor: RaceAnchor) -> Tuple[Optional[dict], O
     if not dm:
         return None, "unsupported_distance"
 
-    from services.vdot_calculator import calculate_vdot_from_race_time, calculate_training_paces
+    from services.rpi_calculator import calculate_rpi_from_race_time, calculate_training_paces
 
-    vdot = calculate_vdot_from_race_time(float(dm), int(anchor.time_seconds))
-    if vdot is None:
+    rpi = calculate_rpi_from_race_time(float(dm), int(anchor.time_seconds))
+    if rpi is None:
         return None, "calc_failed"
 
-    paces = calculate_training_paces(float(vdot)) or {}
+    paces = calculate_training_paces(float(rpi)) or {}
 
     # Keep payload small + UI-friendly; include raw seconds for future use.
     out: dict[str, Any] = {
@@ -185,7 +185,7 @@ def compute_training_pace_profile(anchor: RaceAnchor) -> Tuple[Optional[dict], O
             "race_date": anchor.race_date.isoformat() if anchor.race_date else None,
         },
         # Avoid trademark exposure in UI surfaces; this is the same scalar used by the calculator.
-        "fitness_score": float(vdot),
+        "fitness_score": float(rpi),
         "paces": {
             "easy": paces.get("easy"),
             "marathon": paces.get("marathon"),

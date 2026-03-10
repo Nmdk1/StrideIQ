@@ -7,12 +7,12 @@
 
 The Critical Speed + D' model has been **archived** and removed from the main codebase.
 
-**Reason**: Redundant with Training Pace Calculator (VDOT-based), which:
+**Reason**: Redundant with Training Pace Calculator (RPI-based), which:
 - Predicts race times more simply and accurately from a single race input
 - Uses well-understood paces (Easy, Tempo, Interval) that athletes recognize
 - Doesn't require explaining D' (anaerobic reserve) to users
 
-**User feedback**: CS predictions were confusing (two different predictions for same race), less accurate than VDOT, and provided low perceived value.
+**User feedback**: CS predictions were confusing (two different predictions for same race), less accurate than RPI, and provided low perceived value.
 
 **Preserved in**: Branch `archive/cs-model-2026-01` for potential future pivot to insight-only mode (speed/endurance profile, trend analysis, race pacing strategy).
 
@@ -40,7 +40,7 @@ Athletes need to understand:
 3. What pace can I realistically hold for any race distance?
 
 Current tools either:
-- Use simplified VDOT tables (assume fixed relationships)
+- Use simplified RPI tables (assume fixed relationships)
 - Require expensive lab testing
 - Provide no confidence intervals
 

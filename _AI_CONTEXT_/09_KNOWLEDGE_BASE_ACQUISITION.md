@@ -57,7 +57,7 @@
 6. **Store:** Save to vector DB + structured DB
 
 **Extraction Prompts (Examples):**
-- "Extract the VDOT formula and pace tables from this text"
+- "Extract the RPI formula and pace tables from this text"
 - "Identify periodization principles and training phases"
 - "Extract load progression rules and recovery principles"
 - "Identify workout types and their purposes"
@@ -68,7 +68,7 @@
 ### 3. Core Principles to Extract (Priority: HIGH)
 
 **From Daniels:**
-- VDOT formula and calculation
+- RPI formula and calculation
 - Pace tables (E, M, T, I, R paces)
 - Training principles and laws
 - Periodization model
@@ -113,7 +113,7 @@
 - Technology: pgvector (PostgreSQL extension) or Pinecone/Weaviate
 
 **Structured Database (Algorithms/Rules):**
-- VDOT formula (code/algorithm)
+- RPI formula (code/algorithm)
 - Pace tables (structured data)
 - Periodization models (rules/logic)
 - Workout prescriptions (templates)
@@ -136,7 +136,7 @@
 - ✅ Extract training plans (20 plans stored)
 - ✅ Extract principles (50+ entries stored)
 - ✅ Set up database storage (PostgreSQL with knowledge base tables)
-- 🚧 Extract exact VDOT formula from stored text
+- 🚧 Extract exact RPI formula from stored text
 - 🚧 Set up vector database (pgvector) for semantic search
 
 **Week 3-4 (Jan 19 - Feb 1):**
@@ -183,7 +183,7 @@
 - ✅ Training plans extracted (20 plans stored)
 - ✅ Principles extracted (50+ entries stored)
 - ✅ Structured database operational (PostgreSQL)
-- 📋 VDOT formula extracted and implemented (extraction in progress)
+- 📋 RPI formula extracted and implemented (extraction in progress)
 - 📋 Periodization principles extracted (extraction in progress)
 - 📋 Load progression rules extracted (extraction in progress)
 - 📋 Vector database operational (pgvector setup pending)
@@ -205,7 +205,7 @@
 
 1. **TODAY:** Acquire Daniels' Running Formula and Advanced Marathoning (digital versions)
 2. **THIS WEEK:** Set up knowledge extraction pipeline
-3. **THIS WEEK:** Extract VDOT formula as proof of concept
+3. **THIS WEEK:** Extract RPI formula as proof of concept
 4. **NEXT WEEK:** Extract periodization principles
 5. **ONGOING:** Always track outcomes and refine
 

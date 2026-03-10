@@ -49,7 +49,7 @@ from services.correlation_engine import (
     aggregate_efficiency_by_effort_zone,
     aggregate_efficiency_trend,
 )
-from services.vdot_calculator import calculate_race_time_from_vdot
+from services.rpi_calculator import calculate_race_time_from_rpi, calculate_training_paces
 
 
 def _iso(dt: datetime) -> str:
@@ -74,6 +74,59 @@ def _pace_str_mi(seconds: Optional[int], meters: Optional[int]) -> Optional[str]
     m = int(pace_s_per_mi // 60)
     s = int(round(pace_s_per_mi % 60))
     return f"{m}:{s:02d}/mi"
+
+
+def _pace_seconds_from_text(pace_text: Optional[str]) -> Optional[int]:
+    if not pace_text:
+        return None
+    cleaned = str(pace_text).strip()
+    if "/" in cleaned:
+        cleaned = cleaned.split("/", 1)[0]
+    parts = cleaned.split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return None
+
+
+def _fmt_mmss(total_seconds: int) -> str:
+    total_seconds = abs(int(total_seconds))
+    m = total_seconds // 60
+    s = total_seconds % 60
+    return f"{m}:{s:02d}"
+
+
+def _relative_date(target: date, reference: Optional[date] = None) -> str:
+    """Pre-compute a human-readable relative time string.
+
+    Past dates  → "(today)", "(yesterday)", "(3 days ago)", "(2 weeks ago)"
+    Future dates → "(tomorrow)", "(in 3 days)", "(in 2 weeks)"
+
+    Every date entering an LLM prompt MUST use this — the LLM must never
+    compute relative time itself (it gets it wrong).
+    """
+    ref = reference or date.today()
+    delta = (ref - target).days
+
+    if delta == 0:
+        return "(today)"
+    elif delta == 1:
+        return "(yesterday)"
+    elif delta == -1:
+        return "(tomorrow)"
+    elif delta < 0:
+        future = abs(delta)
+        if future <= 13:
+            return f"(in {future} days)"
+        weeks = future // 7
+        return f"(in {weeks} week{'s' if weeks != 1 else ''})"
+    elif delta <= 13:
+        return f"({delta} days ago)"
+    else:
+        weeks = delta // 7
+        return f"({weeks} week{'s' if weeks != 1 else ''} ago)"
 
 
 def _preferred_units(db: Session, athlete_id: UUID) -> str:
@@ -126,7 +179,7 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
         # Phase 3: Add elevation, weather, max_hr for richer context
         elevation_gain_m = float(a.total_elevation_gain) if a.total_elevation_gain is not None else None
         elevation_gain_ft = round(elevation_gain_m * 3.28084, 0) if elevation_gain_m is not None else None
-        
+
         run_rows.append(
             {
                 "activity_id": str(a.id),
@@ -137,17 +190,18 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
                 "distance_km": round(distance_km, 2) if distance_km is not None else None,
                 "duration_s": int(a.duration_s) if a.duration_s is not None else None,
                 "avg_hr": int(a.avg_hr) if a.avg_hr is not None else None,
-                "max_hr": int(a.max_hr) if a.max_hr is not None else None,  # Phase 3
+                "max_hr": int(a.max_hr) if a.max_hr is not None else None,
                 "pace_per_km": _pace_str(a.duration_s, a.distance_m),
                 "pace_per_mile": pace_mi,
                 "workout_type": a.workout_type,
                 "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
-                # Phase 3: Environmental context
                 "elevation_gain_m": round(elevation_gain_m, 1) if elevation_gain_m is not None else None,
                 "elevation_gain_ft": int(elevation_gain_ft) if elevation_gain_ft is not None else None,
                 "temperature_f": round(float(a.temperature_f), 1) if a.temperature_f is not None else None,
                 "humidity_pct": round(float(a.humidity_pct), 0) if a.humidity_pct is not None else None,
                 "weather_condition": a.weather_condition,
+                "shape_sentence": a.shape_sentence,
+                "is_race": bool(getattr(a, "user_verified_race", False) or getattr(a, "is_race_candidate", False)),
             }
         )
 
@@ -179,14 +233,14 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
             parts.append(f"({a.weather_condition})")
         value_str = " ".join(parts) if parts else "run"
 
+        _run_rel = _relative_date(a.start_time.date()) if a.start_time else ""
         evidence.append(
             {
                 "type": "activity",
                 "id": str(a.id),
                 "ref": str(a.id)[:8],
-                "date": date_str,
+                "date": f"{date_str} {_run_rel}",
                 "value": value_str,
-                # Back-compat keys (internal use in earlier phases)
                 "activity_id": str(a.id),
                 "start_time": _iso(a.start_time),
             }
@@ -195,10 +249,40 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
     total_distance_m = sum((a.distance_m or 0) for a in runs)
     total_duration_s = sum((a.duration_s or 0) for a in runs)
 
+    # --- Narrative ---
+    total_mi = round(total_distance_m / _M_PER_MI, 1)
+    total_km = round(total_distance_m / 1000.0, 1)
+    if units == "imperial":
+        dist_str = f"{total_mi} miles"
+    else:
+        dist_str = f"{total_km} km"
+    dur_hrs = round(total_duration_s / 3600.0, 1)
+
+    rr_parts: List[str] = [
+        f"{len(runs)} runs in the last {days} days totaling {dist_str} ({dur_hrs} hours)."
+    ]
+    if run_rows:
+        latest = run_rows[0]
+        l_name = latest.get("name") or "Run"
+        l_date = latest.get("start_time", "")[:10]
+        l_dist = latest.get("distance_mi") if units == "imperial" else latest.get("distance_km")
+        l_unit = "mi" if units == "imperial" else "km"
+        l_pace = latest.get("pace_per_mile") if units == "imperial" else latest.get("pace_per_km")
+        try:
+            _relative = " " + _relative_date(date.fromisoformat(l_date))
+        except (ValueError, TypeError):
+            _relative = ""
+        rr_parts.append(
+            f"Most recent: {l_name} on {l_date}{_relative}, "
+            f"{l_dist:.1f} {l_unit} @ {l_pace or 'N/A'}."
+        )
+    narrative = " ".join(rr_parts)
+
     return {
         "ok": True,
         "tool": "get_recent_runs",
         "generated_at": _iso(now),
+        "narrative": narrative,
         "data": {
             "window_days": days,
             "preferred_units": units,
@@ -255,6 +339,34 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
         .all()
     )
 
+    weekday_name = day_date.strftime("%A")
+    weekday_index = day_date.weekday()
+
+    marathon_pace_per_mile: Optional[str] = None
+    marathon_pace_per_km: Optional[str] = None
+    marathon_pace_sec_per_mile: Optional[int] = None
+    try:
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if athlete and athlete.rpi:
+            paces = calculate_training_paces(float(athlete.rpi))
+            marathon_block = paces.get("marathon")
+            if isinstance(marathon_block, dict):
+                mi_val = marathon_block.get("mi")
+                km_val = marathon_block.get("km")
+                if isinstance(mi_val, str) and mi_val:
+                    marathon_pace_per_mile = f"{mi_val}/mi"
+                    marathon_pace_sec_per_mile = _pace_seconds_from_text(mi_val)
+                if isinstance(km_val, str) and km_val:
+                    marathon_pace_per_km = f"{km_val}/km"
+            if marathon_pace_sec_per_mile is None:
+                raw_mi = paces.get("marathon_pace")
+                if isinstance(raw_mi, (int, float)) and raw_mi > 0:
+                    marathon_pace_sec_per_mile = int(round(float(raw_mi)))
+                    marathon_pace_per_mile = f"{_fmt_mmss(marathon_pace_sec_per_mile)}/mi"
+    except Exception:
+        # Keep day-context available even if pace references are unavailable.
+        pass
+
     planned_data: Optional[Dict[str, Any]] = None
     evidence: List[Dict[str, Any]] = []
     if planned:
@@ -289,6 +401,28 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
     for a in acts:
         distance_km = (float(a.distance_m) / 1000.0) if a.distance_m is not None else None
         distance_mi = _mi_from_m(a.distance_m) if a.distance_m is not None else None
+        pace_mi_str = _pace_str_mi(a.duration_s, a.distance_m)
+        pace_km_str = _pace_str(a.duration_s, a.distance_m)
+        pace_sec_per_mile = _pace_seconds_from_text(pace_mi_str)
+        pace_vs_marathon_label: Optional[str] = None
+        pace_vs_marathon_seconds_per_mile: Optional[int] = None
+        pace_vs_marathon_direction: Optional[str] = None
+        if (
+            pace_sec_per_mile is not None
+            and marathon_pace_sec_per_mile is not None
+            and marathon_pace_sec_per_mile > 0
+        ):
+            delta = int(round(pace_sec_per_mile - marathon_pace_sec_per_mile))
+            pace_vs_marathon_seconds_per_mile = delta
+            if delta < 0:
+                pace_vs_marathon_direction = "faster"
+                pace_vs_marathon_label = f"faster by {_fmt_mmss(delta)}/mi"
+            elif delta > 0:
+                pace_vs_marathon_direction = "slower"
+                pace_vs_marathon_label = f"slower by {_fmt_mmss(delta)}/mi"
+            else:
+                pace_vs_marathon_direction = "equal"
+                pace_vs_marathon_label = "on marathon pace"
         activity_rows.append(
             {
                 "activity_id": str(a.id),
@@ -299,8 +433,11 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
                 "distance_km": round(distance_km, 2) if distance_km is not None else None,
                 "duration_s": int(a.duration_s) if a.duration_s is not None else None,
                 "avg_hr": int(a.avg_hr) if a.avg_hr is not None else None,
-                "pace_per_km": _pace_str(a.duration_s, a.distance_m),
-                "pace_per_mile": _pace_str_mi(a.duration_s, a.distance_m),
+                "pace_per_km": pace_km_str,
+                "pace_per_mile": pace_mi_str,
+                "pace_vs_marathon_label": pace_vs_marathon_label,
+                "pace_vs_marathon_seconds_per_mile": pace_vs_marathon_seconds_per_mile,
+                "pace_vs_marathon_direction": pace_vs_marathon_direction,
                 "workout_type": a.workout_type,
                 "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
             }
@@ -335,14 +472,43 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
             }
         )
 
+    # --- Narrative ---
+    _cd_rel = _relative_date(day_date)
+    cd_parts: List[str] = [f"Calendar day {day_date.isoformat()} ({weekday_name}) {_cd_rel}:"]
+    if planned_data:
+        status = "completed" if planned_data.get("completed") else ("skipped" if planned_data.get("skipped") else "not yet completed")
+        cd_parts.append(
+            f"Planned: {planned_data.get('title', 'workout')} ({planned_data.get('workout_type', 'N/A')}) — {status}."
+        )
+    else:
+        cd_parts.append("No workout was planned for this day.")
+    if activity_rows:
+        for ar in activity_rows:
+            d_val = ar.get("distance_mi") if units == "imperial" else ar.get("distance_km")
+            d_unit = "mi" if units == "imperial" else "km"
+            p_val = ar.get("pace_per_mile") if units == "imperial" else ar.get("pace_per_km")
+            cd_parts.append(
+                f"Actual: {ar.get('name', 'Run')} — {d_val:.1f} {d_unit} @ {p_val or 'N/A'}"
+                + (f" (avg HR {ar['avg_hr']} bpm)" if ar.get("avg_hr") else "")
+                + "."
+            )
+    else:
+        cd_parts.append("No runs recorded on this day.")
+    cd_narrative = " ".join(cd_parts)
+
     return {
         "ok": True,
         "tool": "get_calendar_day_context",
         "generated_at": _iso(now),
+        "narrative": cd_narrative,
         "data": {
             "date": day_date.isoformat(),
+            "weekday": weekday_name,
+            "weekday_index": weekday_index,
             "preferred_units": units,
             "active_plan_id": str(plan.id) if plan else None,
+            "marathon_pace_per_mile": marathon_pace_per_mile,
+            "marathon_pace_per_km": marathon_pace_per_km,
             "planned_workout": planned_data,
             "activities": activity_rows,
         },
@@ -415,10 +581,12 @@ def get_efficiency_trend(db: Session, athlete_id: UUID, days: int = 30) -> Dict[
             if len(efficiencies) >= 6:
                 early_avg = sum(efficiencies[:3]) / 3
                 late_avg = sum(efficiencies[-3:]) / 3
-                # Lower EF is better in the main analytics implementation.
-                if late_avg < early_avg:
+                # EF = speed(m/s) / HR — this is the unambiguous speed-based
+                # efficiency factor (NOT pace/HR).  Higher IS better for speed/HR.
+                # See Athlete Trust Safety Contract for pace/HR ambiguity distinction.
+                if late_avg > early_avg:
                     trend_direction = "improving"
-                elif late_avg > early_avg:
+                elif late_avg < early_avg:
                     trend_direction = "declining"
                 else:
                     trend_direction = "stable"
@@ -430,11 +598,11 @@ def get_efficiency_trend(db: Session, athlete_id: UUID, days: int = 30) -> Dict[
                     "date_range": {"start": derived[0]["date"], "end": derived[-1]["date"]} if derived else None,
                     "current_efficiency": efficiencies[-1] if efficiencies else None,
                     "average_efficiency": round(sum(efficiencies) / len(efficiencies), 2) if efficiencies else None,
-                    "best_efficiency": round(min(efficiencies), 2) if efficiencies else None,
-                    "worst_efficiency": round(max(efficiencies), 2) if efficiencies else None,
+                    "best_efficiency": round(max(efficiencies), 4) if efficiencies else None,
+                    "worst_efficiency": round(min(efficiencies), 4) if efficiencies else None,
                     "trend_direction": trend_direction,
                     "trend_magnitude": trend_magnitude,
-                    "note": "Derived EF fallback (pace_per_mile + avg_hr). Lower EF is better.",
+                    "note": "EF = speed(m/s) / avg_hr (unambiguous: higher = more speed per heartbeat). Not the same as pace/HR ratio.",
                 },
                 "trend_analysis": {
                     "method": "fallback_basic",
@@ -480,10 +648,27 @@ def get_efficiency_trend(db: Session, athlete_id: UUID, days: int = 30) -> Dict[
                     }
                 )
 
+    # --- Narrative ---
+    summ = result.get("summary") or {}
+    ef_current = summ.get("current_efficiency")
+    ef_best = summ.get("best_efficiency")
+    ef_avg = summ.get("average_efficiency")
+    ef_trend = summ.get("trend_direction", "unknown")
+    ef_parts: List[str] = [f"Efficiency trend over {days} days: {ef_trend}."]
+    if ef_current is not None:
+        ef_parts.append(f"Current EF: {ef_current:.2f}.")
+    if ef_best is not None:
+        ef_parts.append(f"Best EF: {ef_best:.2f}.")
+    if ef_avg is not None:
+        ef_parts.append(f"Average EF: {ef_avg:.2f}.")
+    ef_parts.append("EF here is speed/HR (not pace/HR). Higher = more speed per heartbeat.")
+    ef_narrative = " ".join(ef_parts)
+
     return {
         "ok": True,
         "tool": "get_efficiency_trend",
         "generated_at": _iso(now),
+        "narrative": ef_narrative,
         "data": {
             "window_days": days,
             "summary": result.get("summary"),
@@ -525,10 +710,11 @@ def get_plan_week(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     evidence: List[Dict[str, Any]] = []
 
     for w in workouts:
+        _w_rel = _relative_date(w.scheduled_date, today)
         workout_rows.append(
             {
                 "planned_workout_id": str(w.id),
-                "scheduled_date": w.scheduled_date.isoformat(),
+                "scheduled_date": f"{w.scheduled_date.isoformat()} {_w_rel}",
                 "title": w.title,
                 "workout_type": w.workout_type,
                 "workout_subtype": w.workout_subtype,
@@ -544,18 +730,49 @@ def get_plan_week(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             {
                 "type": "planned_workout",
                 "id": str(w.id),
-                "date": w.scheduled_date.isoformat(),
+                "date": f"{w.scheduled_date.isoformat()} {_w_rel}",
                 "value": f"{w.title} ({w.workout_type})",
-                # Back-compat keys
                 "planned_workout_id": str(w.id),
-                "scheduled_date": w.scheduled_date.isoformat(),
+                "scheduled_date": f"{w.scheduled_date.isoformat()} {_w_rel}",
             }
         )
+
+    # --- Narrative ---
+    pw_parts: List[str] = []
+    if plan:
+        pw_parts.append(f"Active plan: {plan.name or 'Unnamed'}.")
+        if plan.goal_race_name:
+            pw_parts.append(f"Goal race: {plan.goal_race_name}.")
+        if plan.goal_race_date:
+            days_until = (plan.goal_race_date - today).days
+            pw_parts.append(f"Race date: {plan.goal_race_date.isoformat()} ({days_until} days away).")
+        if plan.goal_time_seconds:
+            h = plan.goal_time_seconds // 3600
+            m = (plan.goal_time_seconds % 3600) // 60
+            s = plan.goal_time_seconds % 60
+            goal_fmt = f"{h}:{m:02d}:{s:02d}"
+            pw_parts.append(f"Goal time: {goal_fmt}.")
+        if plan.goal_time_seconds and plan.goal_race_distance_m:
+            sec_per_mi = plan.goal_time_seconds / (plan.goal_race_distance_m / _M_PER_MI)
+            pm = int(sec_per_mi // 60)
+            ps = int(round(sec_per_mi % 60))
+            pw_parts.append(f"Required pace: {pm}:{ps:02d}/mi.")
+    else:
+        pw_parts.append("No active training plan.")
+
+    completed = sum(1 for w in workout_rows if w.get("completed"))
+    total_wo = len(workout_rows)
+    if total_wo:
+        pw_parts.append(f"This week: {total_wo} workouts scheduled, {completed} completed.")
+    else:
+        pw_parts.append("No workouts scheduled this week.")
+    plan_narrative = " ".join(pw_parts)
 
     return {
         "ok": True,
         "tool": "get_plan_week",
         "generated_at": _iso(datetime.utcnow()),
+        "narrative": plan_narrative,
         "data": {
             "week_start": week_start.isoformat(),
             "week_end": week_end.isoformat(),
@@ -565,6 +782,17 @@ def get_plan_week(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     "name": plan.name,
                     "goal_race_name": plan.goal_race_name,
                     "goal_race_date": plan.goal_race_date.isoformat() if plan.goal_race_date else None,
+                    "goal_race_distance_m": plan.goal_race_distance_m,
+                    "goal_time_seconds": plan.goal_time_seconds,
+                    "goal_time_formatted": (
+                        f"{plan.goal_time_seconds // 3600}:{(plan.goal_time_seconds % 3600) // 60:02d}:{plan.goal_time_seconds % 60:02d}"
+                        if plan.goal_time_seconds else None
+                    ),
+                    "goal_pace_per_mile": (
+                        f"{int((plan.goal_time_seconds / (plan.goal_race_distance_m / _M_PER_MI)) // 60)}:{int(round((plan.goal_time_seconds / (plan.goal_race_distance_m / _M_PER_MI)) % 60)):02d}/mi"
+                        if plan.goal_time_seconds and plan.goal_race_distance_m else None
+                    ),
+                    "days_until_race": (plan.goal_race_date - today).days if plan.goal_race_date else None,
                     "total_weeks": plan.total_weeks,
                 }
                 if plan
@@ -585,10 +813,30 @@ def get_training_load(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     summary = calc.calculate_training_load(athlete_id)
     zone_info = calc.get_tsb_zone(summary.current_tsb, athlete_id=athlete_id)
 
+    # --- Narrative ---
+    ctl_v = round(summary.current_ctl, 1) if summary.current_ctl is not None else "?"
+    atl_v = round(summary.current_atl, 1) if summary.current_atl is not None else "?"
+    tsb_v = round(summary.current_tsb, 1) if summary.current_tsb is not None else "?"
+    ratio_note = ""
+    if summary.current_ctl and summary.current_atl:
+        ratio = summary.current_atl / summary.current_ctl if summary.current_ctl > 0 else 0
+        if ratio > 1.3:
+            ratio_note = " Acute:Chronic ratio is high — coach should recommend recovery."
+        elif ratio > 1.1:
+            ratio_note = " Acute:Chronic ratio is moderately elevated."
+
+    narrative = (
+        f"(INTERNAL — translate for athlete, never quote raw numbers.) "
+        f"CTL: {ctl_v}, ATL: {atl_v}, TSB: {tsb_v}. "
+        f"Zone: {zone_info.label} — {zone_info.description} "
+        f"Phase: {summary.training_phase or 'N/A'}.{ratio_note}"
+    )
+
     return {
         "ok": True,
         "tool": "get_training_load",
         "generated_at": _iso(now),
+        "narrative": narrative,
         "data": {
             "atl": summary.current_atl,
             "ctl": summary.current_ctl,
@@ -624,29 +872,29 @@ def get_training_load(db: Session, athlete_id: UUID) -> Dict[str, Any]:
 def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     Get RPI-based training paces for the athlete.
-    
+
     Returns target paces for easy, threshold, interval, repetition, and marathon training.
     This is THE authoritative source for training paces - do not derive paces from other data.
     """
     now = datetime.utcnow()
     try:
-        from services.vdot_calculator import calculate_training_paces as calc_paces
-        
+        from services.rpi_calculator import calculate_training_paces as calc_paces
+
         athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
             return {"ok": False, "tool": "get_training_paces", "error": "Athlete not found"}
-        
-        vdot = athlete.vdot
-        if not vdot:
+
+        rpi = athlete.rpi
+        if not rpi:
             return {
                 "ok": False,
                 "tool": "get_training_paces",
                 "error": "No RPI on file. Athlete needs to complete a time trial or race to calculate training paces.",
             }
-        
+
         units = athlete.preferred_units or "metric"
-        paces = calc_paces(vdot)
-        
+        paces = calc_paces(rpi)
+
         # Format for display
         def format_display(pace_key: str) -> str:
             """Format a pace for human-readable display."""
@@ -662,14 +910,24 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             elif isinstance(val, str):
                 return val
             return "N/A"
-        
+
+        # --- Narrative ---
+        narrative = (
+            f"Training paces based on RPI {rpi:.1f}: "
+            f"Easy {format_display('easy')}, Marathon {format_display('marathon')}, "
+            f"Threshold {format_display('threshold')}, Interval {format_display('interval')}, "
+            f"Repetition {format_display('repetition')}. "
+            f"These are THE authoritative paces — do not derive paces from other data."
+        )
+
         return {
             "ok": True,
             "tool": "get_training_paces",
             "generated_at": _iso(now),
+            "narrative": narrative,
             "data": {
-                "rpi": vdot,  # Running Performance Index
-                "vdot": vdot,  # Keep for backward compatibility
+                "rpi": rpi,  # Running Performance Index
+                "rpi": rpi,  # Keep for backward compatibility
                 "preferred_units": units,
                 "paces": {
                     "easy": format_display("easy"),
@@ -691,7 +949,7 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     "type": "calculation",
                     "id": f"rpi_paces:{athlete_id}",
                     "date": date.today().isoformat(),
-                    "value": f"RPI {vdot:.1f} → Threshold {format_display('threshold')}, Easy {format_display('easy')}",
+                    "value": f"RPI {rpi:.1f} → Threshold {format_display('threshold')}, Easy {format_display('easy')}",
                 }
             ],
         }
@@ -719,10 +977,27 @@ def get_correlations(db: Session, athlete_id: UUID, days: int = 30) -> Dict[str,
         f"(lag {top.get('time_lag_days')}d, n={top.get('sample_size')})"
     )
 
+    # --- Narrative ---
+    corr_list = result.get("correlations") if isinstance(result, dict) else None
+    if isinstance(corr_list, list) and corr_list:
+        narr_items: List[str] = []
+        for c in corr_list[:3]:
+            inp = c.get("input_name", "?")
+            out = c.get("output_name", "?")
+            r = c.get("correlation_coefficient")
+            lag = c.get("time_lag_days", 0)
+            interp = c.get("interpretation", "")
+            r_str = f"r={r:.2f}" if r is not None else "r=?"
+            narr_items.append(f"{inp} → {out} ({r_str}, lag {lag}d): {interp}")
+        narrative = f"Top correlations over {days} days: " + " | ".join(narr_items)
+    else:
+        narrative = f"No significant correlations found over the last {days} days."
+
     return {
         "ok": True,
         "tool": "get_correlations",
         "generated_at": _iso(now),
+        "narrative": narrative,
         "data": result,
         "evidence": [
             {
@@ -779,16 +1054,16 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
         predictions: Dict[str, Any] = {}
         evidence: List[Dict[str, Any]] = []
 
-        def _best_vdot_from_personal_bests() -> Optional[Dict[str, Any]]:
+        def _best_rpi_from_personal_bests() -> Optional[Dict[str, Any]]:
             """
-            Derive a VDOT estimate from the athlete's PersonalBest table.
+            Derive a RPI estimate from the athlete's PersonalBest table.
 
             Returns:
-                {"vdot": float, "pb": PersonalBest} or None
+                {"rpi": float, "pb": PersonalBest} or None
             """
             try:
                 from models import PersonalBest
-                from services.vdot_calculator import calculate_vdot_from_race_time
+                from services.rpi_calculator import calculate_rpi_from_race_time
 
                 pbs = (
                     db.query(PersonalBest)
@@ -803,7 +1078,7 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 # Prefer race PBs and standard race distances (better anchors).
                 candidates: List[tuple[float, Any]] = []
                 for pb in pbs:
-                    v = calculate_vdot_from_race_time(pb.distance_meters, pb.time_seconds)
+                    v = calculate_rpi_from_race_time(pb.distance_meters, pb.time_seconds)
                     if not v:
                         continue
                     weight = 0.0
@@ -819,18 +1094,18 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 candidates.sort(key=lambda t: t[0], reverse=True)
                 best_weighted, best_pb = candidates[0]
 
-                # Remove weight for reporting a clean VDOT value.
-                base_vdot = float(best_weighted)
+                # Remove weight for reporting a clean RPI value.
+                base_rpi = float(best_weighted)
                 if getattr(best_pb, "is_race", False):
-                    base_vdot -= 0.3
+                    base_rpi -= 0.3
                 if best_pb.distance_category in {"5k", "10k", "half_marathon", "marathon"}:
-                    base_vdot -= 0.2
+                    base_rpi -= 0.2
 
-                return {"vdot": round(base_vdot, 1), "pb": best_pb}
+                return {"rpi": round(base_rpi, 1), "pb": best_pb}
             except Exception:
                 return None
 
-        pb_vdot = _best_vdot_from_personal_bests()
+        pb_rpi = _best_rpi_from_personal_bests()
         for label, dist_m in distances:
             try:
                 pred = predictor.predict(athlete_id=athlete_id, race_date=race_date, distance_m=dist_m)
@@ -843,20 +1118,20 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 except Exception:
                     pass
                 # Fallback: if the calibrated model table isn't present in this environment,
-                # use the athlete's stored VDOT or derive one from PBs to provide a reasonable estimate.
+                # use the athlete's stored RPI or derive one from PBs to provide a reasonable estimate.
                 msg = str(e)
-                fallback_vdot: Optional[float] = None
+                fallback_rpi: Optional[float] = None
                 fallback_source: Optional[str] = None
 
-                if athlete and getattr(athlete, "vdot", None):
-                    fallback_vdot = float(athlete.vdot)
-                    fallback_source = "athlete_vdot"
-                elif pb_vdot and pb_vdot.get("vdot"):
-                    fallback_vdot = float(pb_vdot["vdot"])
-                    fallback_source = "pb_vdot"
+                if athlete and getattr(athlete, "rpi", None):
+                    fallback_rpi = float(athlete.rpi)
+                    fallback_source = "athlete_rpi"
+                elif pb_rpi and pb_rpi.get("rpi"):
+                    fallback_rpi = float(pb_rpi["rpi"])
+                    fallback_source = "pb_rpi"
 
-                if fallback_vdot and "athlete_calibrated_model" in msg:
-                    seconds = calculate_race_time_from_vdot(float(fallback_vdot), dist_m)
+                if fallback_rpi and "athlete_calibrated_model" in msg:
+                    seconds = calculate_race_time_from_rpi(float(fallback_rpi), dist_m)
                     if seconds:
                         predictions[label] = {
                             "prediction": {
@@ -864,12 +1139,12 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                                 "time_formatted": _fmt_time(int(seconds)),
                                 "confidence_interval_seconds": None,
                                 "confidence_interval_formatted": None,
-                                "confidence": f"{fallback_source}_fallback",
+                                "confidence": "Estimate",
                             },
-                            "projections": {"rpi": round(float(fallback_vdot), 1), "vdot": round(float(fallback_vdot), 1), "ctl": None, "tsb": None},
+                            "projections": {"rpi": round(float(fallback_rpi), 1), "ctl": None, "tsb": None},
                             "factors": [
                                 "Calibrated performance model unavailable; using RPI-derived equivalent times.",
-                                f"RPI source: {fallback_source.replace('vdot', 'rpi') if fallback_source else 'unknown'}",
+                                f"RPI source: {fallback_source or 'unknown'}",
                             ],
                             "notes": ["This estimate is less personalized than the calibrated model pipeline."],
                         }
@@ -879,8 +1154,8 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     predictions[label] = {"error": msg}
 
         # Evidence: cite the PB used for fallback (if any), plus a derived marker.
-        if pb_vdot and pb_vdot.get("pb"):
-            pb = pb_vdot["pb"]
+        if pb_rpi and pb_rpi.get("pb"):
+            pb = pb_rpi["pb"]
             pb_date = (
                 getattr(pb, "achieved_at", None).date().isoformat()
                 if getattr(pb, "achieved_at", None)
@@ -898,10 +1173,26 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 }
             )
 
+        # --- Narrative ---
+        pred_parts: List[str] = []
+        for label_key in ["5K", "10K", "Half Marathon", "Marathon"]:
+            p = predictions.get(label_key)
+            if isinstance(p, dict) and "prediction" in p:
+                t = p["prediction"].get("time_formatted")
+                if t:
+                    pred_parts.append(f"{label_key}: {t}")
+        pred_summary = ", ".join(pred_parts) if pred_parts else "No predictions available"
+        _race_rel = _relative_date(race_date)
+        narrative = (
+            f"Race predictions (target date {race_date.isoformat()} {_race_rel}): {pred_summary}. "
+            f"These are model-derived estimates — use compute_running_math for exact pace/time calculations."
+        )
+
         return {
             "ok": True,
             "tool": "get_race_predictions",
             "generated_at": _iso(now),
+            "narrative": narrative,
             "data": {
                 "race_date": race_date.isoformat(),
                 "predictions": predictions,
@@ -940,10 +1231,28 @@ def get_recovery_status(db: Session, athlete_id: UUID) -> Dict[str, Any]:
         false_fitness = detect_false_fitness(db, athlete_id_str)
         masked_fatigue = detect_masked_fatigue(db, athlete_id_str)
 
+        # --- Narrative ---
+        n_parts: List[str] = []
+        if half_life_days is not None:
+            n_parts.append(f"Recovery half-life: {half_life_days} days.")
+        else:
+            n_parts.append("Recovery half-life: insufficient data.")
+        if durability is not None:
+            dur_val = round(durability, 1) if isinstance(durability, (int, float)) else durability
+            n_parts.append(f"Durability index: {dur_val}.")
+        if false_fitness:
+            n_parts.append("WARNING: False fitness signals detected.")
+        if masked_fatigue:
+            n_parts.append("WARNING: Masked fatigue signals detected.")
+        if not false_fitness and not masked_fatigue:
+            n_parts.append("No red flags in recovery signals.")
+        narrative = " ".join(n_parts)
+
         return {
             "ok": True,
             "tool": "get_recovery_status",
             "generated_at": _iso(now),
+            "narrative": narrative,
             "data": {
                 "recovery_half_life_days": half_life_days,
                 "durability_index": durability,
@@ -1032,10 +1341,21 @@ def get_active_insights(db: Session, athlete_id: UUID, limit: int = 5) -> Dict[s
                 }
             )
 
+        # --- Narrative ---
+        if insight_rows:
+            ai_parts: List[str] = [f"{len(insight_rows)} insight(s) available:"]
+            for ir in insight_rows[:3]:
+                title = ir.get("title") or ir.get("message") or "Insight"
+                ai_parts.append(f"• {title}")
+            ai_narrative = " ".join(ai_parts)
+        else:
+            ai_narrative = "No active insights at this time."
+
         return {
             "ok": True,
             "tool": "get_active_insights",
             "generated_at": _iso(now),
+            "narrative": ai_narrative,
             "data": {
                 "insight_count": len(insight_rows),
                 "insights": insight_rows,
@@ -1053,23 +1373,23 @@ def get_active_insights(db: Session, athlete_id: UUID, limit: int = 5) -> Dict[s
 def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     Training patterns that preceded personal bests.
-    
+
     Returns BOTH summary stats AND per-PB detail so coach can cite specifics.
     """
     from services.training_load import TrainingLoadCalculator
     from models import PersonalBest
-    
+
     now = datetime.utcnow()
     try:
         start = now - timedelta(days=365)
-        
+
         # Get all PBs
         pbs = db.query(PersonalBest).filter(
             PersonalBest.athlete_id == athlete_id,
             PersonalBest.achieved_at >= start,
             PersonalBest.achieved_at <= now
         ).all()
-        
+
         if not pbs:
             return {
                 "ok": True,
@@ -1078,14 +1398,14 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 "data": {"pb_count": 0, "pbs": []},
                 "evidence": [],
             }
-        
+
         # Get training load history for TSB lookup
         calc = TrainingLoadCalculator(db)
         try:
             history = calc.get_load_history(athlete_id, days=365)
         except Exception:
             history = []
-        
+
         # Build date lookup
         load_by_date = {}
         items = history if isinstance(history, list) else history.get("daily_loads", [])
@@ -1097,16 +1417,16 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 from datetime import datetime as dt
                 d = dt.fromisoformat(d).date()
             load_by_date[d] = item
-        
+
         # Build per-PB detail
         pb_details = []
         tsb_values = []
-        
+
         for pb in sorted(pbs, key=lambda x: x.achieved_at or now):
             pb_date = pb.achieved_at.date() if pb.achieved_at else None
             if not pb_date:
                 continue
-                
+
             # Get TSB day before
             check_date = pb_date - timedelta(days=1)
             tsb = None
@@ -1120,11 +1440,11 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     tsb_values.append(tsb)
                 if ctl is not None:
                     ctl = round(ctl, 1)
-            
+
             dist_km = round((pb.distance_meters or 0) / 1000, 2)
             time_min = round((pb.time_seconds or 0) / 60, 1)
             pace = round(time_min / dist_km, 2) if dist_km > 0 else None
-            
+
             pb_details.append({
                 "personal_best_id": str(pb.id),
                 "activity_id": str(pb.activity_id) if getattr(pb, "activity_id", None) else None,
@@ -1137,7 +1457,7 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 "tsb_day_before": tsb,
                 "ctl_day_before": ctl,
             })
-        
+
         # Compute summary stats
         summary = {
             "pb_count": len(pb_details),
@@ -1145,7 +1465,7 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             "tsb_max": max(tsb_values) if tsb_values else None,
             "tsb_mean": round(sum(tsb_values) / len(tsb_values), 1) if tsb_values else None,
         }
-        
+
         # Build evidence with actual citations
         evidence = []
         for pb in pb_details:
@@ -1158,10 +1478,29 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 "value": f"{pb['category']} PR: {pb['distance_km']}km in {pb['time_min']}min{activity_part}, TSB was {pb['tsb_day_before']}",
             })
 
+        # --- Narrative ---
+        _today = date.today()
+        pb_narr_parts: List[str] = [f"{len(pb_details)} personal best(s) in the last year."]
+        for pbd in pb_details[:3]:
+            cat = pbd.get("category", "?")
+            t_min = pbd.get("time_min")
+            t_str = f"{t_min:.1f} min" if t_min else "?"
+            pb_date_str = pbd.get("date", "?")
+            try:
+                _pb_narr_rel = _relative_date(date.fromisoformat(pb_date_str), _today)
+            except (ValueError, TypeError):
+                _pb_narr_rel = ""
+            tsb_str = f"TSB was {pbd['tsb_day_before']}" if pbd.get("tsb_day_before") is not None else "TSB unknown"
+            pb_narr_parts.append(f"{cat} PR on {pb_date_str} {_pb_narr_rel}: {t_str} ({tsb_str}).")
+        if summary.get("tsb_mean") is not None:
+            pb_narr_parts.append(f"Average TSB before PRs: {summary['tsb_mean']}.")
+        pb_narrative = " ".join(pb_narr_parts)
+
         return {
             "ok": True,
             "tool": "get_pb_patterns",
             "generated_at": _iso(now),
+            "narrative": pb_narrative,
             "data": {
                 **summary,
                 "pbs": pb_details,
@@ -1206,36 +1545,27 @@ def get_efficiency_by_zone(
         # Evidence: include a few concrete, citable activities that match the zone filter.
         evidence: List[Dict[str, Any]] = []
         try:
-            athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-            max_hr = int(athlete.max_hr) if athlete and athlete.max_hr else None
-            if max_hr:
-                if effort_zone == "easy":
-                    hr_min, hr_max = 0, int(max_hr * 0.75)
-                elif effort_zone == "threshold":
-                    hr_min, hr_max = int(max_hr * 0.80), int(max_hr * 0.88)
-                elif effort_zone == "race":
-                    hr_min, hr_max = int(max_hr * 0.88), 999
-                else:
-                    hr_min, hr_max = None, None
-
-                if hr_min is not None and hr_max is not None:
-                    acts = (
+            from services.effort_classification import classify_effort_bulk
+            zone_map = {"easy": "easy", "threshold": "moderate", "race": "hard"}
+            target_class = zone_map.get(effort_zone)
+            if target_class:
+                    acts_all = (
                         db.query(Activity)
                         .filter(
                             Activity.athlete_id == athlete_id,
                             Activity.sport == "run",
                             Activity.start_time >= start,
                             Activity.start_time <= now,
-                            Activity.avg_hr >= hr_min,
-                            Activity.avg_hr <= hr_max,
                             Activity.distance_m >= 3000,
                             Activity.duration_s.isnot(None),
                             Activity.avg_hr.isnot(None),
                         )
                         .order_by(Activity.start_time.desc())
-                        .limit(5)
+                        .limit(50)
                         .all()
                     )
+                    classifications = classify_effort_bulk(acts_all, str(athlete_id), db)
+                    acts = [a for a in acts_all if classifications.get(a.id) == target_class][:5]
 
                     for a in acts:
                         pace_sec_km = float(a.duration_s) / (float(a.distance_m) / 1000.0)
@@ -1265,10 +1595,25 @@ def get_efficiency_by_zone(
             # Don't fail the tool if evidence enrichment fails.
             pass
 
+        # --- Narrative ---
+        ez_parts: List[str] = [f"{effort_zone.capitalize()} zone efficiency over {days} days: {len(zone_data or [])} data points."]
+        if current is not None:
+            ez_parts.append(f"Current: {current:.4f}.")
+        if best is not None:
+            ez_parts.append(f"Best: {best:.4f}.")
+        if avg is not None:
+            ez_parts.append(f"Average: {avg:.4f}.")
+        if trend_data:
+            trend_pct = round(trend_data[-1][1], 1)
+            ez_parts.append(f"Trend vs baseline: {trend_pct:+.1f}% (efficiency ratio shifted).")
+        ez_parts.append("Pace/HR ratio is directionally ambiguous — do not infer better/worse from sign alone.")
+        ez_narrative = " ".join(ez_parts)
+
         return {
             "ok": True,
             "tool": "get_efficiency_by_zone",
             "generated_at": _iso(now),
+            "narrative": ez_narrative,
             "data": {
                 "effort_zone": effort_zone,
                 "window_days": days,
@@ -1277,7 +1622,7 @@ def get_efficiency_by_zone(
                 "best_efficiency": round(best, 6) if best is not None else None,
                 "average_efficiency": round(avg, 6) if avg is not None else None,
                 "recent_trend_pct": round(trend_data[-1][1], 2) if trend_data else None,
-                "note": "Efficiency is Pace(sec/km)/HR(bpm). Lower = faster at same HR (better). Trend % is vs baseline (negative = improvement).",
+                "note": "Efficiency is Pace(sec/km)/HR(bpm) — directionally ambiguous (rises when HR drops, falls when pace improves). Do not infer direction from sign alone. See OutputMetricMeta.",
             },
             "evidence": evidence
             + [
@@ -1359,10 +1704,22 @@ def get_nutrition_correlations(
                 "interpretation": _interpret_nutrition_correlation(key, float(r)),
             }
 
+        # --- Narrative ---
+        nc_items: List[str] = []
+        for key, val in results.items():
+            if isinstance(val, dict) and val.get("correlation") is not None:
+                interp = val.get("interpretation", "")
+                nc_items.append(f"{key}: r={val['correlation']:.2f} ({interp})")
+        if nc_items:
+            nc_narrative = f"Nutrition correlations over {days} days: " + "; ".join(nc_items[:3]) + "."
+        else:
+            nc_narrative = f"No significant nutrition correlations found over {days} days."
+
         return {
             "ok": True,
             "tool": "get_nutrition_correlations",
             "generated_at": _iso(now),
+            "narrative": nc_narrative,
             "data": results,
             "evidence": [
                 {
@@ -1436,21 +1793,29 @@ def get_weekly_volume(db: Session, athlete_id: UUID, weeks: int = 12) -> Dict[st
             b["total_distance_m"] += float(a.distance_m or 0)
             b["total_duration_s"] += float(a.duration_s or 0)
 
+        current_week_key = end_week_start.isoformat()
         week_rows: List[Dict[str, Any]] = []
         for key in sorted(buckets.keys()):
             b = buckets[key]
             dist_m = float(b["total_distance_m"])
             dur_s = float(b["total_duration_s"])
-            week_rows.append(
-                {
-                    "week_start": b["week_start"],
-                    "week_end": b["week_end"],
-                    "run_count": int(b["run_count"]),
-                    "total_distance_km": round(dist_m / 1000.0, 2),
-                    "total_distance_mi": round(dist_m / _M_PER_MI, 2),
-                    "total_duration_hr": round(dur_s / 3600.0, 2),
-                }
-            )
+            row: Dict[str, Any] = {
+                "week_start": b["week_start"],
+                "week_end": b["week_end"],
+                "run_count": int(b["run_count"]),
+                "total_distance_km": round(dist_m / 1000.0, 2),
+                "total_distance_mi": round(dist_m / _M_PER_MI, 2),
+                "total_duration_hr": round(dur_s / 3600.0, 2),
+            }
+            # Mark the current (in-progress) week so the coach doesn't
+            # confuse partial data with a completed week.
+            if key == current_week_key:
+                days_elapsed = (today - end_week_start).days + 1  # 1-7
+                row["is_current_week"] = True
+                row["days_elapsed"] = days_elapsed
+                row["days_remaining"] = 7 - days_elapsed
+                row["note"] = f"IN PROGRESS — only {days_elapsed} of 7 days completed"
+            week_rows.append(row)
 
         # Evidence: cite the top 3 weeks by distance in preferred units
         def _week_magnitude(wr: Dict[str, Any]) -> float:
@@ -1461,19 +1826,66 @@ def get_weekly_volume(db: Session, athlete_id: UUID, weeks: int = 12) -> Dict[st
         for w in top_weeks:
             dist = w["total_distance_mi"] if units == "imperial" else w["total_distance_km"]
             unit = "mi" if units == "imperial" else "km"
+            partial_note = " (IN PROGRESS — week not complete)" if w.get("is_current_week") else ""
             evidence.append(
                 {
                     "type": "derived",
                     "id": f"weekly_volume:{str(athlete_id)}:{w['week_start']}",
                     "date": w["week_start"],
-                    "value": f"Week of {w['week_start']}: {dist:.1f} {unit} across {w['run_count']} runs",
+                    "value": f"Week of {w['week_start']}: {dist:.1f} {unit} across {w['run_count']} runs{partial_note}",
                 }
             )
+
+        # --- Narrative ---
+        unit_label = "mi" if units == "imperial" else "km"
+        dist_key = "total_distance_mi" if units == "imperial" else "total_distance_km"
+
+        # Identify the current (partial) week and the last full week
+        current_row = next((w for w in week_rows if w.get("is_current_week")), None)
+        completed_rows = [w for w in week_rows if not w.get("is_current_week")]
+        last_full = completed_rows[-1] if completed_rows else None
+
+        lines: List[str] = []
+        if current_row:
+            lines.append(
+                f"This week (in progress, {current_row['days_elapsed']} of 7 days): "
+                f"{current_row[dist_key]:.1f} {unit_label} across {current_row['run_count']} runs. "
+                f"DO NOT treat this as a full week."
+            )
+        if last_full:
+            try:
+                _lf_rel = _relative_date(date.fromisoformat(last_full['week_start']), today)
+            except (ValueError, TypeError):
+                _lf_rel = ""
+            lines.append(
+                f"Last full week ({last_full['week_start']} {_lf_rel}): "
+                f"{last_full[dist_key]:.1f} {unit_label} across {last_full['run_count']} runs."
+            )
+
+        # 4-week trend
+        recent_4 = completed_rows[-4:] if len(completed_rows) >= 4 else completed_rows
+        if len(recent_4) >= 2:
+            vols = [w[dist_key] for w in recent_4]
+            trajectory = "rising" if vols[-1] > vols[0] else ("falling" if vols[-1] < vols[0] else "flat")
+            lines.append(
+                f"Last {len(recent_4)} full weeks trajectory: {trajectory} "
+                f"({' → '.join(f'{v:.0f}' for v in vols)} {unit_label})."
+            )
+
+        # Peak week
+        if completed_rows:
+            peak = max(completed_rows, key=lambda w: w[dist_key])
+            lines.append(
+                f"Peak week in window: {peak['week_start']} at {peak[dist_key]:.1f} {unit_label}."
+            )
+
+        narrative = " ".join(lines) if lines else "No weekly volume data available."
 
         return {
             "ok": True,
             "tool": "get_weekly_volume",
             "generated_at": _iso(now),
+            "narrative": narrative,
             "data": {
                 "preferred_units": units,
                 "weeks": weeks,
@@ -1503,7 +1915,7 @@ def get_best_runs(
     Return the "best" runs by an explicit, auditable definition.
 
     Metrics:
-      - efficiency: lowest Pace(sec/km)/HR(bpm) (lower = better)
+      - efficiency: highest speed/HR — unambiguous (higher = more speed per heartbeat)
       - pace: fastest pace (min/mi or min/km depending on units)
       - distance: longest distance
       - intensity_score: highest intensity_score
@@ -1529,23 +1941,20 @@ def get_best_runs(
             )
         )
 
+        _effort_zone_filter = None
         if effort_zone:
             ez = effort_zone.lower().strip()
-            athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-            max_hr = int(athlete.max_hr) if athlete and athlete.max_hr else None
-            if max_hr:
-                if ez == "easy":
-                    hr_min, hr_max = 0, int(max_hr * 0.75)
-                elif ez == "threshold":
-                    hr_min, hr_max = int(max_hr * 0.80), int(max_hr * 0.88)
-                elif ez == "race":
-                    hr_min, hr_max = int(max_hr * 0.88), 999
-                else:
-                    hr_min, hr_max = None, None
-                if hr_min is not None and hr_max is not None:
-                    q = q.filter(Activity.avg_hr.isnot(None), Activity.avg_hr >= hr_min, Activity.avg_hr <= hr_max)
+            zone_map = {"easy": "easy", "threshold": "moderate", "race": "hard"}
+            _effort_zone_filter = zone_map.get(ez)
 
-        acts = q.order_by(Activity.start_time.desc()).limit(200).all()  # bounded
+        acts_raw = q.order_by(Activity.start_time.desc()).limit(200).all()  # bounded
+
+        if _effort_zone_filter:
+            from services.effort_classification import classify_effort_bulk
+            classifications = classify_effort_bulk(acts_raw, str(athlete_id), db)
+            acts = [a for a in acts_raw if classifications.get(a.id) == _effort_zone_filter]
+        else:
+            acts = acts_raw
 
         rows: List[Dict[str, Any]] = []
         for a in acts:
@@ -1557,12 +1966,14 @@ def get_best_runs(
             pace_s_per_km = duration_s / (distance_m / 1000.0)
             pace_mi = _pace_str_mi(int(a.duration_s) if a.duration_s else None, int(a.distance_m) if a.distance_m else None)
             pace_km = _pace_str(int(a.duration_s) if a.duration_s else None, int(a.distance_m) if a.distance_m else None)
-            eff = (pace_s_per_km / float(a.avg_hr)) if a.avg_hr else None
+            speed_mps = (distance_m / duration_s) if duration_s > 0 else None
+            eff = (speed_mps / float(a.avg_hr)) if (speed_mps and a.avg_hr) else None
 
+            _br_rel = _relative_date(a.start_time.date())
             rows.append(
                 {
                     "activity_id": str(a.id),
-                    "date": a.start_time.date().isoformat(),
+                    "date": f"{a.start_time.date().isoformat()} {_br_rel}",
                     "name": (a.name or "").strip() or "Run",
                     "distance_km": round(distance_m / 1000.0, 2),
                     "distance_mi": round(distance_m / _M_PER_MI, 2),
@@ -1571,14 +1982,14 @@ def get_best_runs(
                     "pace_per_km": pace_km,
                     "pace_per_mile": pace_mi,
                     "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
-                    "efficiency_sec_per_km_per_bpm": round(eff, 6) if eff is not None else None,
+                    "efficiency_speed_per_hr": round(eff, 6) if eff is not None else None,
                 }
             )
 
         def _score(r: Dict[str, Any]) -> float:
             if metric == "efficiency":
-                v = r.get("efficiency_sec_per_km_per_bpm")
-                return float(v) if v is not None else 1e9  # lower is better
+                v = r.get("efficiency_speed_per_hr")
+                return -float(v) if v is not None else 1e9  # speed/HR: higher is better (unambiguous)
             if metric == "pace":
                 # lower seconds per km is better; derive from formatted pace if possible
                 # fall back to distance/duration
@@ -1605,8 +2016,8 @@ def get_best_runs(
             parts = [r["name"], f"{dist:.1f} {unit}", f"@ {pace}"]
             if r.get("avg_hr") is not None:
                 parts.append(f"(avg HR {r['avg_hr']} bpm)")
-            if metric == "efficiency" and r.get("efficiency_sec_per_km_per_bpm") is not None:
-                parts.append(f"[eff {r['efficiency_sec_per_km_per_bpm']:.6f}]")
+            if metric == "efficiency" and r.get("efficiency_speed_per_hr") is not None:
+                parts.append(f"[eff {r['efficiency_speed_per_hr']:.6f}]")
             evidence.append(
                 {
                     "type": "activity",
@@ -1617,10 +2028,21 @@ def get_best_runs(
                 }
             )
 
+        # --- Narrative ---
+        br_parts: List[str] = [f"Top {len(best)} runs by {metric} in the last {days} days:"]
+        for i, r in enumerate(best, 1):
+            d = r["distance_mi"] if units == "imperial" else r["distance_km"]
+            u = "mi" if units == "imperial" else "km"
+            p = r["pace_per_mile"] if units == "imperial" else r["pace_per_km"]
+            hr_str = f", avg HR {r['avg_hr']}" if r.get("avg_hr") else ""
+            br_parts.append(f"{i}. {r['name']} ({r['date']}): {d:.1f} {u} @ {p}{hr_str}.")
+        br_narrative = " ".join(br_parts) if best else f"No qualifying runs found by {metric} in the last {days} days."
+
         return {
             "ok": True,
             "tool": "get_best_runs",
             "generated_at": _iso(now),
+            "narrative": br_narrative,
             "data": {
                 "preferred_units": units,
                 "window_days": days,
@@ -1736,10 +2158,27 @@ def compare_training_periods(db: Session, athlete_id: UUID, days: int = 28) -> D
                 }
             )
 
+        # --- Narrative ---
+        unit_lbl = "mi" if units == "imperial" else "km"
+        dist_a_val = sa["total_distance_mi"] if units == "imperial" else sa["total_distance_km"]
+        dist_b_val = sb["total_distance_mi"] if units == "imperial" else sb["total_distance_km"]
+        cp_parts: List[str] = [
+            f"Last {days} days vs prior {days} days: "
+            f"{dist_a_val:.0f} {unit_lbl} ({sa['run_count']} runs) vs "
+            f"{dist_b_val:.0f} {unit_lbl} ({sb['run_count']} runs)."
+        ]
+        if dist_delta_pct is not None:
+            direction = "increase" if dist_delta_pct > 0 else ("decrease" if dist_delta_pct < 0 else "no change")
+            cp_parts.append(f"Volume change: {dist_delta_pct:+.0f}% ({direction}).")
+            if abs(dist_delta_pct) > 30:
+                cp_parts.append("This is a significant ramp — monitor for injury risk.")
+        cp_narrative = " ".join(cp_parts)
+
         return {
             "ok": True,
             "tool": "compare_training_periods",
             "generated_at": _iso(now),
+            "narrative": cp_narrative,
             "data": {
                 "preferred_units": units,
                 "days": days,
@@ -1774,17 +2213,19 @@ def compare_training_periods(db: Session, athlete_id: UUID, days: int = 28) -> D
 
 def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[str, Any]:
     """
-    Phase 3: Wellness trends from DailyCheckin data.
-    
+    Phase 3: Wellness trends from DailyCheckin (self-report) + GarminDay (watch-measured).
+
     Returns sleep, stress, soreness, HRV, and mindset trends.
     Critical for understanding recovery context and readiness.
+    Garmin Health API data (hrv_overnight_avg, resting_hr, sleep_total_s, avg_stress)
+    is included alongside athlete self-report when available.
     """
-    from models import DailyCheckin
-    
+    from models import DailyCheckin, GarminDay
+
     now = datetime.utcnow()
     days = max(7, min(int(days), 90))
     cutoff = now - timedelta(days=days)
-    
+
     try:
         checkins = (
             db.query(DailyCheckin)
@@ -1795,8 +2236,19 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
             .order_by(DailyCheckin.date.desc())
             .all()
         )
-        
-        if not checkins:
+
+        # Garmin Health API data — watch-measured biometrics for the same window
+        garmin_days = (
+            db.query(GarminDay)
+            .filter(
+                GarminDay.athlete_id == athlete_id,
+                GarminDay.calendar_date >= cutoff.date(),
+            )
+            .order_by(GarminDay.calendar_date.desc())
+            .all()
+        )
+
+        if not checkins and not garmin_days:
             return {
                 "ok": True,
                 "tool": "get_wellness_trends",
@@ -1804,12 +2256,13 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
                 "data": {
                     "window_days": days,
                     "checkin_count": 0,
-                    "message": "No wellness check-ins recorded in this period.",
+                    "garmin_days_count": 0,
+                    "message": "No wellness check-ins or Garmin Health API data recorded in this period.",
                 },
                 "evidence": [],
             }
-        
-        # Aggregate metrics
+
+        # Aggregate metrics from self-report check-ins
         sleep_values = [float(c.sleep_h) for c in checkins if c.sleep_h is not None]
         stress_values = [int(c.stress_1_5) for c in checkins if c.stress_1_5 is not None]
         soreness_values = [int(c.soreness_1_5) for c in checkins if c.soreness_1_5 is not None]
@@ -1817,11 +2270,52 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
         resting_hr_values = [int(c.resting_hr) for c in checkins if c.resting_hr is not None]
         enjoyment_values = [int(c.enjoyment_1_5) for c in checkins if c.enjoyment_1_5 is not None]
         confidence_values = [int(c.confidence_1_5) for c in checkins if c.confidence_1_5 is not None]
-        motivation_values = [int(c.motivation_1_5) for c in checkins if c.motivation_1_5 is not None]
-        
+        readiness_values = [int(c.readiness_1_5) for c in checkins if c.readiness_1_5 is not None]
+
+        # Aggregate Garmin Health API biometrics (device-measured, higher fidelity than self-report).
+        # Be defensive: unit tests and mixed/malformed rows can contain mock/non-numeric values.
+        # avg_stress = -1 means insufficient data from Garmin — exclude from aggregation.
+        def _to_num(value: Any) -> Optional[float]:
+            if value is None:
+                return None
+            # Avoid unittest MagicMock placeholders being treated as numeric.
+            if value.__class__.__module__.startswith("unittest.mock"):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        garmin_sleep_h_vals: List[float] = []
+        garmin_hrv_vals: List[float] = []
+        garmin_rhr_vals: List[float] = []
+        garmin_stress_vals: List[float] = []
+        garmin_sleep_score_vals: List[float] = []
+
+        for g in garmin_days:
+            sleep_total_s = _to_num(getattr(g, "sleep_total_s", None))
+            if sleep_total_s is not None:
+                garmin_sleep_h_vals.append(sleep_total_s / 3600.0)
+
+            hrv_overnight_avg = _to_num(getattr(g, "hrv_overnight_avg", None))
+            if hrv_overnight_avg is not None:
+                garmin_hrv_vals.append(hrv_overnight_avg)
+
+            resting_hr = _to_num(getattr(g, "resting_hr", None))
+            if resting_hr is not None:
+                garmin_rhr_vals.append(resting_hr)
+
+            avg_stress = _to_num(getattr(g, "avg_stress", None))
+            if avg_stress is not None and avg_stress >= 0:
+                garmin_stress_vals.append(avg_stress)
+
+            sleep_score = _to_num(getattr(g, "sleep_score", None))
+            if sleep_score is not None:
+                garmin_sleep_score_vals.append(sleep_score)
+
         def avg(vals: List) -> Optional[float]:
             return round(sum(vals) / len(vals), 2) if vals else None
-        
+
         def trend(vals: List) -> Optional[str]:
             """Determine if values are trending up, down, or stable."""
             if len(vals) < 3:
@@ -1838,7 +2332,7 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
             elif delta_pct < -10:
                 return "declining"
             return "stable"
-        
+
         # Build recent entries for evidence
         evidence: List[Dict[str, Any]] = []
         for c in checkins[:7]:  # Last 7 entries
@@ -1853,20 +2347,95 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
                 parts.append(f"HRV:{float(c.hrv_rmssd):.0f}")
             if c.resting_hr:
                 parts.append(f"RHR:{c.resting_hr}")
-            
+
+            _today = date.today()
             evidence.append({
                 "type": "wellness",
-                "date": c.date.isoformat(),
+                "date": f"{c.date.isoformat()} {_relative_date(c.date, _today)}",
                 "value": " | ".join(parts) if parts else "check-in recorded",
             })
-        
+
+        # --- Narrative ---
+        # Lead with most recent self-report entry for temporal anchoring.
+        # Guard: if no checkins (only Garmin data), skip this block.
+        most_recent_line = ""
+        _today = date.today()
+        if checkins:
+            most_recent = checkins[0]
+            _mr_rel = _relative_date(most_recent.date, _today)
+            recent_parts: List[str] = [f"Most recent self-report ({most_recent.date.isoformat()} {_mr_rel}):"]
+            if most_recent.sleep_h is not None:
+                recent_parts.append(f"sleep={float(most_recent.sleep_h):.1f}h")
+            if most_recent.stress_1_5 is not None:
+                recent_parts.append(f"stress={most_recent.stress_1_5}/5")
+            if most_recent.soreness_1_5 is not None:
+                recent_parts.append(f"soreness={most_recent.soreness_1_5}/5")
+            if most_recent.hrv_rmssd is not None:
+                recent_parts.append(f"HRV={float(most_recent.hrv_rmssd):.0f}ms")
+            if most_recent.resting_hr is not None:
+                recent_parts.append(f"RHR={most_recent.resting_hr}bpm")
+            most_recent_line = (
+                " | ".join(recent_parts)
+                if len(recent_parts) > 1
+                else f"Most recent self-report ({most_recent.date.isoformat()}): no numeric data."
+            )
+
+        wt_parts: List[str] = [
+            most_recent_line or f"No self-report check-ins in last {days} days.",
+            f"Wellness over {days} days ({len(checkins)} check-ins, {len(garmin_days)} Garmin Health API days):",
+        ]
+        if sleep_values:
+            wt_parts.append(f"Self-report sleep avg {avg(sleep_values):.1f}h (trend: {trend(sleep_values) or 'N/A'}).")
+        if garmin_sleep_h_vals:
+            wt_parts.append(
+                f"Garmin device sleep avg {avg(garmin_sleep_h_vals):.1f}h "
+                f"(trend: {trend(garmin_sleep_h_vals) or 'N/A'}, source: Garmin Health API)."
+            )
+        if garmin_sleep_score_vals:
+            wt_parts.append(f"Garmin sleep score avg {avg(garmin_sleep_score_vals):.0f}/100 (source: Garmin Health API).")
+        if stress_values:
+            wt_parts.append(f"Self-report stress avg {avg(stress_values):.1f}/5 (trend: {trend(stress_values) or 'N/A'}).")
+        if garmin_stress_vals:
+            wt_parts.append(
+                f"Garmin device stress avg {avg(garmin_stress_vals):.0f} "
+                f"(trend: {trend(garmin_stress_vals) or 'N/A'}, source: Garmin Health API)."
+            )
+        if soreness_values:
+            wt_parts.append(f"Soreness avg {avg(soreness_values):.1f}/5 (trend: {trend(soreness_values) or 'N/A'}).")
+        if hrv_values:
+            wt_parts.append(f"HRV (self-report) avg {avg(hrv_values):.0f} ms (trend: {trend(hrv_values) or 'N/A'}).")
+        if garmin_hrv_vals:
+            wt_parts.append(
+                f"Garmin overnight HRV avg {avg(garmin_hrv_vals):.0f} ms "
+                f"(trend: {trend(garmin_hrv_vals) or 'N/A'}, source: Garmin Health API). Higher = better recovery."
+            )
+        if resting_hr_values:
+            wt_parts.append(f"Resting HR (self-report) avg {avg(resting_hr_values):.0f} bpm (trend: {trend(resting_hr_values) or 'N/A'}).")
+        if garmin_rhr_vals:
+            wt_parts.append(
+                f"Garmin resting HR avg {avg(garmin_rhr_vals):.0f} bpm "
+                f"(trend: {trend(garmin_rhr_vals) or 'N/A'}, source: Garmin Health API)."
+            )
+        wt_narrative = " ".join(wt_parts) if len(wt_parts) > 1 else "No wellness data available."
+
         return {
             "ok": True,
             "tool": "get_wellness_trends",
             "generated_at": _iso(now),
+            "narrative": wt_narrative,
             "data": {
                 "window_days": days,
                 "checkin_count": len(checkins),
+                "garmin_days_count": len(garmin_days),
+                "garmin_health_api": {
+                    "sleep_avg_h": avg(garmin_sleep_h_vals),
+                    "sleep_score_avg": avg(garmin_sleep_score_vals),
+                    "hrv_overnight_avg_ms": avg(garmin_hrv_vals),
+                    "resting_hr_avg_bpm": avg(garmin_rhr_vals),
+                    "stress_avg": avg(garmin_stress_vals),
+                    "data_points": len(garmin_days),
+                    "note": "Device-measured data from Garmin Health API",
+                },
                 "sleep": {
                     "avg_hours": avg(sleep_values),
                     "min_hours": round(min(sleep_values), 1) if sleep_values else None,
@@ -1901,7 +2470,7 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
                 "mindset": {
                     "avg_enjoyment": avg(enjoyment_values),
                     "avg_confidence": avg(confidence_values),
-                    "avg_motivation": avg(motivation_values),
+                    "avg_readiness": avg(readiness_values),
                     "note": "All scales 1-5, higher is better",
                 },
             },
@@ -1918,19 +2487,19 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
 def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     Phase 3: Athlete profile with physiological thresholds and runner typing.
-    
+
     Returns max_hr, threshold paces, RPI, runner type, and training metrics.
     Critical for personalized recommendations and goal setting.
     """
     now = datetime.utcnow()
-    
+
     try:
         athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
             return {"ok": False, "tool": "get_athlete_profile", "error": "Athlete not found"}
-        
+
         units = (athlete.preferred_units or "metric")
-        
+
         # Calculate age if birthdate available
         age = None
         if athlete.birthdate:
@@ -1938,7 +2507,7 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             age = today.year - athlete.birthdate.year - (
                 (today.month, today.day) < (athlete.birthdate.month, athlete.birthdate.day)
             )
-        
+
         # Convert threshold pace for display
         threshold_pace_display = None
         if athlete.threshold_pace_per_km:
@@ -1952,10 +2521,23 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 m = int(athlete.threshold_pace_per_km // 60)
                 s = int(round(athlete.threshold_pace_per_km % 60))
                 threshold_pace_display = f"{m}:{s:02d}/km"
-        
-        # Calculate HR zones if max_hr available
+
+        # Derive HR zones from N=1 effort thresholds
         hr_zones = None
-        if athlete.max_hr:
+        from services.effort_classification import get_effort_thresholds
+        et = get_effort_thresholds(str(athlete_id), db)
+        p80 = et.get("p80_hr")
+        p40 = et.get("p40_hr")
+        peak = et.get("observed_peak_hr")
+        if p80 and p40:
+            hr_zones = {
+                "zone_1_recovery": {"min": int(p40 * 0.85), "max": int(p40)},
+                "zone_2_easy": {"min": int(p40), "max": int((p40 + p80) / 2)},
+                "zone_3_moderate": {"min": int((p40 + p80) / 2), "max": int(p80)},
+                "zone_4_threshold": {"min": int(p80), "max": int(p80 * 1.05)},
+                "zone_5_max": {"min": int(p80 * 1.05), "max": int(peak) if peak else int(p80 * 1.10)},
+            }
+        elif athlete.max_hr:
             max_hr = athlete.max_hr
             hr_zones = {
                 "zone_1_recovery": {"min": int(max_hr * 0.50), "max": int(max_hr * 0.60)},
@@ -1964,20 +2546,45 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 "zone_4_threshold": {"min": int(max_hr * 0.80), "max": int(max_hr * 0.90)},
                 "zone_5_max": {"min": int(max_hr * 0.90), "max": max_hr},
             }
-        
+
         # Build evidence
         evidence: List[Dict[str, Any]] = []
-        if athlete.vdot:
-            evidence.append({"type": "metric", "name": "RPI", "value": f"{athlete.vdot:.1f}"})
+        if athlete.rpi:
+            evidence.append({"type": "metric", "name": "RPI", "value": f"{athlete.rpi:.1f}"})
         if athlete.runner_type:
             evidence.append({"type": "classification", "name": "runner_type", "value": athlete.runner_type})
         if athlete.max_hr:
             evidence.append({"type": "metric", "name": "max_hr", "value": f"{athlete.max_hr} bpm"})
-        
+
+        # --- Narrative ---
+        n_parts: List[str] = []
+        if age is not None:
+            n_parts.append(f"{age}-year-old")
+        if athlete.sex:
+            n_parts.append(f"{athlete.sex}")
+        n_parts.append("runner.")
+        if athlete.rpi:
+            n_parts.append(f"RPI (Running Performance Index): {athlete.rpi:.1f}.")
+        if athlete.runner_type:
+            n_parts.append(f"Runner type: {athlete.runner_type}.")
+        if athlete.max_hr:
+            n_parts.append(f"Max HR: {athlete.max_hr} bpm.")
+        if threshold_pace_display:
+            n_parts.append(f"Threshold pace: {threshold_pace_display}.")
+        if athlete.durability_index:
+            n_parts.append(f"Durability index: {float(athlete.durability_index):.1f}.")
+        if athlete.recovery_half_life_hours:
+            rhl_days = round(float(athlete.recovery_half_life_hours) / 24.0, 1)
+            n_parts.append(f"Recovery half-life: {rhl_days} days.")
+        if athlete.current_streak_weeks:
+            n_parts.append(f"Current training streak: {athlete.current_streak_weeks} weeks.")
+        narrative = " ".join(n_parts) if n_parts else "Athlete profile data unavailable."
+
         return {
             "ok": True,
             "tool": "get_athlete_profile",
             "generated_at": _iso(now),
+            "narrative": narrative,
             "data": {
                 "preferred_units": units,
                 "demographics": {
@@ -1991,8 +2598,8 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     "threshold_hr": athlete.threshold_hr,
                     "threshold_pace": threshold_pace_display,
                     "threshold_pace_sec_per_km": float(athlete.threshold_pace_per_km) if athlete.threshold_pace_per_km else None,
-                    "rpi": float(athlete.vdot) if athlete.vdot else None,  # Running Performance Index
-                    "vdot": float(athlete.vdot) if athlete.vdot else None,  # Keep for backward compatibility
+                    "rpi": float(athlete.rpi) if athlete.rpi else None,  # Running Performance Index
+                    "rpi": float(athlete.rpi) if athlete.rpi else None,  # Keep for backward compatibility
                     "hr_zones": hr_zones,
                 },
                 "runner_typing": {
@@ -2026,18 +2633,18 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
 def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> Dict[str, Any]:
     """
     Phase 3: Training load history showing ATL/CTL/TSB trends over time.
-    
+
     Returns daily snapshots of training load metrics to understand load progression.
     Critical for periodization analysis and injury risk assessment.
     """
     now = datetime.utcnow()
     days = max(7, min(int(days), 90))
-    
+
     try:
         # Get activities for the window + buffer for CTL calculation (42 days for CTL)
         buffer_days = 42
         cutoff = now - timedelta(days=days + buffer_days)
-        
+
         runs = (
             db.query(Activity)
             .filter(
@@ -2048,7 +2655,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
             .order_by(Activity.start_time.asc())
             .all()
         )
-        
+
         if not runs:
             return {
                 "ok": True,
@@ -2060,7 +2667,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
                 },
                 "evidence": [],
             }
-        
+
         # Calculate daily TSS values
         daily_tss: Dict[date, float] = {}
         for a in runs:
@@ -2070,34 +2677,34 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
             intensity = (a.intensity_score or 50) / 100  # Default to moderate if unknown
             tss = duration_min * intensity
             daily_tss[run_date] = daily_tss.get(run_date, 0) + tss
-        
+
         # Calculate ATL (7-day) and CTL (42-day) for each day in window
         atl_decay = 1 - (2 / 8)  # 7-day time constant
         ctl_decay = 1 - (2 / 43)  # 42-day time constant
-        
+
         history: List[Dict[str, Any]] = []
         evidence: List[Dict[str, Any]] = []
-        
+
         atl = 0.0
         ctl = 0.0
-        
+
         start_date = (now - timedelta(days=days + buffer_days)).date()
         end_date = now.date()
         current_date = start_date
-        
+
         while current_date <= end_date:
             day_tss = daily_tss.get(current_date, 0)
-            
+
             # Exponential weighted moving average
             atl = atl * atl_decay + day_tss * (1 - atl_decay)
             ctl = ctl * ctl_decay + day_tss * (1 - ctl_decay)
             tsb = ctl - atl
-            
+
             # Only include days within the requested window
             if current_date >= (now - timedelta(days=days)).date():
                 # Determine form state
                 form_state = "fresh" if tsb > 10 else ("fatigued" if tsb < -10 else "balanced")
-                
+
                 # Risk assessment
                 if atl > ctl * 1.3:
                     risk = "high"
@@ -2105,7 +2712,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
                     risk = "moderate"
                 else:
                     risk = "low"
-                
+
                 history.append({
                     "date": current_date.isoformat(),
                     "atl": round(atl, 1),
@@ -2115,12 +2722,12 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
                     "injury_risk": risk,
                     "day_tss": round(day_tss, 1),
                 })
-            
+
             current_date += timedelta(days=1)
-        
+
         # Get current state (latest entry)
         current = history[-1] if history else None
-        
+
         # Calculate trends
         if len(history) >= 7:
             recent_ctl = [h["ctl"] for h in history[-7:]]
@@ -2138,7 +2745,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
                     ctl_trend = "maintaining"
         else:
             ctl_trend = None
-        
+
         # Build evidence from key dates
         for h in history[-7:]:
             evidence.append({
@@ -2146,11 +2753,24 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
                 "date": h["date"],
                 "value": f"ATL={h['atl']:.0f} CTL={h['ctl']:.0f} TSB={h['tsb']:+.0f} ({h['form_state']})",
             })
-        
+
+        # --- Narrative ---
+        tlh_parts: List[str] = [f"Training load history over {days} days."]
+        if current:
+            tlh_parts.append(
+                f"Current: ATL={current['atl']:.0f}, CTL={current['ctl']:.0f}, "
+                f"TSB={current['tsb']:+.0f} ({current['form_state']}). "
+                f"Injury risk: {current['injury_risk']}."
+            )
+        if ctl_trend:
+            tlh_parts.append(f"CTL trend: {ctl_trend}.")
+        tlh_narrative = " ".join(tlh_parts)
+
         return {
             "ok": True,
             "tool": "get_training_load_history",
             "generated_at": _iso(now),
+            "narrative": tlh_narrative,
             "data": {
                 "window_days": days,
                 "current_state": current,
@@ -2181,17 +2801,14 @@ def _interpret_nutrition_correlation(key: str, r: float) -> str:
     if abs(r) < 0.1:
         return "No meaningful relationship found"
 
-    # NOTE: Efficiency in our system is pace(sec/km)/HR, so LOWER is better.
-    # That means a NEGATIVE correlation between intake and efficiency can be a positive sign.
+    # Efficiency (pace/HR) is directionally ambiguous — correlation sign
+    # cannot determine better/worse.  See Athlete Trust Safety Contract
+    # in n1_insight_generator.py.  Use neutral association language.
     if "efficiency" in key and "delta" not in key:
-        if r < -0.3:
-            return "Strong positive effect: higher intake -> better efficiency"
-        elif r < -0.1:
-            return "Moderate positive effect"
-        elif r > 0.3:
-            return "Possible negative effect: higher intake -> worse efficiency"
-        elif r > 0.1:
-            return "Slight negative effect"
+        if abs(r) > 0.3:
+            return f"Notable association with efficiency (r={r:.2f}) — review with context"
+        elif abs(r) > 0.1:
+            return f"Mild association with efficiency (r={r:.2f})"
 
     if "delta" in key:
         if r < -0.3:
@@ -2256,10 +2873,30 @@ def get_coach_intent_snapshot(db: Session, athlete_id: UUID, ttl_days: int = 7) 
                 "updated_at": _iso(snap.updated_at) if snap.updated_at else None,
             }
 
+        # --- Narrative ---
+        if snap:
+            ci_parts: List[str] = ["Athlete intent:"]
+            if snap.training_intent:
+                ci_parts.append(f"Intent: {snap.training_intent}.")
+            if snap.next_event_date:
+                ci_parts.append(f"Next event: {snap.next_event_type or 'race'} on {snap.next_event_date.isoformat()}.")
+            if snap.pain_flag:
+                ci_parts.append(f"Pain flag: {snap.pain_flag}.")
+            if snap.weekly_mileage_target is not None:
+                ci_parts.append(f"Weekly mileage target: {float(snap.weekly_mileage_target):.0f}.")
+            if snap.what_feels_off:
+                ci_parts.append(f"What feels off: {snap.what_feels_off}.")
+            if stale:
+                ci_parts.append("(Snapshot is stale — may need refresh.)")
+            ci_narrative = " ".join(ci_parts)
+        else:
+            ci_narrative = "No athlete intent snapshot set yet."
+
         return {
             "ok": True,
             "tool": "get_coach_intent_snapshot",
             "generated_at": _iso(now),
+            "narrative": ci_narrative,
             "data": data,
             "evidence": [
                 {
@@ -2796,10 +3433,25 @@ def get_training_prescription_window(
             )
 
         # Return in preferred units (do not hide the other unit, but keep it out of the main copy).
+        # --- Narrative ---
+        rx_parts: List[str] = [f"Training prescription for {start.isoformat()} to {end.isoformat()} ({len(out_days)} day(s)):"]
+        for od in out_days:
+            d_date = od.get("date", "?")
+            title = od.get("title") or od.get("workout_type") or "Rest"
+            dist = od.get("distance_mi") if units == "imperial" else od.get("distance_km")
+            u = "mi" if units == "imperial" else "km"
+            if dist:
+                rx_parts.append(f"  {d_date}: {title} — {dist:.1f} {u}.")
+            else:
+                rx_parts.append(f"  {d_date}: {title}.")
+        rx_parts.append(f"Based on target {target_weekly_miles:.0f} mi/week, pain: {pain_flag_norm}.")
+        rx_narrative = " ".join(rx_parts)
+
         return {
             "ok": True,
             "tool": "get_training_prescription_window",
             "generated_at": _iso(now),
+            "narrative": rx_narrative,
             "data": {
                 "preferred_units": units,
                 "window": {
@@ -2822,6 +3474,727 @@ def get_training_prescription_window(
         except Exception:
             pass
         return {"ok": False, "tool": "get_training_prescription_window", "error": str(e)}
+
+
+def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
+    """
+    ADR-16: Build a comprehensive pre-computed athlete brief.
+
+    This is the coach's preparation — everything they should know before
+    the conversation starts. Pre-computed facts, not raw data. The LLM
+    reads this and coaches from it.
+
+    Returns a human-readable multi-section string (~3000-4000 tokens).
+    Cached in Redis for 15 minutes. Invalidated on activity write.
+    """
+    from core.cache import get_cache, set_cache
+    _cache_key = f"athlete_brief:{athlete_id}"
+    _cached = get_cache(_cache_key)
+    if _cached is not None:
+        return _cached
+
+    today = date.today()
+    sections: List[str] = [
+        f"## Date Context\nToday is {today.isoformat()} ({today.strftime('%A')}). All dates below are absolute — compute relative time from today when speaking to the athlete."
+    ]
+
+    # ── 1. IDENTITY ──────────────────────────────────────────────────
+    try:
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if athlete:
+            lines = [f"Name: {athlete.display_name or 'Athlete'}"]
+            if athlete.birthdate:
+                age = (today - athlete.birthdate).days // 365
+                lines.append(f"Age: {age}")
+            if athlete.sex:
+                lines.append(f"Sex: {athlete.sex}")
+            lines.append(f"Units: {athlete.preferred_units or 'metric'}")
+            sections.append("## Identity\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: identity failed: {e}")
+
+    # ── 2. GOAL RACE ─────────────────────────────────────────────────
+    try:
+        plan = (
+            db.query(TrainingPlan)
+            .filter(TrainingPlan.athlete_id == athlete_id, TrainingPlan.status == "active")
+            .first()
+        )
+        if plan:
+            lines = [f"Race: {plan.goal_race_name or plan.name}"]
+            if plan.goal_race_date:
+                days_until = (plan.goal_race_date - today).days
+                lines.append(f"Date: {plan.goal_race_date.isoformat()} ({days_until} days away)")
+            if plan.goal_race_distance_m:
+                dist_mi = plan.goal_race_distance_m / _M_PER_MI
+                lines.append(f"Distance: {dist_mi:.1f} miles ({plan.goal_race_distance_m}m)")
+            if plan.goal_time_seconds:
+                h = plan.goal_time_seconds // 3600
+                m = (plan.goal_time_seconds % 3600) // 60
+                s = plan.goal_time_seconds % 60
+                lines.append(f"Target time: {h}:{m:02d}:{s:02d}")
+                if plan.goal_race_distance_m and plan.goal_race_distance_m > 0:
+                    goal_pace_sec = plan.goal_time_seconds / (plan.goal_race_distance_m / _M_PER_MI)
+                    gp_m = int(goal_pace_sec // 60)
+                    gp_s = int(round(goal_pace_sec % 60))
+                    lines.append(f"Target pace: {gp_m}:{gp_s:02d}/mi")
+            sections.append("## Goal Race\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: goal race failed: {e}")
+
+    # ── 3. TRAINING STATE ────────────────────────────────────────────
+    try:
+        load_data = get_training_load(db, athlete_id)
+        if load_data.get("ok"):
+            d = load_data["data"]
+            ctl = d.get("ctl", "N/A")
+            atl = d.get("atl", "N/A")
+            tsb = d.get("tsb", "N/A")
+            zone = d.get("tsb_zone", {})
+            zone_label = zone.get("label", "")
+            phase = d.get("training_phase", "")
+            rec = d.get("recommendation", "")
+            lines = [
+                "(INTERNAL — use to reason about their state but NEVER quote these numbers to the athlete. Translate into plain coaching language.)",
+                f"Chronic load (CTL): {ctl}",
+                f"Acute load (ATL): {atl}",
+                f"Balance (TSB): {tsb} — {zone_label}",
+            ]
+            if phase:
+                lines.append(f"Phase: {phase}")
+            if rec:
+                lines.append(f"Recommendation: {rec}")
+            sections.append("## Training State\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: training state failed: {e}")
+
+    # ── 4. RECOVERY & DURABILITY ─────────────────────────────────────
+    try:
+        recovery = get_recovery_status(db, athlete_id)
+        if recovery.get("ok"):
+            d = recovery["data"]
+            lines = [
+                "(INTERNAL — reason from these but translate into coaching language for the athlete.)",
+                f"Recovery status: {d.get('status', 'unknown')}",
+                f"Injury risk score: {d.get('injury_risk_score', 'N/A')}",
+            ]
+            if d.get("durability_index") is not None:
+                lines.append(f"Durability index: {d['durability_index']}")
+            if d.get("recovery_half_life_hours") is not None:
+                lines.append(f"Recovery half-life: {d['recovery_half_life_hours']:.1f}h")
+            sections.append("## Recovery & Durability\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: recovery failed: {e}")
+
+    # ── 5. VOLUME TRAJECTORY ─────────────────────────────────────────
+    try:
+        weekly = get_weekly_volume(db, athlete_id, weeks=8)
+        if weekly.get("ok"):
+            weeks_data = weekly.get("data", {}).get("weeks_data", weekly.get("data", {}).get("weeks", []))
+            if weeks_data:
+                lines = []
+                completed_weeks = []
+                current_week_info = None
+                for w in weeks_data:
+                    dist = w.get("total_distance_mi", 0)
+                    runs = w.get("run_count", 0)
+                    if w.get("is_current_week"):
+                        elapsed = w.get("days_elapsed", "?")
+                        remaining = w.get("days_remaining", "?")
+                        current_week_info = f"Current week: {dist:.1f}mi through {elapsed} of 7 days ({runs} runs, {remaining} days remaining)"
+                    else:
+                        completed_weeks.append((w.get("week_start", ""), dist, runs))
+
+                # Show trajectory
+                if completed_weeks:
+                    recent = completed_weeks[-4:]  # last 4 completed weeks
+                    trajectory = " → ".join(f"{d:.0f}" for _, d, _ in recent)
+                    lines.append(f"Recent completed weeks (mi): {trajectory}")
+                    if len(recent) >= 2:
+                        first_val = recent[0][1]
+                        last_val = recent[-1][1]
+                        if first_val > 0:
+                            pct_change = ((last_val - first_val) / first_val) * 100
+                            direction = "up" if pct_change > 0 else "down"
+                            lines.append(f"Trend: {direction} {abs(pct_change):.0f}% over {len(recent)} weeks")
+                    # Peak volume
+                    peak = max(completed_weeks, key=lambda x: x[1])
+                    try:
+                        _peak_rel = _relative_date(date.fromisoformat(peak[0]), today)
+                    except (ValueError, TypeError):
+                        _peak_rel = ""
+                    lines.append(f"Peak week: {peak[1]:.1f}mi (week of {peak[0]}) {_peak_rel}")
+                    if last_val > 0 and peak[1] > 0:
+                        pct_of_peak = (last_val / peak[1]) * 100
+                        lines.append(f"Current vs peak: {pct_of_peak:.0f}%")
+
+                if current_week_info:
+                    lines.append(current_week_info)
+
+                sections.append("## Volume Trajectory\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: volume trajectory failed: {e}")
+
+    # ── 6. RECENT RUNS (grouped by date for multi-activity days) ────
+    try:
+        recent = get_recent_runs(db, athlete_id, days=14)
+        if recent.get("ok"):
+            runs = recent.get("data", {}).get("runs", [])
+            if runs:
+                from collections import OrderedDict
+                by_date: OrderedDict[str, list] = OrderedDict()
+                for run in runs[:10]:
+                    run_date = (run.get("start_time") or "")[:10]
+                    by_date.setdefault(run_date, []).append(run)
+
+                lines = [f"Last {len(runs)} runs (14 days):"]
+                for run_date, day_runs in by_date.items():
+                    try:
+                        _day_rel = " " + _relative_date(date.fromisoformat(run_date), today)
+                    except (ValueError, TypeError):
+                        _day_rel = ""
+
+                    if len(day_runs) > 1:
+                        day_dist = sum(r.get("distance_mi", 0) for r in day_runs)
+                        has_race = any(r.get("is_race") for r in day_runs)
+                        label = "Race day" if has_race else f"{len(day_runs)} activities"
+                        lines.append(f"  {run_date}{_day_rel} — {label} ({day_dist:.1f}mi total):")
+                        for run in day_runs:
+                            name = run.get("shape_sentence") or run.get("name", "Run")
+                            dist = run.get("distance_mi", 0)
+                            pace = run.get("pace_per_mile", "N/A")
+                            hr = run.get("avg_hr", "")
+                            hr_str = f" | HR {hr}" if hr else ""
+                            tag = " [race]" if run.get("is_race") else ""
+                            lines.append(f"    • {name} — {dist:.1f}mi @ {pace}{hr_str}{tag}")
+                    else:
+                        run = day_runs[0]
+                        name = run.get("name", "Run")
+                        dist = run.get("distance_mi", 0)
+                        pace = run.get("pace_per_mile", "N/A")
+                        hr = run.get("avg_hr", "")
+                        hr_str = f" | HR {hr}" if hr else ""
+                        lines.append(f"  {run_date}{_day_rel}: {name} — {dist:.1f}mi @ {pace}{hr_str}")
+
+                sections.append("## Recent Runs\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: recent runs failed: {e}")
+
+    # ── 7. RACE PREDICTIONS ──────────────────────────────────────────
+    try:
+        preds = get_race_predictions(db, athlete_id)
+        if preds.get("ok"):
+            pred_data = preds.get("data", {}).get("predictions", {})
+            if pred_data:
+                lines = []
+                for dist_name in ["5K", "10K", "Half Marathon", "Marathon"]:
+                    p = pred_data.get(dist_name, {})
+                    pred_info = p.get("prediction", {})
+                    time_fmt = pred_info.get("time_formatted")
+                    confidence = pred_info.get("confidence", "")
+                    if time_fmt:
+                        lines.append(f"  {dist_name}: {time_fmt} ({confidence} confidence)")
+                if lines:
+                    sections.append("## Race Predictions\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: race predictions failed: {e}")
+
+    # ── 8. TRAINING PACES ────────────────────────────────────────────
+    try:
+        paces = get_training_paces(db, athlete_id)
+        if paces.get("ok"):
+            d = paces["data"]
+            pace_data = d.get("paces", {})
+            rpi = d.get("rpi", "N/A")
+            lines = [f"RPI (Running Performance Index): {rpi}"]
+            for zone_name in ["easy", "marathon", "threshold", "interval", "repetition"]:
+                val = pace_data.get(zone_name, "N/A")
+                lines.append(f"  {zone_name.capitalize()}: {val}")
+            sections.append("## Training Paces\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: training paces failed: {e}")
+
+    # ── 9. KEY PERSONAL BESTS ────────────────────────────────────────
+    try:
+        pbs = get_pb_patterns(db, athlete_id)
+        if pbs.get("ok"):
+            pb_list = pbs.get("data", {}).get("pbs", [])
+            if pb_list:
+                lines = []
+                for pb in pb_list[:5]:
+                    cat = pb.get("category", pb.get("distance_category", ""))
+                    dist_km = pb.get("distance_km", "")
+                    time_min = pb.get("time_min", "")
+                    pb_date = (pb.get("date") or "")[:10]
+                    try:
+                        _pb_rel = _relative_date(date.fromisoformat(pb_date), today)
+                    except (ValueError, TypeError):
+                        _pb_rel = ""
+                    if dist_km and time_min:
+                        lines.append(f"  {cat}: {time_min:.1f}min / {dist_km:.1f}km ({pb_date} {_pb_rel})")
+                if lines:
+                    sections.append("## Personal Bests\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: personal bests failed: {e}")
+
+    # ── 10. PERSONAL FINGERPRINT (confirmed patterns with layer intelligence) ──
+    try:
+        from services.fingerprint_context import build_fingerprint_prompt_section
+        fp_section = build_fingerprint_prompt_section(athlete_id, db, verbose=False, max_findings=10)
+        if fp_section:
+            sections.append("## Personal Fingerprint\n" + fp_section)
+        else:
+            corr = get_correlations(db, athlete_id, days=90)
+            if corr.get("ok"):
+                corr_data = corr.get("data", {})
+                correlations = corr_data.get("correlations", []) if isinstance(corr_data, dict) else []
+                if isinstance(correlations, list) and correlations:
+                    lines = []
+                    for c in correlations[:5]:
+                        input_name = c.get("input_name", "?")
+                        output_name = c.get("output_name", "?")
+                        r = c.get("correlation_coefficient", 0)
+                        n = c.get("sample_size", 0)
+                        direction = "positively" if r > 0 else "inversely"
+                        lines.append(
+                            f"  {input_name} {direction} correlates with {output_name} "
+                            f"(r={r:.2f}, n={n})"
+                        )
+                    if lines:
+                        sections.append("## N-of-1 Insights (Correlations)\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: personal fingerprint failed: {e}")
+
+    # ── 10b. INVESTIGATION FINDINGS (race input analysis) ──
+    try:
+        from services.finding_persistence import get_active_findings
+        stored = get_active_findings(athlete_id, db)
+        if stored:
+            lines = [
+                "(Investigation findings — what the system discovered about this athlete's training patterns.)"
+            ]
+            for f in stored[:8]:
+                conf_label = f"confidence: {f.confidence}" if f.confidence else ""
+                lines.append(f"  [{f.investigation_name}] {f.sentence} ({conf_label})")
+            sections.append("## Training Discoveries\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: investigation findings failed: {e}")
+
+    # ── 11. EFFICIENCY TREND ─────────────────────────────────────────
+    try:
+        eff = get_efficiency_trend(db, athlete_id, days=60)
+        if eff.get("ok"):
+            d = eff.get("data", {})
+            if d:
+                lines = []
+                trend = d.get("trend_direction", "")
+                avg_ef = d.get("average_ef")
+                best_ef = d.get("best_ef")
+                if trend:
+                    lines.append(f"Trend: {trend}")
+                if avg_ef:
+                    lines.append(f"Average EF (60 days): {avg_ef}")
+                if best_ef:
+                    lines.append(f"Best recent EF: {best_ef}")
+                if lines:
+                    sections.append("## Efficiency Trend\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: efficiency trend failed: {e}")
+
+    # ── 12. INTENT & CHECK-IN ────────────────────────────────────────
+    try:
+        intent = get_coach_intent_snapshot(db, athlete_id)
+        if intent.get("ok"):
+            d = intent.get("data", {})
+            lines = []
+            if d.get("training_intent"):
+                lines.append(f"Training intent: {d['training_intent']}")
+            if d.get("pain_flag") and d["pain_flag"] != "none":
+                lines.append(f"Pain flag: {d['pain_flag']}")
+            if d.get("weekly_mileage_target"):
+                lines.append(f"Weekly mileage target: {d['weekly_mileage_target']}")
+            if d.get("next_event_date"):
+                try:
+                    _evt_rel = _relative_date(date.fromisoformat(str(d['next_event_date'])[:10]), today)
+                except (ValueError, TypeError):
+                    _evt_rel = ""
+                lines.append(f"Next event: {d['next_event_date']} {_evt_rel} ({d.get('next_event_type', '')})")
+            if lines:
+                sections.append("## Athlete Intent\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: intent failed: {e}")
+
+    try:
+        from models import DailyCheckin
+        checkin = (
+            db.query(DailyCheckin)
+            .filter(DailyCheckin.athlete_id == athlete_id)
+            .order_by(DailyCheckin.date.desc())
+            .first()
+        )
+        if checkin:
+            try:
+                _ci_date = checkin.date if isinstance(checkin.date, date) else date.fromisoformat(str(checkin.date)[:10])
+                _ci_rel = _relative_date(_ci_date, today)
+            except (ValueError, TypeError):
+                _ci_rel = ""
+            lines = [f"Date: {checkin.date} {_ci_rel}"]
+            if checkin.sleep_h is not None:
+                lines.append(f"Sleep: {checkin.sleep_h}h")
+            if checkin.readiness_1_5 is not None:
+                readiness_map = {5: 'High', 4: 'Good', 3: 'Neutral', 2: 'Low', 1: 'Poor'}
+                lines.append(f"Readiness: {readiness_map.get(checkin.readiness_1_5, checkin.readiness_1_5)}")
+            if checkin.soreness_1_5 is not None:
+                soreness_map = {1: 'None', 2: 'Mild', 4: 'Yes'}
+                lines.append(f"Soreness: {soreness_map.get(checkin.soreness_1_5, checkin.soreness_1_5)}/5")
+            if checkin.stress_1_5 is not None:
+                lines.append(f"Stress: {checkin.stress_1_5}/5")
+            if checkin.notes:
+                lines.append(f"Notes: {checkin.notes[:150]}")
+            sections.append("## Latest Check-in\n" + "\n".join(lines))
+    except Exception as e:
+        logger.debug(f"Brief: checkin failed: {e}")
+
+    if not sections:
+        return "(No athlete data available)"
+
+    brief = "\n\n".join(sections)
+    set_cache(_cache_key, brief, ttl=900)  # 15 min
+    return brief
+
+
+def compute_running_math(
+    db: Session,
+    athlete_id: UUID,
+    pace_per_mile: str = "",
+    pace_per_km: str = "",
+    distance_miles: float = 0.0,
+    distance_km: float = 0.0,
+    time_seconds: int = 0,
+    operation: str = "pace_to_finish",
+) -> Dict[str, Any]:
+    """
+    General-purpose running math calculator. The LLM calls this instead of
+    doing arithmetic.
+
+    Operations:
+      pace_to_finish  — given pace + distance, compute finish time
+      finish_to_pace  — given finish time + distance, compute required pace
+      split_calc      — given two split paces + half distance each, compute total
+
+    Accepts either imperial (miles) or metric (km). Returns both.
+    """
+    now = datetime.utcnow()
+
+    def _parse_pace(pace_str: str) -> Optional[float]:
+        """Parse 'M:SS' or 'M:SS/mi' or 'M:SS/km' into seconds."""
+        if not pace_str:
+            return None
+        cleaned = re.sub(r"/(mi|km|mile|k)\s*$", "", pace_str.strip())
+        parts = cleaned.split(":")
+        try:
+            if len(parts) == 2:
+                return int(parts[0]) * 60 + float(parts[1])
+            elif len(parts) == 1:
+                return float(parts[0])
+        except (ValueError, TypeError):
+            return None
+        return None
+
+    def _fmt_time(total_seconds: float) -> str:
+        """Format seconds as H:MM:SS or M:SS."""
+        total_seconds = round(total_seconds)
+        h = int(total_seconds // 3600)
+        m = int((total_seconds % 3600) // 60)
+        s = int(total_seconds % 60)
+        if h > 0:
+            return f"{h}:{m:02d}:{s:02d}"
+        return f"{m}:{s:02d}"
+
+    def _fmt_pace(seconds_per_unit: float) -> str:
+        m = int(seconds_per_unit // 60)
+        s = int(round(seconds_per_unit % 60))
+        return f"{m}:{s:02d}"
+
+    try:
+        # Normalize distance to miles and km
+        dist_mi = distance_miles or (distance_km / 1.60934 if distance_km else 0.0)
+        dist_km = distance_km or (distance_miles * 1.60934 if distance_miles else 0.0)
+
+        result: Dict[str, Any] = {"operation": operation}
+
+        if operation == "pace_to_finish":
+            pace_sec = _parse_pace(pace_per_mile)
+            unit = "mi"
+            dist = dist_mi
+            if not pace_sec and pace_per_km:
+                pace_sec = _parse_pace(pace_per_km)
+                unit = "km"
+                dist = dist_km
+            if not pace_sec or dist <= 0:
+                return {"ok": False, "tool": "compute_running_math",
+                        "error": "Need a pace and distance to compute finish time."}
+            if unit == "km":
+                finish_sec = pace_sec * dist_km
+                pace_per_mi_sec = pace_sec * 1.60934
+            else:
+                finish_sec = pace_sec * dist_mi
+                pace_per_mi_sec = pace_sec
+            pace_per_km_sec = pace_per_mi_sec / 1.60934
+            result.update({
+                "finish_time": _fmt_time(finish_sec),
+                "finish_time_seconds": round(finish_sec),
+                "pace_per_mile": _fmt_pace(pace_per_mi_sec) + "/mi",
+                "pace_per_km": _fmt_pace(pace_per_km_sec) + "/km",
+                "distance_miles": round(dist_mi, 2),
+                "distance_km": round(dist_km, 2),
+            })
+
+        elif operation == "finish_to_pace":
+            if not time_seconds or (dist_mi <= 0 and dist_km <= 0):
+                return {"ok": False, "tool": "compute_running_math",
+                        "error": "Need a finish time and distance to compute pace."}
+            pace_mi = time_seconds / dist_mi if dist_mi > 0 else 0
+            pace_km = time_seconds / dist_km if dist_km > 0 else 0
+            result.update({
+                "finish_time": _fmt_time(time_seconds),
+                "pace_per_mile": _fmt_pace(pace_mi) + "/mi",
+                "pace_per_km": _fmt_pace(pace_km) + "/km",
+                "distance_miles": round(dist_mi, 2),
+                "distance_km": round(dist_km, 2),
+            })
+
+        elif operation == "split_calc":
+            # For split calculations, pace_per_mile = first half pace, pace_per_km = second half pace
+            # (repurposing fields) or pass as "7:30,7:00" in pace_per_mile
+            paces = pace_per_mile.split(",") if "," in pace_per_mile else [pace_per_mile, pace_per_km]
+            p1 = _parse_pace(paces[0].strip() if len(paces) > 0 else "")
+            p2 = _parse_pace(paces[1].strip() if len(paces) > 1 else "")
+            if not p1 or not p2 or dist_mi <= 0:
+                return {"ok": False, "tool": "compute_running_math",
+                        "error": "Need two split paces and total distance."}
+            half_dist = dist_mi / 2.0
+            total_sec = (p1 * half_dist) + (p2 * half_dist)
+            avg_pace = total_sec / dist_mi
+            result.update({
+                "first_half_pace": _fmt_pace(p1) + "/mi",
+                "second_half_pace": _fmt_pace(p2) + "/mi",
+                "average_pace": _fmt_pace(avg_pace) + "/mi",
+                "finish_time": _fmt_time(total_sec),
+                "finish_time_seconds": round(total_sec),
+                "distance_miles": round(dist_mi, 2),
+                "negative_split_seconds": round(p1 * half_dist - p2 * half_dist),
+            })
+        else:
+            return {"ok": False, "tool": "compute_running_math",
+                    "error": f"Unknown operation: {operation}. Use pace_to_finish, finish_to_pace, or split_calc."}
+
+        # --- Narrative ---
+        if operation == "pace_to_finish":
+            math_narr = (
+                f"At {result.get('pace_per_mile', '?')} pace over {result.get('distance_miles', '?')} miles: "
+                f"finish time is {result.get('finish_time', '?')}."
+            )
+        elif operation == "finish_to_pace":
+            math_narr = (
+                f"To finish {result.get('distance_miles', '?')} miles in {result.get('finish_time', '?')}: "
+                f"required pace is {result.get('pace_per_mile', '?')}."
+            )
+        elif operation == "split_calc":
+            math_narr = (
+                f"Split calculation over {result.get('distance_miles', '?')} miles: "
+                f"first half at {result.get('first_half_pace', '?')}, "
+                f"second half at {result.get('second_half_pace', '?')}, "
+                f"finish time {result.get('finish_time', '?')}."
+            )
+        else:
+            math_narr = f"Running math result: {result}"
+
+        return {
+            "ok": True,
+            "tool": "compute_running_math",
+            "generated_at": _iso(now),
+            "narrative": math_narr,
+            "data": result,
+            "evidence": [{
+                "type": "derived",
+                "id": f"running_math:{operation}",
+                "date": _iso(now)[:10],
+                "value": f"{operation}: {result.get('finish_time', result.get('pace_per_mile', 'computed'))}",
+            }],
+        }
+    except Exception as e:
+        return {"ok": False, "tool": "compute_running_math", "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# ANALYZE RUN STREAMS — Phase 2 coach tool
+# ---------------------------------------------------------------------------
+
+def analyze_run_streams(
+    db: Session,
+    athlete_id: UUID,
+    activity_id: str,
+) -> Dict[str, Any]:
+    """Analyze per-second stream data for a single run activity.
+
+    Resolves the athlete's physiological context (N=1) from the DB,
+    loads the stored stream, invokes the pure-computation engine,
+    and returns the standard coach tool envelope.
+
+    Returns:
+        Standard envelope with:
+            data.activity_id: str
+            data.analysis: dict (segments, drift, moments, plan_comparison,
+                                 channels_present, channels_missing, point_count,
+                                 confidence, tier_used, estimated_flags,
+                                 cross_run_comparable)
+            data.errors: List[dict] with {code, message, retryable}
+    """
+    from models import ActivityStream
+    from services.run_stream_analysis import (
+        AthleteContext, analyze_stream,
+    )
+
+    now = datetime.utcnow()
+    tool_name = "analyze_run_streams"
+    errors: List[Dict[str, Any]] = []
+
+    try:
+        activity_uuid = UUID(activity_id)
+    except (ValueError, TypeError):
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "error": "Invalid activity_id format",
+            "data": {"activity_id": activity_id, "analysis": None, "errors": [
+                {"code": "INVALID_INPUT", "message": "activity_id is not a valid UUID", "retryable": False},
+            ]},
+            "evidence": [],
+        }
+
+    # --- Verify activity exists and belongs to this athlete ---
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_uuid)
+        .first()
+    )
+    if activity is None:
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "error": "Activity not found",
+            "data": {"activity_id": activity_id, "analysis": None, "errors": [
+                {"code": "ACTIVITY_NOT_FOUND", "message": "No activity with this ID", "retryable": False},
+            ]},
+            "evidence": [],
+        }
+
+    if activity.athlete_id != athlete_id:
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "error": "Access denied",
+            "data": {"activity_id": activity_id, "analysis": None, "errors": [
+                {"code": "ACCESS_DENIED", "message": "Activity does not belong to this athlete", "retryable": False},
+            ]},
+            "evidence": [],
+        }
+
+    # --- Check stream availability ---
+    if activity.stream_fetch_status == "unavailable":
+        errors.append({
+            "code": "STREAMS_UNAVAILABLE",
+            "message": "Stream data is permanently unavailable for this activity (manual entry or API limitation)",
+            "retryable": False,
+        })
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "data": {"activity_id": activity_id, "analysis": None, "errors": errors},
+            "evidence": [],
+        }
+
+    # --- Load stream data ---
+    stream_row = (
+        db.query(ActivityStream)
+        .filter(ActivityStream.activity_id == activity_uuid)
+        .first()
+    )
+    if stream_row is None:
+        code = "STREAMS_NOT_FOUND"
+        retryable = activity.stream_fetch_status in ("pending", "failed")
+        errors.append({
+            "code": code,
+            "message": f"No stream data stored (fetch status: {activity.stream_fetch_status})",
+            "retryable": retryable,
+        })
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "data": {"activity_id": activity_id, "analysis": None, "errors": errors},
+            "evidence": [],
+        }
+
+    stream_data = stream_row.stream_data
+    channels_available = stream_row.channels_available or list(stream_data.keys())
+
+    # --- Resolve N=1 athlete context ---
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    athlete_ctx = None
+    if athlete is not None:
+        athlete_ctx = AthleteContext(
+            max_hr=athlete.max_hr,
+            resting_hr=athlete.resting_hr,
+            threshold_hr=athlete.threshold_hr,
+        )
+
+    # --- Resolve linked planned workout (additive) ---
+    planned_workout_dict = None
+    linked_plan = (
+        db.query(PlannedWorkout)
+        .filter(PlannedWorkout.completed_activity_id == activity_uuid)
+        .first()
+    )
+    if linked_plan is not None:
+        planned_workout_dict = {
+            "target_duration_minutes": linked_plan.target_duration_minutes,
+            "target_distance_km": linked_plan.target_distance_km,
+            "target_pace_per_km_seconds": linked_plan.target_pace_per_km_seconds,
+            "segments": linked_plan.segments,  # JSONB — may be None or list of dicts
+        }
+
+    # --- Run analysis ---
+    try:
+        result = analyze_stream(
+            stream_data=stream_data,
+            channels_available=channels_available,
+            planned_workout=planned_workout_dict,
+            athlete_context=athlete_ctx,
+        )
+    except Exception as e:
+        logger.exception("analyze_stream failed for activity %s", activity_id)
+        return {
+            "ok": False, "tool": tool_name, "generated_at": _iso(now),
+            "error": str(e),
+            "data": {"activity_id": activity_id, "analysis": None, "errors": [
+                {"code": "ANALYSIS_FAILED", "message": str(e), "retryable": True},
+            ]},
+            "evidence": [],
+        }
+
+    return {
+        "ok": True,
+        "tool": tool_name,
+        "generated_at": _iso(now),
+        "data": {
+            "activity_id": activity_id,
+            "analysis": result.to_dict(),
+            "errors": [],
+        },
+        "evidence": [{
+            "type": "stream_analysis",
+            "id": f"stream:{activity_id}",
+            "date": activity.start_time.date().isoformat() if activity.start_time else _iso(now)[:10],
+            "value": f"tier={result.tier_used}, confidence={result.confidence}, "
+                     f"segments={len(result.segments)}, moments={len(result.moments)}",
+        }],
+    }
 
 
 def _guardrails_from_pain(pain_flag: str) -> List[str]:

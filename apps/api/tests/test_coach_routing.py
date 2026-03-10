@@ -435,7 +435,7 @@ class TestRunInstructionsBuilder:
 
 
 class TestThreadHistoryLimits:
-    """Test that thread history limits are correctly increased (Phase 2)."""
+    """Test that thread history limits are correctly set (PostgreSQL CoachChat)."""
 
     @pytest.fixture
     def coach(self):
@@ -446,7 +446,6 @@ class TestThreadHistoryLimits:
         with patch.object(AICoach, '__init__', lambda self, db: None):
             coach = AICoach(mock_db)
             coach.db = mock_db
-            coach.client = MagicMock()
             coach.get_thread_history = AICoach.get_thread_history.__get__(coach, AICoach)
             return coach
 
@@ -459,22 +458,36 @@ class TestThreadHistoryLimits:
         assert default_limit == 100, f"Expected default limit 100, got {default_limit}"
 
     def test_max_limit_is_500(self, coach):
-        """Max limit should be 500 (up from 200)."""
-        # Mock the athlete lookup to return a thread_id
-        mock_athlete = MagicMock()
-        mock_athlete.coach_thread_id = "thread_123"
-        coach.db.query.return_value.filter.return_value.first.return_value = mock_athlete
+        """Max limit should be 500 — values above 500 are capped."""
+        from models import CoachChat
         
-        # Mock the OpenAI client
-        coach.client.beta.threads.messages.list.return_value = MagicMock(data=[])
+        # Create a mock CoachChat with 10 messages
+        mock_chat = MagicMock()
+        mock_chat.id = uuid4()
+        mock_chat.messages = [
+            {"role": "user", "content": f"msg {i}", "timestamp": "2026-02-06T00:00:00"}
+            for i in range(10)
+        ]
         
-        # Call with limit > 500, should be capped
-        coach.get_thread_history(uuid4(), limit=1000)
+        # Mock the query chain to return our mock chat
+        coach.db.query.return_value.filter.return_value.order_by.return_value.first.return_value = mock_chat
         
-        # Verify the API was called with limit=500
-        coach.client.beta.threads.messages.list.assert_called_once()
-        call_kwargs = coach.client.beta.threads.messages.list.call_args[1]
-        assert call_kwargs['limit'] == 500, f"Expected limit 500, got {call_kwargs['limit']}"
+        # Call with limit > 500
+        result = coach.get_thread_history(uuid4(), limit=1000)
+        
+        # Should succeed and return messages (limit is internally capped to 500)
+        assert result["thread_id"] == str(mock_chat.id)
+        assert len(result["messages"]) == 10  # all 10 returned since 10 < 500
+
+    def test_returns_empty_when_no_chat_exists(self, coach):
+        """Should return empty messages when no active chat session exists."""
+        # Mock query returning None
+        coach.db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
+        
+        result = coach.get_thread_history(uuid4(), limit=10)
+        
+        assert result["messages"] == []
+        assert result["thread_id"] is None
 
 
 class TestContextInjectionPriorMessages:

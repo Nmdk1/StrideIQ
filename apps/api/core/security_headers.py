@@ -62,11 +62,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             # Note: Adjust 'self' and trusted sources as needed
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "  # May need adjustment for Next.js
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: https:; "
                 "font-src 'self' data:; "
-                "connect-src 'self' https://www.strava.com https://api.strava.com; "
+                "connect-src 'self' https://strideiq.run https://www.strava.com https://api.strava.com; "
                 "frame-ancestors 'none';"
             )
         

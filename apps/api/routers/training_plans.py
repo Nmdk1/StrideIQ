@@ -153,6 +153,13 @@ async def create_plan(
     current_week = _calculate_current_week(plan)
     progress = _calculate_progress(plan)
     
+    # ADR-065: trigger home briefing refresh on plan creation
+    try:
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        enqueue_briefing_refresh(str(athlete.id))
+    except Exception:
+        pass
+
     return PlanSummary(
         id=str(plan.id),
         name=plan.name,

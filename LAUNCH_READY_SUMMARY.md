@@ -35,7 +35,7 @@
 
 ### API Endpoints Verified
 - `GET /health` - ✅
-- `POST /v1/public/vdot/calculate` - ✅
+- `POST /v1/public/rpi/calculate` - ✅
 - `POST /v1/public/age-grade/calculate` - ✅
 
 ### PWA Assets
@@ -52,7 +52,7 @@
 
 ### Core Features
 1. **Free Tools (No Login)**
-   - VDOT Calculator
+   - RPI Calculator
    - WMA Age-Grade Calculator
    - Efficiency Context Checker
    - BMI Calculator

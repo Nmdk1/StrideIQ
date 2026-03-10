@@ -18,7 +18,7 @@ The foundation is **solid**. The codebase is well-architected, the correlation e
 
 ### ✅ What's Working
 - **Morning Check-in** (`/checkin`) - Ultra-fast, friction-free design. Perfect.
-- **Free Tools** - VDOT, WMA, Running Economy, Heat-Adjusted Pace. Real value, no signup required.
+- **Free Tools** - RPI, WMA, Running Economy, Heat-Adjusted Pace. Real value, no signup required.
 - **Navigation** - Clean, responsive, auth-aware
 
 ### ⚠️ Issues to Fix
@@ -233,13 +233,13 @@ export const metadata: Metadata = {
     default: 'Performance Focused Coaching System | Running Efficiency Analytics',
     template: '%s | Performance Focused Coaching'
   },
-  description: 'Discover what actually improves your running. Track efficiency correlations between sleep, nutrition, and performance. Free VDOT calculator, age-grading tools, and AI-powered coaching.',
+  description: 'Discover what actually improves your running. Track efficiency correlations between sleep, nutrition, and performance. Free RPI calculator, age-grading tools, and AI-powered coaching.',
   keywords: [
     'running efficiency',
     'runner performance analytics',
     'running correlation analysis',
     'personal running insights',
-    'VDOT calculator',
+    'RPI calculator',
     'age graded running',
     
     'heat adjusted pace',
@@ -304,7 +304,7 @@ Add JSON-LD for:
 - "personal running insights"
 - "runner efficiency correlations" ← Your unique differentiator
 
-- "VDOT calculator" ← You have this!
+- "RPI calculator" ← You have this!
 - "age graded running calculator" ← You have this!
 - "heat adjusted pace calculator" ← You have this!
 
@@ -318,7 +318,7 @@ Add JSON-LD for:
 **You have great tools but no explanatory content around them.**
 
 Consider adding (POST-LAUNCH):
-- `/tools/vdot-calculator` with full SEO page explaining VDOT
+- `/tools/rpi-calculator` with full SEO page explaining RPI
 - `/tools/age-grading` with explanation of WMA standards
 - `/blog` with articles targeting long-tail keywords
 

@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-Athletes need personalized training paces calculated from their race performance. The Training Pace Calculator (based on VDOT methodology) exists but is not properly integrated into the plan generation workflow:
+Athletes need personalized training paces calculated from their race performance. The Training Pace Calculator (based on RPI methodology) exists but is not properly integrated into the plan generation workflow:
 
 1. **Standard tier**: Effort descriptions only (no paces) - working as designed
 2. **Semi-custom tier**: Should use user-entered race time - broken (format mismatch)
@@ -25,7 +25,7 @@ The athlete should be able to:
 
 1. **User-provided race time** (highest priority) - from plan creation form
 2. **Strava race activities** - races tagged in Strava within last 6 months
-3. **Strava training estimate** - conservative estimate from best training runs (VDOT * 0.95)
+3. **Strava training estimate** - conservative estimate from best training runs (RPI * 0.95)
 
 ### Pace Display Format
 
@@ -69,7 +69,7 @@ PlannedWorkout.coach_notes
 ## Constraints
 
 1. **Time format conversion**: Frontend sends "H:MM:SS", API expects integer seconds
-2. **VDOT calculation requires distance + time**: Both must be provided for pace calculation
+2. **RPI calculation requires distance + time**: Both must be provided for pace calculation
 3. **Strava race detection**: Relies on `workout_type == 'Race'` tag from Strava
 4. **Backward compatibility**: Existing plans retain their current coach_notes
 

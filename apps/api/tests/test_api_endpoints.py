@@ -8,13 +8,13 @@ from main import app
 client = TestClient(app)
 
 
-class TestVDOTEndpoint:
-    """Test VDOT calculator API endpoint"""
+class TestRPIEndpoint:
+    """Test RPI calculator API endpoint"""
     
-    def test_vdot_calculation_endpoint(self):
-        """Test VDOT calculation endpoint"""
+    def test_rpi_calculation_endpoint(self):
+        """Test RPI calculation endpoint"""
         response = client.post(
-            "/v1/vdot/calculate",
+            "/v1/rpi/calculate",
             json={
                 "race_time_seconds": 20 * 60,  # 20 minutes
                 "distance_meters": 5000
@@ -22,14 +22,14 @@ class TestVDOTEndpoint:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "vdot" in data
-        assert data["vdot"] > 0
+        assert "rpi" in data
+        assert data["rpi"] > 0
     
-    def test_vdot_training_paces_endpoint(self):
+    def test_rpi_training_paces_endpoint(self):
         """Test training paces endpoint"""
         response = client.post(
-            "/v1/vdot/training-paces",
-            json={"vdot": 50.0}
+            "/v1/rpi/training-paces",
+            json={"rpi": 50.0}
         )
         assert response.status_code == 200
         data = response.json()
@@ -39,10 +39,10 @@ class TestVDOTEndpoint:
         assert "interval" in data
         assert "repetition" in data
     
-    def test_vdot_invalid_input(self):
+    def test_rpi_invalid_input(self):
         """Test invalid input handling"""
         response = client.post(
-            "/v1/vdot/calculate",
+            "/v1/rpi/calculate",
             json={
                 "race_time_seconds": -100,
                 "distance_meters": 5000
@@ -196,7 +196,7 @@ class TestInputValidation:
     def test_missing_fields(self):
         """Test missing required fields"""
         response = client.post(
-            "/v1/vdot/calculate",
+            "/v1/rpi/calculate",
             json={"race_time_seconds": 20 * 60}
         )
         assert response.status_code == 422
@@ -217,7 +217,7 @@ class TestInputValidation:
     def test_invalid_distance(self):
         """Test invalid distance values"""
         response = client.post(
-            "/v1/vdot/calculate",
+            "/v1/rpi/calculate",
             json={
                 "race_time_seconds": 20 * 60,
                 "distance_meters": -100

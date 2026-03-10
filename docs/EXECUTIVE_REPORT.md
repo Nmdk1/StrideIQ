@@ -40,7 +40,7 @@ StrideIQ is an algorithmic training platform that treats each athlete as a sampl
 ### Data Flow
 
 ```
-Strava OAuth → Webhooks → Activities → TSS/VDOT Computation
+Strava OAuth → Webhooks → Activities → TSS/RPI Computation
                               ↓
                     Individual Performance Model
                     (τ1, τ2, k1, k2 calibration)
@@ -77,7 +77,7 @@ Strava OAuth → Webhooks → Activities → TSS/VDOT Computation
 |------|-----------|--------|
 | **OAuth** | Strava OAuth 2.0 | Access token, athlete profile |
 | **Webhooks** | Activity create/update events | Real-time sync |
-| **Processing** | Distance, duration, HR, splits, best efforts | TSS, VDOT, efficiency metrics |
+| **Processing** | Distance, duration, HR, splits, best efforts | TSS, RPI, efficiency metrics |
 | **Enrichment** | Workout classification, heat adjustment | Contextual metadata |
 
 Activities are stored with full split data. Best efforts (5K, 10K, half, marathon) are extracted for race performance tracking.
@@ -90,7 +90,7 @@ Activities are stored with full split data. Best efforts (5K, 10K, half, maratho
 | **Pre-Race Fingerprinting** | Pattern match: TSB, sleep, mileage before PRs | "Your best races happen with TSB +15 to +20" |
 | **Training Load (TSB/CTL/ATL)** | Banister impulse-response, individual τ | "CTL 72, ATL 85, TSB -13: heavy but sustainable" |
 | **Pace Decay** | Second-half vs first-half pace analysis | "You fade 8% in long runs — MP portions too ambitious?" |
-| **VDOT Calculation** | Daniels' formula from race times | "Current VDOT: 53.2 → MP 6:46, T 6:25" |
+| **RPI Calculation** | Daniels' formula from race times | "Current RPI: 53.2 → MP 6:46, T 6:25" |
 
 All calculations use **your data only**. No "runners like you" nonsense.
 
@@ -123,7 +123,7 @@ Three tiers, one philosophy:
    - Peak weekly: 71 miles
    - Peak long run: 22 miles
    - Peak MP long run: 18 miles
-   - Best VDOT: 53.2
+   - Best RPI: 53.2
    - τ1: 25 days (fast adapter)
    - Constraint: Injury (sharp volume drop)
 
@@ -135,7 +135,7 @@ Three tiers, one philosophy:
 
 3. **WorkoutPrescriptionGenerator** → Specific prescriptions
    - "2x4mi @ 6:25 w/ 3min jog" not "threshold work"
-   - Personal paces from VDOT
+   - Personal paces from RPI
    - Experience-appropriate structures
 
 4. **ConstraintAwarePlanner** → Final assembly
@@ -198,7 +198,7 @@ User modifications preserve personalization:
 | Feature | Others | StrideIQ |
 |---------|--------|----------|
 | **τ time constants** | Fixed 42/7 | Calibrated from YOUR race data |
-| **Training paces** | Generic VDOT tables | From YOUR proven race performances |
+| **Training paces** | Generic RPI tables | From YOUR proven race performances |
 | **Injury return** | "Start over at Week 1" | Respect banked fitness, progressive rebuild |
 | **Dual races** | Manual coordination | Automatic tune-up + goal race sequencing |
 | **Counter-conventional** | "Follow the science" | "Your data says otherwise" |

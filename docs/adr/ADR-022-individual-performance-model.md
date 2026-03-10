@@ -9,7 +9,7 @@
 
 ## Context
 
-Current plan generation uses template-based approaches with VDOT-derived paces and fixed periodization structures. While methodologically sound, this approach:
+Current plan generation uses template-based approaches with RPI-derived paces and fixed periodization structures. While methodologically sound, this approach:
 
 1. Uses **generic constants** (τ1=42, τ2=7) rather than individual response parameters
 2. Does not **predict outcomes** — no race time projection from current trajectory
@@ -51,7 +51,7 @@ where:
 
 **Inputs:**
 - Historical TSS series (from training_load.py)
-- Historical performance markers (race times converted to VDOT, or efficiency trend)
+- Historical performance markers (race times converted to RPI, or efficiency trend)
 
 **Outputs:**
 - Calibrated τ1 (fitness time constant, typical 30-60 days)
@@ -67,7 +67,7 @@ from scipy.optimize import minimize
 
 def fit_banister_model(
     tss_series: List[Tuple[date, float]],  # (date, TSS)
-    performance_series: List[Tuple[date, float]],  # (date, VDOT or EF)
+    performance_series: List[Tuple[date, float]],  # (date, RPI or EF)
 ) -> BanisterModel:
     """
     Fit Banister model parameters to athlete's data.
@@ -219,11 +219,11 @@ def predict_race_time(
         athlete_id, race_date, model, db
     )
     
-    # Convert fitness to predicted VDOT
-    predicted_vdot = fitness_to_vdot(projected_fitness, athlete_id, db)
+    # Convert fitness to predicted RPI
+    predicted_rpi = fitness_to_rpi(projected_fitness, athlete_id, db)
     
-    # VDOT to race time
-    predicted_time = vdot_to_race_time(predicted_vdot, race_distance_m)
+    # RPI to race time
+    predicted_time = rpi_to_race_time(predicted_rpi, race_distance_m)
     
     # Confidence interval based on model fit quality and data recency
     confidence_interval = calculate_confidence_interval(
@@ -233,7 +233,7 @@ def predict_race_time(
     return RacePrediction(
         predicted_time_seconds=predicted_time,
         confidence_interval_seconds=confidence_interval,
-        projected_vdot=predicted_vdot,
+        projected_rpi=predicted_rpi,
         model_confidence=model.confidence,
         factors_considered=["CTL trajectory", "efficiency trend", "historical performance"]
     )

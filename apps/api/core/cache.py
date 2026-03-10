@@ -177,6 +177,10 @@ def invalidate_athlete_cache(athlete_id: str):
         f"activities:*:{athlete_id}:*",
         f"activities:{athlete_id}:*",
         f"athlete:{athlete_id}",
+        # Phase 2/3 caches — invalidated on every activity write
+        f"athlete_brief:{athlete_id}",
+        f"training_load:{athlete_id}:*",
+        f"fitness_bank:{athlete_id}",
     ]
     
     total_deleted = 0

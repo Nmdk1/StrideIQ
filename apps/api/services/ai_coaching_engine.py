@@ -133,7 +133,7 @@ def generate_training_plan(
     Args:
         athlete_id: Athlete ID
         goal_distance: Target race distance (e.g., "5K", "Marathon")
-        current_fitness: Current fitness metrics (VDOT, recent race times, etc.)
+        current_fitness: Current fitness metrics (RPI, recent race times, etc.)
         diagnostic_signals: Efficiency trends, load mapping, recovery elasticity
         athlete_profile: Athlete characteristics (volume_tolerance, speed_background, injury_history)
         policy: Coaching policy (Performance Maximal, Durability First, Re-Entry)

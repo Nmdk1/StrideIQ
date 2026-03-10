@@ -5,12 +5,42 @@ All environment variables are loaded and validated here.
 This ensures consistent configuration across the application.
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, model_validator
 from typing import Optional
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Known-weak DB passwords that must not be used in production (P0-3)
+_WEAK_DB_PASSWORDS = frozenset({"postgres", "password", "admin", "root", "test", ""})
+
+
+def validate_production_config(
+    environment: str,
+    debug: bool,
+    cors_origins: Optional[str],
+    postgres_password: str,
+) -> None:
+    """
+    P0-3: Validate production config. Raises ValueError if invalid.
+    Non-production environments are not validated.
+    """
+    if (environment or "").strip().lower() != "production":
+        return
+    if debug:
+        raise ValueError(
+            "Production config invalid: DEBUG must be False when ENVIRONMENT=production"
+        )
+    if not cors_origins or not cors_origins.strip():
+        raise ValueError(
+            "Production config invalid: CORS_ORIGINS must be set (comma-separated origins) when ENVIRONMENT=production"
+        )
+    pw = (postgres_password or "").strip()
+    if pw in _WEAK_DB_PASSWORDS or len(pw) < 12:
+        raise ValueError(
+            "Production config invalid: POSTGRES_PASSWORD must not be default/weak (min 12 chars) when ENVIRONMENT=production"
+        )
 
 
 class Settings(BaseSettings):
@@ -68,9 +98,12 @@ class Settings(BaseSettings):
                     "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
     )
     
-    # Garmin Configuration (for future official API)
+    # Garmin Configuration — OAuth 2.0 PKCE (official Connect API)
     GARMIN_CLIENT_ID: Optional[str] = Field(default=None)
     GARMIN_CLIENT_SECRET: Optional[str] = Field(default=None)
+    # The redirect_uri registered in the Garmin developer portal.
+    # Must exactly match what is configured there.
+    GARMIN_REDIRECT_URI: Optional[str] = Field(default=None)
     
     # API Configuration
     API_HOST: str = Field(default="0.0.0.0")
@@ -95,12 +128,13 @@ class Settings(BaseSettings):
     
     # Email Configuration
     EMAIL_ENABLED: bool = Field(default=False)
-    SMTP_SERVER: str = Field(default="localhost")
+    SMTP_SERVER: str = Field(default="smtp.gmail.com")
     SMTP_PORT: int = Field(default=587)
     SMTP_USERNAME: Optional[str] = Field(default=None)
     SMTP_PASSWORD: Optional[str] = Field(default=None)
-    FROM_EMAIL: str = Field(default="noreply@performancefocused.com")
-    FROM_NAME: str = Field(default="Performance Focused")
+    SMTP_TIMEOUT_SECONDS: int = Field(default=15)
+    FROM_EMAIL: str = Field(default="noreply@strideiq.run")
+    FROM_NAME: str = Field(default="StrideIQ")
     
     # Cache Configuration
     CACHE_TTL_DEFAULT: int = Field(default=300)  # 5 minutes
@@ -142,15 +176,48 @@ class Settings(BaseSettings):
     # Stripe (Phase 6: hosted checkout/portal)
     STRIPE_SECRET_KEY: Optional[str] = Field(default=None)
     STRIPE_WEBHOOK_SECRET: Optional[str] = Field(default=None)
-    STRIPE_PRICE_PRO_MONTHLY_ID: Optional[str] = Field(default=None)
     STRIPE_CHECKOUT_SUCCESS_URL: Optional[str] = Field(default=None)
     STRIPE_CHECKOUT_CANCEL_URL: Optional[str] = Field(default=None)
     STRIPE_PORTAL_RETURN_URL: Optional[str] = Field(default=None)
+
+    # Stripe — 4-tier price IDs (monetization phase).
+    # All are Optional. Checkout flows fail closed if the required ID is absent.
+    # One-time race-plan unlock ($5)
+    STRIPE_PRICE_PLAN_ONETIME_ID: Optional[str] = Field(default=None)
+    # Guided Self-Coaching ($15/mo, $150/yr)
+    STRIPE_PRICE_GUIDED_MONTHLY_ID: Optional[str] = Field(default=None)
+    STRIPE_PRICE_GUIDED_ANNUAL_ID: Optional[str] = Field(default=None)
+    # Premium ($25/mo, $250/yr)
+    STRIPE_PRICE_PREMIUM_MONTHLY_ID: Optional[str] = Field(default=None)
+    STRIPE_PRICE_PREMIUM_ANNUAL_ID: Optional[str] = Field(default=None)
+
+    # Legacy price ID kept for backward-compat subscription matching only.
+    # New checkouts do NOT use this; existing subscribers still reconcile against it.
+    STRIPE_PRICE_PRO_MONTHLY_ID: Optional[str] = Field(default=None)
     
+    # Cloudflare R2 Object Storage (Runtoon photos + generated images)
+    # All buckets are private. All access is via signed URLs (15-min TTL).
+    R2_ACCOUNT_ID: Optional[str] = Field(default=None)
+    R2_ACCESS_KEY_ID: Optional[str] = Field(default=None)
+    R2_SECRET_ACCESS_KEY: Optional[str] = Field(default=None)
+    R2_BUCKET_NAME: str = Field(default="strideiq-runtoon")
+    R2_ENDPOINT_URL: Optional[str] = Field(default=None)  # https://<account_id>.r2.cloudflarestorage.com
+
     # Sentry Error Tracking
     SENTRY_DSN: Optional[str] = Field(default=None)
     SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.1)  # 10% of transactions
     SENTRY_PROFILES_SAMPLE_RATE: float = Field(default=0.1)
+
+    @model_validator(mode="after")
+    def _validate_production_config(self) -> "Settings":
+        """P0-3: Hard-fail on invalid production config. Non-production unaffected."""
+        validate_production_config(
+            self.ENVIRONMENT,
+            self.DEBUG,
+            self.CORS_ORIGINS,
+            self.POSTGRES_PASSWORD,
+        )
+        return self
 
 
 # Global settings instance

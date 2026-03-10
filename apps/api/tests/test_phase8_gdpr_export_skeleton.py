@@ -36,7 +36,9 @@ def test_gdpr_export_shape_and_no_secrets_leak():
             role="athlete",
             strava_access_token=sentinel,
             strava_refresh_token=sentinel,
-            garmin_password_encrypted=sentinel,
+            # garmin_oauth_access_token replaces garmin_password_encrypted
+            # (dropped in garmin_001 migration, Phase 2 Feb 2026)
+            garmin_oauth_access_token=sentinel,
         )
         db.add(user)
         db.commit()
@@ -59,7 +61,10 @@ def test_gdpr_export_shape_and_no_secrets_leak():
         for forbidden_key in (
             "strava_access_token",
             "strava_refresh_token",
-            "garmin_password_encrypted",
+            # garmin_password_encrypted was dropped in garmin_001 (Phase 2).
+            # garmin_oauth_* columns are the current sensitive Garmin fields.
+            "garmin_oauth_access_token",
+            "garmin_oauth_refresh_token",
             "stored_path",
             "file_sha256",
             "password_hash",

@@ -85,6 +85,7 @@ def parse_nutrition(
 @router.post("/nutrition", response_model=NutritionEntryResponse, status_code=201)
 def create_nutrition_entry(
     nutrition: NutritionEntryCreate,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -98,10 +99,8 @@ def create_nutrition_entry(
     
     Used for correlation analysis: nutrition patterns vs performance efficiency.
     """
-    # Verify athlete exists
-    athlete = db.query(Athlete).filter(Athlete.id == nutrition.athlete_id).first()
-    if not athlete:
-        raise HTTPException(status_code=404, detail="Athlete not found")
+    # Use authenticated user's ID
+    athlete = current_user
     
     # Validate activity_id based on entry_type
     if nutrition.entry_type in ['pre_activity', 'during_activity', 'post_activity']:
@@ -110,10 +109,10 @@ def create_nutrition_entry(
                 status_code=400,
                 detail=f"activity_id is required for entry_type '{nutrition.entry_type}'"
             )
-        # Verify activity exists and belongs to athlete
+        # Verify activity exists and belongs to authenticated user
         activity = db.query(Activity).filter(
             Activity.id == nutrition.activity_id,
-            Activity.athlete_id == nutrition.athlete_id
+            Activity.athlete_id == current_user.id
         ).first()
         if not activity:
             raise HTTPException(
@@ -132,9 +131,9 @@ def create_nutrition_entry(
             detail=f"Invalid entry_type: '{nutrition.entry_type}'. Must be 'pre_activity', 'during_activity', 'post_activity', or 'daily'"
         )
     
-    # Create nutrition entry
+    # Create nutrition entry (use authenticated user's ID)
     db_entry = NutritionEntry(
-        athlete_id=nutrition.athlete_id,
+        athlete_id=current_user.id,
         date=nutrition.date,
         entry_type=nutrition.entry_type,
         activity_id=nutrition.activity_id,
@@ -152,15 +151,15 @@ def create_nutrition_entry(
     db.refresh(db_entry)
     
     # Invalidate cache (nutrition affects correlations)
-    invalidate_athlete_cache(str(nutrition.athlete_id))
-    invalidate_correlation_cache(str(nutrition.athlete_id))
+    invalidate_athlete_cache(str(current_user.id))
+    invalidate_correlation_cache(str(current_user.id))
     
     return db_entry
 
 
 @router.get("/nutrition", response_model=List[NutritionEntryResponse])
 def get_nutrition_entries(
-    athlete_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     entry_type: Optional[str] = Query(None, description="Filter by entry type"),
@@ -168,11 +167,11 @@ def get_nutrition_entries(
     db: Session = Depends(get_db)
 ):
     """
-    Get nutrition entries for an athlete.
+    Get nutrition entries for the authenticated user.
     
     Can filter by date range, entry type, and activity ID.
     """
-    query = db.query(NutritionEntry).filter(NutritionEntry.athlete_id == athlete_id)
+    query = db.query(NutritionEntry).filter(NutritionEntry.athlete_id == current_user.id)
     
     if start_date:
         query = query.filter(NutritionEntry.date >= start_date)
@@ -190,12 +189,16 @@ def get_nutrition_entries(
 @router.get("/nutrition/{id}", response_model=NutritionEntryResponse)
 def get_nutrition_entry_by_id(
     id: UUID,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get a specific nutrition entry by ID."""
     entry = db.query(NutritionEntry).filter(NutritionEntry.id == id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Nutrition entry not found")
+    # Verify ownership
+    if entry.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return entry
 
 
@@ -203,6 +206,7 @@ def get_nutrition_entry_by_id(
 def update_nutrition_entry(
     id: UUID,
     nutrition: NutritionEntryCreate,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -214,10 +218,9 @@ def update_nutrition_entry(
     if not db_entry:
         raise HTTPException(status_code=404, detail="Nutrition entry not found")
     
-    # Verify athlete exists
-    athlete = db.query(Athlete).filter(Athlete.id == nutrition.athlete_id).first()
-    if not athlete:
-        raise HTTPException(status_code=404, detail="Athlete not found")
+    # Verify ownership
+    if db_entry.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
     
     # Validate activity_id based on entry_type
     if nutrition.entry_type in ['pre_activity', 'during_activity', 'post_activity']:
@@ -226,10 +229,10 @@ def update_nutrition_entry(
                 status_code=400,
                 detail=f"activity_id is required for entry_type '{nutrition.entry_type}'"
             )
-        # Verify activity exists and belongs to athlete
+        # Verify activity exists and belongs to authenticated user
         activity = db.query(Activity).filter(
             Activity.id == nutrition.activity_id,
-            Activity.athlete_id == nutrition.athlete_id
+            Activity.athlete_id == current_user.id
         ).first()
         if not activity:
             raise HTTPException(
@@ -248,8 +251,7 @@ def update_nutrition_entry(
             detail=f"Invalid entry_type: '{nutrition.entry_type}'"
         )
     
-    # Update fields
-    db_entry.athlete_id = nutrition.athlete_id
+    # Update fields (keep athlete_id unchanged)
     db_entry.date = nutrition.date
     db_entry.entry_type = nutrition.entry_type
     db_entry.activity_id = nutrition.activity_id
@@ -265,8 +267,8 @@ def update_nutrition_entry(
     db.refresh(db_entry)
     
     # Invalidate cache
-    invalidate_athlete_cache(str(nutrition.athlete_id))
-    invalidate_correlation_cache(str(nutrition.athlete_id))
+    invalidate_athlete_cache(str(current_user.id))
+    invalidate_correlation_cache(str(current_user.id))
     
     return db_entry
 
@@ -274,6 +276,7 @@ def update_nutrition_entry(
 @router.delete("/nutrition/{id}", status_code=204)
 def delete_nutrition_entry(
     id: UUID,
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete a nutrition entry."""
@@ -281,13 +284,16 @@ def delete_nutrition_entry(
     if not db_entry:
         raise HTTPException(status_code=404, detail="Nutrition entry not found")
     
-    athlete_id = str(db_entry.athlete_id)
+    # Verify ownership
+    if db_entry.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     db.delete(db_entry)
     db.commit()
     
     # Invalidate cache
-    invalidate_athlete_cache(athlete_id)
-    invalidate_correlation_cache(athlete_id)
+    invalidate_athlete_cache(str(current_user.id))
+    invalidate_correlation_cache(str(current_user.id))
     
     return None
 

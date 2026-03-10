@@ -1,0 +1,2780 @@
+{
+  "_meta": {
+    "generated": "2026-02-26T21:57:13.575Z",
+    "schemaVersion": "1.0",
+    "formula": "Daniels/Gilbert 1979 (rpi-formula.mjs)",
+    "note": "Goal times use target - 1s convention. Fully deterministic — no API dependency."
+  },
+  "sub-17-minute-5k": {
+    "slug": "sub-17-minute-5k",
+    "label": "Sub-17 Minute 5K",
+    "goalLabel": "Sub-17:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "16:59",
+    "goalTimeSeconds": 1019,
+    "rpi": 60.3,
+    "paces": {
+      "easy": {
+        "mi": "7:25",
+        "km": "4:37",
+        "secPerMile": 445
+      },
+      "marathon": {
+        "mi": "6:24",
+        "km": "3:59",
+        "secPerMile": 384
+      },
+      "threshold": {
+        "mi": "6:03",
+        "km": "3:46",
+        "secPerMile": 363
+      },
+      "interval": {
+        "mi": "5:20",
+        "km": "3:19",
+        "secPerMile": 320
+      },
+      "repetition": {
+        "mi": "4:58",
+        "km": "3:05",
+        "secPerMile": 298
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 9761,
+        "timeFormatted": "2:42:41",
+        "paceMi": "6:12",
+        "paceKm": "3:51"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 4668,
+        "timeFormatted": "1:17:48",
+        "paceMi": "5:56",
+        "paceKm": "3:41"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2113,
+        "timeFormatted": "35:13",
+        "paceMi": "5:40",
+        "paceKm": "3:31"
+      }
+    }
+  },
+  "sub-18-minute-5k": {
+    "slug": "sub-18-minute-5k",
+    "label": "Sub-18 Minute 5K",
+    "goalLabel": "Sub-18:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "17:59",
+    "goalTimeSeconds": 1079,
+    "rpi": 56.4,
+    "paces": {
+      "easy": {
+        "mi": "7:46",
+        "km": "4:50",
+        "secPerMile": 466
+      },
+      "marathon": {
+        "mi": "6:41",
+        "km": "4:09",
+        "secPerMile": 401
+      },
+      "threshold": {
+        "mi": "6:19",
+        "km": "3:56",
+        "secPerMile": 379
+      },
+      "interval": {
+        "mi": "5:34",
+        "km": "3:28",
+        "secPerMile": 334
+      },
+      "repetition": {
+        "mi": "5:11",
+        "km": "3:13",
+        "secPerMile": 311
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 10331,
+        "timeFormatted": "2:52:11",
+        "paceMi": "6:34",
+        "paceKm": "4:05"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 4947,
+        "timeFormatted": "1:22:27",
+        "paceMi": "6:17",
+        "paceKm": "3:54"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2237,
+        "timeFormatted": "37:17",
+        "paceMi": "6:00",
+        "paceKm": "3:44"
+      }
+    }
+  },
+  "sub-19-minute-5k": {
+    "slug": "sub-19-minute-5k",
+    "label": "Sub-19 Minute 5K",
+    "goalLabel": "Sub-19:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "18:59",
+    "goalTimeSeconds": 1139,
+    "rpi": 52.9,
+    "paces": {
+      "easy": {
+        "mi": "8:08",
+        "km": "5:03",
+        "secPerMile": 488
+      },
+      "marathon": {
+        "mi": "6:59",
+        "km": "4:20",
+        "secPerMile": 419
+      },
+      "threshold": {
+        "mi": "6:34",
+        "km": "4:05",
+        "secPerMile": 394
+      },
+      "interval": {
+        "mi": "5:46",
+        "km": "3:35",
+        "secPerMile": 346
+      },
+      "repetition": {
+        "mi": "5:22",
+        "km": "3:20",
+        "secPerMile": 322
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 10909,
+        "timeFormatted": "3:01:49",
+        "paceMi": "6:56",
+        "paceKm": "4:18"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5230,
+        "timeFormatted": "1:27:10",
+        "paceMi": "6:39",
+        "paceKm": "4:08"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2363,
+        "timeFormatted": "39:23",
+        "paceMi": "6:20",
+        "paceKm": "3:56"
+      }
+    }
+  },
+  "sub-20-minute-5k": {
+    "slug": "sub-20-minute-5k",
+    "label": "Sub-20 Minute 5K",
+    "goalLabel": "Sub-20:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "19:59",
+    "goalTimeSeconds": 1199,
+    "rpi": 49.9,
+    "paces": {
+      "easy": {
+        "mi": "8:29",
+        "km": "5:16",
+        "secPerMile": 509
+      },
+      "marathon": {
+        "mi": "7:15",
+        "km": "4:30",
+        "secPerMile": 435
+      },
+      "threshold": {
+        "mi": "6:48",
+        "km": "4:14",
+        "secPerMile": 408
+      },
+      "interval": {
+        "mi": "5:57",
+        "km": "3:42",
+        "secPerMile": 357
+      },
+      "repetition": {
+        "mi": "5:31",
+        "km": "3:26",
+        "secPerMile": 331
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 11458,
+        "timeFormatted": "3:10:58",
+        "paceMi": "7:17",
+        "paceKm": "4:32"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5502,
+        "timeFormatted": "1:31:42",
+        "paceMi": "7:00",
+        "paceKm": "4:21"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2484,
+        "timeFormatted": "41:24",
+        "paceMi": "6:40",
+        "paceKm": "4:09"
+      }
+    }
+  },
+  "sub-21-minute-5k": {
+    "slug": "sub-21-minute-5k",
+    "label": "Sub-21 Minute 5K",
+    "goalLabel": "Sub-21:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "20:59",
+    "goalTimeSeconds": 1259,
+    "rpi": 47.1,
+    "paces": {
+      "easy": {
+        "mi": "8:48",
+        "km": "5:28",
+        "secPerMile": 528
+      },
+      "marathon": {
+        "mi": "7:29",
+        "km": "4:39",
+        "secPerMile": 449
+      },
+      "threshold": {
+        "mi": "7:03",
+        "km": "4:23",
+        "secPerMile": 423
+      },
+      "interval": {
+        "mi": "6:10",
+        "km": "3:50",
+        "secPerMile": 370
+      },
+      "repetition": {
+        "mi": "5:43",
+        "km": "3:33",
+        "secPerMile": 343
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 12028,
+        "timeFormatted": "3:20:28",
+        "paceMi": "7:39",
+        "paceKm": "4:45"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5782,
+        "timeFormatted": "1:36:22",
+        "paceMi": "7:21",
+        "paceKm": "4:34"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2610,
+        "timeFormatted": "43:30",
+        "paceMi": "7:00",
+        "paceKm": "4:21"
+      }
+    }
+  },
+  "sub-22-minute-5k": {
+    "slug": "sub-22-minute-5k",
+    "label": "Sub-22 Minute 5K",
+    "goalLabel": "Sub-22:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "21:59",
+    "goalTimeSeconds": 1319,
+    "rpi": 44.6,
+    "paces": {
+      "easy": {
+        "mi": "9:08",
+        "km": "5:41",
+        "secPerMile": 548
+      },
+      "marathon": {
+        "mi": "7:43",
+        "km": "4:48",
+        "secPerMile": 463
+      },
+      "threshold": {
+        "mi": "7:17",
+        "km": "4:32",
+        "secPerMile": 437
+      },
+      "interval": {
+        "mi": "6:23",
+        "km": "3:58",
+        "secPerMile": 383
+      },
+      "repetition": {
+        "mi": "5:55",
+        "km": "3:41",
+        "secPerMile": 355
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 12589,
+        "timeFormatted": "3:29:49",
+        "paceMi": "8:00",
+        "paceKm": "4:58"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6061,
+        "timeFormatted": "1:41:01",
+        "paceMi": "7:42",
+        "paceKm": "4:47"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2734,
+        "timeFormatted": "45:34",
+        "paceMi": "7:20",
+        "paceKm": "4:33"
+      }
+    }
+  },
+  "sub-23-minute-5k": {
+    "slug": "sub-23-minute-5k",
+    "label": "Sub-23 Minute 5K",
+    "goalLabel": "Sub-23:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "22:59",
+    "goalTimeSeconds": 1379,
+    "rpi": 42.3,
+    "paces": {
+      "easy": {
+        "mi": "9:30",
+        "km": "5:54",
+        "secPerMile": 570
+      },
+      "marathon": {
+        "mi": "7:58",
+        "km": "4:57",
+        "secPerMile": 478
+      },
+      "threshold": {
+        "mi": "7:31",
+        "km": "4:40",
+        "secPerMile": 451
+      },
+      "interval": {
+        "mi": "6:35",
+        "km": "4:05",
+        "secPerMile": 395
+      },
+      "repetition": {
+        "mi": "6:05",
+        "km": "3:47",
+        "secPerMile": 365
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 13155,
+        "timeFormatted": "3:39:15",
+        "paceMi": "8:22",
+        "paceKm": "5:12"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6343,
+        "timeFormatted": "1:45:43",
+        "paceMi": "8:04",
+        "paceKm": "5:01"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2861,
+        "timeFormatted": "47:41",
+        "paceMi": "7:40",
+        "paceKm": "4:46"
+      }
+    }
+  },
+  "sub-24-minute-5k": {
+    "slug": "sub-24-minute-5k",
+    "label": "Sub-24 Minute 5K",
+    "goalLabel": "Sub-24:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "23:59",
+    "goalTimeSeconds": 1439,
+    "rpi": 40.2,
+    "paces": {
+      "easy": {
+        "mi": "9:52",
+        "km": "6:08",
+        "secPerMile": 592
+      },
+      "marathon": {
+        "mi": "8:13",
+        "km": "5:06",
+        "secPerMile": 493
+      },
+      "threshold": {
+        "mi": "7:46",
+        "km": "4:50",
+        "secPerMile": 466
+      },
+      "interval": {
+        "mi": "6:47",
+        "km": "4:13",
+        "secPerMile": 407
+      },
+      "repetition": {
+        "mi": "6:15",
+        "km": "3:53",
+        "secPerMile": 375
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 13722,
+        "timeFormatted": "3:48:42",
+        "paceMi": "8:43",
+        "paceKm": "5:25"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6626,
+        "timeFormatted": "1:50:26",
+        "paceMi": "8:25",
+        "paceKm": "5:14"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2988,
+        "timeFormatted": "49:48",
+        "paceMi": "8:01",
+        "paceKm": "4:59"
+      }
+    }
+  },
+  "sub-25-minute-5k": {
+    "slug": "sub-25-minute-5k",
+    "label": "Sub-25 Minute 5K",
+    "goalLabel": "Sub-25:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "24:59",
+    "goalTimeSeconds": 1499,
+    "rpi": 38.3,
+    "paces": {
+      "easy": {
+        "mi": "10:15",
+        "km": "6:22",
+        "secPerMile": 615
+      },
+      "marathon": {
+        "mi": "8:31",
+        "km": "5:18",
+        "secPerMile": 511
+      },
+      "threshold": {
+        "mi": "8:02",
+        "km": "5:00",
+        "secPerMile": 482
+      },
+      "interval": {
+        "mi": "7:00",
+        "km": "4:21",
+        "secPerMile": 420
+      },
+      "repetition": {
+        "mi": "6:27",
+        "km": "4:00",
+        "secPerMile": 387
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 14280,
+        "timeFormatted": "3:58:00",
+        "paceMi": "9:05",
+        "paceKm": "5:39"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6905,
+        "timeFormatted": "1:55:05",
+        "paceMi": "8:47",
+        "paceKm": "5:27"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3114,
+        "timeFormatted": "51:54",
+        "paceMi": "8:21",
+        "paceKm": "5:11"
+      }
+    }
+  },
+  "sub-27-minute-5k": {
+    "slug": "sub-27-minute-5k",
+    "label": "Sub-27 Minute 5K",
+    "goalLabel": "Sub-27:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "26:59",
+    "goalTimeSeconds": 1619,
+    "rpi": 35,
+    "paces": {
+      "easy": {
+        "mi": "11:00",
+        "km": "6:50",
+        "secPerMile": 660
+      },
+      "marathon": {
+        "mi": "9:05",
+        "km": "5:39",
+        "secPerMile": 545
+      },
+      "threshold": {
+        "mi": "8:34",
+        "km": "5:19",
+        "secPerMile": 514
+      },
+      "interval": {
+        "mi": "7:26",
+        "km": "4:37",
+        "secPerMile": 446
+      },
+      "repetition": {
+        "mi": "6:50",
+        "km": "4:15",
+        "secPerMile": 410
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 15366,
+        "timeFormatted": "4:16:06",
+        "paceMi": "9:46",
+        "paceKm": "6:04"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 7454,
+        "timeFormatted": "2:04:14",
+        "paceMi": "9:29",
+        "paceKm": "5:54"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3362,
+        "timeFormatted": "56:02",
+        "paceMi": "9:01",
+        "paceKm": "5:36"
+      }
+    }
+  },
+  "sub-30-minute-5k": {
+    "slug": "sub-30-minute-5k",
+    "label": "Sub-30 Minute 5K",
+    "goalLabel": "Sub-30:00",
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "goalTimeLabel": "29:59",
+    "goalTimeSeconds": 1799,
+    "rpi": 30.8,
+    "paces": {
+      "easy": {
+        "mi": "12:35",
+        "km": "7:49",
+        "secPerMile": 755
+      },
+      "marathon": {
+        "mi": "10:16",
+        "km": "6:23",
+        "secPerMile": 616
+      },
+      "threshold": {
+        "mi": "9:41",
+        "km": "6:01",
+        "secPerMile": 581
+      },
+      "interval": {
+        "mi": "8:21",
+        "km": "5:11",
+        "secPerMile": 501
+      },
+      "repetition": {
+        "mi": "7:38",
+        "km": "4:45",
+        "secPerMile": 458
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 17028,
+        "timeFormatted": "4:43:48",
+        "paceMi": "10:49",
+        "paceKm": "6:43"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 8297,
+        "timeFormatted": "2:18:17",
+        "paceMi": "10:33",
+        "paceKm": "6:33"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3746,
+        "timeFormatted": "1:02:26",
+        "paceMi": "10:03",
+        "paceKm": "6:15"
+      }
+    }
+  },
+  "sub-35-minute-10k": {
+    "slug": "sub-35-minute-10k",
+    "label": "Sub-35 Minute 10K",
+    "goalLabel": "Sub-35:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "34:59",
+    "goalTimeSeconds": 2099,
+    "rpi": 60.8,
+    "paces": {
+      "easy": {
+        "mi": "7:22",
+        "km": "4:35",
+        "secPerMile": 442
+      },
+      "marathon": {
+        "mi": "6:21",
+        "km": "3:57",
+        "secPerMile": 381
+      },
+      "threshold": {
+        "mi": "6:01",
+        "km": "3:44",
+        "secPerMile": 361
+      },
+      "interval": {
+        "mi": "5:18",
+        "km": "3:18",
+        "secPerMile": 318
+      },
+      "repetition": {
+        "mi": "4:56",
+        "km": "3:04",
+        "secPerMile": 296
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 9694,
+        "timeFormatted": "2:41:34",
+        "paceMi": "6:10",
+        "paceKm": "3:50"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 4636,
+        "timeFormatted": "1:17:16",
+        "paceMi": "5:54",
+        "paceKm": "3:40"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1011,
+        "timeFormatted": "16:51",
+        "paceMi": "5:25",
+        "paceKm": "3:22"
+      }
+    }
+  },
+  "sub-36-minute-10k": {
+    "slug": "sub-36-minute-10k",
+    "label": "Sub-36 Minute 10K",
+    "goalLabel": "Sub-36:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "35:59",
+    "goalTimeSeconds": 2159,
+    "rpi": 58.8,
+    "paces": {
+      "easy": {
+        "mi": "7:33",
+        "km": "4:41",
+        "secPerMile": 453
+      },
+      "marathon": {
+        "mi": "6:30",
+        "km": "4:02",
+        "secPerMile": 390
+      },
+      "threshold": {
+        "mi": "6:09",
+        "km": "3:49",
+        "secPerMile": 369
+      },
+      "interval": {
+        "mi": "5:25",
+        "km": "3:22",
+        "secPerMile": 325
+      },
+      "repetition": {
+        "mi": "5:03",
+        "km": "3:08",
+        "secPerMile": 303
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 9973,
+        "timeFormatted": "2:46:13",
+        "paceMi": "6:20",
+        "paceKm": "3:56"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 4772,
+        "timeFormatted": "1:19:32",
+        "paceMi": "6:04",
+        "paceKm": "3:46"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1041,
+        "timeFormatted": "17:21",
+        "paceMi": "5:35",
+        "paceKm": "3:28"
+      }
+    }
+  },
+  "sub-37-minute-10k": {
+    "slug": "sub-37-minute-10k",
+    "label": "Sub-37 Minute 10K",
+    "goalLabel": "Sub-37:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "36:59",
+    "goalTimeSeconds": 2219,
+    "rpi": 56.9,
+    "paces": {
+      "easy": {
+        "mi": "7:43",
+        "km": "4:48",
+        "secPerMile": 463
+      },
+      "marathon": {
+        "mi": "6:39",
+        "km": "4:08",
+        "secPerMile": 399
+      },
+      "threshold": {
+        "mi": "6:17",
+        "km": "3:54",
+        "secPerMile": 377
+      },
+      "interval": {
+        "mi": "5:32",
+        "km": "3:26",
+        "secPerMile": 332
+      },
+      "repetition": {
+        "mi": "5:09",
+        "km": "3:12",
+        "secPerMile": 309
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 10255,
+        "timeFormatted": "2:50:55",
+        "paceMi": "6:31",
+        "paceKm": "4:03"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 4910,
+        "timeFormatted": "1:21:50",
+        "paceMi": "6:15",
+        "paceKm": "3:53"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1070,
+        "timeFormatted": "17:50",
+        "paceMi": "5:44",
+        "paceKm": "3:34"
+      }
+    }
+  },
+  "sub-38-minute-10k": {
+    "slug": "sub-38-minute-10k",
+    "label": "Sub-38 Minute 10K",
+    "goalLabel": "Sub-38:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "37:59",
+    "goalTimeSeconds": 2279,
+    "rpi": 55.2,
+    "paces": {
+      "easy": {
+        "mi": "7:53",
+        "km": "4:54",
+        "secPerMile": 473
+      },
+      "marathon": {
+        "mi": "6:47",
+        "km": "4:13",
+        "secPerMile": 407
+      },
+      "threshold": {
+        "mi": "6:24",
+        "km": "3:59",
+        "secPerMile": 384
+      },
+      "interval": {
+        "mi": "5:38",
+        "km": "3:30",
+        "secPerMile": 338
+      },
+      "repetition": {
+        "mi": "5:15",
+        "km": "3:16",
+        "secPerMile": 315
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 10522,
+        "timeFormatted": "2:55:22",
+        "paceMi": "6:41",
+        "paceKm": "4:09"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5041,
+        "timeFormatted": "1:24:01",
+        "paceMi": "6:25",
+        "paceKm": "3:59"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1099,
+        "timeFormatted": "18:19",
+        "paceMi": "5:54",
+        "paceKm": "3:40"
+      }
+    }
+  },
+  "sub-39-minute-10k": {
+    "slug": "sub-39-minute-10k",
+    "label": "Sub-39 Minute 10K",
+    "goalLabel": "Sub-39:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "38:59",
+    "goalTimeSeconds": 2339,
+    "rpi": 53.5,
+    "paces": {
+      "easy": {
+        "mi": "8:04",
+        "km": "5:01",
+        "secPerMile": 484
+      },
+      "marathon": {
+        "mi": "6:56",
+        "km": "4:18",
+        "secPerMile": 416
+      },
+      "threshold": {
+        "mi": "6:31",
+        "km": "4:03",
+        "secPerMile": 391
+      },
+      "interval": {
+        "mi": "5:44",
+        "km": "3:34",
+        "secPerMile": 344
+      },
+      "repetition": {
+        "mi": "5:20",
+        "km": "3:19",
+        "secPerMile": 320
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 10804,
+        "timeFormatted": "3:00:04",
+        "paceMi": "6:52",
+        "paceKm": "4:16"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5179,
+        "timeFormatted": "1:26:19",
+        "paceMi": "6:35",
+        "paceKm": "4:05"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1129,
+        "timeFormatted": "18:49",
+        "paceMi": "6:03",
+        "paceKm": "3:46"
+      }
+    }
+  },
+  "sub-40-minute-10k": {
+    "slug": "sub-40-minute-10k",
+    "label": "Sub-40 Minute 10K",
+    "goalLabel": "Sub-40:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "39:59",
+    "goalTimeSeconds": 2399,
+    "rpi": 52,
+    "paces": {
+      "easy": {
+        "mi": "8:14",
+        "km": "5:07",
+        "secPerMile": 494
+      },
+      "marathon": {
+        "mi": "7:04",
+        "km": "4:23",
+        "secPerMile": 424
+      },
+      "threshold": {
+        "mi": "6:38",
+        "km": "4:07",
+        "secPerMile": 398
+      },
+      "interval": {
+        "mi": "5:49",
+        "km": "3:37",
+        "secPerMile": 349
+      },
+      "repetition": {
+        "mi": "5:25",
+        "km": "3:22",
+        "secPerMile": 325
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 11068,
+        "timeFormatted": "3:04:28",
+        "paceMi": "7:02",
+        "paceKm": "4:22"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5308,
+        "timeFormatted": "1:28:28",
+        "paceMi": "6:45",
+        "paceKm": "4:12"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1156,
+        "timeFormatted": "19:16",
+        "paceMi": "6:12",
+        "paceKm": "3:51"
+      }
+    }
+  },
+  "sub-42-minute-10k": {
+    "slug": "sub-42-minute-10k",
+    "label": "Sub-42 Minute 10K",
+    "goalLabel": "Sub-42:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "41:59",
+    "goalTimeSeconds": 2519,
+    "rpi": 49.1,
+    "paces": {
+      "easy": {
+        "mi": "8:34",
+        "km": "5:19",
+        "secPerMile": 514
+      },
+      "marathon": {
+        "mi": "7:19",
+        "km": "4:33",
+        "secPerMile": 439
+      },
+      "threshold": {
+        "mi": "6:52",
+        "km": "4:16",
+        "secPerMile": 412
+      },
+      "interval": {
+        "mi": "6:01",
+        "km": "3:44",
+        "secPerMile": 361
+      },
+      "repetition": {
+        "mi": "5:35",
+        "km": "3:28",
+        "secPerMile": 335
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 11614,
+        "timeFormatted": "3:13:34",
+        "paceMi": "7:23",
+        "paceKm": "4:35"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5578,
+        "timeFormatted": "1:32:58",
+        "paceMi": "7:05",
+        "paceKm": "4:24"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1215,
+        "timeFormatted": "20:15",
+        "paceMi": "6:31",
+        "paceKm": "4:03"
+      }
+    }
+  },
+  "sub-45-minute-10k": {
+    "slug": "sub-45-minute-10k",
+    "label": "Sub-45 Minute 10K",
+    "goalLabel": "Sub-45:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "44:59",
+    "goalTimeSeconds": 2699,
+    "rpi": 45.3,
+    "paces": {
+      "easy": {
+        "mi": "9:02",
+        "km": "5:37",
+        "secPerMile": 542
+      },
+      "marathon": {
+        "mi": "7:39",
+        "km": "4:45",
+        "secPerMile": 459
+      },
+      "threshold": {
+        "mi": "7:13",
+        "km": "4:29",
+        "secPerMile": 433
+      },
+      "interval": {
+        "mi": "6:19",
+        "km": "3:56",
+        "secPerMile": 379
+      },
+      "repetition": {
+        "mi": "5:52",
+        "km": "3:39",
+        "secPerMile": 352
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 12427,
+        "timeFormatted": "3:27:07",
+        "paceMi": "7:54",
+        "paceKm": "4:55"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5980,
+        "timeFormatted": "1:39:40",
+        "paceMi": "7:36",
+        "paceKm": "4:43"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1301,
+        "timeFormatted": "21:41",
+        "paceMi": "6:59",
+        "paceKm": "4:20"
+      }
+    }
+  },
+  "sub-48-minute-10k": {
+    "slug": "sub-48-minute-10k",
+    "label": "Sub-48 Minute 10K",
+    "goalLabel": "Sub-48:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "47:59",
+    "goalTimeSeconds": 2879,
+    "rpi": 42,
+    "paces": {
+      "easy": {
+        "mi": "9:33",
+        "km": "5:56",
+        "secPerMile": 573
+      },
+      "marathon": {
+        "mi": "8:00",
+        "km": "4:58",
+        "secPerMile": 480
+      },
+      "threshold": {
+        "mi": "7:33",
+        "km": "4:41",
+        "secPerMile": 453
+      },
+      "interval": {
+        "mi": "6:36",
+        "km": "4:06",
+        "secPerMile": 396
+      },
+      "repetition": {
+        "mi": "6:06",
+        "km": "3:47",
+        "secPerMile": 366
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 13235,
+        "timeFormatted": "3:40:35",
+        "paceMi": "8:25",
+        "paceKm": "5:14"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6382,
+        "timeFormatted": "1:46:22",
+        "paceMi": "8:07",
+        "paceKm": "5:03"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1387,
+        "timeFormatted": "23:07",
+        "paceMi": "7:26",
+        "paceKm": "4:37"
+      }
+    }
+  },
+  "sub-50-minute-10k": {
+    "slug": "sub-50-minute-10k",
+    "label": "Sub-50 Minute 10K",
+    "goalLabel": "Sub-50:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "49:59",
+    "goalTimeSeconds": 2999,
+    "rpi": 40,
+    "paces": {
+      "easy": {
+        "mi": "9:54",
+        "km": "6:09",
+        "secPerMile": 594
+      },
+      "marathon": {
+        "mi": "8:15",
+        "km": "5:08",
+        "secPerMile": 495
+      },
+      "threshold": {
+        "mi": "7:47",
+        "km": "4:50",
+        "secPerMile": 467
+      },
+      "interval": {
+        "mi": "6:48",
+        "km": "4:14",
+        "secPerMile": 408
+      },
+      "repetition": {
+        "mi": "6:16",
+        "km": "3:54",
+        "secPerMile": 376
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 13775,
+        "timeFormatted": "3:49:35",
+        "paceMi": "8:45",
+        "paceKm": "5:26"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6653,
+        "timeFormatted": "1:50:53",
+        "paceMi": "8:27",
+        "paceKm": "5:15"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1446,
+        "timeFormatted": "24:06",
+        "paceMi": "7:45",
+        "paceKm": "4:49"
+      }
+    }
+  },
+  "sub-55-minute-10k": {
+    "slug": "sub-55-minute-10k",
+    "label": "Sub-55 Minute 10K",
+    "goalLabel": "Sub-55:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "54:59",
+    "goalTimeSeconds": 3299,
+    "rpi": 35.8,
+    "paces": {
+      "easy": {
+        "mi": "10:48",
+        "km": "6:43",
+        "secPerMile": 648
+      },
+      "marathon": {
+        "mi": "8:56",
+        "km": "5:33",
+        "secPerMile": 536
+      },
+      "threshold": {
+        "mi": "8:26",
+        "km": "5:14",
+        "secPerMile": 506
+      },
+      "interval": {
+        "mi": "7:19",
+        "km": "4:33",
+        "secPerMile": 439
+      },
+      "repetition": {
+        "mi": "6:44",
+        "km": "4:11",
+        "secPerMile": 404
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 15090,
+        "timeFormatted": "4:11:30",
+        "paceMi": "9:36",
+        "paceKm": "5:58"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 7313,
+        "timeFormatted": "2:01:53",
+        "paceMi": "9:18",
+        "paceKm": "5:47"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1588,
+        "timeFormatted": "26:28",
+        "paceMi": "8:31",
+        "paceKm": "5:18"
+      }
+    }
+  },
+  "sub-60-minute-10k": {
+    "slug": "sub-60-minute-10k",
+    "label": "Sub-60 Minute 10K",
+    "goalLabel": "Sub-60:00",
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "goalTimeLabel": "59:59",
+    "goalTimeSeconds": 3599,
+    "rpi": 32.3,
+    "paces": {
+      "easy": {
+        "mi": "11:59",
+        "km": "7:27",
+        "secPerMile": 719
+      },
+      "marathon": {
+        "mi": "9:49",
+        "km": "6:06",
+        "secPerMile": 589
+      },
+      "threshold": {
+        "mi": "9:15",
+        "km": "5:45",
+        "secPerMile": 555
+      },
+      "interval": {
+        "mi": "8:00",
+        "km": "4:58",
+        "secPerMile": 480
+      },
+      "repetition": {
+        "mi": "7:20",
+        "km": "4:33",
+        "secPerMile": 440
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 16394,
+        "timeFormatted": "4:33:14",
+        "paceMi": "10:25",
+        "paceKm": "6:28"
+      },
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 7974,
+        "timeFormatted": "2:12:54",
+        "paceMi": "10:08",
+        "paceKm": "6:18"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1731,
+        "timeFormatted": "28:51",
+        "paceMi": "9:17",
+        "paceKm": "5:46"
+      }
+    }
+  },
+  "sub-1-15-half-marathon": {
+    "slug": "sub-1-15-half-marathon",
+    "label": "Sub-1:15 Half Marathon",
+    "goalLabel": "Sub-1:15:00",
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "goalTimeLabel": "1:14:59",
+    "goalTimeSeconds": 4499,
+    "rpi": 62.9,
+    "paces": {
+      "easy": {
+        "mi": "7:11",
+        "km": "4:28",
+        "secPerMile": 431
+      },
+      "marathon": {
+        "mi": "6:11",
+        "km": "3:51",
+        "secPerMile": 371
+      },
+      "threshold": {
+        "mi": "5:50",
+        "km": "3:37",
+        "secPerMile": 350
+      },
+      "interval": {
+        "mi": "5:09",
+        "km": "3:12",
+        "secPerMile": 309
+      },
+      "repetition": {
+        "mi": "4:48",
+        "km": "2:59",
+        "secPerMile": 288
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 9415,
+        "timeFormatted": "2:36:55",
+        "paceMi": "5:59",
+        "paceKm": "3:43"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2038,
+        "timeFormatted": "33:58",
+        "paceMi": "5:28",
+        "paceKm": "3:24"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 982,
+        "timeFormatted": "16:22",
+        "paceMi": "5:16",
+        "paceKm": "3:16"
+      }
+    }
+  },
+  "sub-1-20-half-marathon": {
+    "slug": "sub-1-20-half-marathon",
+    "label": "Sub-1:20 Half Marathon",
+    "goalLabel": "Sub-1:20:00",
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "goalTimeLabel": "1:19:59",
+    "goalTimeSeconds": 4799,
+    "rpi": 58.4,
+    "paces": {
+      "easy": {
+        "mi": "7:35",
+        "km": "4:43",
+        "secPerMile": 455
+      },
+      "marathon": {
+        "mi": "6:32",
+        "km": "4:04",
+        "secPerMile": 392
+      },
+      "threshold": {
+        "mi": "6:11",
+        "km": "3:51",
+        "secPerMile": 371
+      },
+      "interval": {
+        "mi": "5:26",
+        "km": "3:23",
+        "secPerMile": 326
+      },
+      "repetition": {
+        "mi": "5:04",
+        "km": "3:09",
+        "secPerMile": 304
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 10031,
+        "timeFormatted": "2:47:11",
+        "paceMi": "6:23",
+        "paceKm": "3:58"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2171,
+        "timeFormatted": "36:11",
+        "paceMi": "5:49",
+        "paceKm": "3:37"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1047,
+        "timeFormatted": "17:27",
+        "paceMi": "5:37",
+        "paceKm": "3:29"
+      }
+    }
+  },
+  "sub-1-25-half-marathon": {
+    "slug": "sub-1-25-half-marathon",
+    "label": "Sub-1:25 Half Marathon",
+    "goalLabel": "Sub-1:25:00",
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "goalTimeLabel": "1:24:59",
+    "goalTimeSeconds": 5099,
+    "rpi": 54.5,
+    "paces": {
+      "easy": {
+        "mi": "7:57",
+        "km": "4:56",
+        "secPerMile": 477
+      },
+      "marathon": {
+        "mi": "6:50",
+        "km": "4:15",
+        "secPerMile": 410
+      },
+      "threshold": {
+        "mi": "6:27",
+        "km": "4:00",
+        "secPerMile": 387
+      },
+      "interval": {
+        "mi": "5:41",
+        "km": "3:32",
+        "secPerMile": 341
+      },
+      "repetition": {
+        "mi": "5:17",
+        "km": "3:17",
+        "secPerMile": 317
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 10636,
+        "timeFormatted": "2:57:16",
+        "paceMi": "6:46",
+        "paceKm": "4:12"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2304,
+        "timeFormatted": "38:24",
+        "paceMi": "6:11",
+        "paceKm": "3:51"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1111,
+        "timeFormatted": "18:31",
+        "paceMi": "5:58",
+        "paceKm": "3:42"
+      }
+    }
+  },
+  "sub-1-30-half-marathon": {
+    "slug": "sub-1-30-half-marathon",
+    "label": "Sub-1:30 Half Marathon",
+    "goalLabel": "Sub-1:30:00",
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "goalTimeLabel": "1:29:59",
+    "goalTimeSeconds": 5399,
+    "rpi": 51,
+    "paces": {
+      "easy": {
+        "mi": "8:21",
+        "km": "5:11",
+        "secPerMile": 501
+      },
+      "marathon": {
+        "mi": "7:09",
+        "km": "4:27",
+        "secPerMile": 429
+      },
+      "threshold": {
+        "mi": "6:43",
+        "km": "4:10",
+        "secPerMile": 403
+      },
+      "interval": {
+        "mi": "5:53",
+        "km": "3:39",
+        "secPerMile": 353
+      },
+      "repetition": {
+        "mi": "5:28",
+        "km": "3:24",
+        "secPerMile": 328
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 11250,
+        "timeFormatted": "3:07:30",
+        "paceMi": "7:09",
+        "paceKm": "4:27"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2438,
+        "timeFormatted": "40:38",
+        "paceMi": "6:32",
+        "paceKm": "4:04"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1176,
+        "timeFormatted": "19:36",
+        "paceMi": "6:19",
+        "paceKm": "3:56"
+      }
+    }
+  },
+  "sub-1-35-half-marathon": {
+    "slug": "sub-1-35-half-marathon",
+    "label": "Sub-1:35 Half Marathon",
+    "goalLabel": "Sub-1:35:00",
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "goalTimeLabel": "1:34:59",
+    "goalTimeSeconds": 5699,
+    "rpi": 47.9,
+    "paces": {
+      "easy": {
+        "mi": "8:42",
+        "km": "5:24",
+        "secPerMile": 522
+      },
+      "marathon": {
+        "mi": "7:25",
+        "km": "4:37",
+        "secPerMile": 445
+      },
+      "threshold": {
+        "mi": "6:59",
+        "km": "4:20",
+        "secPerMile": 419
+      },
+      "interval": {
+        "mi": "6:06",
+        "km": "3:47",
+        "secPerMile": 366
+      },
+      "repetition": {
+        "mi": "5:40",
+        "km": "3:31",
+        "secPerMile": 340
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 11861,
+        "timeFormatted": "3:17:41",
+        "paceMi": "7:32",
+        "paceKm": "4:41"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2572,
+        "timeFormatted": "42:52",
+        "paceMi": "6:54",
+        "paceKm": "4:17"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1241,
+        "timeFormatted": "20:41",
+        "paceMi": "6:39",
+        "paceKm": "4:08"
+      }
+    }
+  },
+  "sub-1-40-half-marathon": {
+    "slug": "sub-1-40-half-marathon",
+    "label": "Sub-1:40 Half Marathon",
+    "goalLabel": "Sub-1:40:00",
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "goalTimeLabel": "1:39:59",
+    "goalTimeSeconds": 5999,
+    "rpi": 45.1,
+    "paces": {
+      "easy": {
+        "mi": "9:03",
+        "km": "5:37",
+        "secPerMile": 543
+      },
+      "marathon": {
+        "mi": "7:40",
+        "km": "4:46",
+        "secPerMile": 460
+      },
+      "threshold": {
+        "mi": "7:14",
+        "km": "4:30",
+        "secPerMile": 434
+      },
+      "interval": {
+        "mi": "6:20",
+        "km": "3:56",
+        "secPerMile": 380
+      },
+      "repetition": {
+        "mi": "5:53",
+        "km": "3:39",
+        "secPerMile": 353
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 12471,
+        "timeFormatted": "3:27:51",
+        "paceMi": "7:56",
+        "paceKm": "4:56"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2708,
+        "timeFormatted": "45:08",
+        "paceMi": "7:16",
+        "paceKm": "4:31"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1306,
+        "timeFormatted": "21:46",
+        "paceMi": "7:00",
+        "paceKm": "4:21"
+      }
+    }
+  },
+  "sub-1-45-half-marathon": {
+    "slug": "sub-1-45-half-marathon",
+    "label": "Sub-1:45 Half Marathon",
+    "goalLabel": "Sub-1:45:00",
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "goalTimeLabel": "1:44:59",
+    "goalTimeSeconds": 6299,
+    "rpi": 42.6,
+    "paces": {
+      "easy": {
+        "mi": "9:27",
+        "km": "5:52",
+        "secPerMile": 567
+      },
+      "marathon": {
+        "mi": "7:56",
+        "km": "4:56",
+        "secPerMile": 476
+      },
+      "threshold": {
+        "mi": "7:29",
+        "km": "4:39",
+        "secPerMile": 449
+      },
+      "interval": {
+        "mi": "6:33",
+        "km": "4:04",
+        "secPerMile": 393
+      },
+      "repetition": {
+        "mi": "6:03",
+        "km": "3:46",
+        "secPerMile": 363
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 13076,
+        "timeFormatted": "3:37:56",
+        "paceMi": "8:19",
+        "paceKm": "5:10"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2844,
+        "timeFormatted": "47:24",
+        "paceMi": "7:38",
+        "paceKm": "4:45"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1371,
+        "timeFormatted": "22:51",
+        "paceMi": "7:21",
+        "paceKm": "4:34"
+      }
+    }
+  },
+  "sub-1-50-half-marathon": {
+    "slug": "sub-1-50-half-marathon",
+    "label": "Sub-1:50 Half Marathon",
+    "goalLabel": "Sub-1:50:00",
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "goalTimeLabel": "1:49:59",
+    "goalTimeSeconds": 6599,
+    "rpi": 40.4,
+    "paces": {
+      "easy": {
+        "mi": "9:50",
+        "km": "6:07",
+        "secPerMile": 590
+      },
+      "marathon": {
+        "mi": "8:12",
+        "km": "5:06",
+        "secPerMile": 492
+      },
+      "threshold": {
+        "mi": "7:44",
+        "km": "4:48",
+        "secPerMile": 464
+      },
+      "interval": {
+        "mi": "6:46",
+        "km": "4:12",
+        "secPerMile": 406
+      },
+      "repetition": {
+        "mi": "6:14",
+        "km": "3:52",
+        "secPerMile": 374
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 13663,
+        "timeFormatted": "3:47:43",
+        "paceMi": "8:41",
+        "paceKm": "5:24"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2975,
+        "timeFormatted": "49:35",
+        "paceMi": "7:59",
+        "paceKm": "4:58"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1434,
+        "timeFormatted": "23:54",
+        "paceMi": "7:42",
+        "paceKm": "4:47"
+      }
+    }
+  },
+  "sub-2-hour-half-marathon": {
+    "slug": "sub-2-hour-half-marathon",
+    "label": "Sub-2 Hour Half Marathon",
+    "goalLabel": "Sub-2:00:00",
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "goalTimeLabel": "1:59:59",
+    "goalTimeSeconds": 7199,
+    "rpi": 36.5,
+    "paces": {
+      "easy": {
+        "mi": "10:39",
+        "km": "6:37",
+        "secPerMile": 639
+      },
+      "marathon": {
+        "mi": "8:49",
+        "km": "5:29",
+        "secPerMile": 529
+      },
+      "threshold": {
+        "mi": "8:19",
+        "km": "5:10",
+        "secPerMile": 499
+      },
+      "interval": {
+        "mi": "7:14",
+        "km": "4:30",
+        "secPerMile": 434
+      },
+      "repetition": {
+        "mi": "6:39",
+        "km": "4:08",
+        "secPerMile": 399
+      }
+    },
+    "equivalents": {
+      "marathon": {
+        "label": "Marathon",
+        "distanceMeters": 42195,
+        "timeSeconds": 14849,
+        "timeFormatted": "4:07:29",
+        "paceMi": "9:26",
+        "paceKm": "5:52"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3244,
+        "timeFormatted": "54:04",
+        "paceMi": "8:42",
+        "paceKm": "5:24"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1563,
+        "timeFormatted": "26:03",
+        "paceMi": "8:23",
+        "paceKm": "5:13"
+      }
+    }
+  },
+  "sub-2-30-marathon": {
+    "slug": "sub-2-30-marathon",
+    "label": "Sub-2:30 Marathon",
+    "goalLabel": "Sub-2:30:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "2:29:59",
+    "goalTimeSeconds": 8999,
+    "rpi": 66.3,
+    "paces": {
+      "easy": {
+        "mi": "6:53",
+        "km": "4:17",
+        "secPerMile": 413
+      },
+      "marathon": {
+        "mi": "5:57",
+        "km": "3:42",
+        "secPerMile": 357
+      },
+      "threshold": {
+        "mi": "5:35",
+        "km": "3:28",
+        "secPerMile": 335
+      },
+      "interval": {
+        "mi": "4:57",
+        "km": "3:05",
+        "secPerMile": 297
+      },
+      "repetition": {
+        "mi": "4:36",
+        "km": "2:51",
+        "secPerMile": 276
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 4300,
+        "timeFormatted": "1:11:40",
+        "paceMi": "5:28",
+        "paceKm": "3:24"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 1949,
+        "timeFormatted": "32:29",
+        "paceMi": "5:14",
+        "paceKm": "3:15"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 939,
+        "timeFormatted": "15:39",
+        "paceMi": "5:02",
+        "paceKm": "3:08"
+      }
+    }
+  },
+  "sub-2-45-marathon": {
+    "slug": "sub-2-45-marathon",
+    "label": "Sub-2:45 Marathon",
+    "goalLabel": "Sub-2:45:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "2:44:59",
+    "goalTimeSeconds": 9899,
+    "rpi": 59.3,
+    "paces": {
+      "easy": {
+        "mi": "7:31",
+        "km": "4:40",
+        "secPerMile": 451
+      },
+      "marathon": {
+        "mi": "6:28",
+        "km": "4:01",
+        "secPerMile": 388
+      },
+      "threshold": {
+        "mi": "6:08",
+        "km": "3:49",
+        "secPerMile": 368
+      },
+      "interval": {
+        "mi": "5:23",
+        "km": "3:21",
+        "secPerMile": 323
+      },
+      "repetition": {
+        "mi": "5:01",
+        "km": "3:07",
+        "secPerMile": 301
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 4737,
+        "timeFormatted": "1:18:57",
+        "paceMi": "6:01",
+        "paceKm": "3:44"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2143,
+        "timeFormatted": "35:43",
+        "paceMi": "5:45",
+        "paceKm": "3:34"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1033,
+        "timeFormatted": "17:13",
+        "paceMi": "5:32",
+        "paceKm": "3:26"
+      }
+    }
+  },
+  "sub-3-hour-marathon": {
+    "slug": "sub-3-hour-marathon",
+    "label": "Sub-3 Hour Marathon",
+    "goalLabel": "Sub-3:00:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "2:59:59",
+    "goalTimeSeconds": 10799,
+    "rpi": 53.5,
+    "paces": {
+      "easy": {
+        "mi": "8:04",
+        "km": "5:01",
+        "secPerMile": 484
+      },
+      "marathon": {
+        "mi": "6:56",
+        "km": "4:18",
+        "secPerMile": 416
+      },
+      "threshold": {
+        "mi": "6:31",
+        "km": "4:03",
+        "secPerMile": 391
+      },
+      "interval": {
+        "mi": "5:44",
+        "km": "3:34",
+        "secPerMile": 344
+      },
+      "repetition": {
+        "mi": "5:20",
+        "km": "3:19",
+        "secPerMile": 320
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5179,
+        "timeFormatted": "1:26:19",
+        "paceMi": "6:35",
+        "paceKm": "4:05"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2341,
+        "timeFormatted": "39:01",
+        "paceMi": "6:17",
+        "paceKm": "3:54"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1129,
+        "timeFormatted": "18:49",
+        "paceMi": "6:03",
+        "paceKm": "3:46"
+      }
+    }
+  },
+  "sub-3-05-marathon": {
+    "slug": "sub-3-05-marathon",
+    "label": "Sub-3:05 Marathon",
+    "goalLabel": "Sub-3:05:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "3:04:59",
+    "goalTimeSeconds": 11099,
+    "rpi": 51.8,
+    "paces": {
+      "easy": {
+        "mi": "8:15",
+        "km": "5:08",
+        "secPerMile": 495
+      },
+      "marathon": {
+        "mi": "7:05",
+        "km": "4:24",
+        "secPerMile": 425
+      },
+      "threshold": {
+        "mi": "6:39",
+        "km": "4:08",
+        "secPerMile": 399
+      },
+      "interval": {
+        "mi": "5:50",
+        "km": "3:37",
+        "secPerMile": 350
+      },
+      "repetition": {
+        "mi": "5:25",
+        "km": "3:22",
+        "secPerMile": 325
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5325,
+        "timeFormatted": "1:28:45",
+        "paceMi": "6:46",
+        "paceKm": "4:12"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2406,
+        "timeFormatted": "40:06",
+        "paceMi": "6:27",
+        "paceKm": "4:00"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1161,
+        "timeFormatted": "19:21",
+        "paceMi": "6:14",
+        "paceKm": "3:52"
+      }
+    }
+  },
+  "sub-3-10-marathon": {
+    "slug": "sub-3-10-marathon",
+    "label": "Sub-3:10 Marathon",
+    "goalLabel": "Sub-3:10:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "3:09:59",
+    "goalTimeSeconds": 11399,
+    "rpi": 50.2,
+    "paces": {
+      "easy": {
+        "mi": "8:27",
+        "km": "5:15",
+        "secPerMile": 507
+      },
+      "marathon": {
+        "mi": "7:14",
+        "km": "4:30",
+        "secPerMile": 434
+      },
+      "threshold": {
+        "mi": "6:47",
+        "km": "4:13",
+        "secPerMile": 407
+      },
+      "interval": {
+        "mi": "5:56",
+        "km": "3:41",
+        "secPerMile": 356
+      },
+      "repetition": {
+        "mi": "5:30",
+        "km": "3:25",
+        "secPerMile": 330
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5472,
+        "timeFormatted": "1:31:12",
+        "paceMi": "6:57",
+        "paceKm": "4:19"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2471,
+        "timeFormatted": "41:11",
+        "paceMi": "6:38",
+        "paceKm": "4:07"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1192,
+        "timeFormatted": "19:52",
+        "paceMi": "6:24",
+        "paceKm": "3:59"
+      }
+    }
+  },
+  "sub-3-15-marathon": {
+    "slug": "sub-3-15-marathon",
+    "label": "Sub-3:15 Marathon",
+    "goalLabel": "Sub-3:15:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "3:14:59",
+    "goalTimeSeconds": 11699,
+    "rpi": 48.7,
+    "paces": {
+      "easy": {
+        "mi": "8:37",
+        "km": "5:21",
+        "secPerMile": 517
+      },
+      "marathon": {
+        "mi": "7:21",
+        "km": "4:34",
+        "secPerMile": 441
+      },
+      "threshold": {
+        "mi": "6:54",
+        "km": "4:17",
+        "secPerMile": 414
+      },
+      "interval": {
+        "mi": "6:03",
+        "km": "3:46",
+        "secPerMile": 363
+      },
+      "repetition": {
+        "mi": "5:36",
+        "km": "3:29",
+        "secPerMile": 336
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5618,
+        "timeFormatted": "1:33:38",
+        "paceMi": "7:09",
+        "paceKm": "4:27"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2536,
+        "timeFormatted": "42:16",
+        "paceMi": "6:48",
+        "paceKm": "4:14"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1223,
+        "timeFormatted": "20:23",
+        "paceMi": "6:34",
+        "paceKm": "4:05"
+      }
+    }
+  },
+  "sub-3-20-marathon": {
+    "slug": "sub-3-20-marathon",
+    "label": "Sub-3:20 Marathon",
+    "goalLabel": "Sub-3:20:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "3:19:59",
+    "goalTimeSeconds": 11999,
+    "rpi": 47.2,
+    "paces": {
+      "easy": {
+        "mi": "8:47",
+        "km": "5:27",
+        "secPerMile": 527
+      },
+      "marathon": {
+        "mi": "7:29",
+        "km": "4:39",
+        "secPerMile": 449
+      },
+      "threshold": {
+        "mi": "7:02",
+        "km": "4:22",
+        "secPerMile": 422
+      },
+      "interval": {
+        "mi": "6:10",
+        "km": "3:50",
+        "secPerMile": 370
+      },
+      "repetition": {
+        "mi": "5:43",
+        "km": "3:33",
+        "secPerMile": 343
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 5772,
+        "timeFormatted": "1:36:12",
+        "paceMi": "7:20",
+        "paceKm": "4:33"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2605,
+        "timeFormatted": "43:25",
+        "paceMi": "6:59",
+        "paceKm": "4:20"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1257,
+        "timeFormatted": "20:57",
+        "paceMi": "6:45",
+        "paceKm": "4:12"
+      }
+    }
+  },
+  "sub-3-30-marathon": {
+    "slug": "sub-3-30-marathon",
+    "label": "Sub-3:30 Marathon",
+    "goalLabel": "Sub-3:30:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "3:29:59",
+    "goalTimeSeconds": 12599,
+    "rpi": 44.6,
+    "paces": {
+      "easy": {
+        "mi": "9:08",
+        "km": "5:41",
+        "secPerMile": 548
+      },
+      "marathon": {
+        "mi": "7:43",
+        "km": "4:48",
+        "secPerMile": 463
+      },
+      "threshold": {
+        "mi": "7:17",
+        "km": "4:32",
+        "secPerMile": 437
+      },
+      "interval": {
+        "mi": "6:23",
+        "km": "3:58",
+        "secPerMile": 383
+      },
+      "repetition": {
+        "mi": "5:55",
+        "km": "3:41",
+        "secPerMile": 355
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6061,
+        "timeFormatted": "1:41:01",
+        "paceMi": "7:42",
+        "paceKm": "4:47"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2734,
+        "timeFormatted": "45:34",
+        "paceMi": "7:20",
+        "paceKm": "4:33"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1318,
+        "timeFormatted": "21:58",
+        "paceMi": "7:04",
+        "paceKm": "4:23"
+      }
+    }
+  },
+  "sub-3-45-marathon": {
+    "slug": "sub-3-45-marathon",
+    "label": "Sub-3:45 Marathon",
+    "goalLabel": "Sub-3:45:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "3:44:59",
+    "goalTimeSeconds": 13499,
+    "rpi": 41,
+    "paces": {
+      "easy": {
+        "mi": "9:43",
+        "km": "6:02",
+        "secPerMile": 583
+      },
+      "marathon": {
+        "mi": "8:08",
+        "km": "5:03",
+        "secPerMile": 488
+      },
+      "threshold": {
+        "mi": "7:40",
+        "km": "4:46",
+        "secPerMile": 460
+      },
+      "interval": {
+        "mi": "6:42",
+        "km": "4:10",
+        "secPerMile": 402
+      },
+      "repetition": {
+        "mi": "6:11",
+        "km": "3:51",
+        "secPerMile": 371
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6515,
+        "timeFormatted": "1:48:35",
+        "paceMi": "8:17",
+        "paceKm": "5:09"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 2938,
+        "timeFormatted": "48:58",
+        "paceMi": "7:53",
+        "paceKm": "4:54"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1416,
+        "timeFormatted": "23:36",
+        "paceMi": "7:36",
+        "paceKm": "4:43"
+      }
+    }
+  },
+  "sub-4-hour-marathon": {
+    "slug": "sub-4-hour-marathon",
+    "label": "Sub-4 Hour Marathon",
+    "goalLabel": "Sub-4:00:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "3:59:59",
+    "goalTimeSeconds": 14399,
+    "rpi": 37.9,
+    "paces": {
+      "easy": {
+        "mi": "10:20",
+        "km": "6:25",
+        "secPerMile": 620
+      },
+      "marathon": {
+        "mi": "8:35",
+        "km": "5:20",
+        "secPerMile": 515
+      },
+      "threshold": {
+        "mi": "8:05",
+        "km": "5:01",
+        "secPerMile": 485
+      },
+      "interval": {
+        "mi": "7:03",
+        "km": "4:23",
+        "secPerMile": 423
+      },
+      "repetition": {
+        "mi": "6:29",
+        "km": "4:02",
+        "secPerMile": 389
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 6967,
+        "timeFormatted": "1:56:07",
+        "paceMi": "8:51",
+        "paceKm": "5:30"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3142,
+        "timeFormatted": "52:22",
+        "paceMi": "8:26",
+        "paceKm": "5:14"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1514,
+        "timeFormatted": "25:14",
+        "paceMi": "8:07",
+        "paceKm": "5:03"
+      }
+    }
+  },
+  "sub-4-30-marathon": {
+    "slug": "sub-4-30-marathon",
+    "label": "Sub-4:30 Marathon",
+    "goalLabel": "Sub-4:30:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "4:29:59",
+    "goalTimeSeconds": 16199,
+    "rpi": 32.8,
+    "paces": {
+      "easy": {
+        "mi": "11:47",
+        "km": "7:19",
+        "secPerMile": 707
+      },
+      "marathon": {
+        "mi": "9:40",
+        "km": "6:00",
+        "secPerMile": 580
+      },
+      "threshold": {
+        "mi": "9:07",
+        "km": "5:40",
+        "secPerMile": 547
+      },
+      "interval": {
+        "mi": "7:53",
+        "km": "4:54",
+        "secPerMile": 473
+      },
+      "repetition": {
+        "mi": "7:14",
+        "km": "4:30",
+        "secPerMile": 434
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 7871,
+        "timeFormatted": "2:11:11",
+        "paceMi": "10:00",
+        "paceKm": "6:13"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3551,
+        "timeFormatted": "59:11",
+        "paceMi": "9:31",
+        "paceKm": "5:55"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1709,
+        "timeFormatted": "28:29",
+        "paceMi": "9:10",
+        "paceKm": "5:42"
+      }
+    }
+  },
+  "sub-5-hour-marathon": {
+    "slug": "sub-5-hour-marathon",
+    "label": "Sub-5 Hour Marathon",
+    "goalLabel": "Sub-5:00:00",
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "goalTimeLabel": "4:59:59",
+    "goalTimeSeconds": 17999,
+    "rpi": 28.7,
+    "paces": {
+      "easy": {
+        "mi": "13:22",
+        "km": "8:18",
+        "secPerMile": 802
+      },
+      "marathon": {
+        "mi": "10:53",
+        "km": "6:46",
+        "secPerMile": 653
+      },
+      "threshold": {
+        "mi": "10:16",
+        "km": "6:23",
+        "secPerMile": 616
+      },
+      "interval": {
+        "mi": "8:52",
+        "km": "5:31",
+        "secPerMile": 532
+      },
+      "repetition": {
+        "mi": "8:06",
+        "km": "5:02",
+        "secPerMile": 486
+      }
+    },
+    "equivalents": {
+      "halfMarathon": {
+        "label": "Half Marathon",
+        "distanceMeters": 21097.5,
+        "timeSeconds": 8790,
+        "timeFormatted": "2:26:30",
+        "paceMi": "11:11",
+        "paceKm": "6:57"
+      },
+      "10k": {
+        "label": "10K",
+        "distanceMeters": 10000,
+        "timeSeconds": 3974,
+        "timeFormatted": "1:06:14",
+        "paceMi": "10:40",
+        "paceKm": "6:38"
+      },
+      "5k": {
+        "label": "5K",
+        "distanceMeters": 5000,
+        "timeSeconds": 1909,
+        "timeFormatted": "31:49",
+        "paceMi": "10:14",
+        "paceKm": "6:22"
+      }
+    }
+  }
+}

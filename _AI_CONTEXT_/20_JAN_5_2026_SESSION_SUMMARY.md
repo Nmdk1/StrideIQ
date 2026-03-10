@@ -2,14 +2,14 @@
 
 ## Overview
 
-Enhanced the VDOT calculator to match vdoto2.com's full functionality and added user-friendly explanations for new runners. All changes documented and deployed.
+Enhanced the RPI calculator to match rpio2.com's full functionality and added user-friendly explanations for new runners. All changes documented and deployed.
 
 ## ✅ Completed Work
 
-### 1. VDOT Calculator Enhancement
+### 1. RPI Calculator Enhancement
 
-**Backend (`apps/api/services/vdot_enhanced.py`):**
-- Created comprehensive enhanced calculator matching vdoto2.com
+**Backend (`apps/api/services/rpi_enhanced.py`):**
+- Created comprehensive enhanced calculator matching rpio2.com
 - **Race Paces Tab**: Calculates paces for 5K, 1Mi, 1K, 800M, 400M
 - **Training Tab**: 
   - Per mile/km paces (Easy with range, Marathon, Threshold, Interval, Repetition)
@@ -22,8 +22,8 @@ Enhanced the VDOT calculator to match vdoto2.com's full functionality and added 
 **Frontend (`apps/web/app/components/tools/VDOTCalculator.tsx`):**
 - Complete rewrite with three-tab interface
 - Tab navigation with active state styling
-- Professional tables matching vdoto2.com layout
-- Info tooltip explaining what VDOT means
+- Professional tables matching rpio2.com layout
+- Info tooltip explaining what RPI means
 - Maintains dark mode aesthetic
 
 ### 2. Age-Grading Calculator Enhancement
@@ -36,7 +36,7 @@ Enhanced the VDOT calculator to match vdoto2.com's full functionality and added 
 
 ### 3. Documentation
 
-- Created `19_VDOT_CALCULATOR_ENHANCEMENT.md` - comprehensive technical documentation
+- Created `19_RPI_CALCULATOR_ENHANCEMENT.md` - comprehensive technical documentation
 - Updated `11_CURRENT_PROGRESS.md` - added today's work
 - Created `20_JAN_5_2026_SESSION_SUMMARY.md` - this document
 
@@ -44,11 +44,11 @@ Enhanced the VDOT calculator to match vdoto2.com's full functionality and added 
 
 ### Files Modified
 
-1. `apps/api/services/vdot_enhanced.py` - New enhanced calculator service
+1. `apps/api/services/rpi_enhanced.py` - New enhanced calculator service
 2. `apps/web/app/components/tools/VDOTCalculator.tsx` - Complete rewrite
 3. `apps/web/app/components/tools/WMACalculator.tsx` - Added explanation
 4. `apps/api/routers/public_tools.py` - Already using enhanced calculator
-5. `_AI_CONTEXT_/19_VDOT_CALCULATOR_ENHANCEMENT.md` - Technical docs
+5. `_AI_CONTEXT_/19_RPI_CALCULATOR_ENHANCEMENT.md` - Technical docs
 6. `_AI_CONTEXT_/11_CURRENT_PROGRESS.md` - Progress update
 
 ### Key Features
@@ -70,9 +70,9 @@ Enhanced the VDOT calculator to match vdoto2.com's full functionality and added 
 
 ## Testing
 
-- ✅ Tested with 5K in 20:00 (VDOT ~50)
+- ✅ Tested with 5K in 20:00 (RPI ~50)
 - ✅ All three tabs populate correctly
-- ✅ Pace calculations match vdoto2.com format
+- ✅ Pace calculations match rpio2.com format
 - ✅ Easy pace range displays correctly
 - ✅ Interval distances calculate properly
 - ✅ Age-grading explanation displays correctly
@@ -80,7 +80,7 @@ Enhanced the VDOT calculator to match vdoto2.com's full functionality and added 
 
 ## Status
 
-✅ **Complete** - Calculator now matches vdoto2.com functionality
+✅ **Complete** - Calculator now matches rpio2.com functionality
 - All three tabs working
 - Training paces with ranges and intervals
 - Equivalent race times
@@ -90,7 +90,7 @@ Enhanced the VDOT calculator to match vdoto2.com's full functionality and added 
 ## Next Steps (For Afternoon Session)
 
 1. Test calculator with various race times to verify accuracy
-2. Fine-tune calculations if values differ slightly from vdoto2.com
+2. Fine-tune calculations if values differ slightly from rpio2.com
 3. Consider adding temperature/altitude adjustments (future enhancement)
 4. Monitor user feedback for usability improvements
 5. Continue with next phase of development

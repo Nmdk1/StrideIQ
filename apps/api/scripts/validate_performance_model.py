@@ -53,7 +53,7 @@ class RaceResult:
     date: date
     distance_m: float
     time_seconds: float
-    vdot: Optional[float] = None
+    rpi: Optional[float] = None
 
 
 @dataclass
@@ -356,25 +356,25 @@ def _generate_synthetic_sample(sample_id: int) -> AthleteData:
     ))
     
     # Simulate improving fitness
-    base_vdot = 45 + random.uniform(-3, 3)
+    base_rpi = 45 + random.uniform(-3, 3)
     for i, race_day in enumerate(race_dates):
         race_date = start_date + timedelta(days=race_day)
         
         # Slight improvement over time
-        vdot = base_vdot + (i * 0.3)
+        rpi = base_rpi + (i * 0.3)
         
         # Random distance
         distance = random.choice([5000, 10000, 21097, 42195])
         
-        # Calculate time from VDOT (simplified Daniels formula)
+        # Calculate time from RPI (simplified Daniels formula)
         if distance == 5000:
-            time_sec = (29 - 0.35 * (vdot - 30)) * 60
+            time_sec = (29 - 0.35 * (rpi - 30)) * 60
         elif distance == 10000:
-            time_sec = (60 - 0.7 * (vdot - 30)) * 60
+            time_sec = (60 - 0.7 * (rpi - 30)) * 60
         elif distance == 21097:
-            time_sec = (140 - 1.5 * (vdot - 30)) * 60
+            time_sec = (140 - 1.5 * (rpi - 30)) * 60
         else:  # Marathon
-            time_sec = (300 - 3.5 * (vdot - 30)) * 60
+            time_sec = (300 - 3.5 * (rpi - 30)) * 60
         
         # Add some noise
         time_sec *= random.uniform(0.98, 1.02)
@@ -383,7 +383,7 @@ def _generate_synthetic_sample(sample_id: int) -> AthleteData:
             date=race_date,
             distance_m=distance,
             time_seconds=time_sec,
-            vdot=vdot
+            rpi=rpi
         ))
     
     notes = [f"Synthetic {profile['name']} profile"]
@@ -420,12 +420,12 @@ def calibrate_model_from_data(
         # Insufficient data - use defaults
         return 42.0, 7.0, 1.0, 2.0, 50.0, "low"
     
-    # Convert races to VDOT for performance metric
+    # Convert races to RPI for performance metric
     performance_values = []
     for race in races:
-        vdot = race.vdot or _estimate_vdot(race.distance_m, race.time_seconds)
-        if vdot:
-            performance_values.append((race.date, vdot))
+        rpi = race.rpi or _estimate_rpi(race.distance_m, race.time_seconds)
+        if rpi:
+            performance_values.append((race.date, rpi))
     
     if len(performance_values) < 3:
         return 42.0, 7.0, 1.0, 2.0, 50.0, "low"
@@ -463,10 +463,10 @@ def calibrate_model_from_data(
                     p0 = sum(v for _, v in performance_values) / len(performance_values)
                     total_error = 0
                     
-                    for perf_date, actual_vdot in performance_values:
+                    for perf_date, actual_rpi in performance_values:
                         if perf_date in ctl_by_date:
                             predicted = p0 + k1 * ctl_by_date[perf_date] - k2 * atl_by_date[perf_date]
-                            total_error += (predicted - actual_vdot) ** 2
+                            total_error += (predicted - actual_rpi) ** 2
                     
                     if total_error < best_error:
                         best_error = total_error
@@ -483,24 +483,24 @@ def calibrate_model_from_data(
     return (*best_params, confidence)
 
 
-def _estimate_vdot(distance_m: float, time_seconds: float) -> Optional[float]:
-    """Estimate VDOT from race result (simplified Daniels)."""
+def _estimate_rpi(distance_m: float, time_seconds: float) -> Optional[float]:
+    """Estimate RPI from race result (simplified Daniels)."""
     if distance_m <= 0 or time_seconds <= 0:
         return None
     
     velocity = distance_m / time_seconds  # m/s
     
-    # Simplified VDOT estimate
-    # Based on: VDOT ≈ velocity * constant + offset
+    # Simplified RPI estimate
+    # Based on: RPI ≈ velocity * constant + offset
     # Tuned for common distances
     if distance_m < 8000:
-        vdot = velocity * 12 + 20
+        rpi = velocity * 12 + 20
     elif distance_m < 15000:
-        vdot = velocity * 13 + 18
+        rpi = velocity * 13 + 18
     else:
-        vdot = velocity * 14 + 15
+        rpi = velocity * 14 + 15
     
-    return min(85, max(25, vdot))
+    return min(85, max(25, rpi))
 
 
 def predict_race_time(
@@ -522,17 +522,17 @@ def predict_race_time(
         ctl = ctl * decay1 + td.tss * (1 - decay1)
         atl = atl * decay2 + td.tss * (1 - decay2)
     
-    # Predict performance (VDOT)
-    predicted_vdot = p0 + k1 * ctl - k2 * atl
+    # Predict performance (RPI)
+    predicted_rpi = p0 + k1 * ctl - k2 * atl
     
-    # Convert VDOT to race time (inverse of estimate)
+    # Convert RPI to race time (inverse of estimate)
     # Simplified inverse Daniels
     if distance_m < 8000:
-        velocity = (predicted_vdot - 20) / 12
+        velocity = (predicted_rpi - 20) / 12
     elif distance_m < 15000:
-        velocity = (predicted_vdot - 18) / 13
+        velocity = (predicted_rpi - 18) / 13
     else:
-        velocity = (predicted_vdot - 15) / 14
+        velocity = (predicted_rpi - 15) / 14
     
     if velocity <= 0:
         velocity = 3.0  # Fallback ~5:30/km

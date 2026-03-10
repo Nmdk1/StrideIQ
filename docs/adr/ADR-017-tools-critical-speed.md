@@ -7,9 +7,9 @@
 
 After implementation and user testing, the CS + D' Predictor was found to:
 
-1. **Be redundant** with the Training Pace Calculator (VDOT-based), which predicts race times more simply and accurately from a single race input.
+1. **Be redundant** with the Training Pace Calculator (RPI-based), which predicts race times more simply and accurately from a single race input.
 
-2. **Provide low perceived value** — Users don't understand D' (421m) and CS (3.96 m/s) metrics. The predictions weren't meaningfully better than VDOT.
+2. **Provide low perceived value** — Users don't understand D' (421m) and CS (3.96 m/s) metrics. The predictions weren't meaningfully better than RPI.
 
 3. **Create confusion** — Two tools showing different predictions for the same race distance. Users don't know which to trust.
 
@@ -36,7 +36,7 @@ The CS model could be revived in a **pivot to insight-only** mode:
 - "CS trending up 2% over 8 weeks"
 - Race pacing strategy based on D' depletion
 
-This would provide unique value that VDOT cannot offer.
+This would provide unique value that RPI cannot offer.
 
 ---
 
@@ -49,7 +49,7 @@ This would provide unique value that VDOT cannot offer.
 
 ### The Problem
 
-The Tools page has useful calculators (VDOT, Age-Grading, Heat-Adjusted Pace) but doesn't leverage our Critical Speed + D' model. Athletes who have built a CS profile from their race history can't easily use it to predict race times for custom distances.
+The Tools page has useful calculators (RPI, Age-Grading, Heat-Adjusted Pace) but doesn't leverage our Critical Speed + D' model. Athletes who have built a CS profile from their race history can't easily use it to predict race times for custom distances.
 
 ### The Opportunity
 

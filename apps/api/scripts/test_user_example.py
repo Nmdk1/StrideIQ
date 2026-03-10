@@ -3,7 +3,7 @@
 import sys
 sys.path.insert(0, '/app')
 
-from services.vdot_calculator import calculate_vdot_from_race_time, calculate_training_paces
+from services.rpi_calculator import calculate_rpi_from_race_time, calculate_training_paces
 
 def format_pace(secs):
     return f'{secs // 60}:{secs % 60:02d}'
@@ -12,7 +12,7 @@ def format_pace(secs):
 half_marathon_meters = 21097.5
 time_seconds = 1*3600 + 27*60 + 14  # 1:27:14
 
-fitness_score = calculate_vdot_from_race_time(half_marathon_meters, time_seconds)
+fitness_score = calculate_rpi_from_race_time(half_marathon_meters, time_seconds)
 paces = calculate_training_paces(fitness_score)
 
 print("YOUR EXAMPLE: Half Marathon 1:27:14")

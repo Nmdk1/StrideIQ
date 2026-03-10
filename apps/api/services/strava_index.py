@@ -71,6 +71,7 @@ def upsert_strava_activity_summaries(athlete: Athlete, db: Session, summaries: L
         name = a.get("name")
         elev = a.get("total_elevation_gain")
 
+        latlng = a.get("start_latlng") or []
         act = Activity(
             athlete_id=athlete.id,
             start_time=start_time,
@@ -83,6 +84,8 @@ def upsert_strava_activity_summaries(athlete: Athlete, db: Session, summaries: L
             duration_s=int(moving_time) if moving_time else None,
             average_speed=avg_speed,
             total_elevation_gain=elev,
+            start_lat=latlng[0] if len(latlng) >= 2 else None,
+            start_lng=latlng[1] if len(latlng) >= 2 else None,
         )
         db.add(act)
         created += 1

@@ -28,6 +28,7 @@ from services.strava_service import (
     poll_activities,
     get_activity_laps,
     get_activity_details,
+    ensure_fresh_token,
     StravaOAuthCapacityError,
 )
 from services.performance_engine import (
@@ -164,7 +165,36 @@ def verify_strava_connection(
                 "strava_athlete_id": athlete_data.get("id"),
             }
         elif response.status_code in (401, 403):
-            # Token revoked or invalid - clear it
+            # Token expired or revoked — attempt refresh before wiping
+            if current_user.strava_refresh_token:
+                try:
+                    from services.token_encryption import encrypt_token
+                    from services.strava_service import refresh_access_token
+                    
+                    raw_refresh = decrypt_token(current_user.strava_refresh_token)
+                    if raw_refresh:
+                        token_data = refresh_access_token(raw_refresh)
+                        # Refresh succeeded — store new tokens
+                        current_user.strava_access_token = encrypt_token(token_data["access_token"])
+                        if token_data.get("refresh_token"):
+                            current_user.strava_refresh_token = encrypt_token(token_data["refresh_token"])
+                        if token_data.get("expires_at"):
+                            current_user.strava_token_expires_at = datetime.fromtimestamp(
+                                token_data["expires_at"], tz=timezone.utc
+                            )
+                        db.commit()
+                        logger.info(f"Strava token refreshed successfully for athlete {current_user.id}")
+                        return {
+                            "valid": True,
+                            "connected": True,
+                            "strava_athlete_id": current_user.strava_athlete_id,
+                        }
+                except Exception as refresh_err:
+                    logger.warning(
+                        f"Strava token refresh failed for athlete {current_user.id}: {refresh_err}"
+                    )
+            
+            # Refresh failed or no refresh token — token is truly revoked
             logger.info(f"Strava token revoked for athlete {current_user.id}, clearing tokens")
             current_user.strava_access_token = None
             current_user.strava_refresh_token = None
@@ -220,6 +250,13 @@ def get_strava_auth_url(
     Returns URL that user should be redirected to.
     """
     try:
+        # Demo accounts must not link real provider accounts.
+        if getattr(current_user, "is_demo", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Demo accounts cannot connect to Strava. Create a free account to link your data.",
+            )
+
         # Prevent open redirect.
         if not return_to.startswith("/") or return_to.startswith("//"):
             raise HTTPException(status_code=400, detail="Invalid return_to")
@@ -282,6 +319,13 @@ def strava_callback(
         athlete = db.query(Athlete).filter(Athlete.id == payload["athlete_id"]).first()
         if not athlete:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid OAuth state")
+
+        # Double-guard: reject callback for demo accounts even if auth-url was bypassed.
+        if getattr(athlete, "is_demo", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Demo accounts cannot connect to Strava.",
+            )
 
         try:
             token_data = exchange_code_for_token(code)
@@ -349,6 +393,20 @@ def strava_callback(
         if display_name and not athlete.display_name:
             athlete.display_name = display_name
         athlete.strava_athlete_id = strava_athlete_id
+        
+        # Store token expiry (Strava returns expires_at as Unix epoch)
+        if token_data.get("expires_at"):
+            athlete.strava_token_expires_at = datetime.fromtimestamp(
+                token_data["expires_at"], tz=timezone.utc
+            )
+        
+        # Store athlete timezone from Strava profile
+        strava_timezone = athlete_info.get("timezone")
+        if strava_timezone:
+            # Strava returns e.g. "(GMT-05:00) America/New_York" — extract IANA part
+            if " " in strava_timezone:
+                strava_timezone = strava_timezone.split(" ", 1)[-1]
+            athlete.timezone = strava_timezone
         
         db.commit()
         db.refresh(athlete)

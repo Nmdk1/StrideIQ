@@ -1,0 +1,3290 @@
+{
+  "5k": {
+    "distance": "5K",
+    "distanceMeters": 5000,
+    "male": [
+      {
+        "age": 30,
+        "ageFactor": 1.0001,
+        "ageStandardSeconds": 769.1,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1538,
+            "timeFormatted": "25:38",
+            "pace": "8:15"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1282,
+            "timeFormatted": "21:22",
+            "pace": "6:53"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1099,
+            "timeFormatted": "18:19",
+            "pace": "5:54"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 961,
+            "timeFormatted": "16:01",
+            "pace": "5:09"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 855,
+            "timeFormatted": "14:15",
+            "pace": "4:35"
+          }
+        }
+      },
+      {
+        "age": 35,
+        "ageFactor": 1.0179,
+        "ageStandardSeconds": 782.8,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1566,
+            "timeFormatted": "26:06",
+            "pace": "8:24"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1305,
+            "timeFormatted": "21:45",
+            "pace": "7:00"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1118,
+            "timeFormatted": "18:38",
+            "pace": "6:00"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 978,
+            "timeFormatted": "16:18",
+            "pace": "5:15"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 870,
+            "timeFormatted": "14:30",
+            "pace": "4:40"
+          }
+        }
+      },
+      {
+        "age": 40,
+        "ageFactor": 1.0554,
+        "ageStandardSeconds": 811.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1623,
+            "timeFormatted": "27:03",
+            "pace": "8:42"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1353,
+            "timeFormatted": "22:33",
+            "pace": "7:15"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1159,
+            "timeFormatted": "19:19",
+            "pace": "6:13"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1015,
+            "timeFormatted": "16:55",
+            "pace": "5:27"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 902,
+            "timeFormatted": "15:02",
+            "pace": "4:50"
+          }
+        }
+      },
+      {
+        "age": 45,
+        "ageFactor": 1.0959,
+        "ageStandardSeconds": 842.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1685,
+            "timeFormatted": "28:05",
+            "pace": "9:03"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1405,
+            "timeFormatted": "23:25",
+            "pace": "7:32"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1204,
+            "timeFormatted": "20:04",
+            "pace": "6:28"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1053,
+            "timeFormatted": "17:33",
+            "pace": "5:39"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 936,
+            "timeFormatted": "15:36",
+            "pace": "5:01"
+          }
+        }
+      },
+      {
+        "age": 50,
+        "ageFactor": 1.1396,
+        "ageStandardSeconds": 876.4,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1753,
+            "timeFormatted": "29:13",
+            "pace": "9:24"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1461,
+            "timeFormatted": "24:21",
+            "pace": "7:50"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1252,
+            "timeFormatted": "20:52",
+            "pace": "6:43"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1095,
+            "timeFormatted": "18:15",
+            "pace": "5:53"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 974,
+            "timeFormatted": "16:14",
+            "pace": "5:13"
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.1869,
+        "ageStandardSeconds": 912.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1825,
+            "timeFormatted": "30:25",
+            "pace": "9:48"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1521,
+            "timeFormatted": "25:21",
+            "pace": "8:10"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1304,
+            "timeFormatted": "21:44",
+            "pace": "7:00"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1141,
+            "timeFormatted": "19:01",
+            "pace": "6:07"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1014,
+            "timeFormatted": "16:54",
+            "pace": "5:26"
+          }
+        }
+      },
+      {
+        "age": 60,
+        "ageFactor": 1.2384,
+        "ageStandardSeconds": 952.3,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1905,
+            "timeFormatted": "31:45",
+            "pace": "10:13"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1587,
+            "timeFormatted": "26:27",
+            "pace": "8:31"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1360,
+            "timeFormatted": "22:40",
+            "pace": "7:18"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1190,
+            "timeFormatted": "19:50",
+            "pace": "6:23"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1058,
+            "timeFormatted": "17:38",
+            "pace": "5:41"
+          }
+        }
+      },
+      {
+        "age": 65,
+        "ageFactor": 1.2945,
+        "ageStandardSeconds": 995.5,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1991,
+            "timeFormatted": "33:11",
+            "pace": "10:41"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1659,
+            "timeFormatted": "27:39",
+            "pace": "8:54"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1422,
+            "timeFormatted": "23:42",
+            "pace": "7:38"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1244,
+            "timeFormatted": "20:44",
+            "pace": "6:41"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1106,
+            "timeFormatted": "18:26",
+            "pace": "5:56"
+          }
+        }
+      },
+      {
+        "age": 70,
+        "ageFactor": 1.36,
+        "ageStandardSeconds": 1045.8,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 2092,
+            "timeFormatted": "34:52",
+            "pace": "11:13"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1743,
+            "timeFormatted": "29:03",
+            "pace": "9:21"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1494,
+            "timeFormatted": "24:54",
+            "pace": "8:01"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1307,
+            "timeFormatted": "21:47",
+            "pace": "7:01"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1162,
+            "timeFormatted": "19:22",
+            "pace": "6:14"
+          }
+        }
+      },
+      {
+        "age": 75,
+        "ageFactor": 1.4605,
+        "ageStandardSeconds": 1123.1,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 2246,
+            "timeFormatted": "37:26",
+            "pace": "12:03"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1872,
+            "timeFormatted": "31:12",
+            "pace": "10:02"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1604,
+            "timeFormatted": "26:44",
+            "pace": "8:36"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1404,
+            "timeFormatted": "23:24",
+            "pace": "7:32"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1248,
+            "timeFormatted": "20:48",
+            "pace": "6:42"
+          }
+        }
+      },
+      {
+        "age": 80,
+        "ageFactor": 1.6152,
+        "ageStandardSeconds": 1242.1,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 2484,
+            "timeFormatted": "41:24",
+            "pace": "13:20"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2070,
+            "timeFormatted": "34:30",
+            "pace": "11:06"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1774,
+            "timeFormatted": "29:34",
+            "pace": "9:31"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1553,
+            "timeFormatted": "25:53",
+            "pace": "8:20"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1380,
+            "timeFormatted": "23:00",
+            "pace": "7:24"
+          }
+        }
+      }
+    ],
+    "female": [
+      {
+        "age": 30,
+        "ageFactor": 1.0041,
+        "ageStandardSeconds": 837.4,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1675,
+            "timeFormatted": "27:55",
+            "pace": "8:59"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1396,
+            "timeFormatted": "23:16",
+            "pace": "7:29"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1196,
+            "timeFormatted": "19:56",
+            "pace": "6:25"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1047,
+            "timeFormatted": "17:27",
+            "pace": "5:37"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 930,
+            "timeFormatted": "15:30",
+            "pace": "4:59"
+          }
+        }
+      },
+      {
+        "age": 35,
+        "ageFactor": 1.0211,
+        "ageStandardSeconds": 851.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1703,
+            "timeFormatted": "28:23",
+            "pace": "9:08"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1419,
+            "timeFormatted": "23:39",
+            "pace": "7:37"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1217,
+            "timeFormatted": "20:17",
+            "pace": "6:32"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1064,
+            "timeFormatted": "17:44",
+            "pace": "5:43"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 946,
+            "timeFormatted": "15:46",
+            "pace": "5:05"
+          }
+        }
+      },
+      {
+        "age": 40,
+        "ageFactor": 1.0527,
+        "ageStandardSeconds": 878,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1756,
+            "timeFormatted": "29:16",
+            "pace": "9:25"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1463,
+            "timeFormatted": "24:23",
+            "pace": "7:51"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1254,
+            "timeFormatted": "20:54",
+            "pace": "6:44"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1097,
+            "timeFormatted": "18:17",
+            "pace": "5:53"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 976,
+            "timeFormatted": "16:16",
+            "pace": "5:14"
+          }
+        }
+      },
+      {
+        "age": 45,
+        "ageFactor": 1.1016,
+        "ageStandardSeconds": 918.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1837,
+            "timeFormatted": "30:37",
+            "pace": "9:51"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1531,
+            "timeFormatted": "25:31",
+            "pace": "8:13"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1312,
+            "timeFormatted": "21:52",
+            "pace": "7:02"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1148,
+            "timeFormatted": "19:08",
+            "pace": "6:10"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1021,
+            "timeFormatted": "17:01",
+            "pace": "5:29"
+          }
+        }
+      },
+      {
+        "age": 50,
+        "ageFactor": 1.1639,
+        "ageStandardSeconds": 970.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 1941,
+            "timeFormatted": "32:21",
+            "pace": "10:25"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1618,
+            "timeFormatted": "26:58",
+            "pace": "8:41"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1387,
+            "timeFormatted": "23:07",
+            "pace": "7:26"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1213,
+            "timeFormatted": "20:13",
+            "pace": "6:31"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1079,
+            "timeFormatted": "17:59",
+            "pace": "5:47"
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.2335,
+        "ageStandardSeconds": 1028.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 2057,
+            "timeFormatted": "34:17",
+            "pace": "11:02"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1715,
+            "timeFormatted": "28:35",
+            "pace": "9:12"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1470,
+            "timeFormatted": "24:30",
+            "pace": "7:53"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1286,
+            "timeFormatted": "21:26",
+            "pace": "6:54"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1143,
+            "timeFormatted": "19:03",
+            "pace": "6:08"
+          }
+        }
+      },
+      {
+        "age": 60,
+        "ageFactor": 1.3122,
+        "ageStandardSeconds": 1094.4,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 2189,
+            "timeFormatted": "36:29",
+            "pace": "11:44"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1824,
+            "timeFormatted": "30:24",
+            "pace": "9:47"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1563,
+            "timeFormatted": "26:03",
+            "pace": "8:23"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1368,
+            "timeFormatted": "22:48",
+            "pace": "7:20"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1216,
+            "timeFormatted": "20:16",
+            "pace": "6:31"
+          }
+        }
+      },
+      {
+        "age": 65,
+        "ageFactor": 1.4013,
+        "ageStandardSeconds": 1168.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 2337,
+            "timeFormatted": "38:57",
+            "pace": "12:32"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 1948,
+            "timeFormatted": "32:28",
+            "pace": "10:27"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1670,
+            "timeFormatted": "27:50",
+            "pace": "8:57"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1461,
+            "timeFormatted": "24:21",
+            "pace": "7:50"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1299,
+            "timeFormatted": "21:39",
+            "pace": "6:58"
+          }
+        }
+      },
+      {
+        "age": 70,
+        "ageFactor": 1.5038,
+        "ageStandardSeconds": 1254.2,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 2508,
+            "timeFormatted": "41:48",
+            "pace": "13:27"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2090,
+            "timeFormatted": "34:50",
+            "pace": "11:13"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1792,
+            "timeFormatted": "29:52",
+            "pace": "9:37"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1568,
+            "timeFormatted": "26:08",
+            "pace": "8:25"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1394,
+            "timeFormatted": "23:14",
+            "pace": "7:29"
+          }
+        }
+      },
+      {
+        "age": 75,
+        "ageFactor": 1.6221,
+        "ageStandardSeconds": 1352.8,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 2706,
+            "timeFormatted": "45:06",
+            "pace": "14:31"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2255,
+            "timeFormatted": "37:35",
+            "pace": "12:06"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 1933,
+            "timeFormatted": "32:13",
+            "pace": "10:22"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1691,
+            "timeFormatted": "28:11",
+            "pace": "9:04"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1503,
+            "timeFormatted": "25:03",
+            "pace": "8:04"
+          }
+        }
+      },
+      {
+        "age": 80,
+        "ageFactor": 1.773,
+        "ageStandardSeconds": 1478.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 2957,
+            "timeFormatted": "49:17",
+            "pace": "15:52"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2464,
+            "timeFormatted": "41:04",
+            "pace": "13:13"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2112,
+            "timeFormatted": "35:12",
+            "pace": "11:20"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1848,
+            "timeFormatted": "30:48",
+            "pace": "9:55"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1643,
+            "timeFormatted": "27:23",
+            "pace": "8:49"
+          }
+        }
+      }
+    ]
+  },
+  "10k": {
+    "distance": "10K",
+    "distanceMeters": 10000,
+    "male": [
+      {
+        "age": 30,
+        "ageFactor": 1,
+        "ageStandardSeconds": 1584,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3168,
+            "timeFormatted": "52:48",
+            "pace": "8:30"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2640,
+            "timeFormatted": "44:00",
+            "pace": "7:05"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2263,
+            "timeFormatted": "37:43",
+            "pace": "6:04"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1980,
+            "timeFormatted": "33:00",
+            "pace": "5:19"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1760,
+            "timeFormatted": "29:20",
+            "pace": "4:43"
+          }
+        }
+      },
+      {
+        "age": 35,
+        "ageFactor": 1.0092,
+        "ageStandardSeconds": 1598.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3197,
+            "timeFormatted": "53:17",
+            "pace": "8:35"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2664,
+            "timeFormatted": "44:24",
+            "pace": "7:09"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2284,
+            "timeFormatted": "38:04",
+            "pace": "6:08"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 1998,
+            "timeFormatted": "33:18",
+            "pace": "5:22"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1776,
+            "timeFormatted": "29:36",
+            "pace": "4:46"
+          }
+        }
+      },
+      {
+        "age": 40,
+        "ageFactor": 1.0378,
+        "ageStandardSeconds": 1643.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3288,
+            "timeFormatted": "54:48",
+            "pace": "8:49"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2740,
+            "timeFormatted": "45:40",
+            "pace": "7:21"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2348,
+            "timeFormatted": "39:08",
+            "pace": "6:18"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2055,
+            "timeFormatted": "34:15",
+            "pace": "5:31"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1827,
+            "timeFormatted": "30:27",
+            "pace": "4:54"
+          }
+        }
+      },
+      {
+        "age": 45,
+        "ageFactor": 1.0798,
+        "ageStandardSeconds": 1710.4,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3421,
+            "timeFormatted": "57:01",
+            "pace": "9:11"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2851,
+            "timeFormatted": "47:31",
+            "pace": "7:39"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2443,
+            "timeFormatted": "40:43",
+            "pace": "6:33"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2138,
+            "timeFormatted": "35:38",
+            "pace": "5:44"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1900,
+            "timeFormatted": "31:40",
+            "pace": "5:06"
+          }
+        }
+      },
+      {
+        "age": 50,
+        "ageFactor": 1.1254,
+        "ageStandardSeconds": 1782.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3565,
+            "timeFormatted": "59:25",
+            "pace": "9:34"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2971,
+            "timeFormatted": "49:31",
+            "pace": "7:58"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2547,
+            "timeFormatted": "42:27",
+            "pace": "6:50"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2228,
+            "timeFormatted": "37:08",
+            "pace": "5:59"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1981,
+            "timeFormatted": "33:01",
+            "pace": "5:19"
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.175,
+        "ageStandardSeconds": 1861.2,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3722,
+            "timeFormatted": "1:02:02",
+            "pace": "9:59"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3102,
+            "timeFormatted": "51:42",
+            "pace": "8:19"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2659,
+            "timeFormatted": "44:19",
+            "pace": "7:08"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2327,
+            "timeFormatted": "38:47",
+            "pace": "6:14"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2068,
+            "timeFormatted": "34:28",
+            "pace": "5:33"
+          }
+        }
+      },
+      {
+        "age": 60,
+        "ageFactor": 1.2291,
+        "ageStandardSeconds": 1946.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3894,
+            "timeFormatted": "1:04:54",
+            "pace": "10:27"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3245,
+            "timeFormatted": "54:05",
+            "pace": "8:42"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2781,
+            "timeFormatted": "46:21",
+            "pace": "7:28"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2434,
+            "timeFormatted": "40:34",
+            "pace": "6:32"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2163,
+            "timeFormatted": "36:03",
+            "pace": "5:48"
+          }
+        }
+      },
+      {
+        "age": 65,
+        "ageFactor": 1.2885,
+        "ageStandardSeconds": 2041,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 4082,
+            "timeFormatted": "1:08:02",
+            "pace": "10:57"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3402,
+            "timeFormatted": "56:42",
+            "pace": "9:07"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2916,
+            "timeFormatted": "48:36",
+            "pace": "7:49"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2551,
+            "timeFormatted": "42:31",
+            "pace": "6:51"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2268,
+            "timeFormatted": "37:48",
+            "pace": "6:05"
+          }
+        }
+      },
+      {
+        "age": 70,
+        "ageFactor": 1.3539,
+        "ageStandardSeconds": 2144.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 4289,
+            "timeFormatted": "1:11:29",
+            "pace": "11:30"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3574,
+            "timeFormatted": "59:34",
+            "pace": "9:35"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 3064,
+            "timeFormatted": "51:04",
+            "pace": "8:13"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2681,
+            "timeFormatted": "44:41",
+            "pace": "7:11"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2383,
+            "timeFormatted": "39:43",
+            "pace": "6:23"
+          }
+        }
+      },
+      {
+        "age": 75,
+        "ageFactor": 1.4434,
+        "ageStandardSeconds": 2286.3,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 4573,
+            "timeFormatted": "1:16:13",
+            "pace": "12:16"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3811,
+            "timeFormatted": "1:03:31",
+            "pace": "10:13"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 3266,
+            "timeFormatted": "54:26",
+            "pace": "8:46"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2858,
+            "timeFormatted": "47:38",
+            "pace": "7:40"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2540,
+            "timeFormatted": "42:20",
+            "pace": "6:49"
+          }
+        }
+      },
+      {
+        "age": 80,
+        "ageFactor": 1.587,
+        "ageStandardSeconds": 2513.8,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 5028,
+            "timeFormatted": "1:23:48",
+            "pace": "13:29"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 4190,
+            "timeFormatted": "1:09:50",
+            "pace": "11:14"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 3591,
+            "timeFormatted": "59:51",
+            "pace": "9:38"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 3142,
+            "timeFormatted": "52:22",
+            "pace": "8:26"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2793,
+            "timeFormatted": "46:33",
+            "pace": "7:30"
+          }
+        }
+      }
+    ],
+    "female": [
+      {
+        "age": 30,
+        "ageFactor": 1.002,
+        "ageStandardSeconds": 1729.5,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3459,
+            "timeFormatted": "57:39",
+            "pace": "9:17"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2882,
+            "timeFormatted": "48:02",
+            "pace": "7:44"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2471,
+            "timeFormatted": "41:11",
+            "pace": "6:38"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2162,
+            "timeFormatted": "36:02",
+            "pace": "5:48"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1922,
+            "timeFormatted": "32:02",
+            "pace": "5:09"
+          }
+        }
+      },
+      {
+        "age": 35,
+        "ageFactor": 1.0145,
+        "ageStandardSeconds": 1751,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3502,
+            "timeFormatted": "58:22",
+            "pace": "9:24"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2918,
+            "timeFormatted": "48:38",
+            "pace": "7:50"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2501,
+            "timeFormatted": "41:41",
+            "pace": "6:43"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2189,
+            "timeFormatted": "36:29",
+            "pace": "5:52"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1946,
+            "timeFormatted": "32:26",
+            "pace": "5:13"
+          }
+        }
+      },
+      {
+        "age": 40,
+        "ageFactor": 1.0392,
+        "ageStandardSeconds": 1793.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3587,
+            "timeFormatted": "59:47",
+            "pace": "9:37"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 2989,
+            "timeFormatted": "49:49",
+            "pace": "8:01"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2562,
+            "timeFormatted": "42:42",
+            "pace": "6:52"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2242,
+            "timeFormatted": "37:22",
+            "pace": "6:01"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 1993,
+            "timeFormatted": "33:13",
+            "pace": "5:21"
+          }
+        }
+      },
+      {
+        "age": 45,
+        "ageFactor": 1.0778,
+        "ageStandardSeconds": 1860.3,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3721,
+            "timeFormatted": "1:02:01",
+            "pace": "9:59"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3100,
+            "timeFormatted": "51:40",
+            "pace": "8:19"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2658,
+            "timeFormatted": "44:18",
+            "pace": "7:08"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2325,
+            "timeFormatted": "38:45",
+            "pace": "6:14"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2067,
+            "timeFormatted": "34:27",
+            "pace": "5:33"
+          }
+        }
+      },
+      {
+        "age": 50,
+        "ageFactor": 1.1335,
+        "ageStandardSeconds": 1956.4,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 3913,
+            "timeFormatted": "1:05:13",
+            "pace": "10:30"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3261,
+            "timeFormatted": "54:21",
+            "pace": "8:45"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2795,
+            "timeFormatted": "46:35",
+            "pace": "7:30"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2446,
+            "timeFormatted": "40:46",
+            "pace": "6:34"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2174,
+            "timeFormatted": "36:14",
+            "pace": "5:50"
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.2012,
+        "ageStandardSeconds": 2073.3,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 4147,
+            "timeFormatted": "1:09:07",
+            "pace": "11:07"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3455,
+            "timeFormatted": "57:35",
+            "pace": "9:16"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 2962,
+            "timeFormatted": "49:22",
+            "pace": "7:57"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2592,
+            "timeFormatted": "43:12",
+            "pace": "6:57"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2304,
+            "timeFormatted": "38:24",
+            "pace": "6:11"
+          }
+        }
+      },
+      {
+        "age": 60,
+        "ageFactor": 1.2775,
+        "ageStandardSeconds": 2205,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 4410,
+            "timeFormatted": "1:13:30",
+            "pace": "11:50"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3675,
+            "timeFormatted": "1:01:15",
+            "pace": "9:51"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 3150,
+            "timeFormatted": "52:30",
+            "pace": "8:27"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2756,
+            "timeFormatted": "45:56",
+            "pace": "7:24"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2450,
+            "timeFormatted": "40:50",
+            "pace": "6:34"
+          }
+        }
+      },
+      {
+        "age": 65,
+        "ageFactor": 1.3641,
+        "ageStandardSeconds": 2354.4,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 4709,
+            "timeFormatted": "1:18:29",
+            "pace": "12:38"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 3924,
+            "timeFormatted": "1:05:24",
+            "pace": "10:32"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 3363,
+            "timeFormatted": "56:03",
+            "pace": "9:01"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 2943,
+            "timeFormatted": "49:03",
+            "pace": "7:54"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2616,
+            "timeFormatted": "43:36",
+            "pace": "7:01"
+          }
+        }
+      },
+      {
+        "age": 70,
+        "ageFactor": 1.4633,
+        "ageStandardSeconds": 2525.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 5051,
+            "timeFormatted": "1:24:11",
+            "pace": "13:33"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 4209,
+            "timeFormatted": "1:10:09",
+            "pace": "11:17"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 3608,
+            "timeFormatted": "1:00:08",
+            "pace": "9:41"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 3157,
+            "timeFormatted": "52:37",
+            "pace": "8:28"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 2806,
+            "timeFormatted": "46:46",
+            "pace": "7:32"
+          }
+        }
+      },
+      {
+        "age": 75,
+        "ageFactor": 1.578,
+        "ageStandardSeconds": 2723.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 5447,
+            "timeFormatted": "1:30:47",
+            "pace": "14:37"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 4539,
+            "timeFormatted": "1:15:39",
+            "pace": "12:11"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 3891,
+            "timeFormatted": "1:04:51",
+            "pace": "10:26"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 3405,
+            "timeFormatted": "56:45",
+            "pace": "9:08"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 3026,
+            "timeFormatted": "50:26",
+            "pace": "8:07"
+          }
+        }
+      },
+      {
+        "age": 80,
+        "ageFactor": 1.7406,
+        "ageStandardSeconds": 3004.3,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 6009,
+            "timeFormatted": "1:40:09",
+            "pace": "16:07"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 5007,
+            "timeFormatted": "1:23:27",
+            "pace": "13:26"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 4292,
+            "timeFormatted": "1:11:32",
+            "pace": "11:31"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 3755,
+            "timeFormatted": "1:02:35",
+            "pace": "10:04"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 3338,
+            "timeFormatted": "55:38",
+            "pace": "8:57"
+          }
+        }
+      }
+    ]
+  },
+  "marathon": {
+    "distance": "Marathon",
+    "distanceMeters": 42195,
+    "male": [
+      {
+        "age": 30,
+        "ageFactor": 1,
+        "ageStandardSeconds": 7235,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 14470,
+            "timeFormatted": "4:01:10",
+            "pace": "9:12"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 12058,
+            "timeFormatted": "3:20:58",
+            "pace": "7:40"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 10336,
+            "timeFormatted": "2:52:16",
+            "pace": "6:34"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 9044,
+            "timeFormatted": "2:30:44",
+            "pace": "5:45"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 8039,
+            "timeFormatted": "2:13:59",
+            "pace": "5:07"
+          }
+        }
+      },
+      {
+        "age": 35,
+        "ageFactor": 1,
+        "ageStandardSeconds": 7235,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 14470,
+            "timeFormatted": "4:01:10",
+            "pace": "9:12"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 12058,
+            "timeFormatted": "3:20:58",
+            "pace": "7:40"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 10336,
+            "timeFormatted": "2:52:16",
+            "pace": "6:34"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 9044,
+            "timeFormatted": "2:30:44",
+            "pace": "5:45"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 8039,
+            "timeFormatted": "2:13:59",
+            "pace": "5:07"
+          }
+        }
+      },
+      {
+        "age": 40,
+        "ageFactor": 1.0222,
+        "ageStandardSeconds": 7395.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 14791,
+            "timeFormatted": "4:06:31",
+            "pace": "9:24"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 12326,
+            "timeFormatted": "3:25:26",
+            "pace": "7:50"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 10565,
+            "timeFormatted": "2:56:05",
+            "pace": "6:43"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 9245,
+            "timeFormatted": "2:34:05",
+            "pace": "5:53"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 8217,
+            "timeFormatted": "2:16:57",
+            "pace": "5:13"
+          }
+        }
+      },
+      {
+        "age": 45,
+        "ageFactor": 1.0669,
+        "ageStandardSeconds": 7719,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 15438,
+            "timeFormatted": "4:17:18",
+            "pace": "9:49"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 12865,
+            "timeFormatted": "3:34:25",
+            "pace": "8:11"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 11027,
+            "timeFormatted": "3:03:47",
+            "pace": "7:01"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 9649,
+            "timeFormatted": "2:40:49",
+            "pace": "6:08"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 8577,
+            "timeFormatted": "2:22:57",
+            "pace": "5:27"
+          }
+        }
+      },
+      {
+        "age": 50,
+        "ageFactor": 1.1157,
+        "ageStandardSeconds": 8072.1,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 16144,
+            "timeFormatted": "4:29:04",
+            "pace": "10:16"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 13453,
+            "timeFormatted": "3:44:13",
+            "pace": "8:33"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 11532,
+            "timeFormatted": "3:12:12",
+            "pace": "7:20"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 10090,
+            "timeFormatted": "2:48:10",
+            "pace": "6:25"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 8969,
+            "timeFormatted": "2:29:29",
+            "pace": "5:42"
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.1692,
+        "ageStandardSeconds": 8459.2,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 16918,
+            "timeFormatted": "4:41:58",
+            "pace": "10:45"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 14099,
+            "timeFormatted": "3:54:59",
+            "pace": "8:58"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 12085,
+            "timeFormatted": "3:21:25",
+            "pace": "7:41"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 10574,
+            "timeFormatted": "2:56:14",
+            "pace": "6:43"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 9399,
+            "timeFormatted": "2:36:39",
+            "pace": "5:58"
+          }
+        }
+      },
+      {
+        "age": 60,
+        "ageFactor": 1.228,
+        "ageStandardSeconds": 8884.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 17769,
+            "timeFormatted": "4:56:09",
+            "pace": "11:18"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 14808,
+            "timeFormatted": "4:06:48",
+            "pace": "9:25"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 12692,
+            "timeFormatted": "3:31:32",
+            "pace": "8:04"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 11106,
+            "timeFormatted": "3:05:06",
+            "pace": "7:04"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 9872,
+            "timeFormatted": "2:44:32",
+            "pace": "6:17"
+          }
+        }
+      },
+      {
+        "age": 65,
+        "ageFactor": 1.2932,
+        "ageStandardSeconds": 9356.3,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 18713,
+            "timeFormatted": "5:11:53",
+            "pace": "11:54"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 15594,
+            "timeFormatted": "4:19:54",
+            "pace": "9:55"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 13366,
+            "timeFormatted": "3:42:46",
+            "pace": "8:30"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 11695,
+            "timeFormatted": "3:14:55",
+            "pace": "7:26"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 10396,
+            "timeFormatted": "2:53:16",
+            "pace": "6:37"
+          }
+        }
+      },
+      {
+        "age": 70,
+        "ageFactor": 1.3656,
+        "ageStandardSeconds": 9880.1,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 19760,
+            "timeFormatted": "5:29:20",
+            "pace": "12:34"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 16467,
+            "timeFormatted": "4:34:27",
+            "pace": "10:28"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 14114,
+            "timeFormatted": "3:55:14",
+            "pace": "8:58"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 12350,
+            "timeFormatted": "3:25:50",
+            "pace": "7:51"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 10978,
+            "timeFormatted": "3:02:58",
+            "pace": "6:59"
+          }
+        }
+      },
+      {
+        "age": 75,
+        "ageFactor": 1.4584,
+        "ageStandardSeconds": 10551.5,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 21103,
+            "timeFormatted": "5:51:43",
+            "pace": "13:25"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 17586,
+            "timeFormatted": "4:53:06",
+            "pace": "11:11"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 15074,
+            "timeFormatted": "4:11:14",
+            "pace": "9:35"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 13189,
+            "timeFormatted": "3:39:49",
+            "pace": "8:23"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 11724,
+            "timeFormatted": "3:15:24",
+            "pace": "7:27"
+          }
+        }
+      },
+      {
+        "age": 80,
+        "ageFactor": 1.608,
+        "ageStandardSeconds": 11633.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 23268,
+            "timeFormatted": "6:27:48",
+            "pace": "14:47"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 19390,
+            "timeFormatted": "5:23:10",
+            "pace": "12:20"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 16620,
+            "timeFormatted": "4:37:00",
+            "pace": "10:34"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 14542,
+            "timeFormatted": "4:02:22",
+            "pace": "9:15"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 12927,
+            "timeFormatted": "3:35:27",
+            "pace": "8:13"
+          }
+        }
+      }
+    ],
+    "female": [
+      {
+        "age": 30,
+        "ageFactor": 1.0017,
+        "ageStandardSeconds": 7809.3,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 15619,
+            "timeFormatted": "4:20:19",
+            "pace": "9:56"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 13015,
+            "timeFormatted": "3:36:55",
+            "pace": "8:16"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 11156,
+            "timeFormatted": "3:05:56",
+            "pace": "7:05"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 9762,
+            "timeFormatted": "2:42:42",
+            "pace": "6:12"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 8677,
+            "timeFormatted": "2:24:37",
+            "pace": "5:31"
+          }
+        }
+      },
+      {
+        "age": 35,
+        "ageFactor": 1.0122,
+        "ageStandardSeconds": 7891.1,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 15782,
+            "timeFormatted": "4:23:02",
+            "pace": "10:02"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 13152,
+            "timeFormatted": "3:39:12",
+            "pace": "8:22"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 11273,
+            "timeFormatted": "3:07:53",
+            "pace": "7:10"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 9864,
+            "timeFormatted": "2:44:24",
+            "pace": "6:16"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 8768,
+            "timeFormatted": "2:26:08",
+            "pace": "5:34"
+          }
+        }
+      },
+      {
+        "age": 40,
+        "ageFactor": 1.0331,
+        "ageStandardSeconds": 8054,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 16108,
+            "timeFormatted": "4:28:28",
+            "pace": "10:14"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 13423,
+            "timeFormatted": "3:43:43",
+            "pace": "8:32"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 11506,
+            "timeFormatted": "3:11:46",
+            "pace": "7:19"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 10068,
+            "timeFormatted": "2:47:48",
+            "pace": "6:24"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 8949,
+            "timeFormatted": "2:29:09",
+            "pace": "5:41"
+          }
+        }
+      },
+      {
+        "age": 45,
+        "ageFactor": 1.0654,
+        "ageStandardSeconds": 8305.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 16612,
+            "timeFormatted": "4:36:52",
+            "pace": "10:34"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 13843,
+            "timeFormatted": "3:50:43",
+            "pace": "8:48"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 11866,
+            "timeFormatted": "3:17:46",
+            "pace": "7:33"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 10382,
+            "timeFormatted": "2:53:02",
+            "pace": "6:36"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 9229,
+            "timeFormatted": "2:33:49",
+            "pace": "5:52"
+          }
+        }
+      },
+      {
+        "age": 50,
+        "ageFactor": 1.1114,
+        "ageStandardSeconds": 8664.5,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 17329,
+            "timeFormatted": "4:48:49",
+            "pace": "11:01"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 14441,
+            "timeFormatted": "4:00:41",
+            "pace": "9:11"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 12378,
+            "timeFormatted": "3:26:18",
+            "pace": "7:52"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 10831,
+            "timeFormatted": "3:00:31",
+            "pace": "6:53"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 9627,
+            "timeFormatted": "2:40:27",
+            "pace": "6:07"
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.1744,
+        "ageStandardSeconds": 9155.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 18311,
+            "timeFormatted": "5:05:11",
+            "pace": "11:38"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 15259,
+            "timeFormatted": "4:14:19",
+            "pace": "9:42"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 13079,
+            "timeFormatted": "3:37:59",
+            "pace": "8:19"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 11445,
+            "timeFormatted": "3:10:45",
+            "pace": "7:17"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 10173,
+            "timeFormatted": "2:49:33",
+            "pace": "6:28"
+          }
+        }
+      },
+      {
+        "age": 60,
+        "ageFactor": 1.2555,
+        "ageStandardSeconds": 9787.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 19576,
+            "timeFormatted": "5:26:16",
+            "pace": "12:27"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 16313,
+            "timeFormatted": "4:31:53",
+            "pace": "10:22"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 13983,
+            "timeFormatted": "3:53:03",
+            "pace": "8:53"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 12235,
+            "timeFormatted": "3:23:55",
+            "pace": "7:47"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 10875,
+            "timeFormatted": "3:01:15",
+            "pace": "6:55"
+          }
+        }
+      },
+      {
+        "age": 65,
+        "ageFactor": 1.3492,
+        "ageStandardSeconds": 10518.4,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 21037,
+            "timeFormatted": "5:50:37",
+            "pace": "13:22"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 17531,
+            "timeFormatted": "4:52:11",
+            "pace": "11:09"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 15026,
+            "timeFormatted": "4:10:26",
+            "pace": "9:33"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 13148,
+            "timeFormatted": "3:39:08",
+            "pace": "8:21"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 11687,
+            "timeFormatted": "3:14:47",
+            "pace": "7:26"
+          }
+        }
+      },
+      {
+        "age": 70,
+        "ageFactor": 1.4579,
+        "ageStandardSeconds": 11365.8,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 22732,
+            "timeFormatted": "6:18:52",
+            "pace": "14:27"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 18943,
+            "timeFormatted": "5:15:43",
+            "pace": "12:02"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 16237,
+            "timeFormatted": "4:30:37",
+            "pace": "10:19"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 14207,
+            "timeFormatted": "3:56:47",
+            "pace": "9:02"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 12629,
+            "timeFormatted": "3:30:29",
+            "pace": "8:02"
+          }
+        }
+      },
+      {
+        "age": 75,
+        "ageFactor": 1.5898,
+        "ageStandardSeconds": 12394.1,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 24788,
+            "timeFormatted": "6:53:08",
+            "pace": "15:45"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 20657,
+            "timeFormatted": "5:44:17",
+            "pace": "13:08"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 17706,
+            "timeFormatted": "4:55:06",
+            "pace": "11:15"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 15493,
+            "timeFormatted": "4:18:13",
+            "pace": "9:51"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 13771,
+            "timeFormatted": "3:49:31",
+            "pace": "8:45"
+          }
+        }
+      },
+      {
+        "age": 80,
+        "ageFactor": 1.7995,
+        "ageStandardSeconds": 14028.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 28058,
+            "timeFormatted": "7:47:38",
+            "pace": "17:50"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 23382,
+            "timeFormatted": "6:29:42",
+            "pace": "14:52"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 20041,
+            "timeFormatted": "5:34:01",
+            "pace": "12:44"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 17536,
+            "timeFormatted": "4:52:16",
+            "pace": "11:09"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 15588,
+            "timeFormatted": "4:19:48",
+            "pace": "9:55"
+          }
+        }
+      }
+    ]
+  },
+  "half": {
+    "distance": "Half Marathon",
+    "distanceMeters": 21097.5,
+    "male": [
+      {
+        "age": 30,
+        "ageFactor": 1,
+        "ageStandardSeconds": 3451,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 6902,
+            "timeFormatted": "1:55:02",
+            "pace": "8:46"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 5752,
+            "timeFormatted": "1:35:52",
+            "pace": "7:19"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 4930,
+            "timeFormatted": "1:22:10",
+            "pace": "6:16"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 4314,
+            "timeFormatted": "1:11:54",
+            "pace": "5:29"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 3834,
+            "timeFormatted": "1:03:54",
+            "pace": "4:52"
+          }
+        }
+      },
+      {
+        "age": 35,
+        "ageFactor": 1.0073,
+        "ageStandardSeconds": 3476.2,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 6952,
+            "timeFormatted": "1:55:52",
+            "pace": "8:50"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 5794,
+            "timeFormatted": "1:36:34",
+            "pace": "7:22"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 4966,
+            "timeFormatted": "1:22:46",
+            "pace": "6:19"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 4345,
+            "timeFormatted": "1:12:25",
+            "pace": "5:31"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 3862,
+            "timeFormatted": "1:04:22",
+            "pace": "4:55"
+          }
+        }
+      },
+      {
+        "age": 40,
+        "ageFactor": 1.0376,
+        "ageStandardSeconds": 3580.8,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 7162,
+            "timeFormatted": "1:59:22",
+            "pace": "9:06"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 5968,
+            "timeFormatted": "1:39:28",
+            "pace": "7:35"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 5115,
+            "timeFormatted": "1:25:15",
+            "pace": "6:30"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 4476,
+            "timeFormatted": "1:14:36",
+            "pace": "5:41"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 3979,
+            "timeFormatted": "1:06:19",
+            "pace": "5:03"
+          }
+        }
+      },
+      {
+        "age": 45,
+        "ageFactor": 1.0812,
+        "ageStandardSeconds": 3731.2,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 7462,
+            "timeFormatted": "2:04:22",
+            "pace": "9:29"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 6219,
+            "timeFormatted": "1:43:39",
+            "pace": "7:54"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 5330,
+            "timeFormatted": "1:28:50",
+            "pace": "6:47"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 4664,
+            "timeFormatted": "1:17:44",
+            "pace": "5:56"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 4146,
+            "timeFormatted": "1:09:06",
+            "pace": "5:16"
+          }
+        }
+      },
+      {
+        "age": 50,
+        "ageFactor": 1.1287,
+        "ageStandardSeconds": 3895.1,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 7790,
+            "timeFormatted": "2:09:50",
+            "pace": "9:54"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 6492,
+            "timeFormatted": "1:48:12",
+            "pace": "8:15"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 5564,
+            "timeFormatted": "1:32:44",
+            "pace": "7:04"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 4869,
+            "timeFormatted": "1:21:09",
+            "pace": "6:11"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 4328,
+            "timeFormatted": "1:12:08",
+            "pace": "5:30"
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.1805,
+        "ageStandardSeconds": 4073.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 8148,
+            "timeFormatted": "2:15:48",
+            "pace": "10:22"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 6790,
+            "timeFormatted": "1:53:10",
+            "pace": "8:38"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 5820,
+            "timeFormatted": "1:37:00",
+            "pace": "7:24"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 5092,
+            "timeFormatted": "1:24:52",
+            "pace": "6:28"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 4527,
+            "timeFormatted": "1:15:27",
+            "pace": "5:45"
+          }
+        }
+      },
+      {
+        "age": 60,
+        "ageFactor": 1.2373,
+        "ageStandardSeconds": 4269.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 8540,
+            "timeFormatted": "2:22:20",
+            "pace": "10:51"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 7117,
+            "timeFormatted": "1:58:37",
+            "pace": "9:03"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 6100,
+            "timeFormatted": "1:41:40",
+            "pace": "7:45"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 5337,
+            "timeFormatted": "1:28:57",
+            "pace": "6:47"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 4744,
+            "timeFormatted": "1:19:04",
+            "pace": "6:02"
+          }
+        }
+      },
+      {
+        "age": 65,
+        "ageFactor": 1.2999,
+        "ageStandardSeconds": 4486,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 8972,
+            "timeFormatted": "2:29:32",
+            "pace": "11:24"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 7477,
+            "timeFormatted": "2:04:37",
+            "pace": "9:30"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 6409,
+            "timeFormatted": "1:46:49",
+            "pace": "8:09"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 5607,
+            "timeFormatted": "1:33:27",
+            "pace": "7:08"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 4984,
+            "timeFormatted": "1:23:04",
+            "pace": "6:20"
+          }
+        }
+      },
+      {
+        "age": 70,
+        "ageFactor": 1.3691,
+        "ageStandardSeconds": 4724.8,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 9450,
+            "timeFormatted": "2:37:30",
+            "pace": "12:01"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 7875,
+            "timeFormatted": "2:11:15",
+            "pace": "10:01"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 6750,
+            "timeFormatted": "1:52:30",
+            "pace": "8:35"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 5906,
+            "timeFormatted": "1:38:26",
+            "pace": "7:31"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 5250,
+            "timeFormatted": "1:27:30",
+            "pace": "6:40"
+          }
+        }
+      },
+      {
+        "age": 75,
+        "ageFactor": 1.4641,
+        "ageStandardSeconds": 5052.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 10105,
+            "timeFormatted": "2:48:25",
+            "pace": "12:51"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 8421,
+            "timeFormatted": "2:20:21",
+            "pace": "10:42"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 7218,
+            "timeFormatted": "2:00:18",
+            "pace": "9:11"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 6316,
+            "timeFormatted": "1:45:16",
+            "pace": "8:02"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 5614,
+            "timeFormatted": "1:33:34",
+            "pace": "7:08"
+          }
+        }
+      },
+      {
+        "age": 80,
+        "ageFactor": 1.6168,
+        "ageStandardSeconds": 5579.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 11159,
+            "timeFormatted": "3:05:59",
+            "pace": "14:11"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 9299,
+            "timeFormatted": "2:34:59",
+            "pace": "11:49"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 7971,
+            "timeFormatted": "2:12:51",
+            "pace": "10:08"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 6974,
+            "timeFormatted": "1:56:14",
+            "pace": "8:52"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 6200,
+            "timeFormatted": "1:43:20",
+            "pace": "7:53"
+          }
+        }
+      }
+    ],
+    "female": [
+      {
+        "age": 30,
+        "ageFactor": 1.0021,
+        "ageStandardSeconds": 3779.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 7560,
+            "timeFormatted": "2:06:00",
+            "pace": "9:37"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 6300,
+            "timeFormatted": "1:45:00",
+            "pace": "8:01"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 5400,
+            "timeFormatted": "1:30:00",
+            "pace": "6:52"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 4725,
+            "timeFormatted": "1:18:45",
+            "pace": "6:00"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 4200,
+            "timeFormatted": "1:10:00",
+            "pace": "5:20"
+          }
+        }
+      },
+      {
+        "age": 35,
+        "ageFactor": 1.0153,
+        "ageStandardSeconds": 3829.7,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 7659,
+            "timeFormatted": "2:07:39",
+            "pace": "9:44"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 6383,
+            "timeFormatted": "1:46:23",
+            "pace": "8:07"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 5471,
+            "timeFormatted": "1:31:11",
+            "pace": "6:57"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 4787,
+            "timeFormatted": "1:19:47",
+            "pace": "6:05"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 4255,
+            "timeFormatted": "1:10:55",
+            "pace": "5:25"
+          }
+        }
+      },
+      {
+        "age": 40,
+        "ageFactor": 1.0416,
+        "ageStandardSeconds": 3928.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 7858,
+            "timeFormatted": "2:10:58",
+            "pace": "9:59"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 6548,
+            "timeFormatted": "1:49:08",
+            "pace": "8:20"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 5613,
+            "timeFormatted": "1:33:33",
+            "pace": "7:08"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 4911,
+            "timeFormatted": "1:21:51",
+            "pace": "6:15"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 4365,
+            "timeFormatted": "1:12:45",
+            "pace": "5:33"
+          }
+        }
+      },
+      {
+        "age": 45,
+        "ageFactor": 1.083,
+        "ageStandardSeconds": 4085.1,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 8170,
+            "timeFormatted": "2:16:10",
+            "pace": "10:23"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 6808,
+            "timeFormatted": "1:53:28",
+            "pace": "8:39"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 5836,
+            "timeFormatted": "1:37:16",
+            "pace": "7:25"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 5106,
+            "timeFormatted": "1:25:06",
+            "pace": "6:30"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 4539,
+            "timeFormatted": "1:15:39",
+            "pace": "5:46"
+          }
+        }
+      },
+      {
+        "age": 50,
+        "ageFactor": 1.1425,
+        "ageStandardSeconds": 4309.5,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 8619,
+            "timeFormatted": "2:23:39",
+            "pace": "10:57"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 7183,
+            "timeFormatted": "1:59:43",
+            "pace": "9:08"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 6156,
+            "timeFormatted": "1:42:36",
+            "pace": "7:50"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 5387,
+            "timeFormatted": "1:29:47",
+            "pace": "6:51"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 4788,
+            "timeFormatted": "1:19:48",
+            "pace": "6:05"
+          }
+        }
+      },
+      {
+        "age": 55,
+        "ageFactor": 1.2143,
+        "ageStandardSeconds": 4580.3,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 9161,
+            "timeFormatted": "2:32:41",
+            "pace": "11:39"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 7634,
+            "timeFormatted": "2:07:14",
+            "pace": "9:42"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 6543,
+            "timeFormatted": "1:49:03",
+            "pace": "8:19"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 5725,
+            "timeFormatted": "1:35:25",
+            "pace": "7:17"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 5089,
+            "timeFormatted": "1:24:49",
+            "pace": "6:28"
+          }
+        }
+      },
+      {
+        "age": 60,
+        "ageFactor": 1.2957,
+        "ageStandardSeconds": 4887.4,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 9775,
+            "timeFormatted": "2:42:55",
+            "pace": "12:26"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 8146,
+            "timeFormatted": "2:15:46",
+            "pace": "10:21"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 6982,
+            "timeFormatted": "1:56:22",
+            "pace": "8:53"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 6109,
+            "timeFormatted": "1:41:49",
+            "pace": "7:46"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 5430,
+            "timeFormatted": "1:30:30",
+            "pace": "6:54"
+          }
+        }
+      },
+      {
+        "age": 65,
+        "ageFactor": 1.3889,
+        "ageStandardSeconds": 5238.9,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 10478,
+            "timeFormatted": "2:54:38",
+            "pace": "13:19"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 8732,
+            "timeFormatted": "2:25:32",
+            "pace": "11:06"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 7484,
+            "timeFormatted": "2:04:44",
+            "pace": "9:31"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 6549,
+            "timeFormatted": "1:49:09",
+            "pace": "8:20"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 5821,
+            "timeFormatted": "1:37:01",
+            "pace": "7:24"
+          }
+        }
+      },
+      {
+        "age": 70,
+        "ageFactor": 1.4963,
+        "ageStandardSeconds": 5644,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 11288,
+            "timeFormatted": "3:08:08",
+            "pace": "14:21"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 9407,
+            "timeFormatted": "2:36:47",
+            "pace": "11:58"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 8063,
+            "timeFormatted": "2:14:23",
+            "pace": "10:15"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 7055,
+            "timeFormatted": "1:57:35",
+            "pace": "8:58"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 6271,
+            "timeFormatted": "1:44:31",
+            "pace": "7:58"
+          }
+        }
+      },
+      {
+        "age": 75,
+        "ageFactor": 1.6221,
+        "ageStandardSeconds": 6118.6,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 12237,
+            "timeFormatted": "3:23:57",
+            "pace": "15:33"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 10198,
+            "timeFormatted": "2:49:58",
+            "pace": "12:58"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 8741,
+            "timeFormatted": "2:25:41",
+            "pace": "11:07"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 7648,
+            "timeFormatted": "2:07:28",
+            "pace": "9:43"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 6798,
+            "timeFormatted": "1:53:18",
+            "pace": "8:39"
+          }
+        }
+      },
+      {
+        "age": 80,
+        "ageFactor": 1.8005,
+        "ageStandardSeconds": 6791.5,
+        "levels": {
+          "50": {
+            "label": "Recreational",
+            "timeSeconds": 13583,
+            "timeFormatted": "3:46:23",
+            "pace": "17:16"
+          },
+          "60": {
+            "label": "Local Class",
+            "timeSeconds": 11319,
+            "timeFormatted": "3:08:39",
+            "pace": "14:23"
+          },
+          "70": {
+            "label": "Regional Class",
+            "timeSeconds": 9702,
+            "timeFormatted": "2:41:42",
+            "pace": "12:20"
+          },
+          "80": {
+            "label": "National Class",
+            "timeSeconds": 8489,
+            "timeFormatted": "2:21:29",
+            "pace": "10:48"
+          },
+          "90": {
+            "label": "World Class",
+            "timeSeconds": 7546,
+            "timeFormatted": "2:05:46",
+            "pace": "9:36"
+          }
+        }
+      }
+    ]
+  }
+}

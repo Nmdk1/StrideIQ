@@ -19,7 +19,8 @@ export default function CheckinPage() {
   const router = useRouter();
   const { user } = useAuth();
   
-  const [sleep, setSleep] = useState(7);
+  const [sleep, setSleep] = useState<number | null>(null);
+  const [sleepQuality, setSleepQuality] = useState<number | null>(null);
   const [stress, setStress] = useState(3);
   const [soreness, setSoreness] = useState(2);
   const [hrv, setHrv] = useState<string>('');
@@ -27,7 +28,7 @@ export default function CheckinPage() {
   // Coach-inspired additions
   const [enjoyment, setEnjoyment] = useState<number | null>(null);
   const [confidence, setConfidence] = useState<number | null>(null);
-  const [motivation, setMotivation] = useState<number | null>(null);
+  const [readiness, setReadiness] = useState<number | null>(null);
   const [showMindset, setShowMindset] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -51,6 +52,7 @@ export default function CheckinPage() {
           body: JSON.stringify({
             date: today,
             sleep_h: sleep,
+            sleep_quality_1_5: sleepQuality,
             stress_1_5: stress,
             soreness_1_5: soreness,
             hrv_rmssd: hrv ? parseFloat(hrv) : null,
@@ -58,7 +60,7 @@ export default function CheckinPage() {
             // Coach-inspired mindset tracking
             enjoyment_1_5: enjoyment,
             confidence_1_5: confidence,
-            motivation_1_5: motivation,
+            readiness_1_5: readiness,
           }),
         }
       );
@@ -105,18 +107,48 @@ export default function CheckinPage() {
             </p>
           </div>
 
-          {/* Sleep Slider */}
+          {/* Sleep Quality */}
+          <div className="mb-6">
+            <label className="text-sm font-medium mb-2 block">How did you sleep?</label>
+            <div className="flex gap-2">
+              {[
+                { label: 'Great', value: 5, emoji: '🌙' },
+                { label: 'Good', value: 4, emoji: '😊' },
+                { label: 'OK', value: 3, emoji: '😐' },
+                { label: 'Poor', value: 2, emoji: '😴' },
+                { label: 'Awful', value: 1, emoji: '😵' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setSleepQuality(opt.value)}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                    sleepQuality === opt.value
+                      ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/50'
+                      : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700'
+                  }`}
+                >
+                  <span className="block text-base mb-0.5">{opt.emoji}</span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sleep Hours */}
           <div className="mb-6">
             <div className="flex justify-between items-center mb-2">
-              <label className="text-sm font-medium">Sleep</label>
-              <span className="text-lg font-bold text-blue-400">{sleep}h</span>
+              <label className="text-sm font-medium">Hours slept</label>
+              <span className="text-lg font-bold text-blue-400">
+                {sleep != null ? `${sleep}h` : '--'}
+              </span>
             </div>
             <input
               type="range"
               min="0"
               max="12"
               step="0.5"
-              value={sleep}
+              value={sleep ?? 0}
               onChange={(e) => setSleep(parseFloat(e.target.value))}
               className="w-full h-3 bg-slate-700 rounded-lg appearance-none cursor-pointer slider-thumb"
             />
@@ -267,12 +299,12 @@ export default function CheckinPage() {
                   </div>
                 </div>
 
-                {/* Motivation */}
+                {/* Morning Readiness */}
                 <div>
                   <div className="flex justify-between items-center mb-2">
-                    <label className="text-sm font-medium">Motivation?</label>
+                    <label className="text-sm font-medium">Morning readiness</label>
                     <span className="text-sm text-orange-400">
-                      {motivation ? ['😴', '😑', '😐', '😤', '🔥'][motivation - 1] : '--'}
+                      {readiness ? ['😴', '😑', '😐', '💪', '🔥'][readiness - 1] : '--'}
                     </span>
                   </div>
                   <div className="flex gap-2">
@@ -280,9 +312,9 @@ export default function CheckinPage() {
                       <button
                         key={n}
                         type="button"
-                        onClick={() => setMotivation(motivation === n ? null : n)}
+                        onClick={() => setReadiness(readiness === n ? null : n)}
                         className={`flex-1 py-2 rounded ${
-                          motivation === n 
+                          readiness === n 
                             ? 'bg-orange-600 text-white' 
                             : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
                         }`}
@@ -292,8 +324,8 @@ export default function CheckinPage() {
                     ))}
                   </div>
                   <div className="flex justify-between text-xs text-slate-500 mt-1">
-                    <span>Forcing it</span>
-                    <span>Fired up</span>
+                    <span>Low</span>
+                    <span>High</span>
                   </div>
                 </div>
               </div>

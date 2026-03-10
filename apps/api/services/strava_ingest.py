@@ -74,6 +74,7 @@ def ingest_strava_activity_by_id(
 
     created = False
     if not act:
+        latlng = details.get("start_latlng") or []
         act = Activity(
             athlete_id=athlete.id,
             start_time=start_time,
@@ -85,10 +86,14 @@ def ingest_strava_activity_by_id(
             distance_m=int(round(distance_m)) if distance_m else None,
             duration_s=int(moving_time or elapsed_time) if (moving_time or elapsed_time) else None,
             average_speed=avg_speed,
+            start_lat=latlng[0] if len(latlng) >= 2 else None,
+            start_lng=latlng[1] if len(latlng) >= 2 else None,
         )
         db.add(act)
         db.commit()
         db.refresh(act)
+        from core.cache import invalidate_athlete_cache
+        invalidate_athlete_cache(str(athlete.id))
         created = True
     else:
         # Opportunistic field refresh for missing data (do not override user edits)
@@ -101,6 +106,8 @@ def ingest_strava_activity_by_id(
         if act.average_speed is None and avg_speed is not None:
             act.average_speed = avg_speed
         db.commit()
+        from core.cache import invalidate_athlete_cache
+        invalidate_athlete_cache(str(athlete.id))
 
     if mark_as_race is True:
         act.user_verified_race = True

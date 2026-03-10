@@ -1,0 +1,116 @@
+{
+  "_comment": "Canonical contract fixture for GET /v1/activities/{id}/stream-analysis. Used by BOTH backend (test_stream_analysis_endpoint.py) and frontend (rsi-contract.test.ts). If you change a field name here, both test suites MUST update. Backend dataclass is the source of truth.",
+  "_version": "2026-02-14",
+
+  "success_response": {
+    "segments": [
+      {
+        "type": "warmup",
+        "start_index": 0,
+        "end_index": 480,
+        "start_time_s": 0,
+        "end_time_s": 480,
+        "duration_s": 480,
+        "avg_pace_s_km": 345.2,
+        "avg_hr": 135.0,
+        "avg_cadence": 170.0,
+        "avg_grade": 0.5
+      },
+      {
+        "type": "steady",
+        "start_index": 480,
+        "end_index": 4800,
+        "start_time_s": 480,
+        "end_time_s": 4800,
+        "duration_s": 4320,
+        "avg_pace_s_km": 310.5,
+        "avg_hr": 148.0,
+        "avg_cadence": 174.0,
+        "avg_grade": 0.2
+      }
+    ],
+    "drift": {
+      "cardiac_pct": 4.2,
+      "pace_pct": 1.8,
+      "cadence_trend_bpm_per_km": -0.3
+    },
+    "moments": [
+      {
+        "type": "cardiac_drift_onset",
+        "index": 2400,
+        "time_s": 2400,
+        "value": 3.1,
+        "context": null
+      }
+    ],
+    "plan_comparison": null,
+    "channels_present": ["time", "heartrate", "velocity_smooth", "altitude", "cadence", "grade_smooth"],
+    "channels_missing": ["power"],
+    "point_count": 5253,
+    "confidence": 0.95,
+    "tier_used": "tier1_threshold_hr",
+    "estimated_flags": [],
+    "cross_run_comparable": true,
+    "effort_intensity": [0.1, 0.2, 0.3, 0.4, 0.5],
+    "stream": [
+      { "time": 0, "hr": 120, "pace": 360.5, "altitude": 100.2, "grade": 0.5, "cadence": 170, "effort": 0.1 },
+      { "time": 1, "hr": 121, "pace": 358.0, "altitude": 100.3, "grade": 0.4, "cadence": 171, "effort": 0.12 }
+    ]
+  },
+
+  "success_with_plan_response": {
+    "plan_comparison": {
+      "planned_duration_min": 60.0,
+      "actual_duration_min": 62.5,
+      "duration_delta_min": 2.5,
+      "planned_distance_km": 10.0,
+      "actual_distance_km": 10.25,
+      "distance_delta_km": 0.25,
+      "planned_pace_s_km": 360.0,
+      "actual_pace_s_km": 365.9,
+      "pace_delta_s_km": 5.9,
+      "planned_interval_count": 6,
+      "detected_work_count": 5,
+      "interval_count_match": false
+    }
+  },
+
+  "pending_response": { "status": "pending" },
+  "unavailable_response": { "status": "unavailable" },
+
+  "expected_top_level_keys": [
+    "segments", "drift", "moments", "plan_comparison",
+    "channels_present", "channels_missing", "point_count",
+    "confidence", "tier_used", "estimated_flags",
+    "cross_run_comparable", "effort_intensity", "stream"
+  ],
+
+  "expected_segment_keys": [
+    "type", "start_index", "end_index",
+    "start_time_s", "end_time_s", "duration_s",
+    "avg_pace_s_km", "avg_hr", "avg_cadence", "avg_grade"
+  ],
+
+  "expected_drift_keys": ["cardiac_pct", "pace_pct", "cadence_trend_bpm_per_km"],
+
+  "expected_plan_comparison_keys": [
+    "planned_duration_min", "actual_duration_min", "duration_delta_min",
+    "planned_distance_km", "actual_distance_km", "distance_delta_km",
+    "planned_pace_s_km", "actual_pace_s_km", "pace_delta_s_km",
+    "planned_interval_count", "detected_work_count", "interval_count_match"
+  ],
+
+  "expected_moment_keys": ["type", "index", "time_s", "value", "context"],
+
+  "expected_stream_point_keys": ["time", "hr", "pace", "altitude", "grade", "cadence", "effort"],
+
+  "forbidden_old_segment_keys": ["avg_pace_sec_per_km"],
+  "forbidden_old_drift_keys": ["cardiac_drift_pct", "pace_drift_pct"],
+  "forbidden_old_plan_keys": [
+    "planned_duration_s", "actual_duration_s",
+    "planned_distance_m", "actual_distance_m",
+    "planned_pace_sec_per_km", "actual_pace_sec_per_km",
+    "interval_count_planned", "interval_count_actual"
+  ],
+  "forbidden_old_moment_keys": ["label"]
+}

@@ -37,8 +37,8 @@ e11f630 fix: Race equivalents now display using Daniels formula (no lookup depen
 ```
 
 ### Files Changed (Net from session start)
-- `apps/api/services/vdot_calculator.py` - Added binary search for equivalent race time calculation
-- `apps/api/services/vdot_enhanced.py` - Simplified to use formula directly, removed lookup dependency
+- `apps/api/services/rpi_calculator.py` - Added binary search for equivalent race time calculation
+- `apps/api/services/rpi_enhanced.py` - Simplified to use formula directly, removed lookup dependency
 
 ### Pending Work
 1. Re-implement TimeInput auto-formatting feature (properly this time)
@@ -58,7 +58,7 @@ e11f630 fix: Race equivalents now display using Daniels formula (no lookup depen
 The user's primary request was to fix all known pre-existing issues before re-implementing Phases 1-3:
 1. ✅ Fix 26 pre-existing unit test failures
 2. ✅ Fix false positive classifications
-3. ✅ Auto-estimate max_hr and VDOT
+3. ✅ Auto-estimate max_hr and RPI
 4. ✅ Migrate to Pydantic v2 syntax (eliminated 73 warnings)
 5. ✅ Fix RPI equivalent race times
 

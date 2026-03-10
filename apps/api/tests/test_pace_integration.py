@@ -2,7 +2,7 @@
 Tests for Pace Calculator Integration
 
 Tests the full data flow:
-1. VDOT calculation from race times
+1. RPI calculation from race times
 2. Training pace generation
 3. Pace description formatting
 4. Plan generation with paces
@@ -23,22 +23,22 @@ class TestPaceEngine:
         self.engine = PaceEngine()
     
     def test_calculate_from_5k_race(self):
-        """Test VDOT calculation from a 5K race time."""
-        # 20:00 5K = approximately VDOT 50
+        """Test RPI calculation from a 5K race time."""
+        # 20:00 5K = approximately RPI 50
         paces = self.engine.calculate_from_race(
             distance="5k",
             time_seconds=1200  # 20:00
         )
         
         assert paces is not None
-        assert paces.vdot is not None
-        assert 48 <= paces.vdot <= 52  # Reasonable range for 20min 5K
+        assert paces.rpi is not None
+        assert 48 <= paces.rpi <= 52  # Reasonable range for 20min 5K
         assert paces.easy_pace_low > 0
         assert paces.threshold_pace > 0
         assert paces.marathon_pace > 0
     
     def test_calculate_from_marathon_race(self):
-        """Test VDOT calculation from a marathon time."""
+        """Test RPI calculation from a marathon time."""
         # 4:00:00 marathon
         paces = self.engine.calculate_from_race(
             distance="marathon",
@@ -46,11 +46,11 @@ class TestPaceEngine:
         )
         
         assert paces is not None
-        assert paces.vdot is not None
+        assert paces.rpi is not None
         assert paces.marathon_pace > 0
     
     def test_calculate_from_half_marathon(self):
-        """Test VDOT calculation from half marathon."""
+        """Test RPI calculation from half marathon."""
         # 1:45:00 half marathon
         paces = self.engine.calculate_from_race(
             distance="half_marathon",
@@ -58,7 +58,7 @@ class TestPaceEngine:
         )
         
         assert paces is not None
-        assert paces.vdot is not None
+        assert paces.rpi is not None
     
     def test_invalid_distance_returns_none(self):
         """Test that invalid distance returns None."""
@@ -83,9 +83,9 @@ class TestTrainingPaces:
     """Tests for TrainingPaces pace descriptions."""
     
     def setup_method(self):
-        # Create a sample TrainingPaces object (approximately 50 VDOT)
+        # Create a sample TrainingPaces object (approximately 50 RPI)
         self.paces = TrainingPaces(
-            vdot=50.0,
+            rpi=50.0,
             race_distance="5k",
             race_time_seconds=1200,
             easy_pace_low=570,   # 9:30
@@ -151,7 +151,7 @@ class TestPaceFormat:
     def test_format_pace_minutes_seconds(self):
         """Test pace formatting with minutes and seconds."""
         paces = TrainingPaces(
-            vdot=50.0,
+            rpi=50.0,
             race_distance="5k",
             race_time_seconds=1200,
             easy_pace_low=570,   # 9:30
@@ -196,7 +196,7 @@ class TestPlanGeneratorWithPaces:
         )
         
         assert plan is not None
-        assert plan.vdot is not None
+        assert plan.rpi is not None
         assert len(plan.workouts) > 0
         
         # Check that workouts have personalized paces
@@ -219,7 +219,7 @@ class TestPlanGeneratorWithPaces:
         )
         
         assert plan is not None
-        assert plan.vdot is None  # No VDOT for standard plans
+        assert plan.rpi is None  # No RPI for standard plans
         assert len(plan.workouts) > 0
         
         # Check that workouts have effort descriptions

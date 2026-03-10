@@ -43,7 +43,7 @@ class StreakResponse(BaseModel):
 class MindsetSummaryResponse(BaseModel):
     avg_enjoyment: Optional[float] = None
     avg_confidence: Optional[float] = None
-    avg_motivation: Optional[float] = None
+    avg_readiness: Optional[float] = None
     trend: str  # 'improving', 'stable', 'declining', 'insufficient_data'
     insight: str
     data_points: int
@@ -144,24 +144,24 @@ async def get_mindset_summary(
     # Filter to those with mindset data
     with_enjoyment = [c for c in checkins if c.enjoyment_1_5 is not None]
     with_confidence = [c for c in checkins if c.confidence_1_5 is not None]
-    with_motivation = [c for c in checkins if c.motivation_1_5 is not None]
+    with_readiness = [c for c in checkins if c.readiness_1_5 is not None]
     
-    data_points = len(with_enjoyment) + len(with_confidence) + len(with_motivation)
+    data_points = len(with_enjoyment) + len(with_confidence) + len(with_readiness)
     
     if data_points < 3:
         return MindsetSummaryResponse(
             avg_enjoyment=None,
             avg_confidence=None,
-            avg_motivation=None,
+            avg_readiness=None,
             trend='insufficient_data',
-            insight='Log more check-ins with enjoyment, confidence, and motivation to get insights.',
+            insight='Log more check-ins with enjoyment, confidence, and readiness to get insights.',
             data_points=data_points
         )
     
     # Calculate averages
     avg_enjoyment = sum(c.enjoyment_1_5 for c in with_enjoyment) / len(with_enjoyment) if with_enjoyment else None
     avg_confidence = sum(c.confidence_1_5 for c in with_confidence) / len(with_confidence) if with_confidence else None
-    avg_motivation = sum(c.motivation_1_5 for c in with_motivation) / len(with_motivation) if with_motivation else None
+    avg_readiness = sum(c.readiness_1_5 for c in with_readiness) / len(with_readiness) if with_readiness else None
     
     # Calculate trend (compare first half to second half)
     def get_trend(values_list, field):
@@ -199,7 +199,7 @@ async def get_mindset_summary(
     return MindsetSummaryResponse(
         avg_enjoyment=round(avg_enjoyment, 1) if avg_enjoyment else None,
         avg_confidence=round(avg_confidence, 1) if avg_confidence else None,
-        avg_motivation=round(avg_motivation, 1) if avg_motivation else None,
+        avg_readiness=round(avg_readiness, 1) if avg_readiness else None,
         trend=trend,
         insight=insight,
         data_points=data_points
@@ -252,7 +252,7 @@ async def get_profile_summary(
     mindset = MindsetSummaryResponse(
         avg_enjoyment=round(sum(c.enjoyment_1_5 for c in with_enjoyment) / len(with_enjoyment), 1) if with_enjoyment else None,
         avg_confidence=None,
-        avg_motivation=None,
+        avg_readiness=None,
         trend='stable' if data_points >= 3 else 'insufficient_data',
         insight='Track your mindset to get insights.' if data_points < 3 else 'Building mental data.',
         data_points=data_points

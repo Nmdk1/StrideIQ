@@ -47,14 +47,14 @@ def extract_principles_from_text(text: str, source: str, methodology: str) -> Di
     }
 
 
-def extract_vdot_formula(text: str) -> Optional[Dict]:
+def extract_rpi_formula(text: str) -> Optional[Dict]:
     """
-    Extract VDOT formula and pace tables from text.
+    Extract RPI formula and pace tables from text.
     
     Returns:
-        Dictionary with VDOT formula and pace tables, or None if not found
+        Dictionary with RPI formula and pace tables, or None if not found
     """
-    # TODO: Use AI to extract VDOT formula and pace tables
+    # TODO: Use AI to extract RPI formula and pace tables
     # This will be implemented with Claude API or GPT-4
     pass
 

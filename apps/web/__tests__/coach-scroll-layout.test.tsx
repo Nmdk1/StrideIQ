@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // The Coach page is wrapped in auth + makes network calls on mount.
 // For this regression test, we only care about the DOM structure/classes
@@ -13,6 +14,10 @@ jest.mock('react-markdown', () => ({
 
 jest.mock('@/components/auth/ProtectedRoute', () => ({
   ProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+jest.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 jest.mock('@/lib/api/services/ai-coach', () => ({
@@ -35,10 +40,17 @@ describe('Coach scroll layout regression', () => {
     (globalThis as any).requestAnimationFrame =
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).requestAnimationFrame || ((cb: any) => setTimeout(cb, 0));
+    // Mock scrollIntoView (not implemented in JSDOM)
+    Element.prototype.scrollIntoView = jest.fn();
   });
 
   test('transcript is the scroll container; shell is overflow-hidden', () => {
-    render(<CoachPage />);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <CoachPage />
+      </QueryClientProvider>
+    );
 
     const shell = screen.getByTestId('coach-shell');
     expect(shell).toHaveClass('overflow-hidden');

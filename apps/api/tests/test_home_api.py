@@ -20,6 +20,10 @@ from routers.home import (
     format_pace,
     get_correlation_context,
     get_tsb_context,
+    compute_coach_noticed,
+    compute_race_countdown,
+    CoachNoticed,
+    RaceCountdown,
 )
 
 
@@ -164,49 +168,82 @@ class TestGenerateWhyContext:
 
 
 class TestGetCorrelationContext:
-    """Tests for correlation-based context (ADR-020)."""
-    
+    """Tests for persisted-finding correlation context."""
+
     @pytest.fixture
     def mock_db(self):
         return MagicMock()
-    
-    def test_returns_none_on_no_correlations(self, mock_db):
-        """Returns None when no correlations exist."""
-        with patch('services.correlation_engine.analyze_correlations') as mock_analyze:
-            mock_analyze.return_value = {'error': 'Insufficient data'}
-            
-            context, source = get_correlation_context("test-id", "easy", mock_db)
-            
-            assert context is None
-            assert source is None
-    
+
+    def test_returns_finding_from_persisted_data(self, mock_db):
+        """Returns coaching-language sentence from persisted CorrelationFinding."""
+        finding = MagicMock()
+        finding.input_name = "sleep_hours"
+        finding.output_metric = "efficiency"
+        finding.direction = "positive"
+        finding.time_lag_days = 1
+        finding.times_confirmed = 5
+        finding.threshold_value = None
+
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.first.return_value = finding
+        mock_db.query.return_value = query_chain
+
+        context, source = get_correlation_context("test-id", "easy", mock_db)
+
+        assert context is not None
+        assert "sleep" in context.lower()
+        assert source == "correlation"
+
+    def test_returns_none_when_no_eligible_finding(self, mock_db):
+        """Returns (None, None) when no active confirmed finding exists."""
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.first.return_value = None
+        mock_db.query.return_value = query_chain
+
+        context, source = get_correlation_context("test-id", "easy", mock_db)
+
+        assert context is None
+        assert source is None
+
     def test_returns_none_on_exception(self, mock_db):
-        """Returns None gracefully on exception."""
-        with patch('services.correlation_engine.analyze_correlations') as mock_analyze:
-            mock_analyze.side_effect = Exception("DB error")
-            
-            context, source = get_correlation_context("test-id", "easy", mock_db)
-            
-            assert context is None
-            assert source is None
-    
-    def test_returns_sleep_correlation_context(self, mock_db):
-        """Returns context for significant sleep correlation."""
-        with patch('services.correlation_engine.analyze_correlations') as mock_analyze:
-            mock_analyze.return_value = {
-                'correlations': [{
-                    'input_name': 'sleep_hours',
-                    'correlation_coefficient': 0.6,
-                    'is_significant': True,
-                    'p_value': 0.02
-                }]
-            }
-            
-            context, source = get_correlation_context("test-id", "easy", mock_db)
-            
-            assert context is not None
-            assert "sleep" in context.lower() or "efficiency" in context.lower()
-            assert source == "correlation"
+        """Returns (None, None) gracefully on exception."""
+        mock_db.query.side_effect = Exception("DB error")
+
+        context, source = get_correlation_context("test-id", "easy", mock_db)
+
+        assert context is None
+        assert source is None
+
+    def test_includes_threshold_when_present(self, mock_db):
+        """Sentence includes cliff language when threshold_value is set."""
+        finding = MagicMock()
+        finding.input_name = "sleep_hours"
+        finding.output_metric = "efficiency"
+        finding.direction = "positive"
+        finding.time_lag_days = 0
+        finding.times_confirmed = 8
+        finding.threshold_value = 6.5
+
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.first.return_value = finding
+        mock_db.query.return_value = query_chain
+
+        context, source = get_correlation_context("test-id", "easy", mock_db)
+
+        assert "6.5" in context
+        assert source == "correlation"
+
+    def test_no_analyze_correlations_import(self):
+        """analyze_correlations must not be imported in get_correlation_context."""
+        import inspect
+        src = inspect.getsource(get_correlation_context)
+        assert "from services.correlation_engine" not in src
 
 
 class TestGetTSBContext:
@@ -270,6 +307,7 @@ class TestGenerateYesterdayInsight:
     
     def test_efficiency_insight_positive(self):
         activity = MagicMock()
+        activity.shape_sentence = None
         activity.efficiency_score = 3.5
         activity.avg_hr = 145
         activity.distance_m = 10000
@@ -282,6 +320,7 @@ class TestGenerateYesterdayInsight:
     
     def test_efficiency_insight_negative(self):
         activity = MagicMock()
+        activity.shape_sentence = None
         activity.efficiency_score = -2.1
         activity.avg_hr = 160
         activity.distance_m = 10000
@@ -294,6 +333,7 @@ class TestGenerateYesterdayInsight:
     
     def test_low_hr_insight(self):
         activity = MagicMock()
+        activity.shape_sentence = None
         activity.efficiency_score = None
         activity.avg_hr = 135
         activity.distance_m = 10000
@@ -307,6 +347,7 @@ class TestGenerateYesterdayInsight:
     
     def test_high_hr_insight(self):
         activity = MagicMock()
+        activity.shape_sentence = None
         activity.efficiency_score = None
         activity.avg_hr = 170
         activity.distance_m = 10000
@@ -319,6 +360,7 @@ class TestGenerateYesterdayInsight:
     
     def test_fallback_to_distance_pace(self):
         activity = MagicMock()
+        activity.shape_sentence = None
         activity.efficiency_score = None
         activity.avg_hr = 150  # Neither low nor high
         activity.distance_m = 8046.72  # 5 miles
@@ -387,3 +429,165 @@ class TestWeekDayModel:
         assert day.distance_mi == 5.2
         assert day.planned_distance_mi == 5.0
         assert day.distance_mi != day.planned_distance_mi  # Shows difference
+
+
+# ── ADR-17 Phase 2: Coach Noticed ───────────────────────────────────
+
+
+class TestComputeCoachNoticed:
+    """Tests for ADR-17 Phase 2 coach_noticed waterfall."""
+
+    def test_coach_noticed_picks_fingerprint_finding(self):
+        """Priority 1: persisted fingerprint finding (times_confirmed >= 3)."""
+        from uuid import uuid4 as _uuid4
+
+        finding = MagicMock()
+        finding.input_name = "sleep_hours"
+        finding.output_metric = "efficiency"
+        finding.direction = "positive"
+        finding.times_confirmed = 8
+        finding.insight_text = "More sleep improves your next-day efficiency"
+        finding.threshold_value = 6.2
+        finding.asymmetry_ratio = 3.1
+        finding.decay_half_life_days = 2.0
+
+        db = MagicMock()
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = [finding]
+        db.query.return_value = query_chain
+
+        with patch("routers.home._is_finding_in_cooldown", return_value=False):
+            result = compute_coach_noticed(str(_uuid4()), db)
+        assert result is not None
+        assert result.source == "fingerprint"
+        assert "sleep" in result.text.lower()
+        assert result.ask_coach_query
+
+    def test_coach_noticed_skips_immature_findings(self):
+        """Findings with times_confirmed < 3 are not surfaced."""
+        from uuid import uuid4 as _uuid4
+
+        db = MagicMock()
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = []
+        db.query.return_value = query_chain
+
+        with patch("services.home_signals.aggregate_signals", side_effect=Exception("skip")), \
+             patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("skip")):
+            result = compute_coach_noticed(str(_uuid4()), db, hero_narrative=None)
+        assert result is None
+
+    @patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("nope"))
+    @patch("services.home_signals.aggregate_signals", side_effect=Exception("nope"))
+    def test_coach_noticed_fallback_to_narrative(self, _s, _f):
+        """Priority 4: hero_narrative fallback when nothing else available."""
+        db = MagicMock()
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = []
+        db.query.return_value = query_chain
+
+        result = compute_coach_noticed(
+            "athlete-1", db, hero_narrative="Your fitness is building steadily."
+        )
+        assert result is not None
+        assert result.source == "narrative"
+        assert result.text == "Your fitness is building steadily."
+
+    @patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("nope"))
+    @patch("services.home_signals.aggregate_signals", side_effect=Exception("nope"))
+    def test_coach_noticed_returns_none_when_nothing(self, _s, _f):
+        """No data at all → None."""
+        db = MagicMock()
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = []
+        db.query.return_value = query_chain
+
+        result = compute_coach_noticed("athlete-1", db, hero_narrative=None)
+        assert result is None
+
+    @patch("services.home_signals.aggregate_signals")
+    @patch("services.correlation_engine.analyze_correlations")
+    def test_coach_noticed_picks_signal_when_no_correlation(self, mock_corr, mock_signals):
+        """Priority 2: top signal when no strong correlation exists."""
+        mock_corr.return_value = {"correlations": []}
+        mock_signal = MagicMock()
+        mock_signal.title = "Efficiency trending up"
+        mock_signal.subtitle = "3 week improvement"
+        mock_signals.return_value = MagicMock(signals=[mock_signal])
+        db = MagicMock()
+        result = compute_coach_noticed("athlete-1", db)
+        assert result is not None
+        assert result.source == "signal"
+        assert "Efficiency trending up" in result.text
+
+
+# ── ADR-17 Phase 2: Race Countdown ──────────────────────────────────
+
+
+class TestComputeRaceCountdown:
+    """Tests for ADR-17 Phase 2 race_countdown computation."""
+
+    def test_race_countdown_with_plan(self):
+        """Returns countdown with all fields when plan has race data."""
+        plan = MagicMock()
+        plan.goal_race_name = "Boston Marathon"
+        plan.goal_race_date = date.today() + timedelta(days=30)
+        plan.goal_time_seconds = 11400  # 3:10:00
+        plan.goal_race_distance_m = 42195.0
+        db = MagicMock()
+        with patch("services.race_predictor.predict_race_time", return_value=None):
+            result = compute_race_countdown(plan, "athlete-1", db)
+        assert result is not None
+        assert result.days_remaining == 30
+        assert result.race_name == "Boston Marathon"
+        assert result.goal_time == "3:10:00"
+        assert result.goal_pace is not None  # derived from goal_time / distance
+
+    def test_race_countdown_no_plan(self):
+        """Returns None when no active plan."""
+        result = compute_race_countdown(None, "athlete-1", MagicMock())
+        assert result is None
+
+    def test_race_countdown_past_race(self):
+        """Returns None when race date has passed."""
+        plan = MagicMock()
+        plan.goal_race_date = date.today() - timedelta(days=5)
+        plan.goal_race_name = "Old Race"
+        db = MagicMock()
+        result = compute_race_countdown(plan, "athlete-1", db)
+        assert result is None
+
+    def test_race_countdown_no_race_date(self):
+        """Returns None when plan has no race date."""
+        plan = MagicMock()
+        plan.goal_race_date = None
+        db = MagicMock()
+        result = compute_race_countdown(plan, "athlete-1", db)
+        assert result is None
+
+    def test_race_countdown_no_goal_time(self):
+        """Countdown still works without goal_time — pace and time are None."""
+        plan = MagicMock()
+        plan.goal_race_name = "Local 10K"
+        plan.goal_race_date = date.today() + timedelta(days=14)
+        plan.goal_time_seconds = None
+        plan.goal_race_distance_m = None
+        db = MagicMock()
+        with patch("services.race_predictor.predict_race_time", return_value=None):
+            result = compute_race_countdown(plan, "athlete-1", db)
+        assert result is not None
+        assert result.goal_time is None
+        assert result.goal_pace is None
+        assert result.days_remaining == 14

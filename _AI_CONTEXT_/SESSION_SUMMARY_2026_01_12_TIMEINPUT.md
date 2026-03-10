@@ -115,7 +115,7 @@ After enabling the feature flag:
 │                   (parses MM:SS/HH:MM:SS)                   │
 │                           │                                 │
 │                           ▼                                 │
-│                   POST /v1/public/vdot/calculate            │
+│                   POST /v1/public/rpi/calculate            │
 └─────────────────────────────────────────────────────────────┘
 ```
 

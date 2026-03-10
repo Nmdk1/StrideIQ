@@ -23,7 +23,7 @@ if config.config_file_name is not None:
 # Import Base and models
 from core.database import Base
 from models import (
-    Athlete, Activity, DailyCheckin, PersonalBest,
+    Athlete, Activity, ActivityStream, DailyCheckin, PersonalBest,
     CoachingKnowledgeEntry, CoachingRecommendation, RecommendationOutcome
 )
 

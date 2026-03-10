@@ -87,7 +87,7 @@ class TestMessageRouterClassify:
         general_messages = [
             "How's my fitness looking?",
             "Tell me about my recent runs",
-            "What's my VDOT?",
+            "What's my RPI?",
         ]
         
         for q in general_messages:

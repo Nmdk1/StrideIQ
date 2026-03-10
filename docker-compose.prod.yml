@@ -42,6 +42,26 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: minio/minio:latest
+    container_name: strideiq_minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-strideiq-minio-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    expose:
+      - "9000"   # S3 API (internal only — boto3 via Docker network)
+      - "9001"   # Admin console (internal only — never exposed via Caddy)
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   api:
     build:
       context: ./apps/api
@@ -59,16 +79,24 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
       - ./.uploads:/uploads
       - ./books:/books
     expose:
       - "8000"
-    command: sh -c "python run_migrations.py && uvicorn main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    command: sh -c "python run_migrations.py && uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4"
 
   worker:
     build:
-      context: ./apps/worker
+      context: ./apps/api
     container_name: strideiq_worker
     restart: unless-stopped
     env_file:
@@ -82,10 +110,34 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
-      - ./apps/api:/api:ro
       - ./.uploads:/uploads
       - ./books:/books
+    command: celery -A tasks worker --loglevel=info --pool=gevent --concurrency=16 -Q briefing_high,briefing,default
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+
+  beat:
+    build:
+      context: ./apps/api
+    container_name: strideiq_beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A tasks beat --loglevel=info
+    stop_signal: SIGTERM
+    stop_grace_period: 10s
 
   web:
     build:
@@ -112,4 +164,6 @@ volumes:
     name: strideiq_caddy_data
   caddy_config:
     name: strideiq_caddy_config
+  minio_data:
+    name: strideiq_minio_data
 

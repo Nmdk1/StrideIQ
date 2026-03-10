@@ -220,20 +220,20 @@ def main():
         print("WHAT THIS MEANS FOR MARCH")
         print("=" * 80)
         
-        # Calculate VDOT from half marathon
+        # Calculate RPI from half marathon
         # 6:39 pace for half = 1:27:20ish
-        # That's roughly VDOT 52-53
+        # That's roughly RPI 52-53
         
         print("""
   Your November Half Marathon:
     - 6:39 pace = ~1:27:20 finish
-    - VDOT equivalent: ~52-53
+    - RPI equivalent: ~52-53
     - Marathon equivalent: ~3:02-3:05 at 6:57-7:03/mi
     - 10K equivalent: ~39:30 at 6:22/mi
 
   Your December 10K (WHILE LIMPING):
     - 6:19 pace = ~39:10 finish
-    - This EXCEEDED the VDOT prediction while injured
+    - This EXCEEDED the RPI prediction while injured
     - Shows you were even fitter than the half suggested
 
   Fitness Banked:

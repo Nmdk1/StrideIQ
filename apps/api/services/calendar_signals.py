@@ -144,27 +144,20 @@ def get_efficiency_badge(
         
         avg_28 = sum(recent_efficiencies) / len(recent_efficiencies)
         
-        # Calculate difference (lower efficiency value = better)
+        # Calculate difference (pace/HR ratio — directionally ambiguous, see OutputMetricMeta)
         diff_pct = ((day_avg_eff - avg_28) / avg_28) * 100
         
-        if diff_pct < -5:  # Better efficiency
+        # Efficiency (pace/HR) is directionally ambiguous — show neutral
+        # "notable change" badge without claiming better/worse.
+        # See Athlete Trust Safety Contract in n1_insight_generator.py.
+        if abs(diff_pct) > 5:
             return DayBadge(
                 type=SignalType.EFFICIENCY_SPIKE.value,
-                badge="Eff ↑",
-                color="emerald",
-                icon="trending_up",
-                confidence=SignalConfidence.HIGH.value if diff_pct < -8 else SignalConfidence.MODERATE.value,
-                tooltip=f"Efficiency {abs(diff_pct):.0f}% better than 28-day average",
-                priority=2
-            )
-        elif diff_pct > 5:  # Worse efficiency
-            return DayBadge(
-                type=SignalType.EFFICIENCY_DROP.value,
-                badge="Eff ↓",
-                color="orange",
-                icon="trending_down",
-                confidence=SignalConfidence.HIGH.value if diff_pct > 10 else SignalConfidence.MODERATE.value,
-                tooltip=f"Efficiency {diff_pct:.0f}% below 28-day average",
+                badge="Eff Δ",
+                color="blue",
+                icon="activity",
+                confidence=SignalConfidence.HIGH.value if abs(diff_pct) > 8 else SignalConfidence.MODERATE.value,
+                tooltip=f"Efficiency {abs(diff_pct):.0f}% different from 28-day average",
                 priority=3
             )
         
@@ -331,7 +324,7 @@ def get_pr_match_badge(
     Check if pre-run state matches PR fingerprint.
     """
     try:
-        from services.pre_race_fingerprinting import generate_readiness_profile, ConfidenceLevel
+        from services.pre_race_fingerprinting import generate_readiness_profile
         
         # Check for check-in on this day
         checkin = db.query(DailyCheckin).filter(
@@ -344,28 +337,41 @@ def get_pr_match_badge(
         
         profile = generate_readiness_profile(athlete_id, db)
         
-        if not profile or profile.confidence == ConfidenceLevel.INSUFFICIENT:
+        if not profile or profile.confidence_level == "insufficient":
             return None
         
-        # Check match percentage
-        if profile.readiness_score >= 80:
+        # Count how many optimal-range features this day matches
+        match_count = 0
+        total_features = len(profile.optimal_ranges)
+        if total_features == 0:
+            return None
+        
+        # Check sleep against optimal range
+        if "Sleep Hours" in profile.optimal_ranges and checkin.sleep_h is not None:
+            lo, hi = profile.optimal_ranges["Sleep Hours"]
+            if lo <= float(checkin.sleep_h) <= hi:
+                match_count += 1
+        
+        match_pct = (match_count / max(total_features, 1)) * 100
+        
+        if match_pct >= 80:
             return DayBadge(
                 type=SignalType.PR_MATCH.value,
                 badge="PR ✓",
                 color="purple",
                 icon="target",
                 confidence=SignalConfidence.HIGH.value,
-                tooltip=f"State matches PR fingerprint ({int(profile.readiness_score)}%)",
+                tooltip=f"State matches PR fingerprint ({int(match_pct)}%)",
                 priority=1
             )
-        elif profile.readiness_score >= 65:
+        elif match_pct >= 50:
             return DayBadge(
                 type=SignalType.PR_MATCH.value,
                 badge="Ready",
                 color="blue",
                 icon="target",
                 confidence=SignalConfidence.MODERATE.value,
-                tooltip=f"Good readiness score ({int(profile.readiness_score)}%)",
+                tooltip=f"Good readiness match ({int(match_pct)}%)",
                 priority=3
             )
         
@@ -524,17 +530,16 @@ def get_week_trajectory(
             from services.efficiency_analytics import get_efficiency_trends
             
             eff_result = get_efficiency_trends(athlete_id, db, days=14)
+            # Efficiency (pace/HR) is directionally ambiguous — report
+            # change magnitude without claiming positive/negative direction.
+            # See Athlete Trust Safety Contract in n1_insight_generator.py.
             if eff_result and hasattr(eff_result, 'trend_direction'):
-                if eff_result.trend_direction == 'improving':
+                if eff_result.trend_direction in ('improving', 'declining'):
                     change = getattr(eff_result, 'percentage_change', 0)
-                    details['efficiency_trend'] = f"+{change:.1f}%"
-                    signals.append(f"efficiency trending up {change:.1f}%")
-                    trend = TrajectoryTrend.POSITIVE
-                elif eff_result.trend_direction == 'declining':
-                    change = getattr(eff_result, 'percentage_change', 0)
-                    details['efficiency_trend'] = f"{change:.1f}%"
-                    signals.append(f"efficiency down {abs(change):.1f}%")
-                    trend = TrajectoryTrend.CAUTION
+                    details['efficiency_trend'] = f"{change:+.1f}%"
+                    signals.append(f"efficiency shifted {abs(change):.1f}%")
+                    # Do NOT set trend to POSITIVE or CAUTION based on
+                    # ambiguous efficiency direction
         except Exception:
             pass
         

@@ -120,7 +120,7 @@ class GeneratedInsight:
     
     # Context
     activity_id: Optional[UUID] = None
-    insight_date: date = field(default_factory=date.today)
+    insight_date: Optional[date] = None  # Set from activity.start_time; falls back to today
     
     # Supporting data for visualization
     data: Dict[str, Any] = field(default_factory=dict)
@@ -129,12 +129,22 @@ class GeneratedInsight:
     source: str = "n1"  # "n1" (individual data) or "population"
     confidence: float = 1.0  # 0-1
     
-    # For deduplication
+    # For deduplication — must be stable across regenerations.
+    # Do NOT include changing data (numbers, counts) in this key.
     dedup_key: str = ""
     
     def __post_init__(self):
         if not self.dedup_key:
-            self.dedup_key = f"{self.insight_type}:{self.title[:50]}"
+            # Use activity_id for activity-linked insights (unique per activity),
+            # otherwise use type + a stable title prefix (strip digits).
+            if self.activity_id:
+                self.dedup_key = f"{self.insight_type}:{self.activity_id}"
+            else:
+                # Strip digits so "30-day volume: 201.5 miles" and "30-day volume: 209.5 miles"
+                # both become the same key.
+                import re
+                stable_title = re.sub(r'[\d.]+', '', self.title).strip()[:40]
+                self.dedup_key = f"{self.insight_type}:{stable_title}"
 
 
 @dataclass
@@ -250,6 +260,20 @@ class InsightAggregator:
             
         except Exception as e:
             logger.error(f"Error generating insights: {e}")
+        
+        # Stamp insight_date from the triggering activity's actual date,
+        # not the date insight generation happens to run.
+        activity_date = (
+            activity.start_time.date()
+            if activity and getattr(activity, "start_time", None)
+            else None
+        )
+        for insight in all_insights:
+            if insight.insight_date is None:
+                if insight.activity_id and activity_date:
+                    insight.insight_date = activity_date
+                else:
+                    insight.insight_date = date.today()
         
         # Filter by Elite status
         if not self.is_elite:
@@ -392,15 +416,20 @@ class InsightAggregator:
         # (simplified - would need workout type classification)
         # Flag if avg HR > 75% of max on runs that aren't race-flagged
         
-        max_hr = self.athlete.max_hr or 185  # Default estimate
-        threshold_hr = max_hr * 0.75
-        
+        from services.effort_classification import get_effort_thresholds, classify_effort_bulk
+        et = get_effort_thresholds(str(self.athlete.id), self.db)
+        p80 = et.get("p80_hr")
+        threshold_hr = p80 * 0.95 if p80 else None
+
         easy_runs = [
-            a for a in recent 
+            a for a in recent
             if not a.is_race_candidate and a.distance_m and a.distance_m > 3000
         ]
-        
-        too_hard_count = sum(1 for a in easy_runs if a.avg_hr and a.avg_hr > threshold_hr)
+
+        if threshold_hr:
+            too_hard_count = sum(1 for a in easy_runs if a.avg_hr and a.avg_hr > threshold_hr)
+        else:
+            too_hard_count = 0
         
         if len(easy_runs) >= 4 and too_hard_count / len(easy_runs) >= 0.5:
             insights.append(GeneratedInsight(
@@ -469,10 +498,13 @@ class InsightAggregator:
         percentile = (better_count / len(all_efs)) * 100
         
         if percentile >= 80:
+            # "Top X%" means you're in the top X% — lower is better.
+            # Beating 100% of peers = top 1% (clamp to avoid "top 0%").
+            top_pct = max(1, round(100 - percentile))
             insights.append(GeneratedInsight(
                 insight_type=InsightType.COMPARISON,
                 priority=InsightPriority.MEDIUM,
-                title=f"Top {100-percentile:.0f}% efficiency for this distance",
+                title=f"Top {top_pct}% efficiency for this distance",
                 content=(
                     f"This {activity.distance_m/1609:.1f} mi run was more efficient than "
                     f"{percentile:.0f}% of your similar runs in the past 90 days. "
@@ -927,8 +959,9 @@ class InsightAggregator:
 
         # --- What doesn't work (detectable, data-backed flags) ---
         # 1) “Easy runs too hard” heuristic: non-race runs above 75% max HR.
-        max_hr = float(self.athlete.max_hr or 185)
-        easy_hr_threshold = max_hr * 0.75
+        et_intel = get_effort_thresholds(str(self.athlete.id), self.db)
+        p80_intel = et_intel.get("p80_hr")
+        easy_hr_threshold = float(p80_intel) * 0.95 if p80_intel else 999.0
         last_28_cutoff = now - timedelta(days=28)
         recent_28 = [a for a in runs if a.start_time >= last_28_cutoff]
         non_race_recent = [
@@ -1068,24 +1101,42 @@ class InsightAggregator:
         """
         Persist generated insights to the database.
         
-        Returns number of insights saved.
+        For activity-linked insights: dedup by (athlete, date, type, activity_id).
+        For rolling-stat insights (no activity): dedup by (athlete, date, type)
+        and UPDATE existing rows so stale numbers don't accumulate.
+        
+        Returns number of insights saved or updated.
         """
         saved = 0
         
         for insight in insights:
-            # Check if similar insight already exists today
-            existing = (
-                self.db.query(CalendarInsight)
-                .filter(
-                    CalendarInsight.athlete_id == self.athlete.id,
-                    CalendarInsight.insight_date == insight.insight_date,
-                    CalendarInsight.insight_type == insight.insight_type.value,
-                    CalendarInsight.title == insight.title,
-                )
-                .first()
-            )
+            # Safety: ensure insight_date is never None before DB write
+            if insight.insight_date is None:
+                insight.insight_date = date.today()
             
-            if not existing:
+            # Build the dedup query — activity-linked insights match on activity_id too,
+            # rolling-stat insights match only on (athlete, date, type) so updated
+            # numbers replace old rows instead of piling up.
+            filters = [
+                CalendarInsight.athlete_id == self.athlete.id,
+                CalendarInsight.insight_date == insight.insight_date,
+                CalendarInsight.insight_type == insight.insight_type.value,
+            ]
+            if insight.activity_id:
+                filters.append(CalendarInsight.activity_id == insight.activity_id)
+            else:
+                filters.append(CalendarInsight.activity_id.is_(None))
+            
+            existing = self.db.query(CalendarInsight).filter(*filters).first()
+            
+            if existing:
+                # Update in place — title/content/data may have changed
+                existing.title = insight.title
+                existing.content = insight.content
+                existing.priority = insight.priority
+                existing.generation_data = insight.data
+                saved += 1
+            else:
                 db_insight = CalendarInsight(
                     athlete_id=self.athlete.id,
                     insight_date=insight.insight_date,

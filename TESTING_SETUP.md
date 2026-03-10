@@ -21,8 +21,8 @@
 ### ✅ Test Suites Created
 
 **Backend Tests (`apps/api/tests/`):**
-1. **`test_vdot_calculator.py`** - Training Pace Calculator
-   - VDOT calculation from race times
+1. **`test_rpi_calculator.py`** - Training Pace Calculator
+   - RPI calculation from race times
    - Training pace calculations (E/M/T/I/R)
    - Equivalent race time calculations
    - Edge cases and error handling
@@ -100,7 +100,7 @@ cd apps/api
 pytest                           # All tests
 pytest -v                        # Verbose
 pytest --cov=. --cov-report=html # With coverage
-pytest tests/test_vdot_calculator.py  # Specific file
+pytest tests/test_rpi_calculator.py  # Specific file
 ```
 
 **Frontend:**
@@ -115,7 +115,7 @@ npm run test:coverage            # With coverage
 ## What Gets Tested Automatically
 
 ### ✅ Formula Accuracy
-- VDOT calculations match expected values
+- RPI calculations match expected values
 - Age-grading percentages are correct
 - Equivalent times are faster (not slower)
 - Training paces follow correct progression

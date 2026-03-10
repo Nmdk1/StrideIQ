@@ -41,6 +41,11 @@ class InputSnapshotResponse(BaseModel):
     hrv_7_day_avg: Optional[float] = None
     resting_hr_today: Optional[int] = None
     resting_hr_7_day_avg: Optional[float] = None
+    # Garmin device stress — separate scale (0-100); never mapped to /5 field
+    garmin_stress_score: Optional[int] = None
+    garmin_stress_qualifier: Optional[str] = None
+    # Which fields were gap-filled from GarminDay (device) vs DailyCheckin (self-report)
+    garmin_filled_fields: List[str] = []
     days_since_last_run: Optional[int] = None
     runs_this_week: Optional[int] = None
     volume_this_week_km: Optional[float] = None
@@ -278,6 +283,9 @@ async def analyze_run(
             hrv_7_day_avg=analysis.inputs.hrv_7_day_avg,
             resting_hr_today=analysis.inputs.resting_hr_today,
             resting_hr_7_day_avg=analysis.inputs.resting_hr_7_day_avg,
+            garmin_stress_score=analysis.inputs.garmin_stress_score,
+            garmin_stress_qualifier=analysis.inputs.garmin_stress_qualifier,
+            garmin_filled_fields=analysis.inputs.garmin_filled_fields,
             days_since_last_run=analysis.inputs.days_since_last_run,
             runs_this_week=analysis.inputs.runs_this_week,
             volume_this_week_km=analysis.inputs.volume_this_week_km,

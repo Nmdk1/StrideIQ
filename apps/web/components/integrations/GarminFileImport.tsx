@@ -40,7 +40,7 @@ function formatBytes(bytes?: number | null) {
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-export function GarminFileImport() {
+export function GarminFileImport({ compact = false }: { compact?: boolean }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [loading, setLoading] = useState(false);
@@ -115,21 +115,26 @@ export function GarminFileImport() {
     }
   };
 
-  return (
-    <Card className="bg-slate-700/50 border-slate-600">
-      <CardContent className="py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+  const inner = (
+    <div className={compact ? '' : ''}>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {!compact && (
             <div className="p-2 bg-slate-600/50 rounded-lg">
               <Watch className="w-5 h-5 text-slate-200" />
             </div>
-            <div>
-              <p className="font-medium text-slate-200">Garmin (file import)</p>
+          )}
+          <div>
+            <p className="font-medium text-slate-200">
+              {compact ? 'Import from ZIP' : 'Garmin Connect (file import)'}
+            </p>
+            {!compact && (
               <p className="text-sm text-slate-400">
-                Upload your Garmin export ZIP. We import activities asynchronously.
+                Upload your Garmin Connect export ZIP. We import activities asynchronously.
               </p>
-            </div>
+            )}
           </div>
+        </div>
 
           {enabled === false ? (
             <Badge variant="outline" className="text-slate-400 border-slate-500">
@@ -201,7 +206,7 @@ export function GarminFileImport() {
                 Loading recent imports…
               </div>
             ) : jobs.length === 0 ? (
-              <div className="text-sm text-slate-400">No Garmin imports yet.</div>
+              <div className="text-sm text-slate-400">No Garmin Connect imports yet.</div>
             ) : (
               <div className="space-y-2">
                 {jobs.map((j) => (
@@ -241,6 +246,17 @@ export function GarminFileImport() {
             )}
           </div>
         )}
+    </div>
+  );
+
+  if (compact) {
+    return inner;
+  }
+
+  return (
+    <Card className="bg-slate-700/50 border-slate-600">
+      <CardContent className="py-4">
+        {inner}
       </CardContent>
     </Card>
   );

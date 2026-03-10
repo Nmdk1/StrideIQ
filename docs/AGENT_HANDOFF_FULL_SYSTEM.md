@@ -268,7 +268,7 @@ Each tool MUST return:
 | 3 | `get_plan_week` | coach_tools.py | VERIFIED |
 | 4 | `get_training_load` | coach_tools.py | VERIFIED |
 | 5 | `get_correlations` | coach_tools.py | VERIFIED |
-| 6 | `get_race_predictions` | coach_tools.py | VERIFIED (PB/VDOT fallback if model table missing) |
+| 6 | `get_race_predictions` | coach_tools.py | VERIFIED (PB/RPI fallback if model table missing) |
 | 7 | `get_recovery_status` | coach_tools.py | VERIFIED |
 | 8 | `get_active_insights` | coach_tools.py | VERIFIED (may legitimately be empty if no insights exist) |
 | 9 | `get_pb_patterns` | coach_tools.py | VERIFIED (includes PB activity IDs) |

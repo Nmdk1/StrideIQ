@@ -61,10 +61,16 @@ class _DummyStripeConfig:
     def __init__(self, *, webhook_secret: str):
         self.secret_key = "sk_test_dummy"
         self.webhook_secret = webhook_secret
-        self.pro_monthly_price_id = "price_dummy"
         self.checkout_success_url = "http://localhost:3000/settings?stripe=success"
         self.checkout_cancel_url = "http://localhost:3000/settings?stripe=cancel"
         self.portal_return_url = "http://localhost:3000/settings"
+        # Price IDs required by build_price_to_tier — all None for webhook smoke tests
+        self.price_guided_monthly_id = None
+        self.price_guided_annual_id = None
+        self.price_premium_monthly_id = None
+        self.price_premium_annual_id = None
+        self.price_legacy_pro_monthly_id = None
+        self.price_plan_onetime_id = None
 
 
 def _stripe_sig_header(*, secret: str, payload: bytes, timestamp: int) -> str:
@@ -100,7 +106,7 @@ def test_stripe_webhook_rejects_invalid_signature(monkeypatch):
     ts = int(datetime.now(timezone.utc).timestamp())
     bad_sig = _stripe_sig_header(secret="whsec_wrong_" + ("y" * 24), payload=payload, timestamp=ts)
 
-    resp = client.post("/v1/billing/webhooks/stripe", data=payload, headers={"Stripe-Signature": bad_sig})
+    resp = client.post("/v1/billing/webhooks/stripe", content=payload, headers={"Stripe-Signature": bad_sig})
     assert resp.status_code == 400, resp.text
 
     db = SessionLocal()
@@ -133,7 +139,7 @@ def test_stripe_webhook_accepts_valid_signature_and_records_event(monkeypatch):
     ts = int(datetime.now(timezone.utc).timestamp())
     sig = _stripe_sig_header(secret=webhook_secret, payload=payload, timestamp=ts)
 
-    resp = client.post("/v1/billing/webhooks/stripe", data=payload, headers={"Stripe-Signature": sig})
+    resp = client.post("/v1/billing/webhooks/stripe", content=payload, headers={"Stripe-Signature": sig})
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body.get("ok") is True

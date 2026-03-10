@@ -7,7 +7,7 @@ Expected results based on known history:
 - Peak monthly: 276 miles (October)
 - Peak long run: 22 miles
 - Peak MP long run: 18 miles
-- Best race: 10K at 6:18 (VDOT ~54-55) or HM at 6:39 (VDOT ~52-53)
+- Best race: 10K at 6:18 (RPI ~54-55) or HM at 6:39 (RPI ~52-53)
 - Current: Reduced (injury)
 - τ1: ~25 days (fast adapter)
 - Experience: Elite or Experienced
@@ -59,7 +59,7 @@ def main():
         print(f"  Weeks Since Peak: {bank.weeks_since_peak}")
         
         print("\n🏃 RACE PERFORMANCES")
-        print(f"  Best VDOT: {bank.best_vdot:.1f}")
+        print(f"  Best RPI: {bank.best_rpi:.1f}")
         if bank.best_race:
             r = bank.best_race
             pace_min = int(r.pace_per_mile)
@@ -67,14 +67,14 @@ def main():
             cond = f" ({r.conditions})" if r.conditions else ""
             print(f"  Best Race: {r.distance} on {r.date}")
             print(f"    Pace: {pace_min}:{pace_sec:02d}/mi{cond}")
-            print(f"    VDOT: {r.vdot:.1f}")
+            print(f"    RPI: {r.rpi:.1f}")
         
         print("\n  All Races:")
         for r in bank.race_performances[:5]:
             pace_min = int(r.pace_per_mile)
             pace_sec = int((r.pace_per_mile - pace_min) * 60)
             cond = f" ({r.conditions})" if r.conditions else ""
-            print(f"    {r.date}: {r.distance:10s} - {pace_min}:{pace_sec:02d}/mi, VDOT {r.vdot:.1f}{cond}")
+            print(f"    {r.date}: {r.distance:10s} - {pace_min}:{pace_sec:02d}/mi, RPI {r.rpi:.1f}{cond}")
         
         print("\n🧬 INDIVIDUAL RESPONSE")
         print(f"  τ1 (fitness):  {bank.tau1:.0f} days")
@@ -110,7 +110,7 @@ def main():
             ("Peak Monthly >= 270", bank.peak_monthly_miles >= 270),
             ("Peak Long Run >= 22", bank.peak_long_run_miles >= 22),
             ("Peak MP Long >= 16", bank.peak_mp_long_run_miles >= 16),
-            ("Best VDOT >= 52", bank.best_vdot >= 52),
+            ("Best RPI >= 52", bank.best_rpi >= 52),
             ("Experience = Elite or Experienced", 
              bank.experience_level.value in ("elite", "experienced")),
             ("Constraint = Injury", bank.constraint_type.value == "injury"),
@@ -135,8 +135,8 @@ def main():
   Based on Fitness Bank:
   
   Your Proven Capability:
-    - VDOT {bank.best_vdot:.0f} = 10-mile @ ~{6 + bank.best_vdot/100:.0f}:{int((bank.best_vdot%100)/10*6):02d}/mi
-    - Marathon equivalent: ~{2 + (55-bank.best_vdot)/10:.0f}:{int(((55-bank.best_vdot)%10)*6):02d}
+    - RPI {bank.best_rpi:.0f} = 10-mile @ ~{6 + bank.best_rpi/100:.0f}:{int((bank.best_rpi%100)/10*6):02d}/mi
+    - Marathon equivalent: ~{2 + (55-bank.best_rpi)/10:.0f}:{int(((55-bank.best_rpi)%10)*6):02d}
     
   Current Constraint:
     - {bank.constraint_type.value}: {bank.constraint_details}

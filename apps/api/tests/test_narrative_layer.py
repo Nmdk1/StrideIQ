@@ -62,7 +62,7 @@ def mock_fitness_bank():
         peak_threshold_miles=8.0,
         peak_ctl=85.0,
         race_performances=[],
-        best_vdot=53.0,
+        best_rpi=53.0,
         best_race=None,
         current_weekly_miles=55.0,
         current_ctl=72.0,

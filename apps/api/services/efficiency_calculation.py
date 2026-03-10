@@ -24,16 +24,14 @@ def calculate_efficiency_factor_from_ngp(
     """
     Calculate Efficiency Factor (EF) from Normalized Grade Pace (NGP).
     
-    EF = NGP (minutes/mile) / HR (as % of max HR)
-    
-    We convert seconds to minutes for human-readable values (typically 8-15).
-    Lower EF = more efficient (faster pace at same HR, or lower HR at same pace)
-    Higher EF = less efficient
+    EF = speed / HR
+
+    Higher EF = more efficient (more speed produced per heartbeat).
     
     Args:
         ngp_seconds_per_mile: Normalized Grade Pace in seconds per mile
         avg_hr: Average heart rate
-        max_hr: Maximum heart rate (optional, uses 200 as default if not provided)
+        max_hr: Unused. Kept for API compatibility.
     
     Returns:
         Efficiency Factor (float), or None if invalid inputs
@@ -41,23 +39,10 @@ def calculate_efficiency_factor_from_ngp(
     if ngp_seconds_per_mile <= 0 or avg_hr <= 0:
         return None
     
-    # Convert to minutes for human-readable EF values (typically 8-15)
-    ngp_minutes_per_mile = ngp_seconds_per_mile / 60.0
-    
-    # Normalize HR to percentage if max HR available
-    if max_hr and max_hr > 0:
-        hr_percentage = avg_hr / max_hr
-        if hr_percentage <= 0:
-            return None
-        # EF = NGP / hr_percentage (lower is better)
-        ef = ngp_minutes_per_mile / hr_percentage
-    else:
-        # Use raw HR (less accurate but still meaningful)
-        # Normalize by assuming typical max HR of 200 for comparison
-        hr_percentage = avg_hr / 200.0
-        ef = ngp_minutes_per_mile / hr_percentage
-    
-    return round(ef, 2)
+    # Convert NGP to speed (meters per second)
+    speed_mps = 1609.34 / ngp_seconds_per_mile
+    ef = speed_mps / avg_hr
+    return round(ef, 4)
 
 
 def calculate_activity_efficiency_with_decoupling(
@@ -166,11 +151,12 @@ def calculate_activity_efficiency_with_decoupling(
         first_half_ef = sum(first_half_efs) / len(first_half_efs)
         second_half_ef = sum(second_half_efs) / len(second_half_efs)
         
-        # Decoupling = % increase in EF from first half to second half
-        # Positive = cardiac drift (less efficient in second half)
-        # Negative = negative split (more efficient in second half)
+        # For EF = speed/HR (higher is better):
+        # Decoupling = % drop in EF from first half to second half.
+        # Positive = less efficient in second half (drift).
+        # Negative = more efficient in second half (strong finish).
         if first_half_ef > 0:
-            decoupling_percent = ((second_half_ef - first_half_ef) / first_half_ef) * 100.0
+            decoupling_percent = ((first_half_ef - second_half_ef) / first_half_ef) * 100.0
             
             # Traffic light system
             if decoupling_percent < 5.0:
@@ -181,11 +167,11 @@ def calculate_activity_efficiency_with_decoupling(
                 decoupling_status = "red"  # Significant cardiac drift
     
     return {
-        "efficiency_factor": round(overall_ef, 2),
+        "efficiency_factor": round(overall_ef, 4),
         "decoupling_percent": round(decoupling_percent, 1) if decoupling_percent is not None else None,
         "decoupling_status": decoupling_status,
-        "first_half_ef": round(first_half_ef, 2) if first_half_ef is not None else None,
-        "second_half_ef": round(second_half_ef, 2) if second_half_ef is not None else None,
+        "first_half_ef": round(first_half_ef, 4) if first_half_ef is not None else None,
+        "second_half_ef": round(second_half_ef, 4) if second_half_ef is not None else None,
         "splits_used": len(split_efs)
     }
 

@@ -12,7 +12,7 @@ router_errors = []
 routers = [
     'activities', 'auth', 'calendar', 'insights', 'nutrition',
     'plan_generation', 'preferences', 'public_tools', 'training_load',
-    'vdot', 'attribution', 'causal', 'contextual_compare', 'data_export',
+    'rpi', 'attribution', 'causal', 'contextual_compare', 'data_export',
     'strava', 'admin', 'analytics', 'athlete_profile', 'daily_checkin',
     'knowledge', 'training_plans', 'ai_coach'
 ]
@@ -33,7 +33,7 @@ print()
 print('2. Checking key services...')
 service_errors = []
 services = [
-    'vdot_calculator', 'vdot_enhanced', 'vdot_lookup',
+    'rpi_calculator', 'rpi_enhanced', 'rpi_lookup',
     'plan_generator', 'plan_generator_v2', 'athlete_context',
     'attribution_engine', 'causal_attribution', 'contextual_comparison',
     'efficiency_calculation', 'pattern_recognition', 'plan_audit'

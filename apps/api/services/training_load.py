@@ -311,6 +311,14 @@ class TrainingLoadCalculator:
             )
         
         # Try hrTSS first (most accurate for running)
+        # Use N=1 observed peak + resting HR from effort thresholds when athlete.max_hr is missing
+        from services.effort_classification import get_effort_thresholds
+        et = get_effort_thresholds(str(athlete.id), self.db)
+        peak = et.get("observed_peak_hr")
+        resting = et.get("resting_hr")
+        can_hr_tss = activity.avg_hr and peak and resting and et.get("tier") == "hrr"
+        if can_hr_tss:
+            return self._calculate_hr_tss_from_thresholds(activity, peak, resting, duration_minutes)
         if activity.avg_hr and athlete.max_hr and athlete.resting_hr:
             return self._calculate_hr_tss(activity, athlete, duration_minutes)
         
@@ -365,6 +373,30 @@ class TrainingLoadCalculator:
             calculation_method="hrTSS"
         )
     
+    def _calculate_hr_tss_from_thresholds(
+        self,
+        activity: Activity,
+        observed_peak: int,
+        resting_hr: int,
+        duration_minutes: float
+    ) -> WorkoutStress:
+        """hrTSS using N=1 observed peak and resting HR instead of athlete.max_hr."""
+        avg_hr = activity.avg_hr
+        hr_reserve = (avg_hr - resting_hr) / (observed_peak - resting_hr)
+        hr_reserve = max(0, min(1.1, hr_reserve))
+        trimp_factor = 0.75 * math.exp(1.8 * hr_reserve)
+        threshold_trimp = 0.75 * math.exp(1.8 * 0.88)
+        intensity_factor = trimp_factor / threshold_trimp
+        tss = (duration_minutes * intensity_factor ** 2) / 60 * 100
+        return WorkoutStress(
+            activity_id=activity.id,
+            date=activity.start_time.date(),
+            tss=round(tss, 1),
+            duration_minutes=duration_minutes,
+            intensity_factor=round(intensity_factor, 3),
+            calculation_method="hrTSS_n1"
+        )
+
     def _calculate_running_tss(
         self, 
         activity: Activity, 
@@ -455,100 +487,154 @@ class TrainingLoadCalculator:
         )
     
     # =========================================================================
-    # ATL / CTL / TSB CALCULATION
+    # ATL / CTL / TSB CALCULATION — SINGLE-PASS EMA
     # =========================================================================
-    
+
+    def compute_training_state_history(
+        self,
+        athlete_id: UUID,
+        target_dates: Optional[List[date]] = None,
+    ) -> Dict[date, LoadSummary]:
+        """
+        Single-pass EMA from athlete's first activity to last.
+
+        Walks all activities chronologically, computes daily TSS,
+        applies ATL/CTL EMA on every day (including rest days).
+        Returns LoadSummary at each requested target_date.
+
+        If target_dates is None, returns values at every day
+        (useful for charting full history).
+
+        Excludes duplicate activities (is_duplicate == True).
+        """
+        from core.cache import get_cache, set_cache
+        from dataclasses import asdict
+        import json
+
+        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if not athlete:
+            raise ValueError(f"Athlete {athlete_id} not found")
+
+        activities = self.db.query(Activity).filter(
+            Activity.athlete_id == athlete_id,
+            Activity.is_duplicate == False,  # noqa: E712
+        ).order_by(Activity.start_time).all()
+
+        if not activities:
+            if target_dates:
+                return {d: self._empty_load_summary() for d in target_dates}
+            return {}
+
+        first_date = activities[0].start_time.date()
+        last_date = activities[-1].start_time.date()
+
+        target_set = set(target_dates) if target_dates else None
+        end_date = date.today()
+        if target_set:
+            end_date = max(end_date, max(target_set))
+        end_date = max(end_date, last_date)
+
+        daily_tss: Dict[date, float] = {}
+        daily_counts: Dict[date, int] = {}
+        for act in activities:
+            stress = self.calculate_workout_tss(act, athlete)
+            d = stress.date
+            daily_tss[d] = daily_tss.get(d, 0) + stress.tss
+            daily_counts[d] = daily_counts.get(d, 0) + 1
+
+        atl_alpha = 2 / (self.ATL_DECAY_DAYS + 1)
+        ctl_alpha = 2 / (self.CTL_DECAY_DAYS + 1)
+
+        current_atl = 0.0
+        current_ctl = 0.0
+        results: Dict[date, LoadSummary] = {}
+
+        atl_history: List[float] = []
+        ctl_history: List[float] = []
+
+        total_days = (end_date - first_date).days + 1
+        for i in range(total_days):
+            current_date = first_date + timedelta(days=i)
+            day_tss = daily_tss.get(current_date, 0)
+
+            current_atl = current_atl * (1 - atl_alpha) + day_tss * atl_alpha
+            current_ctl = current_ctl * (1 - ctl_alpha) + day_tss * ctl_alpha
+
+            atl_history.append(current_atl)
+            ctl_history.append(current_ctl)
+
+            if target_set is None or current_date in target_set:
+                current_tsb = current_ctl - current_atl
+
+                atl_trend = self._calculate_trend(
+                    atl_history[-14:-7] if len(atl_history) >= 14 else [],
+                    atl_history[-7:] if len(atl_history) >= 7 else [],
+                )
+                ctl_trend = self._calculate_trend(
+                    ctl_history[-14:-7] if len(ctl_history) >= 14 else [],
+                    ctl_history[-7:] if len(ctl_history) >= 7 else [],
+                )
+
+                if atl_trend == "rising" and ctl_trend != "rising":
+                    tsb_trend = "falling"
+                elif atl_trend == "falling" and ctl_trend != "falling":
+                    tsb_trend = "rising"
+                else:
+                    tsb_trend = "stable"
+
+                training_phase = self._determine_training_phase(
+                    current_atl, current_ctl, current_tsb, atl_trend, ctl_trend
+                )
+                recommendation = self._generate_recommendation(
+                    current_atl, current_ctl, current_tsb, training_phase
+                )
+
+                results[current_date] = LoadSummary(
+                    current_atl=round(current_atl, 1),
+                    current_ctl=round(current_ctl, 1),
+                    current_tsb=round(current_tsb, 1),
+                    atl_trend=atl_trend,
+                    ctl_trend=ctl_trend,
+                    tsb_trend=tsb_trend,
+                    training_phase=training_phase,
+                    recommendation=recommendation,
+                )
+
+        return results
+
+    def _empty_load_summary(self) -> LoadSummary:
+        return LoadSummary(
+            current_atl=0.0, current_ctl=0.0, current_tsb=0.0,
+            atl_trend="stable", ctl_trend="stable", tsb_trend="stable",
+            training_phase="recovering", recommendation="No data available.",
+        )
+
     def calculate_training_load(
-        self, 
-        athlete_id: UUID, 
+        self,
+        athlete_id: UUID,
         target_date: Optional[date] = None
     ) -> LoadSummary:
         """
         Calculate current training load metrics for an athlete.
+        Delegates to compute_training_state_history (full-history EMA).
         """
+        from core.cache import get_cache, set_cache
+        from dataclasses import asdict
+
         if target_date is None:
             target_date = date.today()
-        
-        # Get athlete
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            raise ValueError(f"Athlete {athlete_id} not found")
-        
-        # Get last 60 days of activities (need history for CTL)
-        lookback_days = 60
-        start_date = target_date - timedelta(days=lookback_days)
-        
-        activities = self.db.query(Activity).filter(
-            Activity.athlete_id == athlete_id,
-            Activity.start_time >= datetime.combine(start_date, datetime.min.time()),
-            Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time())
-        ).order_by(Activity.start_time).all()
-        
-        # Calculate TSS for each activity
-        daily_tss: Dict[date, float] = {}
-        for activity in activities:
-            stress = self.calculate_workout_tss(activity, athlete)
-            activity_date = stress.date
-            daily_tss[activity_date] = daily_tss.get(activity_date, 0) + stress.tss
-        
-        # Calculate ATL and CTL using exponential weighted average
-        atl_history = []
-        ctl_history = []
-        
-        current_atl = 0.0
-        current_ctl = 0.0
-        
-        atl_decay = 2 / (self.ATL_DECAY_DAYS + 1)  # EMA alpha for ATL
-        ctl_decay = 2 / (self.CTL_DECAY_DAYS + 1)  # EMA alpha for CTL
-        
-        # Iterate through each day
-        for day_offset in range(lookback_days):
-            current_date = start_date + timedelta(days=day_offset)
-            day_tss = daily_tss.get(current_date, 0)
-            
-            # Exponential moving average update
-            current_atl = current_atl * (1 - atl_decay) + day_tss * atl_decay
-            current_ctl = current_ctl * (1 - ctl_decay) + day_tss * ctl_decay
-            
-            atl_history.append(current_atl)
-            ctl_history.append(current_ctl)
-        
-        # Current TSB
-        current_tsb = current_ctl - current_atl
-        
-        # Calculate trends (last 7 days vs previous 7 days)
-        atl_trend = self._calculate_trend(atl_history[-14:-7], atl_history[-7:])
-        ctl_trend = self._calculate_trend(ctl_history[-14:-7], ctl_history[-7:])
-        
-        # TSB trend from ATL/CTL trends
-        if atl_trend == "rising" and ctl_trend != "rising":
-            tsb_trend = "falling"
-        elif atl_trend == "falling" and ctl_trend != "falling":
-            tsb_trend = "rising"
-        else:
-            tsb_trend = "stable"
-        
-        # Determine training phase
-        training_phase = self._determine_training_phase(
-            current_atl, current_ctl, current_tsb, atl_trend, ctl_trend
+        _cache_key = f"training_load:{athlete_id}:{target_date.isoformat()}"
+        _cached = get_cache(_cache_key)
+        if _cached is not None:
+            return LoadSummary(**_cached)
+
+        results = self.compute_training_state_history(
+            athlete_id, target_dates=[target_date]
         )
-        
-        # Generate recommendation
-        recommendation = self._generate_recommendation(
-            current_atl, current_ctl, current_tsb, training_phase
-        )
-        
-        return LoadSummary(
-            current_atl=round(current_atl, 1),
-            current_ctl=round(current_ctl, 1),
-            current_tsb=round(current_tsb, 1),
-            atl_trend=atl_trend,
-            ctl_trend=ctl_trend,
-            tsb_trend=tsb_trend,
-            training_phase=training_phase,
-            recommendation=recommendation
-        )
-    
+        result = results.get(target_date, self._empty_load_summary())
+        set_cache(_cache_key, asdict(result), ttl=300)
+        return result
+
     def get_load_history(
         self,
         athlete_id: UUID,
@@ -556,60 +642,51 @@ class TrainingLoadCalculator:
     ) -> List[DailyLoad]:
         """
         Get daily training load history for charting.
+        Delegates to compute_training_state_history (full-history EMA).
         """
         athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
             return []
-        
+
         end_date = date.today()
         start_date = end_date - timedelta(days=days)
-        
+
+        target_dates = [start_date + timedelta(days=i) for i in range(days)]
+        state = self.compute_training_state_history(athlete_id, target_dates=target_dates)
+
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.is_duplicate == False,  # noqa: E712
             Activity.start_time >= datetime.combine(start_date, datetime.min.time()),
-            Activity.start_time < datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+            Activity.start_time < datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
         ).order_by(Activity.start_time).all()
-        
-        # Calculate TSS per activity
-        daily_tss: Dict[date, Tuple[float, int]] = {}  # date -> (total_tss, count)
-        for activity in activities:
-            stress = self.calculate_workout_tss(activity, athlete)
-            activity_date = stress.date
-            if activity_date in daily_tss:
-                daily_tss[activity_date] = (
-                    daily_tss[activity_date][0] + stress.tss,
-                    daily_tss[activity_date][1] + 1
-                )
-            else:
-                daily_tss[activity_date] = (stress.tss, 1)
-        
-        # Build daily load history
+
+        daily_counts: Dict[date, int] = {}
+        daily_tss_sums: Dict[date, float] = {}
+        for act in activities:
+            stress = self.calculate_workout_tss(act, athlete)
+            d = stress.date
+            daily_counts[d] = daily_counts.get(d, 0) + 1
+            daily_tss_sums[d] = daily_tss_sums.get(d, 0) + stress.tss
+
         history: List[DailyLoad] = []
-        current_atl = 0.0
-        current_ctl = 0.0
-        
-        atl_decay = 2 / (self.ATL_DECAY_DAYS + 1)
-        ctl_decay = 2 / (self.CTL_DECAY_DAYS + 1)
-        
-        for day_offset in range(days):
-            current_date = start_date + timedelta(days=day_offset)
-            tss_data = daily_tss.get(current_date, (0, 0))
-            day_tss, workout_count = tss_data
-            
-            # Update EMAs
-            current_atl = current_atl * (1 - atl_decay) + day_tss * atl_decay
-            current_ctl = current_ctl * (1 - ctl_decay) + day_tss * ctl_decay
-            current_tsb = current_ctl - current_atl
-            
-            history.append(DailyLoad(
-                date=current_date,
-                total_tss=round(day_tss, 1),
-                workout_count=workout_count,
-                atl=round(current_atl, 1),
-                ctl=round(current_ctl, 1),
-                tsb=round(current_tsb, 1)
-            ))
-        
+        for d in target_dates:
+            load = state.get(d)
+            if load:
+                history.append(DailyLoad(
+                    date=d,
+                    total_tss=round(daily_tss_sums.get(d, 0), 1),
+                    workout_count=daily_counts.get(d, 0),
+                    atl=load.current_atl,
+                    ctl=load.current_ctl,
+                    tsb=load.current_tsb,
+                ))
+            else:
+                history.append(DailyLoad(
+                    date=d, total_tss=0, workout_count=0,
+                    atl=0, ctl=0, tsb=0,
+                ))
+
         return history
     
     def _calculate_trend(

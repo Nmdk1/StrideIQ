@@ -85,7 +85,7 @@ def test_phase3_simulated_golden_path_invite_register_oauth_callback_and_bootstr
         assert invite_row.used_at is None
 
         # --- Registration: must succeed ONLY with invite ---
-        password = "password123"
+        password = "SecureP@ss123"
         resp = client.post(
             "/v1/auth/register",
             json={"email": invited_email, "password": password, "display_name": "Invited User"},
@@ -242,7 +242,7 @@ def test_strava_callback_skips_enqueue_when_ingestion_paused(monkeypatch):
         resp = client.post("/v1/admin/invites", json={"email": invited_email, "note": "pause test"}, headers=admin_headers)
         assert resp.status_code == 200, resp.text
 
-        password = "password123"
+        password = "SecureP@ss123"
         resp = client.post("/v1/auth/register", json={"email": invited_email, "password": password, "display_name": "User"})
         assert resp.status_code == 201, resp.text
 

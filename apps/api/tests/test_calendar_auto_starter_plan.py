@@ -7,13 +7,13 @@ from fastapi.testclient import TestClient
 from core.database import SessionLocal
 from core.security import create_access_token
 from main import app
-from models import Athlete, IntakeQuestionnaire, TrainingPlan, PlannedWorkout, AthleteRaceResultAnchor
+from models import Athlete, IntakeQuestionnaire, TrainingPlan, AthleteRaceResultAnchor
 
 
 client = TestClient(app)
 
 
-def test_calendar_auto_provisions_starter_plan_when_onboarding_complete_and_no_active_plan():
+def test_calendar_does_not_auto_provision_plan_when_onboarding_complete_and_no_active_plan():
     db = SessionLocal()
     athlete = None
     try:
@@ -57,34 +57,15 @@ def test_calendar_auto_provisions_starter_plan_when_onboarding_complete_and_no_a
         token = create_access_token({"sub": str(athlete.id), "email": athlete.email, "role": athlete.role})
         headers = {"Authorization": f"Bearer {token}"}
 
-        # Calendar call should auto-create plan
+        # Calendar should stay honest: no active plan means no active plan.
         resp = client.get("/v1/calendar", headers=headers)
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body.get("active_plan") is not None
-        assert body["active_plan"].get("id")
+        assert body.get("active_plan") is None
 
-        # DB: plan exists and is active
+        # DB: no plan should be created as a side effect of loading calendar.
         plan = db.query(TrainingPlan).filter(TrainingPlan.athlete_id == athlete.id, TrainingPlan.status == "active").first()
-        assert plan is not None
-        assert plan.generation_method == "starter_v1_paced"
-
-        # Regression guard: never emit ambiguous "tempo" workout types.
-        assert (
-            db.query(PlannedWorkout)
-            .filter(PlannedWorkout.athlete_id == athlete.id, PlannedWorkout.plan_id == plan.id, PlannedWorkout.workout_type == "tempo")
-            .count()
-            == 0
-        )
-
-        # And at least one workout should have pace guidance (coach_notes)
-        any_pace = (
-            db.query(PlannedWorkout)
-            .filter(PlannedWorkout.athlete_id == athlete.id, PlannedWorkout.plan_id == plan.id)
-            .filter(PlannedWorkout.coach_notes.isnot(None))
-            .count()
-        )
-        assert any_pace > 0
+        assert plan is None
     finally:
         try:
             if athlete is not None:

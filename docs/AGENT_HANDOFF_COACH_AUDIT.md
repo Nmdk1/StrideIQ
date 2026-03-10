@@ -50,7 +50,7 @@ Threshold Pace: 3.92 min/km
 | 3 | `get_plan_week` | VERIFIED | Evidence cites planned workout IDs + dates |
 | 4 | `get_training_load` | VERIFIED | Evidence cites derived ATL/CTL/TSB snapshot |
 | 5 | `get_correlations` | VERIFIED | Evidence cites derived analysis summary (may be “none found”) |
-| 6 | `get_race_predictions` | VERIFIED | PB/VDOT fallback when calibrated model table is absent |
+| 6 | `get_race_predictions` | VERIFIED | PB/RPI fallback when calibrated model table is absent |
 | 7 | `get_recovery_status` | VERIFIED | Evidence cites derived recovery half-life |
 | 8 | `get_active_insights` | VERIFIED | May legitimately be empty if no insights exist |
 | 9 | `get_pb_patterns` | VERIFIED | Evidence includes PB **activity UUIDs** for receipts |

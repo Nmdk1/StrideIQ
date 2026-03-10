@@ -32,7 +32,7 @@ def main() -> int:
 
         print(f"Athlete: {athlete.display_name}")
         print(f"Max HR: {athlete.max_hr}")
-        print(f"VDOT: {athlete.vdot}")
+        print(f"RPI: {athlete.rpi}")
 
         activities = (
             db.query(Activity)

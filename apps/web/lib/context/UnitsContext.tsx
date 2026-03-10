@@ -117,8 +117,9 @@ export function UnitsProvider({ children }: { children: ReactNode }) {
   const formatPace = useCallback((secondsPerKm: number | null | undefined): string => {
     if (secondsPerKm === null || secondsPerKm === undefined) return '-';
     const seconds = convertPace(secondsPerKm);
-    const minutes = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
+    let minutes = Math.floor(seconds / 60);
+    let secs = Math.round(seconds % 60);
+    if (secs === 60) { secs = 0; minutes += 1; }
     const unit = units === 'imperial' ? '/mi' : '/km';
     return `${minutes}:${secs.toString().padStart(2, '0')}${unit}`;
   }, [convertPace, units]);

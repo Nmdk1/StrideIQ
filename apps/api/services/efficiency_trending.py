@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 import statistics
 import math
+from scipy.stats import t as t_dist
 
 
 class TrendConfidence(str, Enum):
@@ -27,8 +28,8 @@ class TrendConfidence(str, Enum):
 
 class TrendDirection(str, Enum):
     """Direction of efficiency trend."""
-    IMPROVING = "improving"     # Negative slope (lower EF = better)
-    DECLINING = "declining"     # Positive slope
+    IMPROVING = "improving"     # Positive slope (higher EF = better)
+    DECLINING = "declining"     # Negative slope
     STABLE = "stable"          # No significant trend
     INSUFFICIENT = "insufficient_data"
 
@@ -100,58 +101,11 @@ def linear_regression(x: List[float], y: List[float]) -> Tuple[float, float, flo
 
 def calculate_p_value_from_t(t_stat: float, df: int) -> float:
     """
-    Approximate two-tailed p-value from t-statistic using normal approximation.
-    For df > 30, t-distribution ≈ normal distribution.
-    
-    For more precise values, use scipy.stats.t.sf() - but this avoids scipy dependency.
+    Two-tailed p-value from t-statistic using exact t-distribution (scipy).
     """
     if df <= 0:
         return 1.0
-    
-    abs_t = abs(t_stat)
-    
-    # For very large t-stats (extremely significant), return very small p-value
-    if abs_t > 100:
-        return 0.0001  # Effectively 0, but avoid exact 0
-    
-    # For very small t-stats, return high p-value
-    if abs_t < 0.001:
-        return 1.0
-    
-    # Standard normal CDF approximation (Abramowitz and Stegun)
-    def norm_cdf(z):
-        # Clamp z to avoid overflow
-        z = max(-37, min(37, z))
-        
-        a1 = 0.254829592
-        a2 = -0.284496736
-        a3 = 1.421413741
-        a4 = -1.453152027
-        a5 = 1.061405429
-        p = 0.3275911
-        
-        sign = 1 if z >= 0 else -1
-        z = abs(z)
-        
-        t = 1.0 / (1.0 + p * z)
-        exp_val = math.exp(-z * z / 2)
-        y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * exp_val
-        
-        return 0.5 * (1.0 + sign * y)
-    
-    # For t-distribution with df degrees of freedom
-    # When df is large, t ≈ z
-    # For smaller df, we need a correction factor
-    if df > 30:
-        correction = 1.0
-    else:
-        # Rough correction for small df
-        correction = math.sqrt(df / (df - 2)) if df > 2 else 1.5
-    
-    adjusted_t = abs_t / correction
-    p_value = 2 * (1 - norm_cdf(adjusted_t))
-    
-    return min(1.0, max(0.0, p_value))
+    return float(min(1.0, max(0.0, 2 * t_dist.sf(abs(t_stat), df))))
 
 
 def analyze_efficiency_trend(
@@ -252,12 +206,12 @@ def analyze_efficiency_trend(
     else:
         confidence = TrendConfidence.INSUFFICIENT
     
-    # Determine direction (negative slope = improving for EF)
+    # Determine direction (positive slope = improving for EF)
     # Only declare direction if statistically significant
     if p_value < 0.05:
-        if slope < 0:
+        if slope > 0:
             direction = TrendDirection.IMPROVING
-        elif slope > 0:
+        elif slope < 0:
             direction = TrendDirection.DECLINING
         else:
             direction = TrendDirection.STABLE
@@ -345,13 +299,13 @@ def calculate_efficiency_percentile(
     """
     Calculate where current efficiency sits in athlete's own history.
     
-    Returns percentile (0-100), where lower is better for EF.
+    Returns percentile (0-100), where higher is better for EF.
     """
     if not historical_efs or len(historical_efs) < 5:
         return None
     
-    # Count how many historical values are worse (higher) than current
-    worse_count = sum(1 for ef in historical_efs if ef > current_ef)
+    # Count how many historical values are worse (lower) than current
+    worse_count = sum(1 for ef in historical_efs if ef < current_ef)
     percentile = (worse_count / len(historical_efs)) * 100
     
     return round(percentile, 1)
@@ -366,18 +320,18 @@ def estimate_days_to_pr_efficiency(
     Estimate days until current trend would reach PR efficiency level.
     
     Returns None if:
-    - Not improving (positive slope)
+    - Not improving (negative slope)
     - Already at or better than PR
     - Would take more than 365 days
     """
-    if slope_per_week >= 0:
+    if slope_per_week <= 0:
         return None  # Not improving
     
-    if current_ef <= pr_ef:
+    if current_ef >= pr_ef:
         return 0  # Already at or better than PR
     
     # EF difference to close
-    ef_gap = current_ef - pr_ef
+    ef_gap = pr_ef - current_ef
     
     # Weeks to close gap
     weeks_needed = ef_gap / abs(slope_per_week)

@@ -43,7 +43,7 @@ Once the invited user registers via `POST /v1/auth/register`, the invite is mark
 - Register with invited email: `POST /v1/auth/register`
 - Complete onboarding intake: `GET/POST /v1/onboarding/intake` stages
 - Connect Strava (optional for beta): `GET /v1/strava/auth-url` then `/v1/strava/callback`
-- Confirm the calendar is seeded (starter plan) and visible
+- Confirm the calendar loads cleanly with the no-plan CTA visible
 
 ## Local dogfood (end-to-end)
 

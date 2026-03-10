@@ -1,7 +1,11 @@
 /**
  * Register Page
- * 
- * Registration page with proper form handling and validation.
+ *
+ * Handles registration with optional tier-intent carry-through.
+ * If ?tier=guided|premium&period=monthly|annual is present, the athlete is
+ * redirected to /settings?upgrade=<tier>&period=<period> after signup instead
+ * of the standard /onboarding flow.  Invalid or missing tier params fall back
+ * to /onboarding — no redirect loop is possible.
  */
 
 'use client';
@@ -13,10 +17,31 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import Link from 'next/link';
 
+const VALID_TIERS = ['guided', 'premium'] as const;
+type ValidTier = (typeof VALID_TIERS)[number];
+
+const TIER_LABELS: Record<ValidTier, string> = {
+  guided: 'Guided ($15/mo)',
+  premium: 'Premium ($25/mo)',
+};
+
+function parseTierIntent(
+  tier: string | null,
+  period: string | null,
+): { tier: ValidTier; period: string } | null {
+  if (!tier || !VALID_TIERS.includes(tier as ValidTier)) return null;
+  const safePeriod = period === 'monthly' ? 'monthly' : 'annual';
+  return { tier: tier as ValidTier, period: safePeriod };
+}
+
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const raceCode = searchParams.get('code');
+  const tierIntent = parseTierIntent(
+    searchParams.get('tier'),
+    searchParams.get('period'),
+  );
   const { register, isLoading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -48,7 +73,11 @@ function RegisterForm() {
         display_name: displayName || undefined,
         race_code: raceCode || undefined,
       });
-      router.push('/onboarding');
+      if (tierIntent) {
+        router.push(`/settings?upgrade=${tierIntent.tier}&period=${tierIntent.period}`);
+      } else {
+        router.push('/onboarding');
+      }
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please try again.');
     } finally {
@@ -80,6 +109,14 @@ function RegisterForm() {
                   <p className="text-purple-300 text-sm">Your free trial is ready with code <span className="font-mono font-bold">{raceCode}</span></p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {tierIntent && (
+            <div className="mb-4 p-3 bg-orange-900/20 border border-orange-700/40 rounded-lg text-sm text-orange-300">
+              You&apos;re signing up for the{' '}
+              <span className="font-semibold">{TIER_LABELS[tierIntent.tier]}</span>{' '}
+              plan — you&apos;ll be redirected to subscribe right after.
             </div>
           )}
 

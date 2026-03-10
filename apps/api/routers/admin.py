@@ -109,7 +109,7 @@ class InviteRevokeRequest(BaseModel):
 
 
 class CompAccessRequest(BaseModel):
-    tier: Literal["free", "pro"] = Field(..., description="Subscription tier to set (free|pro)")
+    tier: Literal["free", "pro", "guided", "premium", "elite"] = Field(..., description="Subscription tier to set")
     reason: Optional[str] = Field(default=None, description="Why this comp was granted (audited)")
 
 
@@ -485,6 +485,24 @@ def list_stuck_ingestion(
         )
 
     return {"cutoff": cutoff.isoformat(), "count": len(out), "items": out}
+
+
+@router.get("/ops/ingestion/garmin-health")
+def get_garmin_ingestion_health(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Garmin ingestion coverage report — last 7 calendar days (UTC).
+
+    Returns per-athlete GarminDay coverage ratios for sleep, HRV, and
+    resting HR.  Identifies athletes with < 50% coverage as underfed.
+
+    Admin/owner only.
+    """
+    from services.garmin_ingestion_health import compute_garmin_coverage
+
+    return compute_garmin_coverage(db)
 
 
 @router.get("/ops/ingestion/errors")
@@ -2256,7 +2274,103 @@ def get_race_code_qr(
         media_type="image/png",
         headers={
             "Content-Disposition": f'inline; filename="{promo.code}_qr.png"',
-            "Cache-Control": "max-age=86400",  # Cache for 24 hours
+            "Cache-Control": "max-age=86400",
         }
     )
+
+
+@router.post("/classify-all-athletes")
+async def admin_classify_all(
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Classify all unclassified activities across all athletes."""
+    from services.workout_classifier import WorkoutClassifierService
+
+    classifier = WorkoutClassifierService(db)
+
+    activities = db.query(Activity).filter(
+        Activity.workout_type.is_(None),
+        Activity.distance_m >= 1000,
+        Activity.is_duplicate == False,  # noqa: E712
+    ).all()
+
+    classified = 0
+    skipped = 0
+    for act in activities:
+        try:
+            result = classifier.classify_activity(act)
+            act.workout_type = result.workout_type.value
+            act.workout_zone = result.workout_zone.value
+            act.workout_confidence = result.confidence
+            act.intensity_score = result.intensity_score
+            classified += 1
+        except Exception:
+            skipped += 1
+            continue
+
+    db.commit()
+
+    return {
+        "classified": classified,
+        "skipped": skipped,
+        "total_unclassified_before": len(activities),
+    }
+
+
+# --- Race-Week Weather Forecast (Manual Admin-Set) ---
+
+class RaceForecastRequest(BaseModel):
+    athlete_id: UUID
+    temp_f: float = Field(..., ge=-20, le=120)
+    humidity_pct: float = Field(..., ge=0, le=100)
+    description: Optional[str] = Field(None, max_length=240)
+
+
+@router.post("/ops/race-forecast", dependencies=[Depends(require_owner)])
+def set_race_forecast(
+    body: RaceForecastRequest,
+    http_request: Request,
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Set a race-day weather forecast for an athlete. Stored in Redis with 14-day TTL."""
+    import json
+    from core.cache import get_redis_client
+
+    client = get_redis_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="Cache unavailable")
+
+    from services.heat_adjustment import calculate_dew_point_f
+    dew_point_f = calculate_dew_point_f(body.temp_f, body.humidity_pct)
+
+    payload = {
+        "temp_f": body.temp_f,
+        "humidity_pct": body.humidity_pct,
+        "dew_point_f": round(dew_point_f, 1),
+        "description": body.description,
+        "set_by": str(current_user.id),
+        "set_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    key = f"race_forecast:{body.athlete_id}"
+    client.setex(key, timedelta(days=14), json.dumps(payload))
+
+    try:
+        from services.admin_audit import record_admin_audit_event
+        record_admin_audit_event(
+            db,
+            request=http_request,
+            actor=current_user,
+            action="set_race_forecast",
+            target_type="athlete",
+            target_id=str(body.athlete_id),
+            before={},
+            after=payload,
+        )
+    except Exception:
+        logger.warning("Failed to record admin audit for race forecast (non-blocking)")
+
+    return {"status": "ok", "key": key, "payload": payload}
 

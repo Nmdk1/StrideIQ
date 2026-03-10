@@ -1,51 +1,50 @@
 import type { Metadata, Viewport } from 'next'
 import Navigation from './components/Navigation'
+import ClientShell from './components/ClientShell'
 import { QueryProvider } from '@/lib/providers/QueryProvider'
 import { AuthProvider } from '@/lib/context/AuthContext'
 import { UnitsProvider } from '@/lib/context/UnitsContext'
 import { CompareProvider } from '@/lib/context/CompareContext'
+import { ConsentProvider } from '@/lib/context/ConsentContext'
+import { ConsentPrompt } from './components/ConsentPrompt'
+import { RuntoonSharePrompt } from '@/components/runtoon/RuntoonSharePrompt'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ImpersonationBanner } from '@/components/admin/ImpersonationBanner'
 import './globals.css'
 
+const META_DESCRIPTION =
+  'Your body has a voice. StrideIQ is AI running intelligence that turns your data into decisions — training paces, trend signals, and coaching that adapts to you.'
+const OG_IMAGE_URL = '/og-image.png?v=6'
+
 export const metadata: Metadata = {
   title: {
-    default: 'StrideIQ | AI-Powered Running Intelligence',
+    default: 'StrideIQ - AI Running Coach & Training Intelligence',
     template: '%s | StrideIQ'
   },
-  description: 'Discover what actually improves your running. AI-powered insights that correlate sleep, nutrition, and training with your performance. Free training pace calculator and age-grading tools.',
-  keywords: [
-    'running intelligence',
-    'AI running coach',
-    'running efficiency',
-    'runner performance analytics',
-    'training pace calculator',
-    'age graded running',
-    'heat adjusted pace',
-    'masters running',
-    'running insights',
-    'Strava analytics'
-  ],
+  description: META_DESCRIPTION,
   authors: [{ name: 'StrideIQ' }],
   creator: 'StrideIQ',
   openGraph: {
     type: 'website',
     locale: 'en_US',
     siteName: 'StrideIQ',
-    title: 'StrideIQ | AI-Powered Running Intelligence',
-    description: 'Discover what actually improves your running. AI-powered insights that correlate sleep, nutrition, and training with your performance.',
+    title: 'StrideIQ - AI Running Coach & Training Intelligence',
+    description: META_DESCRIPTION,
+    images: [{ url: OG_IMAGE_URL, width: 1200, height: 630, alt: 'StrideIQ - AI Running Coach' }],
+    url: 'https://strideiq.run',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'StrideIQ | AI-Powered Running Intelligence',
-    description: 'Discover what actually improves your running.',
+    title: 'StrideIQ - AI Running Coach & Training Intelligence',
+    description: META_DESCRIPTION,
+    images: [OG_IMAGE_URL],
   },
   robots: {
     index: true,
     follow: true
   },
-  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'https://strideiq.run'),
+  metadataBase: new URL('https://strideiq.run'),
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -79,11 +78,17 @@ export default function RootLayout({
             <QueryProvider>
               <UnitsProvider>
                 <CompareProvider>
-                  <TooltipProvider>
-                    <Navigation />
-                    <ImpersonationBanner />
-                    <main>{children}</main>
-                  </TooltipProvider>
+                  <ConsentProvider>
+                    <TooltipProvider>
+                      <Navigation />
+                      <ImpersonationBanner />
+                      <ClientShell>
+                        <ConsentPrompt />
+                        <RuntoonSharePrompt />
+                        <main className="pb-[76px] md:pb-0">{children}</main>
+                      </ClientShell>
+                    </TooltipProvider>
+                  </ConsentProvider>
                 </CompareProvider>
               </UnitsProvider>
             </QueryProvider>

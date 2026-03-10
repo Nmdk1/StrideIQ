@@ -76,6 +76,16 @@ STANDARD_DURATIONS = {
 }
 
 # Volume tier thresholds (miles per week)
+# Tier classification AND peak targets are UNIVERSAL across distances.
+#
+# Mileage is mileage.  The aerobic base is the aerobic base.  The best 5K
+# racers in the world run 120-130 mpw.  A 70mpw runner doing a 10K peak
+# block is training correctly.  The race determines the workout mix (more
+# VO2max for 5K, more MP for marathon), not the volume ceiling.
+#
+# These are DEFAULTS for standard (non-personalized) plans.  The N=1 profile
+# overrides peak, cutback frequency, and long run targets based on the
+# athlete's actual history.  The defaults just need to not get in the way.
 VOLUME_TIER_THRESHOLDS = {
     Distance.MARATHON: {
         VolumeTier.BUILDER: {"min": 20, "max": 35, "peak": 50},
@@ -85,22 +95,25 @@ VOLUME_TIER_THRESHOLDS = {
         VolumeTier.ELITE: {"min": 80, "max": 120, "peak": 110},
     },
     Distance.HALF_MARATHON: {
-        VolumeTier.BUILDER: {"min": 15, "max": 25, "peak": 40},
-        VolumeTier.LOW: {"min": 25, "max": 35, "peak": 45},
-        VolumeTier.MID: {"min": 35, "max": 50, "peak": 55},
-        VolumeTier.HIGH: {"min": 50, "max": 70, "peak": 70},
+        VolumeTier.BUILDER: {"min": 20, "max": 35, "peak": 50},
+        VolumeTier.LOW: {"min": 35, "max": 45, "peak": 55},
+        VolumeTier.MID: {"min": 45, "max": 60, "peak": 70},
+        VolumeTier.HIGH: {"min": 60, "max": 80, "peak": 85},
+        VolumeTier.ELITE: {"min": 80, "max": 120, "peak": 110},
     },
     Distance.TEN_K: {
-        VolumeTier.BUILDER: {"min": 10, "max": 20, "peak": 35},
-        VolumeTier.LOW: {"min": 20, "max": 30, "peak": 40},
-        VolumeTier.MID: {"min": 30, "max": 45, "peak": 50},
-        VolumeTier.HIGH: {"min": 45, "max": 60, "peak": 60},
+        VolumeTier.BUILDER: {"min": 20, "max": 35, "peak": 50},
+        VolumeTier.LOW: {"min": 35, "max": 45, "peak": 55},
+        VolumeTier.MID: {"min": 45, "max": 60, "peak": 70},
+        VolumeTier.HIGH: {"min": 60, "max": 80, "peak": 85},
+        VolumeTier.ELITE: {"min": 80, "max": 120, "peak": 110},
     },
     Distance.FIVE_K: {
-        VolumeTier.BUILDER: {"min": 10, "max": 18, "peak": 30},
-        VolumeTier.LOW: {"min": 18, "max": 28, "peak": 35},
-        VolumeTier.MID: {"min": 28, "max": 40, "peak": 45},
-        VolumeTier.HIGH: {"min": 40, "max": 55, "peak": 55},
+        VolumeTier.BUILDER: {"min": 20, "max": 35, "peak": 50},
+        VolumeTier.LOW: {"min": 35, "max": 45, "peak": 55},
+        VolumeTier.MID: {"min": 45, "max": 60, "peak": 70},
+        VolumeTier.HIGH: {"min": 60, "max": 80, "peak": 85},
+        VolumeTier.ELITE: {"min": 80, "max": 120, "peak": 110},
     },
 }
 
@@ -154,10 +167,53 @@ CUTBACK_RULES = {
     VolumeTier.ELITE: {"frequency": 4, "reduction": 0.20},
 }
 
-# Taper durations by distance (weeks)
+# Taper durations by distance (weeks) — legacy, used by generate_standard()
+# Minimum 2 weeks for all distances: 1 taper week + 1 race week.
+# This gives even 10K/5K a proper taper phase in the structure.
 TAPER_WEEKS = {
     Distance.MARATHON: 2,      # 10-14 days
     Distance.HALF_MARATHON: 2,
-    Distance.TEN_K: 1,
-    Distance.FIVE_K: 1,
+    Distance.TEN_K: 2,         # 7-10 days (1 taper + race week)
+    Distance.FIVE_K: 2,        # 5-7 days (1 taper + race week)
+}
+
+# Taper durations by distance (days) — personalized plans use this
+# These are POPULATION DEFAULTS (Priority 4 in ADR-062).  The TaperCalculator
+# will override with N=1 signals when available.
+TAPER_DAYS_DEFAULT = {
+    Distance.MARATHON: 14,
+    Distance.HALF_MARATHON: 10,
+    Distance.TEN_K: 7,
+    Distance.FIVE_K: 5,
+}
+
+
+class ReboundSpeed(str, Enum):
+    """Recovery rebound speed classification."""
+    FAST = "fast"       # recovery_half_life_hours <= 36
+    NORMAL = "normal"   # 36 < recovery_half_life_hours <= 60
+    SLOW = "slow"       # recovery_half_life_hours > 60
+
+
+# Direct mapping: (rebound_speed, distance) → taper_days
+# Anchored to coaching literature (Daniels, Pfitzinger, Vigil).
+# No τ1 conversion — this is an observable-to-prescription mapping.
+#
+# Fast recoverers adapt quickly but also LOSE fitness quickly → shorter taper.
+# Slow recoverers retain fitness longer → can handle longer taper.
+# Longer races need more taper because the training block generates more
+# accumulated fatigue (MP long runs, glycogen depletion, musculoskeletal load).
+TAPER_DAYS_BY_REBOUND = {
+    (ReboundSpeed.FAST, Distance.MARATHON): 10,
+    (ReboundSpeed.FAST, Distance.HALF_MARATHON): 7,
+    (ReboundSpeed.FAST, Distance.TEN_K): 5,
+    (ReboundSpeed.FAST, Distance.FIVE_K): 4,
+    (ReboundSpeed.NORMAL, Distance.MARATHON): 13,
+    (ReboundSpeed.NORMAL, Distance.HALF_MARATHON): 9,
+    (ReboundSpeed.NORMAL, Distance.TEN_K): 7,
+    (ReboundSpeed.NORMAL, Distance.FIVE_K): 5,
+    (ReboundSpeed.SLOW, Distance.MARATHON): 17,
+    (ReboundSpeed.SLOW, Distance.HALF_MARATHON): 12,
+    (ReboundSpeed.SLOW, Distance.TEN_K): 9,
+    (ReboundSpeed.SLOW, Distance.FIVE_K): 7,
 }

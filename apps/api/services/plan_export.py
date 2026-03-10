@@ -281,7 +281,7 @@ def export_plan_to_json(
             "plan_start_date": plan.plan_start_date.isoformat() if plan.plan_start_date else None,
             "plan_end_date": plan.plan_end_date.isoformat() if plan.plan_end_date else None,
             "total_weeks": plan.total_weeks,
-            "baseline_vdot": plan.baseline_vdot,
+            "baseline_rpi": plan.baseline_rpi,
             "plan_type": plan.plan_type,
             "generation_method": plan.generation_method,
         },

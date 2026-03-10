@@ -77,6 +77,9 @@ export interface ActivitySummary {
   avg_hr?: number;
   workout_type?: string;
   intensity_score?: number;
+  shape_sentence?: string | null;
+  athlete_title?: string | null;
+  resolved_title?: string | null;
 }
 
 export interface InlineInsight {

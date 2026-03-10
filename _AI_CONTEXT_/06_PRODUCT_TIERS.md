@@ -14,7 +14,7 @@ The Performance Physics Engine operates as a freemium multi-tiered service, desi
 **Purpose:** Acquisition funnel and value demonstration
 
 **Features:**
-- **VDOT Pace Calculator** - Free tool for runners to calculate training paces based on recent race times
+- **RPI Pace Calculator** - Free tool for runners to calculate training paces based on recent race times
 - Age-grading calculator (free tool)
 - Pace converter (free tool)
 - Public content and resources
@@ -141,7 +141,7 @@ The Performance Physics Engine operates as a freemium multi-tiered service, desi
 ## Conversion Funnel
 
 ```
-Free Tools (VDOT Calculator)
+Free Tools (RPI Calculator)
     ↓
 Fixed Training Plans (One-Time Purchase)
     ↓
@@ -177,7 +177,7 @@ Premium Guided Self-Coaching Subscription (Tier 4)
 - Subscription management (upgrade/downgrade/cancel)
 
 ### Free Tools
-- VDOT Pace Calculator (standalone, no auth required)
+- RPI Pace Calculator (standalone, no auth required)
 - Age-grading calculator (standalone)
 - Pace converter (standalone)
 
@@ -186,13 +186,13 @@ Premium Guided Self-Coaching Subscription (Tier 4)
 ## Launch Strategy
 
 **Pre-Launch (Phase 2-3):**
-- Build landing page with VDOT calculator
+- Build landing page with RPI calculator
 - Create fixed training plans
 - Set up subscription system
 - Implement tier-based feature gating
 
 **Launch (March 15, 2026):**
-- Free tier: Landing page + VDOT calculator
+- Free tier: Landing page + RPI calculator
 - Fixed plans: Available for purchase
 - Tier 3: Guided coaching subscription (Strava-based)
 - Tier 4: Premium coaching (when Garmin/Coros API access granted)
@@ -228,7 +228,7 @@ Premium Guided Self-Coaching Subscription (Tier 4)
 ## Success Metrics
 
 **Acquisition:**
-- Free tool usage (VDOT calculator)
+- Free tool usage (RPI calculator)
 - Landing page conversion rate
 - Fixed plan purchase rate
 

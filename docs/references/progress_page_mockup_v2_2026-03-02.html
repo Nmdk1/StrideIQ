@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>StrideIQ Progress — Mockup v2 (Advisor)</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1321; overflow-x: hidden; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  code { font-family: monospace; font-size: 11px; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+  input[type=range] { cursor: pointer; }
+  .rs { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; outline: none; cursor: pointer; }
+  .rs::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%; border: 2px solid #0d1321; cursor: pointer; }
+  .rs-b::-webkit-slider-thumb { background: #4a90d9; }
+  .rs-o::-webkit-slider-thumb { background: #e07b20; }
+  .rs-g::-webkit-slider-thumb { background: #2ab87a; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const C = {
+  bg:"#0d1321", card:"#141c2e", deep:"#111828", hover:"#192038",
+  border:"rgba(255,255,255,0.07)", bMed:"rgba(255,255,255,0.12)",
+  orange:"#c2650a", oL:"#e07b20", oFaint:"rgba(194,101,10,0.11)", oBorder:"rgba(194,101,10,0.27)",
+  blue:"#4a90d9", bL:"#6aaaf0", bFaint:"rgba(74,144,217,0.1)",
+  atl:"#e07830",
+  green:"#2ab87a", gFaint:"rgba(42,184,122,0.09)", gBorder:"rgba(42,184,122,0.22)",
+  red:"#e05555", rFaint:"rgba(224,85,85,0.1)", rBorder:"rgba(224,85,85,0.25)",
+  w:"#fff", t80:"rgba(255,255,255,0.8)", t60:"rgba(255,255,255,0.6)",
+  t40:"rgba(255,255,255,0.4)", t25:"rgba(255,255,255,0.25)",
+  t15:"rgba(255,255,255,0.15)", t08:"rgba(255,255,255,0.08)", t04:"rgba(255,255,255,0.04)",
+};
+
+function useInView(ref, thresh=0.1){
+  const[v,setV]=useState(false);
+  useEffect(()=>{
+    const o=new IntersectionObserver(([e])=>{if(e.isIntersecting){setV(true);o.disconnect();}},{threshold:thresh});
+    if(ref.current)o.observe(ref.current);
+    return()=>o.disconnect();
+  },[]);
+  return v;
+}
+function useCountUp(target,ms=900,delay=0){
+  const[v,setV]=useState(0);
+  useEffect(()=>{
+    const t=setTimeout(()=>{
+      const t0=Date.now(),tick=()=>{
+        const p=Math.min((Date.now()-t0)/ms,1),e=1-Math.pow(1-p,3);
+        setV(+(e*target).toFixed(1));
+        if(p<1)requestAnimationFrame(tick);
+      };requestAnimationFrame(tick);
+    },delay);
+    return()=>clearTimeout(t);
+  },[target,delay]);
+  return v;
+}
+
+const Lbl=({c,children})=>(
+  <p style={{color:c||C.t40,fontSize:10,textTransform:"uppercase",letterSpacing:"0.16em",fontWeight:600,margin:"0 0 8px"}}>
+    {children}
+  </p>
+);
+const Tag=({color=C.oL,bg=C.oFaint,border=C.oBorder,children})=>(
+  <span style={{background:bg,color,border:`1px solid ${border}`,fontSize:10,fontWeight:700,
+    padding:"2px 8px",borderRadius:20,textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>
+    {children}
+  </span>
+);
+const LiveDot=({live=true})=>(
+  <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,
+    color:live?C.green:C.t40,marginLeft:8}}>
+    <span style={{width:5,height:5,borderRadius:"50%",background:live?C.green:C.t25,
+      boxShadow:live?`0 0 6px ${C.green}`:""}}/>
+    {live?"Live data":"Needs backend work"}
+  </span>
+);
+
+function Card({children,style={},delay=0}){
+  const r=useRef(null);const v=useInView(r);
+  return(
+    <div ref={r} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,
+      padding:"26px 28px",opacity:v?1:0,transform:v?"none":"translateY(18px)",
+      transition:`opacity 0.5s ease ${delay}ms,transform 0.5s ease ${delay}ms`,...style}}>
+      {children}
+    </div>
+  );
+}
+
+function Hero(){
+  const ctl=useCountUp(42.4,1100,300);
+  const prev=useCountUp(9.9,800,400);
+  return(
+    <div style={{background:`linear-gradient(160deg,rgba(194,101,10,0.08) 0%,transparent 55%)`,
+      borderBottom:`1px solid ${C.border}`,padding:"44px 32px 36px",
+      animation:"fadeUp 0.7s ease both"}}>
+      <div style={{maxWidth:900,margin:"0 auto",display:"flex",justifyContent:"space-between",
+        alignItems:"flex-start",flexWrap:"wrap",gap:24}}>
+        <div style={{flex:1,minWidth:280}}>
+          <Lbl>Monday, Mar 2 · Tobacco Road v26 in 13 days</Lbl>
+          <h1 style={{fontSize:36,fontWeight:800,letterSpacing:"-1px",lineHeight:1.15,marginBottom:14}}>
+            Eight weeks of work.<br/>
+            <span style={{color:C.oL}}>Here's what your body became.</span>
+          </h1>
+          <p style={{color:C.t60,fontSize:15,lineHeight:1.75,maxWidth:500}}>
+            Not averages applied to you. Facts discovered from you — confirmed across months of your own physiology, your own patterns, your own data. This is what the system has learned about how you work.
+          </p>
+        </div>
+        <div style={{display:"flex",gap:32,alignItems:"center",paddingTop:4}}>
+          {[
+            {l:"CTL then",v:prev,color:C.t40,decimals:1},
+            {l:"CTL now",v:ctl,color:C.blue,decimals:1},
+            {l:"Days out",v:13,color:C.oL,decimals:0},
+          ].map(s=>(
+            <div key={s.l} style={{textAlign:"center"}}>
+              <p style={{fontSize:10,color:C.t40,textTransform:"uppercase",letterSpacing:"0.13em",marginBottom:4}}>{s.l}</p>
+              <span style={{fontSize:34,fontWeight:800,color:s.color,letterSpacing:"-1.5px",lineHeight:1}}>
+                {typeof s.v==="number"?s.v.toFixed(s.decimals):s.v}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const NODES=[
+  {id:"sleep",   label:"Sleep",      group:"in"},
+  {id:"motiv",   label:"Motivation", group:"in"},
+  {id:"stress",  label:"Stress",     group:"in"},
+  {id:"hrv",     label:"HRV",        group:"in"},
+  {id:"tsb",     label:"Form",       group:"in"},
+  {id:"soreness",label:"Soreness",   group:"in"},
+  {id:"eff",     label:"Efficiency", group:"out"},
+  {id:"pace",    label:"Pace",       group:"out"},
+  {id:"compl",   label:"Completion", group:"out"},
+];
+const EDGES=[
+  {s:"motiv", t:"eff",   r:0.71,  lag:"2–3 days", n:9,  dir:1,
+   note:"Your strongest signal. Every time motivation was high, efficiency rose within 2–3 days. Confirmed 9 times without exception."},
+  {s:"sleep", t:"eff",   r:0.62,  lag:"1–2 days", n:7,  dir:1,
+   note:"Sleep above your 6.8h baseline produces a measurable efficiency gain within 48 hours. Every hour above baseline counts."},
+  {s:"tsb",   t:"pace",  r:0.68,  lag:"0–1 days", n:6,  dir:1,
+   note:"Form directly predicts pace at a given HR. Fresh TSB = faster pace at the same effort. Confirmed across 6 workouts and races."},
+  {s:"motiv", t:"compl", r:0.58,  lag:"0 days",   n:6,  dir:1,
+   note:"Motivation on the day predicts workout completion. Your self-report is a reliable leading indicator of whether the session happens."},
+  {s:"stress", t:"compl",r:-0.55, lag:"0–1 days", n:5,  dir:-1,
+   note:"High stress days (4–5/5) reliably predict skipped or shortened workouts. Inverse relationship — confirmed 5 times, zero exceptions."},
+  {s:"sleep", t:"pace",  r:0.48,  lag:"2 days",   n:4,  dir:1,
+   note:"Sleep quality feeds pace capacity with a 2-day lag. Strengthening — 4 confirmations so far."},
+  {s:"hrv",   t:"eff",   r:0.44,  lag:"1 day",    n:4,  dir:1,
+   note:"Higher overnight HRV → better running economy next day. Still building confidence at 4 confirmations."},
+  {s:"soreness",t:"pace",r:-0.51, lag:"0 days",   n:5,  dir:-1,
+   note:"Soreness above 3/5 on check-in reliably produces slower paces that day. Your body doesn't hide its state."},
+  {s:"hrv",   t:"pace",  r:0.38,  lag:"1 day",    n:3,  dir:1,
+   note:"Emerging pattern. HRV appears to predict next-day pace capacity. 3 confirmations — not yet reliable, watching."},
+];
+
+function CorrelationWeb(){
+  const svgRef=useRef(null);
+  const wrapRef=useRef(null);
+  const inView=useInView(wrapRef);
+  const[pos,setPos]=useState({});
+  const[active,setActive]=useState(null);
+  const[dims,setDims]=useState({w:800,h:260});
+
+  useEffect(()=>{
+    const ro=new ResizeObserver(([e])=>setDims({w:e.contentRect.width,h:260}));
+    if(wrapRef.current)ro.observe(wrapRef.current);
+    return()=>ro.disconnect();
+  },[]);
+
+  useEffect(()=>{
+    if(!inView)return;
+    const{w,h}=dims;
+    const nodes=NODES.map(n=>({...n}));
+    const links=EDGES.map(e=>({...e,source:e.s,target:e.t}));
+    nodes.filter(n=>n.group==="in").forEach((n,i,arr)=>{
+      n.x=w*0.18; n.y=h*0.08+i*(h*0.85/Math.max(arr.length-1,1));
+    });
+    nodes.filter(n=>n.group==="out").forEach((n,i,arr)=>{
+      n.x=w*0.82; n.y=h*0.15+i*(h*0.7/Math.max(arr.length-1,1));
+    });
+    const sim=d3.forceSimulation(nodes)
+      .force("link",d3.forceLink(links).id(d=>d.id).distance(d=>130+80*(1-Math.abs(d.r))))
+      .force("charge",d3.forceManyBody().strength(-60))
+      .force("x",d3.forceX(d=>d.group==="in"?w*0.18:w*0.82).strength(0.7))
+      .force("y",d3.forceY(h/2).strength(0.08))
+      .force("col",d3.forceCollide(32))
+      .alphaDecay(0.04);
+    sim.on("tick",()=>{
+      const p={};
+      nodes.forEach(n=>{p[n.id]={x:Math.max(36,Math.min(w-36,n.x)),y:Math.max(18,Math.min(h-18,n.y))};});
+      setPos({...p});
+    });
+    return()=>sim.stop();
+  },[inView,dims]);
+
+  return(
+    <div ref={wrapRef}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+        <Lbl>What Drives Your Performance</Lbl>
+        <LiveDot live={true}/>
+      </div>
+      <p style={{color:C.t60,fontSize:14,lineHeight:1.7,maxWidth:600,marginBottom:18}}>
+        Every connection here is statistically confirmed from your own data. Edge thickness is correlation strength. Dashed edges are inverse. Hover any connection for the evidence behind it.
+      </p>
+      <div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap"}}>
+        {[
+          {c:C.green,l:"Positive (more → better)",dash:false},
+          {c:C.red,l:"Inverse (more → worse)",dash:true},
+          {c:C.t25,l:"Stronger = thicker",dash:false},
+        ].map(d=>(
+          <div key={d.l} style={{display:"flex",alignItems:"center",gap:6}}>
+            <div style={{width:22,height:d.dash?0:2,background:d.c,borderRadius:1,
+              borderTop:d.dash?`2px dashed ${d.c}`:"none"}}/>
+            <span style={{fontSize:10,color:C.t40}}>{d.l}</span>
+          </div>
+        ))}
+      </div>
+      <svg ref={svgRef} style={{width:"100%",height:dims.h,display:"block",overflow:"visible"}}
+        viewBox={`0 0 ${dims.w} ${dims.h}`}>
+        <text x={dims.w*0.18} y={10} textAnchor="middle" fill={C.t25} fontSize={9} fontWeight={600}>INPUTS</text>
+        <text x={dims.w*0.82} y={10} textAnchor="middle" fill={C.t25} fontSize={9} fontWeight={600}>OUTPUTS</text>
+        {Object.keys(pos).length>0&&(<>
+          {EDGES.map((e,i)=>{
+            const sid=typeof e.source==='object'?e.source.id:e.s;
+            const tid=typeof e.target==='object'?e.target.id:e.t;
+            const s=pos[sid],t=pos[tid];if(!s||!t)return null;
+            const isAct=active?.s===e.s&&active?.t===e.t;
+            const isDim=active&&!isAct;
+            const str=Math.abs(e.r);const neg=e.dir===-1;
+            const color=isAct?(neg?C.red:C.green):isDim?"rgba(255,255,255,0.05)":(neg?"rgba(224,85,85,0.35)":"rgba(42,184,122,0.3)");
+            const sw=isAct?str*10+3:str*6+1;
+            const mx=(s.x+t.x)/2,my=(s.y+t.y)/2-30;
+            return(
+              <g key={i} style={{cursor:"pointer"}}
+                onMouseEnter={()=>setActive({s:e.s,t:e.t})}
+                onMouseLeave={()=>setActive(null)}>
+                <path d={`M${s.x},${s.y} Q${mx},${my} ${t.x},${t.y}`}
+                  fill="none" stroke={color} strokeWidth={sw}
+                  strokeDasharray={neg?"7,4":"none"} strokeLinecap="round"
+                  style={{transition:"all 0.18s ease"}}/>
+                <path d={`M${s.x},${s.y} Q${mx},${my} ${t.x},${t.y}`}
+                  fill="none" stroke="transparent" strokeWidth={20}/>
+              </g>
+            );
+          })}
+          {NODES.map(n=>{
+            const p=pos[n.id];if(!p)return null;
+            const isIn=n.group==="in";
+            const rel=active&&EDGES.some(e=>e.s===active.s&&e.t===active.t&&(e.s===n.id||e.t===n.id));
+            const nodeColor=isIn?C.blue:C.green;
+            return(
+              <g key={n.id} transform={`translate(${p.x},${p.y})`}>
+                <circle r={26} fill={rel?C.hover:C.deep}
+                  stroke={rel?nodeColor:C.bMed} strokeWidth={rel?2:1}
+                  style={{transition:"all 0.18s ease"}}/>
+                <text textAnchor="middle" dominantBaseline="middle"
+                  fill={rel?nodeColor:C.t60} fontSize={9} fontWeight={rel?700:400}
+                  style={{userSelect:"none",transition:"fill 0.18s ease",pointerEvents:"none"}}>
+                  {n.label.split(" ").map((w,wi,arr)=>(
+                    <tspan key={wi} x={0} dy={wi===0?(arr.length>1?-5:0):11}>{w}</tspan>
+                  ))}
+                </text>
+                {rel&&<circle r={28} fill="none" stroke={nodeColor} strokeWidth={1} opacity={0.3}/>}
+              </g>
+            );
+          })}
+        </>)}
+      </svg>
+      <div style={{minHeight:80,marginTop:4}}>
+        {active?(()=>{
+          const ae=EDGES.find(e=>e.s===active.s&&e.t===active.t);
+          if(!ae)return null;
+          return(
+            <div style={{background:C.hover,border:`1px solid ${ae.dir===-1?C.rBorder:C.gBorder}`,
+              borderRadius:12,padding:"16px 20px",animation:"fadeUp 0.15s ease"}}>
+              <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:14,fontWeight:700,color:ae.dir===-1?C.red:C.green}}>
+                  {NODES.find(n=>n.id===ae.s)?.label} → {NODES.find(n=>n.id===ae.t)?.label}
+                </span>
+                <Tag color={ae.dir===-1?C.red:C.green} bg={ae.dir===-1?C.rFaint:C.gFaint} border={ae.dir===-1?C.rBorder:C.gBorder}>
+                  r = {ae.r>0?"+":""}{ae.r}
+                </Tag>
+                <Tag color={C.t60} bg={C.t08} border={C.border}>lag {ae.lag}</Tag>
+                <Tag color={C.t60} bg={C.t08} border={C.border}>confirmed {ae.n}×</Tag>
+              </div>
+              <p style={{fontSize:13,color:C.t60,lineHeight:1.7,margin:0}}>{ae.note}</p>
+            </div>
+          );
+        })():(
+          <div style={{height:64,display:"flex",alignItems:"center",justifyContent:"center",
+            border:`1px dashed ${C.border}`,borderRadius:12}}>
+            <span style={{fontSize:12,color:C.t25}}>Hover any connection to see the evidence</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const portItems=[
+  {icon:"❤️",label:"Aerobic Threshold",value:"148 bpm",sub:"Derived from your efficiency curve",
+   color:C.blue,live:true,
+   detail:"Not a formula — computed from 90 days of your own HR-to-efficiency relationship. Your actual aerobic ceiling."},
+  {icon:"⚡",label:"Optimal TSB Window",value:"−5 to +8",sub:"Confirmed across 6 hard efforts",
+   color:C.green,live:false,
+   detail:"Every time you've performed at your ceiling, TSB was in this range. This computation needs a new backend job."},
+  {icon:"🔄",label:"Recovery Half-Life",value:"3.8 days",sub:"After 60+ mile week",
+   color:C.oL,live:true,
+   detail:"Stored on your athlete record from HR recovery patterns. 90 days ago it was 5.2 days."},
+  {icon:"📈",label:"Efficiency Ceiling",value:"0.0238",sub:"Personal best — Feb 27",
+   color:C.bL,live:true,
+   detail:"Peak efficiency this block. 20% higher than your starting baseline."},
+  {icon:"🏗️",label:"Peak Load Capacity",value:"63.3 mi",sub:"Absorbed without injury flags",
+   color:C.oL,live:true,
+   detail:"Proven from your actual training block. Your body demonstrated it can handle this volume."},
+  {icon:"😴",label:"Sleep Sensitivity",value:"High",sub:"r = 0.62 with efficiency",
+   color:C.green,live:true,
+   detail:"An extra hour of sleep produces a measurable efficiency boost within 48 hours — confirmed 7 times."},
+];
+
+function PhysiologicalPortrait(){
+  const[open,setOpen]=useState(null);
+  const ref=useRef(null);const inView=useInView(ref);
+  return(
+    <div ref={ref}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+        <Lbl>Your Physiological Portrait</Lbl>
+        <span style={{fontSize:10,color:C.t40}}>— facts about this specific body</span>
+      </div>
+      <p style={{color:C.t60,fontSize:14,lineHeight:1.7,maxWidth:560,marginBottom:18}}>
+        These aren't population averages. They're statements derived from your own data that no other platform could make about you.
+      </p>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+        {portItems.map((p,i)=>(
+          <div key={i} onClick={()=>setOpen(open===i?null:i)}
+            style={{background:open===i?C.hover:C.deep,border:`1px solid ${open===i?C.bMed:C.border}`,
+              borderRadius:12,padding:"16px",cursor:"pointer",
+              opacity:inView?1:0,transform:inView?"none":"translateY(14px)",
+              transition:`all 0.42s ease ${i*55}ms`}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{fontSize:16}}>{p.icon}</span>
+              <LiveDot live={p.live}/>
+            </div>
+            <div style={{fontSize:10,color:C.t40,textTransform:"uppercase",letterSpacing:"0.11em",marginBottom:4}}>{p.label}</div>
+            <div style={{fontSize:20,fontWeight:800,color:p.color,letterSpacing:"-0.4px",marginBottom:2}}>{p.value}</div>
+            <div style={{fontSize:11,color:C.t25,lineHeight:1.4}}>{p.sub}</div>
+            {open===i&&(
+              <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.border}`,
+                fontSize:12,color:C.t60,lineHeight:1.65}}>
+                {p.detail}
+                {!p.live&&<span style={{color:C.oL,display:"block",marginTop:6,fontSize:11}}>→ Needs backend computation</span>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const tlEvents=[
+  {pct:0,   icon:"▶", color:C.t40,  label:"Block begins",      date:"Jan 30",
+   note:"CTL at 9.9. First day of the Tobacco Road build."},
+  {pct:18,  icon:"↑", color:C.blue, label:"59.9 mi week",       date:"Feb 2",
+   note:"First time over 55 miles. Body responded — no LOAD_SPIKE flag. A new ceiling proven."},
+  {pct:32,  icon:"🏆",color:C.oL,   label:"30K PB · 2:47:49",  date:"Feb 8",
+   note:"Personal best at Lauderdale County. TSB was −8, motivation 5/5."},
+  {pct:48,  icon:"⚠", color:C.atl,  label:"Peak fatigue · ATL 71", date:"Feb 15",
+   note:"Highest stress of the block. Your body was at capacity."},
+  {pct:58,  icon:"▲", color:C.oL,   label:"63.3 mi · all-time peak", date:"Feb 16",
+   note:"Highest mileage week ever recorded for you. The summit."},
+  {pct:76,  icon:"↘", color:C.green,label:"Taper starts",       date:"Feb 23",
+   note:"Volume drops 45% to 34.9mi. TSB begins climbing toward fresh."},
+  {pct:88,  icon:"●", color:C.t60,  label:"Today · TSB −4.7",   date:"Mar 2",
+   note:"Readiness 74. Efficiency still improving through the taper. Thirteen days out."},
+  {pct:100, icon:"🏁",color:C.oL,   label:"Tobacco Road v26",   date:"Mar 15",
+   note:"Race day. Data projects 3:00:56. Sub-3 is within range."},
+];
+
+function TrainingTimeline(){
+  const[hov,setHov]=useState(null);
+  const ref=useRef(null);const inView=useInView(ref);
+  return(
+    <div ref={ref} style={{opacity:inView?1:0,transition:"opacity 0.5s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+        <Lbl>Training Block · Jan 30 → Mar 15</Lbl>
+        <LiveDot live={true}/>
+      </div>
+      <p style={{color:C.t60,fontSize:13,lineHeight:1.6,marginBottom:24}}>
+        Every significant moment interpreted in coach voice. Hover to explore.
+      </p>
+      <div style={{position:"relative",marginBottom:hov!==null?0:32}}>
+        <div style={{height:3,borderRadius:2,
+          background:`linear-gradient(to right,${C.t15} 0%,${C.t15} 88%,${C.oBorder} 88%,${C.oFaint} 100%)`}}/>
+        {tlEvents.map((e,i)=>{
+          const isHov=hov===i;const isFuture=e.pct>88;
+          return(
+            <div key={i} style={{position:"absolute",top:-10,left:`${e.pct}%`,
+              transform:"translateX(-50%)",zIndex:isHov?20:1}}
+              onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(null)}>
+              <div style={{width:isHov?22:14,height:isHov?22:14,borderRadius:"50%",
+                background:isHov?e.color:C.card,border:`2px solid ${isHov?e.color:(isFuture?C.oBorder:C.t25)}`,
+                cursor:"pointer",transition:"all 0.15s ease",margin:"0 auto",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                boxShadow:isHov?`0 0 14px ${e.color}55`:"none",opacity:isFuture?0.6:1}}>
+                {isHov&&<span style={{fontSize:8}}>{e.icon}</span>}
+              </div>
+              <div style={{position:"absolute",top:-22,left:"50%",transform:"translateX(-50%)",
+                fontSize:8,color:isHov?e.color:C.t25,whiteSpace:"nowrap",
+                transition:"color 0.15s ease",fontWeight:isHov?600:400}}>{e.date}</div>
+              <div style={{position:"absolute",top:20,left:"50%",transform:"translateX(-50%)",
+                fontSize:8,color:isHov?e.color:C.t25,whiteSpace:"nowrap",
+                transition:"color 0.15s ease",fontWeight:isHov?700:400,textAlign:"center",maxWidth:80}}>{e.label}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{marginTop:52,minHeight:64}}>
+        {hov!==null?(
+          <div style={{background:C.hover,border:`1px solid ${tlEvents[hov].color}33`,borderRadius:10,
+            padding:"14px 18px",display:"flex",gap:12,alignItems:"flex-start",animation:"fadeUp 0.15s ease"}}>
+            <span style={{fontSize:18,lineHeight:1}}>{tlEvents[hov].icon}</span>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:tlEvents[hov].color,marginBottom:4}}>
+                {tlEvents[hov].label} · {tlEvents[hov].date}
+              </div>
+              <p style={{fontSize:13,color:C.t60,lineHeight:1.7,margin:0}}>{tlEvents[hov].note}</p>
+            </div>
+          </div>
+        ):(
+          <div style={{height:64,display:"flex",alignItems:"center",justifyContent:"center",
+            border:`1px dashed ${C.border}`,borderRadius:10}}>
+            <span style={{fontSize:12,color:C.t25}}>Hover any moment on the timeline</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const caps=[
+  {label:"Marathon projection",before:"3:46",after:"3:01",beforeV:226,afterV:181,unit:"min",color:C.blue,live:false,
+   note:"Race predictions exist but need stored history snapshots to show then vs now."},
+  {label:"Easy HR at 8:30/mi",before:"156",after:"142",beforeV:156,afterV:142,unit:"bpm",color:C.green,live:true,invert:true,
+   note:"Derived from activity streams. Lower HR at same pace = better aerobic efficiency."},
+  {label:"Recovery from 60mi week",before:"5.2",after:"3.8",beforeV:5.2,afterV:3.8,unit:"days",color:C.oL,live:true,invert:true,
+   note:"recovery_half_life_days on athlete model. Comparison requires stored history."},
+  {label:"Threshold pace",before:"7:12",after:"6:51",beforeV:432,afterV:411,unit:"/mi",color:C.bL,live:true,
+   note:"From RPI and training pace profile. Updated as fitness improves."},
+];
+
+function CapabilityExpansion(){
+  const ref=useRef(null);const inView=useInView(ref);
+  const[hov,setHov]=useState(null);
+  return(
+    <div ref={ref}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+        <Lbl>Capability Expansion</Lbl>
+        <span style={{fontSize:10,color:C.t40}}>— what your body can do now vs 90 days ago</span>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {caps.map((c,i)=>{
+          const maxV=Math.max(c.beforeV,c.afterV)*1.1;
+          const bPct=(c.beforeV/maxV)*100;const aPct=(c.afterV/maxV)*100;
+          const improv=c.invert?((c.beforeV-c.afterV)/c.beforeV*100).toFixed(0):((c.afterV-c.beforeV)/c.beforeV*100).toFixed(0);
+          const isHov=hov===i;
+          return(
+            <div key={i} onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(null)}
+              style={{opacity:inView?1:0,transform:inView?"none":"translateX(-12px)",
+                transition:`all 0.45s ease ${i*70}ms`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:13,fontWeight:600,color:isHov?C.w:C.t80}}>{c.label}</span>
+                  <LiveDot live={c.live}/>
+                </div>
+                <Tag color={c.color} bg={`${c.color}18`} border={`${c.color}44`}>
+                  {c.invert?"−":"+"}{improv}%
+                </Tag>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:5}}>
+                <span style={{fontSize:9,color:C.t25,width:36,textAlign:"right",flexShrink:0}}>BEFORE</span>
+                <div style={{flex:1,height:5,background:C.t08,borderRadius:3}}>
+                  <div style={{width:`${bPct}%`,height:"100%",background:C.t15,borderRadius:3}}/>
+                </div>
+                <span style={{fontSize:11,color:C.t40,width:44,flexShrink:0,textAlign:"right"}}>{c.before}{c.unit}</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:9,color:c.color,width:36,textAlign:"right",flexShrink:0}}>NOW</span>
+                <div style={{flex:1,height:7,background:C.t08,borderRadius:3,overflow:"hidden"}}>
+                  <div style={{width:inView?`${aPct}%`:"0%",height:"100%",borderRadius:3,
+                    background:`linear-gradient(to right,${c.color}77,${c.color})`,
+                    transition:`width 1s cubic-bezier(0.34,1.1,0.64,1) ${i*70+400}ms`}}/>
+                </div>
+                <span style={{fontSize:13,fontWeight:700,color:c.color,width:44,flexShrink:0,textAlign:"right"}}>{c.after}{c.unit}</span>
+              </div>
+              {isHov&&<div style={{marginTop:8,paddingLeft:46,fontSize:11,color:C.t40,lineHeight:1.5}}>{c.note}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const proved=[
+  {icon:"✓",color:C.green,n:9,status:"Confirmed",
+   headline:"High motivation → efficiency gain within 2–3 days",
+   evidence:"Checked motivation on 9 separate days. All 9: efficiency measurably higher 2–3 days later.",
+   action:"Keep motivation high through this taper. It will pay out in running economy on race day."},
+  {icon:"✓",color:C.green,n:7,status:"Confirmed",
+   headline:"Sleep above 7h → efficiency boost within 48 hours",
+   evidence:"On every night you slept 7+ hours, efficiency was above rolling baseline. Every single time.",
+   action:"Seven hours this week is not a recovery target — it's a performance tool."},
+  {icon:"✓",color:C.green,n:6,status:"Confirmed",
+   headline:"High stress days predict incomplete or skipped workouts",
+   evidence:"5 high-stress check-ins. Every one correlated with a shortened or skipped session.",
+   action:"Stress management this week is training. Protect your mental state like a session."},
+  {icon:"~",color:C.oL,n:4,status:"Emerging",
+   headline:"HRV above 35ms predicts faster next-day pace at same HR",
+   evidence:"4 instances. Consistent pattern but below the confidence threshold. Watching.",
+   action:"Your HRV through taper week will be a leading indicator. Pay attention."},
+  {icon:"~",color:C.oL,n:3,status:"Emerging",
+   headline:"Post-rest-week efficiency ceiling lifts measurably",
+   evidence:"3 observations following each rest week. Consistent but still building.",
+   action:"The taper may produce an efficiency upgrade. Don't judge fitness by how you feel this week."},
+];
+
+function WhatDataProved(){
+  const[open,setOpen]=useState(null);
+  const ref=useRef(null);const inView=useInView(ref);
+  return(
+    <div ref={ref}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+        <Lbl>What the Data Has Proved About You</Lbl>
+        <LiveDot live={true}/>
+      </div>
+      <p style={{color:C.t60,fontSize:14,lineHeight:1.7,maxWidth:580,marginBottom:16}}>
+        These started as hypotheses. Your data confirmed them. They are permanent facts about how your body works — stored and growing.
+      </p>
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+        <Tag color={C.green} bg={C.gFaint} border={C.gBorder}>✓ Confirmed</Tag>
+        <span style={{fontSize:11,color:C.t40,alignSelf:"center"}}>= proven by repeated confirmation</span>
+        <Tag color={C.oL} bg={C.oFaint} border={C.oBorder}>~ Emerging</Tag>
+        <span style={{fontSize:11,color:C.t40,alignSelf:"center"}}>= pattern forming</span>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {proved.map((p,i)=>{
+          const isOpen=open===i;
+          return(
+            <div key={i} onClick={()=>setOpen(isOpen?null:i)}
+              style={{background:isOpen?C.hover:C.deep,border:`1px solid ${isOpen?C.bMed:C.border}`,
+                borderRadius:12,padding:"14px 18px",cursor:"pointer",
+                opacity:inView?1:0,transform:inView?"none":"translateY(10px)",
+                transition:`all 0.4s ease ${i*45}ms`}}>
+              <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                <span style={{fontSize:14,color:p.color,fontWeight:800,marginTop:1,flexShrink:0}}>{p.icon}</span>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <span style={{fontSize:13,fontWeight:600,color:isOpen?C.w:C.t80,lineHeight:1.4}}>{p.headline}</span>
+                    <div style={{display:"flex",gap:7,alignItems:"center",flexShrink:0}}>
+                      <Tag color={p.color} bg={`${p.color}18`} border={`${p.color}44`}>
+                        {p.status} {p.n}×
+                      </Tag>
+                      <span style={{fontSize:10,color:C.t25,transform:isOpen?"rotate(180deg)":"none",
+                        transition:"transform 0.2s ease",display:"inline-block"}}>▾</span>
+                    </div>
+                  </div>
+                  {isOpen&&(
+                    <div style={{marginTop:14,display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                      <div>
+                        <div style={{fontSize:9,color:C.t25,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:5}}>The Evidence</div>
+                        <p style={{fontSize:12,color:C.t60,lineHeight:1.65,margin:0}}>{p.evidence}</p>
+                      </div>
+                      <div>
+                        <div style={{fontSize:9,color:p.color,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:5}}>What It Means Now</div>
+                        <p style={{fontSize:12,color:C.t60,lineHeight:1.65,margin:0}}>{p.action}</p>
+                        <div style={{display:"flex",gap:3,marginTop:10,alignItems:"center"}}>
+                          <span style={{fontSize:9,color:C.t25,marginRight:4}}>Confirmations</span>
+                          {Array.from({length:p.n}).map((_,ci)=>(
+                            <div key={ci} style={{width:7,height:7,borderRadius:"50%",background:p.color}}/>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PredictionSpace(){
+  const ref=useRef(null);const inView=useInView(ref);
+  const[sleep,setSleep]=useState(6.1);
+  const[motiv,setMotiv]=useState(4);
+  const[tsb,setTsb]=useState(-4.7);
+  const baseSec=3*3600+56;
+  const sleepEffect=(sleep-6.1)*-42;
+  const motivEffect=(4-motiv)*-28;
+  const tsbEffect=(tsb-(-4.7))*-12;
+  const totalSec=Math.max(2*3600+30*60, baseSec+sleepEffect+motivEffect+tsbEffect);
+  const h=Math.floor(totalSec/3600),m=Math.floor((totalSec%3600)/60),s=Math.floor(totalSec%60);
+  const timeStr=`${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  const diffMin=Math.round((baseSec-totalSec)/60);
+  const inWindow=tsb>=-5&&tsb<=8;
+  return(
+    <div ref={ref} style={{opacity:inView?1:0,transform:inView?"none":"translateY(18px)",transition:"all 0.5s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+        <Lbl>Race Day Prediction Space</Lbl>
+        <LiveDot live={false}/>
+        <span style={{fontSize:10,color:C.oL}}>— scenario API needed to wire to backend</span>
+      </div>
+      <p style={{color:C.t60,fontSize:14,lineHeight:1.7,maxWidth:560,marginBottom:20}}>
+        Move the sliders. The projection responds using your own correlation coefficients as weights — not a generic model. Needs a <code style={{fontSize:11,color:C.oL,background:C.oFaint,padding:"1px 5px",borderRadius:4}}>/v1/predictions/scenario</code> endpoint to connect to live data.
+      </p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
+        <div>
+          {[
+            {label:"Avg sleep",unit:"h/night",min:4,max:9,step:0.1,val:sleep,set:setSleep,
+             color:C.blue,cls:"rs rs-b",sub:`Your current avg: ${sleep.toFixed(1)}h · correlation r=0.62`},
+            {label:"Motivation level",unit:"/5",min:1,max:5,step:1,val:motiv,set:setMotiv,
+             color:C.oL,cls:"rs rs-o",sub:`Current avg: ${motiv}/5 · correlation r=0.71`},
+            {label:"Race day TSB",unit:"",min:-15,max:15,step:0.5,val:tsb,set:setTsb,
+             color:inWindow?C.green:C.atl,cls:"rs rs-g",
+             sub:inWindow?"In your optimal window (−5 to +8)":"Outside optimal window — adjust taper"},
+          ].map((sl,i)=>(
+            <div key={i} style={{marginBottom:i<2?20:0}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:12,fontWeight:600,color:C.t80}}>{sl.label}</span>
+                <span style={{fontSize:18,fontWeight:800,color:sl.color}}>{sl.val}{sl.unit}</span>
+              </div>
+              <input type="range" min={sl.min} max={sl.max} step={sl.step} value={sl.val}
+                onChange={e=>sl.set(parseFloat(e.target.value))} className={sl.cls}/>
+              <div style={{fontSize:10,color:sl.color,marginTop:4,opacity:0.8}}>{sl.sub}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",
+          background:C.deep,borderRadius:14,padding:"24px",
+          border:`1px solid ${diffMin>0?C.gBorder:C.oBorder}`}}>
+          <Lbl c={C.t25}>Projected Finish Time</Lbl>
+          <div style={{fontSize:54,fontWeight:800,letterSpacing:"-2px",color:diffMin>0?C.green:C.atl,
+            lineHeight:1,marginBottom:8,transition:"color 0.3s ease"}}>
+            {timeStr}
+          </div>
+          {diffMin!==0&&(
+            <div style={{fontSize:13,fontWeight:600,marginBottom:16,color:diffMin>0?C.green:C.atl}}>
+              {diffMin>0?`${diffMin} min faster`:`${Math.abs(diffMin)} min slower`} than baseline
+            </div>
+          )}
+          <div style={{fontSize:12,color:C.t25,textAlign:"center",lineHeight:1.65,marginBottom:14}}>
+            Baseline 3:00:56 at current trajectory.<br/>
+            Weights derived from your confirmed correlations.
+          </div>
+          <div style={{padding:"8px 14px",borderRadius:8,background:C.oFaint,border:`1px solid ${C.oBorder}`,
+            fontSize:11,color:C.oL,textAlign:"center"}}>
+            Needs <code style={{background:C.oFaint}}>POST /v1/predictions/scenario</code> to go live
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StrideIQProgress(){
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,fontFamily:"-apple-system,'Segoe UI',sans-serif",color:C.w}}>
+      <nav style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+        padding:"0 32px",height:54,borderBottom:`1px solid ${C.border}`,
+        background:C.bg,position:"sticky",top:0,zIndex:50}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontWeight:800,fontSize:17}}>StrideIQ</span>
+          <span style={{color:C.t40,fontSize:12}}>Michael Shaffer</span>
+        </div>
+        <div style={{display:"flex",gap:2}}>
+          {["Home","Coach","Calendar","Progress","More"].map(n=>(
+            <button key={n} style={{background:n==="Progress"?"rgba(255,255,255,0.09)":"transparent",
+              border:"none",color:n==="Progress"?C.w:C.t40,padding:"6px 14px",
+              borderRadius:8,fontSize:13,cursor:"pointer",fontWeight:n==="Progress"?600:400}}>{n}</button>
+          ))}
+        </div>
+        <button style={{background:C.orange,border:"none",color:"#fff",padding:"7px 14px",
+          borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer"}}>💬 Coach</button>
+      </nav>
+      <Hero/>
+      <div style={{maxWidth:900,margin:"0 auto",padding:"28px 24px 80px",
+        display:"flex",flexDirection:"column",gap:20}}>
+        <Card><CorrelationWeb/></Card>
+        <Card><PhysiologicalPortrait/></Card>
+        <Card><TrainingTimeline/></Card>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+          <Card><CapabilityExpansion/></Card>
+          <Card><WhatDataProved/></Card>
+        </div>
+        <Card><PredictionSpace/></Card>
+        <div style={{background:C.oFaint,border:`1px solid ${C.oBorder}`,borderRadius:14,padding:"20px 24px"}}>
+          <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+            <span style={{fontSize:18}}>🗺️</span>
+            <div>
+              <p style={{fontSize:13,fontWeight:700,color:C.oL,marginBottom:6}}>Build Roadmap for This Page</p>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"4px 24px"}}>
+                {[
+                  {ready:true,  label:"Correlation Web — 95% · just needs the visualization"},
+                  {ready:true,  label:"Physiological Portrait — 70% · TSB-zone correlation needs a job"},
+                  {ready:true,  label:"Training Block Timeline — 65% · needs block timeline endpoint"},
+                  {ready:true,  label:"Capability Expansion — 60% · needs prediction history snapshots"},
+                  {ready:false, label:"Recovery Fingerprint — 50% · needs metric timestamping"},
+                  {ready:false, label:"Prediction Space — 40% · needs /v1/predictions/scenario"},
+                ].map((r,i)=>(
+                  <div key={i} style={{display:"flex",gap:8,alignItems:"center",padding:"3px 0"}}>
+                    <div style={{width:6,height:6,borderRadius:"50%",flexShrink:0,
+                      background:r.ready?C.green:C.atl}}/>
+                    <span style={{fontSize:11,color:C.t60}}>{r.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style={{textAlign:"center",paddingTop:12}}>
+          <button style={{background:C.orange,border:"none",color:"#fff",padding:"11px 28px",
+            borderRadius:10,fontSize:14,fontWeight:600,cursor:"pointer"}}>
+            💬 Ask Coach About Your Progress
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<StrideIQProgress/>);
+</script>
+</body>
+</html>

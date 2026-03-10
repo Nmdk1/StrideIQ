@@ -49,6 +49,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       # Test-safe secrets (not real credentials)
       SECRET_KEY: test-secret-key-not-for-production
+      TOKEN_ENCRYPTION_KEY: test-encryption-key-32-chars-ok
+      RATE_LIMIT_ENABLED: "false"
+      UPLOADS_DIR: /tmp/uploads
       OPENAI_API_KEY: sk-test-not-real
       STRAVA_CLIENT_ID: "12345"
       STRAVA_CLIENT_SECRET: test-secret

@@ -27,11 +27,17 @@ class TokenEncryption:
         encryption_key = os.getenv("TOKEN_ENCRYPTION_KEY")
         
         if not encryption_key:
+            # SECURITY: Fail hard in production - no auto-generated keys
+            environment = os.getenv("ENVIRONMENT", "development")
+            if environment == "production":
+                raise RuntimeError(
+                    "TOKEN_ENCRYPTION_KEY must be set in production. "
+                    "Generate with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+                )
             # Generate a key if not set (for development only)
-            # In production, this MUST be set via environment variable
             logger.warning("TOKEN_ENCRYPTION_KEY not set. Generating temporary key (NOT FOR PRODUCTION)")
             encryption_key = Fernet.generate_key().decode()
-            logger.warning(f"Generated key: {encryption_key}")
+            # Don't log the actual key - security risk even in dev
             logger.warning("Set TOKEN_ENCRYPTION_KEY environment variable for production!")
         
         # Ensure key is bytes

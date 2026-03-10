@@ -50,7 +50,7 @@ mock_internal_recommendation = {
             }
         ]
     },
-    "rationale": "This plan combines Daniels' VDOT-based pacing with Pfitzinger's periodization model",
+    "rationale": "This plan combines Daniels' RPI-based pacing with Pfitzinger's periodization model",
     "_internal": {
         "blending_rationale": {
             "methodologies": {"Daniels": 0.6, "Pfitzinger": 0.4},

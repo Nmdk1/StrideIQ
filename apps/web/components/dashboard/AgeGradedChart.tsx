@@ -30,7 +30,7 @@ export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
   const chartData = data
     .filter((point) => point.performance_percentage !== null && point.performance_percentage !== undefined)
     .map((point) => ({
-      date: new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      date: new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
       fullDate: point.date,
       ageGraded: point.performance_percentage!,
       efficiency: point.efficiency_factor,

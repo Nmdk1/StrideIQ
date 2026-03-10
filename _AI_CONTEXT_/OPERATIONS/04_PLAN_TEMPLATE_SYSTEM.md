@@ -247,7 +247,7 @@ The threshold block progresses from intervals toward continuous:
 
 ### From Race Time to Training Paces
 
-Use the Training Pace Calculator (VDOT-based):
+Use the Training Pace Calculator (RPI-based):
 
 | Zone | Description | Feel |
 |------|-------------|------|

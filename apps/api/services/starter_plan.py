@@ -177,17 +177,17 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
                 start_date=start_date,
             )
 
-        # Use pace profile scalar as baseline_vdot if available (does not change plan paces).
+        # Use pace profile scalar as baseline_rpi if available (does not change plan paces).
         pace_prof = (
             db.query(AthleteTrainingPaceProfile)
             .filter(AthleteTrainingPaceProfile.athlete_id == athlete.id)
             .first()
         )
-        baseline_vdot = None
+        baseline_rpi = None
         try:
-            baseline_vdot = float(pace_prof.fitness_score) if pace_prof and pace_prof.fitness_score is not None else None
+            baseline_rpi = float(pace_prof.fitness_score) if pace_prof and pace_prof.fitness_score is not None else None
         except Exception:
-            baseline_vdot = None
+            baseline_rpi = None
 
         # Archive any existing active plans (should be none, but keep invariant).
         for p in db.query(TrainingPlan).filter(TrainingPlan.athlete_id == athlete.id, TrainingPlan.status == "active").all():
@@ -209,7 +209,7 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
             plan_start_date=plan.start_date or start_date,
             plan_end_date=goal_date,
             total_weeks=plan.duration_weeks,
-            baseline_vdot=baseline_vdot,
+            baseline_rpi=baseline_rpi,
             baseline_weekly_volume_km=(plan.weekly_volumes[0] * 1.609) if plan.weekly_volumes else None,
             plan_type=goal_distance,
             generation_method=generation_kind,

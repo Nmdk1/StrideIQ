@@ -1,15 +1,15 @@
 """
 AI Coach Service
 
-Uses OpenAI Assistants API for persistent, context-aware coaching.
-High-stakes queries route to Claude Opus 4.5 for maximum reasoning quality.
+Gemini 3 Flash handles bulk coaching queries.
+High-stakes queries route to Claude Opus for maximum reasoning quality.
 
 Features:
-- Persistent threads per athlete (conversation memory)
+- Persistent conversation sessions per athlete (PostgreSQL-backed)
 - Context injection from athlete's actual data
 - Knowledge of training methodology
 - Tiered context (7-day, 30-day, 120-day)
-- Hybrid model routing (GPT-4o-mini + Claude Opus) per ADR-061
+- Hybrid model routing (Gemini Flash + Claude Opus) per ADR-061
 - Hard cost caps per athlete
 """
 
@@ -79,7 +79,11 @@ COACH_MAX_OPUS_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY
 COACH_MONTHLY_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_TOKEN_BUDGET", "1000000"))
 COACH_MONTHLY_OPUS_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET", "50000"))
 COACH_MAX_INPUT_TOKENS = int(os.getenv("COACH_MAX_INPUT_TOKENS", "4000"))
-COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "500"))
+# 500 tokens was causing every response to get cut off mid-sentence.
+# 3000 tokens (~1200 words) allows complete, well-structured coaching responses
+# with numbered points, evidence citations, and actionable recommendations
+# without truncation. Previous 1500 limit was causing mid-sentence cutoffs.
+COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "3000"))
 
 
 def is_high_stakes_query(message: str) -> bool:
@@ -99,14 +103,6 @@ def is_high_stakes_query(message: str) -> bool:
     message_lower = message.lower()
     return any(pattern in message_lower for pattern in HIGH_STAKES_PATTERNS)
 
-# Check if OpenAI is available
-try:
-    from openai import OpenAI
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    logger.warning("OpenAI not installed - AI Coach will be disabled")
-
 # Check if Anthropic is available (for Opus high-stakes routing)
 try:
     from anthropic import Anthropic
@@ -115,16 +111,29 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     logger.info("Anthropic not installed - high-stakes queries will use GPT-4o fallback")
 
+# Check if Google GenAI is available (for Gemini 3 Flash coaching queries)
+try:
+    from google import genai
+    from google.genai import types as genai_types
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    genai = None
+    genai_types = None
+    logger.info("Google GenAI not installed - bulk queries will use GPT-4o-mini fallback")
+
 from models import (
     Athlete,
     Activity,
     TrainingPlan,
     PlannedWorkout,
     DailyCheckin,
+    GarminDay,
     PersonalBest,
     IntakeQuestionnaire,
     CoachIntentSnapshot,
     CoachUsage,
+    CoachChat,
 )
 from services import coach_tools
 from services.training_load import TrainingLoadCalculator
@@ -142,10 +151,10 @@ from services.coach_modules import (
 
 class AICoach:
     """
-    AI Coach powered by OpenAI Assistants API.
+    AI Coach powered by Gemini 3 Flash (standard) and Claude Opus (high-stakes).
     
     Provides:
-    - Persistent conversation threads
+    - Persistent conversation sessions (PostgreSQL-backed)
     - Context-aware responses based on athlete data
     - Training methodology knowledge
     """
@@ -180,10 +189,11 @@ You understand running physiology, periodization, and training principles:
 - Be concise and clear
 - Use the athlete's actual data when making points
 - NEVER use training acronyms (TSB, ATL, CTL, EF, TRIMP, etc.) in responses - translate to plain English like "fatigue level", "fitness", "form", "efficiency"
-- CRITICAL TERMINOLOGY: NEVER say "VDOT" - this is a trademarked term. ALWAYS say "RPI" (Running Performance Index) instead. For example: "Your RPI of 53.2 indicates..." NOT "Your VDOT value of 53.2..."
+- CRITICAL TERMINOLOGY: NEVER say "RPI" - this is a trademarked term. ALWAYS say "RPI" (Running Performance Index) instead. For example: "Your RPI of 53.2 indicates..." NOT "Your RPI value of 53.2..."
 - Avoid jargon unless the athlete uses it first
 - Be encouraging but never sugarcoat problems
 - Format responses with clear structure (use markdown)
+- Conversational A->I->A requirement (chat prose, not JSON): include an interpretive Assessment, explain the Implication, then provide a concrete Action.
 - Do NOT repeat yourself or give the same canned response multiple times
 
 ## Important Rules
@@ -253,25 +263,23 @@ Policy:
 - You can look back up to ~2 years for recent-run tools (up to 730 days). Do not claim you are limited to 30 days."""
 
     # Model tiers (ADR-061: Hybrid architecture with cost caps)
-    # 95% of queries use GPT-4o-mini (cost-efficient)
-    # 5% high-stakes queries use Claude Opus 4.5 (maximum reasoning quality)
-    MODEL_DEFAULT = "gpt-4o-mini"           # Standard coaching (95%)
-    MODEL_HIGH_STAKES = "claude-opus-4-5-20251101"  # Injury/recovery/load decisions (5%)
-    MODEL_FALLBACK = "gpt-4o"               # When Opus unavailable/budget exhausted
+    # 95% of queries use Gemini 3.1 Flash Lite (cost-efficient, 1M context)
+    # 5% high-stakes queries use Claude Opus 4.6 (maximum reasoning quality)
+    MODEL_DEFAULT = "gemini-3-flash-preview"  # Standard coaching (95%) — March 2026 upgrade
+    MODEL_HIGH_STAKES = "claude-opus-4-6"  # Injury/recovery/load decisions (5%)
     
     # Legacy aliases for backward compatibility
     MODEL_LOW = MODEL_DEFAULT
     MODEL_MEDIUM = MODEL_DEFAULT
-    MODEL_HIGH = MODEL_FALLBACK
+    MODEL_HIGH = MODEL_DEFAULT
     MODEL_HIGH_VIP = MODEL_HIGH_STAKES
     MODEL_SIMPLE = MODEL_DEFAULT
     MODEL_STANDARD = MODEL_DEFAULT
 
     def __init__(self, db: Session):
         self.db = db
-        self.client = None
         self.anthropic_client = None
-        self.assistant_id = None
+        self.gemini_client = None
         
         # Phase 4/5: Modular components
         self.router = MessageRouter()
@@ -290,17 +298,16 @@ Policy:
                 self.anthropic_client = Anthropic(api_key=anthropic_key)
                 logger.info("Anthropic client initialized for high-stakes routing")
         
-        if OPENAI_AVAILABLE:
-            api_key = os.getenv("OPENAI_API_KEY")
-            if api_key:
-                # Assistants v1 is deprecated; use Assistants v2 header.
-                # See: https://platform.openai.com/docs/assistants/migration
-                self.client = OpenAI(
-                    api_key=api_key,
-                    default_headers={"OpenAI-Beta": "assistants=v2"},
-                )
-                # Get or create assistant
-                self.assistant_id = os.getenv("OPENAI_ASSISTANT_ID") or self._get_or_create_assistant()
+        # Initialize Gemini client for bulk queries (Feb 2026 migration)
+        if GEMINI_AVAILABLE:
+            google_key = os.getenv("GOOGLE_AI_API_KEY")
+            if google_key:
+                self.gemini_client = genai.Client(api_key=google_key)
+                logger.info("Gemini 3 Flash initialized for coaching queries")
+            else:
+                self.gemini_client = None
+        else:
+            self.gemini_client = None
     
     def _load_vip_athletes(self) -> None:
         """
@@ -349,6 +356,24 @@ Policy:
             logger.warning(f"Failed to check VIP status for athlete {athlete_id}: {e}")
         
         return False
+
+    # =========================================================================
+    # P1-D: CONSENT-GATED LLM DISPATCH
+    # =========================================================================
+
+    def _dispatch_llm(self, prompt: str, athlete_id: "UUID" = None) -> str:
+        """
+        Central LLM dispatch point for the AI coach.
+
+        This method exists as the testable dispatch hook so that consent
+        gating tests can verify via patching that no LLM call is made when
+        has_ai_consent() returns False.  The consent check in chat() runs
+        before this method is ever reached.
+        """
+        raise NotImplementedError(
+            "_dispatch_llm is a dispatch stub — real calls go through "
+            "self.gemini_client or self.anthropic_client inside chat()."
+        )
 
     # =========================================================================
     # ADR-061: BUDGET TRACKING AND COST CAPS
@@ -409,6 +434,11 @@ Policy:
         self.db.refresh(usage)
         return usage
     
+    def _is_founder(self, athlete_id: UUID) -> bool:
+        """Owner/founder bypasses all budget limits."""
+        owner_id = os.getenv("OWNER_ATHLETE_ID", "")
+        return owner_id and str(athlete_id) == owner_id.strip()
+
     def check_budget(self, athlete_id: UUID, is_opus: bool = False, is_vip: bool = False) -> Tuple[bool, str]:
         """
         Check if athlete has budget remaining for a query.
@@ -422,6 +452,9 @@ Policy:
             (allowed, reason) - True if request can proceed, else False with reason
         """
         try:
+            if self._is_founder(athlete_id):
+                return True, "founder_bypass"
+
             usage = self._get_or_create_usage(athlete_id)
             
             # VIP multiplier for Opus allocation (ADR-061)
@@ -487,6 +520,9 @@ Policy:
                 usage.opus_tokens_this_month += total_tokens
                 # Opus: $5/1M input, $25/1M output
                 cost_cents = int((input_tokens * 0.5 + output_tokens * 2.5) / 100)
+            elif "gemini" in model.lower():
+                # Gemini 3 Flash: $0.50/1M input, $3.00/1M output (Mar 2026)
+                cost_cents = int((input_tokens * 0.05 + output_tokens * 0.30) / 100)
             elif "gpt-4o-mini" in model:
                 # GPT-4o-mini: $0.15/1M input, $0.60/1M output
                 cost_cents = int((input_tokens * 0.015 + output_tokens * 0.06) / 100)
@@ -547,19 +583,47 @@ Policy:
             return {"error": str(e)}
 
     def _opus_tools(self) -> List[Dict[str, Any]]:
-        """Define tools available to Opus (Anthropic format)."""
+        """Define tools available to Opus (Anthropic format) — FULL tool suite."""
         return [
             {
                 "name": "get_recent_runs",
-                "description": "Get recent running activities with distances, paces, and heart rate data.",
+                "description": "Get recent running activities with distances, paces, heart rates, and workout types.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days to look back (default 14, max 365)",
-                        }
+                        "days": {"type": "integer", "description": "Number of days to look back (default 14, max 730)"}
                     },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_calendar_day_context",
+                "description": "Get plan + actual context for a specific calendar day (planned workout + completed activities with IDs).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "day": {"type": "string", "description": "Calendar date in YYYY-MM-DD format."}
+                    },
+                    "required": ["day"],
+                },
+            },
+            {
+                "name": "get_efficiency_trend",
+                "description": "Get efficiency trend data over time (pace-at-HR time series + summary). Use for 'am I getting fitter?' questions.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "How many days of history to analyze (default 30, max 365)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_plan_week",
+                "description": "Get the current week's planned workouts for the athlete's active training plan.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
                     "required": [],
                 },
             },
@@ -569,10 +633,7 @@ Policy:
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "weeks": {
-                            "type": "integer",
-                            "description": "Number of weeks to look back (default 12, max 104)",
-                        }
+                        "weeks": {"type": "integer", "description": "Number of weeks to look back (default 12, max 104)"}
                     },
                     "required": [],
                 },
@@ -596,8 +657,19 @@ Policy:
                 },
             },
             {
-                "name": "get_recovery_status",
-                "description": "Get recovery metrics including injury risk score.",
+                "name": "get_correlations",
+                "description": "Get correlations between wellness inputs and efficiency outputs.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "How many days of history to analyze (default 30, max 365)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_race_predictions",
+                "description": "Get race time predictions for 5K, 10K, Half Marathon, and Marathon.",
                 "input_schema": {
                     "type": "object",
                     "properties": {},
@@ -605,23 +677,207 @@ Policy:
                 },
             },
             {
-                "name": "get_athlete_profile",
-                "description": "Get athlete profile including age, training history, and preferences.",
+                "name": "get_recovery_status",
+                "description": "Get recovery metrics: half-life, durability index, false fitness and masked fatigue signals.",
                 "input_schema": {
                     "type": "object",
                     "properties": {},
                     "required": [],
                 },
             },
+            {
+                "name": "get_active_insights",
+                "description": "Get prioritized actionable insights for the athlete.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "Max insights to return (default 5, max 10)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_pb_patterns",
+                "description": "Get training patterns that preceded personal bests, including optimal form range.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_efficiency_by_zone",
+                "description": "Get efficiency trend for specific effort zones (easy, threshold, race).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "effort_zone": {"type": "string", "description": "Effort zone to analyze: easy, threshold, or race (default threshold)"},
+                        "days": {"type": "integer", "description": "Days of history (default 90, max 365)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_nutrition_correlations",
+                "description": "Get correlations between pre/post-activity nutrition and performance/recovery.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "Days of history (default 90, max 365)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_best_runs",
+                "description": "Get best runs by an explicit metric (efficiency, pace, distance, intensity_score), optionally filtered to an effort zone.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "History window (default 365, max 730)"},
+                        "metric": {"type": "string", "description": "Ranking metric: efficiency, pace, distance, or intensity_score"},
+                        "limit": {"type": "integer", "description": "Max results (default 5, max 10)"},
+                        "effort_zone": {"type": "string", "description": "Optional effort zone filter: easy, threshold, or race"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "compare_training_periods",
+                "description": "Compare last N days vs the previous N days (volume/run count deltas).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "Days per period (default 28, max 180)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_coach_intent_snapshot",
+                "description": "Get the athlete's current self-guided intent snapshot (goals/constraints) with staleness indicator.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "ttl_days": {"type": "integer", "description": "How long the snapshot is considered fresh (default 7)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "set_coach_intent_snapshot",
+                "description": "Update the athlete's self-guided intent snapshot (athlete-led) to avoid repetitive questioning.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "training_intent": {"type": "string", "description": "Athlete intent: through_fatigue | build_fitness | freshen_for_event"},
+                        "next_event_date": {"type": "string", "description": "Optional YYYY-MM-DD for race/benchmark"},
+                        "next_event_type": {"type": "string", "description": "Optional: race | benchmark | other"},
+                        "pain_flag": {"type": "string", "description": "none | niggle | pain"},
+                        "time_available_min": {"type": "integer", "description": "Typical time available (minutes)"},
+                        "weekly_mileage_target": {"type": "number", "description": "Athlete-stated target miles/week"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_training_prescription_window",
+                "description": "Deterministically prescribe training for 1-7 days (exact distances/paces/structure).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string", "description": "Start date YYYY-MM-DD (default today)"},
+                        "days": {"type": "integer", "description": "How many days (1-7)"},
+                        "time_available_min": {"type": "integer", "description": "Optional time cap for workouts (minutes)"},
+                        "weekly_mileage_target": {"type": "number", "description": "Optional athlete target miles/week"},
+                        "pain_flag": {"type": "string", "description": "none | niggle | pain"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_wellness_trends",
+                "description": "Get wellness trends from daily check-ins: sleep, stress, soreness, HRV, resting HR, and mindset metrics over time.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "How many days of wellness data to analyze (default 28, max 90)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_athlete_profile",
+                "description": "Get athlete physiological profile: max HR, threshold paces, RPI, runner type, HR zones, and training metrics.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_training_load_history",
+                "description": "Get daily fitness/fatigue/form history showing training load progression and injury risk over time.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "How many days of load history (default 42, max 90)"}
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "compute_running_math",
+                "description": "Compute pace/time/distance math deterministically.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "pace_per_mile": {"type": "string"},
+                        "pace_per_km": {"type": "string"},
+                        "distance_miles": {"type": "number"},
+                        "distance_km": {"type": "number"},
+                        "time_seconds": {"type": "integer"},
+                        "operation": {
+                            "type": "string",
+                            "description": "pace_to_finish | finish_to_pace | split_calc",
+                        },
+                    },
+                    "required": ["operation"],
+                },
+            },
+            {
+                "name": "analyze_run_streams",
+                "description": "Analyze per-second stream data for a run activity. Returns segment classification, cardiac/pace drift, coachable moments, and optional plan comparison. Uses the athlete's physiological profile for N=1 individualized analysis.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "activity_id": {
+                            "type": "string",
+                            "description": "UUID of the activity to analyze (from get_recent_runs or get_calendar_day_context).",
+                        },
+                    },
+                    "required": ["activity_id"],
+                },
+            },
         ]
 
     def _execute_opus_tool(self, athlete_id: UUID, tool_name: str, tool_input: Dict[str, Any]) -> str:
-        """Execute a tool call for Opus and return JSON result."""
+        """Execute a tool call for Opus/Gemini and return JSON result.
+        
+        Handles the FULL tool suite.
+        Used by both query_opus() and query_gemini() code paths.
+        """
         import json
         try:
             if tool_name == "get_recent_runs":
                 days = tool_input.get("days", 14)
-                result = coach_tools.get_recent_runs(self.db, athlete_id, days=min(days, 365))
+                result = coach_tools.get_recent_runs(self.db, athlete_id, days=min(days, 730))
+            elif tool_name == "get_calendar_day_context":
+                result = coach_tools.get_calendar_day_context(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_efficiency_trend":
+                result = coach_tools.get_efficiency_trend(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_plan_week":
+                result = coach_tools.get_plan_week(self.db, athlete_id)
             elif tool_name == "get_weekly_volume":
                 weeks = tool_input.get("weeks", 12)
                 result = coach_tools.get_weekly_volume(self.db, athlete_id, weeks=min(weeks, 104))
@@ -629,14 +885,45 @@ Policy:
                 result = coach_tools.get_training_load(self.db, athlete_id)
             elif tool_name == "get_training_paces":
                 result = coach_tools.get_training_paces(self.db, athlete_id)
+            elif tool_name == "get_correlations":
+                result = coach_tools.get_correlations(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_race_predictions":
+                result = coach_tools.get_race_predictions(self.db, athlete_id)
             elif tool_name == "get_recovery_status":
                 result = coach_tools.get_recovery_status(self.db, athlete_id)
+            elif tool_name == "get_active_insights":
+                result = coach_tools.get_active_insights(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_pb_patterns":
+                result = coach_tools.get_pb_patterns(self.db, athlete_id)
+            elif tool_name == "get_efficiency_by_zone":
+                result = coach_tools.get_efficiency_by_zone(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_nutrition_correlations":
+                result = coach_tools.get_nutrition_correlations(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_best_runs":
+                result = coach_tools.get_best_runs(self.db, athlete_id, **tool_input)
+            elif tool_name == "compare_training_periods":
+                result = coach_tools.compare_training_periods(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_coach_intent_snapshot":
+                result = coach_tools.get_coach_intent_snapshot(self.db, athlete_id, **tool_input)
+            elif tool_name == "set_coach_intent_snapshot":
+                result = coach_tools.set_coach_intent_snapshot(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_training_prescription_window":
+                result = coach_tools.get_training_prescription_window(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_wellness_trends":
+                result = coach_tools.get_wellness_trends(self.db, athlete_id, **tool_input)
             elif tool_name == "get_athlete_profile":
                 result = coach_tools.get_athlete_profile(self.db, athlete_id)
+            elif tool_name == "get_training_load_history":
+                result = coach_tools.get_training_load_history(self.db, athlete_id, **tool_input)
+            elif tool_name == "compute_running_math":
+                result = coach_tools.compute_running_math(self.db, athlete_id, **tool_input)
+            elif tool_name == "analyze_run_streams":
+                result = coach_tools.analyze_run_streams(self.db, athlete_id, **tool_input)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return json.dumps(result, default=str)
         except Exception as e:
+            logger.warning(f"Tool execution error for {tool_name}: {e}")
             return json.dumps({"error": str(e)})
 
     async def query_opus(
@@ -662,9 +949,9 @@ Policy:
         # Build messages
         messages = []
         
-        # Add conversation context (last 3 exchanges max)
+        # Add conversation context (last 5 exchanges)
         if conversation_context:
-            for msg in conversation_context[-6:]:
+            for msg in conversation_context[-10:]:
                 messages.append({
                     "role": msg.get("role", "user"),
                     "content": msg.get("content", ""),
@@ -674,33 +961,90 @@ Policy:
         messages.append({"role": "user", "content": message})
         
         # System prompt for high-stakes reasoning WITH tool guidance
-        system_prompt = """You are StrideIQ, an expert running coach. This is a HIGH-STAKES query involving training load, injury risk, or recovery decisions.
+        _today = date.today()
+        system_prompt = f"""You are StrideIQ, an expert running coach. Today is {_today.isoformat()} ({_today.strftime('%A')}). This is a HIGH-STAKES query involving training load, injury risk, or recovery decisions.
 
-YOU HAVE TOOLS - USE THEM:
+ZERO-HALLUCINATION RULE (NON-NEGOTIABLE): Every number, distance, pace, date, and training fact you state MUST come from tool results. NEVER fabricate or estimate ANY training data. If you haven't called a tool yet, call one NOW. If no tool has the data, say "I don't have that data" -- NEVER make it up. This athlete relies on you exclusively. A wrong number could cause injury. All dates in tool results include pre-computed relative times like '(2 days ago)'. USE those labels verbatim -- do NOT compute your own relative time.
+
+YOU HAVE 22 TOOLS -- USE THEM PROACTIVELY:
 - ALWAYS call get_weekly_volume first to understand the athlete's training history
-- Call get_recent_runs to see individual workout details
+- Call get_recent_runs to see individual workout details (up to 730 days back)
 - Call get_training_load for current fitness/fatigue/form
+- Call get_training_load_history for load progression over time
 - Call get_recovery_status for injury risk assessment
 - Call get_athlete_profile for age, experience, preferences
+- Call get_efficiency_trend to track fitness changes over time
+- Call get_best_runs for peak performance data
+- Call compare_training_periods to compare recent vs previous training
+- Call get_calendar_day_context for specific day plan + actual
+- Call get_wellness_trends for sleep, stress, soreness patterns
+- NEVER say "I don't have access" -- call the tools instead
 
 REASONING APPROACH:
 1. First gather data with tools - look at weeks/months of history, not just recent days
 2. Identify patterns: returning from injury? building mileage? overreaching?
 3. Consider the athlete's context (age, experience, goals)
 4. Make specific, evidence-based recommendations
+5. When the athlete is venting or emotional, empathize FIRST, then offer data perspective
 
 COMMUNICATION:
 - Use plain English (never acronyms like TSB, ATL, CTL)
-- NEVER say "VDOT" - always say "RPI" (Running Performance Index) instead
+- NEVER say "RPI" - always say "RPI" (Running Performance Index) instead
 - Be specific with numbers (recommend "42-45 miles" not "increase gradually")
-- Cite the data you used ("Looking at your last 8 weeks...")
+- Cite the data you used with dates and values ("On 2026-01-15, you ran 8.5 mi @ 9:04/mi...")
 - Be conservative with injury-related advice
+- Do NOT repeat yourself or give the same response multiple times
+
+PERSONAL FINGERPRINT:
+- The ATHLETE BRIEF below may contain a "Personal Fingerprint" section with confirmed patterns.
+- These patterns have been individually validated for THIS athlete — they are not population statistics.
+- When relevant to the athlete's question, reference confirmed patterns by evidence count.
+- Use threshold values for specific recommendations (e.g., "your data shows a sleep cliff at 6.2 hours").
+- Use asymmetry data to convey magnitude (e.g., "bad sleep hurts you 3x more than good sleep helps").
+- Use decay timing for forward-looking advice (e.g., "the effect typically peaks after 2 days for you").
+- NEVER reference a pattern without its confirmation count. This is how the athlete trusts the system.
+- If no fingerprint data exists, coach from the other brief sections normally.
+- You still have tools — use them for data NOT in the brief. But prefer the brief for confirmed patterns.
 
 If you need more data to answer well, call the tools. That's why they're there."""
-        
+
+        try:
+            from services.coach_tools import build_athlete_brief
+            brief = build_athlete_brief(self.db, athlete_id)
+            if brief:
+                system_prompt += f"\n\nATHLETE BRIEF (pre-computed, confirmed patterns):\n{brief}"
+        except Exception:
+            pass
+
+        # Inject athlete-stated facts from coach memory layer 1 (Opus path)
+        try:
+            from models import AthleteFact as _AF
+            _MAX_FACTS = 15
+            _facts = (
+                self.db.query(_AF)
+                .filter(_AF.athlete_id == athlete_id, _AF.is_active == True)  # noqa: E712
+                .order_by(_AF.confirmed_by_athlete.desc(), _AF.extracted_at.desc())
+                .limit(_MAX_FACTS)
+                .all()
+            )
+            if _facts:
+                _fc = "\n\nKNOWN ATHLETE FACTS (from previous conversations):\n"
+                for _f in _facts:
+                    _fc += f"- {_f.fact_key}: {_f.fact_value}\n"
+                _fc += (
+                    "\nYou already know these facts. Do not ask the athlete to repeat them. "
+                    "Do not recite them back — the athlete knows their own body. "
+                    "Use them to reason, connect patterns, and provide context the athlete "
+                    "could not produce on their own.\n"
+                )
+                system_prompt += _fc
+        except Exception:
+            pass
+
         try:
             total_input_tokens = 0
             total_output_tokens = 0
+            tools_called: List[str] = []
             
             # Initial call with tools
             response = self.anthropic_client.messages.create(
@@ -726,6 +1070,7 @@ If you need more data to answer well, call the tools. That's why they're there."
                         tool_name = block.name
                         tool_input = block.input
                         tool_id = block.id
+                        tools_called.append(tool_name)
                         
                         logger.info(f"Opus calling tool: {tool_name} with {tool_input}")
                         result = self._execute_opus_tool(athlete_id, tool_name, tool_input)
@@ -769,6 +1114,17 @@ If you need more data to answer well, call the tools. That's why they're there."
                 if hasattr(block, 'text'):
                     response_text += block.text
             
+            # Post-response validation: data questions must have used tools
+            is_valid, reason = self._validate_tool_usage(
+                message, tools_called, len(tools_called)
+            )
+            if not is_valid:
+                logger.warning(
+                    "Opus response failed tool validation (%s) for athlete %s: "
+                    "tools_called=%s, message='%.80s'",
+                    reason, athlete_id, tools_called, message,
+                )
+            
             self.track_usage(
                 athlete_id=athlete_id,
                 input_tokens=total_input_tokens,
@@ -779,6 +1135,7 @@ If you need more data to answer well, call the tools. That's why they're there."
             
             logger.info(
                 f"Opus query completed: athlete={athlete_id}, "
+                f"tools_called={tools_called}, "
                 f"input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
             )
             
@@ -789,6 +1146,7 @@ If you need more data to answer well, call the tools. That's why they're there."
                 "is_high_stakes": True,
                 "input_tokens": total_input_tokens,
                 "output_tokens": total_output_tokens,
+                "tools_called": tools_called,
             }
             
         except Exception as e:
@@ -800,401 +1158,537 @@ If you need more data to answer well, call the tools. That's why they're there."
                 "error_detail": str(e),
             }
 
-    def _assistant_tools(self) -> List[Dict[str, Any]]:
+    async def query_gemini(
+        self,
+        athlete_id: UUID,
+        message: str,
+        athlete_state: str,
+        conversation_context: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
         """
-        OpenAI Assistants API function tool definitions (bounded tools).
+        Query Gemini 3 Flash for coaching queries (Mar 2026 upgrade).
+        
+        Replaces GPT-4o-mini for 95% of queries. Benefits:
+        - 1M context window (no more aggressive pruning)
+        - Competitive pricing ($0.30/1M input, $2.50/1M output)
+        - Fast inference (254 tokens/sec)
+        
+        Uses Gemini API with function calling for tool access.
         """
-        return [
+        if not self.gemini_client:
+            logger.error("Gemini client not initialized — coach unavailable")
+            return {
+                "response": "Coach is temporarily unavailable. Please try again in a moment.",
+                "error": True,
+            }
+        
+        # Build Gemini tools (function declarations) — FULL tool suite
+        function_declarations = [
             {
-                "type": "function",
-                "function": {
-                    "name": "get_recent_runs",
-                    "description": "Fetch the athlete's recent runs from the Activity table (with IDs + timestamps).",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "days": {
-                                "type": "integer",
-                                "description": "How many days back to look (default 7).",
-                                "minimum": 1,
-                                "maximum": 730,
-                            }
-                        },
-                        "required": [],
+                "name": "get_recent_runs",
+                "description": "Fetch the athlete's recent runs including dates, distances, paces, heart rates, and workout types.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days back to look (default 14, max 730)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_calendar_day_context",
+                "description": "Get plan + actual context for a specific calendar day (planned workout + completed activities with IDs).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "day": {
+                            "type": "string",
+                            "description": "Calendar date in YYYY-MM-DD format."
+                        }
                     },
-                },
+                    "required": ["day"]
+                }
             },
             {
-                "type": "function",
-                "function": {
-                    "name": "get_calendar_day_context",
-                    "description": "Get plan + actual context for a specific calendar day (planned workout + activities with IDs).",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "day": {
-                                "type": "string",
-                                "description": "Calendar date in YYYY-MM-DD.",
-                            }
+                "name": "get_efficiency_trend",
+                "description": "Get efficiency trend data over time (pace-at-HR time series + summary). Use for 'am I getting fitter?' questions.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days of history to analyze (default 30, max 365)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_plan_week",
+                "description": "Get the current week's planned workouts for the athlete's active training plan.",
+                "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "get_weekly_volume",
+                "description": "Get weekly mileage totals for the athlete over recent weeks.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "weeks": {
+                            "type": "integer",
+                            "description": "Number of weeks to retrieve (default 12, max 104)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_training_load",
+                "description": "Get the athlete's current training load metrics: fitness, fatigue, and form.",
+                "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "get_training_paces",
+                "description": "Get RPI-based training paces (easy, threshold, interval, marathon). THIS IS THE AUTHORITATIVE SOURCE for training paces.",
+                "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "get_correlations",
+                "description": "Get correlations between wellness inputs and efficiency outputs.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days of history to analyze (default 30, max 365)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_race_predictions",
+                "description": "Get race time predictions for 5K, 10K, Half Marathon, and Marathon.",
+                "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "get_recovery_status",
+                "description": "Get recovery metrics: half-life, durability index, false fitness and masked fatigue signals.",
+                "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "get_active_insights",
+                "description": "Get prioritized actionable insights for the athlete.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max insights to return (default 5, max 10)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_pb_patterns",
+                "description": "Get training patterns that preceded personal bests, including optimal form range.",
+                "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "get_efficiency_by_zone",
+                "description": "Get efficiency trend for specific effort zones (easy, threshold, race).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "effort_zone": {
+                            "type": "string",
+                            "description": "Effort zone to analyze: easy, threshold, or race (default threshold)"
                         },
-                        "required": ["day"],
-                    },
-                },
+                        "days": {
+                            "type": "integer",
+                            "description": "Days of history (default 90, max 365)"
+                        }
+                    }
+                }
             },
             {
-                "type": "function",
-                "function": {
-                    "name": "get_efficiency_trend",
-                    "description": "Get efficiency trend data over time (EF time series + summary).",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "days": {
-                                "type": "integer",
-                                "description": "How many days of history to analyze (default 30).",
-                                "minimum": 7,
-                                "maximum": 365,
-                            }
+                "name": "get_nutrition_correlations",
+                "description": "Get correlations between pre/post-activity nutrition and performance/recovery.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "Days of history (default 90, max 365)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_best_runs",
+                "description": "Get best runs by an explicit metric (efficiency, pace, distance, intensity_score), optionally filtered to an effort zone.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "History window (default 365, max 730)"},
+                        "metric": {
+                            "type": "string",
+                            "description": "Ranking metric: efficiency, pace, distance, or intensity_score"
                         },
-                        "required": [],
+                        "limit": {"type": "integer", "description": "Max results (default 5, max 10)"},
+                        "effort_zone": {
+                            "type": "string",
+                            "description": "Optional effort zone filter: easy, threshold, or race"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "compare_training_periods",
+                "description": "Compare last N days vs the previous N days (volume/run count deltas).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "Days per period (default 28, max 180)"}
+                    }
+                }
+            },
+            {
+                "name": "get_coach_intent_snapshot",
+                "description": "Get the athlete's current self-guided intent snapshot (goals/constraints) with staleness indicator.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "ttl_days": {"type": "integer", "description": "How long the snapshot is considered fresh (default 7)"}
+                    }
+                }
+            },
+            {
+                "name": "set_coach_intent_snapshot",
+                "description": "Update the athlete's self-guided intent snapshot (athlete-led) to avoid repetitive questioning.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "training_intent": {"type": "string", "description": "Athlete intent: through_fatigue | build_fitness | freshen_for_event"},
+                        "next_event_date": {"type": "string", "description": "Optional YYYY-MM-DD for race/benchmark"},
+                        "next_event_type": {"type": "string", "description": "Optional: race | benchmark | other"},
+                        "pain_flag": {"type": "string", "description": "none | niggle | pain"},
+                        "time_available_min": {"type": "integer", "description": "Typical time available (minutes)"},
+                        "weekly_mileage_target": {"type": "number", "description": "Athlete-stated target miles/week"}
+                    }
+                }
+            },
+            {
+                "name": "get_training_prescription_window",
+                "description": "Deterministically prescribe training for 1-7 days (exact distances/paces/structure).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string", "description": "Start date YYYY-MM-DD (default today)"},
+                        "days": {"type": "integer", "description": "How many days (1-7)"},
+                        "time_available_min": {"type": "integer", "description": "Optional time cap for workouts (minutes)"},
+                        "weekly_mileage_target": {"type": "number", "description": "Optional athlete target miles/week"},
+                        "pain_flag": {"type": "string", "description": "none | niggle | pain"}
+                    }
+                }
+            },
+            {
+                "name": "get_wellness_trends",
+                "description": "Get wellness trends from daily check-ins: sleep, stress, soreness, HRV, resting HR, and mindset metrics over time.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days of wellness data to analyze (default 28, max 90)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_athlete_profile",
+                "description": "Get athlete physiological profile: max HR, threshold paces, RPI, runner type, HR zones, and training metrics.",
+                "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "get_training_load_history",
+                "description": "Get daily fitness/fatigue/form history showing training load progression and injury risk over time.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days of load history (default 42, max 90)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "compute_running_math",
+                "description": "Compute pace/time/distance math deterministically.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pace_per_mile": {"type": "string"},
+                        "pace_per_km": {"type": "string"},
+                        "distance_miles": {"type": "number"},
+                        "distance_km": {"type": "number"},
+                        "time_seconds": {"type": "integer"},
+                        "operation": {"type": "string"},
                     },
+                    "required": ["operation"],
                 },
             },
             {
-                "type": "function",
-                "function": {
-                    "name": "get_plan_week",
-                    "description": "Get the current week's planned workouts for the athlete's active plan.",
-                    "parameters": {"type": "object", "properties": {}, "required": []},
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_training_load",
-                    "description": "Get current ATL/CTL/TSB and personalized TSB zone info.",
-                    "parameters": {"type": "object", "properties": {}, "required": []},
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_training_paces",
-                    "description": "Get RPI-based training paces (easy, threshold, interval, marathon, repetition). THIS IS THE AUTHORITATIVE SOURCE for training paces - always use this for pace questions.",
-                    "parameters": {"type": "object", "properties": {}, "required": []},
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_correlations",
-                    "description": "Get correlations between wellness inputs and efficiency outputs.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "days": {
-                                "type": "integer",
-                                "description": "How many days of history to analyze (default 30).",
-                                "minimum": 14,
-                                "maximum": 365,
-                            }
+                "name": "analyze_run_streams",
+                "description": "Analyze per-second stream data for a run activity. Returns segment classification, cardiac/pace drift, coachable moments, and optional plan comparison. Uses the athlete's physiological profile for N=1 individualized analysis.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "activity_id": {
+                            "type": "string",
+                            "description": "UUID of the activity to analyze (from get_recent_runs or get_calendar_day_context).",
                         },
-                        "required": [],
                     },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_race_predictions",
-                    "description": "Get race time predictions for 5K, 10K, Half Marathon, and Marathon.",
-                    "parameters": {"type": "object", "properties": {}, "required": []},
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_recovery_status",
-                    "description": "Get recovery metrics: half-life, durability index, false fitness and masked fatigue signals.",
-                    "parameters": {"type": "object", "properties": {}, "required": []},
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_active_insights",
-                    "description": "Get prioritized actionable insights for the athlete.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "limit": {
-                                "type": "integer",
-                                "description": "Max insights to return (default 5, max 10).",
-                                "minimum": 1,
-                                "maximum": 10,
-                            }
-                        },
-                        "required": [],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_pb_patterns",
-                    "description": "Get training patterns that preceded personal bests, including optimal TSB range.",
-                    "parameters": {"type": "object", "properties": {}, "required": []},
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_efficiency_by_zone",
-                    "description": "Get efficiency trend for specific effort zones (easy, threshold, race).",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "effort_zone": {
-                                "type": "string",
-                                "enum": ["easy", "threshold", "race"],
-                                "description": "Effort zone to analyze (default threshold).",
-                            },
-                            "days": {
-                                "type": "integer",
-                                "description": "Days of history (default 90, max 365).",
-                                "minimum": 30,
-                                "maximum": 365,
-                            }
-                        },
-                        "required": [],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_nutrition_correlations",
-                    "description": "Get correlations between pre/post-activity nutrition and performance/recovery.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "days": {
-                                "type": "integer",
-                                "description": "Days of history (default 90, max 365).",
-                                "minimum": 30,
-                                "maximum": 365,
-                            }
-                        },
-                        "required": [],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_weekly_volume",
-                    "description": "Weekly rollups of run volume (distance/time/count) for the last N weeks.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "weeks": {
-                                "type": "integer",
-                                "description": "How many weeks back (default 12, max 104).",
-                                "minimum": 1,
-                                "maximum": 104,
-                            }
-                        },
-                        "required": [],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_best_runs",
-                    "description": "Get best runs by an explicit metric (efficiency, pace, distance, intensity_score), optionally filtered to an effort zone.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "days": {"type": "integer", "description": "History window (default 365, max 730).", "minimum": 7, "maximum": 730},
-                            "metric": {
-                                "type": "string",
-                                "description": "Ranking metric.",
-                                "enum": ["efficiency", "pace", "distance", "intensity_score"],
-                            },
-                            "limit": {"type": "integer", "description": "Max results (default 5, max 10).", "minimum": 1, "maximum": 10},
-                            "effort_zone": {
-                                "type": "string",
-                                "description": "Optional effort zone filter based on athlete max HR.",
-                                "enum": ["easy", "threshold", "race"],
-                            },
-                        },
-                        "required": [],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "compare_training_periods",
-                    "description": "Compare last N days vs the previous N days (volume/run count deltas).",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "days": {"type": "integer", "description": "Days per period (default 28, max 180).", "minimum": 7, "maximum": 180}
-                        },
-                        "required": [],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_coach_intent_snapshot",
-                    "description": "Get the athlete's current self-guided intent snapshot (goals/constraints) with staleness indicator.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "ttl_days": {"type": "integer", "description": "How long the snapshot is considered fresh (default 7).", "minimum": 1, "maximum": 30}
-                        },
-                        "required": [],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "set_coach_intent_snapshot",
-                    "description": "Update the athlete's self-guided intent snapshot (athlete-led) to avoid repetitive questioning.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "training_intent": {"type": "string", "description": "Athlete intent: through_fatigue | build_fitness | freshen_for_event (free text accepted)."},
-                            "next_event_date": {"type": "string", "description": "Optional YYYY-MM-DD for race/benchmark."},
-                            "next_event_type": {"type": "string", "description": "Optional: race | benchmark | other."},
-                            "pain_flag": {"type": "string", "description": "none | niggle | pain."},
-                            "time_available_min": {"type": "integer", "description": "Typical time available (minutes).", "minimum": 0, "maximum": 300},
-                            "weekly_mileage_target": {"type": "number", "description": "Athlete-stated target miles/week for current period.", "minimum": 0, "maximum": 250},
-                            "what_feels_off": {"type": "string", "description": "Optional: legs | lungs | motivation | life_stress | other."},
-                        },
-                        "required": [],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_training_prescription_window",
-                    "description": "Deterministically prescribe training for 1-7 days (exact distances/paces/structure) using athlete history + intent snapshot.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "start_date": {"type": "string", "description": "Start date YYYY-MM-DD (default today)."},
-                            "days": {"type": "integer", "description": "How many days (1-7).", "minimum": 1, "maximum": 7},
-                            "time_available_min": {"type": "integer", "description": "Optional time cap for workouts (minutes).", "minimum": 0, "maximum": 300},
-                            "weekly_mileage_target": {"type": "number", "description": "Optional athlete target miles/week (overrides derived).", "minimum": 0, "maximum": 250},
-                            "facilities": {"type": "array", "items": {"type": "string"}, "description": "Optional facilities: road/treadmill/track/hills."},
-                            "pain_flag": {"type": "string", "description": "none | niggle | pain (overrides snapshot)."},
-                        },
-                        "required": [],
-                    },
-                },
-            },
-            # Phase 3: New tools for expanded data access
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_wellness_trends",
-                    "description": "Get wellness trends from daily check-ins: sleep, stress, soreness, HRV, resting HR, and mindset metrics over time.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "days": {
-                                "type": "integer",
-                                "description": "How many days of wellness data to analyze (default 28, max 90).",
-                                "minimum": 7,
-                                "maximum": 90,
-                            }
-                        },
-                        "required": [],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_athlete_profile",
-                    "description": "Get athlete physiological profile: max HR, threshold paces, RPI, runner type (speedster/endurance/balanced), HR zones, and training metrics.",
-                    "parameters": {"type": "object", "properties": {}, "required": []},
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_training_load_history",
-                    "description": "Get daily ATL/CTL/TSB history showing training load progression, form state, and injury risk over time.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "days": {
-                                "type": "integer",
-                                "description": "How many days of load history (default 42, max 90).",
-                                "minimum": 7,
-                                "maximum": 90,
-                            }
-                        },
-                        "required": [],
-                    },
+                    "required": ["activity_id"],
                 },
             },
         ]
-    
-    def _get_or_create_assistant(self) -> Optional[str]:
-        """Get existing assistant or create a new one."""
-        if not self.client:
-            return None
+        
+        gemini_tools = genai_types.Tool(function_declarations=function_declarations)
+        
+        # ADR-16: Build rich pre-computed athlete brief
+        try:
+            athlete_brief = coach_tools.build_athlete_brief(self.db, athlete_id)
+        except Exception as e:
+            logger.warning(f"Failed to build athlete brief for {athlete_id}: {e}")
+            athlete_brief = "(Brief unavailable — call tools for data.)"
+
+        # ADR-16: System prompt — coaching persona + brief injection
+        _today = date.today()
+        system_instruction = f"""You are the athlete's personal running coach. Today is {_today.isoformat()} ({_today.strftime('%A')}). You have reviewed their complete file before this conversation — it's in the ATHLETE BRIEF below.
+
+ZERO-HALLUCINATION RULE (NON-NEGOTIABLE):
+Every number, distance, pace, date, and training fact you state MUST come from the ATHLETE BRIEF below or from a tool result. NEVER fabricate, estimate, or guess ANY training data. If the brief doesn't have it, CALL A TOOL. If no tool has it, say "I don't have that data" — NEVER make it up. This athlete is 79 years old and relies on you exclusively. A wrong number could cause injury.
+
+COACHING APPROACH:
+- Lead with what matters. If you see something important in the brief, bring it up — don't wait to be asked.
+- Be direct and sparse. Athletes don't want essays.
+- Show patterns, explain what they mean, recommend what to do about them.
+- All dates in the brief and tool results include pre-computed relative times like '(2 days ago)' or '(yesterday)'. USE those labels verbatim — do NOT compute your own relative time.
+- NEVER compute math yourself — use the compute_running_math tool for pace/distance/time calculations.
+- Conversational A->I->A requirement (chat prose, not JSON): provide an interpretive Assessment, explain the Implication, then a concrete Action.
+- Do NOT output internal labels like "fact capsule", "response contract", or schema keys.
+
+YOU HAVE 24 TOOLS — USE THEM PROACTIVELY:
+- Call get_weekly_volume to understand training history
+- Call get_recent_runs for individual workout details (up to 730 days back)
+- Call get_training_load for current fitness/fatigue/form
+- Call get_training_load_history for load progression over time
+- Call get_recovery_status for injury risk assessment
+- Call get_race_predictions for time estimates
+- Call get_plan_week for the current training plan
+- Call get_calendar_day_context for specific day plan + actual
+- Call get_wellness_trends for sleep, stress, soreness patterns
+- Call compute_running_math for ANY pace/distance/time calculation
+- NEVER say "I don't have access" — call the tools instead
+- When in doubt, call a tool. A tool call is ALWAYS better than a guess.
+
+TOOL OUTPUTS: Each tool returns a "narrative" field — a pre-interpreted summary. Coach from the narrative, not the raw JSON.
+
+COMMUNICATION STYLE:
+- Use plain English. No acronyms (say "fitness level" not "CTL", "fatigue" not "ATL", "form" not "TSB").
+- Never say "RPI" — always say "RPI" (Running Performance Index).
+- If you make an error, correct it briefly and move on. No groveling. Just "You're right" and the correct answer.
+- Concise. Answer the question, give the evidence, recommend the action.
+- Use the athlete's preferred units (check the brief).
+- If the athlete is venting, empathize briefly, then offer data-backed perspective.
+- Never recommend medical advice — refer to healthcare professionals.
+
+PERSONAL FINGERPRINT:
+- The ATHLETE BRIEF may contain a "Personal Fingerprint" section with confirmed patterns.
+- These patterns have been individually validated for THIS athlete — they are not population statistics.
+- When relevant, reference confirmed patterns by evidence count.
+- Use threshold values for specific recommendations (e.g., "your data shows a sleep cliff at 6.2 hours").
+- Use asymmetry data to convey magnitude (e.g., "bad sleep hurts you 3x more than good sleep helps").
+- Use decay timing for forward-looking advice (e.g., "the effect typically peaks after 2 days for you").
+- NEVER reference a pattern without its confirmation count. This is how the athlete trusts the system.
+- If no fingerprint data exists, coach from the other brief sections normally.
+
+WEEK BOUNDARY AWARENESS:
+- Current week data is PARTIAL — the brief marks it clearly. Do NOT treat partial week totals as complete weeks.
+- "Last week" = the most recent COMPLETED week, not the in-progress week.
+
+ATHLETE BRIEF:
+{athlete_brief}"""
+
+        # Inject athlete-stated facts from coach memory layer 1
+        try:
+            from models import AthleteFact as _AF
+            _MAX_FACTS = 15
+            _facts = (
+                self.db.query(_AF)
+                .filter(_AF.athlete_id == athlete_id, _AF.is_active == True)  # noqa: E712
+                .order_by(_AF.confirmed_by_athlete.desc(), _AF.extracted_at.desc())
+                .limit(_MAX_FACTS)
+                .all()
+            )
+            if _facts:
+                _fc = "\n\nKNOWN ATHLETE FACTS (from previous conversations):\n"
+                for _f in _facts:
+                    _fc += f"- {_f.fact_key}: {_f.fact_value}\n"
+                _fc += (
+                    "\nYou already know these facts. Do not ask the athlete to repeat them. "
+                    "Do not recite them back — the athlete knows their own body. "
+                    "Use them to reason, connect patterns, and provide context the athlete "
+                    "could not produce on their own.\n"
+                )
+                system_instruction += _fc
+        except Exception:
+            pass
+
+        # Build conversation contents (last 5 exchanges = 10 messages)
+        contents = []
+        if conversation_context:
+            for msg in conversation_context[-10:]:
+                role = "user" if msg.get("role") == "user" else "model"
+                contents.append(genai_types.Content(
+                    role=role,
+                    parts=[genai_types.Part(text=msg.get("content", ""))]
+                ))
+        
+        # Add current message
+        contents.append(genai_types.Content(
+            role="user",
+            parts=[genai_types.Part(text=message)]
+        ))
         
         try:
-            # Try to find existing assistant by name
-            assistants = self.client.beta.assistants.list(limit=20)
-            for assistant in assistants.data:
-                if assistant.name == "StrideIQ Coach":
-                    logger.info(f"Using existing assistant: {assistant.id}")
-                    # Ensure tool definitions are up to date (idempotent).
-                    try:
-                        self.client.beta.assistants.update(
-                            assistant_id=assistant.id,
-                            instructions=self.SYSTEM_INSTRUCTIONS
-                            + "\n\n## Tool Use Policy\n"
-                            + "- You MUST use the provided tools for athlete data.\n"
-                            + "- Do NOT invent metrics. If unavailable, say so.\n"
-                            + "- When you cite numbers (dates, distances, efficiency, fatigue, fitness, form), they must come from tool outputs.\n"
-                            + "- NEVER use acronyms (ATL, CTL, TSB, EF) - always use plain English.\n",
-                            tools=self._assistant_tools(),
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to update assistant tools/instructions: {e}")
-                    return assistant.id
+            total_input_tokens = 0
+            total_output_tokens = 0
+            tools_called: List[str] = []
             
-            # Create new assistant
-            assistant = self.client.beta.assistants.create(
-                name="StrideIQ Coach",
-                instructions=self.SYSTEM_INSTRUCTIONS
-                + "\n\n## Tool Use Policy\n"
-                + "- You MUST use the provided tools for athlete data.\n"
-                + "- Do NOT invent metrics. If unavailable, say so.\n"
-                + "- When you cite numbers (dates, distances, efficiency, fatigue, fitness, form), they must come from tool outputs.\n"
-                + "- NEVER use acronyms (ATL, CTL, TSB, EF) - always use plain English.\n",
-                model="gpt-4o",  # or "gpt-4-turbo-preview" for cost savings
-                tools=self._assistant_tools(),
+            # Temperature 0.2: Gemini docs recommend low temperature for
+            # "more deterministic and reliable function calls". 0.7 caused
+            # hallucination of training data (fabricated distances/volumes).
+            config = genai_types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                tools=[gemini_tools],
+                max_output_tokens=COACH_MAX_OUTPUT_TOKENS,
+                temperature=0.2,
             )
-            logger.info(f"Created new assistant: {assistant.id}")
-            return assistant.id
+            
+            # Send message with tools
+            response = self.gemini_client.models.generate_content(
+                model=self.MODEL_DEFAULT,
+                contents=contents,
+                config=config,
+            )
+            
+            # Track usage
+            if hasattr(response, 'usage_metadata'):
+                total_input_tokens += getattr(response.usage_metadata, 'prompt_token_count', 0)
+                total_output_tokens += getattr(response.usage_metadata, 'candidates_token_count', 0)
+            
+            # Handle function calls in a loop (max 5 iterations)
+            for _ in range(5):
+                # Check if there are function calls to process
+                function_calls = []
+                if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                    for part in response.candidates[0].content.parts:
+                        if hasattr(part, 'function_call') and part.function_call:
+                            function_calls.append(part.function_call)
+                
+                if not function_calls:
+                    break
+                
+                # Add assistant response to contents
+                contents.append(response.candidates[0].content)
+                
+                function_response_parts = []
+                for fc in function_calls:
+                    tool_name = fc.name
+                    tool_args = dict(fc.args) if fc.args else {}
+                    tools_called.append(tool_name)
+                    
+                    logger.info(f"Gemini calling tool: {tool_name} with {tool_args}")
+                    result = self._execute_opus_tool(athlete_id, tool_name, tool_args)
+                    
+                    function_response_parts.append(
+                        genai_types.Part(
+                            function_response=genai_types.FunctionResponse(
+                                name=tool_name,
+                                response={"result": result}
+                            )
+                        )
+                    )
+                
+                # Add function results to contents
+                contents.append(genai_types.Content(
+                    role="user",
+                    parts=function_response_parts
+                ))
+                
+                # Send function results back
+                response = self.gemini_client.models.generate_content(
+                    model=self.MODEL_DEFAULT,
+                    contents=contents,
+                    config=config,
+                )
+                
+                if hasattr(response, 'usage_metadata'):
+                    total_input_tokens += getattr(response.usage_metadata, 'prompt_token_count', 0)
+                    total_output_tokens += getattr(response.usage_metadata, 'candidates_token_count', 0)
+            
+            # Extract final response text
+            response_text = ""
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'text') and part.text:
+                    response_text += part.text
+            
+            # Post-response validation: data questions must have used tools
+            is_valid, reason = self._validate_tool_usage(
+                message, tools_called, len(tools_called)
+            )
+            if not is_valid:
+                logger.warning(
+                    "Gemini response failed tool validation (%s) for athlete %s: "
+                    "tools_called=%s, message='%.80s'",
+                    reason, athlete_id, tools_called, message,
+                )
+            
+            # Track usage with Gemini pricing
+            self.track_usage(
+                athlete_id=athlete_id,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                model=self.MODEL_DEFAULT,
+                is_opus=False,
+            )
+            
+            logger.info(
+                f"Gemini query completed: athlete={athlete_id}, "
+                f"tools_called={tools_called}, "
+                f"input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
+            )
+            
+            return {
+                "response": response_text,
+                "error": False,
+                "model": self.MODEL_DEFAULT,
+                "is_high_stakes": False,
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
+                "tools_called": tools_called,
+            }
             
         except Exception as e:
-            logger.error(f"Failed to get/create assistant: {e}")
-            return None
-    
+            logger.error(f"Gemini query failed for {athlete_id}: {e}")
+            return {
+                "response": "Coach is temporarily unavailable. Please try again in a moment.",
+                "error": True,
+                "error_detail": str(e),
+            }
+
     def get_or_create_thread(self, athlete_id: UUID) -> Optional[str]:
         """
         Get or create a conversation thread for an athlete.
@@ -1207,87 +1701,127 @@ If you need more data to answer well, call the tools. That's why they're there."
 
     def get_or_create_thread_with_state(self, athlete_id: UUID) -> Tuple[Optional[str], bool]:
         """
-        Get or create a conversation thread for an athlete.
+        Get or create a conversation session for an athlete using PostgreSQL (CoachChat).
 
         Returns:
-            (thread_id, created_new)
+            (chat_id_str, created_new)
         """
-        if not self.client:
-            return None, False
-
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            return None, False
-
-        if athlete.coach_thread_id:
-            return athlete.coach_thread_id, False
-
         try:
-            thread = self.client.beta.threads.create()
-            athlete.coach_thread_id = thread.id
-            self.db.add(athlete)
+            # Find the most recent active open chat session
+            chat = (
+                self.db.query(CoachChat)
+                .filter(
+                    CoachChat.athlete_id == athlete_id,
+                    CoachChat.context_type == "open",
+                    CoachChat.is_active == True,
+                )
+                .order_by(CoachChat.updated_at.desc())
+                .first()
+            )
+            if chat:
+                return str(chat.id), False
+
+            # Create a new chat session
+            chat = CoachChat(
+                athlete_id=athlete_id,
+                context_type="open",
+                messages=[],
+                is_active=True,
+            )
+            self.db.add(chat)
             self.db.commit()
-            return thread.id, True
+            return str(chat.id), True
         except Exception as e:
             self.db.rollback()
-            logger.error(f"Failed to create/persist thread: {e}")
+            logger.error(f"Failed to get/create coach chat session: {e}")
             return None, False
 
     def get_thread_history(self, athlete_id: UUID, limit: int = 100) -> Dict[str, Any]:
         """
-        Fetch persisted coach thread messages for this athlete.
+        Fetch persisted coach conversation messages from PostgreSQL (CoachChat).
 
         Returns:
             {"thread_id": str|None, "messages": [{"role","content","created_at"}]}
-        
-        Phase 2: Increased defaults (100→500 max) for better conversation context.
         """
         limit = max(1, min(int(limit), 500))
 
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        thread_id = athlete.coach_thread_id if athlete else None
-        if not self.client or not thread_id:
-            return {"thread_id": thread_id, "messages": []}
-
         try:
-            msgs = self.client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=limit)
-            out: List[Dict[str, Any]] = []
-            for m in msgs.data or []:
-                # Assistants API message content can be multiple parts; we take the first text part.
-                content_text = ""
-                try:
-                    if m.content and hasattr(m.content[0], "text"):
-                        content_text = m.content[0].text.value
-                    else:
-                        content_text = str(m.content[0]) if m.content else ""
-                except Exception:
-                    content_text = ""
-
-                # Production-beta: hide internal context injections from UI/history.
-                if (content_text or "").startswith("INTERNAL COACH CONTEXT"):
-                    continue
-
-                created_at = None
-                try:
-                    # created_at is unix seconds
-                    if getattr(m, "created_at", None):
-                        created_at = datetime.utcfromtimestamp(int(m.created_at)).replace(microsecond=0).isoformat()
-                except Exception:
-                    created_at = None
-
-                out.append(
-                    {
-                        "role": getattr(m, "role", None) or "assistant",
-                        "content": content_text,
-                        "created_at": created_at,
-                    }
+            chat = (
+                self.db.query(CoachChat)
+                .filter(
+                    CoachChat.athlete_id == athlete_id,
+                    CoachChat.context_type == "open",
+                    CoachChat.is_active == True,
                 )
+                .order_by(CoachChat.updated_at.desc())
+                .first()
+            )
+            if not chat or not chat.messages:
+                return {"thread_id": str(chat.id) if chat else None, "messages": []}
 
-            out.reverse()  # chronological
-            return {"thread_id": thread_id, "messages": out}
+            # Messages are stored chronologically in the JSONB array.
+            # Return the last `limit` messages.
+            all_msgs = chat.messages or []
+            recent = all_msgs[-limit:] if len(all_msgs) > limit else all_msgs
+
+            out: List[Dict[str, Any]] = []
+            for m in recent:
+                content = m.get("content", "")
+                # Production-beta: hide internal context injections from UI/history.
+                if (content or "").startswith("INTERNAL COACH CONTEXT"):
+                    continue
+                out.append({
+                    "role": m.get("role", "assistant"),
+                    "content": content,
+                    "created_at": m.get("timestamp") or m.get("created_at"),
+                })
+
+            return {"thread_id": str(chat.id), "messages": out}
         except Exception as e:
-            logger.warning(f"Failed to read coach thread history: {e}")
-            return {"thread_id": thread_id, "messages": []}
+            logger.warning(f"Failed to read coach chat history: {e}")
+            return {"thread_id": None, "messages": []}
+
+    def _save_chat_messages(self, athlete_id: UUID, user_message: str, assistant_response: str) -> None:
+        """Save user message and assistant response to PostgreSQL CoachChat."""
+        try:
+            chat = (
+                self.db.query(CoachChat)
+                .filter(
+                    CoachChat.athlete_id == athlete_id,
+                    CoachChat.context_type == "open",
+                    CoachChat.is_active == True,
+                )
+                .order_by(CoachChat.updated_at.desc())
+                .first()
+            )
+            if not chat:
+                chat = CoachChat(
+                    athlete_id=athlete_id,
+                    context_type="open",
+                    messages=[],
+                    is_active=True,
+                )
+                self.db.add(chat)
+
+            now_iso = datetime.utcnow().replace(microsecond=0).isoformat()
+            msgs = list(chat.messages or [])
+            msgs.append({"role": "user", "content": user_message, "timestamp": now_iso})
+            msgs.append({"role": "assistant", "content": assistant_response, "timestamp": now_iso})
+            chat.messages = msgs
+            # Force SQLAlchemy to detect the JSONB change
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(chat, "messages")
+            self.db.commit()
+
+            # Fire-and-forget fact extraction (async, non-blocking)
+            try:
+                from tasks.fact_extraction_task import extract_athlete_facts
+                extract_athlete_facts.delay(str(athlete_id), str(chat.id))
+            except Exception as fe:
+                logger.warning(f"Failed to enqueue fact extraction: {fe}")
+        except Exception as e:
+            self.db.rollback()
+            logger.warning(f"Failed to save coach chat messages: {e}")
     
     def build_context(self, athlete_id: UUID, window_days: int = 30) -> str:
         """
@@ -1312,8 +1846,8 @@ If you need more data to answer well, call the tools. That's why they're there."
         if athlete.birthdate:
             age = (today - athlete.birthdate).days // 365
             context_parts.append(f"Age: {age}")
-        if athlete.vdot:
-            context_parts.append(f"Current RPI: {athlete.vdot:.1f}")
+        if athlete.rpi:
+            context_parts.append(f"Current RPI: {athlete.rpi:.1f}")
         if athlete.resting_hr:
             context_parts.append(f"Resting HR: {athlete.resting_hr} bpm")
         if athlete.max_hr:
@@ -1369,15 +1903,15 @@ If you need more data to answer well, call the tools. That's why they're there."
         
         if recent_activities:
             context_parts.append("\n## Last 7 Days")
-            total_distance = sum(a.distance_m or 0 for a in recent_activities) / 1000
+            total_distance_mi = sum(a.distance_m or 0 for a in recent_activities) / 1609.344
             total_time = sum(a.duration_s or 0 for a in recent_activities) / 60
-            context_parts.append(f"Runs: {len(recent_activities)} | Distance: {total_distance:.1f} km | Time: {total_time:.0f} min")
+            context_parts.append(f"Runs: {len(recent_activities)} | Distance: {total_distance_mi:.1f} mi | Time: {total_time:.0f} min")
             
             for a in recent_activities[:5]:  # Show last 5
-                distance_km = (a.distance_m or 0) / 1000
+                distance_mi = (a.distance_m or 0) / 1609.344
                 pace = self._format_pace(a.duration_s, a.distance_m) if a.distance_m else "N/A"
                 hr = f"{a.avg_hr} bpm" if a.avg_hr else ""
-                context_parts.append(f"  - {a.start_time.strftime('%a %m/%d')}: {distance_km:.1f} km @ {pace} {hr}")
+                context_parts.append(f"  - {a.start_time.strftime('%a %m/%d')}: {distance_mi:.1f} mi @ {pace} {hr}")
         
         # --- 30-Day Summary ---
         thirty_days_ago = today - timedelta(days=30)
@@ -1389,23 +1923,23 @@ If you need more data to answer well, call the tools. That's why they're there."
         
         if month_activities:
             context_parts.append("\n## Last 30 Days")
-            total_distance = sum(a.distance_m or 0 for a in month_activities) / 1000
-            avg_weekly = total_distance / 4.3  # ~4.3 weeks
+            total_distance_mi = sum(a.distance_m or 0 for a in month_activities) / 1609.344
+            avg_weekly_mi = total_distance_mi / 4.3  # ~4.3 weeks
             run_count = len(month_activities)
             
             # Calculate average efficiency
             efficiencies = []
             for a in month_activities:
                 if a.avg_hr and a.distance_m and a.duration_s:
-                    pace_km = a.duration_s / (a.distance_m / 1000)
-                    efficiency = pace_km / a.avg_hr  # Lower is better
+                    pace_per_mi = a.duration_s / (a.distance_m / 1609.344)
+                    efficiency = pace_per_mi / a.avg_hr  # pace/HR ratio (directionally ambiguous — see OutputMetricMeta)
                     efficiencies.append(efficiency)
             
-            context_parts.append(f"Runs: {run_count} | Distance: {total_distance:.0f} km | Avg/week: {avg_weekly:.0f} km")
+            context_parts.append(f"Runs: {run_count} | Distance: {total_distance_mi:.0f} mi | Avg/week: {avg_weekly_mi:.0f} mi")
             
             if efficiencies:
                 avg_eff = sum(efficiencies) / len(efficiencies)
-                context_parts.append(f"Average efficiency: {avg_eff:.3f} (pace/HR ratio - lower is better)")
+                context_parts.append(f"Average efficiency: {avg_eff:.3f} (pace/HR ratio — directionally ambiguous, do not assume lower=better)")
         
         # --- Recent Check-ins ---
         recent_checkins = self.db.query(DailyCheckin).filter(
@@ -1414,18 +1948,58 @@ If you need more data to answer well, call the tools. That's why they're there."
         ).order_by(DailyCheckin.date.desc()).limit(3).all()
         
         if recent_checkins:
-            context_parts.append("\n## Recent Wellness")
+            context_parts.append("\n## Recent Wellness (athlete self-report)")
             for c in recent_checkins:
                 parts = []
-                if c.sleep_h:
+                if c.readiness_1_5 is not None:
+                    readiness_map = {5: 'High', 4: 'Good', 3: 'Neutral', 2: 'Low', 1: 'Poor'}
+                    parts.append(f"Readiness: {readiness_map.get(c.readiness_1_5, c.readiness_1_5)}")
+                if c.sleep_h is not None:
                     parts.append(f"Sleep: {c.sleep_h}h")
-                if c.stress_1_5:
+                if c.stress_1_5 is not None:
                     parts.append(f"Stress: {c.stress_1_5}/5")
-                if c.soreness_1_5:
+                if c.soreness_1_5 is not None:
                     parts.append(f"Soreness: {c.soreness_1_5}/5")
+                else:
+                    parts.append("Soreness: not reported")
                 if parts:
                     context_parts.append(f"  {c.date.strftime('%m/%d')}: {' | '.join(parts)}")
-        
+
+        # --- Garmin Watch Data (Health API) — last 7 days ---
+        # This is device-measured biometric data (not athlete self-report).
+        # Required for coach to answer "how is my body responding based on watch data?"
+        # and for Garmin partner compliance (demonstrating Health API usage).
+        garmin_days = (
+            self.db.query(GarminDay)
+            .filter(
+                GarminDay.athlete_id == athlete_id,
+                GarminDay.calendar_date >= seven_days_ago,
+            )
+            .order_by(GarminDay.calendar_date.desc())
+            .limit(7)
+            .all()
+        )
+        if garmin_days:
+            context_parts.append("\n## Garmin Watch Data (Health API — device-measured, last 7 days)")
+            for g in garmin_days:
+                row_parts = []
+                if g.sleep_total_s is not None:
+                    sleep_h = g.sleep_total_s / 3600.0
+                    row_parts.append(f"Sleep: {sleep_h:.1f}h")
+                if g.sleep_score is not None:
+                    row_parts.append(f"Sleep score: {g.sleep_score}")
+                if g.hrv_overnight_avg is not None:
+                    row_parts.append(f"HRV: {g.hrv_overnight_avg}ms")
+                if g.resting_hr is not None:
+                    row_parts.append(f"Resting HR: {g.resting_hr} bpm")
+                if g.avg_stress is not None and g.avg_stress >= 0:
+                    row_parts.append(f"Stress: {g.avg_stress}")
+                if g.body_battery_end is not None:
+                    row_parts.append(f"Body Battery EOD: {g.body_battery_end}")
+                if row_parts:
+                    date_str = g.calendar_date.strftime("%m/%d")
+                    context_parts.append(f"  {date_str}: {' | '.join(row_parts)}")
+
         return "\n".join(context_parts)
     
     def _format_time(self, seconds: int) -> str:
@@ -1439,14 +2013,14 @@ If you need more data to answer well, call the tools. That's why they're there."
         return f"{minutes}:{secs:02d}"
     
     def _format_pace(self, duration_s: Optional[int], distance_m: Optional[int]) -> str:
-        """Format pace as M:SS/km."""
+        """Format pace as M:SS/mi (always miles — never km or meters)."""
         if not duration_s or not distance_m or distance_m == 0:
             return "N/A"
-        
-        pace_per_km = duration_s / (distance_m / 1000)
-        minutes = int(pace_per_km // 60)
-        seconds = int(pace_per_km % 60)
-        return f"{minutes}:{seconds:02d}/km"
+
+        pace_per_mi = duration_s / (distance_m / 1609.344)
+        minutes = int(pace_per_mi // 60)
+        seconds = int(pace_per_mi % 60)
+        return f"{minutes}:{seconds:02d}/mi"
     
     def _get_plan_week(self, plan: TrainingPlan) -> int:
         """Calculate current week of the plan."""
@@ -1459,89 +2033,34 @@ If you need more data to answer well, call the tools. That's why they're there."
         days_in = (today - plan.plan_start_date).days
         return (days_in // 7) + 1
 
-    def get_dynamic_suggestions(self, athlete_id: UUID) -> List[str]:
+    def get_dynamic_suggestions(self, athlete_id: UUID) -> List[Dict[str, str]]:
         """
-        Return 3-5 data-driven suggested questions.
+        Return 3-5 data-driven suggested questions as structured objects.
+        
+        Each suggestion has:
+        - title: Short, specific, data-driven headline
+        - description: One sentence of context with actual numbers
+        - prompt: Internal payload sent to the LLM (invisible to user)
         
         Sources:
         - coach_tools.get_active_insights (prioritized insights)
         - coach_tools.get_pb_patterns (recent PBs)
         - coach_tools.get_training_load (TSB state)
         - coach_tools.get_efficiency_by_zone (efficiency trends)
+        - Recent activities
+        - Goal race countdown
         """
-        suggestions: List[str] = []
+        suggestions: List[Dict[str, str]] = []
+        seen_titles: set = set()
 
-        def add(q: str) -> None:
-            if q and q not in suggestions and len(suggestions) < 5:
-                suggestions.append(q)
+        def add(title: str, description: str, prompt: str) -> None:
+            if title and title not in seen_titles and len(suggestions) < 5:
+                seen_titles.add(title)
+                suggestions.append({"title": title, "description": description, "prompt": prompt})
 
         today = date.today()
 
-        # --- 1. Insights from coach_tools.get_active_insights ---
-        try:
-            result = coach_tools.get_active_insights(self.db, athlete_id, limit=3)
-            if result.get("ok"):
-                for ins in result.get("data", {}).get("insights", []):
-                    q = self._insight_to_question(ins)
-                    if q:
-                        add(q)
-        except Exception:
-            pass
-
-        # --- 2. PB-driven suggestions ---
-        try:
-            result = coach_tools.get_pb_patterns(self.db, athlete_id)
-            if result.get("ok"):
-                data = result.get("data") or {}
-                pb_count = data.get("pb_count", 0)
-                tsb_min = data.get("tsb_min")
-                tsb_max = data.get("tsb_max")
-                pbs = data.get("pbs", [])
-                
-                if pb_count >= 2 and tsb_min is not None and tsb_max is not None:
-                    add(
-                        f"Analyze what led to my {pb_count} PRs. Cite each PR date + distance + TSB day-before (from get_pb_patterns)."
-                    )
-                
-                # Add specific extreme TSB suggestion if there's an outlier
-                if pbs:
-                    extreme = min(pbs, key=lambda p: p.get("tsb_day_before") or 0)
-                    if extreme.get("tsb_day_before") is not None and extreme.get("tsb_day_before") < -30:
-                        add(
-                            f"Explain my {extreme['category']} PR on {extreme['date']} when TSB was {extreme['tsb_day_before']:.0f}. Cite the PR details and compare to my typical PR TSB range."
-                        )
-        except Exception:
-            pass
-
-        # --- 3. TSB-driven suggestions ---
-        try:
-            result = coach_tools.get_training_load(self.db, athlete_id)
-            if result.get("ok"):
-                tsb = result.get("data", {}).get("tsb")
-                if tsb is not None:
-                    if tsb > 20:
-                        add(f"Am I fresh enough for a hard workout? Cite my current ATL/CTL/TSB and explain what that implies for today.")
-                    elif tsb < -30:
-                        add(f"Am I overreaching? Cite my current ATL/CTL/TSB and give a recovery plan for the next 48 hours.")
-                    else:
-                        add(f"Summarize my current training load status. Cite current ATL/CTL/TSB and the TSB zone label.")
-        except Exception:
-            pass
-
-        # --- 4. Efficiency-driven suggestions ---
-        try:
-            result = coach_tools.get_efficiency_by_zone(self.db, athlete_id, "threshold", 90)
-            if result.get("ok"):
-                trend = result.get("data", {}).get("recent_trend_pct")
-                if trend is not None:
-                    if trend < -10:
-                        add("Is my threshold efficiency improving? Use get_efficiency_by_zone and cite the current value + trend%, and also cite 2 specific recent runs from get_efficiency_trend.")
-                    elif trend > 10:
-                        add("My threshold efficiency looks worse. Use get_efficiency_by_zone and get_efficiency_trend to identify 2 concrete examples (date + activity id) showing the change.")
-        except Exception:
-            pass
-
-        # --- 5. Recent activity suggestions ---
+        # --- 1. Recent activity (highest priority — just ran) ---
         try:
             start_of_today = datetime.combine(today, datetime.min.time())
             completed_today = (
@@ -1551,38 +2070,163 @@ If you need more data to answer well, call the tools. That's why they're there."
                     Activity.sport == "run",
                     Activity.start_time >= start_of_today,
                 )
+                .order_by(Activity.start_time.desc())
                 .first()
             )
             if completed_today:
-                distance_km = (completed_today.distance_m or 0) / 1000
-                add(f"Review my run from today ({distance_km:.1f} km). Cite the date + run label + distance + pace + avg HR (from get_recent_runs).")
+                dist_mi = (completed_today.distance_m or 0) / 1609.34
+                dur_min = (completed_today.duration_s or 0) / 60
+                pace_min = dur_min / dist_mi if dist_mi > 0 else 0
+                pace_str = f"{int(pace_min)}:{int((pace_min % 1) * 60):02d}/mi" if dist_mi > 0 else "?"
+                add(
+                    f"Today's {dist_mi:.1f}mi run",
+                    f"{pace_str} over {dist_mi:.1f}mi — what did it do for your build?",
+                    f"What effect did today's run have on my fitness and fatigue? Was the effort appropriate for where I am in my training? What should I do tomorrow based on how today loaded me?",
+                )
         except Exception:
             pass
 
-        # --- Fallback defaults ---
-        if len(suggestions) < 3:
-            add("How is my training going overall? Cite at least 2 recent runs (date + run label + distance + pace) and my current ATL/CTL/TSB.")
-            add("Am I on track for my goal race? Use get_plan_week and get_training_load and cite specific workouts + current load.")
+        # --- 2. TSB-driven (current state) ---
+        try:
+            result = coach_tools.get_training_load(self.db, athlete_id)
+            if result.get("ok"):
+                data = result.get("data", {})
+                tsb = data.get("tsb")
+                atl = data.get("atl")
+                ctl = data.get("ctl")
+                zone = data.get("tsb_zone_label", "")
+                if tsb is not None and atl is not None and ctl is not None:
+                    if tsb > 20:
+                        add(
+                            f"TSB is +{tsb:.0f} — you're fresh",
+                            f"CTL {ctl:.0f}, ATL {atl:.0f}. Ready for a hard session?",
+                            "I'm feeling fresh. What's the best way to capitalize on this freshness — should I push a quality session, or is there a strategic reason to stay easy? What does my recent training suggest I'm ready for?",
+                        )
+                    elif tsb < -30:
+                        add(
+                            f"TSB is {tsb:.0f} — deep fatigue",
+                            f"ATL {atl:.0f} vs CTL {ctl:.0f}. Should we ease up?",
+                            "I'm carrying a lot of fatigue. Is this productive overreach that's building fitness, or am I digging a hole? What's the risk if I keep pushing, and what would a smart next 48-72 hours look like?",
+                        )
+                    else:
+                        label = f" ({zone})" if zone else ""
+                        add(
+                            f"TSB is {tsb:.0f}{label}",
+                            f"CTL {ctl:.0f}, ATL {atl:.0f}. Where am I in the build?",
+                            "Where am I in my training build right now? Am I absorbing the load well or showing signs of stagnation? What should the next week look like to keep progressing without overreaching?",
+                        )
+        except Exception:
+            pass
+
+        # --- 3. Goal race countdown ---
+        try:
+            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            if athlete and athlete.goal_race_date:
+                days_out = (athlete.goal_race_date - today).days
+                race_name = athlete.goal_race_name or "goal race"
+                if 0 < days_out <= 120:
+                    add(
+                        f"{days_out} days to {race_name}",
+                        "Are you on track? What should the next few weeks look like?",
+                        f"With {days_out} days until {race_name}, am I on track? Based on my current fitness, fatigue, and recent training quality — what's the honest assessment of where I'll be on race day, and what should I prioritize in the remaining weeks?",
+                    )
+        except Exception:
+            pass
+
+        # --- 4. PB-driven ---
+        try:
+            result = coach_tools.get_pb_patterns(self.db, athlete_id)
+            if result.get("ok"):
+                data = result.get("data") or {}
+                pbs = data.get("pbs", [])
+                pb_count = data.get("pb_count", 0)
+                
+                if pbs:
+                    # Most recent PB
+                    most_recent = max(pbs, key=lambda p: p.get("date", ""))
+                    cat = most_recent.get("category", "?")
+                    pb_date = most_recent.get("date", "")
+                    tsb_before = most_recent.get("tsb_day_before")
+                    
+                    # Format time
+                    time_s = most_recent.get("time_seconds", 0)
+                    if time_s:
+                        mins = int(time_s) // 60
+                        secs = int(time_s) % 60
+                        time_str = f"{mins}:{secs:02d}"
+                    else:
+                        time_str = ""
+                    
+                    tsb_str = f" at TSB {tsb_before:.0f}" if tsb_before is not None else ""
+                    date_str = pb_date[:10] if pb_date else ""
+                    
+                    if pb_count >= 2:
+                        add(
+                            f"{cat} PR — {time_str}" if time_str else f"{cat} PR on {date_str}",
+                            f"Set on {date_str}{tsb_str}. What pattern led to your {pb_count} PRs?",
+                            f"I've set {pb_count} PRs. Is there a pattern — a fatigue level, a type of training block, a volume sweet spot — that consistently produces my best performances? What can I learn from this to chase the next one?",
+                        )
+                    elif time_str:
+                        add(
+                            f"{cat} PR — {time_str}",
+                            f"Set on {date_str}{tsb_str}. What can you tell me about it?",
+                            f"I PR'd my {cat} with {time_str}. What in my recent training set that up? Was it the volume, the workouts, the taper, the freshness? And what does it tell me about where my fitness actually is right now?",
+                        )
+        except Exception:
+            pass
+
+        # --- 5. Insights ---
+        try:
+            result = coach_tools.get_active_insights(self.db, athlete_id, limit=3)
+            if result.get("ok"):
+                for ins in result.get("data", {}).get("insights", []):
+                    title = ins.get("title") or ""
+                    if not title:
+                        continue
+                    title_lower = title.lower()
+                    if "improving" in title_lower:
+                        add(title, "What's driving this improvement?", f"My data shows: {title}. What in my training is driving this, and how do I keep it going without overdoing it?")
+                    elif "declining" in title_lower or "drop" in title_lower:
+                        add(title, "Should we investigate this trend?", f"My data shows: {title}. Should I be concerned? Is this a normal training phase or a sign I need to change something? What would you recommend?")
+                    elif "risk" in title_lower or "warning" in title_lower:
+                        add(title, "What should I do about this?", f"My data flagged: {title}. How serious is this, what's causing it, and what concrete steps should I take in the next few days?")
+                    else:
+                        add(title, "Tell me more about this.", f"My data shows: {title}. What does this mean for my training, and is there anything I should do differently?")
+        except Exception:
+            pass
+
+        # --- 6. Efficiency trend ---
+        try:
+            result = coach_tools.get_efficiency_by_zone(self.db, athlete_id, "threshold", 90)
+            if result.get("ok"):
+                data = result.get("data", {})
+                trend = data.get("recent_trend_pct")
+                current = data.get("current_efficiency")
+                if trend is not None:
+                    if trend < -10:
+                        add(
+                            f"Threshold efficiency improving {abs(trend):.0f}%",
+                            f"Current: {current:.1f}. What's changing in your runs?" if current else "What's changing in your runs?",
+                            "My threshold efficiency is improving. What's driving this — is it the volume, the workout structure, better recovery, or just accumulated fitness? How do I keep this trajectory going?",
+                        )
+                    elif trend > 10:
+                        add(
+                            f"Threshold efficiency down {trend:.0f}%",
+                            f"Current: {current:.1f}. Worth investigating." if current else "Worth investigating.",
+                            "My threshold efficiency is declining. Is this accumulated fatigue that will resolve with rest, or a sign that something in my training needs to change? What specific runs show the drop-off?",
+                        )
+        except Exception:
+            pass
+
+        # --- Fallback ---
+        if len(suggestions) < 2:
+            add(
+                "How's my training going?",
+                "A full read on your recent runs, load, and trajectory.",
+                "Give me an honest assessment of my training. Am I building fitness, stagnating, or running myself into the ground? What's going well, what concerns you, and what would you change in the next 7 days?",
+            )
 
         return suggestions[:5]
-
-    def _insight_to_question(self, insight: Dict[str, Any]) -> Optional[str]:
-        """Convert an insight dict to a question format."""
-        title = insight.get("title") or ""
-        if not title:
-            return None
-
-        title_lower = title.lower()
-        if "improving" in title_lower:
-            return f"{title} — what's driving this?"
-        elif "declining" in title_lower or "drop" in title_lower:
-            return f"{title} — should we investigate?"
-        elif "pattern" in title_lower:
-            return f"{title} — is this intentional?"
-        elif "risk" in title_lower or "warning" in title_lower:
-            return f"{title} — what should I do?"
-        else:
-            return f"{title} — tell me more?"
 
     def classify_query_complexity(self, message: str) -> str:
         """
@@ -1691,12 +2335,29 @@ If you need more data to answer well, call the tools. That's why they're there."
         if not self.high_stakes_routing_enabled:
             return self.MODEL_DEFAULT, False
         
-        # Free users always get GPT-4o-mini (no Opus for unpaid)
+        # Free users always get Gemini (no Opus for unpaid)
         if athlete_id:
             athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
             if athlete and not getattr(athlete, "has_active_subscription", False):
                 return self.MODEL_DEFAULT, False
-        
+
+        # Founder always gets Opus — no keyword gating
+        if athlete_id and self._is_founder(athlete_id):
+            if self.anthropic_client:
+                logger.info(f"Routing to Opus: founder_bypass")
+                return self.MODEL_HIGH_STAKES, True
+            return self.MODEL_DEFAULT, False
+
+        # VIP athletes always get Opus (budget checked but not keyword-gated)
+        if athlete_id and self.is_athlete_vip(athlete_id):
+            allowed, reason = self.check_budget(athlete_id, is_opus=True, is_vip=True)
+            if allowed and self.anthropic_client:
+                logger.info(f"Routing to Opus: vip_always, athlete={athlete_id}")
+                return self.MODEL_HIGH_STAKES, True
+            else:
+                logger.info(f"VIP Opus fallback: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
+                return self.MODEL_DEFAULT, False
+
         # Determine if query needs Opus (high-stakes OR high-complexity)
         is_high_stakes = is_high_stakes_query(message)
         complexity = self.classify_query_complexity(message)
@@ -1717,11 +2378,11 @@ If you need more data to answer well, call the tools. That's why they're there."
                 )
                 return self.MODEL_HIGH_STAKES, True
             else:
-                # Fallback to GPT-4o (not mini) when Opus unavailable/budget exhausted
-                logger.info(f"Opus fallback to GPT-4o: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
-                return self.MODEL_FALLBACK, False
+                # Fallback to Gemini when Opus unavailable/budget exhausted
+                logger.info(f"Opus fallback to Gemini: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
+                return self.MODEL_DEFAULT, False
         
-        # Default: GPT-4o-mini for cost efficiency
+        # Default: Gemini 3 Flash
         return self.MODEL_DEFAULT, False
     
     def get_model_for_query_legacy(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> str:
@@ -1749,10 +2410,28 @@ If you need more data to answer well, call the tools. That's why they're there."
         Returns:
             Dict with response text and metadata
         """
-        # If OpenAI not available, return a helpful message
-        if not self.client or not self.assistant_id:
+        # P1-D: Consent gate — no LLM dispatch without explicit opt-in.
+        from services.consent import has_ai_consent as _has_consent
+        if not _has_consent(athlete_id=athlete_id, db=self.db):
             return {
-                "response": "AI Coach is not configured. Please set OPENAI_API_KEY in your environment.",
+                "response": (
+                    "AI coaching insights are currently disabled for your account. "
+                    "To enable AI insights and unlock personalized coaching, go to "
+                    "**Settings → AI Processing** and grant consent. "
+                    "All other features remain fully available."
+                ),
+                "error": False,
+                "timed_out": False,
+                "history_thin": False,
+                "used_baseline": False,
+                "baseline_needed": False,
+                "rebuild_plan_prompt": False,
+            }
+
+        # If no LLM client is available, return a helpful message
+        if not self.gemini_client:
+            return {
+                "response": "AI Coach is not configured. Please set GOOGLE_AI_API_KEY in your environment.",
                 "error": True
             }
 
@@ -1781,9 +2460,9 @@ If you need more data to answer well, call the tools. That's why they're there."
             baseline_needed = False
             used_baseline = False
 
-        # Production-beta: ambiguity hard stop for return-from-injury/break comparisons.
-        # Runs BEFORE any deterministic shortcuts so it cannot be bypassed.
-        if self._needs_return_scope_clarification(lower):
+        # ADR-16: Removed canned return-scope-clarification guardrail.
+        # The rich athlete brief gives the LLM all the context it needs.
+        if False and self._needs_return_scope_clarification(lower):
             thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
             return {
                 "response": (
@@ -1822,11 +2501,9 @@ If you need more data to answer well, call the tools. That's why they're there."
         # raw data dumps that were hard to read and lacked coaching nuance.
         _skip_deterministic_shortcuts = True
         
-        # Gate 2: Return context + comparison language → force clarification
-        # This prevents scope errors like "longest run" defaulting to all-time
-        # when the athlete is clearly in a post-injury context.
-        # Only applies if NOT a judgment question (judgment questions go to LLM with full context)
-        if msg_type == MessageType.CLARIFICATION_NEEDED:
+        # ADR-16: Removed canned clarification gate. The LLM with a rich brief
+        # handles return-from-injury context naturally.
+        if False and msg_type == MessageType.CLARIFICATION_NEEDED:
             thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
             return {
                 "response": (
@@ -2092,7 +2769,7 @@ If you need more data to answer well, call the tools. That's why they're there."
                 conversation_context = []
                 if thread_id:
                     try:
-                        history_data = self.get_thread_history(athlete_id, limit=6)
+                        history_data = self.get_thread_history(athlete_id, limit=10)
                         history = history_data.get("messages", [])
                         conversation_context = [
                             {"role": m.get("role"), "content": m.get("content")}
@@ -2109,402 +2786,136 @@ If you need more data to answer well, call the tools. That's why they're there."
                     conversation_context=conversation_context,
                 )
                 
-                # Add to thread for continuity (store in OpenAI thread too)
-                if thread_id and not opus_result.get("error"):
-                    try:
-                        self.client.beta.threads.messages.create(
-                            thread_id=thread_id,
-                            role="user",
-                            content=message
-                        )
-                        self.client.beta.threads.messages.create(
-                            thread_id=thread_id,
-                            role="assistant",
-                            content=opus_result.get("response", "")
-                        )
-                    except Exception as e:
-                        logger.debug(f"Failed to sync Opus response to thread: {e}")
+                # Save to PostgreSQL (CoachChat) for conversation continuity
+                if not opus_result.get("error"):
+                    self._save_chat_messages(athlete_id, message, opus_result.get("response", ""))
                 
                 opus_result["thread_id"] = thread_id
                 return opus_result
 
-            thread_id, is_new_thread = self.get_or_create_thread_with_state(athlete_id)
-            if not thread_id:
-                return {
-                    "response": "Unable to start coach conversation (thread creation failed).",
-                    "error": True,
-                }
-            
-            # New thread kickoff: reinforce bounded-tool policy (no data injection).
-            if is_new_thread:
-                self.client.beta.threads.messages.create(
-                    thread_id=thread_id,
-                    role="user",
-                    content=(
-                        "You are the athlete's coach.\n\n"
-                        "CRITICAL: Before answering ANY question about mileage, training, or workouts, you MUST call "
-                        "get_recent_runs and get_training_load first to get the athlete's actual data. NEVER say 'I don't have data' "
-                        "without calling these tools first.\n\n"
-                        "Use tools for ALL athlete-specific facts (dates, distances, fatigue, fitness, form, plan details). "
-                        "Do not guess or invent metrics.\n\n"
-                        "UNITS: Use the athlete's preferred units. If they use miles, respond in miles + min/mi.\n\n"
-                        "EVIDENCE REQUIRED: Cite facts with ISO date + human label + key values. "
-                        "NEVER use acronyms (ATL, CTL, TSB, EF, TRIMP) - use plain English instead.\n\n"
-                        "TERMINOLOGY: NEVER say 'VDOT' - always say 'RPI' (Running Performance Index) instead."
-                    ),
-                )
-
-            # =========================================================================
-            # PHASE 2 CONTEXT ARCHITECTURE: Use additional_instructions instead of user messages
-            # =========================================================================
-            # Benefits:
-            # - Instructions are system-level (higher priority than user messages)
-            # - Don't pollute thread history (cleaner conversation)
-            # - Always fresh for each run
-            # - Can include athlete-specific context dynamically
-            
-            # Build dynamic run instructions based on question type and athlete state
-            run_instructions: List[str] = []
-            
-            try:
-                # Thin history injection (for athletes with sparse data)
-                if history_thin:
-                    thin_injected = self._build_thin_history_injection(history_snapshot=history_snapshot, baseline=baseline)
-                    if thin_injected:
-                        run_instructions.append(thin_injected)
+            # Route default queries to Gemini 3 Flash (Mar 2026 upgrade)
+            if model == self.MODEL_DEFAULT and self.gemini_client:
+                # ADR-16: Brief is now built inside query_gemini() — no separate athlete_state needed
+                athlete_state = ""  # Legacy param, brief is injected in query_gemini
                 
-                # Dynamic per-run instructions (judgment, return-context, prescription, etc.)
-                # Sprint 4: Pass model to simplify instructions for mini
-                dynamic_instructions = self._build_run_instructions(
-                    athlete_id=athlete_id, 
-                    message=message,
-                    model=model,
-                )
-                if dynamic_instructions:
-                    run_instructions.append(dynamic_instructions)
-                
-                # Sprint 4: Skip complex instruction layers for mini (keep it simple)
-                is_mini = model == "gpt-4o-mini"
-                
-                if not is_mini:
-                    # Phase 5: Confidence-gated responses for judgment questions
-                    if msg_type == MessageType.JUDGMENT:
-                        confidence_instruction = self.conversation_manager.build_confidence_instruction()
-                        run_instructions.append(confidence_instruction)
-                    
-                    # Phase 5: Progressive detail levels based on conversation depth
+                # Get recent conversation context
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                conversation_context = []
+                if thread_id:
                     try:
-                        history_data = self.get_thread_history(athlete_id, limit=20)
-                        history_raw = history_data.get("messages", [])
-                        user_message_count = sum(1 for m in history_raw if m.get("role") == "user")
-                        detail_level = self.conversation_manager.get_detail_level(user_message_count + 1)  # +1 for current message
-                        detail_instruction = self.conversation_manager.build_detail_instruction(detail_level)
-                        run_instructions.append(detail_instruction)
-                    except Exception as e:
-                        logger.debug(f"Detail level calculation skipped: {e}")
-                
-            except Exception as e:
-                logger.info("Coach run instructions build skipped: %s", str(e))
-            
-            # Combine all run instructions
-            additional_instructions = "\n\n".join(run_instructions) if run_instructions else None
-            
-            # Add the user's message
-            self.client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=message
-            )
-            
-            # Run the assistant with additional_instructions (Phase 2)
-            run = self.client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id,
-                model=model,  # Override model per query
-                additional_instructions=additional_instructions,
-            )
-            
-            # Wait for completion (with timeout)
-            import time
-            max_wait = int(os.getenv("COACH_MAX_WAIT_S") or "120")
-            max_wait = max(30, min(max_wait, 240))
-            start = time.time()
-            
-            # Track tool calls for validation (Sprint 2: tool validation)
-            tool_calls_count = 0
-            tools_called: List[str] = []
-            
-            while True:
-                run_status = self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
-                
-                if run_status.status == "completed":
-                    break
-                elif run_status.status == "requires_action":
-                    required = getattr(run_status, "required_action", None)
-                    submit = getattr(required, "submit_tool_outputs", None) if required else None
-                    tool_calls = getattr(submit, "tool_calls", None) if submit else None
-
-                    if not tool_calls:
-                        return {
-                            "response": "AI coach requested tools, but no tool calls were provided.",
-                            "error": True,
-                        }
-
-                    logger.info(
-                        "AI coach requires_action: %s tool call(s) requested",
-                        len(tool_calls),
-                    )
-                    
-                    # Track tool calls for validation
-                    tool_calls_count += len(tool_calls)
-                    
-                    tool_outputs = []
-                    for call in tool_calls:
-                        try:
-                            fn = call.function
-                            tool_name = fn.name
-                            raw_args = fn.arguments or "{}"
-                            args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
-                            logger.info("AI coach tool_call requested: %s args=%s", tool_name, raw_args)
-                            
-                            # Track which tools were called for validation
-                            tools_called.append(tool_name)
-
-                            if tool_name == "get_recent_runs":
-                                output = coach_tools.get_recent_runs(self.db, athlete_id, **args)
-                            elif tool_name == "get_calendar_day_context":
-                                output = coach_tools.get_calendar_day_context(self.db, athlete_id, **args)
-                            elif tool_name == "get_efficiency_trend":
-                                output = coach_tools.get_efficiency_trend(self.db, athlete_id, **args)
-                            elif tool_name == "get_plan_week":
-                                output = coach_tools.get_plan_week(self.db, athlete_id)
-                            elif tool_name == "get_training_load":
-                                output = coach_tools.get_training_load(self.db, athlete_id)
-                            elif tool_name == "get_training_paces":
-                                output = coach_tools.get_training_paces(self.db, athlete_id)
-                            elif tool_name == "get_correlations":
-                                output = coach_tools.get_correlations(self.db, athlete_id, **args)
-                            elif tool_name == "get_race_predictions":
-                                output = coach_tools.get_race_predictions(self.db, athlete_id)
-                            elif tool_name == "get_recovery_status":
-                                output = coach_tools.get_recovery_status(self.db, athlete_id)
-                            elif tool_name == "get_active_insights":
-                                output = coach_tools.get_active_insights(self.db, athlete_id, **args)
-                            elif tool_name == "get_pb_patterns":
-                                output = coach_tools.get_pb_patterns(self.db, athlete_id)
-                            elif tool_name == "get_efficiency_by_zone":
-                                output = coach_tools.get_efficiency_by_zone(self.db, athlete_id, **args)
-                            elif tool_name == "get_nutrition_correlations":
-                                output = coach_tools.get_nutrition_correlations(self.db, athlete_id, **args)
-                            elif tool_name == "get_weekly_volume":
-                                output = coach_tools.get_weekly_volume(self.db, athlete_id, **args)
-                            elif tool_name == "get_best_runs":
-                                output = coach_tools.get_best_runs(self.db, athlete_id, **args)
-                            elif tool_name == "compare_training_periods":
-                                output = coach_tools.compare_training_periods(self.db, athlete_id, **args)
-                            elif tool_name == "get_coach_intent_snapshot":
-                                output = coach_tools.get_coach_intent_snapshot(self.db, athlete_id, **args)
-                            elif tool_name == "set_coach_intent_snapshot":
-                                output = coach_tools.set_coach_intent_snapshot(self.db, athlete_id, **args)
-                            elif tool_name == "get_training_prescription_window":
-                                output = coach_tools.get_training_prescription_window(self.db, athlete_id, **args)
-                            # Phase 3: New tools
-                            elif tool_name == "get_wellness_trends":
-                                output = coach_tools.get_wellness_trends(self.db, athlete_id, **args)
-                            elif tool_name == "get_athlete_profile":
-                                output = coach_tools.get_athlete_profile(self.db, athlete_id)
-                            elif tool_name == "get_training_load_history":
-                                output = coach_tools.get_training_load_history(self.db, athlete_id, **args)
-                            else:
-                                output = {
-                                    "ok": False,
-                                    "tool": tool_name,
-                                    "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
-                                    "error": f"Unknown tool: {tool_name}",
-                                    "data": {},
-                                    "evidence": [],
-                                }
-
-                            # Log a bounded view of the tool output for verification.
-                            try:
-                                output_preview = json.dumps(output)[:1200]
-                            except Exception:
-                                output_preview = str(output)[:1200]
-                            logger.info("AI coach tool_call output: %s %s", tool_name, output_preview)
-
-                            tool_outputs.append(
-                                {
-                                    "tool_call_id": call.id,
-                                    "output": json.dumps(output),
-                                }
-                            )
-                        except Exception as e:
-                            tool_outputs.append(
-                                {
-                                    "tool_call_id": call.id,
-                                    "output": json.dumps(
-                                        {
-                                            "ok": False,
-                                            "tool": getattr(getattr(call, "function", None), "name", "unknown"),
-                                            "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
-                                            "error": f"Tool execution error: {str(e)}",
-                                            "data": {},
-                                            "evidence": [],
-                                        }
-                                    ),
-                                }
-                            )
-
-                    self.client.beta.threads.runs.submit_tool_outputs(
-                        thread_id=thread_id,
-                        run_id=run.id,
-                        tool_outputs=tool_outputs,
-                    )
-                elif run_status.status in ["failed", "cancelled", "expired"]:
-                    return {
-                        "response": f"The AI coach encountered an error: {run_status.status}",
-                        "error": True
-                    }
-                
-                if time.time() - start > max_wait:
-                    # Best-effort partial: if the assistant has already posted something, return it.
-                    partial = ""
-                    try:
-                        msgs = self.client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=1)
-                        if msgs.data:
-                            c = msgs.data[0].content[0]
-                            if hasattr(c, "text"):
-                                partial = (c.text.value or "").strip()
-                            else:
-                                partial = str(c).strip()
-                    except Exception:
-                        partial = ""
-                    if partial:
-                        partial = (
-                            partial.strip()
-                            + "\n\n---\n"
-                            + "_Thinking took too long — here’s what I have so far. You can retry, or ask again with a smaller scope._"
-                        )
-                    else:
-                        partial = (
-                            "Thinking took too long — here’s what I have so far: (no partial output yet).\n\n"
-                            "Retry, or ask again with a smaller scope."
-                        )
-                    return {
-                        "response": partial,
-                        "thread_id": thread_id,
-                        "error": False,
-                        "timed_out": True,
-                        "history_thin": bool(history_thin),
-                        "used_baseline": bool(used_baseline),
-                        "baseline_needed": bool(baseline_needed),
-                        "rebuild_plan_prompt": False,
-                    }
-                
-                time.sleep(1)
-            
-            # Get the response
-            messages = self.client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=1
-            )
-            
-            if messages.data:
-                response_content = messages.data[0].content[0]
-                if hasattr(response_content, 'text'):
-                    response_text = response_content.text.value
-                else:
-                    response_text = str(response_content)
-                
-                # =========================================================================
-                # SPRINT 2: Tool Usage Validation
-                # If this was a data question but no tools were called, log it as a
-                # validation failure. In future, we can add retry logic here.
-                # =========================================================================
-                tool_valid, tool_reason = self._validate_tool_usage(
-                    message=message,
-                    tools_called=tools_called,
-                    tool_calls_count=tool_calls_count,
-                )
-                if not tool_valid:
-                    logger.warning(
-                        f"Tool validation FAILED for message: reason={tool_reason}, "
-                        f"tool_calls_count={tool_calls_count}, tools_called={tools_called}, "
-                        f"message_preview={message[:100] if message else ''}..."
-                    )
-                    # Log for monitoring - in future sprint, add retry logic here
-                else:
-                    logger.debug(
-                        f"Tool validation passed: tool_calls_count={tool_calls_count}, "
-                        f"tools_called={tools_called[:3] if tools_called else []}"
-                    )
-
-                # Enforce citations contract: if the answer contains numeric claims,
-                # it must include receipts (dates and/or activity ids). If not, force a rewrite.
-                try:
-                    response_text = await self._enforce_citations_contract(
-                        thread_id=thread_id,
-                        prior_response=response_text,
-                        athlete_id=athlete_id,
-                        model=model,
-                    )
-                except Exception as e:
-                    # Never fail the whole request; return the original response.
-                    logger.warning(f"Citations enforcement failed: {e}")
-
-                # Normalize for UI + trust contract:
-                # - prefer "## Evidence" section naming
-                # - collapse-friendly output (heading present when applicable)
-                # - suppress UUID spam unless explicitly requested
-                try:
-                    response_text = self._normalize_response_for_ui(
-                        user_message=message,
-                        assistant_message=response_text,
-                    )
-                except Exception as e:
-                    logger.warning(f"Coach response normalization failed: {e}")
-
-                # "Rebuild plan?" prompt: only when history transitions from thin -> not thin.
-                rebuild_plan_prompt = False
-                try:
-                    snap = self.db.query(CoachIntentSnapshot).filter(CoachIntentSnapshot.athlete_id == athlete_id).first()
-                    if not snap:
-                        snap = CoachIntentSnapshot(athlete_id=athlete_id)
-                        self.db.add(snap)
-                        self.db.flush()
-                    extra = snap.extra or {}
-                    prev_thin = bool(extra.get("history_thin_last_seen", False))
-                    if prev_thin and (not history_thin):
-                        rebuild_plan_prompt = True
-                    extra["history_thin_last_seen"] = bool(history_thin)
-                    extra["history_run_count_28d_last_seen"] = int((history_snapshot or {}).get("run_count_28d") or 0)
-                    extra["history_last_seen_at"] = datetime.utcnow().isoformat()
-                    snap.extra = extra
-                    self.db.commit()
-                except Exception:
-                    try:
-                        self.db.rollback()
+                        history_data = self.get_thread_history(athlete_id, limit=10)
+                        history = history_data.get("messages", [])
+                        conversation_context = [
+                            {"role": m.get("role"), "content": m.get("content")}
+                            for m in history if m.get("role") in ("user", "assistant")
+                        ]
                     except Exception:
                         pass
+                
+                # Query Gemini
+                gemini_result = await self.query_gemini(
+                    athlete_id=athlete_id,
+                    message=message,
+                    athlete_state=athlete_state,
+                    conversation_context=conversation_context,
+                )
 
-                return {
-                    "response": response_text,
-                    "thread_id": thread_id,
-                    "error": False,
-                    "timed_out": False,
-                    "history_thin": bool(history_thin),
-                    "used_baseline": bool(used_baseline),
-                    "baseline_needed": bool(baseline_needed),
-                    "rebuild_plan_prompt": bool(rebuild_plan_prompt),
-                }
-            
+                # Gemini returned success.
+                if not gemini_result.get("error"):
+                    # Normalize for UI + trust contract (Coach Output Contract v1):
+                    # - strip internal labels (fact capsule, response contract, etc.)
+                    # - prefer "## Evidence" section naming
+                    # - suppress UUID spam unless explicitly requested
+                    raw_response = gemini_result.get("response", "")
+                    try:
+                        normalized = self._normalize_response_for_ui(
+                            user_message=message,
+                            assistant_message=raw_response,
+                        )
+                        gemini_result["response"] = normalized
+                    except Exception as e:
+                        logger.warning(f"Coach response normalization failed: {e}")
+
+                    # Save to PostgreSQL (CoachChat) for conversation continuity
+                    self._save_chat_messages(athlete_id, message, gemini_result.get("response", ""))
+
+                    gemini_result["thread_id"] = thread_id
+                    return gemini_result
+
+                # Reliability hardening:
+                # If Gemini fails but Anthropic is configured, attempt Opus fallback
+                # before surfacing "temporarily unavailable" to the athlete.
+                if self.anthropic_client:
+                    logger.warning(
+                        "Gemini query failed for %s; attempting Opus fallback. "
+                        "error_detail=%s",
+                        athlete_id,
+                        gemini_result.get("error_detail"),
+                    )
+                    opus_result = await self.query_opus(
+                        athlete_id=athlete_id,
+                        message=message,
+                        athlete_state=self._build_athlete_state_for_opus(athlete_id),
+                        conversation_context=conversation_context,
+                    )
+                    if not opus_result.get("error"):
+                        raw_response = opus_result.get("response", "")
+                        try:
+                            normalized = self._normalize_response_for_ui(
+                                user_message=message,
+                                assistant_message=raw_response,
+                            )
+                            opus_result["response"] = normalized
+                        except Exception as e:
+                            logger.warning(f"Coach response normalization failed: {e}")
+                        self._save_chat_messages(athlete_id, message, opus_result.get("response", ""))
+
+                    opus_result["thread_id"] = thread_id
+                    return opus_result
+
+                # No Anthropic fallback available; return Gemini failure as-is.
+                gemini_result["thread_id"] = thread_id
+                return gemini_result
+
+            # Safety net: any unhandled model routes to Gemini if available
+            if self.gemini_client:
+                logger.warning(f"Unhandled model '{model}' — routing to Gemini as safety net")
+                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+                conversation_context = []
+                if thread_id:
+                    try:
+                        history_data = self.get_thread_history(athlete_id, limit=10)
+                        history = history_data.get("messages", [])
+                        conversation_context = [
+                            {"role": m.get("role"), "content": m.get("content")}
+                            for m in history if m.get("role") in ("user", "assistant")
+                        ]
+                    except Exception:
+                        pass
+                gemini_result = await self.query_gemini(
+                    athlete_id=athlete_id,
+                    message=message,
+                    athlete_state="",
+                    conversation_context=conversation_context,
+                )
+                if not gemini_result.get("error"):
+                    raw_response = gemini_result.get("response", "")
+                    try:
+                        normalized = self._normalize_response_for_ui(
+                            user_message=message,
+                            assistant_message=raw_response,
+                        )
+                        gemini_result["response"] = normalized
+                    except Exception as e:
+                        logger.warning(f"Coach response normalization failed: {e}")
+                    self._save_chat_messages(athlete_id, message, gemini_result.get("response", ""))
+                gemini_result["thread_id"] = thread_id
+                return gemini_result
+
             return {
-                "response": "No response received from AI coach.",
-                "error": True
+                "response": "Coach is temporarily unavailable. Please try again in a moment.",
+                "error": True,
+                "thread_id": None,
             }
             
         except Exception as e:
@@ -3336,248 +3747,6 @@ If you need more data to answer well, call the tools. That's why they're there."
     _UUID_RE = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
     _DATE_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
 
-    def _looks_like_uncited_numeric_answer(self, text: str) -> bool:
-        """
-        Heuristic gate (refined):
-        - We MUST not block prescription, exploration, or hypothesis generation.
-        - We DO enforce receipts for athlete-specific factual/causal claims (metrics, trends, correlations),
-          because those are trust-breaking when uncited.
-
-        Trigger only when:
-        - There are digits AND the answer appears to make athlete-specific factual/causal claims
-          (TSB/ATL/CTL/EF/pace/HR/volume/% trends, “last X days”, “you ran”, etc.)
-        - AND there are no receipt markers (ISO date / UUID / explicit Receipts/Citations section).
-        """
-        if not text:
-            return False
-
-        lower = text.lower()
-
-        # Only treat explicit headings as satisfying the contract; the word "evidence" may appear in normal prose.
-        receipt_section = bool(re.search(r"(^|\n)##\s*(evidence|receipts)\b", lower))
-        has_date = bool(self._DATE_RE.search(text))
-        has_uuid = bool(self._UUID_RE.search(text))
-        if receipt_section or has_date or has_uuid:
-            return False
-
-        has_digits = any(ch.isdigit() for ch in text)
-        if not has_digits:
-            return False
-
-        # Signals that the response is describing athlete-specific facts/metrics rather than prescribing.
-        metric_tokens = (
-            "tsb",
-            "atl",
-            "ctl",
-            "ef",
-            "efficiency",
-            "rpi",
-            "vdot",  # Keep for user input detection even though we output RPI
-            "bpm",
-            "avg hr",
-            "heart rate",
-            "pace",
-            "min/mi",
-            "min/km",
-            "mi",
-            "miles",
-            "km",
-            "kilometer",
-            "kilometre",
-            "%",
-            "percent",
-            "pr",
-            "pb",
-            "personal best",
-            "trend",
-            "correlat",
-        )
-
-        past_context = (
-            "you ran" in lower
-            or "you did" in lower
-            or "you averaged" in lower
-            or "in the last" in lower
-            or "last " in lower
-            or "past " in lower
-            or "recent" in lower
-            or "since " in lower
-            or "this week" in lower
-            or "last week" in lower
-            or "over the" in lower
-        )
-
-        causal_language = (
-            "caus" in lower
-            or "caused" in lower
-            or "drives" in lower
-            or "drive " in lower
-            or "led to" in lower
-            or "because" in lower
-            or "resulted" in lower
-        )
-
-        looks_like_metric_claim = any(tok in lower for tok in metric_tokens) and (past_context or "your " in lower)
-        looks_like_causal_claim = causal_language and any(tok in lower for tok in metric_tokens)
-
-        # If this is pure prescription (“do 2 easy runs”, “run 30 min easy”), do not enforce receipts.
-        # We only enforce when it reads like analysis of the athlete’s data.
-        return looks_like_metric_claim or looks_like_causal_claim
-
-    async def _enforce_citations_contract(self, *, thread_id: str, prior_response: str, athlete_id: UUID, model: str) -> str:
-        """
-        If the model returned numeric claims without receipts, force a rewrite in the same thread.
-        """
-        if not self._looks_like_uncited_numeric_answer(prior_response):
-            return prior_response
-
-        # Ask for a rewrite with receipts. This stays inside the same thread so the
-        # assistant can reference tool outputs already generated during the run.
-        self.client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=(
-                "Rewrite your last answer to comply with the Evidence & Citations rules.\n\n"
-                "Rules:\n"
-                "- If you include any numbers (distances, times, paces, HR, efficiency, fatigue, fitness, form, percentages), you MUST include receipts.\n"
-                "- Add a final section titled '## Evidence' listing supporting evidence lines.\n"
-                "- Evidence lines must include at least one ISO date (YYYY-MM-DD) and a human label (e.g., run name + key values).\n"
-                "- Do NOT dump long UUIDs unless the athlete explicitly asks; keep evidence readable.\n"
-                "- Do not add new claims; only restate with proper receipts.\n"
-                "- If you cannot cite the data, reply exactly: \"I don't have enough data to answer that.\""
-            ),
-        )
-
-        run = self.client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id,
-            model=model,
-        )
-
-        import time
-
-        max_wait = 45
-        start = time.time()
-        while True:
-            run_status = self.client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
-
-            if run_status.status == "completed":
-                break
-            elif run_status.status == "requires_action":
-                required = getattr(run_status, "required_action", None)
-                submit = getattr(required, "submit_tool_outputs", None) if required else None
-                tool_calls = getattr(submit, "tool_calls", None) if submit else None
-
-                if not tool_calls:
-                    break
-
-                tool_outputs = []
-                for call in tool_calls:
-                    try:
-                        fn = call.function
-                        tool_name = fn.name
-                        raw_args = fn.arguments or "{}"
-                        args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
-
-                        # Tool dispatch (same as main run loop)
-                        if tool_name == "get_recent_runs":
-                            output = coach_tools.get_recent_runs(self.db, athlete_id, **args)
-                        elif tool_name == "get_calendar_day_context":
-                            output = coach_tools.get_calendar_day_context(self.db, athlete_id, **args)
-                        elif tool_name == "get_efficiency_trend":
-                            output = coach_tools.get_efficiency_trend(self.db, athlete_id, **args)
-                        elif tool_name == "get_plan_week":
-                            output = coach_tools.get_plan_week(self.db, athlete_id)
-                        elif tool_name == "get_training_load":
-                            output = coach_tools.get_training_load(self.db, athlete_id)
-                        elif tool_name == "get_training_paces":
-                            output = coach_tools.get_training_paces(self.db, athlete_id)
-                        elif tool_name == "get_correlations":
-                            output = coach_tools.get_correlations(self.db, athlete_id, **args)
-                        elif tool_name == "get_race_predictions":
-                            output = coach_tools.get_race_predictions(self.db, athlete_id)
-                        elif tool_name == "get_recovery_status":
-                            output = coach_tools.get_recovery_status(self.db, athlete_id)
-                        elif tool_name == "get_active_insights":
-                            output = coach_tools.get_active_insights(self.db, athlete_id, **args)
-                        elif tool_name == "get_pb_patterns":
-                            output = coach_tools.get_pb_patterns(self.db, athlete_id)
-                        elif tool_name == "get_efficiency_by_zone":
-                            output = coach_tools.get_efficiency_by_zone(self.db, athlete_id, **args)
-                        elif tool_name == "get_nutrition_correlations":
-                            output = coach_tools.get_nutrition_correlations(self.db, athlete_id, **args)
-                        elif tool_name == "get_weekly_volume":
-                            output = coach_tools.get_weekly_volume(self.db, athlete_id, **args)
-                        elif tool_name == "get_best_runs":
-                            output = coach_tools.get_best_runs(self.db, athlete_id, **args)
-                        elif tool_name == "compare_training_periods":
-                            output = coach_tools.compare_training_periods(self.db, athlete_id, **args)
-                        elif tool_name == "get_coach_intent_snapshot":
-                            output = coach_tools.get_coach_intent_snapshot(self.db, athlete_id, **args)
-                        elif tool_name == "set_coach_intent_snapshot":
-                            output = coach_tools.set_coach_intent_snapshot(self.db, athlete_id, **args)
-                        elif tool_name == "get_training_prescription_window":
-                            output = coach_tools.get_training_prescription_window(self.db, athlete_id, **args)
-                        # Phase 3: New tools
-                        elif tool_name == "get_wellness_trends":
-                            output = coach_tools.get_wellness_trends(self.db, athlete_id, **args)
-                        elif tool_name == "get_athlete_profile":
-                            output = coach_tools.get_athlete_profile(self.db, athlete_id)
-                        elif tool_name == "get_training_load_history":
-                            output = coach_tools.get_training_load_history(self.db, athlete_id, **args)
-                        else:
-                            output = {
-                                "ok": False,
-                                "tool": tool_name,
-                                "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
-                                "error": f"Unknown tool: {tool_name}",
-                                "data": {},
-                                "evidence": [],
-                            }
-
-                        tool_outputs.append({"tool_call_id": call.id, "output": json.dumps(output)})
-                    except Exception as e:
-                        tool_outputs.append(
-                            {
-                                "tool_call_id": call.id,
-                                "output": json.dumps(
-                                    {
-                                        "ok": False,
-                                        "tool": getattr(getattr(call, "function", None), "name", "unknown"),
-                                        "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
-                                        "error": f"Tool execution error: {str(e)}",
-                                        "data": {},
-                                        "evidence": [],
-                                    }
-                                ),
-                            }
-                        )
-
-                self.client.beta.threads.runs.submit_tool_outputs(thread_id=thread_id, run_id=run.id, tool_outputs=tool_outputs)
-            elif run_status.status in ["failed", "cancelled", "expired"]:
-                break
-
-            if time.time() - start > max_wait:
-                break
-            time.sleep(1)
-
-        # Pull the latest assistant message after the rewrite attempt.
-        rewritten = self.client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=1)
-        if rewritten.data:
-            content = rewritten.data[0].content[0]
-            if hasattr(content, "text"):
-                candidate = content.text.value
-            else:
-                candidate = str(content)
-
-            # Only accept the rewrite if it now has receipts (or is the explicit "not enough data").
-            if candidate.strip() == "I don't have enough data to answer that.":
-                return candidate
-            if not self._looks_like_uncited_numeric_answer(candidate):
-                return candidate
-
-        # If rewrite failed, return a safe refusal instead of uncited numbers.
-        return "I don't have enough data to answer that."
 
     def _extract_days_lookback(self, lower_message: str) -> Optional[int]:
         """
@@ -3666,6 +3835,32 @@ If you need more data to answer well, call the tools. That's why they're there."
     def _has_return_context(self, lower_message: str) -> bool:
         ml = (lower_message or "").lower()
         return any(p in ml for p in self._RETURN_CONTEXT_PHRASES)
+
+    def _looks_like_uncited_numeric_answer(self, text: str) -> bool:
+        """
+        Guardrail: detect uncited athlete metric claims (ATL, CTL, TSB, mileage, pace, efficiency).
+        Returns True if text appears to cite athlete data without receipts; False for prescriptions or when receipts present.
+        """
+        t = (text or "").strip()
+        if not t:
+            return False
+        lower = t.lower()
+        # Receipts present: inline activity ref or Receipts block
+        if "receipts:" in lower:
+            return False
+        if re.search(r"activity\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", lower):
+            return False
+        # Prescription patterns: instructions (do 2 runs, run 30 min, 6x20s) - not metric claims
+        if re.search(r"\b(do|run)\s+\d+\s+(easy|long|recovery)\s+run", lower):
+            return False
+        if re.search(r"run\s+\d+\s+min", lower) or re.search(r"\d+x\d+s?\s+strides?", lower):
+            return False
+        # Athlete metric claims: your ATL/CTL/TSB, you ran X miles, your pace, efficiency trend
+        metric_signals = (
+            "atl is", "ctl is", "tsb is", "atl:", "ctl:", "tsb:",
+            "you ran", "your pace", "efficiency trend", "your atl", "your ctl", "your tsb",
+        )
+        return any(s in lower for s in metric_signals)
 
     def _thread_mentions_return_context(self, athlete_id: UUID, limit: int = 10) -> bool:
         """
@@ -3899,17 +4094,20 @@ If you need more data to answer well, call the tools. That's why they're there."
                 checkin = (
                     self.db.query(DailyCheckin)
                     .filter(DailyCheckin.athlete_id == athlete_id)
-                    .order_by(DailyCheckin.checkin_date.desc())
+                    .order_by(DailyCheckin.date.desc())
                     .first()
                 )
                 if checkin:
-                    state_lines.append(f"Last checkin ({checkin.checkin_date}):")
-                    if checkin.sleep_hours:
-                        state_lines.append(f"  Sleep: {checkin.sleep_hours}h")
-                    if checkin.energy_level:
-                        state_lines.append(f"  Energy: {checkin.energy_level}/10")
-                    if checkin.soreness_level:
-                        state_lines.append(f"  Soreness: {checkin.soreness_level}/10")
+                    state_lines.append(f"Last checkin ({checkin.date}):")
+                    if checkin.sleep_h is not None:
+                        state_lines.append(f"  Sleep: {checkin.sleep_h}h")
+                    if checkin.readiness_1_5 is not None:
+                        readiness_map = {5: 'High', 4: 'Good', 3: 'Neutral', 2: 'Low', 1: 'Poor'}
+                        state_lines.append(f"  Readiness: {readiness_map.get(checkin.readiness_1_5, checkin.readiness_1_5)}")
+                    if checkin.soreness_1_5 is not None:
+                        state_lines.append(f"  Soreness: {checkin.soreness_1_5}/5")
+                    if checkin.stress_1_5 is not None:
+                        state_lines.append(f"  Stress: {checkin.stress_1_5}/5")
                     if checkin.notes:
                         state_lines.append(f"  Notes: {checkin.notes[:100]}")
             except Exception:
@@ -4027,10 +4225,15 @@ If you need more data to answer well, call the tools. That's why they're there."
         """
         True when:
         - The athlete uses return-context language ("since coming back", "after injury", etc.)
-        - AND also uses comparison/superlative language ("longest", "slow", etc.)
-        - BUT does not provide any concrete return window (date, \"6 weeks\", month name).
+        - AND uses true superlative/comparison language ("longest", "fastest", "best", etc.)
+        - BUT does not provide any concrete return window (date, "6 weeks", month name).
 
-        This is a production-beta trust guardrail: ask a clarifying question instead of assuming.
+        This is a production-beta trust guardrail: ask a clarifying question instead
+        of assuming an all-time scope.
+
+        IMPORTANT: Does NOT fire on narrative/venting statements like "returning from
+        injury sucks" or "I'm running slow". The plain adjectives "slow" and "fast"
+        are NOT treated as comparison triggers — only true superlatives are.
         """
         lower = (lower_message or "").lower()
         if not lower:
@@ -4038,22 +4241,16 @@ If you need more data to answer well, call the tools. That's why they're there."
         if not self._has_return_context(lower):
             return False
 
-        # Comparison/superlative tokens (include common sentiment like "slow").
-        if not (
-            "longest" in lower
-            or "furthest" in lower
-            or "fastest" in lower
-            or "slowest" in lower
-            or "best" in lower
-            or "worst" in lower
-            or "most" in lower
-            or "least" in lower
-            or "hardest" in lower
-            or "toughest" in lower
-            or "easiest" in lower
-            or "slow" in lower
-            or "fast" in lower
-        ):
+        # Only fire on TRUE superlative/comparison terms that imply a ranking/scope.
+        # "slow" and "fast" are plain adjectives describing current state — NOT triggers.
+        # "I'm running slow" is venting, not a comparison question.
+        _SUPERLATIVE_TERMS = (
+            "longest", "furthest", "fastest", "slowest",
+            "best", "worst", "most", "least",
+            "hardest", "toughest", "easiest",
+            "biggest", "smallest",
+        )
+        if not any(term in lower for term in _SUPERLATIVE_TERMS):
             return False
 
         has_iso_date = bool(re.search(r"\b20\d{2}-\d{2}-\d{2}\b", lower))
@@ -4094,6 +4291,31 @@ If you need more data to answer well, call the tools. That's why they're there."
 
         # Normalize headings: 'Receipts' -> 'Evidence'
         text = re.sub(r"(?mi)(^|\n)##\s*Receipts\s*$", r"\1## Evidence", text)
+        # Suppress internal prompt-contract leakage in user-facing prose.
+        text = re.sub(r"(?mi)^\s*authoritative fact capsule.*$", "", text)
+        text = re.sub(r"(?mi)^\s*response contract.*$", "", text)
+        # Rewrite internal pace-comparison language into athlete-friendly prose.
+        # Matches both standalone lines and bullet-list items (e.g. "- Recorded pace…").
+        def _rewrite_pace_relation(m: re.Match) -> str:
+            prefix = m.group("prefix") or ""
+            direction = (m.group("direction") or "").strip().lower()
+            amount = (m.group("amount") or "").strip().rstrip(".")
+            if not amount:
+                return ""
+            if direction == "slower":
+                return f"{prefix}Pace sat about {amount} off marathon rhythm — controlled effort."
+            elif direction == "faster":
+                return f"{prefix}Pace was about {amount} quicker than marathon rhythm."
+            else:
+                return f"{prefix}Pace was about {amount} relative to marathon rhythm."
+        text = re.sub(
+            r"(?mi)^(?P<prefix>\s*[-*]\s*)?recorded pace vs marathon pace\s*:\s*"
+            r"(?P<direction>slower|faster)?\s*(?:by\s*)?(?P<amount>[0-9:]+/mi(?:le)?)?\s*\.?\s*$",
+            _rewrite_pace_relation,
+            text,
+        )
+        text = re.sub(r"(?mi)^\s*date\s*:\s*20\d{2}-\d{2}-\d{2}.*$", "", text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
 
         # If the model wrote a trailing "Receipts" or "Evidence" label without a markdown heading,
         # convert it into a collapsible heading.

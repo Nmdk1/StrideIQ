@@ -291,7 +291,7 @@ export default function ActivitiesPage() {
                   canSelect={canAddMore}
                   onToggleSelection={() => toggleSelection({
                     id: activity.id,
-                    name: activity.name,
+                    name: activity.resolved_title ?? activity.name,
                     date: activity.start_date,
                     workout_type: activity.workout_type || null,
                     distance_m: activity.distance,

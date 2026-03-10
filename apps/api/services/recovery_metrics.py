@@ -9,13 +9,13 @@ Calculates recovery-related metrics from the manifesto:
 Based on Manifesto Section 2: Secondary Signals
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
-from models import Activity, DailyCheckin, ActivityFeedback
+from models import Activity, DailyCheckin, ActivityFeedback, Athlete
 
 import logging
 
@@ -356,3 +356,136 @@ def detect_masked_fatigue(
     return warnings
 
 
+def compute_recovery_curve(
+    db: Session,
+    athlete_id: str,
+    now_days: int = 90,
+    before_days: int = 180,
+    min_hard_sessions: int = 3,
+) -> Optional[Dict]:
+    """
+    Build "before" vs "now" recovery curves from hard-session efficiency.
+
+    1. Find hard sessions (avg_hr > 85% max_hr) in each window.
+    2. For each, collect efficiency of runs on days 0-7 after.
+    3. Average across instances, normalize as % of easy-run baseline.
+
+    Returns dict with "before", "now" arrays (% of baseline) and
+    "days" labels, or a fallback message if insufficient data.
+    """
+    from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
+    from services.effort_classification import classify_effort_bulk
+    from models import ActivitySplit
+
+    end = datetime.now(timezone.utc)
+    now_start = end - timedelta(days=now_days)
+    before_start = end - timedelta(days=before_days)
+
+    activities = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.start_time >= before_start,
+            Activity.avg_hr.isnot(None),
+        )
+        .order_by(Activity.start_time)
+        .all()
+    )
+
+    if len(activities) < 10:
+        return None
+
+    classifications = classify_effort_bulk(activities, str(athlete_id), db)
+
+    ef_cache: Dict = {}
+
+    def _get_ef(act: Activity) -> Optional[float]:
+        if act.id in ef_cache:
+            return ef_cache[act.id]
+        splits = (
+            db.query(ActivitySplit)
+            .filter(ActivitySplit.activity_id == act.id)
+            .order_by(ActivitySplit.split_number)
+            .all()
+        )
+        r = calculate_activity_efficiency_with_decoupling(
+            activity=act, splits=splits, max_hr=None,
+        )
+        val = r.get("efficiency_factor")
+        ef_cache[act.id] = val
+        return val
+
+    date_to_acts: Dict = {}
+    for a in activities:
+        d = a.start_time.date()
+        date_to_acts.setdefault(d, []).append(a)
+
+    easy_efs: List[float] = []
+    for a in activities:
+        if classifications.get(a.id) == "easy":
+            ef = _get_ef(a)
+            if ef:
+                easy_efs.append(ef)
+
+    if not easy_efs:
+        return None
+    baseline = sum(easy_efs) / len(easy_efs)
+
+    def _build_curve(window_start: datetime, window_end: datetime) -> Tuple[List, int]:
+        hard_dates = []
+        for a in activities:
+            if (
+                window_start <= a.start_time <= window_end
+                and classifications.get(a.id) == "hard"
+            ):
+                hard_dates.append(a.start_time.date())
+
+        if len(hard_dates) < min_hard_sessions:
+            return [], len(hard_dates)
+
+        day_sums = [0.0] * 8
+        day_counts = [0] * 8
+
+        for hd in hard_dates:
+            for offset in range(8):
+                target = hd + timedelta(days=offset)
+                if target in date_to_acts:
+                    for a in date_to_acts[target]:
+                        ef = _get_ef(a)
+                        if ef:
+                            day_sums[offset] += ef
+                            day_counts[offset] += 1
+
+        curve = []
+        for i in range(8):
+            if day_counts[i] > 0:
+                pct = round((day_sums[i] / day_counts[i]) / baseline * 100, 1)
+            else:
+                curve.append(None)
+                continue
+            curve.append(pct)
+
+        return curve, len(hard_dates)
+
+    before_curve, before_count = _build_curve(before_start, now_start)
+    now_curve, now_count = _build_curve(now_start, end)
+
+    if before_count < min_hard_sessions and now_count < min_hard_sessions:
+        return {
+            "fallback": True,
+            "message": (
+                f"Need more hard sessions to compute your recovery curve. "
+                f"Currently {now_count} hard session{'s' if now_count != 1 else ''} "
+                f"in the last {now_days} days."
+            ),
+            "hard_sessions_now": now_count,
+            "hard_sessions_before": before_count,
+        }
+
+    return {
+        "before": before_curve if before_curve else [None] * 8,
+        "now": now_curve if now_curve else [None] * 8,
+        "days": [f"Day {i}" for i in range(8)],
+        "hard_sessions_now": now_count,
+        "hard_sessions_before": before_count,
+    }

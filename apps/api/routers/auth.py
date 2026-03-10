@@ -77,6 +77,8 @@ class UserResponse(BaseModel):
     trial_source: Optional[str] = None
     # Derived entitlement signal (includes trials)
     has_active_subscription: bool = False
+    # Nav gating — lightweight signal for frontend
+    has_correlations: bool = False
 
     model_config = ConfigDict(from_attributes=True)
     
@@ -132,11 +134,13 @@ def register(
             detail="Email already registered"
         )
     
-    # Validate password strength (basic check)
-    if len(user_data.password) < 8:
+    # Validate password strength (comprehensive policy)
+    from core.password_policy import validate_password
+    is_valid, password_errors = validate_password(user_data.password)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters"
+            detail=password_errors[0] if len(password_errors) == 1 else password_errors
         )
     
     # Determine subscription tier: use invite's grant_tier if set, otherwise "free"
@@ -295,6 +299,12 @@ def login(
         data={"sub": str(user.id), "email": user.email, "role": user.role}
     )
     
+    try:
+        from tasks.progress_prewarm_tasks import enqueue_progress_prewarm
+        enqueue_progress_prewarm(str(user.id))
+    except Exception as e:
+        logger.warning("progress prewarm enqueue failed (non-blocking): %s", e)
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -318,10 +328,19 @@ def login(
 
 @router.get("/me", response_model=UserResponse)
 def get_current_user_info(
-    current_user: Athlete = Depends(get_current_user)
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Get current authenticated user information."""
-    return current_user
+    from models import CorrelationFinding as _CF
+    has_corr = db.query(_CF).filter(
+        _CF.athlete_id == current_user.id,
+        _CF.is_active.is_(True),
+        _CF.times_confirmed >= 3,
+    ).limit(1).count() > 0
+    resp = UserResponse.model_validate(current_user)
+    resp.has_correlations = has_corr
+    return resp
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -376,8 +395,8 @@ def forgot_password(
             algorithm=ALGORITHM,
         )
         
-        # Build reset URL
-        frontend_url = getattr(settings, "FRONTEND_URL", "https://strideiq.run")
+        # Build reset URL from canonical web app base URL config.
+        frontend_url = (settings.WEB_APP_BASE_URL or "https://strideiq.run").rstrip("/")
         reset_url = f"{frontend_url}/reset-password?token={reset_token}"
         
         # Send email
@@ -416,9 +435,11 @@ If you didn't request this, you can safely ignore this email.
         if sent:
             logger.info(f"Password reset email sent to {email}")
         else:
-            # Email not configured - log for debugging
-            logger.warning(f"Password reset requested for {email} but email service is disabled")
-            logger.info(f"Reset URL (dev only): {reset_url}")
+            # NEVER log reset URL/token.
+            logger.warning(
+                "Password reset requested for %s but email send failed (service disabled, creds missing, or SMTP error)",
+                email,
+            )
     else:
         # Don't reveal that email doesn't exist
         logger.info(f"Password reset requested for non-existent email: {email}")
@@ -440,11 +461,13 @@ def reset_password(
     
     Validates the token and updates the password.
     """
-    # Validate password strength
-    if len(request.new_password) < 8:
+    # Validate password strength (comprehensive policy)
+    from core.password_policy import validate_password
+    is_valid, password_errors = validate_password(request.new_password)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters"
+            detail=password_errors[0] if len(password_errors) == 1 else password_errors
         )
     
     # Decode and validate token
@@ -490,5 +513,39 @@ def reset_password(
     return {
         "success": True,
         "message": "Password has been reset. You can now log in with your new password.",
+    }
+
+
+# --- EMAIL CHANGE VERIFICATION ---
+
+class EmailChangeVerifyRequest(BaseModel):
+    """Request to verify email change"""
+    token: str
+
+
+@router.post("/verify-email-change")
+def verify_email_change(
+    request: EmailChangeVerifyRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Verify and complete an email change request.
+    
+    The token is sent to the user's new email address when they request
+    an email change. This endpoint validates the token and updates the email.
+    """
+    from services.email_verification import complete_email_change
+    
+    success, message = complete_email_change(db, request.token)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message
+        )
+    
+    return {
+        "success": True,
+        "message": message
     }
 

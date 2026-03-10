@@ -11,13 +11,13 @@
 
 StrideIQ has two pace calculation methods:
 
-1. **Daniels/Gilbert Equations** (`vdot_calculator.py` → `calculate_training_paces()`): Uses the actual oxygen cost physics (public domain):
+1. **Daniels/Gilbert Equations** (`rpi_calculator.py` → `calculate_training_paces()`): Uses the actual oxygen cost physics (public domain):
    - `VO2 = -4.6 + 0.182258*v + 0.000104*v^2`
    - Reverse-solves with quadratic formula to derive velocity from target VO2
    - Uses intensity percentages at benchmark RPI values with linear interpolation
    - Powers the **Training Pace Calculator** (public tool)
 
-2. **Linear Approximation** (`workout_prescription.py` → `calculate_paces_from_vdot()`): Uses simplified formulas:
+2. **Linear Approximation** (`workout_prescription.py` → `calculate_paces_from_rpi()`): Uses simplified formulas:
    - `marathon_pace = 10.5 - (rpi * 0.07)`
    - `threshold_pace = marathon_pace - 0.35`
    - Powers plan generation and workout prescriptions
@@ -36,11 +36,11 @@ An athlete who calculates paces in the Training Pace Calculator, then generates 
 
 ## Decision
 
-**Replace the linear approximation in `WorkoutPrescriptionGenerator` with the Daniels/Gilbert equations already implemented in `vdot_calculator.py`.**
+**Replace the linear approximation in `WorkoutPrescriptionGenerator` with the Daniels/Gilbert equations already implemented in `rpi_calculator.py`.**
 
 Specifically:
-1. Remove `calculate_paces_from_vdot()` from `workout_prescription.py`
-2. Import `calculate_training_paces()` from `vdot_calculator.py`
+1. Remove `calculate_paces_from_rpi()` from `workout_prescription.py`
+2. Import `calculate_training_paces()` from `rpi_calculator.py`
 3. Adapt the returned pace format to match what `WorkoutPrescriptionGenerator` expects (minutes per mile as float)
 4. Verify all workout descriptions render with correct paces
 
@@ -51,13 +51,13 @@ Specifically:
 ## Considered Alternatives Rejected
 
 **A. Copy the Daniels equations into workout_prescription.py**  
-Rejected. Duplicating physics code invites drift. Single source is `vdot_calculator.py`.
+Rejected. Duplicating physics code invites drift. Single source is `rpi_calculator.py`.
 
 **B. Keep the linear approximation and document the difference**  
-Rejected. Violates N=1 philosophy. Athlete's VDOT must produce consistent paces everywhere.
+Rejected. Violates N=1 philosophy. Athlete's RPI must produce consistent paces everywhere.
 
 **C. Create a new shared pace module**  
-Rejected for this scope. The correct implementation already exists in `vdot_calculator.py`. Refactoring to a shared module is future work.
+Rejected for this scope. The correct implementation already exists in `rpi_calculator.py`. Refactoring to a shared module is future work.
 
 **D. Use database lookup tables instead of calculations**  
 Rejected. The Daniels equations ARE the source of truth. Lookup tables were an optimization layer, not a replacement.
@@ -87,7 +87,7 @@ Rejected. The Daniels equations ARE the source of truth. Lookup tables were an o
 An athlete's RPI produces a specific threshold pace via physics. That pace must be the same in the Training Pace Calculator, in their plan, and on their calendar. Two different formulas producing different results means the system doesn't trust its own math.
 
 **Architecture alignment:**
-- `vdot_calculator.py` already has the validated Daniels/Gilbert implementation
+- `rpi_calculator.py` already has the validated Daniels/Gilbert implementation
 - `WorkoutPrescriptionGenerator` already consumes a pace dictionary
 - Change is a source swap, not a structural change
 
@@ -101,13 +101,13 @@ An athlete's RPI produces a specific threshold pace via physics. That pace must 
 ## Implementation Notes
 
 **Source of truth:**
-- `apps/api/services/vdot_calculator.py` → `calculate_training_paces(vdot)`
+- `apps/api/services/rpi_calculator.py` → `calculate_training_paces(rpi)`
 
 **File to modify:**
 - `apps/api/services/workout_prescription.py`
 
 **Key change:**
-- Replace `calculate_paces_from_vdot()` (lines 29-69) with import from `vdot_calculator.py`
+- Replace `calculate_paces_from_rpi()` (lines 29-69) with import from `rpi_calculator.py`
 - Adapt return format: `calculate_training_paces()` returns `{pace: {mi: "M:SS", km: "M:SS"}}` 
 - `WorkoutPrescriptionGenerator` expects `{pace: float}` (minutes per mile)
 - Add conversion function to parse "M:SS" → float
@@ -117,4 +117,4 @@ An athlete's RPI produces a specific threshold pace via physics. That pace must 
 - Verify all pace format strings render correctly in workout descriptions
 
 **Note on internal naming:**
-Internal file names (`vdot_calculator.py`, `vdot_enhanced.py`) use legacy terminology. User-facing terminology is **RPI** (Running Performance Index). The underlying physics (Daniels/Gilbert oxygen cost equations) are public domain.
+Internal file names (`rpi_calculator.py`, `rpi_enhanced.py`) use legacy terminology. User-facing terminology is **RPI** (Running Performance Index). The underlying physics (Daniels/Gilbert oxygen cost equations) are public domain.

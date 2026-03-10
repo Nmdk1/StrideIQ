@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database import SessionLocal
+from core.database import SessionLocal
 from models import Activity, ActivitySplit, Athlete
 from sqlalchemy import func
 from services.strava_service import get_activity_laps
