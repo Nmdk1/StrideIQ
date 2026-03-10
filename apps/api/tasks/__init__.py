@@ -78,6 +78,7 @@ from . import garmin_webhook_tasks  # noqa: E402  # D4: Celery task stubs
 from . import progress_prewarm_tasks  # noqa: E402
 from . import garmin_health_monitor_task  # noqa: E402  # daily GarminDay coverage check
 from . import correlation_tasks  # noqa: E402  # daily correlation sweep
+from . import experience_guardrail_task  # noqa: E402  # daily experience audit
 
 try:
     from . import runtoon_tasks  # noqa: E402

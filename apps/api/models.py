@@ -2751,3 +2751,26 @@ class NarrativeFeedback(Base):
     __table_args__ = (
         Index("ix_narrative_feedback_athlete_created", "athlete_id", "created_at"),
     )
+
+
+class ExperienceAuditLog(Base):
+    """Permanent log of daily production experience guardrail runs."""
+    __tablename__ = "experience_audit_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    run_date = Column(Date, nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    tier = Column(Text, nullable=False)
+    passed = Column(Boolean, nullable=False)
+    total_assertions = Column(Integer, nullable=False)
+    passed_count = Column(Integer, nullable=False)
+    failed_count = Column(Integer, nullable=False)
+    skipped_count = Column(Integer, nullable=False, server_default='0')
+    results = Column(JSONB, nullable=False)
+    summary = Column(Text, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('athlete_id', 'run_date', 'tier', name='uq_audit_athlete_date_tier'),
+    )

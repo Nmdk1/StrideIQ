@@ -51,6 +51,14 @@ beat_schedule = {
         'task': 'tasks.refresh_living_fingerprint',
         'schedule': crontab(hour=6, minute=0),
     },
+    # Daily experience guardrail — 06:15 UTC.
+    # Runs after morning intelligence (05:00 local) and Garmin sync.
+    # Audits all athlete-facing surfaces for data truth, language hygiene,
+    # structural integrity, and trust violations. Founder-only in v1.
+    'daily-experience-guardrail': {
+        'task': 'tasks.run_experience_guardrail',
+        'schedule': crontab(hour=6, minute=15),
+    },
 }
 
 
