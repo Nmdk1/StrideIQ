@@ -259,6 +259,29 @@ class TestRuntoonService:
         assert result.generation_time_ms >= 0
         assert result.prompt_hash != ""
 
+    def test_worker_guardrail_no_router_import_in_activity_context(self):
+        """
+        Regression guardrail:
+        runtoon_service must not import routers.activities at runtime because
+        worker context may not have API-only import paths available.
+        """
+        import inspect
+        from services import runtoon_service as svc
+
+        source = inspect.getsource(svc._format_activity_context)
+        assert "routers.activities" not in source, (
+            "_format_activity_context imports routers.activities; "
+            "this can break Celery worker runtime imports."
+        )
+        assert "_resolve_activity_title" in source
+
+    def test_worker_guardrail_tasks_module_is_importable(self):
+        """Regression guardrail: task module must import cleanly in tests/CI."""
+        import tasks.runtoon_tasks as rt
+
+        assert rt.generate_runtoon_for_activity is not None
+        assert rt.generate_runtoon_for_latest is not None
+
 
 # ---------------------------------------------------------------------------
 # Rate limit + idempotency logic tests
