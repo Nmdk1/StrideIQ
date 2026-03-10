@@ -28,7 +28,8 @@ from scipy.stats import t as t_dist
 from models import (
     Activity, ActivitySplit, NutritionEntry, DailyCheckin, 
     WorkPattern, BodyComposition, ActivityFeedback,
-    PlannedWorkout, TrainingPlan, Athlete, PersonalBest
+    PlannedWorkout, TrainingPlan, Athlete, PersonalBest,
+    GarminDay, ActivityReflection,
 )
 from datetime import date as date_type
 from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
@@ -78,6 +79,28 @@ CONFOUNDER_MAP: Dict[Tuple[str, str], str] = {
     #   Taper produces both more sleep AND faster race pace.
     ("sleep_hours", "pace_easy"): "ctl",
     ("sleep_hours", "pace_threshold"): "ctl",
+
+    # Heat confounded by training load
+    ("dew_point_f", "efficiency"): "daily_session_stress",
+    ("heat_adjustment_pct", "efficiency"): "daily_session_stress",
+
+    # Garmin stress confounded by training load
+    ("garmin_avg_stress", "efficiency"): "daily_session_stress",
+
+    # Body battery confounded by training load
+    ("garmin_body_battery_end", "efficiency"): "daily_session_stress",
+
+    # Feedback confounded by training load
+    ("feedback_perceived_effort", "efficiency"): "daily_session_stress",
+    ("feedback_leg_feel", "efficiency"): "daily_session_stress",
+    ("feedback_energy_pre", "efficiency"): "daily_session_stress",
+
+    # Steps confounded by training load
+    ("garmin_steps", "efficiency"): "daily_session_stress",
+
+    # Volume confounded by fitness
+    ("weekly_volume_km", "efficiency"): "ctl",
+    ("weekly_volume_km", "pace_easy"): "ctl",
 }
 
 # Expected physiological direction for (input, output) pairs.
@@ -97,6 +120,36 @@ DIRECTION_EXPECTATIONS: Dict[Tuple[str, str], str] = {
     ("tsb", "pace_easy"): "positive",
     ("tsb", "pace_threshold"): "positive",
     ("rpe_1_10", "efficiency"): "negative",
+
+    # GarminDay — recovery signals (higher = better)
+    ("garmin_sleep_score", "efficiency"): "positive",
+    ("garmin_sleep_deep_s", "efficiency"): "positive",
+    ("garmin_sleep_rem_s", "efficiency"): "positive",
+    ("garmin_body_battery_end", "efficiency"): "positive",
+    ("garmin_hrv_5min_high", "efficiency"): "positive",
+    ("garmin_sleep_score", "pace_easy"): "positive",
+    ("garmin_body_battery_end", "pace_easy"): "positive",
+
+    # GarminDay — stress signals (higher = worse)
+    ("garmin_avg_stress", "efficiency"): "negative",
+    ("garmin_max_stress", "efficiency"): "negative",
+
+    # Heat (higher = worse performance)
+    ("dew_point_f", "efficiency"): "negative",
+    ("heat_adjustment_pct", "efficiency"): "negative",
+    ("dew_point_f", "pace_easy"): "negative",
+
+    # Feedback (higher = better)
+    ("feedback_energy_pre", "efficiency"): "positive",
+    ("feedback_leg_feel", "efficiency"): "positive",
+
+    # Sleep quality
+    ("sleep_quality_1_5", "efficiency"): "positive",
+    ("sleep_quality_1_5", "pace_easy"): "positive",
+
+    # Training patterns (more consecutive days / less rest = worse)
+    ("consecutive_run_days", "efficiency"): "negative",
+    ("days_since_rest", "efficiency"): "negative",
 }
 
 
@@ -270,7 +323,21 @@ def aggregate_daily_inputs(
     ).all()
     
     inputs["sleep_hours"] = [(row.date, float(row.sleep_h)) for row in sleep_data]
-    
+
+    sleep_quality_data = db.query(
+        DailyCheckin.date,
+        DailyCheckin.sleep_quality_1_5
+    ).filter(
+        DailyCheckin.athlete_id == athlete_id,
+        DailyCheckin.date >= start_date.date(),
+        DailyCheckin.date <= end_date.date(),
+        DailyCheckin.sleep_quality_1_5.isnot(None)
+    ).all()
+
+    inputs["sleep_quality_1_5"] = [
+        (row.date, float(row.sleep_quality_1_5)) for row in sleep_quality_data
+    ]
+
     # HRV (rMSSD)
     hrv_data = db.query(
         DailyCheckin.date,
@@ -348,7 +415,49 @@ def aggregate_daily_inputs(
     ).group_by(NutritionEntry.date).all()
     
     inputs["daily_carbs_g"] = [(row.date, float(row.total_carbs)) for row in carbs_data]
-    
+
+    fat_data = db.query(
+        NutritionEntry.date,
+        func.sum(NutritionEntry.fat_g).label('total_fat')
+    ).filter(
+        NutritionEntry.athlete_id == athlete_id,
+        NutritionEntry.date >= start_date.date(),
+        NutritionEntry.date <= end_date.date(),
+        NutritionEntry.fat_g.isnot(None)
+    ).group_by(NutritionEntry.date).all()
+
+    inputs["daily_fat_g"] = [
+        (row.date, float(row.total_fat)) for row in fat_data
+    ]
+
+    fiber_data = db.query(
+        NutritionEntry.date,
+        func.sum(NutritionEntry.fiber_g).label('total_fiber')
+    ).filter(
+        NutritionEntry.athlete_id == athlete_id,
+        NutritionEntry.date >= start_date.date(),
+        NutritionEntry.date <= end_date.date(),
+        NutritionEntry.fiber_g.isnot(None)
+    ).group_by(NutritionEntry.date).all()
+
+    inputs["daily_fiber_g"] = [
+        (row.date, float(row.total_fiber)) for row in fiber_data
+    ]
+
+    calorie_data = db.query(
+        NutritionEntry.date,
+        func.sum(NutritionEntry.calories).label('total_calories')
+    ).filter(
+        NutritionEntry.athlete_id == athlete_id,
+        NutritionEntry.date >= start_date.date(),
+        NutritionEntry.date <= end_date.date(),
+        NutritionEntry.calories.isnot(None)
+    ).group_by(NutritionEntry.date).all()
+
+    inputs["daily_calories"] = [
+        (row.date, float(row.total_calories)) for row in calorie_data
+    ]
+
     # Body composition trends (weight, BMI)
     weight_data = db.query(
         BodyComposition.date,
@@ -373,6 +482,34 @@ def aggregate_daily_inputs(
     ).order_by(BodyComposition.date).all()
     
     inputs["bmi"] = [(row.date, float(row.bmi)) for row in bmi_data]
+
+    body_fat_data = db.query(
+        BodyComposition.date,
+        BodyComposition.body_fat_pct
+    ).filter(
+        BodyComposition.athlete_id == athlete_id,
+        BodyComposition.date >= start_date.date(),
+        BodyComposition.date <= end_date.date(),
+        BodyComposition.body_fat_pct.isnot(None)
+    ).order_by(BodyComposition.date).all()
+
+    inputs["body_fat_pct"] = [
+        (row.date, float(row.body_fat_pct)) for row in body_fat_data
+    ]
+
+    muscle_mass_data = db.query(
+        BodyComposition.date,
+        BodyComposition.muscle_mass_kg
+    ).filter(
+        BodyComposition.athlete_id == athlete_id,
+        BodyComposition.date >= start_date.date(),
+        BodyComposition.date <= end_date.date(),
+        BodyComposition.muscle_mass_kg.isnot(None)
+    ).order_by(BodyComposition.date).all()
+
+    inputs["muscle_mass_kg"] = [
+        (row.date, float(row.muscle_mass_kg)) for row in muscle_mass_data
+    ]
 
     # Stress (1-5 scale)
     stress_data = db.query(
@@ -477,7 +614,321 @@ def aggregate_daily_inputs(
     ).all()
 
     inputs["hrv_sdnn"] = [(row.date, float(row.hrv_sdnn)) for row in hrv_sdnn_data]
-    
+
+    # ── GarminDay wearable signals ──
+
+    _garmin_base = db.query(GarminDay).filter(
+        GarminDay.athlete_id == athlete_id,
+        GarminDay.calendar_date >= start_date.date(),
+        GarminDay.calendar_date <= end_date.date(),
+    )
+
+    _gd_rows = _garmin_base.all()
+
+    _GARMIN_SIGNALS = [
+        ("garmin_sleep_score", "sleep_score"),
+        ("garmin_sleep_deep_s", "sleep_deep_s"),
+        ("garmin_sleep_rem_s", "sleep_rem_s"),
+        ("garmin_sleep_awake_s", "sleep_awake_s"),
+        ("garmin_body_battery_end", "body_battery_end"),
+        ("garmin_avg_stress", "avg_stress"),
+        ("garmin_max_stress", "max_stress"),
+        ("garmin_steps", "steps"),
+        ("garmin_active_time_s", "active_time_s"),
+        ("garmin_moderate_intensity_s", "moderate_intensity_s"),
+        ("garmin_vigorous_intensity_s", "vigorous_intensity_s"),
+        ("garmin_hrv_5min_high", "hrv_5min_high"),
+        ("garmin_min_hr", "min_hr"),
+        ("garmin_vo2max", "vo2max"),
+    ]
+
+    for input_key, attr in _GARMIN_SIGNALS:
+        series = []
+        for row in _gd_rows:
+            val = getattr(row, attr, None)
+            if val is not None:
+                series.append((row.calendar_date, float(val)))
+        inputs[input_key] = series
+
+    return inputs
+
+
+def aggregate_activity_level_inputs(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session
+) -> Dict[str, List[Tuple[date_type, float]]]:
+    """
+    Aggregate activity-level signals into daily time series.
+    For days with multiple activities, uses the primary run (longest distance).
+    """
+    inputs: Dict[str, List[Tuple[date_type, float]]] = {}
+
+    activities = db.query(Activity).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.sport == "run",
+        Activity.start_time >= start_date,
+        Activity.start_time <= end_date,
+    ).order_by(Activity.start_time).all()
+
+    if not activities:
+        return inputs
+
+    by_date: Dict[date_type, Activity] = {}
+    for a in activities:
+        d = a.start_time.date()
+        if d not in by_date or (a.distance_m or 0) > (by_date[d].distance_m or 0):
+            by_date[d] = a
+
+    _ACTIVITY_SIGNALS = [
+        ("dew_point_f", "dew_point_f"),
+        ("heat_adjustment_pct", "heat_adjustment_pct"),
+        ("temperature_f", "temperature_f"),
+        ("humidity_pct", "humidity_pct"),
+        ("elevation_gain_m", "total_elevation_gain"),
+        ("avg_cadence", "avg_cadence"),
+        ("avg_stride_length_m", "avg_stride_length_m"),
+        ("avg_ground_contact_ms", "avg_ground_contact_ms"),
+        ("avg_vertical_oscillation_cm", "avg_vertical_oscillation_cm"),
+        ("avg_vertical_ratio_pct", "avg_vertical_ratio_pct"),
+        ("avg_power_w", "avg_power_w"),
+        ("garmin_aerobic_te", "garmin_aerobic_te"),
+        ("garmin_anaerobic_te", "garmin_anaerobic_te"),
+        ("garmin_perceived_effort", "garmin_perceived_effort"),
+        ("garmin_body_battery_impact", "garmin_body_battery_impact"),
+        ("activity_intensity_score", "intensity_score"),
+        ("active_kcal", "active_kcal"),
+    ]
+
+    for signal_key, attr in _ACTIVITY_SIGNALS:
+        series = []
+        for d, a in sorted(by_date.items()):
+            val = getattr(a, attr, None)
+            if val is not None:
+                fval = float(val)
+                if signal_key == "heat_adjustment_pct" and fval <= 0:
+                    continue
+                series.append((d, fval))
+        if series:
+            inputs[signal_key] = series
+
+    tod_series = []
+    for d, a in sorted(by_date.items()):
+        if a.start_time:
+            tod_series.append((d, float(a.start_time.hour)))
+    if tod_series:
+        inputs["run_start_hour"] = tod_series
+
+    return inputs
+
+
+def aggregate_feedback_inputs(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session
+) -> Dict[str, List[Tuple[date_type, float]]]:
+    """
+    Aggregate post-run feedback and reflection signals.
+    """
+    inputs: Dict[str, List[Tuple[date_type, float]]] = {}
+
+    _LEG_FEEL_ORDINAL = {
+        "fresh": 5, "normal": 4, "tired": 3,
+        "heavy": 2, "sore": 1, "injured": 0,
+    }
+
+    feedback_rows = db.query(
+        ActivityFeedback.submitted_at,
+        ActivityFeedback.perceived_effort,
+        ActivityFeedback.energy_pre,
+        ActivityFeedback.energy_post,
+        ActivityFeedback.leg_feel,
+    ).filter(
+        ActivityFeedback.athlete_id == athlete_id,
+        ActivityFeedback.submitted_at >= start_date,
+        ActivityFeedback.submitted_at <= end_date,
+    ).all()
+
+    perceived_effort = []
+    energy_pre = []
+    energy_post = []
+    leg_feel = []
+
+    for row in feedback_rows:
+        d = row.submitted_at.date() if row.submitted_at else None
+        if d is None:
+            continue
+        if row.perceived_effort is not None:
+            perceived_effort.append((d, float(row.perceived_effort)))
+        if row.energy_pre is not None:
+            energy_pre.append((d, float(row.energy_pre)))
+        if row.energy_post is not None:
+            energy_post.append((d, float(row.energy_post)))
+        if row.leg_feel and row.leg_feel in _LEG_FEEL_ORDINAL:
+            leg_feel.append((d, float(_LEG_FEEL_ORDINAL[row.leg_feel])))
+
+    if perceived_effort:
+        inputs["feedback_perceived_effort"] = perceived_effort
+    if energy_pre:
+        inputs["feedback_energy_pre"] = energy_pre
+    if energy_post:
+        inputs["feedback_energy_post"] = energy_post
+    if leg_feel:
+        inputs["feedback_leg_feel"] = leg_feel
+
+    _REFLECTION_ORDINAL = {"harder": -1, "expected": 0, "easier": 1}
+
+    reflection_rows = db.query(
+        ActivityReflection.created_at,
+        ActivityReflection.response,
+    ).filter(
+        ActivityReflection.athlete_id == athlete_id,
+        ActivityReflection.created_at >= start_date,
+        ActivityReflection.created_at <= end_date,
+    ).all()
+
+    reflection_series = []
+    for row in reflection_rows:
+        d = row.created_at.date() if row.created_at else None
+        if d is None:
+            continue
+        val = _REFLECTION_ORDINAL.get(row.response)
+        if val is not None:
+            reflection_series.append((d, float(val)))
+
+    if reflection_series:
+        inputs["reflection_vs_expected"] = reflection_series
+
+    return inputs
+
+
+def aggregate_training_pattern_inputs(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session
+) -> Dict[str, List[Tuple[date_type, float]]]:
+    """
+    Compute derived training pattern signals from activity history.
+    """
+    inputs: Dict[str, List[Tuple[date_type, float]]] = {}
+
+    activities = db.query(
+        Activity.start_time,
+        Activity.distance_m,
+        Activity.workout_type,
+        Activity.total_elevation_gain,
+    ).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.sport == "run",
+        Activity.start_time >= start_date - timedelta(days=14),
+        Activity.start_time <= end_date,
+    ).order_by(Activity.start_time).all()
+
+    if not activities:
+        return inputs
+
+    activity_dates = sorted(set(a.start_time.date() for a in activities))
+    activity_date_set = set(activity_dates)
+    analysis_start = start_date.date()
+
+    _QUALITY_TYPES = {
+        "intervals", "tempo", "threshold", "race", "fartlek", "hills",
+    }
+
+    from collections import defaultdict
+    daily_distance: Dict[date_type, float] = defaultdict(float)
+    daily_elevation: Dict[date_type, float] = defaultdict(float)
+    daily_quality: Dict[date_type, bool] = defaultdict(bool)
+
+    for a in activities:
+        d = a.start_time.date()
+        daily_distance[d] += float(a.distance_m or 0)
+        daily_elevation[d] += float(a.total_elevation_gain or 0)
+        if a.workout_type and a.workout_type.lower() in _QUALITY_TYPES:
+            daily_quality[d] = True
+
+    days_since_quality = []
+    last_quality_date = None
+    current = analysis_start
+    end = end_date.date()
+    while current <= end:
+        if daily_quality.get(current):
+            last_quality_date = current
+        if last_quality_date and current in activity_date_set:
+            gap = (current - last_quality_date).days
+            days_since_quality.append((current, float(gap)))
+        current += timedelta(days=1)
+    if days_since_quality:
+        inputs["days_since_quality"] = days_since_quality
+
+    consec_series = []
+    for d in activity_dates:
+        if d < analysis_start:
+            continue
+        streak = 0
+        check = d
+        while check in activity_date_set:
+            streak += 1
+            check -= timedelta(days=1)
+        consec_series.append((d, float(streak)))
+    if consec_series:
+        inputs["consecutive_run_days"] = consec_series
+
+    rest_day_series = []
+    for d in activity_dates:
+        if d < analysis_start:
+            continue
+        gap = 0
+        check = d - timedelta(days=1)
+        while check in activity_date_set:
+            gap += 1
+            check -= timedelta(days=1)
+        rest_day_series.append((d, float(gap + 1)))
+    if rest_day_series:
+        inputs["days_since_rest"] = rest_day_series
+
+    weekly_vol_series = []
+    for d in activity_dates:
+        if d < analysis_start:
+            continue
+        week_total = sum(
+            daily_distance.get(d - timedelta(days=i), 0) for i in range(7)
+        )
+        weekly_vol_series.append((d, week_total / 1000.0))
+    if weekly_vol_series:
+        inputs["weekly_volume_km"] = weekly_vol_series
+
+    long_run_ratio_series = []
+    for d in activity_dates:
+        if d < analysis_start:
+            continue
+        week_distances = [
+            daily_distance.get(d - timedelta(days=i), 0) for i in range(7)
+        ]
+        week_total = sum(week_distances)
+        if week_total > 0:
+            longest = max(week_distances)
+            long_run_ratio_series.append((d, longest / week_total))
+    if long_run_ratio_series:
+        inputs["long_run_ratio"] = long_run_ratio_series
+
+    weekly_elev_series = []
+    for d in activity_dates:
+        if d < analysis_start:
+            continue
+        week_elev = sum(
+            daily_elevation.get(d - timedelta(days=i), 0) for i in range(7)
+        )
+        if week_elev > 0:
+            weekly_elev_series.append((d, week_elev))
+    if weekly_elev_series:
+        inputs["weekly_elevation_m"] = weekly_elev_series
+
     return inputs
 
 
@@ -1227,11 +1678,26 @@ def analyze_correlations(
         load_inputs = aggregate_training_load_inputs(athlete_id, start_date, end_date, db)
         inputs.update(load_inputs)
 
+    activity_inputs = aggregate_activity_level_inputs(
+        athlete_id, start_date, end_date, db
+    )
+    inputs.update(activity_inputs)
+
+    feedback_inputs = aggregate_feedback_inputs(
+        athlete_id, start_date, end_date, db
+    )
+    inputs.update(feedback_inputs)
+
+    pattern_inputs = aggregate_training_pattern_inputs(
+        athlete_id, start_date, end_date, db
+    )
+    inputs.update(pattern_inputs)
+
     # Daily session stress (acute load proxy for confounder control)
     inputs["daily_session_stress"] = aggregate_daily_session_stress(
         athlete_id, start_date, end_date, db,
     )
-    
+
     # Get outputs based on metric
     if output_metric == "efficiency":
         outputs = aggregate_efficiency_outputs(athlete_id, start_date, end_date, db)
@@ -1390,10 +1856,25 @@ def discover_combination_correlations(
     
     # Aggregate inputs
     inputs = aggregate_daily_inputs(athlete_id, start_date, end_date, db)
-    
+
+    activity_inputs = aggregate_activity_level_inputs(
+        athlete_id, start_date, end_date, db
+    )
+    inputs.update(activity_inputs)
+
+    feedback_inputs = aggregate_feedback_inputs(
+        athlete_id, start_date, end_date, db
+    )
+    inputs.update(feedback_inputs)
+
+    pattern_inputs = aggregate_training_pattern_inputs(
+        athlete_id, start_date, end_date, db
+    )
+    inputs.update(pattern_inputs)
+
     # Aggregate outputs
     outputs = aggregate_efficiency_outputs(athlete_id, start_date, end_date, db)
-    
+
     if len(outputs) < MIN_SAMPLE_SIZE:
         return {
             "error": "Insufficient data",

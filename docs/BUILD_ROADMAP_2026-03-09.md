@@ -45,7 +45,41 @@ Even a minimal version (manually input the forecast, let the model personalize) 
 
 ---
 
-## Horizon 1: The Engine Speaks (Now → 3 weeks)
+## Priority 1: Full Correlation Engine Input Wiring (NOW — highest ROI)
+
+**The engine can only discover what it can see.** An audit on March 10
+revealed: the system stores ~98 meaningful signals. The correlation engine
+uses 19 of them. **81% of stored intelligence is invisible to the engine.**
+
+The single largest gap is `GarminDay` — complete blackout. Zero references
+from the correlation engine. Every wearable signal (sleep score, deep sleep,
+REM sleep, body battery, stress score, steps, HRV 5-min high) is ingested
+daily and never correlated against performance. Activity-level signals
+(cadence, elevation, ground contact, running power, training effect, body
+battery impact) are similarly stored and ignored.
+
+**Build:** Wire all 49 new input signals across 5 phases. No new tables,
+no new APIs, no frontend changes. Pure engine intelligence expansion.
+
+| Phase | Category | New Signals | Effort |
+|-------|----------|:-----------:|--------|
+| 1 | GarminDay wearable | 14 | 1-2 hours |
+| 2 | Activity-level | 18 | 2-3 hours |
+| 3 | Feedback & Reflection | 5 | 1 hour |
+| 4 | Checkin + Composition + Nutrition | 6 | 30 min |
+| 5 | Training Patterns (derived) | 6 | 2-3 hours |
+| 6-9 | FRIENDLY_NAMES, DIRECTION_EXPECTATIONS, CONFOUNDER_MAP, ban list check | — | 1 hour |
+
+**Total: 49 new inputs → engine goes from 21 to 70 input signals.**
+After this, the daily correlation sweep automatically discovers relationships
+the system has been blind to since launch.
+
+**Spec:** `docs/specs/CORRELATION_ENGINE_FULL_INPUT_WIRING_SPEC.md`
+**Audit:** `docs/DATA_INTELLIGENCE_AUDIT_2026-03-10.md`
+
+---
+
+## Horizon 1: The Engine Speaks (Weeks 1–3)
 
 The intelligence that exists reaches the athlete through screens they already visit. Zero new pages. Zero new visual vocabulary. Just better versions of what's there.
 
@@ -214,9 +248,11 @@ No gate — this is the long game. Each layer makes the product harder to leave.
 ## The Dependency Graph
 
 ```
-P0: Race-week weather (THIS WEEK)
+P0: Race-week weather (DONE)
 │
-Horizon 1 (Engine Speaks — 3 weeks)
+★ P1: Full Correlation Engine Input Wiring (NOW — 49 new signals)
+│
+Horizon 1 (Engine Speaks — weeks 1-3)
 │   ├── Findings on chart (not below it)
 │   ├── Weather-adjusted effort coloring
 │   ├── Shape icons on activity list

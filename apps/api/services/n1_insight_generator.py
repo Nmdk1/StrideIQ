@@ -115,6 +115,64 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "chronic_load": "fitness (training load)",
     "acute_load": "fatigue (recent load)",
     "form_score": "form (training readiness)",
+
+    # GarminDay wearable
+    "garmin_sleep_score": "Garmin sleep score",
+    "garmin_sleep_deep_s": "deep sleep time",
+    "garmin_sleep_rem_s": "REM sleep time",
+    "garmin_sleep_awake_s": "awake time during sleep",
+    "garmin_body_battery_end": "end-of-day body battery",
+    "garmin_avg_stress": "Garmin stress score",
+    "garmin_max_stress": "peak daily stress",
+    "garmin_steps": "daily step count",
+    "garmin_active_time_s": "daily active time",
+    "garmin_moderate_intensity_s": "moderate intensity time",
+    "garmin_vigorous_intensity_s": "vigorous intensity time",
+    "garmin_hrv_5min_high": "peak HRV window",
+    "garmin_min_hr": "lowest daily heart rate",
+    "garmin_vo2max": "Garmin VO2max",
+
+    # Activity-level
+    "dew_point_f": "dew point",
+    "heat_adjustment_pct": "heat impact",
+    "temperature_f": "temperature",
+    "humidity_pct": "humidity",
+    "elevation_gain_m": "elevation gain",
+    "avg_cadence": "running cadence",
+    "avg_stride_length_m": "stride length",
+    "avg_ground_contact_ms": "ground contact time",
+    "avg_vertical_oscillation_cm": "vertical bounce",
+    "avg_vertical_ratio_pct": "vertical ratio",
+    "avg_power_w": "running power",
+    "garmin_aerobic_te": "aerobic training effect",
+    "garmin_anaerobic_te": "anaerobic training effect",
+    "garmin_perceived_effort": "Garmin perceived effort",
+    "garmin_body_battery_impact": "body battery drain",
+    "activity_intensity_score": "session intensity",
+    "active_kcal": "calories burned",
+    "run_start_hour": "time of day",
+
+    # Feedback/reflection
+    "feedback_perceived_effort": "post-run perceived effort",
+    "feedback_energy_pre": "pre-run energy",
+    "feedback_energy_post": "post-run energy",
+    "feedback_leg_feel": "leg freshness",
+    "reflection_vs_expected": "run vs expectations",
+
+    # Checkin/composition/nutrition
+    "sleep_quality_1_5": "sleep quality",
+    "body_fat_pct": "body fat percentage",
+    "muscle_mass_kg": "muscle mass",
+    "daily_fat_g": "daily fat intake",
+    "daily_fiber_g": "daily fiber intake",
+    "daily_calories": "daily calorie intake",
+
+    # Training patterns
+    "days_since_quality": "rest since last hard session",
+    "consecutive_run_days": "consecutive running days",
+    "days_since_rest": "days without rest",
+    "long_run_ratio": "long run proportion",
+    "weekly_elevation_m": "weekly elevation gain",
 }
 
 

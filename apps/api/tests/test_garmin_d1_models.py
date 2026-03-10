@@ -135,15 +135,19 @@ class TestActivityGarminColumns:
             "garmin_feel / garmin_perceived_effort must have low-fidelity caveat in models.py"
         )
 
-    def test_training_effect_absent_from_n1_insight_generator(self):
-        """[L2] Training Effect columns must not appear in the correlation/insight engine."""
-        te_columns = ["garmin_aerobic_te", "garmin_anaerobic_te", "garmin_te_label"]
-        services = [
-            "services/n1_insight_generator.py",
-            "services/daily_intelligence.py",
-        ]
+    def test_training_effect_absent_from_load_readiness(self):
+        """[L2] Training Effect columns must not appear in load/readiness services.
+
+        TE is allowed in n1_insight_generator FRIENDLY_NAMES (correlation
+        discovery display labels) but blocked from daily_intelligence
+        (load/readiness calculations). garmin_te_label (categorical) is
+        blocked everywhere.
+        """
         import os
-        for service in services:
+
+        load_services = ["services/daily_intelligence.py"]
+        te_columns = ["garmin_aerobic_te", "garmin_anaerobic_te", "garmin_te_label"]
+        for service in load_services:
             path = os.path.join(os.path.dirname(__file__), "..", service)
             if not os.path.exists(path):
                 continue
@@ -151,9 +155,19 @@ class TestActivityGarminColumns:
                 content = f.read()
             for col in te_columns:
                 assert col not in content, (
-                    f"{col} (Training Effect — INFORMATIONAL ONLY) found in {service}. "
+                    f"{col} (Training Effect) found in {service}. "
                     "Must not be used in load or readiness calculations."
                 )
+
+        insight_path = os.path.join(
+            os.path.dirname(__file__), "..", "services/n1_insight_generator.py"
+        )
+        if os.path.exists(insight_path):
+            with open(insight_path) as f:
+                content = f.read()
+            assert "garmin_te_label" not in content, (
+                "garmin_te_label (categorical) must not appear in insight generator."
+            )
 
     def test_new_garmin_activity_columns_round_trip(self, db_session, test_athlete):
         """Runtime: new columns persist correctly for a Garmin activity."""
