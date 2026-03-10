@@ -159,16 +159,16 @@ class TestPhase2ActivityLevel:
     def test_activity_multi_run_day_takes_longest(self, db_session, test_athlete):
         """Two runs on same day → longest run's values used."""
         from services.correlation_engine import aggregate_activity_level_inputs
-        now = datetime.now(timezone.utc)
+        morning = datetime(2026, 3, 10, 7, 0, tzinfo=timezone.utc)
         self._make_activity(
-            db_session, test_athlete, start_time=now, distance_m=3000,
+            db_session, test_athlete, start_time=morning, distance_m=3000,
             avg_cadence=170,
         )
         self._make_activity(
-            db_session, test_athlete, start_time=now + timedelta(hours=4),
+            db_session, test_athlete, start_time=morning + timedelta(hours=4),
             distance_m=10000, avg_cadence=180,
         )
-        end = now + timedelta(days=1)
+        end = morning + timedelta(days=1)
         start = end - timedelta(days=7)
         inputs = aggregate_activity_level_inputs(str(test_athlete.id), start, end, db_session)
         assert inputs["avg_cadence"][0][1] == 180.0
