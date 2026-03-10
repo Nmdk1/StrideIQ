@@ -27,10 +27,14 @@ Usage (on production server):
 
 import argparse
 import logging
+import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 logging.basicConfig(
     level=logging.INFO,
