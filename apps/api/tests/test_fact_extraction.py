@@ -217,12 +217,10 @@ class TestUpsert:
         ).all()
         assert len(all_facts) == 2
 
-    @patch("tasks.fact_extraction_task.AthleteFact")
-    def test_upsert_concurrent_insert_handled(self, MockAF, db_session, test_athlete):
-        """#8: simulate IntegrityError -> re-query and skip gracefully."""
-        from sqlalchemy.exc import IntegrityError
-        from tasks.fact_extraction_task import _upsert_fact
+    def test_upsert_concurrent_insert_handled(self, db_session, test_athlete):
+        """#8: duplicate insert via same-value path is handled gracefully."""
         from models import AthleteFact, CoachChat
+        from tasks.fact_extraction_task import _upsert_fact
 
         chat = CoachChat(
             athlete_id=test_athlete.id, context_type="open",
@@ -232,21 +230,12 @@ class TestUpsert:
         db_session.commit()
         db_session.refresh(chat)
 
-        # Insert first fact normally (without mock)
-        with patch.object(type(MockAF), "__mro__", new_callable=lambda: property(lambda self: (type(self), object))):
-            pass
-
-        # Re-import the real function to test against real DB
-        from importlib import reload
-        import tasks.fact_extraction_task as fet
-        reload(fet)
-
         fact_data = _fake_extraction_result()
-        fet._upsert_fact(db_session, test_athlete.id, chat.id, fact_data)
+        _upsert_fact(db_session, test_athlete.id, chat.id, fact_data)
         db_session.commit()
 
-        # Attempting duplicate insert should be handled by the same-value skip
-        fet._upsert_fact(db_session, test_athlete.id, chat.id, fact_data)
+        # Second insert with same key+value should be a no-op (same-value skip)
+        _upsert_fact(db_session, test_athlete.id, chat.id, fact_data)
         db_session.commit()
 
         count = db_session.query(AthleteFact).filter(
@@ -831,7 +820,7 @@ class TestIntegration:
         guardrail = ExperienceGuardrail(
             athlete_id=str(test_athlete.id),
             db=db_session,
-            redis=None,
+            redis_client=None,
         )
         # Coach text mentions deadlift with old value 315 but not current 335
         coach_texts = ["Your deadlift at 315 is solid for your frame."]
@@ -874,7 +863,7 @@ class TestIntegration:
         guardrail = ExperienceGuardrail(
             athlete_id=str(test_athlete.id),
             db=db_session,
-            redis=None,
+            redis_client=None,
         )
         # '315' appears but NOT near 'deadlift' key context
         coach_texts = ["Your pace was 3:15 per km on the tempo today."]
@@ -917,7 +906,7 @@ class TestIntegration:
         guardrail = ExperienceGuardrail(
             athlete_id=str(test_athlete.id),
             db=db_session,
-            redis=None,
+            redis_client=None,
         )
         # '1315' contains '315' but should NOT match due to numeric boundary
         coach_texts = ["Your deadlift volume was 1315 total pounds this week."]
