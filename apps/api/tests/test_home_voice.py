@@ -523,3 +523,65 @@ class TestMorningVoiceSchemaConstraints:
         text = "A" * 400 + " ran 5 miles today"  # 400+ chars, has digit
         result = validate_voice_output(text, field="morning_voice")
         assert result["valid"] is True
+
+    def test_multi_paragraph_truncates_to_first(self):
+        from routers.home import validate_voice_output
+
+        text = (
+            "10 miles at 8:40 pace today with controlled effort and even cadence.\n\n"
+            "Second paragraph that should be removed."
+        )
+        result = validate_voice_output(text, field="morning_voice")
+        assert result["valid"] is True
+        assert result.get("truncated_text") == "10 miles at 8:40 pace today with controlled effort and even cadence."
+
+    def test_multi_paragraph_short_first_fails(self):
+        from routers.home import validate_voice_output
+
+        text = "Great run.\n\nSecond paragraph with 7 miles context."
+        result = validate_voice_output(text, field="morning_voice")
+        assert result["valid"] is False
+        assert "multiple_paragraphs_short_first" in result.get("reason", "")
+
+    def test_newline_in_workout_why_not_truncated(self):
+        from routers.home import validate_voice_output
+
+        text = "Keep effort easy and relaxed.\nFocus on rhythm and smooth form."
+        result = validate_voice_output(text, field="workout_why")
+        assert result["valid"] is True
+        assert "truncated_text" not in result
+
+
+class TestFindingTextSanitization:
+    def test_friendly_names_includes_tsb_ctl_atl(self):
+        from services.n1_insight_generator import FRIENDLY_NAMES
+
+        assert FRIENDLY_NAMES.get("tsb")
+        assert FRIENDLY_NAMES.get("ctl")
+        assert FRIENDLY_NAMES.get("atl")
+
+    def test_sanitize_finding_text_replaces_internal_metrics(self):
+        from routers.home import _sanitize_finding_text
+
+        raw = "when your tsb is higher and your ctl is stable, your atl usually drops."
+        clean = _sanitize_finding_text(raw)
+        lower = clean.lower()
+        assert "tsb" not in lower
+        assert "ctl" not in lower
+        assert "atl" not in lower
+        assert "form" in lower
+        assert "fitness" in lower
+        assert "fatigue" in lower
+
+    def test_sanitize_finding_text_no_change_when_clean(self):
+        from routers.home import _sanitize_finding_text
+
+        raw = "When sleep is consistent, your easy pace is steadier."
+        assert _sanitize_finding_text(raw) == raw
+
+    def test_home_finding_uses_sanitizer(self):
+        import inspect
+        from routers.home import get_home_data
+
+        source = inspect.getsource(get_home_data)
+        assert "_sanitize_finding_text(" in source

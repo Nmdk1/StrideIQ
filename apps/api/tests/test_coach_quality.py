@@ -325,7 +325,7 @@ class TestInsightRotation:
              patch("services.coach_tools.build_athlete_brief", return_value="(brief)"), \
              patch("routers.home.compute_coach_noticed", return_value=None), \
              patch("routers.home._build_rich_intelligence_context", return_value=""), \
-             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None)):
+             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None, False)):
 
             return generate_coach_home_briefing(
                 athlete_id=athlete_id, db=db, skip_cache=True, **kwargs
@@ -378,7 +378,7 @@ class TestCoachNoFabricatedSoreness:
              patch("services.coach_tools.build_athlete_brief", return_value="(brief)"), \
              patch("routers.home.compute_coach_noticed", return_value=None), \
              patch("routers.home._build_rich_intelligence_context", return_value=""), \
-             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None)):
+             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None, False)):
             mock_redis_mod.from_url.return_value.get.return_value = None
 
             return generate_coach_home_briefing(
@@ -449,7 +449,7 @@ class TestCoachPlanDistanceMatchesDb:
              patch("services.coach_tools.build_athlete_brief", return_value="(brief)"), \
              patch("routers.home.compute_coach_noticed", return_value=None), \
              patch("routers.home._build_rich_intelligence_context", return_value=""), \
-             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None)):
+             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None, False)):
             mock_redis_mod.from_url.return_value.get.return_value = None
 
             return generate_coach_home_briefing(
@@ -498,7 +498,7 @@ class TestCoachNoThisWeekRunsBeforeWeekStart:
              patch("services.coach_tools.build_athlete_brief", return_value="(brief)"), \
              patch("routers.home.compute_coach_noticed", return_value=None), \
              patch("routers.home._build_rich_intelligence_context", return_value=""), \
-             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None)):
+             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None, False)):
             mock_redis_mod.from_url.return_value.get.return_value = None
 
             return generate_coach_home_briefing(
@@ -560,7 +560,7 @@ class TestDateGroundingInPrompts:
              patch("services.coach_tools.build_athlete_brief", return_value="(brief)"), \
              patch("routers.home.compute_coach_noticed", return_value=None), \
              patch("routers.home._build_rich_intelligence_context", return_value=""), \
-             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None)):
+             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None, False)):
             mock_redis.return_value.get.return_value = None
 
             return generate_coach_home_briefing(
@@ -813,7 +813,7 @@ class TestBriefDatePreComputation:
              patch("services.coach_tools.build_athlete_brief", return_value="(brief)"), \
              patch("routers.home.compute_coach_noticed", return_value=None), \
              patch("routers.home._build_rich_intelligence_context", return_value=""), \
-             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None)):
+             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None, False)):
             mock_redis.return_value.get.return_value = None
             prep = generate_coach_home_briefing(
                 athlete_id=athlete_id, db=db, skip_cache=True

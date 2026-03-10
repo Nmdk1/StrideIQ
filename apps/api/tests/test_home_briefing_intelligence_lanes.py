@@ -87,7 +87,7 @@ def test_schema_fields_have_explicit_lane_blocks():
     with patch("services.coach_tools.build_athlete_brief", return_value="(brief)"), \
          patch("routers.home._build_rich_intelligence_context", return_value=""), \
          patch("routers.home.compute_coach_noticed", return_value=None), \
-         patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None)), \
+         patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, None, False)), \
          patch("services.fingerprint_context.build_fingerprint_prompt_section", return_value=None):
         from routers.home import generate_coach_home_briefing
 

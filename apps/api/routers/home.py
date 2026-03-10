@@ -632,7 +632,9 @@ def _get_garmin_sleep_h_for_last_night(
     """
     Query GarminDay for last night's sleep using athlete-local date.
 
-    Returns (sleep_h_float, local_date_str) or (None, local_date_str).
+    Returns (sleep_h_float, local_date_str, is_today).
+    is_today=True means value is from athlete-local today (last-night semantics).
+    is_today=False means fallback/stale date and must not be labeled "last night".
 
     Date resolution (wakeup-day semantics per L1 CalendarDate Rule):
       1. local_today   — sync usually arrives within minutes of wakeup
@@ -675,16 +677,17 @@ def _get_garmin_sleep_h_for_last_night(
             )
             if row and row.sleep_total_s:
                 sleep_h = round(row.sleep_total_s / 3600, 2)
+                is_today = candidate_date == local_today
                 logger.debug(
-                    "Garmin sleep grounding: athlete=%s date=%s sleep_h=%.2f",
-                    athlete_id, candidate_date, sleep_h,
+                    "Garmin sleep grounding: athlete=%s date=%s sleep_h=%.2f is_today=%s",
+                    athlete_id, candidate_date, sleep_h, is_today,
                 )
-                return sleep_h, str(candidate_date)
+                return sleep_h, str(candidate_date), is_today
 
-        return None, str(local_today)
+        return None, str(local_today), False
     except Exception as e:
         logger.warning("_get_garmin_sleep_h_for_last_night failed (non-blocking): %s", e)
-        return None, "unknown"
+        return None, "unknown", False
 
 
 def validate_sleep_claims(
@@ -798,7 +801,6 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
         }
 
     # 4. Length check — minimum only; no upper cap.
-    # Structure (one paragraph, 2-3 sentences) is enforced by the prompt.
     if field in ("morning_voice", "workout_why"):
         if len(text) < 40:
             return {
@@ -807,7 +809,49 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
                 "fallback": _VOICE_FALLBACK,
             }
 
+    # 5. Paragraph enforcement for morning_voice.
+    # Prompt-only constraints drift; this is the hard structural backstop.
+    if field == "morning_voice":
+        stripped = text.strip()
+        if "\n" in stripped:
+            import re
+            paragraphs = [p.strip() for p in re.split(r"\n+", stripped) if p.strip()]
+            if len(paragraphs) > 1:
+                first_para = paragraphs[0]
+                if len(first_para) >= 40 and re.search(r"\d", first_para):
+                    logger.warning(
+                        "morning_voice had %d paragraphs; truncated to first (%d chars)",
+                        len(paragraphs),
+                        len(first_para),
+                    )
+                    return {"valid": True, "truncated_text": first_para}
+                return {
+                    "valid": False,
+                    "reason": "structure:multiple_paragraphs_short_first",
+                    "fallback": _VOICE_FALLBACK,
+                }
+
     return {"valid": True}
+
+
+def _sanitize_finding_text(text: str) -> str:
+    """Remove internal metric acronyms from athlete-facing finding text."""
+    if not text:
+        return text
+    out = text
+    replacements = (
+        ("your tsb", "your form"),
+        ("your ctl", "your fitness"),
+        ("your atl", "your fatigue"),
+    )
+    for raw, clean in replacements:
+        out = out.replace(raw, clean)
+        out = out.replace(raw.title(), clean.title())
+    import re
+    out = re.sub(r"\btsb\b", "form", out, flags=re.IGNORECASE)
+    out = re.sub(r"\bctl\b", "fitness", out, flags=re.IGNORECASE)
+    out = re.sub(r"\batl\b", "fatigue", out, flags=re.IGNORECASE)
+    return out
 
 
 def validate_relative_time_claims(
@@ -1162,6 +1206,8 @@ def _fetch_llm_briefing_sync(
         if not voice_check["valid"]:
             logger.warning(f"morning_voice failed validation ({voice_check.get('reason')}); using fallback")
             result["morning_voice"] = voice_check["fallback"]
+        elif voice_check.get("truncated_text"):
+            result["morning_voice"] = voice_check["truncated_text"]
     else:
         result["morning_voice"] = _VOICE_FALLBACK
 
@@ -1441,15 +1487,22 @@ def generate_coach_home_briefing(
 
     # --- Sleep source grounding (source contract — prevents hallucinated sleep values) ---
     # Query Garmin device sleep for last night using athlete-local date.
-    garmin_sleep_h, garmin_date_used = _get_garmin_sleep_h_for_last_night(athlete_id, db)
+    garmin_sleep_h, garmin_date_used, garmin_is_today = _get_garmin_sleep_h_for_last_night(athlete_id, db)
     checkin_sleep_h = checkin_data.get("sleep_h") if checkin_data else None
 
     sleep_parts: list = ["=== SLEEP SOURCE CONTRACT ==="]
-    if garmin_sleep_h is not None:
+    if garmin_sleep_h is not None and garmin_is_today:
         sleep_parts.append(
             f"GARMIN_LAST_NIGHT_SLEEP_HOURS: {garmin_sleep_h:.2f}h "
             f"(device-measured, date={garmin_date_used}, source=garmin_device)"
         )
+    elif garmin_sleep_h is not None and not garmin_is_today:
+        sleep_parts.append(
+            "GARMIN SLEEP NOT YET AVAILABLE for last night. "
+            f"Do NOT cite a Garmin sleep number. The most recent Garmin sleep is from "
+            f"{garmin_date_used} ({garmin_sleep_h:.2f}h) — that is NOT last night."
+        )
+        garmin_sleep_h = None
     if checkin_sleep_h is not None:
         sleep_parts.append(
             f"TODAY_CHECKIN_SLEEP_HOURS: {checkin_sleep_h:.1f}h "
@@ -1627,9 +1680,11 @@ def compute_coach_noticed(
             idx = date.today().toordinal() % len(eligible)
             f = eligible[idx]
             if not _is_finding_in_cooldown(athlete_id, f.input_name, f.output_metric):
-                finding_text = f.insight_text or (
+                finding_text = _sanitize_finding_text(
+                    f.insight_text or (
                     f"{f.input_name.replace('_', ' ').title()} {f.direction}ly "
                     f"affects your {f.output_metric.replace('_', ' ')}"
+                    )
                 )
                 detail_parts = []
                 if f.threshold_value is not None:
@@ -2827,7 +2882,9 @@ async def get_home_data(
             f = eligible[idx]
             tier = "strong" if f.times_confirmed >= 8 else "confirmed"
             home_finding = HomeFinding(
-                text=f.insight_text or f"{f.input_name.replace('_', ' ')} affects your {f.output_metric}",
+                text=_sanitize_finding_text(
+                    f.insight_text or f"{f.input_name.replace('_', ' ')} affects your {f.output_metric}"
+                ),
                 confidence_tier=tier,
                 domain=f.output_metric,
                 times_confirmed=f.times_confirmed,

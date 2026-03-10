@@ -109,6 +109,12 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "efficiency": "running efficiency",
     "pace_easy": "easy pace",
     "completion_rate": "workout completion rate",
+    "tsb": "form (training readiness)",
+    "ctl": "fitness (training load)",
+    "atl": "fatigue (recent load)",
+    "chronic_load": "fitness (training load)",
+    "acute_load": "fatigue (recent load)",
+    "form_score": "form (training readiness)",
 }
 
 

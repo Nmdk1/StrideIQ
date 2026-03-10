@@ -551,7 +551,7 @@ class TestHealthBriefingRefreshTrigger:
 
         assert result["processed"] == 1
         mock_dirty.assert_called_once_with(ATHLETE_ID)
-        mock_enq.assert_called_once_with(ATHLETE_ID)
+        mock_enq.assert_called_once_with(ATHLETE_ID, force=True)
 
     def test_refresh_not_triggered_when_nothing_processed(self):
         from tasks.garmin_webhook_tasks import process_garmin_health_task

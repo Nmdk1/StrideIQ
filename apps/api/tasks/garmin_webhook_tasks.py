@@ -793,7 +793,7 @@ def process_garmin_health_task(
                 from tasks.home_briefing_tasks import enqueue_briefing_refresh
 
                 mark_briefing_dirty(str(athlete_id))
-                enqueue_briefing_refresh(str(athlete_id))
+                enqueue_briefing_refresh(str(athlete_id), force=True)
             except Exception as refresh_exc:
                 logger.warning(
                     "Garmin health briefing refresh trigger failed for athlete %s: %s",

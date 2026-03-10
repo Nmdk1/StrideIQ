@@ -496,6 +496,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                     f"for {athlete_id}; using fallback"
                 )
                 result["morning_voice"] = voice_check["fallback"]
+            elif voice_check.get("truncated_text"):
+                result["morning_voice"] = voice_check["truncated_text"]
         else:
             result["morning_voice"] = _VOICE_FALLBACK
 

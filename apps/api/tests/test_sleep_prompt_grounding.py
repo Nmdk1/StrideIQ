@@ -165,7 +165,7 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("services.coach_tools.build_athlete_brief", return_value="(Brief unavailable)"),
             patch("routers.home._build_rich_intelligence_context", return_value=""),
             patch("routers.home.compute_coach_noticed", return_value=None),
-            patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, str(date.today()))),
+            patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, str(date.today()), False)),
         ):
             prep = generate_coach_home_briefing(
                 athlete_id="test-athlete-id",
@@ -191,7 +191,7 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("services.coach_tools.build_athlete_brief", return_value="(Brief unavailable)"),
             patch("routers.home._build_rich_intelligence_context", return_value=""),
             patch("routers.home.compute_coach_noticed", return_value=None),
-            patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, str(date.today()))),
+            patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, str(date.today()), True)),
         ):
             prep = generate_coach_home_briefing(
                 athlete_id="test-athlete-id",
@@ -215,7 +215,7 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("services.coach_tools.build_athlete_brief", return_value="(Brief unavailable)"),
             patch("routers.home._build_rich_intelligence_context", return_value=""),
             patch("routers.home.compute_coach_noticed", return_value=None),
-            patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, str(date.today()))),
+            patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, str(date.today()), True)),
         ):
             prep = generate_coach_home_briefing(
                 athlete_id="test-athlete-id",
@@ -228,6 +228,32 @@ class TestPromptContainsSourceLabeledSleepFields:
         assert garmin_sleep_h == 6.75
         assert "GARMIN_LAST_NIGHT_SLEEP_HOURS" in prompt
         assert "6.75" in prompt
+
+    def test_prompt_suppresses_stale_garmin_sleep(self):
+        """Fallback-yesterday Garmin values must not be labeled as last-night sleep."""
+        from routers.home import generate_coach_home_briefing
+
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
+
+        with (
+            patch("services.coach_tools.build_athlete_brief", return_value="(Brief unavailable)"),
+            patch("routers.home._build_rich_intelligence_context", return_value=""),
+            patch("routers.home.compute_coach_noticed", return_value=None),
+            patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, "2026-03-09", False)),
+        ):
+            prep = generate_coach_home_briefing(
+                athlete_id="test-athlete-id",
+                db=mock_db,
+                checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "readiness_label": "Fine", "soreness_label": "None"},
+                skip_cache=True,
+            )
+
+        _, prompt, _, _, _, garmin_sleep_h = prep
+        assert "GARMIN_LAST_NIGHT_SLEEP_HOURS" not in prompt
+        assert "NOT YET AVAILABLE" in prompt
+        assert garmin_sleep_h is None
 
 
 # ===========================================================================
@@ -309,8 +335,9 @@ class TestGarminSleepLocalDateFallback:
 
         mock_db.query.side_effect = query_side_effect
 
-        sleep_h, date_used = _get_garmin_sleep_h_for_last_night("athlete-id", mock_db)
+        sleep_h, date_used, is_today = _get_garmin_sleep_h_for_last_night("athlete-id", mock_db)
         assert sleep_h == pytest.approx(7.0, abs=0.05)
+        assert is_today is True
 
     def test_garmin_sleep_falls_back_to_yesterday_on_delayed_sync(self):
         """Falls back to local_today - 1 when today has no GarminDay row."""
@@ -338,8 +365,9 @@ class TestGarminSleepLocalDateFallback:
 
         mock_db.query.side_effect = query_side_effect
 
-        sleep_h, date_used = _get_garmin_sleep_h_for_last_night("athlete-id", mock_db)
+        sleep_h, date_used, is_today = _get_garmin_sleep_h_for_last_night("athlete-id", mock_db)
         assert sleep_h == pytest.approx(6.5, abs=0.05)
+        assert is_today is False
 
     def test_garmin_sleep_uses_utc_fallback_when_no_timezone(self):
         """When athlete has no timezone, uses UTC date without raising."""
@@ -362,9 +390,10 @@ class TestGarminSleepLocalDateFallback:
 
         mock_db.query.side_effect = query_side_effect
 
-        sleep_h, date_used = _get_garmin_sleep_h_for_last_night("athlete-id", mock_db)
+        sleep_h, date_used, is_today = _get_garmin_sleep_h_for_last_night("athlete-id", mock_db)
         assert sleep_h == pytest.approx(6.75, abs=0.05)
         assert date_used != "unknown"  # Must return a real date, not error
+        assert is_today is True
 
 
 # ===========================================================================
