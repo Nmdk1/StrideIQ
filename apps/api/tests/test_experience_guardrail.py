@@ -191,6 +191,7 @@ class TestDataTruth:
             plan_start_date=today - timedelta(days=60),
             plan_end_date=race_date,
             total_weeks=10,
+            plan_type="marathon",
         )
         db_session.add(plan)
         db_session.commit()
