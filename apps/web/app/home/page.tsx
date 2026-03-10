@@ -481,19 +481,18 @@ export default function HomePage() {
           {/* Training Load — compact PMC (paired visually with LastRunHero) */}
           <CompactPMC />
 
-          {/* 2. The Voice — morning_voice + coach_noticed, or pending placeholder */}
+          {/* 2. The Voice — single paragraph only (morning_voice primary) */}
           {(coach_briefing?.morning_voice || coach_briefing?.coach_noticed) ? (
             <div data-testid="morning-voice" className="px-1 py-2 space-y-2">
-              {coach_briefing.morning_voice && (
+              {coach_briefing.morning_voice ? (
                 <p className="text-base text-slate-300 leading-relaxed">
                   {coach_briefing.morning_voice}
                 </p>
-              )}
-              {coach_briefing.coach_noticed && (
-                <p className="text-sm text-slate-400 leading-relaxed">
+              ) : coach_briefing.coach_noticed ? (
+                <p className="text-base text-slate-300 leading-relaxed">
                   {coach_briefing.coach_noticed}
                 </p>
-              )}
+              ) : null}
             </div>
           ) : isBriefingPending ? (
             <BriefingPendingPlaceholder

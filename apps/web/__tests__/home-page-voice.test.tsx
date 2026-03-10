@@ -229,6 +229,13 @@ describe('Home Page Voice: Voice rendering', () => {
     );
     expect(found).toBe(false);
   });
+
+  test('when morning_voice exists, coach_noticed text is not rendered as second paragraph', () => {
+    render(<HomePage />);
+    const voiceEl = screen.getByTestId('morning-voice');
+    expect(voiceEl).toHaveTextContent('48 miles across 6 runs this week');
+    expect(voiceEl).not.toHaveTextContent('Strong consistency this week.');
+  });
 });
 
 describe('Home Page Voice: Full-bleed hero', () => {

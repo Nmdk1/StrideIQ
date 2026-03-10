@@ -834,6 +834,51 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
     return {"valid": True}
 
 
+def _normalize_cached_briefing_payload(
+    payload: Optional[dict],
+    garmin_sleep_h: Optional[float],
+    checkin_sleep_h: Optional[float],
+) -> Optional[dict]:
+    """
+    Normalize/sanitize cached coach briefing payload on read.
+
+    Why this exists:
+    - Cache entries can outlive a deploy and contain pre-fix text.
+    - We need read-time guardrails so old cached content cannot leak:
+      - multi-paragraph morning_voice
+      - ungrounded sleep claims
+      - internal metrics in coach_noticed
+    """
+    if not payload or not isinstance(payload, dict):
+        return None
+
+    out = dict(payload)
+
+    raw_voice = out.get("morning_voice")
+    if raw_voice:
+        voice_check = validate_voice_output(raw_voice, field="morning_voice")
+        if not voice_check.get("valid"):
+            out["morning_voice"] = voice_check.get("fallback", _VOICE_FALLBACK)
+        elif voice_check.get("truncated_text"):
+            out["morning_voice"] = voice_check["truncated_text"]
+
+        final_voice = out.get("morning_voice") or ""
+        if final_voice and final_voice != _VOICE_FALLBACK:
+            sleep_check = validate_sleep_claims(final_voice, garmin_sleep_h, checkin_sleep_h)
+            if not sleep_check.get("valid"):
+                out["morning_voice"] = _VOICE_FALLBACK
+    elif "morning_voice" in out:
+        out["morning_voice"] = _VOICE_FALLBACK
+
+    raw_noticed = out.get("coach_noticed")
+    if raw_noticed:
+        noticed_check = validate_voice_output(raw_noticed, field="coach_noticed")
+        if not noticed_check.get("valid"):
+            out["coach_noticed"] = None
+
+    return out
+
+
 def _sanitize_finding_text(text: str) -> str:
     """Remove internal metric acronyms from athlete-facing finding text."""
     if not text:
@@ -2733,7 +2778,19 @@ async def get_home_data(
 
                 cached_payload, b_state = read_briefing_cache(str(current_user.id))
                 briefing_state = b_state.value
-                coach_briefing = cached_payload
+                _garmin_sleep_h = None
+                _checkin_sleep_h = today_checkin.sleep_h if today_checkin else None
+                try:
+                    _g_h, _g_date, _g_is_today = _get_garmin_sleep_h_for_last_night(str(current_user.id), db)
+                    if _g_h is not None and _g_is_today:
+                        _garmin_sleep_h = _g_h
+                except Exception:
+                    _garmin_sleep_h = None
+                coach_briefing = _normalize_cached_briefing_payload(
+                    cached_payload,
+                    garmin_sleep_h=_garmin_sleep_h,
+                    checkin_sleep_h=_checkin_sleep_h,
+                )
 
                 if b_state in (BriefingState.STALE, BriefingState.MISSING):
                     try:

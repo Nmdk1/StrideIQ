@@ -78,7 +78,7 @@ If this doesn't happen, nothing else matters.
 
 ## Horizon 2: Proof of Moat (Weeks 3–8)
 
-Two things happen that no other running app can do. One looks backward (Pre-Race Fingerprint retrospective). One looks forward (race countdown weather). Both produce sentences the athlete says out loud to their running partner.
+Two things happen that no other running app can do. One looks backward (Pre-Race Fingerprint retrospective). One looks forward (race countdown weather). Both produce sentences the athlete says out loud to their running partner. And a permanent guardrail ensures the athlete never sees a lie.
 
 | # | Item | Surface | Depends On | Est. |
 |---|------|---------|------------|------|
@@ -88,6 +88,15 @@ Two things happen that no other running app can do. One looks backward (Pre-Race
 | 2d | Daily intelligence → frontend consumers | Insights page, home | `daily_intelligence.py` (built, unwired) | 3-4 days |
 | 2e | Progress narrative activation | Progress page | `useProgressNarrative` hook (built, dormant) | 2-3 days |
 | 2f | Personal Operating Manual Lite — fingerprint evidence page | New or existing page | Active `CorrelationFinding` grouped by domain, coaching language | 1-2 weeks |
+| 2g | **Daily Experience Guardrail** | Infrastructure (Celery beat) | None — **spec complete, building now** | 5-6 hours |
+
+### The Experience Guardrail (2g)
+
+24 assertions that run against production every morning at 06:15 UTC. Catches the class of bug that code audits miss: "technically correct but experientially wrong." Checks data truth (sleep values match source), language hygiene (no internal metrics leak), structural integrity (single paragraph, word count), temporal consistency (72h finding cooldown), cross-endpoint consistency, and trust integrity (no superseded findings in coach output).
+
+Every run writes a permanent log entry to `experience_audit_log`. Six months from now, you can see exactly when a regression was introduced and what it broke. Assertions don't lie. See `docs/specs/DAILY_EXPERIENCE_GUARDRAIL_SPEC.md`.
+
+**This ships before any new feature. It is the safety net for everything above and below it on this map.**
 
 ### The Operating Manual Lite (2f)
 
@@ -119,7 +128,7 @@ Michael sees his marathon block compared to his historical blocks. Belle sees so
 
 Two parallel tracks. One deepens the engine. The other explores the visual future.
 
-### Track A: Engine Layers 5-6 + Pre-Race v1
+### Track A: Engine Layers 5-6 + Pre-Race v1 + AutoInvestigation
 
 | # | Item | What It Enables | Est. |
 |---|------|----------------|------|
@@ -127,15 +136,31 @@ Two parallel tracks. One deepens the engine. The other explores the visual futur
 | 3b | L6: Rate of Change Correlations | Momentum — "sleep trending up 3 days predicts better than stable sleep" | 1-2 weeks |
 | 3c | Pre-Race Fingerprint v1 — forward-looking | Block-level matching for upcoming race | 2-3 weeks |
 | 3d | Personal Operating Manual (full) | Accumulation view, ≥8 active findings | 1-2 weeks |
+| 3e-auto | **FQS metric implementation + validation** | Objective quality score for findings — the `val_bpb` of StrideIQ | 1 week |
+| 3f-auto | **Shadow investigation runner** | Run investigations with modified params against historical corpus without touching production | 1 week |
+| 3g-auto | **AutoInvestigation Loop v1 (structured optimizer)** | Nightly loop: modify investigation params → measure FQS → keep or discard. Bayesian optimization, not LLM. | 1-2 weeks |
+| 3h-auto | **Cascade detection scoring** | Connected pathways (sleep → HRV → efficiency) scored higher than isolated correlations | 1 week |
+
+### The AutoInvestigation Loop (3e–3h-auto)
+
+Inspired by Karpathy's autoresearch pattern. The system runs an automated optimization loop against individual athlete physiology overnight. Every night that passes makes the product harder to replicate — not because of code, but because of accumulated knowledge per athlete. A competitor would need to run the same loop for the same duration against the same athlete to catch up. That's a time-locked moat.
+
+**FQS (Finding Quality Score)** = `(confidence × 0.35) + (specificity × 0.30) + (actionability × 0.20) + (stability × 0.15)` + cascade bonus. Validated before the loop activates.
+
+**Data density gate:** 90 days or 60 activities before the loop activates per athlete.
+
+**Rarity gate for "learned something new":** Only surfaces to the athlete when aggregate FQS improves by >0.05 AND a genuinely novel finding crossed the surfacing threshold. Otherwise the loop runs silently and findings get sharper without announcement.
+
+**Safety:** Shadow parameters only — never modifies production registry directly. Experience Guardrail (2g) catches any downstream trust break. See `docs/specs/AUTOINVESTIGATION_LOOP_SPEC.md`.
 
 ### Track B: Path B Design Exploration (non-code, parallel)
 
 | # | Item | Output | Est. |
 |---|------|--------|------|
-| 3e | Emotional storyboard | Moment-by-moment narrative of fingerprint unlock | 1 week |
-| 3f | Creative coding prototypes | p5.js sketches: fingerprint with 8 / 25 / 50 findings | 2 weeks |
-| 3g | Technology proof-of-concept | ChartGPU stream rendering, R3F terrain, Framer breathing | 2 weeks |
-| 3h | Reconnection moment test | Prototype: Path A finding appears as Path B filament | 1 week |
+| 3e-vis | Emotional storyboard | Moment-by-moment narrative of fingerprint unlock | 1 week |
+| 3f-vis | Creative coding prototypes | p5.js sketches: fingerprint with 8 / 25 / 50 findings | 2 weeks |
+| 3g-vis | Technology proof-of-concept | ChartGPU stream rendering, R3F terrain, Framer breathing | 2 weeks |
+| 3h-vis | Reconnection moment test | Prototype: Path A finding appears as Path B filament | 1 week |
 
 ### Gate for Track A
 
@@ -159,6 +184,12 @@ Path B production code begins. Only if Horizon 3 Track B gates passed. Sequenced
 | 4d | Race Canvas | Event-triggered (before races) | 3-4 weeks |
 | 4e | L7: Interaction Effects | Multi-input patterns | 2-3 weeks |
 | 4f | L8: Failure Mode Detection | Injury fingerprint foundation | 2-3 weeks |
+| 4g | **AutoInvestigation v2 — LLM agent for novel investigation proposals** | Nightly (background) | 2-3 weeks |
+| 4h | **Multi-athlete parameter sharing — cohort priors** | Background | 2-3 weeks |
+
+### AutoInvestigation v2 (4g-4h)
+
+With the structured optimizer (3g-auto) proven and stable, the LLM agent takes over for the creative part: proposing *novel investigation combinations* that the structured optimizer can't discover. And when multiple athletes have tuned parameters, findings that improve FQS for athletes with similar profiles become shareable priors — cohort intelligence feeding individual tuning. The moat becomes permanent because knowledge compounds across athletes AND across time.
 
 ### Gate
 
@@ -193,6 +224,7 @@ Horizon 1 (Engine Speaks — 3 weeks)
 │   └── Coach quality fixes
 │
 ├── Horizon 2 (Proof of Moat — weeks 3-8)
+│   ├── ★ EXPERIENCE GUARDRAIL (ships first — safety net for everything)
 │   ├── Pre-Race Fingerprint retrospective
 │   ├── Race countdown weather
 │   ├── Belle deep backfill
@@ -200,10 +232,15 @@ Horizon 1 (Engine Speaks — 3 weeks)
 │   ├── Progress narrative activation
 │   └── Operating Manual Lite
 │
-├── Horizon 3A (Engine L5-6 — weeks 8-16)
+├── Horizon 3A (Engine L5-6 + AutoInvestigation — weeks 8-16)
 │   ├── Confidence trajectory
 │   ├── Momentum effects
-│   └── Pre-Race Fingerprint v1 (forward)
+│   ├── Pre-Race Fingerprint v1 (forward)
+│   ├── FQS metric (the val_bpb of StrideIQ)
+│   ├── Shadow investigation runner
+│   ├── AutoInvestigation Loop v1 (structured optimizer)
+│   └── Cascade detection scoring
+│        └── GATE: FQS validated, loop improves findings overnight
 │
 ├── Horizon 3B (Path B Design — PARALLEL, non-code)
 │   ├── Emotional storyboard
@@ -212,12 +249,16 @@ Horizon 1 (Engine Speaks — 3 weeks)
 │   └── Reconnection test
 │        └── GATE: beauty + recognition
 │
-└── Horizon 4 (Dream — weeks 16-28) — ONLY if gate passes
-    ├── Run signatures
-    ├── Morning pulse
-    ├── Fingerprint organism
-    └── Race canvas
-         └── Horizon 5 (Moat — weeks 28+)
+├── Horizon 4 (Dream + AutoInvestigation v2 — weeks 16-28)
+│   ├── Run signatures
+│   ├── Morning pulse
+│   ├── Fingerprint organism
+│   ├── Race canvas
+│   ├── LLM agent for novel investigation proposals
+│   └── Multi-athlete parameter sharing (cohort priors)
+│        └── GATE: "what app is that?" + moat compounding while you sleep
+│
+└── Horizon 5 (Moat Permanent — weeks 28+)
 ```
 
 ---

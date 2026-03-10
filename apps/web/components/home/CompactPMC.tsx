@@ -52,19 +52,19 @@ interface LoadHistoryResponse {
 const LEGEND_ITEMS = [
   {
     key: 'ctl',
-    name: 'Fitness (CTL)',
+    name: 'Fitness',
     color: '#3B82F6',
-    tooltip: '42-day average of training stress. Higher = more accumulated fitness.',
+    tooltip: 'Longer-term training load trend. Higher = more accumulated fitness.',
   },
   {
     key: 'atl',
-    name: 'Fatigue (ATL)',
+    name: 'Fatigue',
     color: '#F97316',
-    tooltip: '7-day average of training stress. Higher = more recent fatigue.',
+    tooltip: 'Short-term training stress trend. Higher = more recent fatigue.',
   },
   {
     key: 'tsb',
-    name: 'Form (TSB)',
+    name: 'Form',
     color: '#10B981',
     tooltip: 'Fitness minus Fatigue. Positive = fresh. Negative = fatigued but building.',
   },
@@ -172,7 +172,7 @@ export function CompactPMC() {
             <Area
               type="monotone"
               dataKey="tsb"
-              name="Form (TSB)"
+              name="Form"
               fill="#10B981"
               fillOpacity={0.2}
               stroke="#10B981"
@@ -183,7 +183,7 @@ export function CompactPMC() {
             <Line
               type="monotone"
               dataKey="ctl"
-              name="Fitness (CTL)"
+              name="Fitness"
               stroke="#3B82F6"
               strokeWidth={2}
               dot={false}
@@ -192,7 +192,7 @@ export function CompactPMC() {
             <Line
               type="monotone"
               dataKey="atl"
-              name="Fatigue (ATL)"
+              name="Fatigue"
               stroke="#F97316"
               strokeWidth={2}
               dot={false}

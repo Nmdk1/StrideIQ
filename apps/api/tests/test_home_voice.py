@@ -585,3 +585,30 @@ class TestFindingTextSanitization:
 
         source = inspect.getsource(get_home_data)
         assert "_sanitize_finding_text(" in source
+
+
+class TestCachedBriefingNormalization:
+    def test_cached_multi_paragraph_is_truncated_to_first(self):
+        from routers.home import _normalize_cached_briefing_payload
+
+        payload = {
+            "morning_voice": (
+                "10 miles at 8:40 pace today with controlled effort and even cadence.\n\n"
+                "Second paragraph should never surface."
+            ),
+            "coach_noticed": "Strong consistency this week.",
+        }
+        out = _normalize_cached_briefing_payload(payload, garmin_sleep_h=None, checkin_sleep_h=None)
+        assert out is not None
+        assert out["morning_voice"] == "10 miles at 8:40 pace today with controlled effort and even cadence."
+
+    def test_cached_internal_metrics_in_coach_noticed_are_cleared(self):
+        from routers.home import _normalize_cached_briefing_payload
+
+        payload = {
+            "morning_voice": "10 miles at 8:40 pace today with controlled effort and even cadence.",
+            "coach_noticed": "TSB is up and CTL is stable.",
+        }
+        out = _normalize_cached_briefing_payload(payload, garmin_sleep_h=None, checkin_sleep_h=None)
+        assert out is not None
+        assert out["coach_noticed"] is None

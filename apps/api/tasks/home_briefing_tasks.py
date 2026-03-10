@@ -51,6 +51,7 @@ if _app_root not in sys.path:
 
 PROVIDER_TIMEOUT_S = 45   # Rich prompt (5 intelligence sources) needs more generation time
 TASK_HARD_TIMEOUT_S = 55  # Must exceed PROVIDER_TIMEOUT_S + DB work headroom
+BRIEFING_FINGERPRINT_VERSION = "v2"
 
 
 def _build_data_fingerprint(
@@ -61,7 +62,7 @@ def _build_data_fingerprint(
     from models import Activity, DailyCheckin, TrainingPlan
 
     today = date.today()
-    parts = [athlete_id]
+    parts = [athlete_id, f"schema:{BRIEFING_FINGERPRINT_VERSION}"]
 
     try:
         latest_activity = (
