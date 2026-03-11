@@ -2824,3 +2824,69 @@ class ExperienceAuditLog(Base):
     __table_args__ = (
         UniqueConstraint('athlete_id', 'run_date', 'tier', name='uq_audit_athlete_date_tier'),
     )
+
+
+class AutoDiscoveryRun(Base):
+    """
+    One founder-only nightly shadow research session.
+
+    Tracks the overall lifecycle of a single AutoDiscovery pass:
+    which loop families ran, how many experiments were conducted,
+    and the full structured nightly report (JSONB).
+
+    Phase 0: shadow mode only — no live mutation permitted.
+    """
+    __tablename__ = "auto_discovery_run"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(Text, nullable=False, server_default="running")  # running|completed|failed|partial
+    loop_types = Column(JSONB, nullable=False, server_default="[]")
+    experiment_count = Column(Integer, nullable=False, server_default="0")
+    kept_count = Column(Integer, nullable=False, server_default="0")
+    discarded_count = Column(Integer, nullable=False, server_default="0")
+    report = Column(JSONB, nullable=True)
+    notes = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_auto_discovery_run_athlete_started", "athlete_id", "started_at"),
+        Index("ix_auto_discovery_run_status_started", "status", "started_at"),
+    )
+
+
+class AutoDiscoveryExperiment(Base):
+    """
+    One experiment within a single AutoDiscoveryRun.
+
+    Records the complete before/after state of one candidate change:
+    baseline config, candidate config, FQS scores, keep/discard decision,
+    and a result summary.
+
+    Phase 0: every experiment is shadow-only; kept=True means
+    'worth reviewing', not 'applied to production'.
+    """
+    __tablename__ = "auto_discovery_experiment"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("auto_discovery_run.id"), nullable=False)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    loop_type = Column(Text, nullable=False)  # correlation_rescan|interaction_scan|registry_tuning
+    target_name = Column(Text, nullable=False)  # investigation name, input name, or pair id
+    baseline_config = Column(JSONB, nullable=False, server_default="{}")
+    candidate_config = Column(JSONB, nullable=False, server_default="{}")
+    baseline_score = Column(Float, nullable=True)
+    candidate_score = Column(Float, nullable=True)
+    score_delta = Column(Float, nullable=True)
+    kept = Column(Boolean, nullable=False, server_default="false")
+    runtime_ms = Column(Integer, nullable=True)
+    result_summary = Column(JSONB, nullable=True)
+    failure_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_auto_disc_exp_run_id", "run_id"),
+        Index("ix_auto_disc_exp_athlete_loop_created", "athlete_id", "loop_type", "created_at"),
+        Index("ix_auto_disc_exp_loop_kept_created", "loop_type", "kept", "created_at"),
+    )

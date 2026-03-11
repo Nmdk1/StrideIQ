@@ -41,6 +41,7 @@ from . import best_effort_tasks  # noqa: E402
 from . import import_tasks  # noqa: E402
 from . import intelligence_tasks  # noqa: E402
 from . import home_briefing_tasks  # noqa: E402
+from . import auto_discovery_tasks  # noqa: E402
 
 # SEV-1 guardrail: fail worker startup if home briefing imports are broken.
 try:

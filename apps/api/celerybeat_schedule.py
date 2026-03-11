@@ -59,6 +59,13 @@ beat_schedule = {
         'task': 'tasks.run_experience_guardrail',
         'schedule': crontab(hour=6, minute=15),
     },
+    # AutoDiscovery nightly shadow pass — 04:00 UTC, founder-only.
+    # Gated by feature flag 'auto_discovery.enabled'.
+    # Phase 0A: correlation multi-window rescan only.
+    'auto-discovery-nightly': {
+        'task': 'tasks.run_auto_discovery_nightly',
+        'schedule': crontab(hour=4, minute=0),
+    },
 }
 
 

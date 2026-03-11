@@ -45,8 +45,28 @@ TREADMILL_ELEV_THRESHOLD_M = 20
 # ═══════════════════════════════════════════════════════
 
 @dataclass
+class InvestigationParamSpec:
+    """Metadata for a single tunable parameter on an investigation."""
+    name: str
+    param_type: str  # "int" | "float" | "bool" | "enum"
+    default: object
+    description: str
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+    enum_values: Optional[List[str]] = None
+    search_enabled: bool = True
+
+
+@dataclass
 class InvestigationSpec:
-    """Metadata for a registered investigation."""
+    """Metadata for a registered investigation.
+
+    Phase-0 shadow-tuning additions:
+        tunable_params    — list of InvestigationParamSpec (pilot subset only)
+        runtime_cost_hint — "low" | "medium" | "high"
+        actionability_class — "controllable" | "environmental" | "mixed"
+        shadow_enabled    — True iff this investigation is in the Phase-0 pilot
+    """
     name: str
     fn: Callable
     requires: List[str]
@@ -54,6 +74,12 @@ class InvestigationSpec:
     min_races: int = 0
     min_data_weeks: int = 0
     description: str = ""
+    # Phase 0 shadow-tuning metadata (pilot subset only)
+    tunable_params: List[InvestigationParamSpec] = field(default_factory=list)
+    runtime_cost_hint: str = "medium"          # "low" | "medium" | "high"
+    actionability_class: str = "mixed"         # "controllable" | "environmental" | "mixed"
+    shadow_enabled: bool = False               # Only True for Phase-0 pilot subset
+
 
 INVESTIGATION_REGISTRY: List[InvestigationSpec] = []
 
@@ -3275,3 +3301,135 @@ def _most_common(items: List[str]) -> str:
     if not items:
         return 'unknown'
     return Counter(items).most_common(1)[0][0]
+
+
+# ═══════════════════════════════════════════════════════
+#  Phase-0 Pilot: Shadow-Tuning Metadata
+#
+#  Annotate the 6-investigation pilot subset with tunable_params,
+#  runtime_cost_hint, actionability_class, and shadow_enabled.
+#  Applied post-registration so decorator signatures are unchanged.
+# ═══════════════════════════════════════════════════════
+
+_PILOT_SHADOW_METADATA: Dict[str, dict] = {
+    "investigate_pace_at_hr_adaptation": {
+        "tunable_params": [
+            InvestigationParamSpec(
+                name="min_activities",
+                param_type="int",
+                default=20,
+                min_value=10,
+                max_value=60,
+                description="Minimum activities required before reporting a finding",
+            ),
+            InvestigationParamSpec(
+                name="min_data_weeks",
+                param_type="int",
+                default=12,
+                min_value=4,
+                max_value=24,
+                description="Minimum historical weeks of data required",
+            ),
+        ],
+        "runtime_cost_hint": "medium",
+        "actionability_class": "controllable",
+        "shadow_enabled": True,
+    },
+    "investigate_heat_tax": {
+        "tunable_params": [
+            InvestigationParamSpec(
+                name="min_activities",
+                param_type="int",
+                default=30,
+                min_value=15,
+                max_value=60,
+                description="Minimum activities before reporting a heat-tax finding",
+            ),
+        ],
+        "runtime_cost_hint": "medium",
+        "actionability_class": "environmental",
+        "shadow_enabled": True,
+    },
+    "investigate_long_run_durability": {
+        "tunable_params": [
+            InvestigationParamSpec(
+                name="min_activities",
+                param_type="int",
+                default=20,
+                min_value=10,
+                max_value=40,
+                description="Minimum long-run activities for durability analysis",
+            ),
+        ],
+        "runtime_cost_hint": "medium",
+        "actionability_class": "controllable",
+        "shadow_enabled": True,
+    },
+    "investigate_interval_recovery_trend": {
+        "tunable_params": [
+            InvestigationParamSpec(
+                name="min_activities",
+                param_type="int",
+                default=10,
+                min_value=5,
+                max_value=30,
+                description="Minimum interval sessions for recovery trend",
+            ),
+        ],
+        "runtime_cost_hint": "low",
+        "actionability_class": "controllable",
+        "shadow_enabled": True,
+    },
+    "investigate_stride_progression": {
+        "tunable_params": [
+            InvestigationParamSpec(
+                name="min_activities",
+                param_type="int",
+                default=10,
+                min_value=5,
+                max_value=30,
+                description="Minimum activities for stride progression analysis",
+            ),
+            InvestigationParamSpec(
+                name="min_data_weeks",
+                param_type="int",
+                default=4,
+                min_value=2,
+                max_value=12,
+                description="Minimum weeks for stride trend detection",
+            ),
+        ],
+        "runtime_cost_hint": "high",
+        "actionability_class": "controllable",
+        "shadow_enabled": True,
+    },
+    "investigate_workout_variety_effect": {
+        "tunable_params": [
+            InvestigationParamSpec(
+                name="min_activities",
+                param_type="int",
+                default=20,
+                min_value=10,
+                max_value=40,
+                description="Minimum activities for variety-effect analysis",
+            ),
+        ],
+        "runtime_cost_hint": "low",
+        "actionability_class": "mixed",
+        "shadow_enabled": True,
+    },
+}
+
+
+def _apply_pilot_shadow_metadata() -> None:
+    """Patch the INVESTIGATION_REGISTRY with Phase-0 shadow-tuning metadata."""
+    for spec in INVESTIGATION_REGISTRY:
+        meta = _PILOT_SHADOW_METADATA.get(spec.name)
+        if meta:
+            spec.tunable_params = meta.get("tunable_params", [])
+            spec.runtime_cost_hint = meta.get("runtime_cost_hint", "medium")
+            spec.actionability_class = meta.get("actionability_class", "mixed")
+            spec.shadow_enabled = meta.get("shadow_enabled", False)
+
+
+_apply_pilot_shadow_metadata()
