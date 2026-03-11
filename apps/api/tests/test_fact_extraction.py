@@ -1138,3 +1138,23 @@ class TestTemporalFactLifecycle:
         assert "age_years" in keys
         assert "prefers_morning_runs" in keys
 
+
+class TestUpcomingRaceExtraction:
+    """Fix 2: Extraction prompt captures upcoming race details."""
+
+    def test_extraction_prompt_includes_upcoming_race(self):
+        """Extraction prompt mentions upcoming race details."""
+        from tasks.fact_extraction_task import EXTRACTION_PROMPT
+        assert "upcoming race" in EXTRACTION_PROMPT.lower()
+
+    def test_upcoming_race_in_fact_types(self):
+        """upcoming_race is a valid fact_type in the extraction prompt."""
+        from tasks.fact_extraction_task import EXTRACTION_PROMPT
+        assert "upcoming_race" in EXTRACTION_PROMPT
+
+    def test_upcoming_race_not_in_ttl_categories(self):
+        """upcoming_race must NOT be in FACT_TTL_CATEGORIES (deadline-driven lifecycle out of scope)."""
+        from tasks.fact_extraction_task import FACT_TTL_CATEGORIES
+        assert "upcoming_race" not in FACT_TTL_CATEGORIES
+
+

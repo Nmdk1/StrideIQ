@@ -36,10 +36,11 @@ Extract any concrete, specific factual claims the athlete made about:
 - Their life context (age, occupation, years running, other sports)
 - Their race history (PRs, recent race results, upcoming goals)
 - Their health (resting heart rate, blood pressure, medications, etc.)
+- Their upcoming race details (race name, date, distance, course profile like flat/hilly, goal time, goal pace)
 - Anything else specific and factual that would be useful coaching context
 
 For each fact, return:
-- fact_type: one of [body_composition, strength_pr, injury_history, current_symptoms, training_phase, equipment, preference, life_context, race_history, health, other]
+- fact_type: one of [body_composition, strength_pr, injury_history, current_symptoms, training_phase, equipment, preference, life_context, race_history, health, upcoming_race, other]
 - fact_key: a snake_case identifier (e.g., "dexa_bone_density_t_score", "deadlift_1rm_lbs")
 - fact_value: the value as a string (e.g., "3.2", "315", "before 8am")
 - numeric_value: the numeric value if applicable, else null
@@ -51,6 +52,13 @@ Rules:
 - If the athlete says "I deadlift around 300-315", use the higher value (315) and note the range in source_excerpt.
 - Use consistent fact_key naming: lowercase snake_case, include units where relevant (e.g., _lbs, _in, _pct).
 - If the same fact appears multiple times with different values, extract only the most recent/specific version.
+
+Examples of upcoming_race facts:
+- fact_key: "upcoming_race_name", fact_value: "Eastern States 20 Miler"
+- fact_key: "upcoming_race_date", fact_value: "2026-03-22"
+- fact_key: "upcoming_race_course_profile", fact_value: "flat"
+- fact_key: "upcoming_race_distance_miles", fact_value: "20"
+- fact_key: "upcoming_race_goal_pace", fact_value: "8:20/mi"
 
 Return as a JSON array. If no facts found, return [].
 """

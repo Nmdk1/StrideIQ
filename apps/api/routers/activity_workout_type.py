@@ -140,6 +140,14 @@ async def update_activity_workout_type(
     activity.workout_type = request.workout_type
     activity.workout_zone = WORKOUT_ZONE_MAP.get(request.workout_type)
     activity.workout_confidence = 1.0  # User-set = 100% confidence
+
+    if request.workout_type in ("race", "tune_up_race"):
+        activity.user_verified_race = True
+        activity.is_race_candidate = True
+    else:
+        # Explicit user override to non-race must clear both race signals.
+        activity.user_verified_race = False
+        activity.is_race_candidate = False
     
     db.commit()
     db.refresh(activity)

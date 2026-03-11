@@ -352,6 +352,11 @@ def _ingest_activity_item(
     # --- No match: create new Activity row ---
     new_activity = _create_activity_from_adapted(adapted, athlete.id)
     db.add(new_activity)
+    try:
+        from services.hr_backfill import backfill_hr_from_garmin
+        backfill_hr_from_garmin(db, athlete.id, new_activity)
+    except Exception:
+        logger.warning("HR backfill failed for garmin activity %s — non-fatal", external_id, exc_info=True)
     return "created"
 
 
