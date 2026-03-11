@@ -1,4 +1,9 @@
 """Verify temporal_fact_001 migration ran correctly in production."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from core.database import SessionLocal
 from models import AthleteFact
 
