@@ -2890,3 +2890,77 @@ class AutoDiscoveryExperiment(Base):
         Index("ix_auto_disc_exp_athlete_loop_created", "athlete_id", "loop_type", "created_at"),
         Index("ix_auto_disc_exp_loop_kept_created", "loop_type", "kept", "created_at"),
     )
+
+
+class AutoDiscoveryCandidate(Base):
+    """
+    Durable cross-run candidate memory for AutoDiscovery (Phase 0C).
+
+    Groups recurring shadow candidates across nightly runs by a deterministic
+    stable key.  The founder can review and approve/reject/defer candidates;
+    approved candidates can be staged for controlled promotion.
+
+    Safety guarantees:
+    - Candidate rows never directly mutate athlete-facing surfaces.
+    - Staging intent (promotion_target) is a label only — no auto-mutation.
+    - current_status transitions are explicit founder actions only.
+    """
+    __tablename__ = "auto_discovery_candidate"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    # Type of candidate: stable_finding, strengthened_finding, interaction, registry_tuning
+    candidate_type = Column(Text, nullable=False)
+    # Deterministic stable key — unique per (athlete_id, candidate_type, candidate_key).
+    candidate_key = Column(Text, nullable=False)
+    first_seen_run_id = Column(UUID(as_uuid=True), ForeignKey("auto_discovery_run.id"), nullable=False)
+    last_seen_run_id = Column(UUID(as_uuid=True), ForeignKey("auto_discovery_run.id"), nullable=False)
+    times_seen = Column(Integer, nullable=False, server_default="1")
+    # Review state: open | approved | rejected | deferred | promoted
+    current_status = Column(Text, nullable=False, server_default="open")
+    latest_summary = Column(JSONB, nullable=True)  # compact candidate payload
+    latest_score = Column(Float, nullable=True)
+    latest_score_delta = Column(Float, nullable=True)
+    provenance_snapshot = Column(JSONB, nullable=True)  # score_provenance block
+    # Promotion staging: null until founder approves and stages.
+    # Values: surface_candidate | registry_change_candidate |
+    #         investigation_upgrade_candidate | manual_research_candidate
+    promotion_target = Column(Text, nullable=True)
+    promotion_note = Column(Text, nullable=True)  # optional short founder note
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        # Uniqueness enforced at DB level — same candidate must not have duplicate rows.
+        UniqueConstraint("athlete_id", "candidate_type", "candidate_key",
+                         name="uq_auto_disc_candidate_athlete_type_key"),
+        Index("ix_auto_disc_candidate_athlete_status", "athlete_id", "current_status"),
+        Index("ix_auto_disc_candidate_type_status", "candidate_type", "current_status"),
+        Index("ix_auto_disc_candidate_times_seen", "athlete_id", "times_seen"),
+    )
+
+
+class AutoDiscoveryReviewLog(Base):
+    """
+    Audit log for founder review actions on AutoDiscoveryCandidate rows.
+
+    Each row records one explicit founder action (approve/reject/defer/stage).
+    Enables full auditability without overwriting the candidate row history.
+    """
+    __tablename__ = "auto_discovery_review_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("auto_discovery_candidate.id"), nullable=False)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    action = Column(Text, nullable=False)  # approve | reject | defer | stage
+    previous_status = Column(Text, nullable=True)
+    new_status = Column(Text, nullable=False)
+    promotion_target = Column(Text, nullable=True)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_auto_disc_review_log_candidate", "candidate_id"),
+        Index("ix_auto_disc_review_log_athlete_created", "athlete_id", "created_at"),
+    )

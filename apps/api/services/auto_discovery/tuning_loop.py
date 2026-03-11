@@ -148,6 +148,8 @@ def run_pilot_tuning_loop(
                         "rationale": rationale,
                         "baseline_error": baseline_error,
                         "candidate_error": candidate_error,
+                        # WS1-1B: FQS provenance for founder review.
+                        "score_provenance": _build_tuning_provenance(adapter),
                     },
                     "failure_reason": candidate_error,
                     "runtime_ms": runtime_ms,
@@ -352,4 +354,27 @@ def summarize_tuning_results(
             }
             for e in ranked
         ],
+    }
+
+
+def _build_tuning_provenance(adapter: Any) -> Dict[str, Any]:
+    """
+    Build compact FQS provenance block for tuning experiments (WS1-1B).
+
+    Tuning uses AthleteFindingFQSAdapter, which scores AthleteFinding objects.
+    The provenance captures the adapter's static component quality labels
+    (per-finding component values would require re-scoring at report time,
+    so we report the quality labels and flag any inferred components).
+
+    Shape matches the spec:
+        component_values: empty dict (individual findings not re-scored here)
+        component_quality: labels from adapter
+        has_inferred_components: True if any component is not 'exact'
+    """
+    quality = adapter.COMPONENT_QUALITY
+    has_inferred = any(v != "exact" for v in quality.values())
+    return {
+        "component_values": {},
+        "component_quality": quality,
+        "has_inferred_components": has_inferred,
     }

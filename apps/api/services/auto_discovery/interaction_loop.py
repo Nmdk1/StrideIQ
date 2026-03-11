@@ -155,8 +155,11 @@ def run_pairwise_interaction_scan(
                 "top_interactions": kept or interactions[:3],  # top 3 even if below threshold
                 "threshold_statement": threshold_statement,
                 "error": error,
+                # WS1-1B: FQS provenance block preserved for founder review.
+                "score_provenance": _build_interaction_provenance(kept or scored_interactions[:3]),
             },
-            "baseline_score": float(len(kept)),
+            # WS1-1A: real aggregate score from kept candidates (not count-based).
+            "baseline_score": _aggregate_interaction_score(kept),
             "candidate_score": None,
             "score_delta": None,
             "failure_reason": error,
@@ -266,4 +269,63 @@ def _score_interaction(candidate: Dict[str, Any]) -> Dict[str, Any]:
             "effect_size_norm": round(effect_score, 4),
             "sample_support": round(sample_score, 4),
         },
+    }
+
+
+def _aggregate_interaction_score(candidates: List[Dict[str, Any]]) -> Optional[float]:
+    """
+    Aggregate interaction scores from kept/scored candidates.
+
+    Returns the mean `interaction_score` of the candidates, or None if the
+    list is empty (no candidates cleared threshold).
+
+    Used by the orchestrator to populate a real numeric `baseline_score` on
+    the interaction experiment row instead of the count-based proxy.
+    """
+    if not candidates:
+        return None
+    scores = [c.get("interaction_score") or 0.0 for c in candidates]
+    return round(sum(scores) / len(scores), 4)
+
+
+def _build_interaction_provenance(candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Build a compact FQS provenance block for interaction results.
+
+    Interaction candidates do not go through the full FQS adapter pipeline
+    (no correlation_finding row), so provenance reflects the two transparent
+    score components used in _score_interaction().
+
+    Shape matches the spec:
+        score_provenance.component_values
+        score_provenance.component_quality
+        score_provenance.has_inferred_components
+    """
+    if not candidates:
+        return {
+            "component_values": {},
+            "component_quality": {
+                "effect_size_norm": "exact",
+                "sample_support": "exact",
+            },
+            "has_inferred_components": False,
+        }
+
+    # Average component values across candidates.
+    effect_scores = [c.get("score_components", {}).get("effect_size_norm", 0.0) for c in candidates]
+    sample_scores = [c.get("score_components", {}).get("sample_support", 0.0) for c in candidates]
+
+    avg_effect = round(sum(effect_scores) / len(effect_scores), 4) if effect_scores else 0.0
+    avg_sample = round(sum(sample_scores) / len(sample_scores), 4) if sample_scores else 0.0
+
+    return {
+        "component_values": {
+            "effect_size_norm": avg_effect,
+            "sample_support": avg_sample,
+        },
+        "component_quality": {
+            "effect_size_norm": "exact",
+            "sample_support": "exact",
+        },
+        "has_inferred_components": False,
     }
