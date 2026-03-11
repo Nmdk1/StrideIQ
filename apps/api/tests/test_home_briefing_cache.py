@@ -873,9 +873,9 @@ class TestCeleryTask:
             assert result["model"] == "gemini-2.5-flash"
 
     def test_celery_task_uses_opus_when_key_present(self, fake_redis):
-        """Test 31: with ANTHROPIC_API_KEY set, task tries Opus first and uses it on success."""
+        """Test 31: with ANTHROPIC_API_KEY set, task tries Sonnet (via _call_opus_briefing) first and uses it on success."""
         import os
-        opus_result = {"coach_noticed": "Opus insight", "morning_voice": "50 miles."}
+        opus_result = {"coach_noticed": "Sonnet insight", "morning_voice": "50 miles."}
         with patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=opus_result) as mock_opus, \
              patch("tasks.home_briefing_tasks._call_gemini_briefing") as mock_gemini, \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
@@ -891,7 +891,7 @@ class TestCeleryTask:
             result = generate_home_briefing_task(athlete_id=str(uuid4()))
             mock_opus.assert_called_once()
             mock_gemini.assert_not_called()
-            assert result["model"] == "claude-opus-4-6"
+            assert result["model"] == "claude-sonnet-4-6"
 
     def test_celery_task_handles_provider_failure(self, fake_redis):
         """Test 32: on failure: record failure, no cache written."""
