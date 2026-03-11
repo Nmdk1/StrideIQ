@@ -1650,7 +1650,8 @@ def analyze_correlations(
     days: int = 90,
     db: Session = None,
     include_training_load: bool = True,  # NEW PARAMETER
-    output_metric: str = "efficiency"     # NEW PARAMETER: "efficiency", "pace_easy", "completion"
+    output_metric: str = "efficiency",     # NEW PARAMETER: "efficiency", "pace_easy", "completion"
+    shadow_mode: bool = False,             # Phase 0B: bypass production cache when True
 ) -> Dict:
     """
     Main correlation analysis function.
@@ -1663,9 +1664,11 @@ def analyze_correlations(
         raise ValueError("Database session required")
     from core.cache import get_cache, set_cache
     _cache_key = f"correlations:{athlete_id}:{days}:{output_metric}"
-    _cached = get_cache(_cache_key)
-    if _cached is not None:
-        return _cached
+    # Shadow mode bypasses production cache entirely to avoid read/write pollution.
+    if not shadow_mode:
+        _cached = get_cache(_cache_key)
+        if _cached is not None:
+            return _cached
     
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
@@ -1827,7 +1830,8 @@ def analyze_correlations(
         logger.warning(f"Correlation persistence failed for {athlete_id}: {e}")
 
     try:
-        set_cache(_cache_key, result, ttl=900)  # 15 min
+        if not shadow_mode:
+            set_cache(_cache_key, result, ttl=900)  # 15 min
     except Exception:
         pass
     return result

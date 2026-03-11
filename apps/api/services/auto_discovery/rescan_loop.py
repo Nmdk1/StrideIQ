@@ -81,6 +81,7 @@ def run_multiwindow_rescan(
                         db=db,
                         include_training_load=True,
                         output_metric=metric,
+                        shadow_mode=True,  # bypass production cache (WS1)
                     )
                     correlations = result.get("correlations", [])
                     findings_by_metric[metric] = [
@@ -90,7 +91,8 @@ def run_multiwindow_rescan(
                             "p_value": c.get("p_value"),
                             "sample_size": c.get("sample_size"),
                             "direction": c.get("direction"),
-                            "lag_days": c.get("lag_days"),
+                            "time_lag_days": c.get("time_lag_days"),  # fix: was "lag_days"
+                            "strength": c.get("strength"),
                         }
                         for c in correlations
                     ]

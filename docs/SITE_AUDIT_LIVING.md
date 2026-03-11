@@ -1,14 +1,26 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
-**Last updated:** March 9, 2026
-**Last updated by:** Builder session — Ledger P0 + Path A Home Surfaces + Activity Intelligence (commits `5d53e70`, `02e2a26`, `ac986eb`)
+**Last updated:** March 11, 2026
+**Last updated by:** Builder session — AutoDiscovery Phase 0A + 0B (shadow scoring, interaction loop, pilot tuning loop)
 
 ---
 
-## 0. Delta Since Last Audit (Mar 5 -> Mar 9)
+## 0. Delta Since Last Audit (Mar 9 -> Mar 11)
 
 Shipped and now live in product/system behavior:
+
+- **AutoDiscovery Phase 0B (Mar 11, 2026)**: Founder-only shadow learning platform extended from scaffold to real intellectual work. Four workstreams: **(1) Shadow isolation hardening** — `analyze_correlations()` gains `shadow_mode=True` parameter that skips all production cache reads and writes (`get_cache` / `set_cache` bypassed entirely), rescan loop lag field fixed from `lag_days` to `time_lag_days` (matching `CorrelationResult.to_dict()`), Celery task refactored to evaluate loop-family enablement per-athlete rather than task-wide. **(2) Real FQS integration** — `CorrelationFindingFQSAdapter` gains `score_shadow_dict(c)` method that scores raw shadow correlation dicts without committed `CorrelationFinding` rows; `AthleteFindingFQSAdapter` gains `score_finding_list(findings)` aggregate; orchestrator now stores real FQS `baseline_score` on every rescan experiment; report `score_summary` includes `aggregate_baseline_score` per loop family. **(3) Pairwise interaction loop** — new `services/auto_discovery/interaction_loop.py`: median-split pairwise testing across 4 output metrics (`efficiency`, `pace_easy`, `pace_threshold`, `completion`), Cohen's d effect size, transparent `interaction_score` with `effect_size_norm` + `sample_support` components, `INTERACTION_KEEP_THRESHOLD = 0.35`, persisted as `AutoDiscoveryExperiment` rows. **(4) Pilot registry tuning loop** — new `services/auto_discovery/tuning_loop.py`: reads `InvestigationParamSpec` metadata for all 6 pilot investigations, generates step-up/step-down candidates (20% of param range), temporarily patches `spec.min_activities` and `spec.min_data_weeks` during shadow evaluation then restores originals (no registry mutation), uses `AthleteFindingFQSAdapter.score_finding_list()` for baseline vs candidate scoring, keep rule: `score_delta > 0.03` AND no stability regression. **(5) Report upgrade** — `candidate_interactions` and `registry_tuning_candidates` are now structured dicts with `cleared_threshold` + `candidates` or explicit `reason`; score_summary includes FQS values per loop family; `production_cache_polluted: false` added to `no_surface_guarantee`; schema_version bumped to 2. Sample report: `docs/sample_auto_discovery_phase0b_run_report.json`. 35+ new tests in `apps/api/tests/test_auto_discovery_phase0b.py` (54 pass, 22 skip — no local Postgres). Safety guarantees unchanged: no athlete-facing table mutations, no live registry mutations, no production cache writes from shadow paths.
+
+- **AutoDiscovery Phase 0A (Mar 11, 2026)**: Experiment ledger (`auto_discovery_run` + `auto_discovery_experiment` tables), founder-only orchestrator (shadow mode), FQS v1 adapters, feature flags, multi-window rescan (30/60/90/180/365/full-history), nightly Celery beat task. Migration: `auto_discovery_001` (chained off `temporal_fact_001`). Sample report: `docs/sample_auto_discovery_run_report.json`. 37 tests passing. CI green.
+
+- **Full Correlation Engine Input Wiring (Mar 10, 2026)**: Engine expanded from 21 to 70 input signals across 5 phases. Phase 1: 14 GarminDay wearable signals (sleep score, deep/REM/light sleep, body battery, stress, HRV, resting HR, steps, respiratory rate, SpO2, aerobic/anaerobic TE). Phase 2: 18 activity-level signals (cadence, elevation, ground contact, power, dew point, temperature, etc.) via new `aggregate_activity_level_inputs()`. Phase 3: 5 feedback/reflection signals via new `aggregate_feedback_inputs()`. Phase 4: 6 checkin/composition/nutrition signals. Phase 5: 6 derived training pattern signals (weekly volume, long run ratio, quality session frequency, rest day frequency, intensity score, session variety) via new `aggregate_training_pattern_inputs()`. All new inputs wired into `analyze_correlations()` and `discover_combination_correlations()`. FRIENDLY_NAMES added to `n1_insight_generator.py` for all 49 new keys. DIRECTION_EXPECTATIONS and CONFOUNDER_MAP extended. Ban list verified (no new keys in `_VOICE_INTERNAL_METRICS`). 22 new tests in `test_correlation_inputs.py`. Spec: `docs/specs/CORRELATION_ENGINE_FULL_INPUT_WIRING_SPEC.md`. Audit: `docs/DATA_INTELLIGENCE_AUDIT_2026-03-10.md`. Commit: `d074587`.
+- **Fingerprint Backfill (Mar 10-11, 2026)**: New script `apps/api/scripts/backfill_correlation_fingerprint.py`. Runs correlation analysis across 7 overlapping windows (30/60/90/120/180/270/365 days) × 9 output metrics per athlete. Computes robustness count per finding key (# windows where significant). Bounded bootstrap promotion: if `times_confirmed < 3` and robustness >= 3 windows, set `times_confirmed = 3`. Never boosts above 3 from backfill. Reruns are idempotent (no confirmation inflation). After correlation passes, runs L1-L4 layer enrichment and investigation engine refresh. Founder results: 38 active findings, 23 surfaceable, 14 layer-enriched, 15 investigation findings updated. Runtime: 27.5s. Targeted briefing refresh via `apps/api/scripts/refresh_briefings.py` (no `FLUSHALL`). Verification script at `apps/api/scripts/verify_backfill.py`. Commits: `f89d269` through `9a6dd59`.
+- **Athlete Fact Extraction (Mar 10, 2026)**: Coach memory layer 1. New `AthleteFact` model with partial unique index `UNIQUE (athlete_id, fact_key) WHERE is_active = true`. Concurrency-safe upsert using `db.begin_nested()` savepoints — `IntegrityError` rolls back savepoint only, not parent transaction. Incremental extraction via `CoachChat.last_extracted_msg_count` checkpoint — only processes new messages since last extraction. Checkpoint advances only on successful extraction (not on LLM failure). Extraction triggers after `_save_chat_messages()`. Active facts injected into coach prompts (15 fact cap, ordered by `confirmed_by_athlete DESC, extracted_at DESC`). Injected into morning voice and Opus briefing prompts. Backfill script at `scripts/backfill_athlete_facts.py` with `--resume-from-chat-id` (strict `(created_at, id)` tuple boundary). Experience guardrail assertion #25: key-scoped superseded fact leak detection with numeric boundary matching. 26 tests in `test_fact_extraction.py`. Migration: `athlete_fact_001`. Commit: `0e9b6a9`.
+- **Daily Experience Guardrail (Mar 10, 2026)**: 25 assertions across 6 categories: Data Truth (#1-#7), Language Hygiene (#8-#11), Structural Integrity (#12-#16), Temporal Consistency (#17-#19), Cross-Endpoint Consistency (#20-#22), Trust Integrity (#23-#25). Runs daily via Celery beat at 06:15 UTC. Preflight check: if no Garmin data in 18h, skip Category 1 (no wolf-crying on rest days). `coach_briefing` gets full assertion battery in Tier 1. Results logged to `ExperienceAuditLog` table. New service: `services/experience_guardrail.py`. New task: `tasks/experience_guardrail_task.py`. Migration: `exp_audit_001`. Spec: `docs/specs/DAILY_EXPERIENCE_GUARDRAIL_SPEC.md`. Commit: `0c4aa45`.
+- **CI Hardening (Mar 10, 2026)**: Added `pytest-timeout` (120s per test) to prevent indefinite CI hangs. Backend Tests job has 20-minute timeout. Commit: `faa2463`.
+
+### Previous delta (Mar 5 -> Mar 9)
 
 - **Ledger P0 Fixes (Mar 9, 2026)**: (1) Removed live `analyze_correlations()` from Home request path — replaced with persisted `CorrelationFinding` lookup (`is_active=True`, `times_confirmed >= 3`), coaching language formatting. (2) Fixed 5 broken frontend links: removed dead `/lab-results` CTA from EmptyStates, changed `/plans` to `/plans/create` in insights, added `id="ai-powered-insights"` anchor on privacy page, added `id="runtoon"` anchor on settings page. (3) Deleted dead `apps/api/routers/lab_results.py` backend router. (4) Tightened `morning_voice` schema to one paragraph/2-3 sentences/no restatement, added warning telemetry at >240 chars (fail-close >280 unchanged). (5) Fixed ledger script to strip anchor fragments before route matching. Ledger P0 count = 0. Commit: `5d53e70`.
 - **Home Page Intelligence Surfaces (Mar 9, 2026)**: (1) `heat_adjustment_pct` added to `LastRun` model and populated from activity data — frontend shows weather-adjusted pace context on home when >3%. (2) `HomeFinding` typed model with `finding: Optional[HomeFinding]` and `has_correlations: bool` on `HomeResponse`. Day-based rotation across top active confirmed findings. (3) Cold-start state on home: `<10` activities → "Getting started", `10-30` → "Patterns forming", `30+` with no confirmed finding → "Analysis in progress". (4) Activity detail response now includes `dew_point_f` and `heat_adjustment_pct`; frontend renders weather context when >3%. Commit: `02e2a26`.
@@ -57,7 +69,7 @@ Shipped and now live in product/system behavior:
 | **Web** | Next.js 14 (App Router) | `apps/web/` |
 | **API** | FastAPI (Python 3.11) | `apps/api/` |
 | **Database** | TimescaleDB (PostgreSQL 16) | Docker: `timescale/timescaledb:latest-pg16` |
-| **Workers** | Celery | `apps/api/tasks/` (7 task modules — includes `runtoon_tasks.py`) |
+| **Workers** | Celery | `apps/api/tasks/` (14 task modules) |
 | **Object Storage** | MinIO (S3-compatible) | Docker: `strideiq_minio`, private bucket `strideiq-runtoon` |
 | **Cache/Queue** | Redis 7 Alpine | Celery broker + response cache |
 | **Proxy** | Caddy 2 | Auto-TLS, reverse proxy |
@@ -85,24 +97,26 @@ Migration runs automatically on API container startup. Manual migration: `docker
 
 ---
 
-## 2. Codebase Scale (as of 2026-02-16 snapshot; recount pending)
+## 2. Codebase Scale (as of 2026-03-11)
 
 | Metric | Count |
 |--------|-------|
-| SQLAlchemy models | 57 |
-| FastAPI routers | 53 |
-| Python services | 137 |
-| Celery task modules | 7 (includes `runtoon_tasks.py`) |
-| Test files | 144 |
-| Alembic migrations | 66 |
-| React pages | 43 |
-| React components | 59 |
-| TanStack Query hooks | 20 |
+| SQLAlchemy models | 53 |
+| FastAPI routers | 55 |
+| Python services | ~120 |
+| Celery task modules | 14 |
+| Test files | 175 |
+| Passing tests | 3,575+ |
+| Alembic migrations | 91 |
+| Correlation engine inputs | 70 |
+| React pages | 63 |
+| React components | 70 |
+| TanStack Query hooks | 21 |
 | Intelligence rules | 8 |
 
 ---
 
-## 3. Core Data Models (57 tables)
+## 3. Core Data Models (53 tables)
 
 ### Athlete & Auth
 - `Athlete` — core user record, includes `is_demo` flag (demo accounts cannot link Strava)
@@ -141,7 +155,8 @@ Migration runs automatically on API container startup. Manual migration: `docker
 - `AthleteLearning`, `AthleteCalibratedModel`, `AthleteWorkoutResponse` — N=1 learning
 
 ### Coach
-- `CoachChat` — conversation history
+- `CoachChat` — conversation history (includes `last_extracted_msg_count` for incremental fact extraction)
+- `AthleteFact` — coach memory: facts extracted from chat (partial unique index on active key per athlete)
 - `CoachIntentSnapshot` — coach decision audit
 - `CoachActionProposal` — proposed actions (propose → confirm → apply)
 - `CoachUsage` — LLM usage tracking
@@ -161,6 +176,7 @@ Migration runs automatically on API container startup. Manual migration: `docker
 ### Admin & Audit
 - `InviteAuditEvent`, `AdminAuditEvent` — admin operation audit trail
 - `WorkoutSelectionAuditEvent` — workout selection transparency
+- `ExperienceAuditLog` — daily experience guardrail assertion results
 
 ---
 
@@ -186,12 +202,16 @@ readiness → intelligence rules → narrate → persist.
 
 ### Correlation Engine (`services/correlation_engine.py`)
 
-Discovers N=1 correlations between inputs (check-in data, training load, body composition) and outputs (efficiency, pace, completion rate).
+Discovers N=1 correlations between inputs and outputs. **Expanded from 21 to 70 input signals on March 10, 2026.**
 
+- **70 input signals** across 5 categories: GarminDay wearable (14), activity-level (18), feedback/reflection (5), checkin/composition/nutrition (6), derived training patterns (6), plus original daily inputs (21)
 - **Statistical gates:** p < 0.05, |r| >= 0.3, n >= 10
 - **Time-shifted:** 0–7 day lags (catches "bad sleep → performance drops 2 days later")
-- **Output metrics:** efficiency, pace_easy, pace_threshold, completion, efficiency by zone, PB events, race pace
+- **Output metrics:** efficiency, pace_easy, pace_threshold, completion, efficiency_threshold, efficiency_race, efficiency_trend, pb_events, race_pace
 - **Bonferroni correction** applied in N1 insight generator
+- **Aggregation functions:** `aggregate_daily_inputs()`, `aggregate_activity_level_inputs()`, `aggregate_feedback_inputs()`, `aggregate_training_pattern_inputs()`
+- **Confounder control:** `CONFOUNDER_MAP` with explicit pairs, partial correlation via `compute_partial_correlation()`
+- **Direction expectations:** `DIRECTION_EXPECTATIONS` for sanity checks on known relationships
 
 ### Correlation Persistence (`services/correlation_persistence.py`) — NEW
 
@@ -338,7 +358,7 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 ## 8. Known Issues & Technical Debt
 
 ### Active Issues
-- **Garmin production-access process still pending final completion** — evaluation environment is active; endpoint compliance and submission package are in progress with Partner Services.
+- **Flaky Garmin sync tests cause CI hangs (HIGH PRIORITY)** — `test_garmin_d5_activity_sync.py` and `test_garmin_d6_health_sync.py` intermittently hang indefinitely. Mitigated with `pytest-timeout=120s` and job `timeout-minutes: 20`, but timeout-failure is a coverage lapse, not a green pass. Root cause unknown — may be related to mocked HTTP calls or event loop interactions. **Fix this before building new features.**
 - **Garmin physiology coverage is underfed for connected athletes** — monitor now exists (`/v1/admin/ops/ingestion/garmin-health`) and currently indicates sparse sleep/HRV population for some athletes.
 - ~~**Email deliverability wiring remains operationally sensitive**~~ — **RESOLVED (Feb 28, 2026).** Production email is live: `smtp.gmail.com:587`, sender `noreply@strideiq.run` via `michael@strideiq.run`. Password reset E2E verified by Codex. DNS hardening (SPF/DKIM/DMARC) still needed at Porkbun.
 - **Coach quality audit scoped (Mar 8, 2026):** Full audit of 11 failure patterns documented in `docs/COACH_QUALITY_AUDIT.md`. Covers: A-I-A template rigidity, reflexive conservatism, hallucinated external facts, math errors, sycophantic recovery, lecturing experienced athletes, not using tools, ignoring prior context. Fixes scoped: deterministic pre-checks (race day, recent activity, weather), system prompt rewrites, routing expansion for standard users. Queued behind current work.
@@ -356,6 +376,7 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 - Sleep weight = 0.00 in readiness score — excluded until correlation engine proves individual relationship
 
 ### Resolved Issues
+- **Garmin production-access process (Mar 3, 2026):** Marc Lussi (Partner Services) approved StrideIQ for production environment. Health API approved for commercial/study use. Rate limits lifted. Historical Data Export approved.
 - **Coach Garmin Health API data (Mar 2 → resolved Mar 2, 2026):** `build_context()` now queries `GarminDay` for last 7 days. Sleep, HRV, RHR, stress, body battery in coach context with "source: Garmin Health API" attribution.
 - **Coach hallucinations (Mar 2 → resolved Mar 2, 2026):** Soreness null → prompt says "not reported today — do NOT claim any soreness." Week run count grounded with explicit count and fabrication ban.
 - **Coach noticed staleness (Mar 2 → resolved Mar 2, 2026):** 48h rotation via Redis persistence + ROTATION CONSTRAINT in prompt.
@@ -461,15 +482,19 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 | `progress_prewarm_tasks.py` | Progress endpoint/cache prewarm |
 | `garmin_health_monitor_task.py` | Daily Garmin ingestion coverage monitoring |
 | `runtoon_tasks.py` | On-demand Runtoon generation (triggered by share flow, not by sync) |
+| `correlation_tasks.py` | Daily correlation sweep + layer enrichment |
+| `fact_extraction_task.py` | Athlete fact extraction from coach chat (triggered after message save) |
+| `experience_guardrail_task.py` | Daily experience guardrail (06:15 UTC via Celery beat) |
+| `auto_discovery_tasks.py` | Founder-only nightly AutoDiscovery shadow pass (04:00 UTC, Phase 0B) |
 
 ---
 
 ## 12. Alembic Migration Chain
 
-Current head: `lfp_005_sentence` (chains off `lfp_004_layer` ← `lfp_003_registry` ← `lfp_002_shape` ← `lfp_001_heat` ← `phase1c_001` ← ...)
+Current head: `athlete_fact_001` (chains off the main migration chain)
 
 CI enforces single-head integrity via `.github/scripts/ci_alembic_heads_check.py`.
-`EXPECTED_HEADS = {"lfp_005_sentence"}`.
+`EXPECTED_HEADS = {"athlete_fact_001"}`.
 
 When adding a new migration: **must chain off the current head** — update `down_revision` and `EXPECTED_HEADS` in the CI script.
 
@@ -511,12 +536,13 @@ Non-negotiable operating rules:
 
 ### Backend/API Inventory
 
-Current code scan snapshot:
-- SQLAlchemy model classes in `apps/api/models.py`: **60**
-- Router modules in `apps/api/routers/`: **60** files (lab_results.py removed Mar 9)
-- Service modules in `apps/api/services/`: **152** files
+Current code scan snapshot (Mar 11, 2026):
+- SQLAlchemy model classes in `apps/api/models.py`: **53**
+- Router modules in `apps/api/routers/`: **55** files
+- Service modules in `apps/api/services/`: **~120** files
 - Task modules in `apps/api/tasks/`: **14** files
-- API test files in `apps/api/tests/`: **176** files
+- API test files in `apps/api/tests/`: **175** files
+- Correlation engine input signals: **70** (expanded from 21 on Mar 10)
 
 ### Frontend Inventory
 
@@ -575,18 +601,23 @@ Before any agent marks work complete:
 
 ```
 # Core
-apps/api/models.py                          ← All 57 SQLAlchemy models
+apps/api/models.py                          ← All 53 SQLAlchemy models (includes AthleteFact, ExperienceAuditLog)
 apps/api/core/auth.py                       ← Auth, RBAC, JWT
 apps/api/core/database.py                   ← DB session, Base
 
 # Intelligence Pipeline
 apps/api/services/daily_intelligence.py     ← 8 intelligence rules
-apps/api/services/correlation_engine.py     ← N=1 correlation discovery
+apps/api/services/correlation_engine.py     ← N=1 correlation discovery (70 inputs, 4 aggregate functions)
 apps/api/services/correlation_persistence.py ← Persistent findings + reproducibility
-apps/api/services/n1_insight_generator.py   ← Polarity-aware insight generation
+apps/api/services/correlation_layers.py     ← L1-L4 enrichment (threshold, asymmetry, decay, mediators)
+apps/api/services/n1_insight_generator.py   ← Polarity-aware insight generation + FRIENDLY_NAMES
 apps/api/services/adaptation_narrator.py    ← Gemini Flash narration + scoring
+apps/api/services/experience_guardrail.py   ← 25 daily assertions across 6 categories
 apps/api/services/readiness_score.py        ← Composite readiness
 apps/api/tasks/intelligence_tasks.py        ← Daily intelligence orchestration
+apps/api/tasks/correlation_tasks.py         ← Daily correlation sweep + layer enrichment
+apps/api/tasks/fact_extraction_task.py      ← Athlete fact extraction from coach chat
+apps/api/tasks/experience_guardrail_task.py ← Daily experience guardrail (06:15 UTC)
 
 # Living Fingerprint
 apps/api/services/heat_adjustment.py        ← Weather normalization (Magnus + combined value)
@@ -634,6 +665,12 @@ apps/web/app/home/page.tsx                  ← Home page
 apps/web/lib/hooks/queries/home.ts          ← Home data + check-in mutation
 apps/web/lib/api-client.ts                  ← API client
 
+# Scripts (production utility)
+apps/api/scripts/backfill_correlation_fingerprint.py ← Multi-window correlation backfill + bootstrap
+apps/api/scripts/refresh_briefings.py       ← Targeted home briefing refresh (no FLUSHALL)
+apps/api/scripts/verify_backfill.py         ← Post-backfill verification
+scripts/backfill_athlete_facts.py           ← Historical fact extraction with resume
+
 # Config & Deploy
 docker-compose.yml                          ← Container orchestration
 apps/api/alembic/                           ← Migration management
@@ -643,5 +680,9 @@ apps/api/alembic/                           ← Migration management
 docs/SITE_AUDIT_LIVING.md                   ← THIS FILE
 docs/TRAINING_PLAN_REBUILD_PLAN.md          ← Build plan + phase gates
 docs/FOUNDER_OPERATING_CONTRACT.md          ← How to work with the founder
+docs/SESSION_HANDOFF_2026-03-11_NEW_BUILDER_ONBOARDING.md ← Comprehensive new-builder onboarding
 docs/ARCHITECTURE_OVERVIEW.md               ← System design principles
+docs/specs/CORRELATION_ENGINE_FULL_INPUT_WIRING_SPEC.md ← 70-input correlation engine spec
+docs/DATA_INTELLIGENCE_AUDIT_2026-03-10.md  ← Data blind spots audit
+docs/BUILDER_INSTRUCTIONS_2026-03-10_FINGERPRINT_BACKFILL.md ← Backfill safety rules
 ```

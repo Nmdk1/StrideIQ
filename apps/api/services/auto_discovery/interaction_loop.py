@@ -1,0 +1,269 @@
+"""
+Pairwise Interaction Loop — Phase 0B (founder-only, shadow mode).
+
+Turns the existing combination-correlation helper into a persisted,
+scored shadow discovery loop.
+
+Scope: pairwise only.  Three-way and higher-order interactions are
+explicitly out of scope for Phase 0B.
+
+Output metrics supported: efficiency, pace_easy, pace_threshold, completion.
+
+Safety guarantees:
+- No writes to athlete-facing tables.
+- No writes to correlation_finding or fingerprint_finding.
+- Returns experiment dicts; the orchestrator owns persistence.
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+import time
+from datetime import datetime, timedelta
+from statistics import mean, stdev
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
+# Minimum samples per group for an interaction to be reportable.
+_MIN_GROUP_SIZE = 5
+# Minimum Cohen's d to be considered a meaningful interaction effect.
+_MIN_EFFECT_SIZE = 0.5
+# Maximum interactions returned per metric.
+_TOP_N = 10
+# Keep threshold: interaction score must exceed this to be "kept".
+INTERACTION_KEEP_THRESHOLD = 0.35
+
+# Output metrics with their aggregation keys and polarity
+# (lower is better for pace, higher for completion/efficiency).
+_INTERACTION_METRICS: Dict[str, str] = {
+    "efficiency": "efficiency",
+    "pace_easy": "pace_easy",
+    "pace_threshold": "pace_threshold",
+    "completion": "completion",
+}
+
+
+def run_pairwise_interaction_scan(
+    athlete_id: UUID,
+    db: Session,
+    days: int = 180,
+) -> List[Dict[str, Any]]:
+    """
+    Run pairwise interaction discovery for the athlete in shadow mode.
+
+    Returns a list of experiment-result dicts (one per output metric)
+    suitable for writing to `auto_discovery_experiment`.
+
+    No production DB tables are mutated.  The caller must roll back
+    any pending writes after this function returns.
+    """
+    from services.correlation_engine import (
+        aggregate_daily_inputs,
+        aggregate_training_load_inputs,
+        aggregate_activity_level_inputs,
+        aggregate_feedback_inputs,
+        aggregate_training_pattern_inputs,
+        aggregate_efficiency_outputs,
+        MIN_SAMPLE_SIZE,
+    )
+
+    def _get_output_for_metric(metric_name, athlete_id_str, start_date, end_date, db):
+        from tasks.correlation_tasks import _aggregate_output_for_metric
+        return _aggregate_output_for_metric(metric_name, athlete_id_str, start_date, end_date, db)
+
+    athlete_id_str = str(athlete_id)
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    experiment_results: List[Dict[str, Any]] = []
+
+    # Aggregate all inputs once.
+    try:
+        all_inputs = aggregate_daily_inputs(athlete_id_str, start_date, end_date, db)
+        load_inputs = aggregate_training_load_inputs(athlete_id_str, start_date, end_date, db)
+        all_inputs.update(load_inputs)
+        activity_inputs = aggregate_activity_level_inputs(athlete_id_str, start_date, end_date, db)
+        all_inputs.update(activity_inputs)
+        feedback_inputs = aggregate_feedback_inputs(athlete_id_str, start_date, end_date, db)
+        all_inputs.update(feedback_inputs)
+        pattern_inputs = aggregate_training_pattern_inputs(athlete_id_str, start_date, end_date, db)
+        all_inputs.update(pattern_inputs)
+    except Exception as exc:
+        logger.error("Interaction scan: input aggregation failed for athlete=%s: %s", athlete_id_str, exc)
+        return []
+
+    for metric_name in _INTERACTION_METRICS:
+        t0 = time.monotonic()
+        error: Optional[str] = None
+        interactions: List[Dict[str, Any]] = []
+
+        try:
+            output_data = _get_output_for_metric(metric_name, athlete_id_str, start_date, end_date, db)
+            if len(output_data) < MIN_SAMPLE_SIZE:
+                error = f"Insufficient output data: {len(output_data)} < {MIN_SAMPLE_SIZE}"
+            else:
+                output_dict = {d: v for d, v in output_data}
+                interactions = _find_pairwise_interactions(
+                    all_inputs=all_inputs,
+                    output_dict=output_dict,
+                    output_metric=metric_name,
+                    min_group=_MIN_GROUP_SIZE,
+                    min_effect=_MIN_EFFECT_SIZE,
+                    top_n=_TOP_N,
+                )
+        except Exception as exc:
+            error = str(exc)
+            logger.warning("Interaction scan: metric=%s failed: %s", metric_name, exc)
+
+        runtime_ms = int((time.monotonic() - t0) * 1000)
+        scored_interactions = [_score_interaction(i) for i in interactions]
+        scored_interactions.sort(key=lambda x: x["interaction_score"], reverse=True)
+
+        # Threshold statement if no interactions cleared the bar.
+        threshold_statement = None
+        kept = [i for i in scored_interactions if i["interaction_score"] >= INTERACTION_KEEP_THRESHOLD]
+        if not interactions:
+            threshold_statement = {
+                "cleared_threshold": False,
+                "reason": error or "no interactions above minimum effect size",
+                "threshold": INTERACTION_KEEP_THRESHOLD,
+            }
+        elif not kept:
+            threshold_statement = {
+                "cleared_threshold": False,
+                "reason": f"{len(interactions)} candidates tested, none exceeded score threshold {INTERACTION_KEEP_THRESHOLD}",
+                "threshold": INTERACTION_KEEP_THRESHOLD,
+            }
+
+        experiment_results.append({
+            "loop_type": "interaction_scan",
+            "target_name": f"pairwise:{metric_name}",
+            "baseline_config": {
+                "output_metric": metric_name,
+                "days": days,
+                "min_effect_size": _MIN_EFFECT_SIZE,
+            },
+            "candidate_config": {},
+            "result_summary": {
+                "output_metric": metric_name,
+                "interactions_tested": len(interactions),
+                "interactions_kept": len(kept),
+                "top_interactions": kept or interactions[:3],  # top 3 even if below threshold
+                "threshold_statement": threshold_statement,
+                "error": error,
+            },
+            "baseline_score": float(len(kept)),
+            "candidate_score": None,
+            "score_delta": None,
+            "failure_reason": error,
+            "runtime_ms": runtime_ms,
+        })
+        logger.info(
+            "Interaction scan: athlete=%s metric=%s candidates=%d kept=%d runtime_ms=%d",
+            athlete_id_str, metric_name, len(interactions), len(kept), runtime_ms,
+        )
+
+    return experiment_results
+
+
+def _find_pairwise_interactions(
+    all_inputs: Dict[str, Any],
+    output_dict: Dict[Any, float],
+    output_metric: str,
+    min_group: int,
+    min_effect: float,
+    top_n: int,
+) -> List[Dict[str, Any]]:
+    """Core median-split pairwise test loop."""
+    # Build binary splits.
+    splits: Dict[str, Dict] = {}
+    for input_name, data in all_inputs.items():
+        if len(data) < min_group * 2:
+            continue
+        values = [v for _, v in data]
+        median_val = sorted(values)[len(values) // 2]
+        splits[input_name] = {
+            "high": {d for d, v in data if v >= median_val},
+            "low": {d for d, v in data if v < median_val},
+            "median": median_val,
+        }
+
+    input_names = list(splits.keys())
+    results: List[Dict[str, Any]] = []
+
+    for i in range(len(input_names)):
+        for j in range(i + 1, len(input_names)):
+            n1, n2 = input_names[i], input_names[j]
+            s1, s2 = splits[n1], splits[n2]
+
+            both_high = s1["high"] & s2["high"]
+            both_low = s1["low"] & s2["low"]
+
+            eff_high = [output_dict[d] for d in both_high if d in output_dict]
+            eff_low = [output_dict[d] for d in both_low if d in output_dict]
+
+            if len(eff_high) < min_group or len(eff_low) < min_group:
+                continue
+
+            m_high = mean(eff_high)
+            m_low = mean(eff_low)
+            if len(eff_high) > 1 and len(eff_low) > 1:
+                pooled = math.sqrt((stdev(eff_high) ** 2 + stdev(eff_low) ** 2) / 2)
+            else:
+                pooled = 1.0
+            effect = (m_high - m_low) / pooled if pooled > 0 else 0.0
+
+            if abs(effect) < min_effect:
+                continue
+
+            # Lower output = better for pace metrics; higher = better for completion/efficiency-style.
+            lower_is_better = "pace" in output_metric
+            high_is_better = (effect < 0) if lower_is_better else (effect > 0)
+
+            results.append({
+                "factors": [n1, n2],
+                "output_metric": output_metric,
+                "condition": "both_high",
+                "effect_size": round(effect, 3),
+                "mean_high": round(m_high, 4),
+                "mean_low": round(m_low, 4),
+                "n_high": len(eff_high),
+                "n_low": len(eff_low),
+                "high_group_better": high_is_better,
+                "direction_label": (
+                    f"{'lower' if lower_is_better else 'higher'} {output_metric} when both {n1} and {n2} are high"
+                ),
+            })
+
+    results.sort(key=lambda x: abs(x["effect_size"]), reverse=True)
+    return results[:top_n]
+
+
+def _score_interaction(candidate: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Compute a transparent founder-reviewable score for a pairwise candidate.
+
+    Score components:
+        effect_size_norm  — normalized |Cohen's d|, capped at 1.5 → score [0, 1]
+        sample_support    — log-scaled combined sample size
+    """
+    abs_effect = abs(candidate.get("effect_size") or 0.0)
+    n_total = (candidate.get("n_high") or 0) + (candidate.get("n_low") or 0)
+
+    effect_score = min(1.0, abs_effect / 1.5)
+    sample_score = min(1.0, math.log1p(max(0, n_total - 10)) / math.log1p(90))
+
+    interaction_score = round(0.6 * effect_score + 0.4 * sample_score, 4)
+
+    return {
+        **candidate,
+        "interaction_score": interaction_score,
+        "score_components": {
+            "effect_size_norm": round(effect_score, 4),
+            "sample_support": round(sample_score, 4),
+        },
+    }

@@ -125,6 +125,68 @@ class CorrelationFindingFQSAdapter:
             "component_quality": self.COMPONENT_QUALITY,
         }
 
+    def score_shadow_dict(self, c: Dict[str, Any]) -> FQSResult:
+        """
+        Score a raw shadow correlation dict produced by the rescan loop.
+
+        Shadow correlation dicts have no persisted layer metadata
+        (threshold, asymmetry, decay) so specificity and cascade are
+        inferred from available fields only.  All component_quality labels
+        remain the same as for persisted findings.
+
+        Required dict keys (from CorrelationResult.to_dict()):
+            input_name, correlation_coefficient, p_value, sample_size,
+            direction, time_lag_days, strength
+        """
+        # Confidence: derived from sample size (no times_confirmed in shadow).
+        # Use |r| × log-scaled sample weight as a proxy.
+        abs_r = abs(c.get("correlation_coefficient") or 0.0)
+        n = c.get("sample_size") or 0
+        sample_weight = min(1.0, math.log1p(max(0, n - 10)) / math.log1p(50))
+        confidence = round(abs_r * sample_weight, 4)
+
+        # Specificity: from lag presence + sample support.
+        specificity = 0.0
+        if (c.get("time_lag_days") or 0) > 0:
+            specificity += 0.3
+        if n >= 20:
+            specificity += 0.2
+        if abs_r >= 0.5:
+            specificity += 0.2
+        if c.get("strength") == "strong":
+            specificity += 0.3
+        elif c.get("strength") == "moderate":
+            specificity += 0.15
+        specificity = min(1.0, round(specificity, 4))
+
+        actionability = _REGISTRY_DEFAULT_ACTIONABILITY
+        stability = round(sample_weight * abs_r, 4)
+        cascade_bonus = 0.0  # no layer evidence in shadow dicts
+
+        components: Dict[str, float] = {
+            "confidence": confidence,
+            "specificity": specificity,
+            "actionability": actionability,
+            "stability": stability,
+            "cascade_bonus": cascade_bonus,
+        }
+
+        base_score = (
+            0.35 * confidence
+            + 0.25 * specificity
+            + 0.20 * actionability
+            + 0.20 * stability
+        )
+        final_score = min(1.0, base_score + cascade_bonus)
+
+        return {
+            "origin": "correlation_shadow",
+            "base_score": round(base_score, 4),
+            "final_score": round(final_score, 4),
+            "components": {k: round(v, 4) for k, v in components.items()},
+            "component_quality": self.COMPONENT_QUALITY,
+        }
+
     def _confidence(self, finding: "CorrelationFinding") -> float:
         # Logarithmic saturation: diminishing returns past ~20 confirmations.
         confirmation_weight = min(1.0, math.log1p(finding.times_confirmed) / math.log1p(20))
@@ -256,3 +318,15 @@ class AthleteFindingFQSAdapter:
         else:
             longevity_factor = 0.0
         return round(0.6 * recency + 0.4 * longevity_factor, 4)
+
+    def score_finding_list(self, findings: list) -> float:
+        """
+        Aggregate FQS score for a list of AthleteFinding objects.
+
+        Used by the tuning loop to compare baseline vs candidate finding sets.
+        Returns the mean final_score, or 0.0 if findings is empty.
+        """
+        if not findings:
+            return 0.0
+        scores = [self.score(f)["final_score"] for f in findings]
+        return round(sum(scores) / len(scores), 4)
