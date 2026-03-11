@@ -18,6 +18,14 @@ from models import AthleteFact, CoachChat
 
 logger = logging.getLogger(__name__)
 
+FACT_TTL_CATEGORIES = {
+    "injury_history": 14,
+    "current_symptoms": 14,
+    "training_phase": 21,
+    "equipment": 90,
+    "strength_pr": 30,
+}
+
 EXTRACTION_PROMPT = """You are extracting structured facts from an athlete's messages to their running coach.
 
 Extract any concrete, specific factual claims the athlete made about:
@@ -31,7 +39,7 @@ Extract any concrete, specific factual claims the athlete made about:
 - Anything else specific and factual that would be useful coaching context
 
 For each fact, return:
-- fact_type: one of [body_composition, strength_pr, injury_history, preference, life_context, race_history, health, other]
+- fact_type: one of [body_composition, strength_pr, injury_history, current_symptoms, training_phase, equipment, preference, life_context, race_history, health, other]
 - fact_key: a snake_case identifier (e.g., "dexa_bone_density_t_score", "deadlift_1rm_lbs")
 - fact_value: the value as a string (e.g., "3.2", "315", "before 8am")
 - numeric_value: the numeric value if applicable, else null
@@ -134,6 +142,8 @@ def _upsert_fact(db, athlete_id: UUID, chat_id: UUID, extracted: dict):
         confidence="athlete_stated",
         source_chat_id=chat_id,
         source_excerpt=extracted["source_excerpt"],
+        temporal=FACT_TTL_CATEGORIES.get(extracted["fact_type"]) is not None,
+        ttl_days=FACT_TTL_CATEGORIES.get(extracted["fact_type"]),
     )
 
     try:

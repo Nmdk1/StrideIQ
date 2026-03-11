@@ -1508,19 +1508,38 @@ def generate_coach_home_briefing(
     try:
         from models import AthleteFact as _AF
         MAX_INJECTED_FACTS = 15
-        active_facts = (
-            db.query(_AF)
-            .filter(
-                _AF.athlete_id == athlete_id,
-                _AF.is_active == True,  # noqa: E712
+        BATCH_SIZE = 50
+        MAX_SCAN_ROWS = 500
+        _now = datetime.now(timezone.utc)
+
+        active_facts = []
+        offset = 0
+        while len(active_facts) < MAX_INJECTED_FACTS and offset < MAX_SCAN_ROWS:
+            batch = (
+                db.query(_AF)
+                .filter(
+                    _AF.athlete_id == athlete_id,
+                    _AF.is_active == True,  # noqa: E712
+                )
+                .order_by(
+                    _AF.confirmed_by_athlete.desc(),
+                    _AF.extracted_at.desc(),
+                )
+                .offset(offset)
+                .limit(BATCH_SIZE)
+                .all()
             )
-            .order_by(
-                _AF.confirmed_by_athlete.desc(),
-                _AF.extracted_at.desc(),
-            )
-            .limit(MAX_INJECTED_FACTS)
-            .all()
-        )
+            if not batch:
+                break
+
+            for f in batch:
+                if f.temporal and f.ttl_days is not None:
+                    if f.extracted_at < _now - timedelta(days=f.ttl_days):
+                        continue
+                active_facts.append(f)
+                if len(active_facts) >= MAX_INJECTED_FACTS:
+                    break
+            offset += BATCH_SIZE
         if active_facts:
             facts_section = "=== ATHLETE-STATED FACTS (from coach conversations) ===\n"
             for f in active_facts:

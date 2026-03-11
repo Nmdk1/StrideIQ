@@ -38,6 +38,8 @@ def _make_athlete_fact(**overrides):
         extracted_at=datetime.now(timezone.utc),
         superseded_at=None,
         is_active=True,
+        temporal=False,
+        ttl_days=None,
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -922,3 +924,217 @@ class TestIntegration:
         result_25 = [r for r in guardrail.results if r.id == 25]
         assert len(result_25) == 1
         assert result_25[0].passed is True
+
+
+class TestTemporalFactLifecycle:
+    """Tests for temporal fact TTL classification and filtering."""
+
+    def _select_injected_facts(self, db_session, athlete_id):
+        """Mirror home.py injection selection logic."""
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        from models import AthleteFact as _AF
+
+        MAX_INJECTED_FACTS = 15
+        BATCH_SIZE = 50
+        MAX_SCAN_ROWS = 500
+        _now = _dt.now(_tz.utc)
+
+        selected = []
+        offset = 0
+        while len(selected) < MAX_INJECTED_FACTS and offset < MAX_SCAN_ROWS:
+            batch = (
+                db_session.query(_AF)
+                .filter(
+                    _AF.athlete_id == athlete_id,
+                    _AF.is_active == True,  # noqa: E712
+                )
+                .order_by(
+                    _AF.confirmed_by_athlete.desc(),
+                    _AF.extracted_at.desc(),
+                )
+                .offset(offset)
+                .limit(BATCH_SIZE)
+                .all()
+            )
+            if not batch:
+                break
+
+            for f in batch:
+                if f.temporal and f.ttl_days is not None:
+                    if f.extracted_at < _now - _td(days=f.ttl_days):
+                        continue
+                selected.append(f)
+                if len(selected) >= MAX_INJECTED_FACTS:
+                    break
+            offset += BATCH_SIZE
+
+        return selected
+
+    def test_injury_fact_gets_ttl(self):
+        """injury_history fact_type → temporal=True, ttl_days=14."""
+        from tasks.fact_extraction_task import FACT_TTL_CATEGORIES
+        assert FACT_TTL_CATEGORIES["injury_history"] == 14
+
+    def test_permanent_fact_no_ttl(self):
+        """life_context fact_type → not in TTL dict (permanent)."""
+        from tasks.fact_extraction_task import FACT_TTL_CATEGORIES
+        assert "life_context" not in FACT_TTL_CATEGORIES
+        assert "race_history" not in FACT_TTL_CATEGORIES
+        assert "health" not in FACT_TTL_CATEGORIES
+        assert "preference" not in FACT_TTL_CATEGORIES
+
+    def test_equipment_fact_gets_90_day_ttl(self):
+        """equipment fact_type → temporal=True, ttl_days=90."""
+        from tasks.fact_extraction_task import FACT_TTL_CATEGORIES
+        assert FACT_TTL_CATEGORIES["equipment"] == 90
+
+    def test_strength_fact_gets_30_day_ttl(self):
+        """strength_pr fact_type → temporal=True, ttl_days=30."""
+        from tasks.fact_extraction_task import FACT_TTL_CATEGORIES
+        assert FACT_TTL_CATEGORIES["strength_pr"] == 30
+
+    def test_stale_temporal_fact_excluded_from_injection(self, db_session, test_athlete):
+        """Temporal fact past TTL must not survive selection."""
+        from datetime import datetime, timedelta, timezone
+        from models import AthleteFact, CoachChat
+
+        chat = CoachChat(
+            athlete_id=test_athlete.id,
+            context_type="open",
+            messages=[],
+            is_active=True,
+        )
+        db_session.add(chat)
+        db_session.commit()
+        db_session.refresh(chat)
+
+        db_session.add(AthleteFact(
+            athlete_id=test_athlete.id,
+            fact_type="injury_history",
+            fact_key="current_injury_symptoms",
+            fact_value="left shin soreness",
+            confidence="athlete_stated",
+            source_chat_id=chat.id,
+            source_excerpt="left shin soreness",
+            is_active=True,
+            temporal=True,
+            ttl_days=14,
+            extracted_at=datetime.now(timezone.utc) - timedelta(days=20),
+        ))
+        db_session.add(AthleteFact(
+            athlete_id=test_athlete.id,
+            fact_type="life_context",
+            fact_key="age_years",
+            fact_value="57",
+            confidence="athlete_stated",
+            source_chat_id=chat.id,
+            source_excerpt="I am 57",
+            is_active=True,
+            temporal=False,
+            ttl_days=None,
+            extracted_at=datetime.now(timezone.utc) - timedelta(days=60),
+        ))
+        db_session.commit()
+
+        selected = self._select_injected_facts(db_session, test_athlete.id)
+        keys = {f.fact_key for f in selected}
+        assert "current_injury_symptoms" not in keys
+        assert "age_years" in keys
+
+    def test_fresh_temporal_fact_included_in_injection(self, db_session, test_athlete):
+        """Temporal fact within TTL survives selection."""
+        from datetime import datetime, timedelta, timezone
+        from models import AthleteFact, CoachChat
+
+        chat = CoachChat(
+            athlete_id=test_athlete.id,
+            context_type="open",
+            messages=[],
+            is_active=True,
+        )
+        db_session.add(chat)
+        db_session.commit()
+        db_session.refresh(chat)
+
+        db_session.add(AthleteFact(
+            athlete_id=test_athlete.id,
+            fact_type="injury_history",
+            fact_key="current_injury_symptoms",
+            fact_value="left shin soreness",
+            confidence="athlete_stated",
+            source_chat_id=chat.id,
+            source_excerpt="left shin soreness",
+            is_active=True,
+            temporal=True,
+            ttl_days=14,
+            extracted_at=datetime.now(timezone.utc) - timedelta(days=5),
+        ))
+        db_session.commit()
+
+        selected = self._select_injected_facts(db_session, test_athlete.id)
+        keys = {f.fact_key for f in selected}
+        assert "current_injury_symptoms" in keys
+
+    def test_injection_not_starved_by_stale_head(self, db_session, test_athlete):
+        """Many stale newest rows should not prevent selecting valid older rows."""
+        from datetime import datetime, timedelta, timezone
+        from models import AthleteFact, CoachChat
+
+        chat = CoachChat(
+            athlete_id=test_athlete.id,
+            context_type="open",
+            messages=[],
+            is_active=True,
+        )
+        db_session.add(chat)
+        db_session.commit()
+        db_session.refresh(chat)
+
+        for i in range(40):
+            db_session.add(AthleteFact(
+                athlete_id=test_athlete.id,
+                fact_type="injury_history",
+                fact_key=f"old_injury_{i}",
+                fact_value="stale",
+                confidence="athlete_stated",
+                source_chat_id=chat.id,
+                source_excerpt="stale",
+                is_active=True,
+                temporal=True,
+                ttl_days=14,
+                extracted_at=datetime.now(timezone.utc) - timedelta(days=20),
+            ))
+
+        db_session.add(AthleteFact(
+            athlete_id=test_athlete.id,
+            fact_type="life_context",
+            fact_key="age_years",
+            fact_value="57",
+            confidence="athlete_stated",
+            source_chat_id=chat.id,
+            source_excerpt="I am 57",
+            is_active=True,
+            temporal=False,
+            ttl_days=None,
+            extracted_at=datetime.now(timezone.utc) - timedelta(days=120),
+        ))
+        db_session.add(AthleteFact(
+            athlete_id=test_athlete.id,
+            fact_type="preference",
+            fact_key="prefers_morning_runs",
+            fact_value="true",
+            confidence="athlete_stated",
+            source_chat_id=chat.id,
+            source_excerpt="I prefer morning runs",
+            is_active=True,
+            temporal=False,
+            ttl_days=None,
+            extracted_at=datetime.now(timezone.utc) - timedelta(days=110),
+        ))
+        db_session.commit()
+
+        selected = self._select_injected_facts(db_session, test_athlete.id)
+        keys = {f.fact_key for f in selected}
+        assert "age_years" in keys
+        assert "prefers_morning_runs" in keys
+

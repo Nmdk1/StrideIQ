@@ -2758,10 +2758,12 @@ class NarrativeFeedback(Base):
 
 class AthleteFact(Base):
     """
-    Permanent memory: structured facts extracted from coach conversations.
+    Structured memory: structured facts extracted from coach conversations.
 
     Layer 1 is athlete-stated only — facts the athlete explicitly told the coach.
     Supersession: same (athlete_id, fact_key) with a new value deactivates the old row.
+    Temporal facts (injuries, symptoms, equipment, training phase) have a TTL
+    and are excluded from athlete-facing surfaces after expiry.
 
     Governance: medical-adjacent facts acceptable during founder-only beta.
     Before public launch, add retention policy (max age, athlete-triggered deletion,
@@ -2786,6 +2788,8 @@ class AthleteFact(Base):
     extracted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     superseded_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    temporal = Column(Boolean, nullable=False, default=False, server_default="false")
+    ttl_days = Column(Integer, nullable=True)
 
     __table_args__ = (
         Index("ix_athlete_fact_athlete_active", "athlete_id", "is_active"),
