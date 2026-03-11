@@ -2,14 +2,14 @@
 AI Coach Service
 
 Gemini 3 Flash handles bulk coaching queries.
-High-stakes queries route to Claude Opus for maximum reasoning quality.
+High-stakes queries route to Claude Sonnet for maximum reasoning quality.
 
 Features:
 - Persistent conversation sessions per athlete (PostgreSQL-backed)
 - Context injection from athlete's actual data
 - Knowledge of training methodology
 - Tiered context (7-day, 30-day, 120-day)
-- Hybrid model routing (Gemini Flash + Claude Opus) per ADR-061
+- Hybrid model routing (Gemini Flash + Claude Sonnet) per ADR-061
 - Hard cost caps per athlete
 """
 
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # High-stakes signals that trigger Opus routing
 class HighStakesSignal(Enum):
-    """Signals that trigger Opus routing for maximum reasoning quality."""
+    """Signals that trigger Sonnet routing for premium reasoning quality."""
     INJURY = "injury"
     PAIN = "pain"
     OVERTRAINING = "overtraining"
@@ -44,7 +44,7 @@ class HighStakesSignal(Enum):
     ILLNESS = "illness"
 
 
-# Patterns that trigger high-stakes routing to Opus
+# Patterns that trigger high-stakes routing to Sonnet
 HIGH_STAKES_PATTERNS = [
     # Injury/pain signals (liability risk)
     "injury", "injured", "pain", "painful", "hurt", "hurting",
@@ -78,6 +78,14 @@ COACH_MAX_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_REQUESTS_PER_DAY", "50"))
 COACH_MAX_OPUS_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY", "3"))
 COACH_MONTHLY_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_TOKEN_BUDGET", "1000000"))
 COACH_MONTHLY_OPUS_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET", "50000"))
+# VIP premium-lane caps (founder bypass still uncapped). These are hard caps,
+# not multipliers, so VIP experience stays strong while preventing abuse.
+COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP = int(
+    os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP", "12")
+)
+COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP = int(
+    os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP", "200000")
+)
 COACH_MAX_INPUT_TOKENS = int(os.getenv("COACH_MAX_INPUT_TOKENS", "4000"))
 # 500 tokens was causing every response to get cut off mid-sentence.
 # 3000 tokens (~1200 words) allows complete, well-structured coaching responses
@@ -88,7 +96,7 @@ COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "3000"))
 
 def is_high_stakes_query(message: str) -> bool:
     """
-    Determine if query requires Opus for maximum reasoning quality.
+    Determine if query requires Sonnet for premium reasoning quality.
     
     Returns True for:
     - Injury/pain mentions
@@ -263,10 +271,10 @@ Policy:
 - You can look back up to ~2 years for recent-run tools (up to 730 days). Do not claim you are limited to 30 days."""
 
     # Model tiers (ADR-061: Hybrid architecture with cost caps)
-    # 95% of queries use Gemini 3.1 Flash Lite (cost-efficient, 1M context)
-    # 5% high-stakes queries use Claude Opus 4.6 (maximum reasoning quality)
-    MODEL_DEFAULT = "gemini-3-flash-preview"  # Standard coaching (95%) — March 2026 upgrade
-    MODEL_HIGH_STAKES = "claude-opus-4-6"  # Injury/recovery/load decisions (5%)
+    # 95% of queries use Gemini 3 Flash (cost-efficient, 1M context)
+    # 5% high-stakes queries use Claude Sonnet 4.6 (premium reasoning quality)
+    MODEL_DEFAULT = "gemini-3-flash-preview"  # Standard coaching (95%) — March 2026; requires google-genai>=1.66.0 for tool-call reliability
+    MODEL_HIGH_STAKES = "claude-sonnet-4-6"  # Premium Anthropic lane — Sonnet 4.6 (was Opus)
     
     # Legacy aliases for backward compatibility
     MODEL_LOW = MODEL_DEFAULT
@@ -445,8 +453,10 @@ Policy:
         
         Args:
             athlete_id: The athlete's ID
-            is_opus: Whether this is an Opus (high-stakes) query
-            is_vip: Whether athlete is VIP (gets 10× Opus allocation)
+            is_opus: Whether this is a premium Anthropic lane query (Sonnet).
+                     Parameter name retained for CoachUsage schema compatibility —
+                     semantics are "premium Anthropic lane" (now claude-sonnet-4-6).
+            is_vip: Whether athlete is VIP (gets higher premium-lane caps)
             
         Returns:
             (allowed, reason) - True if request can proceed, else False with reason
@@ -457,17 +467,23 @@ Policy:
 
             usage = self._get_or_create_usage(athlete_id)
             
-            # VIP multiplier for Opus allocation (ADR-061)
-            vip_multiplier = 10 if is_vip else 1
-            
             # Daily request limit (same for VIP and standard)
             if usage.requests_today >= COACH_MAX_REQUESTS_PER_DAY:
                 return False, "daily_request_limit"
             
-            # Opus-specific limits (VIP gets 10× allocation)
+            # Premium Anthropic lane limits (founder bypass handled above).
+            # CoachUsage schema uses opus_* column names for compatibility
             if is_opus:
-                max_opus_daily = COACH_MAX_OPUS_REQUESTS_PER_DAY * vip_multiplier
-                max_opus_monthly = COACH_MONTHLY_OPUS_TOKEN_BUDGET * vip_multiplier
+                max_opus_daily = (
+                    COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP
+                    if is_vip
+                    else COACH_MAX_OPUS_REQUESTS_PER_DAY
+                )
+                max_opus_monthly = (
+                    COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP
+                    if is_vip
+                    else COACH_MONTHLY_OPUS_TOKEN_BUDGET
+                )
                 
                 if usage.opus_requests_today >= max_opus_daily:
                     return False, "daily_opus_limit"
@@ -500,7 +516,8 @@ Policy:
             input_tokens: Number of input tokens used
             output_tokens: Number of output tokens used
             model: Model name used
-            is_opus: Whether this was an Opus query
+            is_opus: Whether this was a premium Anthropic lane query (Sonnet).
+                     Parameter/field name retained for CoachUsage schema compatibility.
         """
         try:
             usage = self._get_or_create_usage(athlete_id)
@@ -548,15 +565,21 @@ Policy:
         Get current budget status for an athlete.
         
         Returns dict with usage stats and remaining budgets.
-        VIP athletes see their 10× Opus allocation.
+        VIP athletes see higher premium-lane hard caps.
         """
         try:
             usage = self._get_or_create_usage(athlete_id)
             is_vip = self.is_athlete_vip(athlete_id)
-            vip_multiplier = 10 if is_vip else 1
-            
-            max_opus_daily = COACH_MAX_OPUS_REQUESTS_PER_DAY * vip_multiplier
-            max_opus_monthly = COACH_MONTHLY_OPUS_TOKEN_BUDGET * vip_multiplier
+            max_opus_daily = (
+                COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP
+                if is_vip
+                else COACH_MAX_OPUS_REQUESTS_PER_DAY
+            )
+            max_opus_monthly = (
+                COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP
+                if is_vip
+                else COACH_MONTHLY_OPUS_TOKEN_BUDGET
+            )
             
             return {
                 "date": str(usage.date),
@@ -934,10 +957,11 @@ Policy:
         conversation_context: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         """
-        Query Claude Opus for high-stakes decisions (ADR-061).
+        Query Claude Sonnet (MODEL_HIGH_STAKES) for premium-lane decisions (ADR-061).
         
-        Uses Anthropic API with TOOL ACCESS - Opus can query any data it needs.
-        Reserved for injury/recovery/load decisions where maximum reasoning quality matters.
+        Uses Anthropic API with TOOL ACCESS — Sonnet can query any data it needs.
+        Reserved for injury/recovery/load decisions and founder queries.
+        Function name retained for compatibility — runtime model is claude-sonnet-4-6.
         """
         if not self.anthropic_client:
             return {
@@ -1072,7 +1096,7 @@ If you need more data to answer well, call the tools. That's why they're there."
                         tool_id = block.id
                         tools_called.append(tool_name)
                         
-                        logger.info(f"Opus calling tool: {tool_name} with {tool_input}")
+                        logger.info(f"Sonnet calling tool: {tool_name} with {tool_input}")
                         result = self._execute_opus_tool(athlete_id, tool_name, tool_input)
                         
                         tool_results.append({
@@ -1120,7 +1144,7 @@ If you need more data to answer well, call the tools. That's why they're there."
             )
             if not is_valid:
                 logger.warning(
-                    "Opus response failed tool validation (%s) for athlete %s: "
+                    "Sonnet response failed tool validation (%s) for athlete %s: "
                     "tools_called=%s, message='%.80s'",
                     reason, athlete_id, tools_called, message,
                 )
@@ -1134,7 +1158,7 @@ If you need more data to answer well, call the tools. That's why they're there."
             )
             
             logger.info(
-                f"Opus query completed: athlete={athlete_id}, "
+                f"Sonnet query completed: athlete={athlete_id}, "
                 f"tools_called={tools_called}, "
                 f"input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
             )
@@ -1150,7 +1174,7 @@ If you need more data to answer well, call the tools. That's why they're there."
             }
             
         except Exception as e:
-            logger.error(f"Opus query failed for {athlete_id}: {e}")
+            logger.error(f"Sonnet query failed for {athlete_id}: {e}")
             return {
                 "response": f"I encountered an error processing your request. Please try again.",
                 "error": True,
@@ -1601,8 +1625,18 @@ ATHLETE BRIEF:
                 if not function_calls:
                     break
                 
-                # Add assistant response to contents
-                contents.append(response.candidates[0].content)
+                # Append model turn to contents — strip thought parts to avoid
+                # thought_signature INVALID_ARGUMENT on round-trip (google-genai <1.66.0
+                # base64 encoding bug; defensive strip ensures correctness regardless).
+                model_content = response.candidates[0].content
+                safe_parts = [
+                    p for p in (model_content.parts or [])
+                    if hasattr(p, 'function_call') and p.function_call
+                ]
+                if safe_parts:
+                    contents.append(genai_types.Content(role="model", parts=safe_parts))
+                else:
+                    contents.append(model_content)
                 
                 function_response_parts = []
                 for fc in function_calls:
@@ -2316,12 +2350,12 @@ ATHLETE BRIEF:
         """
         Select model based on query content and athlete tier (ADR-061: Hybrid architecture).
         
-        Routing logic - Opus for queries that MATTER:
-        1. High-stakes queries (injury/pain/load) → Opus (liability risk)
-        2. High-complexity queries (causal + ambiguity) → Opus (needs real reasoning)
-        3. Everything else → GPT-4o-mini
+        Routing logic — Sonnet for queries that MATTER:
+        1. High-stakes queries (injury/pain/load) → Sonnet (liability risk)
+        2. High-complexity queries (causal + ambiguity) → Sonnet (needs real reasoning)
+        3. Everything else → Gemini 3 Flash
         
-        VIP athletes get 10× Opus allocation but same routing rules.
+        VIP athletes get 10× premium-lane allocation but same routing rules.
         
         Args:
             query_type: Legacy 'simple'/'standard' or new 'low'/'medium'/'high'
@@ -2329,57 +2363,61 @@ ATHLETE BRIEF:
             message: Original message for classification
             
         Returns:
-            Tuple of (model_name, is_opus)
+            Tuple of (model_name, is_premium_anthropic)
         """
         # Check if high-stakes routing is enabled
         if not self.high_stakes_routing_enabled:
             return self.MODEL_DEFAULT, False
         
-        # Free users always get Gemini (no Opus for unpaid)
+        # Free users always get Gemini (no Sonnet for unpaid)
         if athlete_id:
             athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
             if athlete and not getattr(athlete, "has_active_subscription", False):
                 return self.MODEL_DEFAULT, False
 
-        # Founder always gets Opus — no keyword gating
+        # Founder always gets Sonnet — no keyword gating
         if athlete_id and self._is_founder(athlete_id):
             if self.anthropic_client:
-                logger.info(f"Routing to Opus: founder_bypass")
+                logger.info(f"Routing to Sonnet: founder_bypass")
                 return self.MODEL_HIGH_STAKES, True
             return self.MODEL_DEFAULT, False
 
-        # VIP athletes always get Opus (budget checked but not keyword-gated)
+        # VIP athletes always get Sonnet (budget checked but not keyword-gated)
         if athlete_id and self.is_athlete_vip(athlete_id):
             allowed, reason = self.check_budget(athlete_id, is_opus=True, is_vip=True)
             if allowed and self.anthropic_client:
-                logger.info(f"Routing to Opus: vip_always, athlete={athlete_id}")
+                logger.info(f"Routing to Sonnet: vip_always, athlete={athlete_id}")
                 return self.MODEL_HIGH_STAKES, True
             else:
-                logger.info(f"VIP Opus fallback: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
+                logger.info(f"VIP Sonnet fallback: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
                 return self.MODEL_DEFAULT, False
 
-        # Determine if query needs Opus (high-stakes OR high-complexity)
+        # Determine if query needs Sonnet (high-stakes OR high-complexity)
         is_high_stakes = is_high_stakes_query(message)
         complexity = self.classify_query_complexity(message)
         is_high_complexity = complexity == "high"
         
-        # Route to Opus if either condition is true
-        needs_opus = is_high_stakes or is_high_complexity
+        # Route to Sonnet if either condition is true
+        needs_premium = is_high_stakes or is_high_complexity
         
-        if needs_opus and athlete_id:
-            # Check Opus budget (VIP gets 10× allocation via check_budget)
+        if needs_premium and athlete_id:
+            # Check premium-lane budget (VIP gets 10× allocation via check_budget)
+            # NOTE: is_opus=True refers to the premium Anthropic lane counter,
+            # which now maps to Sonnet (not Opus). The CoachUsage schema retains
+            # opus_requests_today column name for compatibility — semantics are
+            # "premium Anthropic requests today".
             is_vip = self.is_athlete_vip(athlete_id)
             allowed, reason = self.check_budget(athlete_id, is_opus=True, is_vip=is_vip)
             
             if allowed and self.anthropic_client:
                 logger.info(
-                    f"Routing to Opus: is_high_stakes={is_high_stakes}, "
+                    f"Routing to Sonnet: is_high_stakes={is_high_stakes}, "
                     f"is_high_complexity={is_high_complexity}, is_vip={is_vip}"
                 )
                 return self.MODEL_HIGH_STAKES, True
             else:
-                # Fallback to Gemini when Opus unavailable/budget exhausted
-                logger.info(f"Opus fallback to Gemini: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
+                # Fallback to Gemini when Sonnet unavailable/budget exhausted
+                logger.info(f"Sonnet fallback to Gemini: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
                 return self.MODEL_DEFAULT, False
         
         # Default: Gemini 3 Flash
@@ -2759,9 +2797,9 @@ ATHLETE BRIEF:
                     "budget_reason": budget_reason,
                 }
             
-            # ADR-061: Route high-stakes queries to Opus (direct API, not Assistants)
+            # ADR-061: Route premium-lane queries to Sonnet (direct API, not Assistants)
             if is_opus and self.anthropic_client:
-                # Build athlete state for Opus context
+                # Build athlete state for Sonnet context
                 athlete_state = self._build_athlete_state_for_opus(athlete_id)
                 
                 # Get recent conversation context
@@ -2778,7 +2816,7 @@ ATHLETE BRIEF:
                     except Exception:
                         pass
                 
-                # Query Opus directly
+                # Query Sonnet directly (query_opus runs the Anthropic path; model string is MODEL_HIGH_STAKES=claude-sonnet-4-6)
                 opus_result = await self.query_opus(
                     athlete_id=athlete_id,
                     message=message,
@@ -2843,11 +2881,11 @@ ATHLETE BRIEF:
                     return gemini_result
 
                 # Reliability hardening:
-                # If Gemini fails but Anthropic is configured, attempt Opus fallback
+                # If Gemini fails but Anthropic is configured, attempt Sonnet fallback
                 # before surfacing "temporarily unavailable" to the athlete.
                 if self.anthropic_client:
                     logger.warning(
-                        "Gemini query failed for %s; attempting Opus fallback. "
+                        "Gemini query failed for %s; attempting Sonnet fallback. "
                         "error_detail=%s",
                         athlete_id,
                         gemini_result.get("error_detail"),

@@ -1023,7 +1023,7 @@ def _call_opus_briefing_sync(
     try:
         from anthropic import Anthropic
     except ImportError:
-        logger.warning("anthropic package not installed — cannot use Opus for home briefing")
+        logger.warning("anthropic package not installed — cannot use Sonnet for home briefing")
         return None
 
     field_descriptions = "\n".join(
@@ -1049,7 +1049,7 @@ def _call_opus_briefing_sync(
     try:
         client = Anthropic(api_key=api_key, timeout=timeout_s)
         response = client.messages.create(
-            model="claude-opus-4-6",
+            model="claude-sonnet-4-6",
             system=system_prompt,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
@@ -1058,7 +1058,7 @@ def _call_opus_briefing_sync(
 
         raw_text = response.content[0].text if response.content else ""
         if not raw_text.strip():
-            logger.warning("Opus returned empty response for home briefing")
+            logger.warning("Sonnet returned empty response for home briefing")
             return None
 
         text = raw_text.strip()
@@ -1070,13 +1070,13 @@ def _call_opus_briefing_sync(
 
         result = _json.loads(text)
         logger.info(
-            f"Home briefing generated via Opus "
+            f"Home briefing generated via Sonnet "
             f"(input={response.usage.input_tokens}, output={response.usage.output_tokens})"
         )
         return result
 
     except _json.JSONDecodeError as je:
-        logger.warning(f"Opus JSON parse failed: {je}")
+        logger.warning(f"Sonnet JSON parse failed: {je}")
         return None
     except Exception as e:
         logger.warning(f"Opus home briefing call failed: {type(e).__name__}: {e}")

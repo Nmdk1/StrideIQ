@@ -290,7 +290,10 @@ def _call_opus_briefing(
     schema_fields: dict,
     required_fields: list,
 ) -> Optional[dict]:
-    """Call Opus with PROVIDER_TIMEOUT_S enforced."""
+    """Call Sonnet (via _call_opus_briefing_sync) with PROVIDER_TIMEOUT_S enforced.
+    
+    Function name retained for compatibility — runtime model is claude-sonnet-4-6.
+    """
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
     from routers.home import _call_opus_briefing_sync
 
@@ -307,7 +310,7 @@ def _call_opus_briefing(
         return future.result(timeout=PROVIDER_TIMEOUT_S)
     except FuturesTimeout:
         logger.warning(
-            "Opus home briefing provider timeout (%ss)", PROVIDER_TIMEOUT_S
+            "Sonnet home briefing provider timeout (%ss)", PROVIDER_TIMEOUT_S
         )
         future.cancel()
         pool.shutdown(wait=False)
@@ -324,14 +327,14 @@ def _call_llm_for_briefing(
     """
     Single LLM dispatch point for home briefing generation.
 
-    Always tries Opus first (if ANTHROPIC_API_KEY is set), falls back to
+    Always tries Sonnet first (if ANTHROPIC_API_KEY is set), falls back to
     Gemini Flash. Matches the behaviour of _fetch_llm_briefing_sync in
     home.py. The use_opus feature flag has been retired — the model
     selection is driven entirely by API key availability.
 
     This wrapper exists so consent gating in generate_home_briefing_task
     can be verified by tests via patching this function.  All actual LLM
-    calls go through _call_opus_briefing or _call_gemini_briefing.
+    calls go through _call_opus_briefing (Sonnet) or _call_gemini_briefing.
     """
     result = _call_opus_briefing(prompt, schema_fields, required_fields)
     if result is not None:
@@ -454,7 +457,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         prompt, schema_fields, required_fields, checkin_data, race_data, garmin_sleep_h = prompt_result
 
         use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
-        source_model = "claude-opus-4-6" if use_opus else "gemini-2.5-flash"
+        source_model = "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
         result = _call_llm_for_briefing(prompt, schema_fields, required_fields)
 
         if result is None:
