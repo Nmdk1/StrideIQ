@@ -7,6 +7,7 @@ Covers:
 3. Feature flag gating — can disable without code changes.
 4. Integration run — run row, experiment rows, report sections, no-surface
    guarantee, no-production-mutation guarantee.
+5. Shadow rollback safety — CorrelationFinding count unchanged after real rollback.
 
 DB-backed tests use the conftest.py transactional rollback fixture.
 Non-DB tests are pure unit tests.
@@ -459,6 +460,131 @@ class TestAutoDiscoveryIntegration:
         assert exp.target_name is not None
         assert exp.baseline_config is not None
         assert exp.result_summary is not None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  5b. Shadow rollback safety — real rollback path, no mocking
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAutoDiscoveryShadowRollbackSafety:
+    """
+    Validates the core shadow-mode contract without mocking db.rollback().
+
+    The orchestrator calls run_multiwindow_rescan(), which (in production)
+    flushes CorrelationFinding rows via analyze_correlations().  The
+    orchestrator then calls db.rollback() to discard those pending writes
+    before committing only the ledger rows.
+
+    This test replaces run_multiwindow_rescan with a stub that:
+      1. Directly flushes one CorrelationFinding row to db_session (simulating
+         what analyze_correlations() would do in production).
+      2. Returns a valid experiment-result list.
+
+    We then let the orchestrator run with its real rollback path (no patch),
+    and assert that the CorrelationFinding count in the DB is unchanged.
+    """
+
+    @pytest.fixture
+    def _seed_correlation_finding(self, db_session, test_athlete):
+        """Pre-seed one committed CorrelationFinding row as a baseline count."""
+        from models import CorrelationFinding
+        existing = CorrelationFinding(
+            athlete_id=test_athlete.id,
+            input_name="pre_existing_input",
+            output_metric="efficiency",
+            direction="positive",
+            time_lag_days=0,
+            correlation_coefficient=0.42,
+            p_value=0.03,
+            sample_size=15,
+            strength="moderate",
+            times_confirmed=1,
+            category="what_works",
+            confidence=0.6,
+            is_active=True,
+            is_confounded=False,
+            direction_counterintuitive=False,
+        )
+        db_session.add(existing)
+        db_session.commit()
+        return existing
+
+    def test_rollback_discards_correlation_finding_flushes(
+        self, db_session, test_athlete, _seed_correlation_finding
+    ):
+        """
+        Simulate rescan flushing a CorrelationFinding, then verify the
+        orchestrator's rollback prevents it from being committed.
+
+        Key: db_session.rollback is NOT patched here.
+        """
+        from models import CorrelationFinding
+        from services.auto_discovery.orchestrator import run_auto_discovery_for_athlete
+
+        # Baseline: one pre-existing CorrelationFinding committed.
+        count_before = db_session.query(CorrelationFinding).filter_by(
+            athlete_id=test_athlete.id
+        ).count()
+        assert count_before == 1
+
+        # Stub rescan: flushes a second CorrelationFinding to simulate what
+        # analyze_correlations() does, then returns a valid result list.
+        def _stub_rescan(athlete_id, db):
+            shadow_row = CorrelationFinding(
+                athlete_id=athlete_id,
+                input_name="shadow_only_input",
+                output_metric="efficiency",
+                direction="positive",
+                time_lag_days=0,
+                correlation_coefficient=0.51,
+                p_value=0.02,
+                sample_size=18,
+                strength="moderate",
+                times_confirmed=1,
+                category="what_works",
+                confidence=0.7,
+                is_active=True,
+                is_confounded=False,
+                direction_counterintuitive=False,
+            )
+            db.add(shadow_row)
+            db.flush()  # Mirrors what persist_correlation_findings() does.
+            # Count is now 2 inside the flush, before rollback.
+            return [
+                {
+                    "loop_type": "correlation_rescan",
+                    "target_name": "multiwindow:90d",
+                    "baseline_config": {"window_days": 90, "window_label": "90d"},
+                    "candidate_config": {},
+                    "result_summary": {
+                        "window_label": "90d",
+                        "findings_by_metric": {"efficiency": [{"input_name": "shadow_only_input"}]},
+                        "total_findings": 1,
+                        "error": None,
+                    },
+                    "failure_reason": None,
+                    "runtime_ms": 10,
+                }
+            ]
+
+        with patch(
+            "services.auto_discovery.orchestrator.run_multiwindow_rescan",
+            side_effect=_stub_rescan,
+        ):
+            run_auto_discovery_for_athlete(
+                athlete_id=test_athlete.id,
+                db=db_session,
+                enabled_loops=["correlation_rescan"],
+            )
+
+        # After orchestrator commits, count must still be 1 — not 2.
+        count_after = db_session.query(CorrelationFinding).filter_by(
+            athlete_id=test_athlete.id
+        ).count()
+        assert count_after == count_before, (
+            f"Rollback failed: CorrelationFinding count grew from {count_before} "
+            f"to {count_after}. Shadow row was committed when it must not be."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
