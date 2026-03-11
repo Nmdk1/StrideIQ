@@ -74,6 +74,7 @@ HIGH_STAKES_PATTERNS = [
 ]
 
 # Cost cap constants (ADR-061)
+# Canonical cap reference + builder addendum block: docs/COACH_RUNTIME_CAP_CONFIG.md
 COACH_MAX_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_REQUESTS_PER_DAY", "50"))
 COACH_MAX_OPUS_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY", "3"))
 COACH_MONTHLY_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_TOKEN_BUDGET", "1000000"))
