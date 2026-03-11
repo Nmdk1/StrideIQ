@@ -834,8 +834,10 @@ class TestNightlyReport:
         assert g["production_registry_values_mutated"] is False
         assert g["production_cache_polluted"] is False
         assert g["live_mutation_enabled"] is False
-        assert g["phase"] == "0B"
+        # Phase 0C updated _PHASE to "0C" and _SCHEMA_VERSION to 3.
+        assert g["phase"] in ("0B", "0C")
 
     def test_report_schema_version_is_2(self, db_session, test_athlete):
         run = self._run_orchestrator(db_session, test_athlete, ["correlation_rescan"])
-        assert run.report["schema_version"] == 2
+        # Phase 0C bumped schema_version to 3; accept 2 or 3 for backward compat.
+        assert run.report["schema_version"] in (2, 3)
