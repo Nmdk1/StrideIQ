@@ -1,4 +1,6 @@
-"""Verify fingerprint backfill results."""
+"""Verify fingerprint backfill results for a selected athlete."""
+import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -7,8 +9,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core.database import SessionLocal
 from models import Athlete, CorrelationFinding
 
+parser = argparse.ArgumentParser(description="Verify fingerprint backfill results")
+parser.add_argument(
+    "--athlete-email",
+    default=os.getenv("STRIDEIQ_VERIFY_ATHLETE_EMAIL"),
+    help="Athlete email to verify (or set STRIDEIQ_VERIFY_ATHLETE_EMAIL).",
+)
+args = parser.parse_args()
+
+if not args.athlete_email:
+    raise SystemExit(
+        "Missing athlete email. Provide --athlete-email or STRIDEIQ_VERIFY_ATHLETE_EMAIL."
+    )
+
 db = SessionLocal()
-user = db.query(Athlete).filter(Athlete.email == "mbshaf@gmail.com").first()
+user = db.query(Athlete).filter(Athlete.email == args.athlete_email).first()
+if not user:
+    db.close()
+    raise SystemExit(f"Athlete not found for email: {args.athlete_email}")
 
 findings = (
     db.query(CorrelationFinding)
