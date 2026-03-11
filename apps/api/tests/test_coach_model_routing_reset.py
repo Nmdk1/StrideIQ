@@ -327,12 +327,10 @@ class TestGeminiThoughtSignatureFix:
         assert "opus" not in coach_with_anthropic.MODEL_DEFAULT.lower()
 
     def test_requirements_pin_sdk_version(self):
-        """requirements.txt must pin google-genai >= 1.66.0."""
+        """google-genai pin must be present and not remove the upper bound cap."""
         import pathlib
         req_path = pathlib.Path(__file__).parent.parent / "requirements.txt"
         content = req_path.read_text()
         assert "google-genai" in content
-        # Must not allow versions below 1.66.0
-        assert ">=1.0.0" not in content, (
-            "google-genai must be pinned to >=1.66.0 for thought_signature fix"
-        )
+        # Upper bound must still be present (no unbounded upgrades)
+        assert "<2.0.0" in content or ",<2" in content

@@ -274,7 +274,7 @@ Policy:
     # Model tiers (ADR-061: Hybrid architecture with cost caps)
     # 95% of queries use Gemini 3 Flash (cost-efficient, 1M context)
     # 5% high-stakes queries use Claude Sonnet 4.6 (premium reasoning quality)
-    MODEL_DEFAULT = "gemini-3-flash-preview"  # Standard coaching (95%) — March 2026; requires google-genai>=1.66.0 for tool-call reliability
+    MODEL_DEFAULT = "gemini-3-flash-preview"  # Standard coaching (95%) — March 2026; thought_signature fix applied in tool loop (defensive strip)
     MODEL_HIGH_STAKES = "claude-sonnet-4-6"  # Premium Anthropic lane — Sonnet 4.6 (was Opus)
     
     # Legacy aliases for backward compatibility
