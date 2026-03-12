@@ -431,10 +431,22 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                         entry = json.loads(raw)
                         if entry.get("data_fingerprint") == fingerprint:
                             logger.info(
-                                "Home briefing fingerprint unchanged for %s — skipping LLM call",
+                                "Home briefing fingerprint unchanged for %s — refreshing cache without LLM call",
                                 athlete_id,
                             )
-                            return {"status": "skipped", "reason": "fingerprint_unchanged"}
+                            # Critical: refresh generated_at/expires_at so unchanged
+                            # fingerprints do not decay into stale->missing.
+                            # This keeps morning voice + coach insight available
+                            # when source data has not changed.
+                            cached_source_model = entry.get("source_model") or "cache-refresh"
+                            write_briefing_cache(
+                                athlete_id=athlete_id,
+                                payload=cached_payload,
+                                source_model=str(cached_source_model),
+                                data_fingerprint=fingerprint,
+                            )
+                            reset_circuit(athlete_id)
+                            return {"status": "success", "reason": "fingerprint_unchanged_cache_refreshed"}
                 except (json.JSONDecodeError, TypeError, Exception):
                     pass
 
@@ -476,6 +488,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             _valid_home_briefing_contract,
             validate_voice_output,
             validate_sleep_claims,
+            _strip_ungrounded_sleep_sentences,
             _VOICE_FALLBACK,
         )
 
@@ -512,11 +525,36 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if final_voice and final_voice != _VOICE_FALLBACK:
             sleep_check = validate_sleep_claims(final_voice, _garmin_h, _checkin_h)
             if not sleep_check["valid"]:
-                logger.warning(
-                    "morning_voice sleep claim ungrounded (%s) for %s; suppressing to fallback",
-                    sleep_check.get("reason"), athlete_id,
+                stripped = _strip_ungrounded_sleep_sentences(
+                    final_voice, _garmin_h, _checkin_h
                 )
-                result["morning_voice"] = _VOICE_FALLBACK
+                candidate = stripped.get("text") or ""
+                if candidate:
+                    candidate_voice_check = validate_voice_output(candidate, field="morning_voice")
+                    candidate_sleep_check = validate_sleep_claims(candidate, _garmin_h, _checkin_h)
+                    if candidate_voice_check.get("valid") and candidate_sleep_check.get("valid"):
+                        logger.warning(
+                            "morning_voice sleep claim ungrounded (%s) for %s; removed offending sentence(s)",
+                            sleep_check.get("reason"),
+                            athlete_id,
+                        )
+                        result["morning_voice"] = candidate
+                    else:
+                        logger.warning(
+                            "morning_voice sleep claim ungrounded (%s) for %s; candidate invalid (voice=%s sleep=%s), using deterministic fallback",
+                            sleep_check.get("reason"),
+                            athlete_id,
+                            candidate_voice_check.get("reason"),
+                            candidate_sleep_check.get("reason"),
+                        )
+                        result["morning_voice"] = _build_deterministic_briefing(athlete_id, db).get("morning_voice", _VOICE_FALLBACK)
+                else:
+                    logger.warning(
+                        "morning_voice sleep claim ungrounded (%s) for %s; no valid content remained, using deterministic fallback",
+                        sleep_check.get("reason"),
+                        athlete_id,
+                    )
+                    result["morning_voice"] = _build_deterministic_briefing(athlete_id, db).get("morning_voice", _VOICE_FALLBACK)
 
         raw_noticed = result.get("coach_noticed")
         if raw_noticed:

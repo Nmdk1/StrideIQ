@@ -906,6 +906,56 @@ class TestCeleryTask:
         assert circuit_val is not None
         assert int(circuit_val) == 1
 
+    def test_celery_task_refreshes_cache_when_fingerprint_unchanged(self, fake_redis):
+        """Regression: unchanged fingerprint must refresh cache timestamp, not decay to missing."""
+        from datetime import datetime, timedelta, timezone
+        from services.home_briefing_cache import _cache_key, read_briefing_cache, BriefingState
+
+        athlete_id = str(uuid4())
+        payload = {
+            "coach_noticed": "Carry momentum from your latest run.",
+            "today_context": "Keep effort controlled.",
+            "week_assessment": "Stable trajectory this week.",
+            "morning_voice": "6.0 miles at 8:56/mi in your latest run.",
+            "workout_why": "Consistency compounds.",
+        }
+        fingerprint = "fp_same"
+
+        # Seed a stale entry that still exists in Redis.
+        stale_entry = {
+            "payload": payload,
+            "generated_at": (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=40)).isoformat(),
+            "source_model": "claude-sonnet-4-6",
+            "version": 1,
+            "data_fingerprint": fingerprint,
+        }
+        fake_redis.setex(_cache_key(athlete_id), 3600, json.dumps(stale_entry))
+
+        with patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
+             patch("tasks.home_briefing_tasks.get_redis_client", return_value=fake_redis), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value=fingerprint), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)) as mock_prompt, \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=payload) as mock_llm, \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("routers.home.validate_voice_output", return_value={"valid": True}), \
+             patch("routers.home.validate_sleep_claims", return_value={"valid": True}), \
+             patch("services.consent.has_ai_consent", return_value=True):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+
+        assert result["status"] == "success"
+        assert result["reason"] == "fingerprint_unchanged_cache_refreshed"
+        mock_prompt.assert_not_called()
+        mock_llm.assert_not_called()
+
+        refreshed_payload, refreshed_state = read_briefing_cache(athlete_id)
+        assert refreshed_state == BriefingState.FRESH
+        assert refreshed_payload is not None
+        assert refreshed_payload.get("morning_voice") == payload["morning_voice"]
+
     def test_celery_task_writes_deterministic_fallback_when_llm_unavailable(self, fake_redis):
         """LLM outage should still write a deterministic refreshed briefing."""
         athlete_id = str(uuid4())

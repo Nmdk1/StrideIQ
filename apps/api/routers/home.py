@@ -741,6 +741,65 @@ def validate_sleep_claims(
     return {"valid": True}
 
 
+def _strip_ungrounded_sleep_sentences(
+    text: str,
+    garmin_sleep_h: Optional[float],
+    checkin_sleep_h: Optional[float],
+) -> dict:
+    """
+    Remove sentence(s) containing ungrounded numeric sleep claims only.
+
+    Preserves valid coaching content when a single sleep sentence is invalid.
+    """
+    import re
+
+    if not text:
+        return {"text": text, "removed": False}
+
+    known_sources = [s for s in [garmin_sleep_h, checkin_sleep_h] if s is not None]
+    sleep_num_re = re.compile(r"(\d+(?:\.\d+)?)\s*(?:h\b|hours?)", re.IGNORECASE)
+    # Mirror sleep validator splitting semantics: do not split decimal numbers.
+    chunks = [
+        c.strip()
+        for c in re.split(r"(?<!\d)[.!?](?!\d)", text)
+        if c and c.strip()
+    ]
+    kept = []
+    removed_any = False
+
+    for chunk in chunks:
+        sentence = chunk.strip()
+        if not sentence:
+            continue
+
+        lower = sentence.lower()
+        if not any(k in lower for k in _SLEEP_CONTEXT_KEYWORDS):
+            kept.append(sentence)
+            continue
+
+        remove_sentence = False
+        for m in sleep_num_re.finditer(sentence):
+            val = float(m.group(1))
+            if val > _SLEEP_MAX_H:
+                continue
+            if not known_sources:
+                remove_sentence = True
+                break
+            if not any(abs(val - s) <= _SLEEP_TOLERANCE_H for s in known_sources):
+                remove_sentence = True
+                break
+
+        if remove_sentence:
+            removed_any = True
+            continue
+        kept.append(sentence)
+
+    sanitized = " ".join(kept).strip()
+    if sanitized and sanitized[-1] not in ".!?":
+        sanitized += "."
+    return {"text": sanitized, "removed": removed_any}
+
+
 def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
     """
     Post-generation validator for LLM-produced morning_voice / workout_why.
@@ -867,7 +926,21 @@ def _normalize_cached_briefing_payload(
         if final_voice and final_voice != _VOICE_FALLBACK:
             sleep_check = validate_sleep_claims(final_voice, garmin_sleep_h, checkin_sleep_h)
             if not sleep_check.get("valid"):
-                out["morning_voice"] = _VOICE_FALLBACK
+                stripped = _strip_ungrounded_sleep_sentences(
+                    final_voice, garmin_sleep_h, checkin_sleep_h
+                )
+                candidate = stripped.get("text") or ""
+                if candidate:
+                    candidate_voice_check = validate_voice_output(candidate, field="morning_voice")
+                    candidate_sleep_check = validate_sleep_claims(
+                        candidate, garmin_sleep_h, checkin_sleep_h
+                    )
+                    if candidate_voice_check.get("valid") and candidate_sleep_check.get("valid"):
+                        out["morning_voice"] = candidate
+                    else:
+                        out["morning_voice"] = _VOICE_FALLBACK
+                else:
+                    out["morning_voice"] = _VOICE_FALLBACK
     elif "morning_voice" in out:
         out["morning_voice"] = _VOICE_FALLBACK
 
@@ -881,10 +954,15 @@ def _normalize_cached_briefing_payload(
 
 
 def _sanitize_finding_text(text: str) -> str:
-    """Remove internal metric acronyms from athlete-facing finding text."""
+    """Normalize legacy/internal tokens in athlete-facing finding text."""
     if not text:
         return text
     out = text
+    import re
+
+    # Legacy all-caps pronoun appears in some persisted findings; normalize tone.
+    out = re.sub(r"\bYOUR\b", "your", out)
+
     replacements = (
         ("your tsb", "your form"),
         ("your ctl", "your fitness"),
@@ -893,10 +971,43 @@ def _sanitize_finding_text(text: str) -> str:
     for raw, clean in replacements:
         out = out.replace(raw, clean)
         out = out.replace(raw.title(), clean.title())
-    import re
+
     out = re.sub(r"\btsb\b", "form", out, flags=re.IGNORECASE)
     out = re.sub(r"\bctl\b", "fitness", out, flags=re.IGNORECASE)
     out = re.sub(r"\batl\b", "fatigue", out, flags=re.IGNORECASE)
+
+    # Backward compatibility: persisted findings may still contain raw signal keys
+    # (underscore/space/dotted variants). Normalize to friendly labels at read-time.
+    try:
+        from services.n1_insight_generator import FRIENDLY_NAMES
+    except Exception:  # pragma: no cover - defensive fallback
+        FRIENDLY_NAMES = {}
+
+    for raw_key in sorted(FRIENDLY_NAMES.keys(), key=len, reverse=True):
+        friendly = friendly_signal_name(raw_key)
+        if not friendly:
+            continue
+        variants = {
+            raw_key,
+            raw_key.replace("_", " "),
+            raw_key.replace("_", "."),
+        }
+        parts = raw_key.split("_")
+        if len(parts) >= 3 and parts[-1].isdigit() and parts[-2].isdigit():
+            stem = "_".join(parts[:-2])
+            stem_space = stem.replace("_", " ")
+            a, b = parts[-2], parts[-1]
+            variants.update({
+                f"{stem} {a}.{b}",
+                f"{stem_space} {a}.{b}",
+                f"{stem} {a}/{b}",
+                f"{stem_space} {a}/{b}",
+            })
+        for variant in variants:
+            if not variant or variant.lower() == friendly.lower():
+                continue
+            pattern = rf"(?<![A-Za-z0-9]){re.escape(variant)}(?![A-Za-z0-9])"
+            out = re.sub(pattern, friendly, out, flags=re.IGNORECASE)
     return out
 
 
@@ -1265,11 +1376,35 @@ def _fetch_llm_briefing_sync(
     if final_voice and final_voice != _VOICE_FALLBACK:
         sleep_check = validate_sleep_claims(final_voice, _garmin_sleep_h, _checkin_sleep_h)
         if not sleep_check["valid"]:
-            logger.warning(
-                "morning_voice sleep claim ungrounded (%s); suppressing to fallback",
-                sleep_check.get("reason"),
+            stripped = _strip_ungrounded_sleep_sentences(
+                final_voice, _garmin_sleep_h, _checkin_sleep_h
             )
-            result["morning_voice"] = _VOICE_FALLBACK
+            candidate = stripped.get("text") or ""
+            if candidate:
+                candidate_voice_check = validate_voice_output(candidate, field="morning_voice")
+                candidate_sleep_check = validate_sleep_claims(
+                    candidate, _garmin_sleep_h, _checkin_sleep_h
+                )
+                if candidate_voice_check.get("valid") and candidate_sleep_check.get("valid"):
+                    logger.warning(
+                        "morning_voice sleep claim ungrounded (%s); removed offending sentence(s) and kept remaining content",
+                        sleep_check.get("reason"),
+                    )
+                    result["morning_voice"] = candidate
+                else:
+                    logger.warning(
+                        "morning_voice sleep claim ungrounded (%s); candidate still invalid (voice=%s sleep=%s), using fallback",
+                        sleep_check.get("reason"),
+                        candidate_voice_check.get("reason"),
+                        candidate_sleep_check.get("reason"),
+                    )
+                    result["morning_voice"] = _VOICE_FALLBACK
+            else:
+                logger.warning(
+                    "morning_voice sleep claim ungrounded (%s); no valid content remained, using fallback",
+                    sleep_check.get("reason"),
+                )
+                result["morning_voice"] = _VOICE_FALLBACK
 
     # --- Post-generation validator: coach_noticed ---
     # Uses the same ban lists (sycophancy, causal, internal metrics).
