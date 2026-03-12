@@ -371,7 +371,16 @@ def adapt_activity_detail_samples(
 
 
 def _compute_elevation_gain(samples: list) -> Optional[float]:
-    """Sum positive elevation deltas from consecutive sample elevations."""
+    """
+    Compute net elevation change from the first to last sample in a lap.
+
+    Uses net change (end - start altitude) rather than summing all positive
+    deltas, because GPS elevation traces contain noise that inflates gross gain
+    on flat segments.  Net change matches how Garmin computes per-lap grade for
+    GAP: it reflects the actual altitude difference across the segment.
+
+    Positive → net uphill; negative → net downhill; None if < 2 samples.
+    """
     elevations = [
         s["elevationInMeters"]
         for s in samples
@@ -379,12 +388,7 @@ def _compute_elevation_gain(samples: list) -> Optional[float]:
     ]
     if len(elevations) < 2:
         return None
-    gain = 0.0
-    for i in range(1, len(elevations)):
-        delta = elevations[i] - elevations[i - 1]
-        if delta > 0:
-            gain += delta
-    return round(gain, 2) if gain > 0 else 0.0
+    return round(elevations[-1] - elevations[0], 2)
 
 
 def _moving_time_from_samples(lap_samples: list, max_gap_s: int = 3) -> Optional[int]:
@@ -663,7 +667,15 @@ def _elevation_gain_for_window(
     start_ts: float,
     end_ts: float,
 ) -> Optional[float]:
-    """Sum positive elevation deltas within a time window [start_ts, end_ts)."""
+    """
+    Compute net elevation change within a time window [start_ts, end_ts).
+
+    Uses net change (end - start altitude) rather than summing all positive
+    deltas.  GPS noise inflates gross gain on flat segments; net change is the
+    correct input to grade-adjusted pace calculations.
+
+    Positive → net uphill; negative → net downhill; None if < 2 samples.
+    """
     elevations = [
         s["elevationInMeters"]
         for s in samples
@@ -674,12 +686,7 @@ def _elevation_gain_for_window(
     ]
     if len(elevations) < 2:
         return None
-    gain = 0.0
-    for i in range(1, len(elevations)):
-        delta = elevations[i] - elevations[i - 1]
-        if delta > 0:
-            gain += delta
-    return round(gain, 2) if gain > 0 else 0.0
+    return round(elevations[-1] - elevations[0], 2)
 
 
 def _aggregate_split_window(
