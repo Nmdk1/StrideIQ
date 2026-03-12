@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from core.auth import get_current_user
-from database import get_db
+from core.database import get_db
 from models import Athlete
 from services.auto_discovery.feature_flags import is_live_mutation_enabled
 
