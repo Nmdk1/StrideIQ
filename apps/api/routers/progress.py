@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from models import Athlete, Activity, DailyCheckin, CorrelationFinding, TrainingPlan
+from services.n1_insight_generator import friendly_signal_name
 from routers.auth import get_current_user
 from core.cache import get_cache, set_cache as _set_cache, invalidate_pattern
 
@@ -1464,8 +1465,8 @@ def _assemble_patterns_data(
                 visual_data={
                     "input_series": [],
                     "output_series": [],
-                    "input_label": f.input_name.replace("_", " ").title(),
-                    "output_label": f.output_metric.replace("_", " ").title(),
+                    "input_label": friendly_signal_name(f.input_name).title(),
+                    "output_label": friendly_signal_name(f.output_metric).title(),
                 },
                 times_confirmed=tc,
                 current_relevance="",

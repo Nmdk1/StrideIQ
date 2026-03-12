@@ -161,11 +161,19 @@ FRIENDLY_NAMES: Dict[str, str] = {
 
     # Checkin/composition/nutrition
     "sleep_quality_1_5": "sleep quality",
+    "readiness_1_5": "self-rated readiness",
+    "stress_1_5": "stress level",
+    "soreness_1_5": "soreness",
+    "enjoyment_1_5": "run enjoyment",
+    "confidence_1_5": "confidence",
+    "rpe_1_10": "perceived effort",
     "body_fat_pct": "body fat percentage",
     "muscle_mass_kg": "muscle mass",
     "daily_fat_g": "daily fat intake",
     "daily_fiber_g": "daily fiber intake",
     "daily_calories": "daily calorie intake",
+    "weight_kg": "body weight",
+    "bmi": "body mass index",
 
     # Training patterns
     "days_since_quality": "rest since last hard session",
@@ -173,12 +181,31 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "days_since_rest": "days without rest",
     "long_run_ratio": "long run proportion",
     "weekly_elevation_m": "weekly elevation gain",
+
+    # Work/life context
+    "work_stress": "work stress",
+    "work_hours": "hours worked",
+    "overnight_avg_hr": "overnight heart rate",
+    "hrv_sdnn": "heart-rate variability (SDNN)",
+    "daily_session_stress": "training session stress",
+
+    # Output metrics — used in athlete-facing text as the outcome
+    "efficiency": "running efficiency",
+    "pace_easy": "easy pace",
+    "pace_threshold": "threshold pace",
+    "completion": "workout completion",
+    "efficiency_threshold": "threshold running efficiency",
 }
 
 
 def _friendly(raw_name: str) -> str:
     """Convert internal metric name to human-friendly label."""
     return FRIENDLY_NAMES.get(raw_name, raw_name.replace("_", " "))
+
+
+def friendly_signal_name(raw_name: str) -> str:
+    """Public alias for _friendly(). Import this in routers/renderers."""
+    return _friendly(raw_name)
 
 
 # ---------------------------------------------------------------------------

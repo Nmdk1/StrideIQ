@@ -25,6 +25,7 @@ from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
 from models import Athlete, Activity, ActivityStream, PlannedWorkout, TrainingPlan, CalendarInsight, DailyCheckin
+from services.n1_insight_generator import friendly_signal_name
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +282,7 @@ def get_correlation_context(
         if not finding:
             return None, None
 
-        inp = finding.input_name.replace("_", " ")
+        inp = friendly_signal_name(finding.input_name)
         direction = "better" if finding.direction == "positive" else "harder"
         lag = finding.time_lag_days
 
@@ -585,7 +586,7 @@ def _set_finding_cooldowns(
         for finding in injected_findings:
             input_name = finding.get("input_name", "")
             output_metric = finding.get("output_metric", "")
-            readable = input_name.replace("_1_5", "").replace("_", " ")
+            readable = friendly_signal_name(input_name)
             if readable and readable in combined:
                 key = f"finding_surfaced:{athlete_id}:{input_name}:{output_metric}"
                 client.setex(key, _FINDING_COOLDOWN_TTL, "1")
@@ -1782,14 +1783,14 @@ def compute_coach_noticed(
             if not _is_finding_in_cooldown(athlete_id, f.input_name, f.output_metric):
                 finding_text = _sanitize_finding_text(
                     f.insight_text or (
-                    f"{f.input_name.replace('_', ' ').title()} {f.direction}ly "
-                    f"affects your {f.output_metric.replace('_', ' ')}"
+                    f"{friendly_signal_name(f.input_name).title()} {f.direction}ly "
+                    f"affects your {friendly_signal_name(f.output_metric)}"
                     )
                 )
                 detail_parts = []
                 if f.threshold_value is not None:
                     detail_parts.append(
-                        f"your {f.input_name.replace('_', ' ')} cliff is around "
+                        f"your {friendly_signal_name(f.input_name)} cliff is around "
                         f"{f.threshold_value:.1f}"
                     )
                 if f.asymmetry_ratio is not None and f.asymmetry_ratio > 1.5:
@@ -1809,8 +1810,8 @@ def compute_coach_noticed(
                     text=text,
                     source="fingerprint",
                     ask_coach_query=(
-                        f"Tell me more about how {f.input_name.replace('_', ' ')} "
-                        f"affects my {f.output_metric.replace('_', ' ')}"
+                        f"Tell me more about how {friendly_signal_name(f.input_name)} "
+                        f"affects my {friendly_signal_name(f.output_metric)}"
                     ),
                 )
     except Exception as e:
@@ -2995,7 +2996,7 @@ async def get_home_data(
             tier = "strong" if f.times_confirmed >= 8 else "confirmed"
             home_finding = HomeFinding(
                 text=_sanitize_finding_text(
-                    f.insight_text or f"{f.input_name.replace('_', ' ')} affects your {f.output_metric}"
+                    f.insight_text or f"{friendly_signal_name(f.input_name)} affects your {friendly_signal_name(f.output_metric)}"
                 ),
                 confidence_tier=tier,
                 domain=f.output_metric,

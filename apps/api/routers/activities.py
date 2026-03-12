@@ -14,6 +14,7 @@ from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
 from models import Activity, Athlete, ActivitySplit
+from services.n1_insight_generator import friendly_signal_name
 from schemas import ActivityResponse
 
 router = APIRouter(prefix="/v1/activities", tags=["activities"])
@@ -580,7 +581,7 @@ def get_activity_findings(
     result = []
     for f in findings:
         tier = "strong" if f.times_confirmed >= 8 else "confirmed"
-        text = f.insight_text or f"{f.input_name.replace('_', ' ')} affects your {f.output_metric}"
+        text = f.insight_text or f"{friendly_signal_name(f.input_name)} affects your {friendly_signal_name(f.output_metric)}"
         evidence = f"Confirmed {f.times_confirmed} times" if f.times_confirmed else None
         result.append(FindingAnnotation(
             text=text,
