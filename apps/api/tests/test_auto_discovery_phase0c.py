@@ -116,10 +116,17 @@ class TestInteractionScanScoreSummary:
         scan = summary["interaction_scan"]
         assert scan["experiments_run"] == 2
         assert scan["kept"] == 2
-        # The key 0C requirement: aggregate_baseline_score must be a real number.
+        # The key 0C requirement: aggregate_baseline_score must be a real number when candidates kept.
         assert scan["aggregate_baseline_score"] is not None
         assert isinstance(scan["aggregate_baseline_score"], float)
         assert 0.0 < scan["aggregate_baseline_score"] < 1.0
+        # aggregate_all_score covers all experiments (value-bearing, not None).
+        assert scan["aggregate_all_score"] is not None
+        assert isinstance(scan["aggregate_all_score"], float)
+        # Loop design explicitly documented; candidate score absent by design.
+        assert scan["loop_design"] == "single_arm_discovery"
+        assert scan["aggregate_candidate_score"] is None  # single-arm: no A/B variant
+        assert scan["aggregate_delta"] is None
 
     def test_interaction_scan_summary_none_when_no_candidates(self):
         """When no interaction experiments ran, interaction_scan section absent."""
@@ -775,6 +782,312 @@ class TestFounderReviewQueryOutput:
         assert "latest_score" in item
         assert "first_seen_run_id" in item
         assert "last_seen_run_id" in item
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Three-fix regression suite (advisor findings)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAdvisorFindingFixes:
+    """
+    Regression tests for the three advisor-review findings:
+      Fix 1 (High)   — interaction_scan score summary aggregate_all_score is value-bearing
+      Fix 2 (Medium) — stage action requires approved status
+      Fix 3 (Medium) — interaction/tuning durable candidates carry provenance
+    """
+
+    # ── Fix 1: aggregate_all_score is numeric ────────────────────────────────
+
+    def test_aggregate_all_score_is_numeric_when_experiments_exist(self):
+        """aggregate_all_score must be a real float whenever interaction_scan ran."""
+        from services.auto_discovery.orchestrator import _build_score_summary
+
+        exp1 = MagicMock()
+        exp1.loop_type = "interaction_scan"
+        exp1.kept = False  # not kept — but all_score should still include it
+        exp1.baseline_score = 0.30
+        exp1.candidate_score = None
+        exp1.score_delta = None
+
+        exp2 = MagicMock()
+        exp2.loop_type = "interaction_scan"
+        exp2.kept = True
+        exp2.baseline_score = 0.70
+        exp2.candidate_score = None
+        exp2.score_delta = None
+
+        summary = _build_score_summary(
+            experiment_rows=[exp1, exp2],
+            rescan_results=[],
+            stability={"stable": [], "strengthening": [], "recent_only": [], "unstable": []},
+        )
+
+        scan = summary["interaction_scan"]
+        # aggregate_all_score covers kept + not-kept.
+        assert scan["aggregate_all_score"] is not None
+        assert isinstance(scan["aggregate_all_score"], float)
+        assert abs(scan["aggregate_all_score"] - round((0.30 + 0.70) / 2, 4)) < 1e-6
+        # aggregate_baseline_score is None because only 1 experiment is kept
+        # and this test only checks all_score; kept score is a separate assertion.
+
+    def test_aggregate_baseline_score_only_counts_kept(self):
+        """aggregate_baseline_score reflects kept candidates only; not_kept excluded."""
+        from services.auto_discovery.orchestrator import _build_score_summary
+
+        kept = MagicMock()
+        kept.loop_type = "interaction_scan"
+        kept.kept = True
+        kept.baseline_score = 0.80
+        kept.candidate_score = None
+        kept.score_delta = None
+
+        not_kept = MagicMock()
+        not_kept.loop_type = "interaction_scan"
+        not_kept.kept = False
+        not_kept.baseline_score = 0.20
+        not_kept.candidate_score = None
+        not_kept.score_delta = None
+
+        summary = _build_score_summary(
+            experiment_rows=[kept, not_kept],
+            rescan_results=[],
+            stability={"stable": [], "strengthening": [], "recent_only": [], "unstable": []},
+        )
+
+        scan = summary["interaction_scan"]
+        # Baseline score = only kept experiment.
+        assert scan["aggregate_baseline_score"] == 0.80
+        # All score = both experiments.
+        assert abs(scan["aggregate_all_score"] - 0.50) < 1e-6
+
+    def test_loop_design_field_present_and_correct(self):
+        """loop_design field must be 'single_arm_discovery'."""
+        from services.auto_discovery.orchestrator import _build_score_summary
+
+        exp = MagicMock()
+        exp.loop_type = "interaction_scan"
+        exp.kept = True
+        exp.baseline_score = 0.55
+        exp.candidate_score = None
+        exp.score_delta = None
+
+        summary = _build_score_summary(
+            experiment_rows=[exp],
+            rescan_results=[],
+            stability={"stable": [], "strengthening": [], "recent_only": [], "unstable": []},
+        )
+        assert summary["interaction_scan"]["loop_design"] == "single_arm_discovery"
+
+    # ── Fix 2: stage requires approved status ────────────────────────────────
+
+    def _make_candidate(self, status: str):
+        from models import AutoDiscoveryCandidate
+        c = MagicMock(spec=AutoDiscoveryCandidate)
+        c.id = uuid.uuid4()
+        c.athlete_id = uuid.uuid4()
+        c.current_status = status
+        c.reviewed_at = None
+        c.updated_at = None
+        c.promotion_target = None
+        c.promotion_note = None
+        return c
+
+    def test_stage_on_open_candidate_raises(self):
+        """stage must be rejected when candidate status is 'open'."""
+        from services.auto_discovery.orchestrator import review_candidate
+
+        candidate = self._make_candidate("open")
+        db = MagicMock()
+        db.query.return_value.filter_by.return_value.first.return_value = candidate
+
+        with pytest.raises(ValueError, match="must be approved first"):
+            review_candidate(
+                candidate_id=candidate.id,
+                action="stage",
+                db=db,
+                promotion_target="surface_candidate",
+            )
+
+    def test_stage_on_rejected_candidate_raises(self):
+        """stage must be rejected when candidate status is 'rejected'."""
+        from services.auto_discovery.orchestrator import review_candidate
+
+        candidate = self._make_candidate("rejected")
+        db = MagicMock()
+        db.query.return_value.filter_by.return_value.first.return_value = candidate
+
+        with pytest.raises(ValueError, match="must be approved first"):
+            review_candidate(
+                candidate_id=candidate.id,
+                action="stage",
+                db=db,
+                promotion_target="registry_change_candidate",
+            )
+
+    def test_stage_on_deferred_candidate_raises(self):
+        """stage must be rejected when candidate status is 'deferred'."""
+        from services.auto_discovery.orchestrator import review_candidate
+
+        candidate = self._make_candidate("deferred")
+        db = MagicMock()
+        db.query.return_value.filter_by.return_value.first.return_value = candidate
+
+        with pytest.raises(ValueError, match="must be approved first"):
+            review_candidate(
+                candidate_id=candidate.id,
+                action="stage",
+                db=db,
+                promotion_target="manual_research_candidate",
+            )
+
+    def test_stage_on_approved_candidate_succeeds(self):
+        """stage succeeds when candidate is already approved."""
+        from services.auto_discovery.orchestrator import review_candidate
+
+        candidate = self._make_candidate("approved")
+        db = MagicMock()
+        db.query.return_value.filter_by.return_value.first.return_value = candidate
+
+        review_candidate(
+            candidate_id=candidate.id,
+            action="stage",
+            db=db,
+            promotion_target="investigation_upgrade_candidate",
+        )
+        assert candidate.promotion_target == "investigation_upgrade_candidate"
+        assert candidate.current_status == "approved"  # unchanged
+
+    # ── Fix 3: interaction/tuning candidates carry provenance ────────────────
+
+    def test_interaction_candidate_upsert_carries_provenance(self):
+        """Interaction candidates stored in durable memory must include provenance."""
+        from services.auto_discovery.orchestrator import _upsert_candidates
+        from models import AutoDiscoveryCandidate
+
+        athlete_id = uuid.uuid4()
+        run = MagicMock()
+        run.id = uuid.uuid4()
+
+        db = MagicMock()
+        db.query.return_value.filter_by.return_value.first.return_value = None
+
+        report = {
+            "stable_findings": [],
+            "strengthened_findings": [],
+            "candidate_interactions": {
+                "cleared_threshold": True,
+                "candidates": [
+                    {
+                        "factors": ["hrv_score", "weekly_volume"],
+                        "output_metric": "efficiency",
+                        "direction_label": "higher efficiency when both are high",
+                        "interaction_score": 0.65,
+                        "score_components": {
+                            "effect_size_norm": 0.567,
+                            "sample_support": 0.60,
+                        },
+                    }
+                ],
+            },
+            "registry_tuning_candidates": {"cleared_threshold": False, "candidates": []},
+        }
+
+        _upsert_candidates(athlete_id=athlete_id, run=run, report=report, db=db)
+
+        added = db.add.call_args[0][0]
+        assert isinstance(added, AutoDiscoveryCandidate)
+        provenance = added.provenance_snapshot
+        assert provenance is not None
+        assert "component_values" in provenance
+        assert provenance["component_values"]["effect_size_norm"] == 0.567
+        assert provenance["component_quality"]["effect_size_norm"] == "exact"
+        assert provenance["has_inferred_components"] is False
+
+    def test_tuning_candidate_summarize_includes_provenance(self):
+        """summarize_tuning_results kept candidates must include score_provenance."""
+        from services.auto_discovery.tuning_loop import summarize_tuning_results
+
+        provenance = {
+            "component_values": {},
+            "component_quality": {"confidence": "inferred", "actionability": "registry_default"},
+            "has_inferred_components": True,
+        }
+
+        exp = {
+            "kept": True,
+            "baseline_score": 0.40,
+            "candidate_score": 0.46,
+            "score_delta": 0.06,
+            "baseline_config": {"investigation": "investigate_heat_tax", "params": {"min_activities": 20}},
+            "candidate_config": {
+                "investigation": "investigate_heat_tax",
+                "changed_delta": {"min_activities": 16},
+                "changed_param": "min_activities",
+            },
+            "result_summary": {
+                "investigation": "investigate_heat_tax",
+                "param_name": "min_activities",
+                "kept": True,
+                "rationale": "kept: score_delta 0.0600 > 0.03 and finding count stable",
+                "baseline_error": None,
+                "candidate_error": None,
+                "score_provenance": provenance,
+            },
+        }
+
+        result = summarize_tuning_results([exp])
+
+        assert result["cleared_threshold"] is True
+        cand = result["candidates"][0]
+        assert "score_provenance" in cand
+        assert cand["score_provenance"]["has_inferred_components"] is True
+
+    def test_tuning_upsert_uses_score_provenance_from_candidate(self):
+        """_upsert_candidates stores provenance from tuning candidate score_provenance."""
+        from services.auto_discovery.orchestrator import _upsert_candidates
+        from models import AutoDiscoveryCandidate
+
+        athlete_id = uuid.uuid4()
+        run = MagicMock()
+        run.id = uuid.uuid4()
+
+        db = MagicMock()
+        db.query.return_value.filter_by.return_value.first.return_value = None
+
+        provenance = {
+            "component_values": {},
+            "component_quality": {"confidence": "inferred", "actionability": "registry_default"},
+            "has_inferred_components": True,
+        }
+
+        report = {
+            "stable_findings": [],
+            "strengthened_findings": [],
+            "candidate_interactions": {"cleared_threshold": False, "candidates": []},
+            "registry_tuning_candidates": {
+                "cleared_threshold": True,
+                "candidates": [
+                    {
+                        "investigation": "investigate_heat_tax",
+                        "parameter_change": {"min_activities": 16},
+                        "baseline_score": 0.40,
+                        "candidate_score": 0.46,
+                        "score_delta": 0.06,
+                        "kept": True,
+                        "rationale": "kept",
+                        "score_provenance": provenance,
+                    }
+                ],
+            },
+        }
+
+        _upsert_candidates(athlete_id=athlete_id, run=run, report=report, db=db)
+
+        added = db.add.call_args[0][0]
+        assert isinstance(added, AutoDiscoveryCandidate)
+        stored_provenance = added.provenance_snapshot
+        assert stored_provenance is not None
+        assert stored_provenance["has_inferred_components"] is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

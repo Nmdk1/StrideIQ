@@ -351,6 +351,8 @@ def summarize_tuning_results(
                 "score_delta": e.get("score_delta"),
                 "kept": True,
                 "rationale": e["result_summary"].get("rationale"),
+                # Provenance block so durable candidate memory has honest quality labels.
+                "score_provenance": e["result_summary"].get("score_provenance"),
             }
             for e in ranked
         ],

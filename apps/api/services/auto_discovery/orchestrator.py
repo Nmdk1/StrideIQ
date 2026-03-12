@@ -510,20 +510,39 @@ def _build_score_summary(
     interaction_exps = [e for e in experiment_rows if e.loop_type == "interaction_scan"]
     kept_interaction = [e for e in interaction_exps if e.kept]
     if interaction_exps:
-        # WS1-1A: aggregate real interaction scores (not count-based).
-        b_scores_int = [
+        # WS1-1A: aggregate real interaction scores from kept experiments.
+        # The pairwise loop is discovery-only (no A/B candidate variant), so
+        # aggregate_candidate_score and aggregate_delta are structurally absent —
+        # this is not a placeholder; it reflects the loop's single-arm design.
+        # We report aggregate_interaction_score (mean kept interaction_score) so
+        # the summary is value-bearing when kept candidates exist.
+        kept_scores_int = [
+            e.baseline_score for e in kept_interaction
+            if e.baseline_score is not None
+        ]
+        all_scores_int = [
             e.baseline_score for e in interaction_exps
             if e.baseline_score is not None
         ]
-        agg_baseline_int = (
-            round(sum(b_scores_int) / len(b_scores_int), 4) if b_scores_int else None
+        agg_kept = (
+            round(sum(kept_scores_int) / len(kept_scores_int), 4)
+            if kept_scores_int else None
+        )
+        agg_all = (
+            round(sum(all_scores_int) / len(all_scores_int), 4)
+            if all_scores_int else None
         )
         summary["interaction_scan"] = {
             "experiments_run": len(interaction_exps),
             "kept": len(kept_interaction),
-            "aggregate_baseline_score": agg_baseline_int,
-            "aggregate_candidate_score": None,  # pairwise loop has no candidate variant
+            # Mean interaction_score of kept candidates (null only when nothing kept).
+            "aggregate_baseline_score": agg_kept,
+            # Mean interaction_score across all tested experiments (value-bearing).
+            "aggregate_all_score": agg_all,
+            # Pairwise loop is single-arm (discovery only); no candidate variant exists.
+            "aggregate_candidate_score": None,
             "aggregate_delta": None,
+            "loop_design": "single_arm_discovery",
         }
 
     # Registry tuning.
@@ -638,12 +657,22 @@ def _upsert_candidates(
     interaction_section = report.get("candidate_interactions", {})
     if interaction_section.get("cleared_threshold"):
         for cand in interaction_section.get("candidates", []):
+            # Build interaction provenance from score_components already on the candidate.
+            sc = cand.get("score_components") or {}
+            interaction_provenance = {
+                "component_values": sc,
+                "component_quality": {
+                    "effect_size_norm": "exact",
+                    "sample_support": "exact",
+                },
+                "has_inferred_components": False,
+            } if sc else None
             candidates_to_upsert.append({
                 "candidate_type": "interaction",
                 "payload": cand,
                 "score": cand.get("interaction_score"),
                 "score_delta": None,
-                "provenance": None,
+                "provenance": interaction_provenance,
             })
 
     # Registry tuning candidates
@@ -655,7 +684,8 @@ def _upsert_candidates(
                 "payload": cand,
                 "score": cand.get("candidate_score"),
                 "score_delta": cand.get("score_delta"),
-                "provenance": cand.get("provenance_snapshot"),
+                # score_provenance is the key added by summarize_tuning_results.
+                "provenance": cand.get("score_provenance"),
             })
 
     for item in candidates_to_upsert:
@@ -764,6 +794,12 @@ def review_candidate(
                 "Valid values: surface_candidate, registry_change_candidate, "
                 "investigation_upgrade_candidate, manual_research_candidate"
             )
+        # Staging requires an already-approved candidate — explicit discipline.
+        if candidate.current_status != "approved":
+            raise ValueError(
+                f"Cannot stage candidate with status='{candidate.current_status}'. "
+                "Candidate must be approved first (action='approve') before staging."
+            )
         valid_targets = {
             "surface_candidate",
             "registry_change_candidate",
@@ -775,7 +811,7 @@ def review_candidate(
                 f"Invalid promotion_target '{promotion_target}'. "
                 f"Must be one of: {sorted(valid_targets)}"
             )
-        new_status = "approved"
+        new_status = "approved"  # status unchanged; only promotion_target is set
         candidate.promotion_target = promotion_target
         if note:
             candidate.promotion_note = note
