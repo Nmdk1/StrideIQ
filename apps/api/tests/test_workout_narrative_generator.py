@@ -33,12 +33,14 @@ from services.workout_narrative_generator import (
 
 @pytest.fixture(autouse=True)
 def _kill_switch_off(monkeypatch):
-    """Ensure kill switch is explicitly off for all generator tests.
+    """Ensure kill switch is off for all generator tests.
 
-    This prevents the FeatureFlag DB lookup from running (which would consume
-    a mock DB query slot and cause context-building tests to fail).
+    Patches the FeatureFlag DB lookup inside the generator to return None,
+    preventing a spurious .first() call from consuming DB mock side_effect slots.
     """
     monkeypatch.setenv(KILL_SWITCH_3B_ENV, "false")
+    with patch("services.workout_narrative_generator._is_3b_kill_switched", return_value=False):
+        yield
 
 
 # ---------------------------------------------------------------------------

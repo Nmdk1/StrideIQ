@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from services.workout_narrative_generator import (
     generate_workout_narrative,
     score_narrative_quality,
+    _is_3b_kill_switched,
     WorkoutNarrativeResult,
     KILL_SWITCH_3B_ENV,
 )
@@ -559,3 +560,222 @@ class TestGateAwareRollout:
         data = resp.json()
         assert data["kill_switch_active"] is True
         assert data["suppressed"] is True
+
+
+# ===========================================================================
+# 6. Hardening regression tests (e440690 follow-up)
+# ===========================================================================
+
+class TestKillSwitchEnvDBParity:
+    """env=false + DB disabled must still kill; env unset + DB disabled must kill."""
+
+    def test_env_false_db_disabled_kills_generator(self):
+        """env KILL_SWITCH=false + DB FeatureFlag disabled → generator returns suppressed."""
+        disabled_flag = MagicMock()
+        disabled_flag.enabled = False  # DB flag says disabled
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = disabled_flag
+
+        with patch.dict(os.environ, {KILL_SWITCH_3B_ENV: "false"}):
+            result = generate_workout_narrative(uuid.uuid4(), date.today(), db)
+
+        assert result.suppressed is True
+        assert "kill_switch" in result.suppression_reason.lower()
+
+    def test_env_unset_db_disabled_kills_generator(self):
+        """env KILL_SWITCH unset + DB FeatureFlag disabled → generator returns suppressed."""
+        disabled_flag = MagicMock()
+        disabled_flag.enabled = False
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = disabled_flag
+
+        env_without_ks = {k: v for k, v in os.environ.items() if k != KILL_SWITCH_3B_ENV}
+        with patch.dict(os.environ, env_without_ks, clear=True):
+            result = generate_workout_narrative(uuid.uuid4(), date.today(), db)
+
+        assert result.suppressed is True
+        assert "kill_switch" in result.suppression_reason.lower()
+
+    def test_is_3b_kill_switched_env_false_db_disabled(self):
+        """_is_3b_kill_switched returns True when DB flag disabled even if env is false."""
+        disabled_flag = MagicMock()
+        disabled_flag.enabled = False
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = disabled_flag
+
+        with patch.dict(os.environ, {KILL_SWITCH_3B_ENV: "false"}):
+            result = _is_3b_kill_switched(db)
+
+        assert result is True
+
+    def test_kill_switch_active_truthful_in_workout_endpoint_db_disabled(self):
+        """kill_switch_active=True in workout response when DB FeatureFlag disabled (env=false)."""
+        from fastapi.testclient import TestClient
+        from main import app
+        from core.auth import get_current_user
+        from core.database import get_db
+        from services.phase3_eligibility import EligibilityResult
+
+        athlete = _make_athlete(tier="premium")
+        db = _mock_db_no_suppressions()
+
+        app.dependency_overrides[get_current_user] = lambda: athlete
+        app.dependency_overrides[get_db] = lambda: db
+
+        try:
+            with patch.dict(os.environ, {KILL_SWITCH_3B_ENV: "false"}), \
+                 patch("services.phase3_eligibility._is_kill_switched", return_value=True), \
+                 patch("services.phase3_eligibility.get_3b_eligibility") as mock_elig:
+                mock_elig.return_value = EligibilityResult(
+                    eligible=False,
+                    reason="3B workout narratives are globally disabled (kill switch).",
+                    evidence={"kill_switch": True},
+                )
+                client = TestClient(app, raise_server_exceptions=False)
+                resp = client.get(f"/v1/intelligence/workout-narrative/{date.today().isoformat()}")
+        finally:
+            app.dependency_overrides.clear()
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["kill_switch_active"] is True
+
+    def test_kill_switch_active_truthful_in_admin_review_db_disabled(self):
+        """kill_switch_active=True in admin review response when DB FeatureFlag disabled."""
+        from fastapi.testclient import TestClient
+        from main import app
+        from core.auth import get_current_user
+        from core.database import get_db
+
+        founder = _make_athlete(tier="free")
+        founder.email = "mbshaf@gmail.com"
+        db = MagicMock()
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        db.query.return_value.filter.return_value.all.return_value = []
+
+        app.dependency_overrides[get_current_user] = lambda: founder
+        app.dependency_overrides[get_db] = lambda: db
+
+        try:
+            with patch.dict(os.environ, {KILL_SWITCH_3B_ENV: "false"}), \
+                 patch("services.phase3_eligibility._is_kill_switched", return_value=True), \
+                 patch("services.phase3_eligibility._narration_quality_score", return_value=None):
+                client = TestClient(app, raise_server_exceptions=False)
+                resp = client.get("/v1/intelligence/admin/narrative-review")
+        finally:
+            app.dependency_overrides.clear()
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["kill_switch_active"] is True
+
+
+class TestGateClosedEnforcement:
+    """Gate-closed (provisional) must suppress non-founder premium athletes."""
+
+    def _make_app_with_user(self, athlete):
+        from fastapi.testclient import TestClient
+        from main import app
+        from core.auth import get_current_user
+        from core.database import get_db
+
+        db = _mock_db_no_suppressions()
+        app.dependency_overrides[get_current_user] = lambda: athlete
+        app.dependency_overrides[get_db] = lambda: db
+        return app, TestClient(app, raise_server_exceptions=False)
+
+    def test_non_founder_premium_suppressed_when_gate_closed(self):
+        """Non-founder premium athlete gets gate_closed_founder_only reason when gate is not open."""
+        from services.phase3_eligibility import EligibilityResult
+
+        athlete = _make_athlete(tier="premium")
+        athlete.email = "notfounder@example.com"
+        app, client = self._make_app_with_user(athlete)
+
+        try:
+            with patch("services.phase3_eligibility.get_3b_eligibility") as mock_elig, \
+                 patch("services.phase3_eligibility._is_kill_switched", return_value=False):
+                # Eligible but provisional — gate not open
+                mock_elig.return_value = EligibilityResult(
+                    eligible=True,
+                    reason="Eligible for workout narratives.",
+                    provisional=True,
+                )
+                resp = client.get(f"/v1/intelligence/workout-narrative/{date.today().isoformat()}")
+        finally:
+            app.dependency_overrides.clear()
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["suppressed"] is True
+        assert data["reason"] == "gate_closed_founder_only"
+        assert data["gate_open"] is False
+
+    def test_founder_can_get_narrative_when_gate_closed(self):
+        """Founder account can receive generated narrative even when gate is not open (provisional)."""
+        from services.phase3_eligibility import EligibilityResult
+
+        founder = _make_athlete(tier="premium")
+        founder.email = "mbshaf@gmail.com"
+        app, client = self._make_app_with_user(founder)
+
+        try:
+            with patch("services.phase3_eligibility.get_3b_eligibility") as mock_elig, \
+                 patch("services.phase3_eligibility._is_kill_switched", return_value=False), \
+                 patch("services.workout_narrative_generator.generate_workout_narrative") as mock_gen, \
+                 patch("routers.daily_intelligence.NarrationLog"):
+                mock_elig.return_value = EligibilityResult(
+                    eligible=True,
+                    reason="Eligible for workout narratives.",
+                    provisional=True,  # gate not open
+                )
+                mock_gen.return_value = WorkoutNarrativeResult(
+                    narrative="After last week's 18km, today's easy build week 7 run.",
+                    suppressed=False,
+                )
+                resp = client.get(f"/v1/intelligence/workout-narrative/{date.today().isoformat()}")
+        finally:
+            app.dependency_overrides.clear()
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # Founder bypasses gate-closed suppression
+        assert data["suppressed"] is False
+        assert data["narrative"] is not None
+        assert data["reason"] != "gate_closed_founder_only"
+
+    def test_non_founder_gets_narrative_when_gate_open(self):
+        """Non-founder premium athlete gets generated narrative when gate IS open."""
+        from services.phase3_eligibility import EligibilityResult
+
+        athlete = _make_athlete(tier="premium")
+        athlete.email = "notfounder@example.com"
+        app, client = self._make_app_with_user(athlete)
+
+        try:
+            with patch("services.phase3_eligibility.get_3b_eligibility") as mock_elig, \
+                 patch("services.phase3_eligibility._is_kill_switched", return_value=False), \
+                 patch("services.workout_narrative_generator.generate_workout_narrative") as mock_gen, \
+                 patch("routers.daily_intelligence.NarrationLog"):
+                mock_elig.return_value = EligibilityResult(
+                    eligible=True,
+                    reason="Eligible for workout narratives.",
+                    provisional=False,  # gate IS open
+                )
+                mock_gen.return_value = WorkoutNarrativeResult(
+                    narrative="Your build phase week 7 tempo is ready.",
+                    suppressed=False,
+                )
+                resp = client.get(f"/v1/intelligence/workout-narrative/{date.today().isoformat()}")
+        finally:
+            app.dependency_overrides.clear()
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["suppressed"] is False
+        assert data["narrative"] is not None
+        assert data["gate_open"] is True
+        assert data["reason"] != "gate_closed_founder_only"

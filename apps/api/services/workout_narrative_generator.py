@@ -484,6 +484,32 @@ def score_narrative_quality(
 
 
 # ---------------------------------------------------------------------------
+# Kill switch helper (module-level so tests can patch it cleanly)
+# ---------------------------------------------------------------------------
+
+def _is_3b_kill_switched(db: Session) -> bool:
+    """Check env var AND FeatureFlag table for 3B kill switch.
+
+    Logic:
+    - env "1"/"true"/"yes" → immediate hard kill (no DB query needed).
+    - Any other env value (including explicit "false" or unset) → check DB
+      FeatureFlag.  A disabled flag always kills, even if env is "false".
+    """
+    import os
+    _ks_env = os.getenv(KILL_SWITCH_3B_ENV, "").lower()
+    if _ks_env in ("1", "true", "yes"):
+        return True
+    try:
+        from models import FeatureFlag
+        flag = db.query(FeatureFlag).filter(FeatureFlag.key == KILL_SWITCH_3B_ENV).first()
+        if flag and not flag.enabled:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -497,23 +523,7 @@ def generate_workout_narrative(
 
     Returns WorkoutNarrativeResult.  `narrative` is None when suppressed.
     """
-    import os
-    # Global kill switch — checked here so the generator is safe regardless
-    # of call site (router, task, or direct invocation).
-    _ks_env = os.getenv(KILL_SWITCH_3B_ENV, "").lower()
-    kill_switch_active = _ks_env in ("1", "true", "yes")
-    # Only query DB FeatureFlag when env var is not explicitly set (empty string).
-    # If env var is set to any value (including "false"), skip the DB check to
-    # avoid consuming mock DB query slots in tests and to keep unit tests stable.
-    if not kill_switch_active and _ks_env == "":
-        try:
-            from models import FeatureFlag
-            flag = db.query(FeatureFlag).filter(FeatureFlag.key == KILL_SWITCH_3B_ENV).first()
-            if flag and not flag.enabled:
-                kill_switch_active = True
-        except Exception:
-            pass
-    if kill_switch_active:
+    if _is_3b_kill_switched(db):
         return WorkoutNarrativeResult(
             suppressed=True,
             suppression_reason="3B workout narratives globally disabled (kill_switch).",

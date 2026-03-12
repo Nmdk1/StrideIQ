@@ -380,14 +380,20 @@ def get_workout_narrative(
 
     Gate-aware rollout:
     - gate_open=False + provisional=True → eligible athlete but global quality
-      gate not yet met; rollout remains founder-controlled.
-    - gate_open=True → global 90%-for-4-weeks gate is met.
+      gate not yet met; rollout is founder-only/tightly controlled.
+      Non-founder premium athletes are suppressed with reason
+      "gate_closed_founder_only" until the gate opens.
+    - gate_open=True → global 90%-for-4-weeks gate is met; all premium athletes
+      can receive narratives.
     """
     import os
-    from services.phase3_eligibility import get_3b_eligibility, KILL_SWITCH_3B_ENV, NARRATION_QUALITY_GATE
-    from services.workout_narrative_generator import KILL_SWITCH_3B_ENV as _GEN_KS_ENV
+    from services.phase3_eligibility import (
+        get_3b_eligibility, _is_kill_switched, KILL_SWITCH_3B_ENV, NARRATION_QUALITY_GATE,
+    )
 
-    kill_switch_active = os.getenv(KILL_SWITCH_3B_ENV, "").lower() in ("1", "true", "yes")
+    # Compute kill_switch_active via the shared _is_kill_switched helper so
+    # both env var AND DB FeatureFlag are reflected consistently.
+    kill_switch_active = _is_kill_switched(KILL_SWITCH_3B_ENV, db)
 
     elig = get_3b_eligibility(current_user.id, db, as_of=target_date)
     eligibility_dict = {
@@ -402,6 +408,19 @@ def get_workout_narrative(
         return WorkoutNarrativeResponse(
             suppressed=True,
             reason=elig.reason,
+            eligibility=eligibility_dict,
+            kill_switch_active=kill_switch_active,
+            gate_open=False,
+        )
+
+    # Gate-closed enforcement: when the quality gate is not met (provisional),
+    # only founders can receive generated narratives.  All other premium athletes
+    # are suppressed with a machine-readable reason so the caller can display
+    # appropriate messaging ("coming soon" / "being reviewed").
+    if elig.provisional and not _is_founder_3b(current_user):
+        return WorkoutNarrativeResponse(
+            suppressed=True,
+            reason="gate_closed_founder_only",
             eligibility=eligibility_dict,
             kill_switch_active=kill_switch_active,
             gate_open=False,
@@ -525,9 +544,9 @@ def founder_review_narratives(
 
     import os
     from datetime import datetime as _dt
-    from services.phase3_eligibility import KILL_SWITCH_3B_ENV, NARRATION_QUALITY_GATE
+    from services.phase3_eligibility import _is_kill_switched, KILL_SWITCH_3B_ENV, NARRATION_QUALITY_GATE
 
-    kill_switch_active = os.getenv(KILL_SWITCH_3B_ENV, "").lower() in ("1", "true", "yes")
+    kill_switch_active = _is_kill_switched(KILL_SWITCH_3B_ENV, db)
     from sqlalchemy import desc as _desc
     from models import NarrationLog as _NarrationLog
 
