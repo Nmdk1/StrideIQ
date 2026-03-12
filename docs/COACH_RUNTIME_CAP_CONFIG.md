@@ -1,6 +1,6 @@
 # Coach Runtime Cap Config — Canonical Reference
 
-**Last updated:** March 11, 2026  
+**Last updated:** March 12, 2026  
 **Applies to:** `apps/api/services/ai_coach.py` — premium Anthropic lane caps
 
 ---
@@ -72,3 +72,20 @@ Builder requirement:
 - Keep these as env-driven hard caps unless explicitly instructed otherwise.
 - Canonical reference: `docs/COACH_RUNTIME_CAP_CONFIG.md`
 ```
+
+---
+
+## Production verification (Mar 12, 2026)
+
+Deployment:
+- Commit: `9a82a0d`
+- Command: `cd /opt/strideiq/repo && git pull origin main && docker compose -f docker-compose.prod.yml up -d --build`
+
+Live runtime checks:
+- `services.ai_coach` loaded from `/app/services/ai_coach.py`
+- Live constants in `strideiq_api`:
+  - `COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP = 15`
+  - `COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP = 1000000`
+- Live `get_budget_status()` smoke check on production VIP athletes returns:
+  - `opus_requests_limit_today = 15`
+  - `opus_tokens_limit_this_month = 1000000`

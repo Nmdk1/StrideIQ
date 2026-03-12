@@ -2,7 +2,7 @@
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
 **Last updated:** March 12, 2026
-**Last updated by:** Builder session — Phase 3B graduation controls
+**Last updated by:** Advisor session — VIP Sonnet cap deploy verification
 
 ---
 
@@ -11,6 +11,8 @@
 Shipped and now live in product/system behavior:
 
 - **Phase 3B Graduation Controls (Mar 12, 2026)**:
+
+- **Coach VIP Sonnet Cap Raise + Production Deploy Verification (Mar 12, 2026):** VIP premium Anthropic lane defaults increased to `COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP=15` and `COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP=1000000` in `services/ai_coach.py`. Canonical runtime cap doc updated at `docs/COACH_RUNTIME_CAP_CONFIG.md`. Production deploy completed from commit `9a82a0d` using standard compose rebuild command. Live verification in `strideiq_api` confirmed constants loaded from `/app/services/ai_coach.py` and `get_budget_status()` now reports `opus_requests_limit_today=15` and `opus_tokens_limit_this_month=1000000` for VIP athletes. Founder uncapped bypass and non-VIP caps remain unchanged.
 
 ---
 
@@ -30,7 +32,7 @@ Shipped and now live in product/system behavior:
 
 Shipped and now live in product/system behavior:
 
-- **Coach Model Routing Reset (Mar 11, 2026)**: (1) `MODEL_HIGH_STAKES` changed from `claude-opus-4-6` to `claude-sonnet-4-6` — no live Opus path remains. (2) `home.py` `_call_opus_briefing_sync` and `home_briefing_tasks.py` `source_model` both updated to `claude-sonnet-4-6`. (3) Gemini `thought_signature` INVALID_ARGUMENT fix: multi-turn tool loop now strips thought parts from model content before appending to conversation history; `google-genai` pinned to `>=1.66.0`. (4) Premium lane cap model preserved: VIP uses hard caps (`COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP=12`, `COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP=200000`), no multiplier logic, founder always uncapped. Canonical cap reference: `docs/COACH_RUNTIME_CAP_CONFIG.md`. 13 targeted tests in `test_coach_model_routing_reset.py`. Commit: `68700b2`.
+- **Coach Model Routing Reset (Mar 11, 2026)**: (1) `MODEL_HIGH_STAKES` changed from `claude-opus-4-6` to `claude-sonnet-4-6` — no live Opus path remains. (2) `home.py` `_call_opus_briefing_sync` and `home_briefing_tasks.py` `source_model` both updated to `claude-sonnet-4-6`. (3) Gemini `thought_signature` INVALID_ARGUMENT fix: multi-turn tool loop now strips thought parts from model content before appending to conversation history; `google-genai` pinned to `>=1.66.0`. (4) Premium lane cap model preserved (later adjusted Mar 12): VIP hard caps, no multiplier logic, founder always uncapped. Canonical cap reference: `docs/COACH_RUNTIME_CAP_CONFIG.md`. 13 targeted tests in `test_coach_model_routing_reset.py`. Commit: `68700b2`.
 
 - **AutoDiscovery Phase 0C (Mar 11, 2026)**: Founder review + controlled promotion staging layer. Five workstreams: **(1) 0B fidelity gaps closed** — `interaction_scan` score summary now value-bearing (real aggregate `baseline_score` from mean `interaction_score` of kept candidates, not count-based `None` placeholder); FQS provenance block (`component_values`, `component_quality`, `has_inferred_components`) now preserved in every experiment `result_summary` and report path for all three loop families; `_score_rescan_window()` now returns `score_provenance` alongside aggregate scores. **(2) Durable cross-run candidate memory** — new `auto_discovery_candidate` table (migration `auto_discovery_002`) with deterministic stable key uniqueness enforced at DB level (`UniqueConstraint(athlete_id, candidate_type, candidate_key)`); orchestrator `_upsert_candidates()` runs after each nightly pass to group recurring shadow candidates; candidate re-appearance increments `times_seen` and updates tracking fields without ever overwriting founder review state. **(3) Founder review state machine** — `review_candidate()` function in orchestrator supports approve/reject/defer/stage actions; every action writes an `auto_discovery_review_log` row for full auditability; staging sets `promotion_target` label on candidate (no auto-mutation). **(4) Controlled promotion staging** — four explicit promotion targets (`surface_candidate`, `registry_change_candidate`, `investigation_upgrade_candidate`, `manual_research_candidate`); staging is label-only, no live athlete-facing or registry writes occur. **(5) Founder review query** — `get_founder_review_summary()` returns structured sections: open candidates sorted by value, candidates seen 2+ times, approved/rejected/deferred history; no manual JSON diffing required. Schema: `auto_discovery_candidate` + `auto_discovery_review_log` (migration `auto_discovery_002`). 32 new tests + 86 total AutoDiscovery tests passing. CI green.
 
