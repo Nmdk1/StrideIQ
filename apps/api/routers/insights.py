@@ -478,7 +478,7 @@ class N1ReviewResponse(BaseModel):
 
 class N1SuppressRequest(BaseModel):
     """Request to suppress a single N=1 insight pattern for an athlete."""
-    athlete_id: str
+    athlete_id: UUID
     fingerprint: str
     reason: Optional[str] = None
 
@@ -492,8 +492,8 @@ def _is_founder(current_user: Athlete) -> bool:
 
 @router.get("/admin/n1-review", response_model=N1ReviewResponse)
 def founder_review_n1_insights(
-    athlete_id: Optional[str] = Query(None, description="Filter to specific athlete"),
-    current_user: Athlete = Depends(require_tier(["guided"])),
+    athlete_id: Optional[UUID] = Query(None, description="Filter to specific athlete"),
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -562,7 +562,7 @@ def founder_review_n1_insights(
 @router.post("/admin/n1-suppress")
 def founder_suppress_n1_insight(
     body: N1SuppressRequest,
-    current_user: Athlete = Depends(require_tier(["guided"])),
+    current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -584,10 +584,12 @@ def founder_suppress_n1_insight(
         N1InsightSuppression.insight_fingerprint == body.fingerprint,
     ).first()
 
+    athlete_id_str = str(body.athlete_id)
+
     if existing:
         return {
             "status": "already_suppressed",
-            "athlete_id": body.athlete_id,
+            "athlete_id": athlete_id_str,
             "fingerprint": body.fingerprint,
         }
 
@@ -604,13 +606,13 @@ def founder_suppress_n1_insight(
         db.rollback()
         return {
             "status": "already_suppressed",
-            "athlete_id": body.athlete_id,
+            "athlete_id": athlete_id_str,
             "fingerprint": body.fingerprint,
         }
 
     return {
         "status": "suppressed",
-        "athlete_id": body.athlete_id,
+        "athlete_id": athlete_id_str,
         "fingerprint": body.fingerprint,
         "reason": body.reason,
     }
