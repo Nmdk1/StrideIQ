@@ -95,9 +95,11 @@
     "interaction_scan": {
       "experiments_run": 4,
       "kept": 3,
-      "aggregate_baseline_score": null,
+      "aggregate_baseline_score": 0.5875,
+      "aggregate_all_score": 0.4812,
       "aggregate_candidate_score": null,
-      "aggregate_score_delta": null
+      "aggregate_delta": null,
+      "loop_design": "single_arm_discovery"
     },
     "registry_tuning": {
       "experiments_run": 8,
