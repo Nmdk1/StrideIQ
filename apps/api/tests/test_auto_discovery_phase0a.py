@@ -279,15 +279,29 @@ class TestAutoDiscoveryFeatureFlags:
             from services.auto_discovery.feature_flags import is_rescan_enabled
             assert not is_rescan_enabled("athlete", db)
 
-    def test_live_mutation_always_false_in_phase_0(self):
+    def test_live_mutation_driven_by_flag_in_phase_1(self):
         db = MagicMock()
         with patch("services.auto_discovery.feature_flags.is_feature_enabled", return_value=True):
             from services.auto_discovery.feature_flags import is_live_mutation_enabled
+            # Phase 1: flag-driven; when system + mutation flags are both enabled, returns True
+            assert is_live_mutation_enabled("athlete", db)
+
+    def test_live_mutation_false_when_flag_disabled(self):
+        db = MagicMock()
+        with patch("services.auto_discovery.feature_flags.is_feature_enabled", return_value=False):
+            from services.auto_discovery.feature_flags import is_live_mutation_enabled
+            # Flag is off — mutation must be off regardless
             assert not is_live_mutation_enabled("athlete", db)
 
-    def test_athlete_surfacing_always_false_in_phase_0(self):
+    def test_athlete_surfacing_driven_by_flag_in_phase_1(self):
         db = MagicMock()
         with patch("services.auto_discovery.feature_flags.is_feature_enabled", return_value=True):
+            from services.auto_discovery.feature_flags import is_athlete_surfacing_enabled
+            assert is_athlete_surfacing_enabled("athlete", db)
+
+    def test_athlete_surfacing_false_when_flag_disabled(self):
+        db = MagicMock()
+        with patch("services.auto_discovery.feature_flags.is_feature_enabled", return_value=False):
             from services.auto_discovery.feature_flags import is_athlete_surfacing_enabled
             assert not is_athlete_surfacing_enabled("athlete", db)
 

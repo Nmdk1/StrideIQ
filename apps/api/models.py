@@ -2536,6 +2536,13 @@ class CorrelationFinding(Base):
     decay_half_life_days = Column(Float, nullable=True)
     decay_type = Column(Text, nullable=True)
 
+    # --- AutoDiscovery Phase 1: discovery provenance + stability metadata ---
+    discovery_source = Column(Text, nullable=True)          # "daily_sweep" | "auto_discovery"
+    discovery_window_days = Column(Integer, nullable=True)  # window where first found
+    stability_class = Column(Text, nullable=True)           # stable|recent_only|strengthening|unstable|degrading
+    windows_confirmed = Column(Integer, nullable=True)      # count of windows passing significance
+    stability_checked_at = Column(DateTime(timezone=True), nullable=True)
+
     __table_args__ = (
         # One row per unique (athlete, input, output, lag) combination.
         Index(
@@ -2545,6 +2552,11 @@ class CorrelationFinding(Base):
         ),
         Index("ix_corr_finding_active", "athlete_id", "is_active"),
     )
+
+
+# ---------------------------------------------------------------------------
+# AutoDiscovery Phase 1 — live mutation models
+# ---------------------------------------------------------------------------
 
 
 class CorrelationMediator(Base):
@@ -2995,4 +3007,104 @@ class N1InsightSuppression(Base):
         UniqueConstraint("athlete_id", "insight_fingerprint",
                          name="uq_n1_suppression_athlete_fingerprint"),
         Index("ix_n1_suppression_athlete", "athlete_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# AutoDiscovery Phase 1 — live mutation models
+# ---------------------------------------------------------------------------
+
+class AutoDiscoveryChangeLog(Base):
+    """Typed durable change ledger.  Every live mutation from AutoDiscovery
+    writes one row here, enabling audit and revert operations.
+    """
+    __tablename__ = "auto_discovery_change_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("auto_discovery_run.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    athlete_id = Column(UUID(as_uuid=True), nullable=False)
+    change_type = Column(Text, nullable=False)
+    change_key = Column(Text, nullable=False)
+    before_state = Column(JSONB, nullable=True)
+    after_state = Column(JSONB, nullable=True)
+    reverted = Column(Boolean, nullable=False, default=False)
+    reverted_at = Column(DateTime(timezone=True), nullable=True)
+    reverted_by = Column(Text, nullable=True)
+    revert_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "athlete_id", "change_type", "change_key", "run_id",
+            name="uq_adcl_athlete_type_key_run",
+        ),
+        Index("ix_auto_discovery_change_log_athlete_id", "athlete_id"),
+        Index("ix_auto_discovery_change_log_run_id", "run_id"),
+        Index("ix_auto_discovery_change_log_reverted", "athlete_id", "reverted"),
+    )
+
+
+class AthleteInvestigationConfig(Base):
+    """Per-athlete investigation parameter overrides produced by tuning loop."""
+    __tablename__ = "athlete_investigation_config"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), nullable=False)
+    investigation_name = Column(Text, nullable=False)
+    param_overrides = Column(JSONB, nullable=False)
+    applied_from_run_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("auto_discovery_run.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    applied_change_log_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("auto_discovery_change_log.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    applied_at = Column(DateTime(timezone=True), nullable=False)
+    reverted = Column(Boolean, nullable=False, default=False)
+    reverted_at = Column(DateTime(timezone=True), nullable=True)
+    reverted_by = Column(Text, nullable=True)
+    revert_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index(
+            "ix_aic_athlete_investigation_active",
+            "athlete_id", "investigation_name", "reverted",
+        ),
+    )
+
+
+class AutoDiscoveryScanCoverage(Base):
+    """Tracks which (athlete, input, output, window) combinations have been
+    tested, preventing redundant work and enabling progress reporting.
+    """
+    __tablename__ = "auto_discovery_scan_coverage"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), nullable=False)
+    loop_type = Column(Text, nullable=False)
+    test_key = Column(Text, nullable=False)
+    input_a = Column(Text, nullable=False)
+    input_b = Column(Text, nullable=True)
+    output_metric = Column(Text, nullable=False)
+    window_days = Column(Integer, nullable=True)
+    last_scanned_at = Column(DateTime(timezone=True), nullable=False)
+    result = Column(Text, nullable=False)  # signal / no_signal / error
+    scan_count = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "athlete_id", "loop_type", "test_key",
+            name="uq_adsc_athlete_loop_test_key",
+        ),
+        Index("ix_adsc_athlete_loop", "athlete_id", "loop_type"),
+        Index("ix_adsc_athlete_last_scanned", "athlete_id", "last_scanned_at"),
     )

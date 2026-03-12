@@ -329,3 +329,195 @@ def _build_interaction_provenance(candidates: List[Dict[str, Any]]) -> Dict[str,
         },
         "has_inferred_components": False,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: Interaction finding promotion
+# ---------------------------------------------------------------------------
+
+# How many times a candidate must be seen across nightly runs before promoting
+_INTERACTION_PROMOTION_TIMES_SEEN = 3
+
+
+def promote_interaction_findings(
+    athlete_id: UUID,
+    db: Session,
+) -> List[Dict[str, Any]]:
+    """Phase 1 mutation: promote interaction candidates that have been seen
+    in 3+ consecutive nightly runs into real AthleteFinding rows.
+
+    Uses upsert semantics: identity key is
+    `interaction_discovery:{sorted_inputs}:{output_metric}`.
+
+    Returns list of promoted finding dicts.  Caller owns commit.
+    """
+    from models import AutoDiscoveryCandidate, AthleteFinding
+    from services.n1_insight_generator import friendly_signal_name
+    import uuid as _uuid
+
+    now = datetime.utcnow()
+    promoted: List[Dict[str, Any]] = []
+
+    eligible_candidates = (
+        db.query(AutoDiscoveryCandidate)
+        .filter(
+            AutoDiscoveryCandidate.athlete_id == athlete_id,
+            AutoDiscoveryCandidate.candidate_type == "interaction",
+            AutoDiscoveryCandidate.times_seen >= _INTERACTION_PROMOTION_TIMES_SEEN,
+            AutoDiscoveryCandidate.current_status.in_(["open", "approved"]),
+        )
+        .all()
+    )
+
+    for candidate in eligible_candidates:
+        summary = candidate.latest_summary or {}
+        input_a = summary.get("input_a") or ""
+        input_b = summary.get("input_b") or ""
+        output_metric = summary.get("output_metric") or ""
+
+        if not (input_a and output_metric):
+            continue
+
+        inputs_sorted = sorted([input_a, input_b]) if input_b else [input_a]
+        finding_key = f"interaction_discovery:{'_x_'.join(inputs_sorted)}:{output_metric}"
+
+        existing = (
+            db.query(AthleteFinding)
+            .filter(
+                AthleteFinding.athlete_id == athlete_id,
+                AthleteFinding.finding_type == "pairwise_interaction",
+                AthleteFinding.investigation_name == finding_key,
+                AthleteFinding.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+
+        label_a = friendly_signal_name(input_a)
+        label_b = friendly_signal_name(input_b) if input_b else ""
+        label_out = friendly_signal_name(output_metric)
+
+        if input_b:
+            sentence = (
+                f"When {label_a} is high together with {label_b}, "
+                f"your {label_out} changes significantly."
+            )
+        else:
+            sentence = f"Your {label_a} has an interaction effect on {label_out}."
+
+        receipts = {
+            "input_a": input_a,
+            "input_b": input_b,
+            "output_metric": output_metric,
+            "effect_size": summary.get("effect_size"),
+            "interaction_score": summary.get("interaction_score"),
+            "times_seen": candidate.times_seen,
+            "discovery_candidate_id": str(candidate.id),
+        }
+
+        if existing:
+            # Update times_seen tracking and receipts
+            existing_receipts = existing.receipts or {}
+            existing_receipts["times_seen"] = candidate.times_seen
+            existing_receipts["last_confirmed_at"] = now.isoformat()
+            existing.receipts = existing_receipts
+            existing.last_confirmed_at = now
+            db.flush()
+            state = "updated"
+        else:
+            new_finding = AthleteFinding(
+                id=_uuid.uuid4(),
+                athlete_id=athlete_id,
+                investigation_name=finding_key,
+                finding_type="pairwise_interaction",
+                sentence=sentence,
+                receipts=receipts,
+                confidence="suggestive",
+                first_detected_at=now,
+                last_confirmed_at=now,
+                is_active=True,
+            )
+            db.add(new_finding)
+            db.flush()
+            state = "created"
+
+        # Mark candidate as promoted
+        candidate.current_status = "promoted"
+        candidate.updated_at = now
+        db.flush()
+
+        promoted.append({
+            "finding_key": finding_key,
+            "input_a": input_a,
+            "input_b": input_b,
+            "output_metric": output_metric,
+            "state": state,
+            "times_seen": candidate.times_seen,
+        })
+        logger.info(
+            "Interaction Phase 1: %s finding athlete=%s key=%s",
+            state, str(athlete_id), finding_key,
+        )
+
+    return promoted
+
+
+def upsert_scan_coverage(
+    athlete_id: UUID,
+    input_a: str,
+    input_b: Optional[str],
+    output_metric: str,
+    window_days: Optional[int],
+    result: str,
+    db: Session,
+) -> None:
+    """Upsert a scan coverage record for one (athlete, input pair, metric, window).
+
+    `result` must be 'signal', 'no_signal', or 'error'.
+    """
+    from models import AutoDiscoveryScanCoverage
+    import uuid as _uuid
+
+    now = datetime.utcnow()
+    test_key = _make_coverage_key(input_a, input_b, output_metric, window_days)
+
+    existing = (
+        db.query(AutoDiscoveryScanCoverage)
+        .filter(
+            AutoDiscoveryScanCoverage.athlete_id == athlete_id,
+            AutoDiscoveryScanCoverage.loop_type == "interaction_scan",
+            AutoDiscoveryScanCoverage.test_key == test_key,
+        )
+        .first()
+    )
+
+    if existing:
+        existing.last_scanned_at = now
+        existing.result = result
+        existing.scan_count = (existing.scan_count or 0) + 1
+    else:
+        db.add(AutoDiscoveryScanCoverage(
+            id=_uuid.uuid4(),
+            athlete_id=athlete_id,
+            loop_type="interaction_scan",
+            test_key=test_key,
+            input_a=input_a,
+            input_b=input_b,
+            output_metric=output_metric,
+            window_days=window_days,
+            last_scanned_at=now,
+            result=result,
+            scan_count=1,
+        ))
+    db.flush()
+
+
+def _make_coverage_key(
+    input_a: str,
+    input_b: Optional[str],
+    output_metric: str,
+    window_days: Optional[int],
+) -> str:
+    import hashlib, json
+    parts = sorted([input_a, input_b or ""]) + [output_metric, str(window_days or "full")]
+    return hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:32]
+

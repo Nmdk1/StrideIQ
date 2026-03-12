@@ -35,6 +35,10 @@ FLAG_LOOP_INTERACTION = "auto_discovery.loop.interaction"
 FLAG_LOOP_TUNING = "auto_discovery.loop.tuning"
 FLAG_LIVE_MUTATION = "auto_discovery.mutation.live"
 FLAG_ATHLETE_SURFACING = "auto_discovery.surfacing.athlete"
+# Phase 1 per-loop auto-promote flags
+FLAG_AUTO_PROMOTE_STABILITY = "auto_discovery.auto_promote.stability"
+FLAG_AUTO_PROMOTE_FINDINGS = "auto_discovery.auto_promote.findings"
+FLAG_AUTO_PROMOTE_TUNING = "auto_discovery.auto_promote.tuning"
 
 # ─── Gating helpers ────────────────────────────────────────────────────────
 
@@ -71,18 +75,48 @@ def is_tuning_enabled(athlete_id: Optional[str], db: Session) -> bool:
 def is_live_mutation_enabled(athlete_id: Optional[str], db: Session) -> bool:
     """Return True iff live production config mutation is permitted.
 
-    Phase 0: always returns False regardless of flag state — the flag
-    provides the architecture for future phases but is hard-wired off here.
+    Phase 1: driven by the real feature flag.  Default off unless
+    ``auto_discovery.mutation.live`` is explicitly enabled for the athlete.
     """
-    return False  # Phase 0 hard-guard; remove in Phase 1 after explicit approval
+    return (
+        is_auto_discovery_enabled(athlete_id, db)
+        and is_feature_enabled(FLAG_LIVE_MUTATION, athlete_id, db)
+    )
 
 
 def is_athlete_surfacing_enabled(athlete_id: Optional[str], db: Session) -> bool:
     """Return True iff athlete-facing output surfacing is permitted.
 
-    Phase 0: always returns False — shadow mode only.
+    Phase 1: driven by the real feature flag.
     """
-    return False  # Phase 0 hard-guard; remove after explicit approval
+    return (
+        is_auto_discovery_enabled(athlete_id, db)
+        and is_feature_enabled(FLAG_ATHLETE_SURFACING, athlete_id, db)
+    )
+
+
+def is_auto_promote_stability_enabled(athlete_id: Optional[str], db: Session) -> bool:
+    """Return True iff stability annotations auto-apply."""
+    return (
+        is_live_mutation_enabled(athlete_id, db)
+        and is_feature_enabled(FLAG_AUTO_PROMOTE_STABILITY, athlete_id, db)
+    )
+
+
+def is_auto_promote_findings_enabled(athlete_id: Optional[str], db: Session) -> bool:
+    """Return True iff new deep-window findings auto-create."""
+    return (
+        is_live_mutation_enabled(athlete_id, db)
+        and is_feature_enabled(FLAG_AUTO_PROMOTE_FINDINGS, athlete_id, db)
+    )
+
+
+def is_auto_promote_tuning_enabled(athlete_id: Optional[str], db: Session) -> bool:
+    """Return True iff proven tuning improvements auto-apply."""
+    return (
+        is_live_mutation_enabled(athlete_id, db)
+        and is_feature_enabled(FLAG_AUTO_PROMOTE_TUNING, athlete_id, db)
+    )
 
 
 # ─── Seed helper (for migrations / management commands) ────────────────────
@@ -123,5 +157,23 @@ SEED_FLAGS: list[dict] = [
         "enabled": False,
         "rollout_percentage": 0,
         "description": "Athlete-facing output surfacing (Phase 1+, never in Phase 0)",
+    },
+    {
+        "key": FLAG_AUTO_PROMOTE_STABILITY,
+        "enabled": False,
+        "rollout_percentage": 0,
+        "description": "AutoDiscovery: auto-apply stability annotations (Phase 1)",
+    },
+    {
+        "key": FLAG_AUTO_PROMOTE_FINDINGS,
+        "enabled": False,
+        "rollout_percentage": 0,
+        "description": "AutoDiscovery: auto-create deep-window findings (Phase 1)",
+    },
+    {
+        "key": FLAG_AUTO_PROMOTE_TUNING,
+        "enabled": False,
+        "rollout_percentage": 0,
+        "description": "AutoDiscovery: auto-apply proven tuning improvements (Phase 1)",
     },
 ]

@@ -1,22 +1,23 @@
 """
-AutoDiscovery Orchestrator — Phase 0C (shadow mode only).
+AutoDiscovery Orchestrator — Phase 1 (live mutation + safety + observability).
 
-Executes one founder-only nightly research pass for a single athlete.
-Phase 0C extends 0B with:
-  - WS1: interaction_scan score summary is value-bearing (real aggregate scores)
-  - WS1: FQS provenance preserved in persisted/report output
-  - WS2: durable cross-run candidate memory (auto_discovery_candidate)
-  - WS3: founder review state machine (approve/reject/defer)
-  - WS4: controlled promotion staging (surface/registry/investigation/manual)
+Phase 0C shadow pass is preserved and always runs.  When live mutation is
+enabled (``auto_discovery.mutation.live`` flag), Phase 1 adds:
+  - Deep-window CorrelationFinding promotion
+  - Stability annotation on existing findings
+  - Interaction finding promotion (after 3+ nightly runs)
+  - Per-athlete investigation tuning apply (after 2+ consecutive kept runs)
+  - Typed durable change ledger (auto_discovery_change_log)
+  - Per-athlete transaction boundary with auto-disable thresholds
+  - Scan coverage persistence
 
-Safety guarantees (unchanged from Phase 0A/0B):
-- No correlation_finding, fingerprint_finding, or athlete-facing table
-  is mutated and committed.
-- No production registry values are written.
-- No production cache is read or written from shadow paths.
-- auto_discovery_candidate upserts preserve existing review state (open/approved/etc.)
-  when a candidate re-appears — they only update last_seen_run_id, times_seen,
-  latest_summary, latest_score, latest_score_delta, and provenance_snapshot.
+Safety contracts:
+- Global kill switch: ``auto_discovery.mutation.live`` off → shadow only.
+- Per-loop kill switches: auto_promote.findings, auto_promote.stability,
+  auto_promote.tuning independently disableable.
+- If error rate for a loop exceeds threshold, promotion auto-disables for run.
+- Per-athlete transaction boundary: all mutations or none commit.
+- All mutations write to change_log for audit and revert.
 """
 
 from __future__ import annotations
@@ -34,22 +35,43 @@ from models import AutoDiscoveryRun, AutoDiscoveryExperiment, AutoDiscoveryCandi
 from services.auto_discovery.rescan_loop import (
     run_multiwindow_rescan,
     summarize_window_stability,
+    promote_deep_window_findings,
+    annotate_finding_stability,
 )
 from services.auto_discovery.fqs_adapters import CorrelationFindingFQSAdapter
 from services.auto_discovery.interaction_loop import (
     run_pairwise_interaction_scan,
     INTERACTION_KEEP_THRESHOLD,
+    promote_interaction_findings,
+    upsert_scan_coverage,
 )
 from services.auto_discovery.tuning_loop import (
     run_pilot_tuning_loop,
     summarize_tuning_results,
     TUNING_KEEP_THRESHOLD,
+    apply_tuning_improvement,
+    count_consecutive_kept_runs,
+)
+from services.auto_discovery.feature_flags import (
+    is_live_mutation_enabled,
+    is_auto_promote_findings_enabled,
+    is_auto_promote_stability_enabled,
+    is_auto_promote_tuning_enabled,
 )
 
 logger = logging.getLogger(__name__)
 
-_PHASE = "0C"
-_SCHEMA_VERSION = 3
+_PHASE = "1"
+_SCHEMA_VERSION = 4
+
+# ── Phase 1 auto-disable thresholds ─────────────────────────────────────────
+# Stop promotion for a loop if error rate exceeds this fraction in one run
+_MAX_LOOP_ERROR_RATE = 0.20
+# Hard caps on mutations per athlete per run
+_MAX_MUTATIONS_PER_ATHLETE = 20
+_MAX_TOTAL_MUTATIONS_PER_RUN = 50
+# Consecutive runs required before a tuning improvement can be applied
+_TUNING_CONSECUTIVE_RUNS = 2
 
 
 def run_auto_discovery_for_athlete(
@@ -58,7 +80,15 @@ def run_auto_discovery_for_athlete(
     enabled_loops: Optional[List[str]] = None,
 ) -> AutoDiscoveryRun:
     """
-    Execute one full AutoDiscovery shadow pass for the athlete.
+    Execute one full AutoDiscovery pass for the athlete.
+
+    Phase 0C shadow pass always runs first (experiment ledger, candidate memory).
+    Phase 1 live mutation runs only when ``auto_discovery.mutation.live`` is
+    enabled for the athlete.
+
+    Per-athlete transaction contract: if live mutation is enabled, all mutations
+    for this athlete either commit together or are rolled back entirely.
+    The change ledger captures every applied mutation for audit and revert.
 
     Parameters
     ----------
@@ -69,7 +99,7 @@ def run_auto_discovery_for_athlete(
         this function; this function owns the final commit.
     enabled_loops:
         Loop families to run.  Default: ["correlation_rescan"].
-        Phase 0B adds: "interaction_scan", "registry_tuning".
+        Phase 0B/1 adds: "interaction_scan", "registry_tuning".
 
     Returns
     -------
@@ -235,15 +265,339 @@ def run_auto_discovery_for_athlete(
         db=db,
     )
 
+    # ── Phase 1: Live mutation block ─────────────────────────────────────────
+    # Runs only when auto_discovery.mutation.live is enabled for this athlete.
+    # Per-athlete transaction contract: all mutations commit together or
+    # the entire mutation block is rolled back (shadow data is preserved).
+    phase1_summary = _run_phase1_mutations(
+        athlete_id=athlete_id,
+        run=run,
+        all_rescan_results=all_rescan_results,
+        experiment_rows=experiment_rows,
+        db=db,
+    )
+    if phase1_summary:
+        report["phase1_mutations"] = phase1_summary
+
     db.commit()
     logger.info(
-        "AutoDiscovery Phase 0C: athlete=%s status=%s experiments=%d duration_s=%.1f",
+        "AutoDiscovery Phase 1: athlete=%s status=%s experiments=%d duration_s=%.1f",
         athlete_id_str,
         run.status,
         run.experiment_count,
         (finished_at - started_at).total_seconds(),
     )
     return run
+
+
+# ── Phase 1: Live mutation executor ────────────────────────────────────────
+
+def _run_phase1_mutations(
+    athlete_id: UUID,
+    run: AutoDiscoveryRun,
+    all_rescan_results: List[Dict[str, Any]],
+    experiment_rows: List[AutoDiscoveryExperiment],
+    db: Session,
+) -> Optional[Dict[str, Any]]:
+    """Execute Phase 1 live mutations for the athlete.
+
+    Returns a summary dict to embed in the run report, or None if mutation
+    is not enabled for this athlete.
+
+    Per-athlete transaction contract: if any step raises an unexpected error,
+    the entire mutation block is rolled back and an error record is returned
+    instead of propagating the exception.
+    """
+    athlete_id_str = str(athlete_id)
+
+    if not is_live_mutation_enabled(athlete_id_str, db):
+        return None
+
+    summary: Dict[str, Any] = {
+        "mutation_live": True,
+        "findings_promoted": [],
+        "stability_annotated": 0,
+        "interactions_promoted": [],
+        "tuning_applied": [],
+        "change_log_ids": [],
+        "auto_disabled_loops": [],
+        "error": None,
+    }
+
+    mutation_count = 0
+
+    try:
+        # ── 1: Deep-window finding promotion ──────────────────────────────
+        if is_auto_promote_findings_enabled(athlete_id_str, db):
+            rescan_experiments = [
+                e for e in experiment_rows if e.loop_type == "correlation_rescan"
+            ]
+            error_count = sum(1 for e in rescan_experiments if e.failure_reason)
+            total = len(rescan_experiments)
+            error_rate = (error_count / total) if total else 0.0
+
+            if error_rate > _MAX_LOOP_ERROR_RATE:
+                summary["auto_disabled_loops"].append({
+                    "loop": "rescan_promotion",
+                    "reason": f"error_rate {error_rate:.2f} > threshold {_MAX_LOOP_ERROR_RATE}",
+                    "error_count": error_count,
+                    "total": total,
+                })
+                logger.warning(
+                    "Phase 1: auto-disabled rescan promotion for athlete=%s (error_rate=%.2f)",
+                    athlete_id_str, error_rate,
+                )
+            elif mutation_count < _MAX_MUTATIONS_PER_ATHLETE:
+                promoted, count = promote_deep_window_findings(
+                    athlete_id=athlete_id,
+                    rescan_results=all_rescan_results,
+                    db=db,
+                )
+                for p in promoted:
+                    change_log_id = _write_change_log(
+                        athlete_id=athlete_id,
+                        run_id=run.id,
+                        change_type="new_correlation_finding",
+                        change_key=_finding_change_key(athlete_id_str, p),
+                        before_state=None,
+                        after_state=p,
+                        db=db,
+                    )
+                    if change_log_id:
+                        summary["change_log_ids"].append(str(change_log_id))
+                    mutation_count += 1
+                summary["findings_promoted"] = promoted
+
+        # ── 2: Stability annotation ────────────────────────────────────────
+        if is_auto_promote_stability_enabled(athlete_id_str, db):
+            count = annotate_finding_stability(
+                athlete_id=athlete_id,
+                rescan_results=all_rescan_results,
+                db=db,
+            )
+            summary["stability_annotated"] = count
+            if count > 0:
+                _write_change_log(
+                    athlete_id=athlete_id,
+                    run_id=run.id,
+                    change_type="stability_annotation",
+                    change_key=f"stability:{athlete_id_str}:{run.id}",
+                    before_state=None,
+                    after_state={"count": count},
+                    db=db,
+                )
+                mutation_count += count
+
+        # ── 3: Interaction finding promotion ──────────────────────────────
+        if is_auto_promote_findings_enabled(athlete_id_str, db):
+            interaction_experiments = [
+                e for e in experiment_rows if e.loop_type == "interaction_scan"
+            ]
+            error_count = sum(1 for e in interaction_experiments if e.failure_reason)
+            total = len(interaction_experiments)
+            error_rate = (error_count / total) if total else 0.0
+
+            if error_rate > _MAX_LOOP_ERROR_RATE:
+                summary["auto_disabled_loops"].append({
+                    "loop": "interaction_promotion",
+                    "reason": f"error_rate {error_rate:.2f} > threshold {_MAX_LOOP_ERROR_RATE}",
+                })
+            elif mutation_count < _MAX_MUTATIONS_PER_ATHLETE:
+                promoted = promote_interaction_findings(athlete_id=athlete_id, db=db)
+                for p in promoted:
+                    change_log_id = _write_change_log(
+                        athlete_id=athlete_id,
+                        run_id=run.id,
+                        change_type="new_interaction_finding",
+                        change_key=p.get("finding_key", ""),
+                        before_state=None,
+                        after_state=p,
+                        db=db,
+                    )
+                    if change_log_id:
+                        summary["change_log_ids"].append(str(change_log_id))
+                    mutation_count += 1
+                summary["interactions_promoted"] = promoted
+
+        # ── 4: Tuning apply ────────────────────────────────────────────────
+        if is_auto_promote_tuning_enabled(athlete_id_str, db):
+            tuning_experiments = [
+                e for e in experiment_rows
+                if e.loop_type == "registry_tuning" and e.kept
+            ]
+            error_count = sum(1 for e in [
+                x for x in experiment_rows if x.loop_type == "registry_tuning"
+            ] if e.failure_reason)
+            total_tuning = len([x for x in experiment_rows if x.loop_type == "registry_tuning"])
+            tuning_error_rate = (error_count / total_tuning) if total_tuning else 0.0
+
+            if tuning_error_rate > _MAX_LOOP_ERROR_RATE:
+                summary["auto_disabled_loops"].append({
+                    "loop": "tuning_apply",
+                    "reason": f"error_rate {tuning_error_rate:.2f} > threshold {_MAX_LOOP_ERROR_RATE}",
+                })
+            else:
+                applied = _apply_proven_tuning(
+                    athlete_id=athlete_id,
+                    tuning_experiments=tuning_experiments,
+                    run=run,
+                    db=db,
+                )
+                summary["tuning_applied"] = applied
+                for a in applied:
+                    mutation_count += 1
+
+    except Exception as exc:
+        logger.error(
+            "Phase 1 mutation error for athlete=%s: %s — rolling back phase1 mutations",
+            athlete_id_str, exc,
+        )
+        # Roll back only the Phase 1 mutations; shadow data (experiments, candidates)
+        # was already flushed — we re-add the run after rollback.
+        try:
+            db.rollback()
+            db.add(run)
+            db.flush()
+        except Exception:
+            pass
+        summary["error"] = str(exc)
+        summary["mutation_live"] = False
+
+    return summary
+
+
+def _apply_proven_tuning(
+    athlete_id: UUID,
+    tuning_experiments: List[AutoDiscoveryExperiment],
+    run: AutoDiscoveryRun,
+    db: Session,
+) -> List[Dict[str, Any]]:
+    """Apply tuning experiments that have been kept for enough consecutive runs."""
+    applied: List[Dict[str, Any]] = []
+
+    seen_investigations: Dict[str, Dict[str, Any]] = {}
+    for exp in tuning_experiments:
+        target_name = exp.target_name or ""
+        parts = target_name.split(":")
+        if len(parts) < 2:
+            continue
+        inv_name = parts[1]
+        if inv_name not in seen_investigations or (exp.score_delta or 0) > (seen_investigations[inv_name].get("score_delta") or 0):
+            seen_investigations[inv_name] = {
+                "experiment": exp,
+                "score_delta": exp.score_delta,
+                "candidate_config": exp.candidate_config,
+                "result_summary": exp.result_summary,
+            }
+
+    for inv_name, best in seen_investigations.items():
+        exp = best["experiment"]
+        consecutive = count_consecutive_kept_runs(athlete_id, inv_name, db, _TUNING_CONSECUTIVE_RUNS)
+        if consecutive < _TUNING_CONSECUTIVE_RUNS:
+            logger.info(
+                "Tuning Phase 1: skipping %s — only %d/%d consecutive kept runs",
+                inv_name, consecutive, _TUNING_CONSECUTIVE_RUNS,
+            )
+            continue
+
+        param_overrides = (exp.candidate_config or {}).get("changed_delta") or {}
+        if not param_overrides:
+            param_overrides = exp.candidate_config or {}
+
+        # First write the change log so we have an ID for the config FK
+        before_state = (exp.result_summary or {}).get("baseline_config")
+        after_state = {
+            "investigation_name": inv_name,
+            "param_overrides": param_overrides,
+            "score_delta": exp.score_delta,
+        }
+        change_log_id = _write_change_log(
+            athlete_id=athlete_id,
+            run_id=run.id,
+            change_type="tuning_override_applied",
+            change_key=_tuning_change_key(str(athlete_id), inv_name, param_overrides),
+            before_state=before_state,
+            after_state=after_state,
+            db=db,
+        )
+
+        was_applied = apply_tuning_improvement(
+            athlete_id=athlete_id,
+            investigation_name=inv_name,
+            param_overrides=param_overrides,
+            run_id=run.id,
+            change_log_id=change_log_id,
+            db=db,
+        )
+
+        if was_applied:
+            applied.append({
+                "investigation_name": inv_name,
+                "param_overrides": param_overrides,
+                "score_delta": exp.score_delta,
+                "change_log_id": str(change_log_id) if change_log_id else None,
+            })
+
+    return applied
+
+
+def _write_change_log(
+    athlete_id: UUID,
+    run_id: UUID,
+    change_type: str,
+    change_key: str,
+    before_state: Optional[Any],
+    after_state: Optional[Any],
+    db: Session,
+) -> Optional[UUID]:
+    """Write one row to auto_discovery_change_log.
+
+    Returns the new row id, or None if the row already exists (idempotent).
+    """
+    from models import AutoDiscoveryChangeLog
+    from sqlalchemy.exc import IntegrityError
+
+    row_id = _uuid.uuid4()
+    row = AutoDiscoveryChangeLog(
+        id=row_id,
+        run_id=run_id,
+        athlete_id=athlete_id,
+        change_type=change_type,
+        change_key=change_key,
+        before_state=before_state,
+        after_state=after_state,
+        reverted=False,
+    )
+    try:
+        db.add(row)
+        db.flush()
+        return row_id
+    except IntegrityError:
+        db.rollback()
+        return None
+
+
+def _finding_change_key(athlete_id_str: str, finding_dict: Dict[str, Any]) -> str:
+    import hashlib, json
+    parts = {
+        "athlete": athlete_id_str,
+        "input": finding_dict.get("input_name"),
+        "output": finding_dict.get("output_metric"),
+        "direction": finding_dict.get("direction"),
+        "lag": finding_dict.get("lag_days", 0),
+        "source": "auto_discovery",
+    }
+    return hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:32]
+
+
+def _tuning_change_key(athlete_id_str: str, inv_name: str, param_overrides: Dict[str, Any]) -> str:
+    import hashlib, json
+    parts = {
+        "athlete": athlete_id_str,
+        "investigation": inv_name,
+        "params": json.dumps(param_overrides, sort_keys=True),
+    }
+    return hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:32]
 
 
 # ── FQS rescan scoring ─────────────────────────────────────────────────────

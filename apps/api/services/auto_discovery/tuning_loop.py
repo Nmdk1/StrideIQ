@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
@@ -380,3 +381,145 @@ def _build_tuning_provenance(adapter: Any) -> Dict[str, Any]:
         "component_quality": quality,
         "has_inferred_components": has_inferred,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: Per-athlete tuning apply
+# ---------------------------------------------------------------------------
+
+# How many consecutive kept runs before applying a tuning improvement
+_CONSECUTIVE_RUNS_REQUIRED = 2
+
+
+def apply_tuning_improvement(
+    athlete_id: UUID,
+    investigation_name: str,
+    param_overrides: dict,
+    run_id: "UUID",
+    change_log_id: "UUID",
+    db: Session,
+) -> bool:
+    """Phase 1 mutation: apply a proven tuning improvement as a per-athlete
+    investigation config override.
+
+    Enforces single-active-config rule: only one active (non-reverted) config
+    per athlete × investigation is allowed.
+
+    Returns True if applied (new or updated), False if already identical config
+    is active (idempotent).
+    """
+    from models import AthleteInvestigationConfig
+    import uuid as _uuid
+    import json
+
+    now = datetime.utcnow()
+
+    # Check for existing active config with the same override (idempotent)
+    existing_active = (
+        db.query(AthleteInvestigationConfig)
+        .filter(
+            AthleteInvestigationConfig.athlete_id == athlete_id,
+            AthleteInvestigationConfig.investigation_name == investigation_name,
+            AthleteInvestigationConfig.reverted == False,  # noqa: E712
+        )
+        .order_by(AthleteInvestigationConfig.applied_at.desc())
+        .first()
+    )
+
+    if existing_active:
+        try:
+            if json.dumps(existing_active.param_overrides, sort_keys=True) == json.dumps(param_overrides, sort_keys=True):
+                logger.info(
+                    "Tuning Phase 1: idempotent skip — identical config already active "
+                    "for athlete=%s investigation=%s", str(athlete_id), investigation_name,
+                )
+                return False
+        except Exception:
+            pass
+
+    config = AthleteInvestigationConfig(
+        id=_uuid.uuid4(),
+        athlete_id=athlete_id,
+        investigation_name=investigation_name,
+        param_overrides=param_overrides,
+        applied_from_run_id=run_id,
+        applied_change_log_id=change_log_id,
+        applied_at=now,
+        reverted=False,
+    )
+    db.add(config)
+    db.flush()
+    logger.info(
+        "Tuning Phase 1: applied config athlete=%s investigation=%s overrides=%s",
+        str(athlete_id), investigation_name, param_overrides,
+    )
+    return True
+
+
+def get_active_param_overrides(
+    athlete_id: UUID,
+    investigation_name: str,
+    db: Session,
+) -> Optional[Dict[str, Any]]:
+    """Return the current active param_overrides for this athlete × investigation,
+    or None if no override is active (use registry defaults).
+    """
+    from models import AthleteInvestigationConfig
+
+    config = (
+        db.query(AthleteInvestigationConfig)
+        .filter(
+            AthleteInvestigationConfig.athlete_id == athlete_id,
+            AthleteInvestigationConfig.investigation_name == investigation_name,
+            AthleteInvestigationConfig.reverted == False,  # noqa: E712
+        )
+        .order_by(AthleteInvestigationConfig.applied_at.desc())
+        .first()
+    )
+    return config.param_overrides if config else None
+
+
+def count_consecutive_kept_runs(
+    athlete_id: UUID,
+    investigation_name: str,
+    db: Session,
+    window: int = _CONSECUTIVE_RUNS_REQUIRED,
+) -> int:
+    """Count how many of the last N runs had this investigation kept.
+    Used to enforce the consecutive-run threshold before promoting a tuning change.
+    """
+    from models import AutoDiscoveryExperiment, AutoDiscoveryRun
+
+    recent_experiments = (
+        db.query(AutoDiscoveryExperiment)
+        .join(AutoDiscoveryRun, AutoDiscoveryExperiment.run_id == AutoDiscoveryRun.id)
+        .filter(
+            AutoDiscoveryExperiment.athlete_id == athlete_id,
+            AutoDiscoveryExperiment.loop_type == "registry_tuning",
+            AutoDiscoveryExperiment.target_name.contains(investigation_name),
+        )
+        .order_by(AutoDiscoveryRun.started_at.desc())
+        .limit(window)
+        .all()
+    )
+    return sum(1 for e in recent_experiments if e.kept)
+
+
+def run_investigation_with_athlete_overrides(
+    athlete_id: UUID,
+    investigation_name: str,
+    db: Session,
+) -> Tuple[list, Optional[str], Optional[dict]]:
+    """Run an investigation using any active per-athlete param overrides.
+
+    Used by the daily sweep and race input analysis to incorporate Phase 1 tuning.
+    Returns (findings, error_str, applied_overrides_or_None).
+    """
+    active_overrides = get_active_param_overrides(athlete_id, investigation_name, db)
+    if active_overrides:
+        findings, err = _run_with_config(investigation_name, active_overrides, athlete_id, db)
+        return findings, err, active_overrides
+    else:
+        findings, err = _run_with_config(investigation_name, {}, athlete_id, db)
+        return findings, err, None
+
