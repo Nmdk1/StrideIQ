@@ -2,11 +2,23 @@
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
 **Last updated:** March 12, 2026
-**Last updated by:** Builder session — Garmin flake fix + Phase 3C graduation controls
+**Last updated by:** Builder session — Phase 3B graduation controls
+
+---
+
+## 0. Delta Since Last Audit (Mar 12 — 3B graduation)
+
+Shipped and now live in product/system behavior:
+
+- **Phase 3B Graduation Controls (Mar 12, 2026)**:
 
 ---
 
 ## 0. Delta Since Last Audit (Mar 11 -> Mar 12)
+
+Shipped and now live in product/system behavior:
+
+- **Garmin Sync Test Flake Fixed (Mar 12, 2026)**: Graduation layer added on top of the already-built 3B workout narrative generator. **(1) Global kill switch in generator** — `STRIDEIQ_3B_KILL_SWITCH` env var now checked directly inside `generate_workout_narrative()`, not just in the router eligibility path. This means the kill switch is enforced even when the generator is called directly from tasks or scripts. DB FeatureFlag fallback also wired. Machine-readable `suppression_reason="3B workout narratives globally disabled (kill_switch)."` returned. Env var also surfaced as `kill_switch_active` field in `WorkoutNarrativeResponse`. **(2) Gate-aware rollout state** — `WorkoutNarrativeResponse` now includes `gate_open: bool` (True only when narration accuracy > 90% for 4 weeks) and `kill_switch_active: bool`. Provisional eligibility (gate not yet met) is explicit and machine-readable. **Preflight gate state:** `/v1/intelligence/narration/quality` currently returns `passes_90_threshold=false` (no production `NarrationLog.score` rows yet). Rollout is founder-controlled/provisional. **(3) Founder review endpoint** — `GET /v1/intelligence/admin/narrative-review` (founder-gated, not tier-gated; `Depends(get_current_user)` + explicit founder check): returns `NarrationLog` rows with `rule_id="WORKOUT_NARRATIVE"`, including narrative text, prompt, model, tokens, latency, suppression state, `quality_score` breakdown, and eligibility context. Query params: `athlete_id` (UUID, 422 on malformed), `limit` (default 50 for first-50 review), `days` (default 28), `suppressed_only` (for suppression diagnostics). **(4) 4-criterion quality scorer** — new `score_narrative_quality(text, ctx, recent_narratives)` function in `workout_narrative_generator.py` scores each narrative on: `contextual` (has specific week/phase/recent/upcoming reference), `non_repetitive` (not >50% token overlap with recent), `physiologically_sound` (no intensity encouragement in wrong context), `tone_rules_ok` (no banned metrics, no prescriptive drift, no generic sludge). Each criterion returns a pass/fail bool + machine-readable `_fail_reason` label for founder triage. `criteria_passed` (0-4) and `score` (0.0-1.0) computed. **(5) Quality score persisted** — `quality_score` dict now stored in `NarrationLog.ground_truth['quality_score']` on every generated narrative, making it available for founder review without re-scoring. **(6) Per-narrative suppression unchanged** — banned metric check, intensity-in-taper guard, and similarity >50% suppression all remain independent of the global kill switch. **(7) Rollout surface unchanged** — `GET /v1/intelligence/workout-narrative/{target_date}` remains the only 3B product surface. No UI expansion in this pass. **(8) Runtime cap contract preserved** — no changes to `ai_coach.py` cap logic; `COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP` and `COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP` as separate hard caps unchanged. 30 new tests in `test_phase3b_graduation.py`. Autouse `_kill_switch_off` fixture added to `test_workout_narrative_generator.py` to prevent FeatureFlag DB query from consuming mock slots. 161 total tests pass (24 xfailed expected). 3B contract tests remain xfailed pending gate open.
 
 Shipped and now live in product/system behavior:
 

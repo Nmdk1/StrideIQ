@@ -356,6 +356,10 @@ class WorkoutNarrativeResponse(BaseModel):
     suppressed: bool = False
     reason: Optional[str] = None
     eligibility: Optional[dict] = None
+    # Gate-aware rollout state — explicit so callers know whether this is
+    # confirmed-gate-open or provisional (gate not yet met).
+    kill_switch_active: bool = False
+    gate_open: bool = False          # True only when narration accuracy > 90% for 4 weeks
 
 
 @router.get(
@@ -373,8 +377,17 @@ def get_workout_narrative(
     Premium tier only.  Returns a fresh narrative on each request —
     never cached, never templated.  If the generator can't produce
     something genuinely contextual, returns null narrative with reason.
+
+    Gate-aware rollout:
+    - gate_open=False + provisional=True → eligible athlete but global quality
+      gate not yet met; rollout remains founder-controlled.
+    - gate_open=True → global 90%-for-4-weeks gate is met.
     """
-    from services.phase3_eligibility import get_3b_eligibility
+    import os
+    from services.phase3_eligibility import get_3b_eligibility, KILL_SWITCH_3B_ENV, NARRATION_QUALITY_GATE
+    from services.workout_narrative_generator import KILL_SWITCH_3B_ENV as _GEN_KS_ENV
+
+    kill_switch_active = os.getenv(KILL_SWITCH_3B_ENV, "").lower() in ("1", "true", "yes")
 
     elig = get_3b_eligibility(current_user.id, db, as_of=target_date)
     eligibility_dict = {
@@ -383,12 +396,15 @@ def get_workout_narrative(
         "confidence": elig.confidence,
         "provisional": elig.provisional,
     }
+    gate_open = elig.eligible and not elig.provisional
 
     if not elig.eligible:
         return WorkoutNarrativeResponse(
             suppressed=True,
             reason=elig.reason,
             eligibility=eligibility_dict,
+            kill_switch_active=kill_switch_active,
+            gate_open=False,
         )
 
     # Generate narrative
@@ -409,8 +425,7 @@ def get_workout_narrative(
         gemini_client=gemini_client,
     )
 
-    # Persist audit record for founder QA review (first 50 narratives).
-    # Uses the existing NarrationLog table with rule_id="WORKOUT_NARRATIVE".
+    # Persist audit record — includes 4-criterion quality_score for founder QA.
     try:
         log = NarrationLog(
             athlete_id=current_user.id,
@@ -424,10 +439,10 @@ def get_workout_narrative(
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             latency_ms=result.latency_ms,
-            # Store eligibility evidence as ground_truth for review
             ground_truth={
                 "eligibility": eligibility_dict,
                 "suppression_reason": result.suppression_reason,
+                "quality_score": result.quality_score,
             },
         )
         db.add(log)
@@ -441,4 +456,122 @@ def get_workout_narrative(
         suppressed=result.suppressed,
         reason=result.suppression_reason,
         eligibility=eligibility_dict,
+        kill_switch_active=kill_switch_active,
+        gate_open=gate_open,
+    )
+
+
+# =============================================================================
+# Phase 3B: Founder Admin Review Surface
+# =============================================================================
+
+class NarrativeReviewItem(BaseModel):
+    """Single workout narrative audit entry for founder review."""
+    id: UUID
+    athlete_id: UUID
+    trigger_date: date
+    narrative: Optional[str] = None
+    suppressed: bool = False
+    suppression_reason: Optional[str] = None
+    prompt_used: Optional[str] = None
+    model_used: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    latency_ms: Optional[int] = None
+    quality_score: Optional[dict] = None   # 4-criterion breakdown
+    eligibility_context: Optional[dict] = None
+    created_at: Optional[datetime] = None
+
+
+class NarrativeReviewResponse(BaseModel):
+    """Batch of 3B workout narrative audit records for founder review."""
+    generated_at: str
+    kill_switch_active: bool
+    gate_open: bool
+    total: int
+    items: List[NarrativeReviewItem]
+
+
+def _is_founder_3b(current_user: Athlete) -> bool:
+    """Check if current user is the founder (mbshaf@gmail.com or OWNER_ATHLETE_ID)."""
+    import os
+    owner_id = os.getenv("OWNER_ATHLETE_ID", "")
+    return str(current_user.id) == owner_id or getattr(current_user, "email", "") == "mbshaf@gmail.com"
+
+
+@router.get("/admin/narrative-review", response_model=NarrativeReviewResponse)
+def founder_review_narratives(
+    athlete_id: Optional[UUID] = Query(None, description="Filter to specific athlete UUID"),
+    limit: int = Query(50, ge=1, le=200, description="Max records; default 50 covers first-50 review"),
+    days: int = Query(28, ge=1, le=365, description="Look-back window in days"),
+    suppressed_only: bool = Query(False, description="Return only suppressed narratives"),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Founder-only: Review Phase 3B workout narrative audit records.
+
+    Designed for:
+    - First-50 review (limit=50, no other filters) before broader rollout.
+    - Weekly sample review (days=7).
+    - Suppression diagnostics (suppressed_only=True).
+
+    Auth: founder-gated (not tier-gated).  A founder with any subscription
+    tier reaches this endpoint.  Non-founders get 403.
+    UUID params are schema-validated — malformed athlete_id returns 422.
+    """
+    if not _is_founder_3b(current_user):
+        raise HTTPException(status_code=403, detail="Founder-only endpoint.")
+
+    import os
+    from datetime import datetime as _dt
+    from services.phase3_eligibility import KILL_SWITCH_3B_ENV, NARRATION_QUALITY_GATE
+
+    kill_switch_active = os.getenv(KILL_SWITCH_3B_ENV, "").lower() in ("1", "true", "yes")
+    from sqlalchemy import desc as _desc
+    from models import NarrationLog as _NarrationLog
+
+    cutoff = date.today() - timedelta(days=days)
+    q = db.query(_NarrationLog).filter(
+        _NarrationLog.rule_id == "WORKOUT_NARRATIVE",
+        _NarrationLog.trigger_date >= cutoff,
+    )
+    if athlete_id is not None:
+        q = q.filter(_NarrationLog.athlete_id == athlete_id)
+    if suppressed_only:
+        q = q.filter(_NarrationLog.suppressed.is_(True))
+
+    rows = q.order_by(_desc(_NarrationLog.created_at)).limit(limit).all()
+
+    # Determine global gate status from recent non-suppressed narratives
+    from services.phase3_eligibility import _narration_quality_score
+    quality = _narration_quality_score(db)
+    gate_open = quality is not None and quality >= NARRATION_QUALITY_GATE
+
+    items = []
+    for row in rows:
+        gt = row.ground_truth or {}
+        items.append(NarrativeReviewItem(
+            id=row.id,
+            athlete_id=row.athlete_id,
+            trigger_date=row.trigger_date,
+            narrative=row.narration_text,
+            suppressed=row.suppressed,
+            suppression_reason=row.suppression_reason,
+            prompt_used=row.prompt_used,
+            model_used=row.model_used,
+            input_tokens=row.input_tokens,
+            output_tokens=row.output_tokens,
+            latency_ms=row.latency_ms,
+            quality_score=gt.get("quality_score"),
+            eligibility_context=gt.get("eligibility"),
+            created_at=row.created_at,
+        ))
+
+    return NarrativeReviewResponse(
+        generated_at=_dt.utcnow().isoformat() + "Z",
+        kill_switch_active=kill_switch_active,
+        gate_open=gate_open,
+        total=len(items),
+        items=items,
     )

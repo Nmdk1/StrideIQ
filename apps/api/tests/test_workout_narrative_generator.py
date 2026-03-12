@@ -8,6 +8,7 @@ Covers:
 - Physiological guardrails (no intensity after long run / taper).
 - LLM error handling.
 """
+import os
 import pytest
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
@@ -26,7 +27,18 @@ from services.workout_narrative_generator import (
     _is_too_similar,
     WorkoutNarrativeResult,
     SIMILARITY_THRESHOLD,
+    KILL_SWITCH_3B_ENV,
 )
+
+
+@pytest.fixture(autouse=True)
+def _kill_switch_off(monkeypatch):
+    """Ensure kill switch is explicitly off for all generator tests.
+
+    This prevents the FeatureFlag DB lookup from running (which would consume
+    a mock DB query slot and cause context-building tests to fail).
+    """
+    monkeypatch.setenv(KILL_SWITCH_3B_ENV, "false")
 
 
 # ---------------------------------------------------------------------------
