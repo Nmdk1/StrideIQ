@@ -468,3 +468,94 @@ class TestMigrationIntegrity:
         migration_file = api_root / "alembic" / "versions" / "phase3c_001_n1_insight_suppression.py"
         content = migration_file.read_text()
         assert "uq_n1_suppression_athlete_fingerprint" in content
+
+
+# ===========================================================================
+# 7. Admin route hardening
+# ===========================================================================
+
+class TestAdminRouteHardening:
+    """
+    Route-level regression tests for the two medium findings closed in 5c23491:
+      - UUID inputs validated at request boundary (422 on malformed, not 500)
+      - Founder auth stands alone — no tier gate blocks founder routes
+    """
+
+    def _make_app_with_overrides(self, athlete):
+        """Return (app, TestClient) with user + db dependency overrides applied."""
+        from fastapi.testclient import TestClient
+        from main import app
+        from core.auth import get_current_user
+        from core.database import get_db
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        db.query.return_value.filter.return_value.all.return_value = []
+
+        app.dependency_overrides[get_current_user] = lambda: athlete
+        app.dependency_overrides[get_db] = lambda: db
+        client = TestClient(app, raise_server_exceptions=False)
+        return app, client
+
+    def test_malformed_uuid_on_n1_review_returns_422(self):
+        """GET /admin/n1-review with non-UUID athlete_id must return 422, not 500."""
+        founder = _make_athlete(tier="guided")
+        founder.email = "mbshaf@gmail.com"
+        app, client = self._make_app_with_overrides(founder)
+        try:
+            resp = client.get("/v1/insights/admin/n1-review?athlete_id=not-a-uuid")
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 422, (
+            f"Expected 422 for malformed UUID, got {resp.status_code}: {resp.text}"
+        )
+
+    def test_malformed_uuid_on_n1_suppress_returns_422(self):
+        """POST /admin/n1-suppress with non-UUID athlete_id must return 422, not 500."""
+        founder = _make_athlete(tier="guided")
+        founder.email = "mbshaf@gmail.com"
+        app, client = self._make_app_with_overrides(founder)
+        try:
+            resp = client.post(
+                "/v1/insights/admin/n1-suppress",
+                json={"athlete_id": "bad-uuid", "fingerprint": "abcd1234"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 422, (
+            f"Expected 422 for malformed UUID, got {resp.status_code}: {resp.text}"
+        )
+
+    def test_founder_without_guided_tier_can_reach_n1_review(self):
+        """Founder with free/basic tier must NOT be blocked by tier middleware."""
+        from fastapi.testclient import TestClient
+        from main import app
+        from core.auth import get_current_user
+        from core.database import get_db
+
+        # Founder on the lowest possible tier — no subscription
+        founder = _make_athlete(tier="free")
+        founder.email = "mbshaf@gmail.com"
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        db.query.return_value.filter.return_value.all.return_value = []
+
+        app.dependency_overrides[get_current_user] = lambda: founder
+        app.dependency_overrides[get_db] = lambda: db
+
+        try:
+            with patch("services.phase3_eligibility.KILL_SWITCH_3C_ENV", "STRIDEIQ_3C_KILL_SWITCH"), \
+                 patch.dict(os.environ, {"STRIDEIQ_3C_KILL_SWITCH": "false"}):
+                client = TestClient(app, raise_server_exceptions=False)
+                resp = client.get("/v1/insights/admin/n1-review")
+        finally:
+            app.dependency_overrides.clear()
+
+        # Founder reaches the endpoint — gets 200 (empty items list, kill switch off)
+        assert resp.status_code == 200, (
+            f"Founder with free tier was blocked (expected 200, got {resp.status_code}): {resp.text}"
+        )
+        data = resp.json()
+        assert "items" in data
+        assert "kill_switch_active" in data
