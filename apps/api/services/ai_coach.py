@@ -82,10 +82,10 @@ COACH_MONTHLY_OPUS_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET
 # VIP premium-lane caps (founder bypass still uncapped). These are hard caps,
 # not multipliers, so VIP experience stays strong while preventing abuse.
 COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP = int(
-    os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP", "12")
+    os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP", "15")
 )
 COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP = int(
-    os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP", "200000")
+    os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP", "1000000")
 )
 COACH_MAX_INPUT_TOKENS = int(os.getenv("COACH_MAX_INPUT_TOKENS", "4000"))
 # 500 tokens was causing every response to get cut off mid-sentence.
@@ -2356,7 +2356,7 @@ ATHLETE BRIEF:
         2. High-complexity queries (causal + ambiguity) → Sonnet (needs real reasoning)
         3. Everything else → Gemini 3 Flash
         
-        VIP athletes get 10× premium-lane allocation but same routing rules.
+        VIP athletes get higher premium-lane caps but same routing rules.
         
         Args:
             query_type: Legacy 'simple'/'standard' or new 'low'/'medium'/'high'
@@ -2402,7 +2402,7 @@ ATHLETE BRIEF:
         needs_premium = is_high_stakes or is_high_complexity
         
         if needs_premium and athlete_id:
-            # Check premium-lane budget (VIP gets 10× allocation via check_budget)
+            # Check premium-lane budget (VIP uses higher hard caps via check_budget)
             # NOTE: is_opus=True refers to the premium Anthropic lane counter,
             # which now maps to Sonnet (not Opus). The CoachUsage schema retains
             # opus_requests_today column name for compatibility — semantics are

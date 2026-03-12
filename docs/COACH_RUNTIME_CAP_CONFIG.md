@@ -11,8 +11,8 @@
 |---|---|---|
 | `COACH_MAX_OPUS_REQUESTS_PER_DAY` | `3` | Non-VIP premium Anthropic lane daily request cap |
 | `COACH_MONTHLY_OPUS_TOKEN_BUDGET` | `50000` | Non-VIP premium Anthropic lane monthly token cap |
-| `COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP` | `12` | VIP hard daily request cap (not a multiplier) |
-| `COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP` | `200000` | VIP hard monthly token cap (not a multiplier) |
+| `COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP` | `15` | VIP hard daily request cap (not a multiplier) |
+| `COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP` | `1000000` | VIP hard monthly token cap (not a multiplier) |
 | `COACH_MAX_REQUESTS_PER_DAY` | `50` | Total daily cap (all lanes) |
 | `COACH_MONTHLY_TOKEN_BUDGET` | `1000000` | Total monthly token cap |
 
@@ -59,8 +59,8 @@ if is_opus:
 
 Premium lane caps are env-driven hard caps and must be preserved:
 
-- `COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP=12`
-- `COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP=200000`
+- `COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP=15`
+- `COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP=1000000`
 
 Context:
 - Founder remains uncapped via founder bypass.
