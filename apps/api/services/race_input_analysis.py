@@ -3154,7 +3154,16 @@ def mine_race_inputs(
             continue
 
         try:
-            result = spec.fn(athlete_id, db, zones, events)
+            from services.auto_discovery.tuning_loop import run_investigation_with_athlete_overrides
+
+            result, override_err, _applied = run_investigation_with_athlete_overrides(
+                athlete_id=athlete_id,
+                investigation_name=spec.name,
+                db=db,
+            )
+            if override_err:
+                logger.warning("Investigation %s override run failed: %s", spec.name, override_err)
+                continue
             if result is None:
                 continue
             if isinstance(result, list):

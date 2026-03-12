@@ -100,6 +100,7 @@ def run_pairwise_interaction_scan(
         t0 = time.monotonic()
         error: Optional[str] = None
         interactions: List[Dict[str, Any]] = []
+        tested_pairs: List[tuple] = []
 
         try:
             output_data = _get_output_for_metric(metric_name, athlete_id_str, start_date, end_date, db)
@@ -107,7 +108,7 @@ def run_pairwise_interaction_scan(
                 error = f"Insufficient output data: {len(output_data)} < {MIN_SAMPLE_SIZE}"
             else:
                 output_dict = {d: v for d, v in output_data}
-                interactions = _find_pairwise_interactions(
+                scan_result = _find_pairwise_interactions(
                     all_inputs=all_inputs,
                     output_dict=output_dict,
                     output_metric=metric_name,
@@ -115,6 +116,8 @@ def run_pairwise_interaction_scan(
                     min_effect=_MIN_EFFECT_SIZE,
                     top_n=_TOP_N,
                 )
+                interactions = scan_result["top_interactions"]
+                tested_pairs = scan_result["tested_pairs"]
         except Exception as exc:
             error = str(exc)
             logger.warning("Interaction scan: metric=%s failed: %s", metric_name, exc)
@@ -165,6 +168,34 @@ def run_pairwise_interaction_scan(
             "failure_reason": error,
             "runtime_ms": runtime_ms,
         })
+
+        # Persist coverage for every tested pair-metric combination so the
+        # scheduler knows what has been explored (and what hasn't).
+        top_pair_set = set()
+        for interaction in (kept or interactions[:3]):
+            factors = interaction.get("factors", [])
+            if len(factors) == 2:
+                top_pair_set.add(tuple(sorted(factors)))
+        for pair in tested_pairs:
+            input_a, input_b = pair[0], pair[1]
+            pair_key = tuple(sorted([input_a, input_b]))
+            result_label = "signal" if pair_key in top_pair_set else "no_signal"
+            try:
+                upsert_scan_coverage(
+                    athlete_id=athlete_id,
+                    input_a=input_a,
+                    input_b=input_b,
+                    output_metric=metric_name,
+                    window_days=days,
+                    result=result_label,
+                    db=db,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Interaction scan: coverage upsert failed pair=(%s,%s) metric=%s: %s",
+                    input_a, input_b, metric_name, exc,
+                )
+
         logger.info(
             "Interaction scan: athlete=%s metric=%s candidates=%d kept=%d runtime_ms=%d",
             athlete_id_str, metric_name, len(interactions), len(kept), runtime_ms,
@@ -197,6 +228,7 @@ def _find_pairwise_interactions(
 
     input_names = list(splits.keys())
     results: List[Dict[str, Any]] = []
+    tested: List[tuple] = []
 
     for i in range(len(input_names)):
         for j in range(i + 1, len(input_names)):
@@ -211,6 +243,8 @@ def _find_pairwise_interactions(
 
             if len(eff_high) < min_group or len(eff_low) < min_group:
                 continue
+
+            tested.append((n1, n2))
 
             m_high = mean(eff_high)
             m_low = mean(eff_low)
@@ -243,7 +277,10 @@ def _find_pairwise_interactions(
             })
 
     results.sort(key=lambda x: abs(x["effect_size"]), reverse=True)
-    return results[:top_n]
+    return {
+        "top_interactions": results[:top_n],
+        "tested_pairs": tested,
+    }
 
 
 def _score_interaction(candidate: Dict[str, Any]) -> Dict[str, Any]:
@@ -371,8 +408,10 @@ def promote_interaction_findings(
 
     for candidate in eligible_candidates:
         summary = candidate.latest_summary or {}
-        input_a = summary.get("input_a") or ""
-        input_b = summary.get("input_b") or ""
+
+        factors = summary.get("factors") or []
+        input_a = summary.get("input_a") or (factors[0] if len(factors) > 0 else "")
+        input_b = summary.get("input_b") or (factors[1] if len(factors) > 1 else "")
         output_metric = summary.get("output_metric") or ""
 
         if not (input_a and output_metric):

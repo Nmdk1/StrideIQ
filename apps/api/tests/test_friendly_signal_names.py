@@ -49,6 +49,7 @@ _ROUTER_FILES = [
     "routers/activities.py",
     "routers/progress.py",
     "routers/insights.py",
+    "routers/correlations.py",
 ]
 
 @pytest.mark.parametrize("rel_path", _ROUTER_FILES)
