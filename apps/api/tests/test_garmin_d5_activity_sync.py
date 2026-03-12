@@ -27,6 +27,23 @@ from services.garmin_adapter import adapt_activity_detail_samples
 
 
 # ---------------------------------------------------------------------------
+# Module-level autouse fixture: block all Celery/broker side effects
+# ---------------------------------------------------------------------------
+# Root cause of the historical hang: tests that call process_garmin_activity_task.run()
+# with a running payload (created > 0) trigger the briefing refresh path, which calls
+# enqueue_briefing_refresh() → generate_home_briefing_task.apply_async() → Celery broker.
+# In CI (no broker), this blocks indefinitely.  We patch both entry points here
+# as an autouse module fixture so every test in this file is always safe.
+
+@pytest.fixture(autouse=True)
+def _no_briefing_side_effects():
+    with patch("services.home_briefing_cache.mark_briefing_dirty"), \
+         patch("tasks.home_briefing_tasks.enqueue_briefing_refresh"), \
+         patch("core.cache.invalidate_athlete_cache"):
+        yield
+
+
+# ---------------------------------------------------------------------------
 # Shared test fixtures / helpers
 # ---------------------------------------------------------------------------
 

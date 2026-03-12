@@ -192,6 +192,7 @@ class N1Insight:
     confidence: float = 0.0
     evidence: Dict[str, Any] = field(default_factory=dict)
     category: str = "pattern"  # "what_works", "what_doesnt", "pattern"
+    fingerprint: str = ""      # stable suppression key: input_name:direction:output_metric
 
 
 # ---------------------------------------------------------------------------
@@ -518,6 +519,18 @@ def _categorize(direction: str, output_metric: str = "efficiency") -> str:
     return "what_works" if beneficial else "what_doesnt"
 
 
+def _insight_fingerprint(input_name: str, direction: str, output_metric: str) -> str:
+    """Build a stable suppression fingerprint for an insight pattern.
+
+    Keyed on input_name:direction:output_metric — stable across text changes.
+    Used by the suppression system so a founder can suppress the pattern
+    permanently regardless of how the insight text evolves.
+    """
+    import hashlib
+    raw = f"{input_name}:{direction}:{output_metric}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -540,7 +553,8 @@ def generate_n1_insights(
 
     Returns:
         List of N1Insight objects, sorted by confidence descending.
-        Only includes findings that survive Bonferroni correction.
+        Only includes findings that survive Bonferroni correction and
+        are not suppressed by a per-insight suppression record.
     """
     # Determine window from history if not specified
     if days_window is None:
@@ -548,6 +562,17 @@ def generate_n1_insights(
         stats = _history_stats(athlete_id, db)
         days_window = min(stats.get("history_span_days", 90), 365)
         days_window = max(days_window, 30)  # floor
+
+    # Load active suppression fingerprints for this athlete
+    suppressed_fingerprints: set = set()
+    try:
+        from models import N1InsightSuppression
+        rows = db.query(N1InsightSuppression).filter(
+            N1InsightSuppression.athlete_id == athlete_id
+        ).all()
+        suppressed_fingerprints = {r.insight_fingerprint for r in rows}
+    except Exception:
+        pass  # suppression table unavailable — fail open (show all insights)
 
     # Run correlation engine
     try:
@@ -583,6 +608,11 @@ def generate_n1_insights(
         strength = c.get("strength", "moderate")
         lag = c.get("time_lag_days", 0)
 
+        # Suppression check: skip if founder has suppressed this pattern
+        fingerprint = _insight_fingerprint(input_name, direction, output_metric)
+        if fingerprint in suppressed_fingerprints:
+            continue
+
         text = _build_insight_text(
             input_name=input_name,
             direction=direction,
@@ -612,6 +642,7 @@ def generate_n1_insights(
             confidence=confidence,
             evidence=evidence,
             category=_categorize(direction, output_metric),
+            fingerprint=fingerprint,
         ))
 
     # Sort by confidence descending, cap at max_insights

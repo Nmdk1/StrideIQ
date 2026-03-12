@@ -2964,3 +2964,35 @@ class AutoDiscoveryReviewLog(Base):
         Index("ix_auto_disc_review_log_candidate", "candidate_id"),
         Index("ix_auto_disc_review_log_athlete_created", "athlete_id", "created_at"),
     )
+
+
+class N1InsightSuppression(Base):
+    """Per-insight suppression record for Phase 3C graduation control.
+
+    Allows founders to suppress individual 3C insight patterns without
+    disabling all of 3C globally.  Suppression is keyed by (athlete_id,
+    insight_fingerprint) where the fingerprint is a stable hash of
+    input_name:direction:output_metric — so the same pattern stays
+    suppressed even if the generated text changes.
+
+    Lifecycle:
+      1. Founder reviews generated 3C outputs via /v1/admin/insights/n1-review.
+      2. If an insight is wrong/weak/badly phrased, POST to
+         /v1/admin/insights/n1-suppress with athlete_id + fingerprint.
+      3. generate_n1_insights() checks suppressions before surfacing.
+      4. Only the specific pattern is suppressed; the rest of 3C continues.
+    """
+    __tablename__ = "n1_insight_suppression"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    insight_fingerprint = Column(Text, nullable=False)  # input_name:direction:output_metric
+    suppressed_by = Column(Text, nullable=True)          # "founder" or founder email
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "insight_fingerprint",
+                         name="uq_n1_suppression_athlete_fingerprint"),
+        Index("ix_n1_suppression_athlete", "athlete_id"),
+    )

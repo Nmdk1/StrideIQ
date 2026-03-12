@@ -130,6 +130,7 @@ class IntelligenceItemResponse(BaseModel):
     source: str = "n1"  # "n1" or "population"
     confidence: Optional[float] = None
     evidence: Optional[dict] = None
+    fingerprint: Optional[str] = None  # suppression key for 3C N=1 items
 
 
 class PatternResponse(BaseModel):
@@ -341,6 +342,7 @@ def get_athlete_intelligence(
                     source=ins.source,
                     confidence=ins.confidence,
                     evidence=ins.evidence,
+                    fingerprint=ins.fingerprint,
                 )
                 if ins.category == "what_works":
                     what_works.append(item)
@@ -446,4 +448,169 @@ def generate_insights_now(
         "status": "generated",
         "insights_generated": len(insights),
         "insights_saved": saved,
+    }
+
+
+# =============================================================================
+# FOUNDER / ADMIN ENDPOINTS — Phase 3C Graduation Controls
+# =============================================================================
+
+class N1ReviewItem(BaseModel):
+    """A single 3C insight surfaced for founder review."""
+    athlete_id: str
+    text: str
+    fingerprint: str
+    confidence: float
+    category: str
+    evidence: Optional[dict] = None
+    eligibility_reason: str
+    correlations_tested: int = 0
+    significant_after_correction: int = 0
+
+
+class N1ReviewResponse(BaseModel):
+    """Batch of 3C insights ready for founder review."""
+    generated_at: str
+    kill_switch_active: bool
+    items: List[N1ReviewItem]
+    total: int
+
+
+class N1SuppressRequest(BaseModel):
+    """Request to suppress a single N=1 insight pattern for an athlete."""
+    athlete_id: str
+    fingerprint: str
+    reason: Optional[str] = None
+
+
+def _is_founder(current_user: Athlete) -> bool:
+    """Check if current user is the founder (mbshaf@gmail.com)."""
+    import os
+    owner_id = os.getenv("OWNER_ATHLETE_ID", "")
+    return str(current_user.id) == owner_id or getattr(current_user, "email", "") == "mbshaf@gmail.com"
+
+
+@router.get("/admin/n1-review", response_model=N1ReviewResponse)
+def founder_review_n1_insights(
+    athlete_id: Optional[str] = Query(None, description="Filter to specific athlete"),
+    current_user: Athlete = Depends(require_tier(["guided"])),
+    db: Session = Depends(get_db),
+):
+    """
+    Founder-only: Review generated 3C N=1 insights before broader rollout.
+
+    Lists insights that would surface for eligible athletes, along with
+    eligibility context and evidence payload for quality judgment.
+    Suppressed insights are excluded (already filtered in generator).
+    """
+    if not _is_founder(current_user):
+        raise HTTPException(status_code=403, detail="Founder-only endpoint.")
+
+    import os
+    from datetime import datetime as _dt
+    from services.phase3_eligibility import get_3c_eligibility, KILL_SWITCH_3C_ENV
+    from services.n1_insight_generator import generate_n1_insights
+
+    kill_switch_active = os.getenv(KILL_SWITCH_3C_ENV, "").lower() in ("1", "true", "yes")
+
+    # Determine which athletes to review
+    target_ids: list
+    if athlete_id:
+        from models import Athlete as AthleteModel
+        a = db.query(AthleteModel).filter(
+            AthleteModel.id == athlete_id
+        ).first()
+        target_ids = [a.id] if a else []
+    else:
+        from models import Athlete as AthleteModel
+        from services.phase3_eligibility import TIERS_3C
+        athletes = db.query(AthleteModel).filter(
+            AthleteModel.subscription_tier.in_(TIERS_3C)
+        ).limit(50).all()
+        target_ids = [a.id for a in athletes]
+
+    items: List[N1ReviewItem] = []
+    for aid in target_ids:
+        try:
+            elig = get_3c_eligibility(aid, db)
+            if not elig.eligible:
+                continue
+            n1_insights = generate_n1_insights(aid, db)
+            for ins in n1_insights:
+                items.append(N1ReviewItem(
+                    athlete_id=str(aid),
+                    text=ins.text,
+                    fingerprint=ins.fingerprint,
+                    confidence=ins.confidence,
+                    category=ins.category,
+                    evidence=ins.evidence,
+                    eligibility_reason=elig.reason,
+                    correlations_tested=elig.evidence.get("correlations_tested", 0),
+                    significant_after_correction=elig.evidence.get("significant_after_correction", 0),
+                ))
+        except Exception:
+            continue
+
+    return N1ReviewResponse(
+        generated_at=_dt.utcnow().isoformat() + "Z",
+        kill_switch_active=kill_switch_active,
+        items=items,
+        total=len(items),
+    )
+
+
+@router.post("/admin/n1-suppress")
+def founder_suppress_n1_insight(
+    body: N1SuppressRequest,
+    current_user: Athlete = Depends(require_tier(["guided"])),
+    db: Session = Depends(get_db),
+):
+    """
+    Founder-only: Suppress a specific 3C N=1 insight pattern for an athlete.
+
+    Suppression is keyed by insight fingerprint (input_name:direction:output_metric).
+    Once suppressed, the pattern will not surface for that athlete even if
+    the correlation remains significant.  Other athletes and other patterns
+    are unaffected.  3C remains globally active.
+    """
+    if not _is_founder(current_user):
+        raise HTTPException(status_code=403, detail="Founder-only endpoint.")
+
+    from models import N1InsightSuppression
+    from sqlalchemy.exc import IntegrityError
+
+    existing = db.query(N1InsightSuppression).filter(
+        N1InsightSuppression.athlete_id == body.athlete_id,
+        N1InsightSuppression.insight_fingerprint == body.fingerprint,
+    ).first()
+
+    if existing:
+        return {
+            "status": "already_suppressed",
+            "athlete_id": body.athlete_id,
+            "fingerprint": body.fingerprint,
+        }
+
+    record = N1InsightSuppression(
+        athlete_id=body.athlete_id,
+        insight_fingerprint=body.fingerprint,
+        suppressed_by=getattr(current_user, "email", str(current_user.id)),
+        reason=body.reason,
+    )
+    try:
+        db.add(record)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return {
+            "status": "already_suppressed",
+            "athlete_id": body.athlete_id,
+            "fingerprint": body.fingerprint,
+        }
+
+    return {
+        "status": "suppressed",
+        "athlete_id": body.athlete_id,
+        "fingerprint": body.fingerprint,
+        "reason": body.reason,
     }
