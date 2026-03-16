@@ -1865,12 +1865,20 @@ def get_site_metrics(
         NutritionEntry.date >= cutoff_date.date()
     ).scalar()
     
-    # Average activities per user
-    avg_activities = db.query(
-        func.avg(func.count(Activity.id))
-    ).filter(
-        Activity.start_time >= cutoff_date
-    ).group_by(Activity.athlete_id).scalar() or 0
+    # Average activities per user — use subquery to avoid nested aggregate
+    from sqlalchemy import text as sa_text
+    avg_row = db.execute(
+        sa_text(
+            "SELECT AVG(cnt) FROM ("
+            "  SELECT COUNT(*) AS cnt"
+            "  FROM activity"
+            "  WHERE start_time >= :cutoff"
+            "  GROUP BY athlete_id"
+            ") sub"
+        ),
+        {"cutoff": cutoff_date},
+    ).scalar()
+    avg_activities = avg_row or 0
     
     return {
         "period_days": days,

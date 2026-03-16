@@ -26,7 +26,7 @@ def send_weekly_digest_task(self: Task, athlete_id: str) -> Dict:
     
     Fetches their top correlations and sends formatted email.
     """
-    db: Session = next(get_db_sync())
+    db: Session = get_db_sync()
     
     try:
         athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
@@ -101,7 +101,7 @@ def send_all_weekly_digests_task() -> Dict:
     This task is called by Celery Beat on a schedule (e.g., every Monday).
     It enqueues individual digest tasks for each athlete.
     """
-    db: Session = next(get_db_sync())
+    db: Session = get_db_sync()
     
     try:
         # Get all athletes with email addresses

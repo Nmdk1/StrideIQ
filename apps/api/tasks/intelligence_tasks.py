@@ -369,7 +369,7 @@ def run_morning_intelligence(self: Task, force_athlete_id: Optional[str] = None)
     Returns:
         Summary dict with processed athletes and any errors.
     """
-    db: Session = next(get_db_sync())
+    db: Session = get_db_sync()
     utc_now = datetime.now(timezone.utc)
     today = utc_now.date()
 
@@ -476,7 +476,7 @@ def run_intelligence_for_athlete_task(
         athlete_id: UUID string
         target_date: ISO date string (defaults to today UTC)
     """
-    db: Session = next(get_db_sync())
+    db: Session = get_db_sync()
 
     try:
         from uuid import UUID as UUID_type
@@ -506,7 +506,7 @@ def refresh_living_fingerprint(self: Task) -> Dict:
     new activity data in the last 24h, persist updated findings, and
     log the results.
     """
-    db: Session = next(get_db_sync())
+    db: Session = get_db_sync()
     try:
         from models import Athlete, Activity
         from services.race_input_analysis import mine_race_inputs
