@@ -938,6 +938,12 @@ def get_user(
         },
         "is_blocked": bool(getattr(user, "is_blocked", False)),
         "is_coach_vip": bool(getattr(user, "is_coach_vip", False)),
+        "admin_tier_override": getattr(user, "admin_tier_override", None),
+        "admin_tier_override_set_at": (
+            user.admin_tier_override_set_at.isoformat()
+            if getattr(user, "admin_tier_override_set_at", None) else None
+        ),
+        "admin_tier_override_reason": getattr(user, "admin_tier_override_reason", None),
         "created_at": user.created_at.isoformat(),
         "onboarding_completed": user.onboarding_completed,
         "onboarding_stage": user.onboarding_stage,
@@ -1109,6 +1115,13 @@ def comp_access(
 
     old_tier = target.subscription_tier
     target.subscription_tier = request.tier
+
+    # Set override fields — prevents Stripe sync from reverting this comp.
+    from datetime import datetime, timezone
+    target.admin_tier_override = request.tier
+    target.admin_tier_override_set_at = datetime.now(timezone.utc)
+    target.admin_tier_override_set_by = current_user.id
+    target.admin_tier_override_reason = request.reason
     db.add(target)
 
     from services.admin_audit import record_admin_audit_event
@@ -1132,6 +1145,59 @@ def comp_access(
             "id": str(target.id),
             "email": target.email,
             "subscription_tier": target.subscription_tier,
+            "admin_tier_override": target.admin_tier_override,
+            "admin_tier_override_set_at": target.admin_tier_override_set_at.isoformat() if target.admin_tier_override_set_at else None,
+        },
+    }
+
+
+@router.post("/users/{user_id}/comp/clear-override")
+def clear_comp_override(
+    user_id: UUID,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("billing.comp")),
+    current_user: Athlete = Depends(require_permission("billing.comp")),
+    db: Session = Depends(get_db),
+):
+    """
+    Clear an active admin tier override, restoring Stripe authority over
+    subscription_tier on the next sync/webhook cycle.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not getattr(target, "admin_tier_override", None):
+        raise HTTPException(status_code=409, detail="No active override to clear")
+
+    old_override = target.admin_tier_override
+    target.admin_tier_override = None
+    target.admin_tier_override_set_at = None
+    target.admin_tier_override_set_by = None
+    target.admin_tier_override_reason = None
+    db.add(target)
+
+    from services.admin_audit import record_admin_audit_event
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="billing.comp.clear_override",
+        target_athlete_id=str(target.id),
+        reason="Admin cleared comp override — Stripe authority restored",
+        payload={"cleared_override": old_override},
+    )
+
+    db.commit()
+    db.refresh(target)
+
+    return {
+        "success": True,
+        "user": {
+            "id": str(target.id),
+            "email": target.email,
+            "subscription_tier": target.subscription_tier,
+            "admin_tier_override": None,
         },
     }
 

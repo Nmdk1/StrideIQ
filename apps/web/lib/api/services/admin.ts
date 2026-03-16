@@ -33,6 +33,9 @@ export interface AdminUserDetail extends AdminUser {
   } | null;
   is_blocked?: boolean;
   is_coach_vip?: boolean;
+  admin_tier_override?: string | null;
+  admin_tier_override_set_at?: string | null;
+  admin_tier_override_reason?: string | null;
   integrations?: {
     preferred_units?: string | null;
     strava_athlete_id?: number | null;
@@ -276,8 +279,12 @@ export const adminService = {
     return apiClient.get<AdminUserDetail>(`/v1/admin/users/${userId}`);
   },
 
-  async compAccess(userId: string, params: { tier: string; reason?: string | null }): Promise<{ success: boolean; user: { id: string; email: string | null; subscription_tier: string } }> {
+  async compAccess(userId: string, params: { tier: string; reason?: string | null }): Promise<{ success: boolean; user: { id: string; email: string | null; subscription_tier: string; admin_tier_override?: string | null; admin_tier_override_set_at?: string | null } }> {
     return apiClient.post(`/v1/admin/users/${userId}/comp`, params);
+  },
+
+  async clearCompOverride(userId: string): Promise<{ success: boolean; user: { id: string; email: string | null; subscription_tier: string; admin_tier_override: null } }> {
+    return apiClient.post(`/v1/admin/users/${userId}/comp/clear-override`, {});
   },
 
   async grantTrial(userId: string, params: { days?: number; reason?: string | null }): Promise<any> {

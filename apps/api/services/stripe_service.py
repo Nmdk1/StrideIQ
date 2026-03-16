@@ -331,8 +331,9 @@ class StripeService:
             except Exception:
                 price_id = None
 
-            athlete.subscription_tier = tier_for_price_and_status(
-                price_id, sub_row.status, self._price_to_tier
+            _apply_stripe_tier(
+                athlete,
+                tier_for_price_and_status(price_id, sub_row.status, self._price_to_tier),
             )
             db.add(athlete)
             db.add(sub_row)
@@ -347,6 +348,21 @@ class StripeService:
 # ---------------------------------------------------------------------------
 # Module-level helpers (also used by process_stripe_event)
 # ---------------------------------------------------------------------------
+
+def _apply_stripe_tier(athlete: Athlete, tier: str) -> None:
+    """
+    Set athlete.subscription_tier from a Stripe-derived tier, respecting the
+    admin comp override precedence contract.
+
+    If admin_tier_override is set, the manual comp takes precedence and Stripe
+    MUST NOT downgrade the tier.  The Subscription mirror (status, price_id,
+    current_period_end) is still updated by callers — only the final tier
+    assignment is guarded here.
+    """
+    if getattr(athlete, "admin_tier_override", None):
+        # Keep the manually comped tier; do not revert.
+        return
+    athlete.subscription_tier = tier
 
 def _ensure_subscription_row(db: Session, *, athlete_id: UUID) -> Subscription:
     sub = db.query(Subscription).filter(Subscription.athlete_id == athlete_id).first()
@@ -543,7 +559,7 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
         if granted_tier == "free" and metadata.get("tier") in ("guided", "premium"):
             granted_tier = metadata["tier"]
 
-        athlete.subscription_tier = granted_tier
+        _apply_stripe_tier(athlete, granted_tier)
         db.add(athlete)
         db.add(sub)
         db.commit()
@@ -553,7 +569,7 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
             "event_type": event_type,
             "mode": "subscription",
             "athlete_id": str(athlete.id),
-            "granted_tier": granted_tier,
+            "granted_tier": athlete.subscription_tier,  # effective tier (may differ if override active)
         }
 
     # ------------------------------------------------------------------
@@ -615,7 +631,7 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
         db.add(sub)
 
         # Derive tier via price→tier map (fail closed on unknown price).
-        athlete.subscription_tier = tier_for_price_and_status(price_id, status, price_to_tier)
+        _apply_stripe_tier(athlete, tier_for_price_and_status(price_id, status, price_to_tier))
         db.add(athlete)
         db.commit()
         return {
@@ -624,7 +640,7 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
             "event_type": event_type,
             "athlete_id": str(athlete.id),
             "status": status,
-            "granted_tier": athlete.subscription_tier,
+            "granted_tier": athlete.subscription_tier,  # effective tier (may differ if override active)
         }
 
     # Unknown/unhandled event: accept and record, no state change.

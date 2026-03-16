@@ -115,6 +115,18 @@ export function useCompAccess() {
   });
 }
 
+export function useClearCompOverride() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { userId: string }) =>
+      adminService.clearCompOverride(params.userId),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: adminKeys.userDetail(vars.userId) });
+      qc.invalidateQueries({ queryKey: adminKeys.userList() });
+    },
+  });
+}
+
 export function useGrantTrial() {
   const qc = useQueryClient();
   return useMutation({

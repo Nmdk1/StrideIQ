@@ -79,6 +79,15 @@ class Athlete(Base):
     # VIP athletes get premium model (gpt-5.2) for complex queries.
     # Set via admin UI. See ADR-060 for tiering rationale.
     is_coach_vip = Column(Boolean, default=False, nullable=False)
+
+    # --- ADMIN COMP OVERRIDE (entitlement precedence contract) ---
+    # When admin_tier_override is non-null, Stripe sync/webhook MUST NOT
+    # downgrade subscription_tier below this value.  Clear the field to
+    # restore Stripe authority.  See admin_tier_override_001 migration.
+    admin_tier_override = Column(Text, nullable=True)
+    admin_tier_override_set_at = Column(DateTime(timezone=True), nullable=True)
+    admin_tier_override_set_by = Column(UUID(as_uuid=True), nullable=True)
+    admin_tier_override_reason = Column(Text, nullable=True)
     
     strava_athlete_id = Column(Integer, nullable=True)
     strava_access_token = Column(Text, nullable=True)  # Encrypted
