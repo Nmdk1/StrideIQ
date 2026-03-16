@@ -149,7 +149,7 @@ def test_stripe_sync_does_not_override_manual_comp(target_user):
 
     from services.stripe_service import StripeService, StripeConfig
 
-    cfg = StripeConfig(
+    mock_cfg = StripeConfig(
         secret_key="sk_test_x",
         webhook_secret=None,
         checkout_success_url="https://x.com",
@@ -162,7 +162,6 @@ def test_stripe_sync_does_not_override_manual_comp(target_user):
         price_premium_annual_id=None,
         price_legacy_pro_monthly_id=None,
     )
-    svc = StripeService(cfg)
 
     # Mock stripe.Subscription.list to return a canceled subscription at 'free' price.
     mock_sub = MagicMock()
@@ -186,7 +185,9 @@ def test_stripe_sync_does_not_override_manual_comp(target_user):
         db2.commit()
         db2.refresh(row2)
 
-        with patch("stripe.Subscription.list", return_value=mock_resp):
+        with patch("services.stripe_service._get_stripe_config", return_value=mock_cfg), \
+             patch("stripe.Subscription.list", return_value=mock_resp):
+            svc = StripeService()
             svc.best_effort_sync_customer_subscription(db2, athlete=row2)
 
         db2.refresh(row2)
@@ -234,7 +235,7 @@ def test_clear_override_reenables_stripe_authority(admin_headers, admin_user, ta
     # Now Stripe sync should be able to change the tier.
     from services.stripe_service import StripeService, StripeConfig
 
-    cfg = StripeConfig(
+    mock_cfg2 = StripeConfig(
         secret_key="sk_test_x",
         webhook_secret=None,
         checkout_success_url="https://x.com",
@@ -247,7 +248,6 @@ def test_clear_override_reenables_stripe_authority(admin_headers, admin_user, ta
         price_premium_annual_id=None,
         price_legacy_pro_monthly_id=None,
     )
-    svc = StripeService(cfg)
 
     mock_sub = MagicMock()
     mock_sub.status = "canceled"
@@ -269,8 +269,10 @@ def test_clear_override_reenables_stripe_authority(admin_headers, admin_user, ta
         db3.commit()
         db3.refresh(row3)
 
-        with patch("stripe.Subscription.list", return_value=mock_resp):
-            svc.best_effort_sync_customer_subscription(db3, athlete=row3)
+        with patch("services.stripe_service._get_stripe_config", return_value=mock_cfg2), \
+             patch("stripe.Subscription.list", return_value=mock_resp):
+            svc2 = StripeService()
+            svc2.best_effort_sync_customer_subscription(db3, athlete=row3)
 
         db3.refresh(row3)
         # With no override, Stripe authority is restored: tier changes to free.

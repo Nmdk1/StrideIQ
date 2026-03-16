@@ -915,7 +915,9 @@ class TestMigrationIntegrity:
         spec = importlib.util.spec_from_file_location("ci", heads_path)
         ci = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(ci)
-        assert "auto_discovery_phase1_001" in ci.EXPECTED_HEADS
+        # Phase 1 migration is the direct ancestor; CI head tracks the latest.
+        assert ci.EXPECTED_HEADS, "EXPECTED_HEADS must not be empty"
+        assert "admin_tier_override_001" in ci.EXPECTED_HEADS or "auto_discovery_phase1_001" in ci.EXPECTED_HEADS
 
     def test_new_models_importable(self):
         from models import AutoDiscoveryChangeLog, AthleteInvestigationConfig, AutoDiscoveryScanCoverage
