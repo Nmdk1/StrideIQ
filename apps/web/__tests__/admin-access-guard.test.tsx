@@ -19,6 +19,7 @@ jest.mock('@/lib/hooks/queries/admin', () => ({
   useSetBlocked: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
   useSetCoachVip: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
   useDeleteUser: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
+  useClearCompOverride: () => ({ mutate: jest.fn(), isPending: false, isError: false, error: null }),
   useAdminFeatureFlags: () => ({ data: { flags: [] }, isLoading: false }),
   useSet3dQualitySelectionMode: () => ({ mutate: jest.fn(), isPending: false, isSuccess: false, isError: false }),
   useOpsQueue: () => ({ data: { available: false, active_count: 0, reserved_count: 0, scheduled_count: 0, workers_seen: [] }, isLoading: false }),
