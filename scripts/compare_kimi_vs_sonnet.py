@@ -422,7 +422,13 @@ def main() -> None:
     else:
         fixtures = _FIXTURES
 
-    fixtures = fixtures[: args.calls]
+    # Repeat fixtures cyclically to reach the requested call count
+    if len(fixtures) < args.calls:
+        import math
+        repeats = math.ceil(args.calls / len(fixtures))
+        fixtures = (fixtures * repeats)[: args.calls]
+    else:
+        fixtures = fixtures[: args.calls]
 
     output_dir = Path(args.output_dir)
     sonnet_model = "claude-sonnet-4-6"
@@ -430,7 +436,7 @@ def main() -> None:
 
     results = []
     for i, fixture in enumerate(fixtures):
-        scenario = fixture["scenario"]
+        scenario = f"{fixture['scenario']}_{i+1}" if args.calls > len(_FIXTURES) else fixture["scenario"]
         ftype = fixture.get("type", "briefing")
         user_prompt = fixture["user_prompt"]
 
