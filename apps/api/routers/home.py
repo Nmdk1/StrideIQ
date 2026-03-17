@@ -2577,8 +2577,14 @@ async def get_home_data(
     """
     Get home page data: today's workout, yesterday's insight, week progress.
     """
-    today = date.today()
+    from services.timezone_utils import get_athlete_timezone, athlete_local_today, local_day_bounds_utc
+    _ath_tz = get_athlete_timezone(current_user)
+    today = athlete_local_today(_ath_tz)
     yesterday = today - timedelta(days=1)
+    # UTC bounds for yesterday's activity window
+    _yest_start_utc, _yest_end_utc = local_day_bounds_utc(yesterday, _ath_tz)
+    # UTC bounds for today (used in week progress and today's workout lookup)
+    _today_start_utc, _today_end_utc = local_day_bounds_utc(today, _ath_tz)
 
     # --- Today's Workout ---
     today_workout = TodayWorkout(has_workout=False)
@@ -2628,8 +2634,8 @@ async def get_home_data(
 
     yesterday_activity = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
-        Activity.start_time >= yesterday,
-        Activity.start_time < today
+        Activity.start_time >= _yest_start_utc,
+        Activity.start_time < _yest_end_utc
     ).order_by(Activity.start_time.desc()).first()
 
     if yesterday_activity:
@@ -2671,10 +2677,12 @@ async def get_home_data(
         ).order_by(Activity.start_time.desc()).first()
 
         if last_activity:
-            days_ago = (today - last_activity.start_time.date()).days
+            from services.timezone_utils import to_athlete_local_date
+            last_local_date = to_athlete_local_date(last_activity.start_time, _ath_tz)
+            days_ago = (today - last_local_date).days
             yesterday_insight = YesterdayInsight(
                 has_activity=False,
-                last_activity_date=last_activity.start_time.date().isoformat(),
+                last_activity_date=last_local_date.isoformat(),
                 last_activity_name=last_activity.name or "Run",
                 last_activity_id=str(last_activity.id),
                 days_since_last=days_ago
@@ -2704,12 +2712,13 @@ async def get_home_data(
 
     _week_actuals_raw = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
-        Activity.start_time >= monday,
-        Activity.start_time < sunday + timedelta(days=1),
+        Activity.start_time >= local_day_bounds_utc(monday, _ath_tz)[0],
+        Activity.start_time < local_day_bounds_utc(sunday, _ath_tz)[1],
     ).all()
     _week_actuals: dict = {}
     for _a in _week_actuals_raw:
-        _day = _a.start_time.date()
+        from services.timezone_utils import to_athlete_local_date as _to_local
+        _day = _to_local(_a.start_time, _ath_tz)
         if _day not in _week_actuals:
             _week_actuals[_day] = _a  # keep first per day
 
@@ -3000,8 +3009,8 @@ async def get_home_data(
                 briefing_state = None
                 today_actual = db.query(Activity).filter(
                     Activity.athlete_id == current_user.id,
-                    Activity.start_time >= today,
-                    Activity.start_time < today + timedelta(days=1),
+                    Activity.start_time >= _today_start_utc,
+                    Activity.start_time < _today_end_utc,
                 ).order_by(Activity.start_time.desc()).first()
 
                 today_completed = None

@@ -148,11 +148,14 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
     """
     Last N days of run activities.
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date, athlete_local_today
     now = datetime.utcnow()
     # Allow ~2 years so injury-return + baseline can be compared.
     days = max(1, min(int(days), 730))
     cutoff = now - timedelta(days=days)
     units = _preferred_units(db, athlete_id)
+    _ath_tz = get_athlete_timezone_from_db(db, athlete_id)
+    _ref_date = athlete_local_today(_ath_tz)
 
     runs = (
         db.query(Activity)
@@ -174,7 +177,7 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
         distance_mi = _mi_from_m(a.distance_m) if a.distance_m is not None else None
         pace = _pace_str(a.duration_s, a.distance_m)
         pace_mi = _pace_str_mi(a.duration_s, a.distance_m)
-        date_str = a.start_time.date().isoformat()
+        date_str = to_athlete_local_date(a.start_time, _ath_tz).isoformat()
 
         # Phase 3: Add elevation, weather, max_hr for richer context
         elevation_gain_m = float(a.total_elevation_gain) if a.total_elevation_gain is not None else None
@@ -233,7 +236,7 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
             parts.append(f"({a.weather_condition})")
         value_str = " ".join(parts) if parts else "run"
 
-        _run_rel = _relative_date(a.start_time.date()) if a.start_time else ""
+        _run_rel = _relative_date(to_athlete_local_date(a.start_time, _ath_tz), _ref_date) if a.start_time else ""
         evidence.append(
             {
                 "type": "activity",

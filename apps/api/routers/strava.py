@@ -406,7 +406,10 @@ def strava_callback(
             # Strava returns e.g. "(GMT-05:00) America/New_York" — extract IANA part
             if " " in strava_timezone:
                 strava_timezone = strava_timezone.split(" ", 1)[-1]
-            athlete.timezone = strava_timezone
+            from services.timezone_utils import is_valid_iana_timezone
+            # Only persist if valid IANA — never overwrite with garbage/null values
+            if is_valid_iana_timezone(strava_timezone):
+                athlete.timezone = strava_timezone
         
         db.commit()
         db.refresh(athlete)
