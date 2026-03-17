@@ -86,12 +86,32 @@ class TestNoRuntimeOpus:
         assert model == coach_no_anthropic.MODEL_DEFAULT
 
     def test_home_briefing_model_string(self):
-        """_call_opus_briefing_sync must call claude-sonnet-4-6, never claude-opus-4-6."""
-        import ast, inspect
+        """Home briefing default model must be claude-sonnet-4-6, never claude-opus-4-6.
+
+        The model is now config-driven via resolve_briefing_model() / BRIEFING_PRIMARY_MODEL.
+        We verify:
+        1. The default config value is claude-sonnet-4-6 (not opus).
+        2. _call_opus_briefing_sync delegates to resolve_briefing_model (not hardcoded).
+        3. The old opus string does not appear in the source.
+        """
+        import inspect
         from routers.home import _call_opus_briefing_sync
+        from core.config import Settings
+
+        # Default config must be sonnet, not opus
+        default_model = Settings.model_fields["BRIEFING_PRIMARY_MODEL"].default
+        assert default_model == "claude-sonnet-4-6", (
+            f"BRIEFING_PRIMARY_MODEL default must be claude-sonnet-4-6, got {default_model}"
+        )
+
+        # Source must not hardcode opus
         src = inspect.getsource(_call_opus_briefing_sync)
-        assert "claude-sonnet-4-6" in src, "Home briefing must use claude-sonnet-4-6"
         assert "claude-opus-4-6" not in src, "Home briefing must not reference claude-opus-4-6"
+
+        # Source must delegate to resolve_briefing_model
+        assert "resolve_briefing_model" in src, (
+            "_call_opus_briefing_sync must use resolve_briefing_model() for model selection"
+        )
 
 
 class TestSonnetIsLivePremiumModel:
