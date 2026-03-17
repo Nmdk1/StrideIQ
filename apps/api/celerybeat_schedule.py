@@ -66,6 +66,13 @@ beat_schedule = {
         'task': 'tasks.run_auto_discovery_nightly',
         'schedule': crontab(hour=4, minute=0),
     },
+    # Timezone backfill — daily at 03:00 UTC.
+    # Infers and persists IANA timezone for athletes with NULL/invalid timezone
+    # using GPS coordinates from their most recent activity. Idempotent.
+    'timezone-backfill': {
+        'task': 'tasks.backfill_athlete_timezones',
+        'schedule': crontab(hour=3, minute=0),
+    },
 }
 
 

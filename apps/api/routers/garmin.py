@@ -245,6 +245,21 @@ def garmin_callback(
             exc,
         )
 
+    # --- Infer timezone from GPS if not already set (Garmin provides none) ---
+    try:
+        from tasks.timezone_tasks import infer_timezone_for_athlete
+        infer_timezone_for_athlete.apply_async(
+            args=[athlete_id_str],
+            countdown=300,  # wait 5 min for backfill activities to land first
+        )
+        logger.info("Timezone inference task enqueued for athlete %s", athlete_id_str)
+    except Exception as exc:
+        logger.warning(
+            "Could not enqueue timezone inference task for athlete %s: %s",
+            athlete_id_str,
+            exc,
+        )
+
     sep = "&" if "?" in return_to else "?"
     redirect_url = _web_redirect(request, f"{return_to}{sep}garmin=connected")
     return RedirectResponse(url=redirect_url, status_code=302)

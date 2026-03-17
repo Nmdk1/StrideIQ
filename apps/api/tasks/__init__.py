@@ -81,6 +81,7 @@ from . import garmin_health_monitor_task  # noqa: E402  # daily GarminDay covera
 from . import correlation_tasks  # noqa: E402  # daily correlation sweep
 from . import experience_guardrail_task  # noqa: E402  # daily experience audit
 from . import fact_extraction_task  # noqa: E402  # coach memory layer 1
+from . import timezone_tasks  # noqa: E402  # GPS-based timezone inference + backfill
 
 try:
     from . import runtoon_tasks  # noqa: E402

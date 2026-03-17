@@ -140,3 +140,74 @@ def is_valid_iana_timezone(tz_str: str) -> bool:
         return True
     except (ZoneInfoNotFoundError, KeyError, Exception):
         return False
+
+
+def infer_timezone_from_coordinates(lat: float, lng: float) -> Optional[ZoneInfo]:
+    """
+    Reverse-geocode a lat/lng to an IANA timezone using timezonefinder.
+
+    Returns ZoneInfo on success, None if no timezone found (e.g. open ocean).
+    Never raises.
+    """
+    try:
+        from timezonefinder import TimezoneFinder  # lazy import — library is optional dep
+        tf = TimezoneFinder()
+        tz_str = tf.timezone_at(lat=lat, lng=lng)
+        if tz_str:
+            return ZoneInfo(tz_str)
+    except Exception:
+        logger.debug("timezonefinder lookup failed for lat=%s lng=%s", lat, lng, exc_info=True)
+    return None
+
+
+def infer_and_persist_athlete_timezone(db: Session, athlete_id: UUID) -> Optional[ZoneInfo]:
+    """
+    Infer an athlete's timezone from their most recent GPS activity and persist it.
+
+    - Only writes if current athlete.timezone is NULL/empty or invalid.
+    - Picks the most recent activity with valid start_lat/start_lng.
+    - Returns the resolved ZoneInfo, or None if inference failed.
+
+    Safe to call repeatedly — idempotent if timezone already valid.
+    """
+    from models import Athlete, Activity  # local import to avoid circular deps
+
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    if not athlete:
+        return None
+
+    # Skip if already have a valid timezone
+    if athlete.timezone and is_valid_iana_timezone(athlete.timezone):
+        return ZoneInfo(athlete.timezone)
+
+    # Find most recent activity with GPS coordinates
+    activity = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.start_lat.isnot(None),
+            Activity.start_lng.isnot(None),
+        )
+        .order_by(Activity.start_time.desc())
+        .first()
+    )
+
+    if not activity or activity.start_lat is None or activity.start_lng is None:
+        logger.debug("No GPS activity found for athlete %s — cannot infer timezone", athlete_id)
+        return None
+
+    tz = infer_timezone_from_coordinates(float(activity.start_lat), float(activity.start_lng))
+    if tz is None:
+        logger.debug(
+            "Timezone inference returned no result for lat=%s lng=%s (athlete %s)",
+            activity.start_lat, activity.start_lng, athlete_id,
+        )
+        return None
+
+    athlete.timezone = str(tz)
+    db.commit()
+    logger.info(
+        "Inferred and persisted timezone %s for athlete %s from activity %s",
+        tz, athlete_id, activity.id,
+    )
+    return tz
