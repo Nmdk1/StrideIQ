@@ -289,10 +289,12 @@ def _call_opus_briefing(
     prompt: str,
     schema_fields: dict,
     required_fields: list,
+    athlete_id: Optional[str] = None,
 ) -> Optional[dict]:
     """Call Sonnet (via _call_opus_briefing_sync) with PROVIDER_TIMEOUT_S enforced.
     
-    Function name retained for compatibility — runtime model is claude-sonnet-4-6.
+    Function name retained for compatibility — runtime model is claude-sonnet-4-6
+    unless Kimi canary is active for this athlete.
     """
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
     from routers.home import _call_opus_briefing_sync
@@ -305,6 +307,7 @@ def _call_opus_briefing(
     future = pool.submit(
         _call_opus_briefing_sync, prompt, schema_fields, required_fields, anthropic_key,
         PROVIDER_TIMEOUT_S,  # llm_timeout — worker path gets full budget
+        athlete_id,          # pass through for canary routing
     )
     try:
         return future.result(timeout=PROVIDER_TIMEOUT_S)
@@ -323,20 +326,21 @@ def _call_llm_for_briefing(
     prompt: str,
     schema_fields: dict,
     required_fields: list,
+    athlete_id: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Single LLM dispatch point for home briefing generation.
 
-    Always tries Sonnet first (if ANTHROPIC_API_KEY is set), falls back to
+    Always tries primary model first (Sonnet or Kimi canary), falls back to
     Gemini Flash. Matches the behaviour of _fetch_llm_briefing_sync in
     home.py. The use_opus feature flag has been retired — the model
-    selection is driven entirely by API key availability.
+    selection is driven by API key availability and canary config.
 
     This wrapper exists so consent gating in generate_home_briefing_task
     can be verified by tests via patching this function.  All actual LLM
-    calls go through _call_opus_briefing (Sonnet) or _call_gemini_briefing.
+    calls go through _call_opus_briefing (Sonnet/Kimi) or _call_gemini_briefing.
     """
-    result = _call_opus_briefing(prompt, schema_fields, required_fields)
+    result = _call_opus_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id)
     if result is not None:
         return result
     return _call_gemini_briefing(prompt, schema_fields, required_fields)
@@ -470,7 +474,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
 
         use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
         source_model = "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
-        result = _call_llm_for_briefing(prompt, schema_fields, required_fields)
+        result = _call_llm_for_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id)
 
         if result is None:
             logger.warning("All LLM providers failed for %s; writing deterministic fallback", athlete_id)

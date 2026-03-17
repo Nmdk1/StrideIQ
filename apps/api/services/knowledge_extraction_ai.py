@@ -38,40 +38,29 @@ except Exception as e:
 def _call_ai(prompt: str, model_preference: str = "claude") -> Optional[str]:
     """
     Call AI model for extraction.
-    
-    Args:
-        prompt: Prompt for AI
-        model_preference: "claude" or "gpt4"
-        
-    Returns:
-        AI response text or None
+
+    Routes through the centralized LLM abstraction. Uses KNOWLEDGE_PRIMARY_MODEL
+    from settings (default: claude-sonnet-4-6), with automatic Gemini fallback
+    if Anthropic fails. The `model_preference` parameter is retained for
+    backward compatibility but has no effect — model selection is config-driven.
     """
-    # Try Claude first (default)
-    if model_preference == "claude" and anthropic_client:
-        try:
-            response = anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=4000,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return response.content[0].text
-        except Exception as e:
-            logger.error(f"Claude API error: {e}")
-    
-    # Fallback to GPT-4
-    if openai_client:
-        try:
-            response = openai_client.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=4000
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
-    
-    logger.error("No AI client available")
-    return None
+    from core.llm_client import call_llm, resolve_knowledge_model
+
+    model = resolve_knowledge_model()
+    try:
+        result = call_llm(
+            model=model,
+            system="You are an expert running coach and sports scientist. Extract the requested information accurately.",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=4000,
+            temperature=0.2,
+            response_mode="text",
+            timeout_s=60,
+        )
+        return result["text"]
+    except RuntimeError as exc:
+        logger.error("Knowledge extraction: all LLM providers failed: %s", exc)
+        return None
 
 
 def extract_rpi_formula(text: str) -> Optional[Dict]:

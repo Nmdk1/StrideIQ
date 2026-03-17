@@ -1119,24 +1119,23 @@ def _call_opus_briefing_sync(
     required_fields: list,
     api_key: str,
     llm_timeout: Optional[int] = None,
+    athlete_id: Optional[str] = None,
 ) -> Optional[dict]:
     """
-    Synchronous Opus call — meant to be run via asyncio.to_thread() or
-    ThreadPoolExecutor in Celery workers.
+    Synchronous LLM call for home briefing — routes through the centralized
+    llm_client abstraction with canary support.
 
-    llm_timeout: SDK-level timeout in seconds. Defaults to HOME_BRIEFING_TIMEOUT_S
-    (10s) for the request path. Workers pass PROVIDER_TIMEOUT_S (45s) so the
-    richer prompt has enough generation time without blocking page loads.
+    The `api_key` parameter is retained for backward compatibility with the
+    Celery task path (home_briefing_tasks.py calls this directly). Actual
+    key resolution is handled inside call_llm_with_json_parse via
+    core.config.settings and os.getenv().
+
+    llm_timeout: SDK-level timeout in seconds. Defaults to HOME_BRIEFING_TIMEOUT_S.
+    athlete_id: when provided, enables Kimi canary routing for this athlete.
     """
-    import json as _json
+    from core.llm_client import call_llm_with_json_parse, resolve_briefing_model
 
     timeout_s = llm_timeout if llm_timeout is not None else HOME_BRIEFING_TIMEOUT_S
-
-    try:
-        from anthropic import Anthropic
-    except ImportError:
-        logger.warning("anthropic package not installed — cannot use Sonnet for home briefing")
-        return None
 
     field_descriptions = "\n".join(
         f'  - "{k}" ({"REQUIRED" if k in required_fields else "optional"}): {v}'
@@ -1158,41 +1157,20 @@ def _call_opus_briefing_sync(
         "- Respond with the raw JSON object only."
     )
 
-    try:
-        client = Anthropic(api_key=api_key, timeout=timeout_s)
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            system=system_prompt,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000,
-            temperature=0.3,
-        )
+    model = resolve_briefing_model(athlete_id=athlete_id)
 
-        raw_text = response.content[0].text if response.content else ""
-        if not raw_text.strip():
-            logger.warning("Sonnet returned empty response for home briefing")
-            return None
+    result = call_llm_with_json_parse(
+        model=model,
+        system=system_prompt,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=2000,
+        temperature=0.3,
+        timeout_s=timeout_s,
+    )
 
-        text = raw_text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-
-        result = _json.loads(text)
-        logger.info(
-            f"Home briefing generated via Sonnet "
-            f"(input={response.usage.input_tokens}, output={response.usage.output_tokens})"
-        )
-        return result
-
-    except _json.JSONDecodeError as je:
-        logger.warning(f"Sonnet JSON parse failed: {je}")
-        return None
-    except Exception as e:
-        logger.warning(f"Opus home briefing call failed: {type(e).__name__}: {e}")
-        return None
+    if result is not None:
+        logger.info("Home briefing generated via %s", model)
+    return result
 
 
 def _call_gemini_briefing_sync(
@@ -1335,7 +1313,10 @@ def _fetch_llm_briefing_sync(
     # --- Primary: Claude Opus 4.6 ---
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     if anthropic_key:
-        result = _call_opus_briefing_sync(prompt, schema_fields, required_fields, anthropic_key)
+        result = _call_opus_briefing_sync(
+            prompt, schema_fields, required_fields, anthropic_key,
+            athlete_id=athlete_id,
+        )
     else:
         logger.info("ANTHROPIC_API_KEY not set — falling back to Gemini for home briefing")
         result = None

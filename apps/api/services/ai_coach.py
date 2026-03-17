@@ -2782,6 +2782,19 @@ ATHLETE BRIEF:
                 f"Coach query: complexity={complexity}, model={model}, is_opus={is_opus}, "
                 f"is_vip={is_vip}, is_high_stakes={is_high_stakes}, is_high_complexity={is_high_complexity}"
             )
+
+            # Kimi canary telemetry — coach tool-call loop remains on Sonnet
+            # until offline tool-parity tests pass. Log canary status only.
+            try:
+                from core.llm_client import is_canary_athlete
+                if is_canary_athlete(str(athlete_id)):
+                    logger.info(
+                        "Coach canary: athlete %s is in Kimi canary cohort. "
+                        "Coach tool-call loop remains on Sonnet pending offline tool-parity validation.",
+                        athlete_id,
+                    )
+            except Exception:
+                pass
             
             # Check overall budget before proceeding
             budget_ok, budget_reason = self.check_budget(athlete_id, is_opus=is_opus, is_vip=is_vip)

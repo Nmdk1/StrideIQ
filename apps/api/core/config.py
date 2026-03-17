@@ -208,6 +208,19 @@ class Settings(BaseSettings):
     SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.1)  # 10% of transactions
     SENTRY_PROFILES_SAMPLE_RATE: float = Field(default=0.1)
 
+    # LLM Provider Configuration
+    # Kimi K2.5 (Moonshot AI — OpenAI-compatible API)
+    KIMI_API_KEY: Optional[str] = Field(default=None)
+    KIMI_BASE_URL: str = Field(default="https://api.moonshot.cn/v1")
+    # Canary routing: set KIMI_CANARY_ENABLED=true + comma-separated athlete UUIDs
+    # to route only those athletes to Kimi. All others remain on Sonnet.
+    KIMI_CANARY_ENABLED: bool = Field(default=False)
+    KIMI_CANARY_ATHLETE_IDS: str = Field(default="")  # comma-separated UUIDs
+
+    # Model selection per call site — change via env to switch providers
+    BRIEFING_PRIMARY_MODEL: str = Field(default="claude-sonnet-4-6")
+    KNOWLEDGE_PRIMARY_MODEL: str = Field(default="claude-sonnet-4-6")
+
     @model_validator(mode="after")
     def _validate_production_config(self) -> "Settings":
         """P0-3: Hard-fail on invalid production config. Non-production unaffected."""
