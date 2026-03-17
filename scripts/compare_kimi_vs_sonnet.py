@@ -205,8 +205,8 @@ def _score_result(raw_text: str, required_fields: list, latency_ms: float) -> di
 # Model call wrappers
 # ---------------------------------------------------------------------------
 
-def _call_model(model: str, system: str, user_prompt: str, timeout_s: int) -> Tuple[str, float]:
-    """Returns (raw_text, latency_ms). Raises on hard failure."""
+def _call_model(model: str, system: str, user_prompt: str, timeout_s: int) -> Tuple[str, float, str]:
+    """Returns (raw_text, latency_ms, actual_model_used). Raises on hard failure."""
     # Import here so the script can be run standalone without full Django setup
     from core.llm_client import call_llm
     t0 = time.monotonic()
@@ -220,7 +220,7 @@ def _call_model(model: str, system: str, user_prompt: str, timeout_s: int) -> Tu
         timeout_s=timeout_s,
     )
     latency_ms = (time.monotonic() - t0) * 1000
-    return result["text"], latency_ms
+    return result["text"], latency_ms, result["provider"]
 
 
 # ---------------------------------------------------------------------------
@@ -247,13 +247,18 @@ def _write_summary(results: list, output_dir: Path, sonnet_model: str, kimi_mode
         latencies.sort()
         p50 = latencies[len(latencies) // 2] if latencies else 0
         p95 = latencies[int(len(latencies) * 0.95)] if latencies else 0
-        return {
+        # For kimi rows, track how many were actually served by Kimi (not fallback)
+        kimi_served = sum(1 for x in rows if x.get("kimi_served", True))
+        result = {
             "n": len(rows),
             "json_parse_rate": f"{parse_ok}/{len(rows)} ({100*parse_ok//len(rows)}%)",
             "required_fields_rate": f"{all_req_ok}/{len(rows)} ({100*all_req_ok//len(rows)}%)",
             "p50_latency_ms": round(p50, 1),
             "p95_latency_ms": round(p95, 1),
         }
+        if model_key == "kimi":
+            result["kimi_served_rate"] = f"{kimi_served}/{len(rows)} ({100*kimi_served//len(rows)}%)"
+        return result
 
     sonnet_stats = _stats("sonnet")
     kimi_stats = _stats("kimi")
@@ -264,6 +269,14 @@ def _write_summary(results: list, output_dir: Path, sonnet_model: str, kimi_mode
         if not k:
             issues.append("NO KIMI RESULTS — cannot evaluate")
             return issues
+        # Kimi must actually serve >= 90% of calls (not fall back to Sonnet/Gemini)
+        served_str = k.get("kimi_served_rate", "N/A")
+        if served_str != "N/A":
+            served_pct = int(served_str.split("(")[1].rstrip("%)"))
+            if served_pct < 90:
+                issues.append(
+                    f"Kimi direct serve rate {served_pct}% < 90% — too many timeouts/429s for canary"
+                )
         k_parse = int(k.get("json_parse_rate", "0/0 (0%)").split("(")[1].rstrip("%)"))
         if k_parse < 99:
             issues.append(f"JSON parse rate {k_parse}% < 99.5% target")
@@ -305,6 +318,7 @@ def _write_summary(results: list, output_dir: Path, sonnet_model: str, kimi_mode
         "",
         "## Kimi K2.5 Stats",
         f"- n: {kimi_stats.get('n', 'N/A')}",
+        f"- Kimi directly served: {kimi_stats.get('kimi_served_rate', 'N/A')}",
         f"- JSON parse rate: {kimi_stats.get('json_parse_rate', 'N/A')}",
         f"- Required fields rate: {kimi_stats.get('required_fields_rate', 'N/A')}",
         f"- p50 latency: {kimi_stats.get('p50_latency_ms', 'N/A')} ms",
@@ -435,9 +449,10 @@ def main() -> None:
         if not args.kimi_only:
             print(f"  Running Sonnet ({sonnet_model})...", end=" ", flush=True)
             try:
-                text, latency_ms = _call_model(sonnet_model, system, user_prompt, args.timeout)
+                text, latency_ms, actual_provider = _call_model(sonnet_model, system, user_prompt, args.timeout)
                 score = _score_result(text, required_fields, latency_ms)
                 score["raw_text"] = text
+                score["actual_provider"] = actual_provider
                 result_row["sonnet"] = score
                 ok_str = "OK" if score["all_required_ok"] else "FAIL"
                 print(f"{ok_str} ({latency_ms:.0f}ms)")
@@ -449,14 +464,18 @@ def main() -> None:
         if not args.sonnet_only:
             print(f"  Running Kimi ({kimi_model})...", end=" ", flush=True)
             try:
-                text, latency_ms = _call_model(kimi_model, system, user_prompt, args.timeout)
+                text, latency_ms, actual_provider = _call_model(kimi_model, system, user_prompt, args.timeout)
                 score = _score_result(text, required_fields, latency_ms)
                 score["raw_text"] = text
+                score["actual_provider"] = actual_provider
+                # Track whether Kimi actually served (vs fell back to Sonnet/Gemini)
+                score["kimi_served"] = (actual_provider == "kimi")
                 result_row["kimi"] = score
+                served_str = "" if score["kimi_served"] else " [FALLBACK to Sonnet]"
                 ok_str = "OK" if score["all_required_ok"] else "FAIL"
-                print(f"{ok_str} ({latency_ms:.0f}ms)")
+                print(f"{ok_str} ({latency_ms:.0f}ms){served_str}")
             except Exception as exc:
-                result_row["kimi"] = {"error": str(exc), "latency_ms": 0, "json_parse_ok": False}
+                result_row["kimi"] = {"error": str(exc), "latency_ms": 0, "json_parse_ok": False, "kimi_served": False}
                 print(f"ERROR: {exc}")
 
         results.append(result_row)
