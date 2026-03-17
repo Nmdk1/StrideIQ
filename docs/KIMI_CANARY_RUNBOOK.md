@@ -27,9 +27,10 @@ Run the probe:
 ```bash
 ssh root@187.124.67.153
 cd /opt/strideiq/repo
-# Run 10-call probe first (brief check)
-docker exec strideiq_api python scripts/compare_kimi_vs_sonnet.py --calls 10 --kimi-only --output-dir /tmp/kimi_probe
-cat /tmp/kimi_probe/summary.md
+# Script lives at repo root — copy into container then run with STRIDEIQ_API_DIR set
+docker cp scripts/compare_kimi_vs_sonnet.py strideiq_api:/tmp/compare_kimi_vs_sonnet.py
+docker exec -e STRIDEIQ_API_DIR=/app -w /app -i strideiq_api python /tmp/compare_kimi_vs_sonnet.py --calls 10 --kimi-only --output-dir /tmp/kimi_probe
+docker exec strideiq_api cat /tmp/kimi_probe/summary.md
 ```
 
 If verdict is GO, proceed to canary activation below.

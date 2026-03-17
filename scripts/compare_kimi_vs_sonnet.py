@@ -44,7 +44,19 @@ from typing import Any, Dict, List, Optional, Tuple
 # Add api directory to path so we can import from it
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _API_DIR = _REPO_ROOT / "apps" / "api"
-sys.path.insert(0, str(_API_DIR))
+# Allow override via env var for cases where script is run from outside the repo
+# (e.g. copied into a Docker container at /tmp)
+_API_DIR_OVERRIDE = os.environ.get("STRIDEIQ_API_DIR")
+if _API_DIR_OVERRIDE:
+    sys.path.insert(0, _API_DIR_OVERRIDE)
+elif _API_DIR.exists():
+    sys.path.insert(0, str(_API_DIR))
+else:
+    # Fallback: try common container path
+    for _fallback in ["/app", "/opt/strideiq/repo/apps/api"]:
+        if Path(_fallback).exists():
+            sys.path.insert(0, _fallback)
+            break
 
 
 # ---------------------------------------------------------------------------
