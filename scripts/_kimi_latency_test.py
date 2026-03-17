@@ -1,12 +1,14 @@
-import urllib.request, json, time
+import os, urllib.request, json, time
 
-KEY = "sk-PWKMFuiALkqVtXHq5blLON3EoCM45Ang0vlVKvbAfyT3fbXH"
+KEY = os.environ.get("KIMI_API_KEY", "")
+if not KEY:
+    raise SystemExit("KIMI_API_KEY env var not set")
 BASE = "https://api.moonshot.ai/v1/chat/completions"
 
 models = [
     ("moonshot-v1-8k", 0.3),
-    ("kimi-k2-turbo-preview", 1),
-    ("kimi-k2.5", 1),
+    ("kimi-k2-turbo-preview", 0.6),
+    ("kimi-k2.5", None),
 ]
 
 for model, temp in models:
@@ -15,8 +17,9 @@ for model, temp in models:
             "model": model,
             "messages": [{"role": "user", "content": "Reply with one word: VERIFIED"}],
             "max_tokens": 20,
-            "temperature": temp
         }
+        if temp is not None:
+            payload["temperature"] = temp
         req = urllib.request.Request(
             BASE,
             data=json.dumps(payload).encode(),
