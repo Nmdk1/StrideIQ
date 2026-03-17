@@ -24,9 +24,10 @@ def _mock_settings(**kwargs):
     """Return a mock settings object with LLM fields."""
     s = MagicMock()
     s.KIMI_API_KEY = kwargs.get("KIMI_API_KEY", None)
-    s.KIMI_BASE_URL = kwargs.get("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
+    s.KIMI_BASE_URL = kwargs.get("KIMI_BASE_URL", "https://api.moonshot.ai/v1")
     s.KIMI_CANARY_ENABLED = kwargs.get("KIMI_CANARY_ENABLED", False)
     s.KIMI_CANARY_ATHLETE_IDS = kwargs.get("KIMI_CANARY_ATHLETE_IDS", "")
+    s.KIMI_CANARY_MODEL = kwargs.get("KIMI_CANARY_MODEL", "kimi-k2-turbo-preview")
     s.BRIEFING_PRIMARY_MODEL = kwargs.get("BRIEFING_PRIMARY_MODEL", "claude-sonnet-4-6")
     s.KNOWLEDGE_PRIMARY_MODEL = kwargs.get("KNOWLEDGE_PRIMARY_MODEL", "claude-sonnet-4-6")
     return s
@@ -280,10 +281,11 @@ class TestCanaryGate:
             KIMI_API_KEY="fake-key",
             KIMI_CANARY_ATHLETE_IDS=self.ATHLETE_A,
             BRIEFING_PRIMARY_MODEL="claude-sonnet-4-6",
+            KIMI_CANARY_MODEL="kimi-k2-turbo-preview",
         )
         with patch("core.llm_client._get_settings", return_value=settings):
             model = resolve_briefing_model(athlete_id=self.ATHLETE_A)
-        assert model == "kimi-k2.5"
+        assert model == "kimi-k2-turbo-preview"
 
     def test_canary_enabled_non_allowlisted_athlete_gets_primary(self):
         from core.llm_client import resolve_briefing_model
@@ -352,10 +354,11 @@ class TestCanaryGate:
             KIMI_API_KEY="fake-key",
             KIMI_CANARY_ATHLETE_IDS=ids,
             BRIEFING_PRIMARY_MODEL="claude-sonnet-4-6",
+            KIMI_CANARY_MODEL="kimi-k2-turbo-preview",
         )
         with patch("core.llm_client._get_settings", return_value=settings):
-            assert resolve_briefing_model(athlete_id=self.ATHLETE_A) == "kimi-k2.5"
-            assert resolve_briefing_model(athlete_id=self.ATHLETE_B) == "kimi-k2.5"
+            assert resolve_briefing_model(athlete_id=self.ATHLETE_A) == "kimi-k2-turbo-preview"
+            assert resolve_briefing_model(athlete_id=self.ATHLETE_B) == "kimi-k2-turbo-preview"
 
 
 # ---------------------------------------------------------------------------

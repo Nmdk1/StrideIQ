@@ -1140,7 +1140,7 @@ def _call_opus_briefing_sync(
     model = resolve_briefing_model(athlete_id=athlete_id)
 
     # kimi-k2.5 is a reasoning model — enforce minimum timeout
-    KIMI_MIN_TIMEOUT_S = 120
+    KIMI_MIN_TIMEOUT_S = 15  # kimi-k2-turbo-preview responds in ~800ms; 15s gives ample headroom
     if model.startswith("kimi"):
         timeout_s = max(llm_timeout or 0, KIMI_MIN_TIMEOUT_S)
     else:

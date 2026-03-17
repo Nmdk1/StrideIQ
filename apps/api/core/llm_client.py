@@ -115,7 +115,15 @@ def _call_kimi(
     response_mode: Literal["text", "json"],
     timeout_s: int,
 ) -> LLMResponse:
-    """Kimi (Moonshot) via OpenAI-compatible SDK."""
+    """
+    Kimi (Moonshot) via OpenAI-compatible SDK.
+
+    Target model: kimi-k2-turbo-preview — 60-100 tok/s, ~800ms, supports
+    response_format json_object, configurable temperature.
+
+    All LLM calls in StrideIQ are narrative generation against structured engine
+    output — not reasoning tasks. Fast JSON-compliant generation is the requirement.
+    """
     try:
         from openai import OpenAI
     except ImportError as exc:
@@ -132,29 +140,22 @@ def _call_kimi(
 
     oai_messages = [{"role": "system", "content": system}] + list(messages)
 
-    extra_kwargs = {}
+    extra_kwargs: dict = {}
     if response_mode == "json":
         extra_kwargs["response_format"] = {"type": "json_object"}
-
-    # kimi-k2.5 is a reasoning model that requires temperature=1
-    # and returns content via choices[0].message.content (thinking is separate)
-    effective_temperature = 1 if model.startswith("kimi") else temperature
 
     t0 = time.monotonic()
     response = client.chat.completions.create(
         model=model,
         messages=oai_messages,
         max_tokens=max_tokens,
-        temperature=effective_temperature,
+        temperature=temperature,
         **extra_kwargs,
     )
     latency_ms = (time.monotonic() - t0) * 1000
 
     choice = response.choices[0] if response.choices else None
     raw_text = choice.message.content if choice and choice.message else ""
-    # For reasoning models, content may be in reasoning_content if content is empty
-    if not raw_text and choice and choice.message:
-        raw_text = getattr(choice.message, "reasoning_content", "") or ""
     usage = response.usage
 
     return LLMResponse(
@@ -282,7 +283,7 @@ def call_llm(
     Route an LLM completion to the correct provider with automatic fallback.
 
     For Kimi-selected calls the fallback chain is:
-        kimi-k2.5 → claude-sonnet-4-6 → gemini-2.5-flash
+        kimi-k2-turbo-preview → claude-sonnet-4-6 → gemini-2.5-flash
 
     For Anthropic-selected calls:
         claude-sonnet-4-6 → gemini-2.5-flash
@@ -417,12 +418,18 @@ def resolve_briefing_model(athlete_id: Optional[str] = None) -> str:
     Return the model to use for briefing generation.
 
     If KIMI_CANARY_ENABLED and the athlete is in KIMI_CANARY_ATHLETE_IDS,
-    returns "kimi-k2.5". Otherwise returns BRIEFING_PRIMARY_MODEL.
+    returns KIMI_CANARY_MODEL (default: kimi-k2-turbo-preview).
+    Otherwise returns BRIEFING_PRIMARY_MODEL.
+
+    Note: kimi-k2.5 is a reasoning model unsuitable for JSON briefings (returns
+    empty content). Use kimi-k2-turbo-preview which is fast (~800ms) and correct.
     """
     if athlete_id and _canary_enabled():
         if athlete_id in _canary_athlete_ids():
-            logger.info("Canary: routing briefing for athlete %s to kimi-k2.5", athlete_id)
-            return "kimi-k2.5"
+            settings = _get_settings()
+            model = settings.KIMI_CANARY_MODEL
+            logger.info("Canary: routing briefing for athlete %s to %s", athlete_id, model)
+            return model
     settings = _get_settings()
     return settings.BRIEFING_PRIMARY_MODEL
 

@@ -1,9 +1,21 @@
-# Kimi K2.5 Canary Activation Runbook
+# Kimi Canary Activation Runbook
 
 ## Current State (as of 2026-03-17)
 
 **Canary is OFF.** `KIMI_CANARY_ENABLED=false` in production.  
 Production is running `claude-sonnet-4-6` for all athletes — zero behavior change.
+
+## Model Selection
+
+**Use `kimi-k2-turbo-preview`, NOT `kimi-k2.5`** for briefings and knowledge extraction.
+
+| Model | Latency (VERIFIED) | Notes |
+|---|---|---|
+| `moonshot-v1-8k` | ~560ms | Standard chat, no reasoning |
+| `kimi-k2-turbo-preview` | ~800ms | **Recommended — fast, direct output** |
+| `kimi-k2.5` | 3-60s+ | Reasoning model, returns empty `content`, unsuitable for JSON briefings |
+
+`kimi-k2.5` is a reasoning model that outputs to `reasoning_content` only — it will return empty responses for structured JSON requests and is inappropriate for real-time use. The configured canary model is `kimi-k2-turbo-preview` via `KIMI_CANARY_MODEL` in config.
 
 ## Scope of Kimi Integration
 
@@ -94,7 +106,7 @@ print('OTHER ATHLETE MODEL:', model2)
 ```
 Expected:
 ```
-FOUNDER MODEL: kimi-k2.5
+FOUNDER MODEL: kimi-k2-turbo-preview
 OTHER ATHLETE MODEL: claude-sonnet-4-6
 ```
 
@@ -143,4 +155,5 @@ Expected after rollback: `CANARY: False`
 
 - **Base URL:** `https://api.moonshot.ai/v1` (`.ai` — international)
 - **NOT:** `https://api.moonshot.cn/v1` (`.cn` — China domestic only)
-- Model: `kimi-k2.5` (temperature must be 1 — reasoning model constraint)
+- Model: `kimi-k2-turbo-preview` (default canary model, ~800ms, direct JSON output)
+- `kimi-k2.5` requires `temperature=1` and is a reasoning model — not used for canary

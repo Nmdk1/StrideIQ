@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Offline replay comparator: Kimi K2.5 vs Claude Sonnet 4.6
+Offline replay comparator: kimi-k2-turbo-preview vs Claude Sonnet 4.6
 
 Usage:
     python scripts/compare_kimi_vs_sonnet.py [OPTIONS]
@@ -10,7 +10,7 @@ Options:
     --fixtures-file PATH  JSON file with pre-captured prompts (default: built-in fixtures)
     --output-dir PATH     Where to write results (default: scripts/replay_results/)
     --calls N             How many prompts to replay per model (default: 5)
-    --timeout S           Per-call timeout in seconds (default: 180 — kimi-k2.5 is a reasoning model)
+    --timeout S           Per-call timeout in seconds (default: 30 — kimi-k2-turbo-preview responds in ~800ms)
     --sonnet-only         Only run Sonnet (baseline pass — generate fixtures)
     --kimi-only           Only run Kimi (comparison pass)
     --no-coach            Skip coach tool-call scenario (default: include in offline, skip live canary)
@@ -395,7 +395,7 @@ def main() -> None:
     parser.add_argument("--fixtures-file", default=None, help="Path to JSON fixtures file")
     parser.add_argument("--output-dir", default="scripts/replay_results", help="Output directory")
     parser.add_argument("--calls", type=int, default=5, help="Number of prompts to replay")
-    parser.add_argument("--timeout", type=int, default=180, help="Per-call timeout in seconds (default 180 — kimi-k2.5 is a reasoning model, needs 60-180s for briefing prompts)")
+    parser.add_argument("--timeout", type=int, default=30, help="Per-call timeout in seconds (default 30 — kimi-k2-turbo-preview responds in ~800ms)")
     parser.add_argument("--sonnet-only", action="store_true")
     parser.add_argument("--kimi-only", action="store_true")
     parser.add_argument("--no-coach", action="store_true", help="Skip coach tool-call scenario")
@@ -426,7 +426,7 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     sonnet_model = "claude-sonnet-4-6"
-    kimi_model = "kimi-k2.5"
+    kimi_model = "kimi-k2-turbo-preview"
 
     results = []
     for i, fixture in enumerate(fixtures):

@@ -221,6 +221,10 @@ class Settings(BaseSettings):
     BRIEFING_PRIMARY_MODEL: str = Field(default="claude-sonnet-4-6")
     KNOWLEDGE_PRIMARY_MODEL: str = Field(default="claude-sonnet-4-6")
 
+    # Kimi canary model — use kimi-k2-turbo-preview (fast, ~800ms)
+    # NOT kimi-k2.5 which is a reasoning model (empty content, unsuitable for JSON briefings)
+    KIMI_CANARY_MODEL: str = Field(default="kimi-k2-turbo-preview")
+
     @model_validator(mode="after")
     def _validate_production_config(self) -> "Settings":
         """P0-3: Hard-fail on invalid production config. Non-production unaffected."""
