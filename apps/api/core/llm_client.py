@@ -136,18 +136,25 @@ def _call_kimi(
     if response_mode == "json":
         extra_kwargs["response_format"] = {"type": "json_object"}
 
+    # kimi-k2.5 is a reasoning model that requires temperature=1
+    # and returns content via choices[0].message.content (thinking is separate)
+    effective_temperature = 1 if model.startswith("kimi") else temperature
+
     t0 = time.monotonic()
     response = client.chat.completions.create(
         model=model,
         messages=oai_messages,
         max_tokens=max_tokens,
-        temperature=temperature,
+        temperature=effective_temperature,
         **extra_kwargs,
     )
     latency_ms = (time.monotonic() - t0) * 1000
 
     choice = response.choices[0] if response.choices else None
     raw_text = choice.message.content if choice and choice.message else ""
+    # For reasoning models, content may be in reasoning_content if content is empty
+    if not raw_text and choice and choice.message:
+        raw_text = getattr(choice.message, "reasoning_content", "") or ""
     usage = response.usage
 
     return LLMResponse(

@@ -211,7 +211,7 @@ class Settings(BaseSettings):
     # LLM Provider Configuration
     # Kimi K2.5 (Moonshot AI — OpenAI-compatible API)
     KIMI_API_KEY: Optional[str] = Field(default=None)
-    KIMI_BASE_URL: str = Field(default="https://api.moonshot.cn/v1")
+    KIMI_BASE_URL: str = Field(default="https://api.moonshot.ai/v1")
     # Canary routing: set KIMI_CANARY_ENABLED=true + comma-separated athlete UUIDs
     # to route only those athletes to Kimi. All others remain on Sonnet.
     KIMI_CANARY_ENABLED: bool = Field(default=False)
