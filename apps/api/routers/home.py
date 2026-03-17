@@ -1130,12 +1130,21 @@ def _call_opus_briefing_sync(
     key resolution is handled inside call_llm_with_json_parse via
     core.config.settings and os.getenv().
 
-    llm_timeout: SDK-level timeout in seconds. Defaults to HOME_BRIEFING_TIMEOUT_S.
+    llm_timeout: SDK-level timeout in seconds. Defaults to HOME_BRIEFING_TIMEOUT_S
+    for Sonnet. For Kimi (reasoning model), minimum 120s is enforced because
+    kimi-k2.5 thinks before responding (60-180s typical for briefing prompts).
     athlete_id: when provided, enables Kimi canary routing for this athlete.
     """
     from core.llm_client import call_llm_with_json_parse, resolve_briefing_model
 
-    timeout_s = llm_timeout if llm_timeout is not None else HOME_BRIEFING_TIMEOUT_S
+    model = resolve_briefing_model(athlete_id=athlete_id)
+
+    # kimi-k2.5 is a reasoning model — enforce minimum timeout
+    KIMI_MIN_TIMEOUT_S = 120
+    if model.startswith("kimi"):
+        timeout_s = max(llm_timeout or 0, KIMI_MIN_TIMEOUT_S)
+    else:
+        timeout_s = llm_timeout if llm_timeout is not None else HOME_BRIEFING_TIMEOUT_S
 
     field_descriptions = "\n".join(
         f'  - "{k}" ({"REQUIRED" if k in required_fields else "optional"}): {v}'
@@ -1156,8 +1165,6 @@ def _call_opus_briefing_sync(
         "- Keep each field concise: 1-2 sentences max.\n"
         "- Respond with the raw JSON object only."
     )
-
-    model = resolve_briefing_model(athlete_id=athlete_id)
 
     result = call_llm_with_json_parse(
         model=model,
