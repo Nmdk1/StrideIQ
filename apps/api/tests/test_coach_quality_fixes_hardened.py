@@ -1,4 +1,5 @@
 import inspect
+import logging
 from types import SimpleNamespace
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
@@ -333,6 +334,90 @@ class TestPromptAndOutputHardening:
         coach = AICoach.__new__(AICoach)
         opus_tool_names = [tool["name"] for tool in coach._opus_tools()]
         assert "get_mile_splits" in opus_tool_names
+        assert "get_profile_edit_paths" in opus_tool_names
 
         gemini_source = inspect.getsource(AICoach.query_gemini)
         assert '"name": "get_mile_splits"' in gemini_source
+        assert '"name": "get_profile_edit_paths"' in gemini_source
+
+    def test_normalize_scrubs_internal_architecture_language(self):
+        from services.ai_coach import AICoach
+
+        coach = AICoach(db=MagicMock())
+        raw = "Since you built the platform, our data model and database show this pipeline."
+        normalized = coach._normalize_response_for_ui(user_message="Why is this wrong?", assistant_message=raw)
+        lower = normalized.lower()
+        assert "since you built the platform" not in lower
+        assert "data model" not in lower
+        assert "database" not in lower
+        assert "pipeline" not in lower
+
+    def test_profile_turn_mismatch_falls_back_to_deterministic_path(self):
+        import asyncio
+        from services.ai_coach import AICoach
+
+        coach = AICoach(db=MagicMock())
+        coach.router = MagicMock()
+        coach.router.classify = MagicMock(return_value=(None, False))
+        coach.gemini_client = object()
+        coach.anthropic_client = None
+        coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_DEFAULT, False))
+        coach.check_budget = MagicMock(return_value=(True, "ok"))
+        coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
+        coach.get_thread_history = MagicMock(return_value={"messages": []})
+        coach.query_gemini = AsyncMock(
+            side_effect=[
+                {"response": "Your splits looked controlled across miles.", "error": False},
+                {"response": "Negative split pattern remains strong.", "error": False},
+            ]
+        )
+        coach._save_chat_messages = MagicMock()
+        coach._maybe_update_units_preference = MagicMock()
+        coach._maybe_update_intent_snapshot = MagicMock()
+
+        out = asyncio.run(coach.chat(uuid4(), "Where do I fix my age in my profile?"))
+        assert out["error"] is False
+        assert "/profile" in out["response"]
+        assert "Personal Information" in out["response"]
+        assert "Birthdate" in out["response"]
+        assert "split" not in out["response"].lower()
+        assert coach.query_gemini.await_count == 2
+
+    def test_intent_band_catches_logistics_analysis_mismatch(self):
+        from services.ai_coach import AICoach
+
+        coach = AICoach(db=MagicMock())
+        ok = coach._response_addresses_latest_turn(
+            "How do I cancel my subscription?",
+            "Your split pace trend improved after the long run.",
+        )
+        assert ok is False
+
+    def test_turn_guard_emits_telemetry_events(self, caplog):
+        import asyncio
+        from services.ai_coach import AICoach
+
+        coach = AICoach(db=MagicMock())
+        coach.router = MagicMock()
+        coach.router.classify = MagicMock(return_value=(None, False))
+        coach.gemini_client = object()
+        coach.anthropic_client = None
+        coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_DEFAULT, False))
+        coach.check_budget = MagicMock(return_value=(True, "ok"))
+        coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
+        coach.get_thread_history = MagicMock(return_value={"messages": []})
+        coach.query_gemini = AsyncMock(
+            side_effect=[
+                {"response": "Your splits looked controlled across miles.", "error": False},
+                {"response": "Negative split pattern remains strong.", "error": False},
+            ]
+        )
+        coach._save_chat_messages = MagicMock()
+        coach._maybe_update_units_preference = MagicMock()
+        coach._maybe_update_intent_snapshot = MagicMock()
+        caplog.set_level(logging.INFO)
+
+        out = asyncio.run(coach.chat(uuid4(), "Where do I fix my age in my profile?"))
+        assert out["error"] is False
+        assert "turn_guard_event event=mismatch_detected" in caplog.text
+        assert "turn_guard_event event=fallback_used" in caplog.text

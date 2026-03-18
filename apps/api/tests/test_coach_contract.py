@@ -188,7 +188,7 @@ class TestNormalizationPipeline:
 
 class TestToolDefinitions:
     """
-    The coach has 23 tools. All must be importable and callable from coach_tools.
+    The coach has 25 tools. All must be importable and callable from coach_tools.
     Missing tools mean the coach can't answer certain questions.
     """
 
@@ -218,6 +218,7 @@ class TestToolDefinitions:
         "get_training_prescription_window",
         "compute_running_math",
         "get_mile_splits",
+        "get_profile_edit_paths",
     ]
 
     def test_all_tools_exist_in_module(self):
@@ -244,9 +245,9 @@ class TestToolDefinitions:
         assert not non_callable, f"Non-callable tools: {non_callable}"
 
     def test_tool_count_matches(self):
-        """Tool list must have exactly 24 entries (reconciliation check)."""
-        assert len(self.REQUIRED_TOOLS) == 24, \
-            f"Expected 24 tools, found {len(self.REQUIRED_TOOLS)} in REQUIRED_TOOLS list"
+        """Tool list must have exactly 25 entries (reconciliation check)."""
+        assert len(self.REQUIRED_TOOLS) == 25, \
+            f"Expected 25 tools, found {len(self.REQUIRED_TOOLS)} in REQUIRED_TOOLS list"
 
 
 # ---------------------------------------------------------------------------
@@ -319,15 +320,14 @@ class TestKnownRegressions:
     def test_normalization_called_in_chat_path(self):
         """
         Normalization MUST be called before returning responses.
-        This is a structural check — verify the chat method calls normalize.
-        Normalization is called from the chat() method, not query_gemini().
+        This is a structural check — verify the chat method calls finalizer.
         """
         import inspect
         from services.ai_coach import AICoach
-        # Normalization is called in the chat() method which wraps query_gemini
+        # Normalization now runs inside _finalize_response_with_turn_guard().
         source = inspect.getsource(AICoach.chat)
-        assert "_normalize_response_for_ui" in source, \
-            "chat() must call _normalize_response_for_ui before returning"
+        assert "_finalize_response_with_turn_guard" in source, \
+            "chat() must finalize responses with turn-guard before returning"
 
     def test_system_prompt_not_empty(self):
         """System instructions must not be empty."""

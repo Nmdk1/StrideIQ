@@ -961,6 +961,20 @@ Policy:
                     "required": ["activity_id"],
                 },
             },
+            {
+                "name": "get_profile_edit_paths",
+                "description": "Get deterministic profile navigation for editing athlete fields (birthdate, sex, display name, height, email).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "field": {
+                            "type": "string",
+                            "description": "Profile field name, e.g. birthdate, sex, display_name, height_cm, email.",
+                        }
+                    },
+                    "required": [],
+                },
+            },
         ]
 
     def _execute_opus_tool(self, athlete_id: UUID, tool_name: str, tool_input: Dict[str, Any]) -> str:
@@ -1023,6 +1037,8 @@ Policy:
                 result = coach_tools.analyze_run_streams(self.db, athlete_id, **tool_input)
             elif tool_name == "get_mile_splits":
                 result = coach_tools.get_mile_splits(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_profile_edit_paths":
+                result = coach_tools.get_profile_edit_paths(self.db, athlete_id, **tool_input)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return json.dumps(result, default=str)
@@ -1178,6 +1194,16 @@ BAN CANNED OPENERS:
   - "Great question"
   - "That's a great question"
   - "I'd be happy to"
+
+ANTI-LEAKAGE RULES (NON-NEGOTIABLE):
+- NEVER mention internal architecture or implementation language.
+- Forbidden terms in athlete-facing responses: "database", "data model", "schema", "table", "row", "pipeline", "prompt", "system prompt", "tool call", "model routing", "token", "inference".
+- NEVER say "since you built the platform" or similar internal context.
+- If the athlete asks where to edit profile fields, call get_profile_edit_paths and answer with route + section + field only.
+
+APOLOGY STYLE CONTRACT:
+- If you made a mistake: acknowledge briefly ("You're right"), give the corrected answer, move on.
+- No long apologies, no self-referential process explanations, no psychologizing.
 
 PERSONAL FINGERPRINT:
 - The ATHLETE BRIEF below may contain a "Personal Fingerprint" section with confirmed patterns.
@@ -1647,6 +1673,19 @@ If you need more data to answer well, call the tools. That's why they're there."
                     "required": ["activity_id"],
                 },
             },
+            {
+                "name": "get_profile_edit_paths",
+                "description": "Get deterministic profile navigation for editing athlete fields (birthdate, sex, display name, height, email).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "field": {
+                            "type": "string",
+                            "description": "Profile field name, e.g. birthdate, sex, display_name, height_cm, email.",
+                        }
+                    }
+                },
+            },
         ]
         
         gemini_tools = genai_types.Tool(function_declarations=function_declarations)
@@ -1731,6 +1770,16 @@ BAN CANNED OPENERS:
   - "Great question"
   - "That's a great question"
   - "I'd be happy to"
+
+ANTI-LEAKAGE RULES (NON-NEGOTIABLE):
+- NEVER mention internal architecture or implementation language.
+- Forbidden terms in athlete-facing responses: "database", "data model", "schema", "table", "row", "pipeline", "prompt", "system prompt", "tool call", "model routing", "token", "inference".
+- NEVER say "since you built the platform" or similar internal context.
+- If the athlete asks where to edit profile fields, call get_profile_edit_paths and answer with route + section + field only.
+
+APOLOGY STYLE CONTRACT:
+- If you made a mistake: acknowledge briefly ("You're right"), give the corrected answer, move on.
+- No long apologies, no self-referential process explanations, no psychologizing.
 
 PERSONAL FINGERPRINT:
 - The ATHLETE BRIEF may contain a "Personal Fingerprint" section with confirmed patterns.
@@ -3036,7 +3085,15 @@ ATHLETE BRIEF:
                 
                 # Save to PostgreSQL (CoachChat) for conversation continuity
                 if not opus_result.get("error"):
-                    self._save_chat_messages(athlete_id, message, opus_result.get("response", ""))
+                    guarded_response = await self._finalize_response_with_turn_guard(
+                        athlete_id=athlete_id,
+                        user_message=message,
+                        response_text=opus_result.get("response", ""),
+                        is_opus=True,
+                        conversation_context=conversation_context,
+                    )
+                    opus_result["response"] = guarded_response
+                    self._save_chat_messages(athlete_id, message, guarded_response)
                 
                 opus_result["thread_id"] = thread_id
                 return opus_result
@@ -3070,22 +3127,17 @@ ATHLETE BRIEF:
 
                 # Gemini returned success.
                 if not gemini_result.get("error"):
-                    # Normalize for UI + trust contract (Coach Output Contract v1):
-                    # - strip internal labels (fact capsule, response contract, etc.)
-                    # - prefer "## Evidence" section naming
-                    # - suppress UUID spam unless explicitly requested
-                    raw_response = gemini_result.get("response", "")
-                    try:
-                        normalized = self._normalize_response_for_ui(
-                            user_message=message,
-                            assistant_message=raw_response,
-                        )
-                        gemini_result["response"] = _strip_emojis(normalized)
-                    except Exception as e:
-                        logger.warning(f"Coach response normalization failed: {e}")
+                    guarded_response = await self._finalize_response_with_turn_guard(
+                        athlete_id=athlete_id,
+                        user_message=message,
+                        response_text=gemini_result.get("response", ""),
+                        is_opus=False,
+                        conversation_context=conversation_context,
+                    )
+                    gemini_result["response"] = guarded_response
 
                     # Save to PostgreSQL (CoachChat) for conversation continuity
-                    self._save_chat_messages(athlete_id, message, gemini_result.get("response", ""))
+                    self._save_chat_messages(athlete_id, message, guarded_response)
 
                     gemini_result["thread_id"] = thread_id
                     return gemini_result
@@ -3107,16 +3159,15 @@ ATHLETE BRIEF:
                         conversation_context=conversation_context,
                     )
                     if not opus_result.get("error"):
-                        raw_response = opus_result.get("response", "")
-                        try:
-                            normalized = self._normalize_response_for_ui(
-                                user_message=message,
-                                assistant_message=raw_response,
-                            )
-                            opus_result["response"] = _strip_emojis(normalized)
-                        except Exception as e:
-                            logger.warning(f"Coach response normalization failed: {e}")
-                        self._save_chat_messages(athlete_id, message, opus_result.get("response", ""))
+                        guarded_response = await self._finalize_response_with_turn_guard(
+                            athlete_id=athlete_id,
+                            user_message=message,
+                            response_text=opus_result.get("response", ""),
+                            is_opus=True,
+                            conversation_context=conversation_context,
+                        )
+                        opus_result["response"] = guarded_response
+                        self._save_chat_messages(athlete_id, message, guarded_response)
 
                     opus_result["thread_id"] = thread_id
                     return opus_result
@@ -3147,16 +3198,15 @@ ATHLETE BRIEF:
                     conversation_context=conversation_context,
                 )
                 if not gemini_result.get("error"):
-                    raw_response = gemini_result.get("response", "")
-                    try:
-                        normalized = self._normalize_response_for_ui(
-                            user_message=message,
-                            assistant_message=raw_response,
-                        )
-                        gemini_result["response"] = _strip_emojis(normalized)
-                    except Exception as e:
-                        logger.warning(f"Coach response normalization failed: {e}")
-                    self._save_chat_messages(athlete_id, message, gemini_result.get("response", ""))
+                    guarded_response = await self._finalize_response_with_turn_guard(
+                        athlete_id=athlete_id,
+                        user_message=message,
+                        response_text=gemini_result.get("response", ""),
+                        is_opus=False,
+                        conversation_context=conversation_context,
+                    )
+                    gemini_result["response"] = guarded_response
+                    self._save_chat_messages(athlete_id, message, guarded_response)
                 gemini_result["thread_id"] = thread_id
                 return gemini_result
 
@@ -3994,6 +4044,20 @@ ATHLETE BRIEF:
 
     _UUID_RE = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
     _DATE_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
+    _SPLIT_TERMS_RE = re.compile(r"\b(split|splits|mile split|km split|negative split|pace band)\b", re.I)
+    _PROFILE_TERMS_RE = re.compile(r"\b(profile|settings|birthdate|birthday|dob|age|sex|gender|height|email)\b", re.I)
+    _PLANNING_TERMS_RE = re.compile(r"\b(should i|plan|tomorrow|next week|workout|rest day|taper|schedule|session)\b", re.I)
+    _ANALYSIS_TERMS_RE = re.compile(r"\b(why|trend|compare|pace|heart rate|hr|fatigue|load|split|performance|improv)\b", re.I)
+    _LOGISTICS_TERMS_RE = re.compile(r"\b(settings|connect|strava|garmin|billing|subscription|cancel|refund|login|password)\b", re.I)
+    _APOLOGY_TERMS_RE = re.compile(r"\b(sorry|my bad|you're right|you are right|i was wrong|apolog)\b", re.I)
+    _INTERNAL_LEAK_REWRITES = (
+        (re.compile(r"\bsince you built the platform\b", re.I), "based on your profile settings"),
+        (re.compile(r"\bdata model\b", re.I), "profile settings"),
+        (re.compile(r"\bdatabase\b", re.I), "training history"),
+        (re.compile(r"\bsystem prompt\b", re.I), "coach guidance"),
+        (re.compile(r"\btool call\b", re.I), "data check"),
+        (re.compile(r"\bmodel routing\b", re.I), "coach response path"),
+    )
 
 
     def _extract_days_lookback(self, lower_message: str) -> Optional[int]:
@@ -4522,6 +4586,214 @@ ATHLETE BRIEF:
             )
         )
 
+    def _is_profile_edit_intent(self, user_message: str) -> bool:
+        lower = (user_message or "").lower()
+        if not lower:
+            return False
+        asks_location = any(
+            token in lower
+            for token in ("where", "how do i change", "how do i edit", "update my", "fix my")
+        )
+        return bool(self._PROFILE_TERMS_RE.search(lower)) and asks_location
+
+    def _infer_profile_field_from_message(self, user_message: str) -> str:
+        lower = (user_message or "").lower()
+        if any(k in lower for k in ("birthdate", "birthday", "dob", "age")):
+            return "birthdate"
+        if any(k in lower for k in ("sex", "gender")):
+            return "sex"
+        if "height" in lower:
+            return "height_cm"
+        if "email" in lower:
+            return "email"
+        if any(k in lower for k in ("name", "display name")):
+            return "display_name"
+        return "birthdate"
+
+    def _infer_intent_band(self, text: str, *, is_user: bool) -> str:
+        lower = (text or "").lower().strip()
+        if not lower:
+            return "unknown"
+
+        if self._is_profile_edit_intent(lower):
+            return "profile"
+        if self._LOGISTICS_TERMS_RE.search(lower):
+            return "logistics"
+        if self._PLANNING_TERMS_RE.search(lower):
+            return "planning"
+        if self._ANALYSIS_TERMS_RE.search(lower):
+            return "analysis"
+
+        # Allow assistant correction style to be identified as apology.
+        if self._APOLOGY_TERMS_RE.search(lower):
+            return "apology"
+        if is_user and any(t in lower for t in ("wrong answer", "off topic", "not what i asked")):
+            return "apology"
+        return "general"
+
+    def _intent_bands_compatible(self, user_band: str, assistant_band: str) -> bool:
+        compatibility = {
+            "profile": {"profile", "logistics"},
+            "logistics": {"logistics", "profile"},
+            "planning": {"planning", "analysis", "general"},
+            "analysis": {"analysis", "planning", "general"},
+            "apology": {"apology", "general", "analysis", "planning", "logistics", "profile"},
+            "general": {"general", "analysis", "planning", "logistics", "profile", "apology"},
+            "unknown": {"general", "analysis", "planning", "logistics", "profile", "apology"},
+        }
+        return assistant_band in compatibility.get(user_band, {"general"})
+
+    def _record_turn_guard_event(
+        self,
+        *,
+        athlete_id: UUID,
+        event: str,
+        user_band: str,
+        assistant_band: str,
+    ) -> None:
+        logger.info(
+            "turn_guard_event event=%s athlete_id=%s user_band=%s assistant_band=%s",
+            event,
+            athlete_id,
+            user_band,
+            assistant_band,
+        )
+
+    def _response_addresses_latest_turn(self, user_message: str, assistant_message: str) -> bool:
+        """Heuristic guardrail using intent bands to catch turn-mismatch responses."""
+        user_lower = (user_message or "").lower().strip()
+        assistant_lower = (assistant_message or "").lower().strip()
+        if not assistant_lower:
+            return False
+
+        user_band = self._infer_intent_band(user_message, is_user=True)
+        assistant_band = self._infer_intent_band(assistant_message, is_user=False)
+
+        # Profile edit questions must produce deterministic navigation guidance.
+        if self._is_profile_edit_intent(user_message):
+            has_profile_path = ("/profile" in assistant_lower) or ("personal information" in assistant_lower)
+            return has_profile_path and self._intent_bands_compatible(user_band, assistant_band)
+
+        # Correction/apology turns should not drift into unrelated workout analysis.
+        if any(t in user_lower for t in ("sorry", "my bad", "apolog")):
+            return self._intent_bands_compatible(user_band, assistant_band)
+
+        return self._intent_bands_compatible(user_band, assistant_band)
+
+    def _build_turn_relevance_fallback(self, athlete_id: UUID, user_message: str) -> str:
+        if self._is_profile_edit_intent(user_message):
+            field = self._infer_profile_field_from_message(user_message)
+            path = coach_tools.get_profile_edit_paths(self.db, athlete_id, field=field)
+            data = path.get("data", {}) if isinstance(path, dict) else {}
+            route = data.get("route", "/profile")
+            section = data.get("section", "Personal Information")
+            field_name = data.get("field", "Birthdate")
+            note = data.get("note", "")
+            base = f"Go to {route} -> {section} -> {field_name}."
+            if note:
+                base += f" {note}"
+            return base
+
+        return (
+            "You're right. I answered the wrong thing. "
+            "Please repeat your last question in one line and I'll answer it directly."
+        )
+
+    async def _finalize_response_with_turn_guard(
+        self,
+        *,
+        athlete_id: UUID,
+        user_message: str,
+        response_text: str,
+        is_opus: bool,
+        conversation_context: List[Dict[str, str]],
+    ) -> str:
+        """Normalize/sanitize output and enforce latest-turn relevance with one retry."""
+        try:
+            normalized = self._normalize_response_for_ui(
+                user_message=user_message,
+                assistant_message=response_text or "",
+            )
+        except Exception as e:
+            logger.warning(f"Coach response normalization failed: {e}")
+            normalized = response_text or ""
+        candidate = _strip_emojis(normalized)
+        user_band = self._infer_intent_band(user_message, is_user=True)
+        candidate_band = self._infer_intent_band(candidate, is_user=False)
+
+        if self._response_addresses_latest_turn(user_message, candidate):
+            self._record_turn_guard_event(
+                athlete_id=athlete_id,
+                event="pass_initial",
+                user_band=user_band,
+                assistant_band=candidate_band,
+            )
+            return candidate
+
+        self._record_turn_guard_event(
+            athlete_id=athlete_id,
+            event="mismatch_detected",
+            user_band=user_band,
+            assistant_band=candidate_band,
+        )
+        logger.warning("Turn mismatch detected for athlete %s; retrying once", athlete_id)
+        retry_instruction = (
+            "Answer ONLY the athlete's latest message directly. "
+            "Do not continue prior topics. "
+            "If this is a profile edit question, provide route + section + field."
+        )
+        retry_message = f"{user_message}\n\nSYSTEM CORRECTION: {retry_instruction}"
+
+        try:
+            if is_opus and self.anthropic_client:
+                retry_result = await self.query_opus(
+                    athlete_id=athlete_id,
+                    message=retry_message,
+                    athlete_state=self._build_athlete_state_for_opus(athlete_id),
+                    conversation_context=conversation_context,
+                )
+            else:
+                retry_result = await self.query_gemini(
+                    athlete_id=athlete_id,
+                    message=retry_message,
+                    athlete_state="",
+                    conversation_context=conversation_context,
+                )
+            if not retry_result.get("error"):
+                retried = _strip_emojis(
+                    self._normalize_response_for_ui(
+                        user_message=user_message,
+                        assistant_message=retry_result.get("response", ""),
+                    )
+                )
+                retried_band = self._infer_intent_band(retried, is_user=False)
+                if self._response_addresses_latest_turn(user_message, retried):
+                    self._record_turn_guard_event(
+                        athlete_id=athlete_id,
+                        event="retry_success",
+                        user_band=user_band,
+                        assistant_band=retried_band,
+                    )
+                    return retried
+                self._record_turn_guard_event(
+                    athlete_id=athlete_id,
+                    event="retry_still_mismatch",
+                    user_band=user_band,
+                    assistant_band=retried_band,
+                )
+        except Exception as e:
+            logger.warning(f"Turn-guard retry failed: {e}")
+
+        fallback = self._build_turn_relevance_fallback(athlete_id, user_message)
+        fallback_band = self._infer_intent_band(fallback, is_user=False)
+        self._record_turn_guard_event(
+            athlete_id=athlete_id,
+            event="fallback_used",
+            user_band=user_band,
+            assistant_band=fallback_band,
+        )
+        return fallback
+
     def _normalize_response_for_ui(self, *, user_message: str, assistant_message: str) -> str:
         """
         Make coach output consistent and readable across *all* questions.
@@ -4534,6 +4806,14 @@ ATHLETE BRIEF:
         text = (assistant_message or "").strip()
         if not text:
             return text
+
+        for pattern, replacement in self._INTERNAL_LEAK_REWRITES:
+            text = pattern.sub(replacement, text)
+        text = re.sub(
+            r"(?i)\b(schema|table|row|pipeline|prompt|token|inference)\b",
+            "training data",
+            text,
+        )
 
         wants_ids = self._user_explicitly_requested_ids(user_message)
 

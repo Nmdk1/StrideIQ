@@ -2632,6 +2632,90 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
         return {"ok": False, "tool": "get_athlete_profile", "error": str(e)}
 
 
+def get_profile_edit_paths(db: Session, athlete_id: UUID, field: str = "birthdate") -> Dict[str, Any]:
+    """Return deterministic UI navigation for athlete profile edits."""
+    now = datetime.utcnow()
+    normalized_field = (field or "birthdate").strip().lower()
+    field_aliases = {
+        "age": "birthdate",
+        "dob": "birthdate",
+        "birthday": "birthdate",
+        "birth date": "birthdate",
+        "name": "display_name",
+        "display name": "display_name",
+        "height": "height_cm",
+        "sex": "sex",
+        "gender": "sex",
+    }
+    canonical_field = field_aliases.get(normalized_field, normalized_field)
+    mapping = {
+        "birthdate": {
+            "route": "/profile",
+            "section": "Personal Information",
+            "field": "Birthdate",
+            "note": "Set your correct birthdate here; age is calculated from this field.",
+        },
+        "sex": {
+            "route": "/profile",
+            "section": "Personal Information",
+            "field": "Sex",
+            "note": "Update sex under Personal Information.",
+        },
+        "display_name": {
+            "route": "/profile",
+            "section": "Personal Information",
+            "field": "Display Name",
+            "note": "This controls how your name appears in the app.",
+        },
+        "height_cm": {
+            "route": "/profile",
+            "section": "Personal Information",
+            "field": "Height",
+            "note": "Enter your current height.",
+        },
+        "email": {
+            "route": "/profile",
+            "section": "Personal Information",
+            "field": "Email",
+            "note": "Changing email may require a verification flow.",
+        },
+    }
+    resolved = mapping.get(canonical_field)
+    if not resolved:
+        resolved = {
+            "route": "/profile",
+            "section": "Personal Information",
+            "field": "Personal Information",
+            "note": "Use Profile > Personal Information for account details.",
+        }
+
+    return {
+        "ok": True,
+        "tool": "get_profile_edit_paths",
+        "generated_at": _iso(now),
+        "narrative": (
+            f"To edit {canonical_field.replace('_', ' ')}, go to {resolved['route']} -> "
+            f"{resolved['section']} -> {resolved['field']}."
+        ),
+        "data": {
+            "requested_field": normalized_field,
+            "resolved_field": canonical_field,
+            "route": resolved["route"],
+            "section": resolved["section"],
+            "field": resolved["field"],
+            "note": resolved["note"],
+        },
+        "evidence": [
+            {
+                "type": "ui_path",
+                "id": f"profile_path:{canonical_field}",
+                "date": date.today().isoformat(),
+                "value": f"{resolved['route']} > {resolved['section']} > {resolved['field']}",
+            }
+        ],
+    }
+
+
 def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> Dict[str, Any]:
     """
     Phase 3: Training load history showing ATL/CTL/TSB trends over time.
