@@ -7,6 +7,7 @@ Processes only NEW messages since the last extraction checkpoint.
 import json
 import logging
 import os
+import re
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -24,7 +25,19 @@ FACT_TTL_CATEGORIES = {
     "training_phase": 21,
     "equipment": 90,
     "strength_pr": 30,
+    "upcoming_race": 7,
+    "race_goal": 7,
+    "race_plan": 7,
 }
+
+_RELATIVE_TIME_PATTERN = re.compile(
+    r"\b("
+    r"tomorrow|today|yesterday|next\s+week|this\s+week|this\s+weekend|next\s+month|"
+    r"in\s+\d+\s+(day|days|week|weeks|month|months)|"
+    r"\d+\s+(day|days|week|weeks|month|months)\s+out"
+    r")\b",
+    re.IGNORECASE,
+)
 
 EXTRACTION_PROMPT = """You are extracting structured facts from an athlete's messages to their running coach.
 
@@ -40,7 +53,7 @@ Extract any concrete, specific factual claims the athlete made about:
 - Anything else specific and factual that would be useful coaching context
 
 For each fact, return:
-- fact_type: one of [body_composition, strength_pr, injury_history, current_symptoms, training_phase, equipment, preference, life_context, race_history, health, upcoming_race, other]
+- fact_type: one of [body_composition, strength_pr, injury_history, current_symptoms, training_phase, equipment, preference, life_context, race_history, health, upcoming_race, race_goal, race_plan, other]
 - fact_key: a snake_case identifier (e.g., "dexa_bone_density_t_score", "deadlift_1rm_lbs")
 - fact_value: the value as a string (e.g., "3.2", "315", "before 8am")
 - numeric_value: the numeric value if applicable, else null
@@ -141,17 +154,26 @@ def _upsert_fact(db, athlete_id: UUID, chat_id: UUID, extracted: dict):
             extracted["fact_key"], existing.fact_value, extracted["fact_value"],
         )
 
+    fact_type = extracted["fact_type"]
+    fact_value = extracted["fact_value"]
+    temporal = FACT_TTL_CATEGORIES.get(fact_type) is not None
+    ttl_days = FACT_TTL_CATEGORIES.get(fact_type)
+
+    if (not temporal) and _contains_relative_time_phrase(fact_value):
+        temporal = True
+        ttl_days = 3
+
     new_fact = AthleteFact(
         athlete_id=athlete_id,
-        fact_type=extracted["fact_type"],
+        fact_type=fact_type,
         fact_key=extracted["fact_key"],
-        fact_value=extracted["fact_value"],
+        fact_value=fact_value,
         numeric_value=extracted.get("numeric_value"),
         confidence="athlete_stated",
         source_chat_id=chat_id,
         source_excerpt=extracted["source_excerpt"],
-        temporal=FACT_TTL_CATEGORIES.get(extracted["fact_type"]) is not None,
-        ttl_days=FACT_TTL_CATEGORIES.get(extracted["fact_type"]),
+        temporal=temporal,
+        ttl_days=ttl_days,
     )
 
     try:
@@ -176,6 +198,12 @@ def _upsert_fact(db, athlete_id: UUID, chat_id: UUID, extracted: dict):
                 "Concurrent insert conflict for %s: winner=%s, ours=%s — keeping winner",
                 extracted["fact_key"], winner.fact_value, extracted["fact_value"],
             )
+
+
+def _contains_relative_time_phrase(text: str) -> bool:
+    if not text:
+        return False
+    return bool(_RELATIVE_TIME_PATTERN.search(str(text)))
 
 
 @celery_app.task(name="tasks.extract_athlete_facts", bind=True, max_retries=2)

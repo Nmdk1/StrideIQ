@@ -283,6 +283,42 @@ class TestUpsert:
         assert squat is not None
         assert squat.fact_value == "275"
 
+    def test_upsert_promotes_relative_time_fact_to_temporal(self, db_session, test_athlete):
+        """Non-temporal category with relative-time text must get short TTL."""
+        from models import AthleteFact, CoachChat
+        from tasks.fact_extraction_task import _upsert_fact
+
+        chat = CoachChat(
+            athlete_id=test_athlete.id, context_type="open",
+            messages=[], is_active=True,
+        )
+        db_session.add(chat)
+        db_session.commit()
+        db_session.refresh(chat)
+
+        _upsert_fact(
+            db_session,
+            test_athlete.id,
+            chat.id,
+            _fake_extraction_result(
+                fact_type="other",
+                fact_key="event_window",
+                fact_value="goal race in 4 days",
+                numeric_value=None,
+                source_excerpt="goal race in 4 days",
+            ),
+        )
+        db_session.commit()
+
+        fact = db_session.query(AthleteFact).filter(
+            AthleteFact.athlete_id == test_athlete.id,
+            AthleteFact.fact_key == "event_window",
+            AthleteFact.is_active == True,  # noqa: E712
+        ).first()
+        assert fact is not None
+        assert fact.temporal is True
+        assert fact.ttl_days == 3
+
 
 # ===================================================================
 # Group 3: Incremental extraction tests (10-12)
@@ -1152,9 +1188,20 @@ class TestUpcomingRaceExtraction:
         from tasks.fact_extraction_task import EXTRACTION_PROMPT
         assert "upcoming_race" in EXTRACTION_PROMPT
 
-    def test_upcoming_race_not_in_ttl_categories(self):
-        """upcoming_race must NOT be in FACT_TTL_CATEGORIES (deadline-driven lifecycle out of scope)."""
+    def test_upcoming_race_in_ttl_categories(self):
+        """upcoming_race must be temporal with a short TTL."""
         from tasks.fact_extraction_task import FACT_TTL_CATEGORIES
-        assert "upcoming_race" not in FACT_TTL_CATEGORIES
+        assert FACT_TTL_CATEGORIES["upcoming_race"] == 7
+        assert FACT_TTL_CATEGORIES["race_goal"] == 7
+        assert FACT_TTL_CATEGORIES["race_plan"] == 7
+
+    def test_relative_time_detector_matches_common_phrases(self):
+        from tasks.fact_extraction_task import _contains_relative_time_phrase
+
+        assert _contains_relative_time_phrase("I am 2 weeks out from race day")
+        assert _contains_relative_time_phrase("Tune-up race is in 4 days")
+        assert _contains_relative_time_phrase("My race is next week")
+        assert _contains_relative_time_phrase("Tomorrow is the workout")
+        assert not _contains_relative_time_phrase("My 10K PR is 41:30")
 
 

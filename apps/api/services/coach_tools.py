@@ -22,13 +22,14 @@ import re
 from datetime import datetime, timedelta, date
 
 logger = logging.getLogger(__name__)
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from models import Activity, TrainingPlan, PlannedWorkout, Athlete
+from models import Activity, TrainingPlan, PlannedWorkout, Athlete, ActivitySplit, ActivityStream
+from core.date_utils import calculate_age
 from services.efficiency_analytics import (
     get_efficiency_trends,
     is_quality_activity,
@@ -2507,9 +2508,7 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
         age = None
         if athlete.birthdate:
             today = date.today()
-            age = today.year - athlete.birthdate.year - (
-                (today.month, today.day) < (athlete.birthdate.month, athlete.birthdate.day)
-            )
+            age = calculate_age(athlete.birthdate, today)
 
         # Convert threshold pace for display
         threshold_pace_display = None
@@ -3507,7 +3506,7 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
         if athlete:
             lines = [f"Name: {athlete.display_name or 'Athlete'}"]
             if athlete.birthdate:
-                age = (today - athlete.birthdate).days // 365
+                age = calculate_age(athlete.birthdate, today)
                 lines.append(f"Age: {age}")
             if athlete.sex:
                 lines.append(f"Sex: {athlete.sex}")
@@ -4028,6 +4027,321 @@ def compute_running_math(
         }
     except Exception as e:
         return {"ok": False, "tool": "compute_running_math", "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# GET MILE/KM SPLITS — coach tool
+# ---------------------------------------------------------------------------
+
+def _to_float_list(values: Any) -> List[float]:
+    out: List[float] = []
+    if not isinstance(values, list):
+        return out
+    for value in values:
+        try:
+            out.append(float(value))
+        except Exception:
+            continue
+    return out
+
+
+def _interpolate_time_at_distance(samples: List[Tuple[float, float]], target_distance: float) -> Optional[float]:
+    if not samples:
+        return None
+    if target_distance <= samples[0][0]:
+        return samples[0][1]
+
+    for idx in range(1, len(samples)):
+        prev_dist, prev_time = samples[idx - 1]
+        curr_dist, curr_time = samples[idx]
+        if curr_dist < target_distance:
+            continue
+        if curr_dist == prev_dist:
+            return curr_time
+        ratio = (target_distance - prev_dist) / (curr_dist - prev_dist)
+        return prev_time + ratio * (curr_time - prev_time)
+    return None
+
+
+def _format_duration_hms(total_seconds: float) -> str:
+    total = max(0, int(round(total_seconds)))
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    seconds = total % 60
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def get_mile_splits(
+    db: Session,
+    athlete_id: UUID,
+    activity_id: str,
+    unit: str = "mi",
+) -> Dict[str, Any]:
+    """Return distance-based split data from stream data and/or device laps."""
+    now = datetime.utcnow()
+    tool_name = "get_mile_splits"
+    normalized_unit = (unit or "mi").strip().lower()
+    if normalized_unit not in ("mi", "km"):
+        return {
+            "ok": False,
+            "tool": tool_name,
+            "generated_at": _iso(now),
+            "error": "Invalid unit. Use 'mi' or 'km'.",
+            "data": {},
+            "evidence": [],
+        }
+
+    try:
+        activity_uuid = UUID(str(activity_id))
+    except Exception:
+        return {
+            "ok": False,
+            "tool": tool_name,
+            "generated_at": _iso(now),
+            "error": "Invalid activity_id format.",
+            "data": {},
+            "evidence": [],
+        }
+
+    activity = db.query(Activity).filter(Activity.id == activity_uuid).first()
+    if activity is None:
+        return {
+            "ok": False,
+            "tool": tool_name,
+            "generated_at": _iso(now),
+            "error": "Activity not found.",
+            "data": {},
+            "evidence": [],
+        }
+    if activity.athlete_id != athlete_id:
+        return {
+            "ok": False,
+            "tool": tool_name,
+            "generated_at": _iso(now),
+            "error": "Access denied: activity does not belong to this athlete.",
+            "data": {},
+            "evidence": [],
+        }
+
+    laps = (
+        db.query(ActivitySplit)
+        .filter(ActivitySplit.activity_id == activity_uuid)
+        .order_by(ActivitySplit.split_number.asc())
+        .all()
+    )
+    unit_distance_m = _M_PER_MI if normalized_unit == "mi" else 1000.0
+    unit_label = "mile" if normalized_unit == "mi" else "km"
+
+    device_laps: List[Dict[str, Any]] = []
+    for lap in laps:
+        lap_distance_m = float(lap.distance) if lap.distance is not None else None
+        lap_distance_units = (lap_distance_m / unit_distance_m) if lap_distance_m else None
+        lap_elapsed = int(lap.elapsed_time) if lap.elapsed_time is not None else None
+        pace_seconds_per_unit = None
+        if lap_elapsed and lap_distance_units and lap_distance_units > 0:
+            pace_seconds_per_unit = lap_elapsed / lap_distance_units
+        device_laps.append(
+            {
+                "split_number": int(lap.split_number),
+                "distance_m": round(lap_distance_m, 2) if lap_distance_m is not None else None,
+                "distance_units": round(lap_distance_units, 3) if lap_distance_units is not None else None,
+                "elapsed_seconds": lap_elapsed,
+                "elapsed_time": _format_duration_hms(lap_elapsed) if lap_elapsed is not None else None,
+                "pace_per_unit": f"{_fmt_mmss(pace_seconds_per_unit)}/{normalized_unit}" if pace_seconds_per_unit else None,
+                "average_heartrate": int(lap.average_heartrate) if lap.average_heartrate is not None else None,
+                "moving_time_seconds": int(lap.moving_time) if lap.moving_time is not None else None,
+            }
+        )
+
+    stream_row = (
+        db.query(ActivityStream)
+        .filter(ActivityStream.activity_id == activity_uuid)
+        .first()
+    )
+
+    stream_splits: List[Dict[str, Any]] = []
+    split_meta: Dict[str, Any] = {}
+    stream_warning: Optional[str] = None
+
+    if stream_row and isinstance(stream_row.stream_data, dict):
+        distances = _to_float_list(stream_row.stream_data.get("distance"))
+        times = _to_float_list(stream_row.stream_data.get("time"))
+        heartrate = _to_float_list(stream_row.stream_data.get("heartrate"))
+        if len(distances) >= 2 and len(times) >= 2:
+            pair_count = min(len(distances), len(times))
+            samples: List[Tuple[float, float]] = []
+            samples_with_hr: List[Tuple[float, float, Optional[float]]] = []
+            dropped_points = 0
+            for idx in range(pair_count):
+                d_val = distances[idx]
+                t_val = times[idx]
+                hr_val = heartrate[idx] if idx < len(heartrate) else None
+                if d_val < 0 or t_val < 0:
+                    dropped_points += 1
+                    continue
+                if samples:
+                    prev_d, prev_t = samples[-1]
+                    if d_val < prev_d or t_val < prev_t:
+                        dropped_points += 1
+                        continue
+                samples.append((d_val, t_val))
+                samples_with_hr.append((d_val, t_val, hr_val))
+
+            if len(samples) >= 2 and samples[-1][0] > 0:
+                total_distance_m = samples[-1][0]
+                total_time_s = samples[-1][1]
+                target = unit_distance_m
+                boundaries = [0.0]
+                while target <= total_distance_m:
+                    boundaries.append(target)
+                    target += unit_distance_m
+                if boundaries[-1] < total_distance_m:
+                    boundaries.append(total_distance_m)
+
+                boundary_times: List[float] = []
+                for boundary in boundaries:
+                    boundary_time = _interpolate_time_at_distance(samples, boundary)
+                    if boundary_time is None:
+                        boundary_times = []
+                        break
+                    boundary_times.append(boundary_time)
+
+                if boundary_times:
+                    for idx in range(1, len(boundaries)):
+                        start_d = boundaries[idx - 1]
+                        end_d = boundaries[idx]
+                        start_t = boundary_times[idx - 1]
+                        end_t = boundary_times[idx]
+                        elapsed = max(0.0, end_t - start_t)
+                        split_distance_m = max(0.0, end_d - start_d)
+                        split_distance_units = split_distance_m / unit_distance_m if unit_distance_m > 0 else None
+                        pace_seconds_per_unit = (
+                            elapsed / split_distance_units
+                            if split_distance_units and split_distance_units > 0
+                            else None
+                        )
+                        avg_hr = None
+                        if samples_with_hr:
+                            hr_window = [
+                                row[2]
+                                for row in samples_with_hr
+                                if row[2] is not None and start_d <= row[0] <= end_d
+                            ]
+                            if hr_window:
+                                avg_hr = round(sum(hr_window) / len(hr_window))
+
+                        stream_splits.append(
+                            {
+                                "split_number": idx,
+                                "is_partial": split_distance_m < (unit_distance_m - 1e-6),
+                                "distance_m": round(split_distance_m, 2),
+                                "distance_units": round(split_distance_units, 3) if split_distance_units is not None else None,
+                                "elapsed_seconds": round(elapsed),
+                                "elapsed_time": _format_duration_hms(elapsed),
+                                "pace_per_unit": f"{_fmt_mmss(pace_seconds_per_unit)}/{normalized_unit}" if pace_seconds_per_unit else None,
+                                "average_heartrate": avg_hr,
+                            }
+                        )
+
+                    half_time = _interpolate_time_at_distance(samples, total_distance_m / 2.0)
+                    split_meta = {
+                        "total_distance_m": round(total_distance_m, 2),
+                        "total_distance_units": round(total_distance_m / unit_distance_m, 3),
+                        "total_elapsed_seconds": round(total_time_s),
+                        "first_half_seconds": round(half_time) if half_time is not None else None,
+                        "second_half_seconds": round(total_time_s - half_time) if half_time is not None else None,
+                        "first_half_time": _format_duration_hms(half_time) if half_time is not None else None,
+                        "second_half_time": _format_duration_hms(total_time_s - half_time) if half_time is not None else None,
+                    }
+                else:
+                    stream_warning = "Could not interpolate split boundaries from stream data."
+            else:
+                stream_warning = "Stream data is non-monotonic or missing cumulative distance."
+        else:
+            stream_warning = "Stream data missing required 'distance' and 'time' channels."
+
+    if stream_splits:
+        narrative = (
+            f"Computed {len(stream_splits)} {unit_label} splits from stream data "
+            f"for {(activity.name or 'run').strip() or 'run'}."
+        )
+        if split_meta.get("first_half_time") and split_meta.get("second_half_time"):
+            narrative += (
+                f" First half: {split_meta['first_half_time']}, "
+                f"second half: {split_meta['second_half_time']}."
+            )
+        return {
+            "ok": True,
+            "tool": tool_name,
+            "generated_at": _iso(now),
+            "narrative": narrative,
+            "data": {
+                "activity_id": str(activity_uuid),
+                "activity_name": activity.name,
+                "unit": normalized_unit,
+                "source": "stream",
+                "splits": stream_splits,
+                "summary": split_meta,
+                "device_laps": device_laps,
+            },
+            "evidence": [
+                {
+                    "type": "activity",
+                    "id": str(activity_uuid),
+                    "date": activity.start_time.date().isoformat() if activity.start_time else _iso(now)[:10],
+                    "value": f"{(activity.name or 'Run').strip() or 'Run'} split analysis from stream data",
+                }
+            ],
+        }
+
+    if device_laps:
+        return {
+            "ok": True,
+            "tool": tool_name,
+            "generated_at": _iso(now),
+            "narrative": (
+                f"Stream splits unavailable; returning {len(device_laps)} device lap splits "
+                f"for {(activity.name or 'run').strip() or 'run'}."
+            ),
+            "data": {
+                "activity_id": str(activity_uuid),
+                "activity_name": activity.name,
+                "unit": normalized_unit,
+                "source": "device_laps",
+                "splits": [],
+                "summary": {},
+                "device_laps": device_laps,
+                "warning": stream_warning,
+            },
+            "evidence": [
+                {
+                    "type": "activity",
+                    "id": str(activity_uuid),
+                    "date": activity.start_time.date().isoformat() if activity.start_time else _iso(now)[:10],
+                    "value": f"{(activity.name or 'Run').strip() or 'Run'} split analysis from device laps",
+                }
+            ],
+        }
+
+    return {
+        "ok": False,
+        "tool": tool_name,
+        "generated_at": _iso(now),
+        "error": "No split-capable data available for this activity.",
+        "data": {
+            "activity_id": str(activity_uuid),
+            "activity_name": activity.name,
+            "unit": normalized_unit,
+            "source": "none",
+            "splits": [],
+            "summary": {},
+            "device_laps": [],
+            "warning": stream_warning or "No stream data and no device laps found.",
+        },
+        "evidence": [],
+    }
 
 
 # ---------------------------------------------------------------------------

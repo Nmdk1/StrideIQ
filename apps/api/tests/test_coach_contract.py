@@ -192,7 +192,7 @@ class TestToolDefinitions:
     Missing tools mean the coach can't answer certain questions.
     """
 
-    # All 23 tools from coach_tools.py — reconciled against actual module.
+    # All tools from coach_tools.py — reconciled against actual module.
     REQUIRED_TOOLS = [
         "get_recent_runs",
         "get_calendar_day_context",
@@ -217,6 +217,7 @@ class TestToolDefinitions:
         "set_coach_intent_snapshot",
         "get_training_prescription_window",
         "compute_running_math",
+        "get_mile_splits",
     ]
 
     def test_all_tools_exist_in_module(self):
@@ -243,9 +244,9 @@ class TestToolDefinitions:
         assert not non_callable, f"Non-callable tools: {non_callable}"
 
     def test_tool_count_matches(self):
-        """Tool list must have exactly 23 entries (reconciliation check)."""
-        assert len(self.REQUIRED_TOOLS) == 23, \
-            f"Expected 23 tools, found {len(self.REQUIRED_TOOLS)} in REQUIRED_TOOLS list"
+        """Tool list must have exactly 24 entries (reconciliation check)."""
+        assert len(self.REQUIRED_TOOLS) == 24, \
+            f"Expected 24 tools, found {len(self.REQUIRED_TOOLS)} in REQUIRED_TOOLS list"
 
 
 # ---------------------------------------------------------------------------

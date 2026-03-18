@@ -24,8 +24,10 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import logging
+from datetime import timezone
 
 logger = logging.getLogger(__name__)
+from core.date_utils import calculate_age
 
 # =============================================================================
 # ADR-061: HYBRID MODEL ARCHITECTURE WITH COST CAPS
@@ -93,6 +95,23 @@ COACH_MAX_INPUT_TOKENS = int(os.getenv("COACH_MAX_INPUT_TOKENS", "4000"))
 # 1500 tokens (~600 words) is generous for any conversational response.
 # Acts as a hard ceiling preventing essays even when soft prompt instructions are ignored.
 COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "1500"))
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"
+    "\U00002600-\U000027BF"
+    "\uFE0F"
+    "\u200D"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def _strip_emojis(text: str) -> str:
+    """Remove emoji glyphs while preserving plain text punctuation."""
+    if not text:
+        return text
+    return _EMOJI_RE.sub("", text)
 
 
 def _check_response_quality(response_text: str, model: str, athlete_id: str) -> None:
@@ -924,6 +943,24 @@ Policy:
                     "required": ["activity_id"],
                 },
             },
+            {
+                "name": "get_mile_splits",
+                "description": "Compute mile/km splits for a specific activity using stream data first, with device laps as fallback.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "activity_id": {
+                            "type": "string",
+                            "description": "UUID of the activity to split (from get_recent_runs or get_calendar_day_context).",
+                        },
+                        "unit": {
+                            "type": "string",
+                            "description": "Split unit: 'mi' (default) or 'km'.",
+                        },
+                    },
+                    "required": ["activity_id"],
+                },
+            },
         ]
 
     def _execute_opus_tool(self, athlete_id: UUID, tool_name: str, tool_input: Dict[str, Any]) -> str:
@@ -984,12 +1021,60 @@ Policy:
                 result = coach_tools.compute_running_math(self.db, athlete_id, **tool_input)
             elif tool_name == "analyze_run_streams":
                 result = coach_tools.analyze_run_streams(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_mile_splits":
+                result = coach_tools.get_mile_splits(self.db, athlete_id, **tool_input)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return json.dumps(result, default=str)
         except Exception as e:
             logger.warning(f"Tool execution error for {tool_name}: {e}")
             return json.dumps({"error": str(e)})
+
+    @staticmethod
+    def _is_temporal_fact_expired(fact: Any, now_utc: datetime) -> bool:
+        if not getattr(fact, "temporal", False):
+            return False
+        ttl_days = getattr(fact, "ttl_days", None)
+        extracted_at = getattr(fact, "extracted_at", None)
+        if ttl_days is None or extracted_at is None:
+            return False
+        extracted = extracted_at
+        if getattr(extracted, "tzinfo", None) is None:
+            extracted = extracted.replace(tzinfo=timezone.utc)
+        return extracted < now_utc - timedelta(days=int(ttl_days))
+
+    def _get_fresh_athlete_facts(self, athlete_id: UUID, max_facts: int = 15) -> List[Any]:
+        from models import AthleteFact as _AF
+
+        batch_size = 50
+        max_scan_rows = 500
+        now_utc = datetime.now(timezone.utc)
+        selected: List[Any] = []
+        offset = 0
+
+        while len(selected) < max_facts and offset < max_scan_rows:
+            batch = (
+                self.db.query(_AF)
+                .filter(
+                    _AF.athlete_id == athlete_id,
+                    _AF.is_active == True,  # noqa: E712
+                )
+                .order_by(_AF.confirmed_by_athlete.desc(), _AF.extracted_at.desc())
+                .offset(offset)
+                .limit(batch_size)
+                .all()
+            )
+            if not batch:
+                break
+
+            for fact in batch:
+                if self._is_temporal_fact_expired(fact, now_utc):
+                    continue
+                selected.append(fact)
+                if len(selected) >= max_facts:
+                    break
+            offset += batch_size
+        return selected
 
     async def query_opus(
         self,
@@ -1039,7 +1124,7 @@ Every activity has a date and a relative label like "(2 days ago)" or "(yesterda
 - If the marathon was "(2 days ago)", say "Sunday's marathon" or "your marathon two days ago" — NEVER "today's marathon".
 - When in doubt, use the actual date. Getting the date wrong destroys trust in everything else you say.
 
-YOU HAVE 22 TOOLS -- USE THEM PROACTIVELY:
+YOU HAVE TOOLS -- USE THEM PROACTIVELY:
 - ALWAYS call get_weekly_volume first to understand the athlete's training history
 - Call get_recent_runs to see individual workout details (up to 730 days back)
 - Call get_training_load for current fitness/fatigue/form
@@ -1082,6 +1167,18 @@ FORMAT:
 - NEVER use emojis.
 - Write in natural sentences and short paragraphs, the way a coach talks.
 
+BAN CANNED OPENERS:
+- Do NOT start with filler or preamble.
+- Start with substance from the athlete's data and question.
+- NEVER open with any of these phrases:
+  - "Here's what the data actually shows"
+  - "Here's what the data shows"
+  - "Based on the data"
+  - "Let me break this down"
+  - "Great question"
+  - "That's a great question"
+  - "I'd be happy to"
+
 PERSONAL FINGERPRINT:
 - The ATHLETE BRIEF below may contain a "Personal Fingerprint" section with confirmed patterns.
 - These patterns have been individually validated for THIS athlete — they are not population statistics.
@@ -1105,15 +1202,7 @@ If you need more data to answer well, call the tools. That's why they're there."
 
         # Inject athlete-stated facts from coach memory layer 1 (Opus path)
         try:
-            from models import AthleteFact as _AF
-            _MAX_FACTS = 15
-            _facts = (
-                self.db.query(_AF)
-                .filter(_AF.athlete_id == athlete_id, _AF.is_active == True)  # noqa: E712
-                .order_by(_AF.confirmed_by_athlete.desc(), _AF.extracted_at.desc())
-                .limit(_MAX_FACTS)
-                .all()
-            )
+            _facts = self._get_fresh_athlete_facts(athlete_id=athlete_id, max_facts=15)
             if _facts:
                 _fc = "\n\nKNOWN ATHLETE FACTS (from previous conversations):\n"
                 for _f in _facts:
@@ -1200,6 +1289,7 @@ If you need more data to answer well, call the tools. That's why they're there."
             for block in response.content:
                 if hasattr(block, 'text'):
                     response_text += block.text
+            response_text = _strip_emojis(response_text)
             
             # Post-response validation: data questions must have used tools
             is_valid, reason = self._validate_tool_usage(
@@ -1539,6 +1629,24 @@ If you need more data to answer well, call the tools. That's why they're there."
                     "required": ["activity_id"],
                 },
             },
+            {
+                "name": "get_mile_splits",
+                "description": "Compute mile/km splits for a specific activity using stream data first, with device laps as fallback.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "activity_id": {
+                            "type": "string",
+                            "description": "UUID of the activity to split (from get_recent_runs or get_calendar_day_context).",
+                        },
+                        "unit": {
+                            "type": "string",
+                            "description": "Split unit: 'mi' (default) or 'km'.",
+                        },
+                    },
+                    "required": ["activity_id"],
+                },
+            },
         ]
         
         gemini_tools = genai_types.Tool(function_declarations=function_declarations)
@@ -1573,7 +1681,7 @@ COACHING APPROACH:
 - Conversational A->I->A requirement (chat prose, not JSON): provide an interpretive Assessment, explain the Implication, then a concrete Action.
 - Do NOT output internal labels like "fact capsule", "response contract", or schema keys.
 
-YOU HAVE 24 TOOLS — USE THEM PROACTIVELY:
+YOU HAVE TOOLS — USE THEM PROACTIVELY:
 - Call get_weekly_volume to understand training history
 - Call get_recent_runs for individual workout details (up to 730 days back)
 - Call get_training_load for current fitness/fatigue/form
@@ -1612,6 +1720,18 @@ FORMAT:
 - NEVER use emojis.
 - Write in natural sentences and short paragraphs, the way a coach talks.
 
+BAN CANNED OPENERS:
+- Do NOT start with filler or preamble.
+- Start with substance from the athlete's data and question.
+- NEVER open with any of these phrases:
+  - "Here's what the data actually shows"
+  - "Here's what the data shows"
+  - "Based on the data"
+  - "Let me break this down"
+  - "Great question"
+  - "That's a great question"
+  - "I'd be happy to"
+
 PERSONAL FINGERPRINT:
 - The ATHLETE BRIEF may contain a "Personal Fingerprint" section with confirmed patterns.
 - These patterns have been individually validated for THIS athlete — they are not population statistics.
@@ -1631,15 +1751,7 @@ ATHLETE BRIEF:
 
         # Inject athlete-stated facts from coach memory layer 1
         try:
-            from models import AthleteFact as _AF
-            _MAX_FACTS = 15
-            _facts = (
-                self.db.query(_AF)
-                .filter(_AF.athlete_id == athlete_id, _AF.is_active == True)  # noqa: E712
-                .order_by(_AF.confirmed_by_athlete.desc(), _AF.extracted_at.desc())
-                .limit(_MAX_FACTS)
-                .all()
-            )
+            _facts = self._get_fresh_athlete_facts(athlete_id=athlete_id, max_facts=15)
             if _facts:
                 _fc = "\n\nKNOWN ATHLETE FACTS (from previous conversations):\n"
                 for _f in _facts:
@@ -1762,6 +1874,7 @@ ATHLETE BRIEF:
             for part in response.candidates[0].content.parts:
                 if hasattr(part, 'text') and part.text:
                     response_text += part.text
+            response_text = _strip_emojis(response_text)
             
             # Post-response validation: data questions must have used tools
             is_valid, reason = self._validate_tool_usage(
@@ -1962,7 +2075,7 @@ ATHLETE BRIEF:
         if athlete.display_name:
             context_parts.append(f"Name: {athlete.display_name}")
         if athlete.birthdate:
-            age = (today - athlete.birthdate).days // 365
+            age = calculate_age(athlete.birthdate, today)
             context_parts.append(f"Age: {age}")
         if athlete.rpi:
             context_parts.append(f"Current RPI: {athlete.rpi:.1f}")
@@ -2967,7 +3080,7 @@ ATHLETE BRIEF:
                             user_message=message,
                             assistant_message=raw_response,
                         )
-                        gemini_result["response"] = normalized
+                        gemini_result["response"] = _strip_emojis(normalized)
                     except Exception as e:
                         logger.warning(f"Coach response normalization failed: {e}")
 
@@ -3000,7 +3113,7 @@ ATHLETE BRIEF:
                                 user_message=message,
                                 assistant_message=raw_response,
                             )
-                            opus_result["response"] = normalized
+                            opus_result["response"] = _strip_emojis(normalized)
                         except Exception as e:
                             logger.warning(f"Coach response normalization failed: {e}")
                         self._save_chat_messages(athlete_id, message, opus_result.get("response", ""))
@@ -3040,7 +3153,7 @@ ATHLETE BRIEF:
                             user_message=message,
                             assistant_message=raw_response,
                         )
-                        gemini_result["response"] = normalized
+                        gemini_result["response"] = _strip_emojis(normalized)
                     except Exception as e:
                         logger.warning(f"Coach response normalization failed: {e}")
                     self._save_chat_messages(athlete_id, message, gemini_result.get("response", ""))
@@ -4167,7 +4280,7 @@ ATHLETE BRIEF:
             if athlete:
                 state_lines.append(f"Athlete: {athlete.display_name or 'Anonymous'}")
                 if athlete.birthdate:
-                    age = (date.today() - athlete.birthdate).days // 365
+                    age = calculate_age(athlete.birthdate, date.today())
                     state_lines.append(f"Age: {age}")
                 if athlete.sex:
                     state_lines.append(f"Sex: {athlete.sex}")
