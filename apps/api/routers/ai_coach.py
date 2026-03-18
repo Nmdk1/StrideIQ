@@ -24,6 +24,7 @@ class ChatRequest(BaseModel):
     """Request to chat with AI coach."""
     message: str
     include_context: bool = True
+    is_synthetic_probe: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -74,7 +75,8 @@ async def chat_with_coach(
     result = await coach.chat(
         athlete_id=athlete.id,
         message=request.message,
-        include_context=request.include_context
+        include_context=request.include_context,
+        is_synthetic_probe=bool(request.is_synthetic_probe),
     )
     
     return ChatResponse(
@@ -114,7 +116,12 @@ async def chat_with_coach_stream(
     async def _gen() -> AsyncIterator[bytes]:
         try:
             task = asyncio.create_task(
-                coach.chat(athlete_id=athlete.id, message=request.message, include_context=request.include_context)
+                coach.chat(
+                    athlete_id=athlete.id,
+                    message=request.message,
+                    include_context=request.include_context,
+                    is_synthetic_probe=bool(request.is_synthetic_probe),
+                )
             )
 
             yield b"event: meta\ndata: " + json.dumps({"type": "meta"}).encode("utf-8") + b"\n\n"

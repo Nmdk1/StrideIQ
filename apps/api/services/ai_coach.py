@@ -20,7 +20,7 @@ import asyncio
 from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import Optional, Dict, List, Any, Tuple
-from uuid import UUID
+from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import logging
@@ -2681,7 +2681,8 @@ ATHLETE BRIEF:
         self, 
         athlete_id: UUID, 
         message: str,
-        include_context: bool = True
+        include_context: bool = True,
+        is_synthetic_probe: bool = False,
     ) -> Dict[str, Any]:
         """
         Send a message to the AI coach and get a response.
@@ -2727,6 +2728,51 @@ ATHLETE BRIEF:
         self._maybe_update_intent_snapshot(athlete_id, message)
 
         lower = (message or "").lower()
+        turn_id = str(uuid4())
+        detected_synthetic_probe = bool(is_synthetic_probe) or ("[synthetic_probe]" in lower) or ("forced mismatch probe" in lower)
+        is_organic = not detected_synthetic_probe
+
+        # Deterministic short-circuit for profile edit guidance:
+        # do not spend LLM latency/tokens on profile-location intents.
+        if self._is_profile_edit_intent(message):
+            field = self._infer_profile_field_from_message(message)
+            path = coach_tools.get_profile_edit_paths(self.db, athlete_id, field=field)
+            data = path.get("data", {}) if isinstance(path, dict) else {}
+            route = data.get("route", "/profile")
+            section = data.get("section", "Personal Information")
+            field_name = data.get("field", "Birthdate")
+            note = data.get("note", "")
+            response = f"Go to {route} -> {section} -> {field_name}."
+            if note:
+                response += f" {note}"
+            response = _strip_emojis(
+                self._normalize_response_for_ui(
+                    user_message=message,
+                    assistant_message=response,
+                )
+            )
+            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            self._record_turn_guard_event(
+                athlete_id=athlete_id,
+                event="pass_initial",
+                user_band="profile",
+                assistant_band="profile",
+                turn_id=turn_id,
+                stage="initial",
+                is_synthetic_probe=detected_synthetic_probe,
+                is_organic=is_organic,
+            )
+            self._save_chat_messages(athlete_id, message, response)
+            return {
+                "response": response,
+                "thread_id": thread_id,
+                "error": False,
+                "timed_out": False,
+                "history_thin": False,
+                "used_baseline": False,
+                "baseline_needed": False,
+                "rebuild_plan_prompt": False,
+            }
 
         # Thin-history detection + baseline intake (production-beta fallback).
         history_thin = False
@@ -3091,6 +3137,9 @@ ATHLETE BRIEF:
                         response_text=opus_result.get("response", ""),
                         is_opus=True,
                         conversation_context=conversation_context,
+                        turn_id=turn_id,
+                        is_synthetic_probe=detected_synthetic_probe,
+                        is_organic=is_organic,
                     )
                     opus_result["response"] = guarded_response
                     self._save_chat_messages(athlete_id, message, guarded_response)
@@ -3133,6 +3182,9 @@ ATHLETE BRIEF:
                         response_text=gemini_result.get("response", ""),
                         is_opus=False,
                         conversation_context=conversation_context,
+                        turn_id=turn_id,
+                        is_synthetic_probe=detected_synthetic_probe,
+                        is_organic=is_organic,
                     )
                     gemini_result["response"] = guarded_response
 
@@ -3165,6 +3217,9 @@ ATHLETE BRIEF:
                             response_text=opus_result.get("response", ""),
                             is_opus=True,
                             conversation_context=conversation_context,
+                            turn_id=turn_id,
+                            is_synthetic_probe=detected_synthetic_probe,
+                            is_organic=is_organic,
                         )
                         opus_result["response"] = guarded_response
                         self._save_chat_messages(athlete_id, message, guarded_response)
@@ -3204,6 +3259,9 @@ ATHLETE BRIEF:
                         response_text=gemini_result.get("response", ""),
                         is_opus=False,
                         conversation_context=conversation_context,
+                        turn_id=turn_id,
+                        is_synthetic_probe=detected_synthetic_probe,
+                        is_organic=is_organic,
                     )
                     gemini_result["response"] = guarded_response
                     self._save_chat_messages(athlete_id, message, guarded_response)
@@ -4650,13 +4708,21 @@ ATHLETE BRIEF:
         event: str,
         user_band: str,
         assistant_band: str,
+        turn_id: str,
+        stage: str,
+        is_synthetic_probe: bool,
+        is_organic: bool,
     ) -> None:
         logger.info(
-            "turn_guard_event event=%s athlete_id=%s user_band=%s assistant_band=%s",
+            "turn_guard_event event=%s turn_id=%s stage=%s athlete_id=%s user_band=%s assistant_band=%s is_synthetic_probe=%s is_organic=%s",
             event,
+            turn_id,
+            stage,
             athlete_id,
             user_band,
             assistant_band,
+            is_synthetic_probe,
+            is_organic,
         )
 
     def _response_addresses_latest_turn(self, user_message: str, assistant_message: str) -> bool:
@@ -4707,6 +4773,9 @@ ATHLETE BRIEF:
         response_text: str,
         is_opus: bool,
         conversation_context: List[Dict[str, str]],
+        turn_id: str,
+        is_synthetic_probe: bool,
+        is_organic: bool,
     ) -> str:
         """Normalize/sanitize output and enforce latest-turn relevance with one retry."""
         try:
@@ -4727,6 +4796,10 @@ ATHLETE BRIEF:
                 event="pass_initial",
                 user_band=user_band,
                 assistant_band=candidate_band,
+                turn_id=turn_id,
+                stage="initial",
+                is_synthetic_probe=is_synthetic_probe,
+                is_organic=is_organic,
             )
             return candidate
 
@@ -4735,7 +4808,27 @@ ATHLETE BRIEF:
             event="mismatch_detected",
             user_band=user_band,
             assistant_band=candidate_band,
+            turn_id=turn_id,
+            stage="initial",
+            is_synthetic_probe=is_synthetic_probe,
+            is_organic=is_organic,
         )
+        # Profile intents are deterministic; do not burn retry latency/tokens.
+        if user_band == "profile":
+            fallback = self._build_turn_relevance_fallback(athlete_id, user_message)
+            fallback_band = self._infer_intent_band(fallback, is_user=False)
+            self._record_turn_guard_event(
+                athlete_id=athlete_id,
+                event="fallback_used",
+                user_band=user_band,
+                assistant_band=fallback_band,
+                turn_id=turn_id,
+                stage="fallback",
+                is_synthetic_probe=is_synthetic_probe,
+                is_organic=is_organic,
+            )
+            return fallback
+
         logger.warning("Turn mismatch detected for athlete %s; retrying once", athlete_id)
         retry_instruction = (
             "Answer ONLY the athlete's latest message directly. "
@@ -4773,6 +4866,10 @@ ATHLETE BRIEF:
                         event="retry_success",
                         user_band=user_band,
                         assistant_band=retried_band,
+                        turn_id=turn_id,
+                        stage="retry",
+                        is_synthetic_probe=is_synthetic_probe,
+                        is_organic=is_organic,
                     )
                     return retried
                 self._record_turn_guard_event(
@@ -4780,6 +4877,10 @@ ATHLETE BRIEF:
                     event="retry_still_mismatch",
                     user_band=user_band,
                     assistant_band=retried_band,
+                    turn_id=turn_id,
+                    stage="retry",
+                    is_synthetic_probe=is_synthetic_probe,
+                    is_organic=is_organic,
                 )
         except Exception as e:
             logger.warning(f"Turn-guard retry failed: {e}")
@@ -4791,6 +4892,10 @@ ATHLETE BRIEF:
             event="fallback_used",
             user_band=user_band,
             assistant_band=fallback_band,
+            turn_id=turn_id,
+            stage="fallback",
+            is_synthetic_probe=is_synthetic_probe,
+            is_organic=is_organic,
         )
         return fallback
 

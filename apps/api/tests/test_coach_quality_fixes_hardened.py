@@ -351,7 +351,7 @@ class TestPromptAndOutputHardening:
         assert "database" not in lower
         assert "pipeline" not in lower
 
-    def test_profile_turn_mismatch_falls_back_to_deterministic_path(self):
+    def test_profile_intent_short_circuits_to_deterministic_path(self):
         import asyncio
         from services.ai_coach import AICoach
 
@@ -380,7 +380,7 @@ class TestPromptAndOutputHardening:
         assert "Personal Information" in out["response"]
         assert "Birthdate" in out["response"]
         assert "split" not in out["response"].lower()
-        assert coach.query_gemini.await_count == 2
+        assert coach.query_gemini.await_count == 0
 
     def test_intent_band_catches_logistics_analysis_mismatch(self):
         from services.ai_coach import AICoach
@@ -416,8 +416,13 @@ class TestPromptAndOutputHardening:
         coach._maybe_update_intent_snapshot = MagicMock()
         coach._record_turn_guard_event = MagicMock()
 
-        out = asyncio.run(coach.chat(uuid4(), "Where do I fix my age in my profile?"))
+        out = asyncio.run(coach.chat(uuid4(), "How do I cancel my subscription?"))
         assert out["error"] is False
         events = [call.kwargs.get("event") for call in coach._record_turn_guard_event.call_args_list]
         assert "mismatch_detected" in events
         assert "fallback_used" in events
+        for call in coach._record_turn_guard_event.call_args_list:
+            assert "turn_id" in call.kwargs
+            assert call.kwargs.get("stage") in {"initial", "retry", "fallback"}
+            assert "is_synthetic_probe" in call.kwargs
+            assert "is_organic" in call.kwargs
