@@ -1,5 +1,4 @@
 import inspect
-import logging
 from types import SimpleNamespace
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
@@ -393,7 +392,7 @@ class TestPromptAndOutputHardening:
         )
         assert ok is False
 
-    def test_turn_guard_emits_telemetry_events(self, caplog):
+    def test_turn_guard_emits_telemetry_events(self):
         import asyncio
         from services.ai_coach import AICoach
 
@@ -415,9 +414,10 @@ class TestPromptAndOutputHardening:
         coach._save_chat_messages = MagicMock()
         coach._maybe_update_units_preference = MagicMock()
         coach._maybe_update_intent_snapshot = MagicMock()
-        caplog.set_level(logging.INFO)
+        coach._record_turn_guard_event = MagicMock()
 
         out = asyncio.run(coach.chat(uuid4(), "Where do I fix my age in my profile?"))
         assert out["error"] is False
-        assert "turn_guard_event event=mismatch_detected" in caplog.text
-        assert "turn_guard_event event=fallback_used" in caplog.text
+        events = [call.kwargs.get("event") for call in coach._record_turn_guard_event.call_args_list]
+        assert "mismatch_detected" in events
+        assert "fallback_used" in events
