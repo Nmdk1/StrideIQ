@@ -90,9 +90,28 @@ COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP = int(
 COACH_MAX_INPUT_TOKENS = int(os.getenv("COACH_MAX_INPUT_TOKENS", "4000"))
 # 500 tokens was causing every response to get cut off mid-sentence.
 # 3000 tokens (~1200 words) allows complete, well-structured coaching responses
-# with numbered points, evidence citations, and actionable recommendations
-# without truncation. Previous 1500 limit was causing mid-sentence cutoffs.
-COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "3000"))
+# 1500 tokens (~600 words) is generous for any conversational response.
+# Acts as a hard ceiling preventing essays even when soft prompt instructions are ignored.
+COACH_MAX_OUTPUT_TOKENS = int(os.getenv("COACH_MAX_OUTPUT_TOKENS", "1500"))
+
+
+def _check_response_quality(response_text: str, model: str, athlete_id: str) -> None:
+    """Log warnings for responses that violate format/length contracts. Never blocks."""
+    warnings = []
+    if "##" in response_text or "###" in response_text:
+        warnings.append("contains markdown headers")
+    if "|" in response_text and "---" in response_text:
+        warnings.append("contains markdown table")
+    if any(ch in response_text for ch in ["🎯", "💪", "🏃", "✅", "🔥", "😊", "👍", "🏅"]):
+        warnings.append("contains emoji")
+    word_count = len(response_text.split())
+    if word_count > 300:
+        warnings.append(f"response is {word_count} words (>300)")
+    if warnings:
+        logger.warning(
+            "Coach response quality check [model=%s athlete=%s]: %s",
+            model, athlete_id, "; ".join(warnings),
+        )
 
 
 def is_high_stakes_query(message: str) -> bool:
@@ -201,9 +220,31 @@ You understand running physiology, periodization, and training principles:
 - CRITICAL TERMINOLOGY: NEVER say "RPI" - this is a trademarked term. ALWAYS say "RPI" (Running Performance Index) instead. For example: "Your RPI of 53.2 indicates..." NOT "Your RPI value of 53.2..."
 - Avoid jargon unless the athlete uses it first
 - Be encouraging but never sugarcoat problems
-- Format responses with clear structure (use markdown)
+- This is a conversation, not a document. Write in natural sentences and short paragraphs, the way a coach talks.
 - Conversational A->I->A requirement (chat prose, not JSON): include an interpretive Assessment, explain the Implication, then provide a concrete Action.
 - Do NOT repeat yourself or give the same canned response multiple times
+
+TEMPORAL ACCURACY (NON-NEGOTIABLE):
+Every activity has a date and a relative label like "(2 days ago)" or "(yesterday)".
+- NEVER say "today's run" or "today's marathon" unless the activity date is literally today.
+- ALWAYS check the relative label before referencing when something happened.
+- If the marathon was "(2 days ago)", say "Sunday's marathon" or "your marathon two days ago" — NEVER "today's marathon".
+- When in doubt, use the actual date: "your March 15 marathon".
+Getting the date wrong destroys trust in everything else you say.
+
+RESPONSE LENGTH:
+- Match your response length to the question complexity.
+- Yes/no question → 2-4 sentences.
+- "Tell me about X" → 1-2 short paragraphs.
+- "Analyze my last month" → detailed but still under 200 words.
+- NEVER write more than the question warrants. If the athlete wants more, they'll ask.
+
+FORMAT:
+- This is a conversation, not a document.
+- NEVER use markdown tables in chat responses.
+- NEVER use markdown headers (##, ###, **Section Name**).
+- NEVER use emojis.
+- Write in natural sentences and short paragraphs, the way a coach talks.
 
 ## Important Rules
 
@@ -991,6 +1032,13 @@ Policy:
 
 ZERO-HALLUCINATION RULE (NON-NEGOTIABLE): Every number, distance, pace, date, and training fact you state MUST come from tool results. NEVER fabricate or estimate ANY training data. If you haven't called a tool yet, call one NOW. If no tool has the data, say "I don't have that data" -- NEVER make it up. This athlete relies on you exclusively. A wrong number could cause injury. All dates in tool results include pre-computed relative times like '(2 days ago)'. USE those labels verbatim -- do NOT compute your own relative time.
 
+TEMPORAL ACCURACY (NON-NEGOTIABLE):
+Every activity has a date and a relative label like "(2 days ago)" or "(yesterday)".
+- NEVER say "today's run" or "today's marathon" unless the activity date is literally today.
+- ALWAYS check the relative label before referencing when something happened.
+- If the marathon was "(2 days ago)", say "Sunday's marathon" or "your marathon two days ago" — NEVER "today's marathon".
+- When in doubt, use the actual date. Getting the date wrong destroys trust in everything else you say.
+
 YOU HAVE 22 TOOLS -- USE THEM PROACTIVELY:
 - ALWAYS call get_weekly_volume first to understand the athlete's training history
 - Call get_recent_runs to see individual workout details (up to 730 days back)
@@ -1019,6 +1067,20 @@ COMMUNICATION:
 - Cite the data you used with dates and values ("On 2026-01-15, you ran 8.5 mi @ 9:04/mi...")
 - Be conservative with injury-related advice
 - Do NOT repeat yourself or give the same response multiple times
+
+RESPONSE LENGTH:
+- Match your response length to the question complexity.
+- Yes/no question → 2-4 sentences.
+- "Tell me about X" → 1-2 short paragraphs.
+- "Analyze my last month" → detailed but still under 200 words.
+- NEVER write more than the question warrants. If the athlete wants more, they'll ask.
+
+FORMAT:
+- This is a conversation, not a document.
+- NEVER use markdown tables in chat responses.
+- NEVER use markdown headers (##, ###, **Section Name**).
+- NEVER use emojis.
+- Write in natural sentences and short paragraphs, the way a coach talks.
 
 PERSONAL FINGERPRINT:
 - The ATHLETE BRIEF below may contain a "Personal Fingerprint" section with confirmed patterns.
@@ -1163,7 +1225,7 @@ If you need more data to answer well, call the tools. That's why they're there."
                 f"tools_called={tools_called}, "
                 f"input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
             )
-            
+            _check_response_quality(response_text, self.MODEL_HIGH_STAKES, str(athlete_id))
             return {
                 "response": response_text,
                 "error": False,
@@ -1495,6 +1557,13 @@ If you need more data to answer well, call the tools. That's why they're there."
 ZERO-HALLUCINATION RULE (NON-NEGOTIABLE):
 Every number, distance, pace, date, and training fact you state MUST come from the ATHLETE BRIEF below or from a tool result. NEVER fabricate, estimate, or guess ANY training data. If the brief doesn't have it, CALL A TOOL. If no tool has it, say "I don't have that data" — NEVER make it up. This athlete is 79 years old and relies on you exclusively. A wrong number could cause injury.
 
+TEMPORAL ACCURACY (NON-NEGOTIABLE):
+Every activity has a date and a relative label like "(2 days ago)" or "(yesterday)".
+- NEVER say "today's run" or "today's marathon" unless the activity date is literally today.
+- ALWAYS check the relative label before referencing when something happened.
+- If the marathon was "(2 days ago)", say "Sunday's marathon" or "your marathon two days ago" — NEVER "today's marathon".
+- When in doubt, use the actual date. Getting the date wrong destroys trust in everything else you say.
+
 COACHING APPROACH:
 - Lead with what matters. If you see something important in the brief, bring it up — don't wait to be asked.
 - Be direct and sparse. Athletes don't want essays.
@@ -1528,6 +1597,20 @@ COMMUNICATION STYLE:
 - Use the athlete's preferred units (check the brief).
 - If the athlete is venting, empathize briefly, then offer data-backed perspective.
 - Never recommend medical advice — refer to healthcare professionals.
+
+RESPONSE LENGTH:
+- Match your response length to the question complexity.
+- Yes/no question → 2-4 sentences.
+- "Tell me about X" → 1-2 short paragraphs.
+- "Analyze my last month" → detailed but still under 200 words.
+- NEVER write more than the question warrants. If the athlete wants more, they'll ask.
+
+FORMAT:
+- This is a conversation, not a document.
+- NEVER use markdown tables in chat responses.
+- NEVER use markdown headers (##, ###, **Section Name**).
+- NEVER use emojis.
+- Write in natural sentences and short paragraphs, the way a coach talks.
 
 PERSONAL FINGERPRINT:
 - The ATHLETE BRIEF may contain a "Personal Fingerprint" section with confirmed patterns.
@@ -1705,7 +1788,7 @@ ATHLETE BRIEF:
                 f"tools_called={tools_called}, "
                 f"input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
             )
-            
+            _check_response_quality(response_text, self.MODEL_DEFAULT, str(athlete_id))
             return {
                 "response": response_text,
                 "error": False,
