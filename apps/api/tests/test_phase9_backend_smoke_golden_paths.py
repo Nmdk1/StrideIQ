@@ -71,6 +71,8 @@ class _DummyStripeConfig:
         self.price_premium_annual_id = None
         self.price_legacy_pro_monthly_id = None
         self.price_plan_onetime_id = None
+        self.price_strideiq_monthly_id = None
+        self.price_strideiq_annual_id = None
 
 
 def _stripe_sig_header(*, secret: str, payload: bytes, timestamp: int) -> str:

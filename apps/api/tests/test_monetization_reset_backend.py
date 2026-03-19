@@ -127,13 +127,30 @@ def test_coach_endpoints_gated_for_free_and_open_for_active_trial():
 def test_checkout_ignores_tier_and_forces_single_paid_tier(monkeypatch):
     captured = {}
 
+    from services import stripe_service as ss
+
+    mock_cfg = ss.StripeConfig(
+        secret_key="sk_test_dummy",
+        webhook_secret=None,
+        checkout_success_url="https://example.com/success",
+        checkout_cancel_url="https://example.com/cancel",
+        portal_return_url="https://example.com/portal",
+        price_plan_onetime_id=None,
+        price_guided_monthly_id=None,
+        price_guided_annual_id=None,
+        price_premium_monthly_id=None,
+        price_premium_annual_id=None,
+        price_legacy_pro_monthly_id=None,
+        price_strideiq_monthly_id="price_strideiq_m",
+        price_strideiq_annual_id="price_strideiq_a",
+    )
+
     def _fake_create_checkout_session(self, *, athlete, tier="premium", billing_period="annual"):
         captured["tier"] = tier
         captured["billing_period"] = billing_period
         return "https://stripe.test/checkout"
 
-    from services import stripe_service as ss
-
+    monkeypatch.setattr(ss, "_get_stripe_config", lambda: mock_cfg)
     monkeypatch.setattr(ss.StripeService, "create_checkout_session", _fake_create_checkout_session)
 
     db = SessionLocal()

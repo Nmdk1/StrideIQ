@@ -25,16 +25,16 @@ class StripeConfig:
     checkout_cancel_url: str
     portal_return_url: str
     # 4-tier price IDs (all Optional; flows fail closed if required ID is absent)
-    price_plan_onetime_id: Optional[str]
-    price_guided_monthly_id: Optional[str]
-    price_guided_annual_id: Optional[str]
-    price_premium_monthly_id: Optional[str]
-    price_premium_annual_id: Optional[str]
+    price_plan_onetime_id: Optional[str] = None
+    price_guided_monthly_id: Optional[str] = None
+    price_guided_annual_id: Optional[str] = None
+    price_premium_monthly_id: Optional[str] = None
+    price_premium_annual_id: Optional[str] = None
     # Monetization reset single paid tier.
-    price_strideiq_monthly_id: Optional[str]
-    price_strideiq_annual_id: Optional[str]
+    price_strideiq_monthly_id: Optional[str] = None
+    price_strideiq_annual_id: Optional[str] = None
     # Legacy price IDs — existing subscribers only; new checkouts do not use these
-    price_legacy_pro_monthly_id: Optional[str]
+    price_legacy_pro_monthly_id: Optional[str] = None
 
 
 def _get_stripe_config() -> StripeConfig:
@@ -90,14 +90,14 @@ def build_price_to_tier(cfg: StripeConfig) -> dict[str, str]:
     """
     mapping: dict[str, str] = {}
     pairs: list[tuple[Optional[str], str]] = [
-        (cfg.price_strideiq_monthly_id, "premium"),
-        (cfg.price_strideiq_annual_id, "premium"),
-        (cfg.price_guided_monthly_id, "guided"),
-        (cfg.price_guided_annual_id, "guided"),
-        (cfg.price_premium_monthly_id, "premium"),
-        (cfg.price_premium_annual_id, "premium"),
+        (getattr(cfg, "price_strideiq_monthly_id", None), "premium"),
+        (getattr(cfg, "price_strideiq_annual_id", None), "premium"),
+        (getattr(cfg, "price_guided_monthly_id", None), "guided"),
+        (getattr(cfg, "price_guided_annual_id", None), "guided"),
+        (getattr(cfg, "price_premium_monthly_id", None), "premium"),
+        (getattr(cfg, "price_premium_annual_id", None), "premium"),
         # Legacy pro price maps to premium (existing subscribers retain access)
-        (cfg.price_legacy_pro_monthly_id, "premium"),
+        (getattr(cfg, "price_legacy_pro_monthly_id", None), "premium"),
     ]
     for price_id, tier in pairs:
         if price_id:

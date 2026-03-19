@@ -512,7 +512,7 @@ class TestLLMPipelineGating:
     @pytest.fixture(autouse=True)
     def athlete_and_headers(self):
         db = SessionLocal()
-        athlete = _make_athlete(db)
+        athlete = _make_athlete(db, subscription_tier="guided")
         headers = _auth_headers(athlete)
         self.athlete = athlete
         self.headers = headers
@@ -537,7 +537,7 @@ class TestLLMPipelineGating:
     def consented_athlete(self):
         """Create an athlete with ai_consent=True."""
         db = SessionLocal()
-        athlete = _make_athlete(db)
+        athlete = _make_athlete(db, subscription_tier="guided")
         headers = _auth_headers(athlete)
         grant_consent(db=db, athlete_id=athlete.id, ip_address="127.0.0.1", user_agent="Test", source="onboarding")
         db.refresh(athlete)
