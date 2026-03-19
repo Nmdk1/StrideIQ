@@ -20,12 +20,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Import Base and models
-from core.database import Base
-from models import (
-    Athlete, Activity, ActivityStream, DailyCheckin, PersonalBest,
-    CoachingKnowledgeEntry, CoachingRecommendation, RecommendationOutcome
-)
+# Import Base and register models for autogenerate metadata discovery.
+from core.database import Base  # noqa: E402
+import models  # noqa: F401,E402
 
 # add your model's MetaData object here
 # for 'autogenerate' support
