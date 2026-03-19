@@ -178,12 +178,17 @@ def register(
         race_promo_code_id=race_promo.id if race_promo else None
     )
     
-    # Start extended trial if race promo code was valid
-    if race_promo and trial_days:
-        now = datetime.now(timezone.utc)
-        athlete.trial_started_at = now
-        athlete.trial_ends_at = now + timedelta(days=trial_days)
+    # Monetization reset: always auto-start a 30-day trial on signup.
+    # Race promo codes may extend beyond 30 days.
+    now = datetime.now(timezone.utc)
+    default_trial_days = 30
+    athlete.trial_started_at = now
+    athlete.trial_source = "signup"
+    if race_promo and trial_days and int(trial_days) > default_trial_days:
+        athlete.trial_ends_at = now + timedelta(days=int(trial_days))
         athlete.trial_source = f"race:{race_promo.code}"
+    else:
+        athlete.trial_ends_at = now + timedelta(days=default_trial_days)
     
     db.add(athlete)
     db.commit()

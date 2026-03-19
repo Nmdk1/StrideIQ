@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from math import ceil
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from pydantic import BaseModel, Field
 
 from core.auth import get_current_active_user
 from core.database import get_db
 from core.tier_utils import normalize_tier
-from models import Athlete, Subscription
+from models import Activity, Athlete, AthleteFact, CorrelationFinding, Subscription
 from services.stripe_service import StripeService, process_stripe_event
 
 
@@ -66,20 +68,15 @@ class CheckoutRequest(BaseModel):
     Old shape (still accepted):
         {"billing_period": "annual"}
 
-    New shape:
-        {"tier": "guided", "billing_period": "monthly"}
-        {"tier": "premium", "billing_period": "annual"}
-
-    If ``tier`` is omitted, defaults to "premium" to preserve existing behavior.
+    Monetization reset:
+    - Single paid StrideIQ subscription tier.
+    - ``tier`` is accepted for backward compatibility and ignored.
     """
     billing_period: str = Field(
         default="annual",
         description="'annual' or 'monthly'",
     )
-    tier: Optional[str] = Field(
-        default=None,
-        description="'guided' or 'premium'. Defaults to 'premium' if omitted.",
-    )
+    tier: Optional[str] = Field(default=None, description="Deprecated, ignored.")
 
 
 @router.post("/checkout")
@@ -89,20 +86,20 @@ def create_checkout(
 ):
     """Create a Stripe Checkout Session for a subscription tier.
 
-    Backward-compatible: old clients sending only ``billing_period`` receive
-    a premium checkout session (unchanged behavior).
+    Monetization reset behavior:
+    - All subscriptions checkout into a single paid tier (premium/StrideIQ).
+    - Deprecated ``tier`` request value is accepted for backward compatibility.
     """
     billing_period = (request.billing_period if request else "annual") or "annual"
     if billing_period not in ("annual", "monthly"):
         raise HTTPException(status_code=400, detail="billing_period must be 'annual' or 'monthly'")
 
-    raw_tier = (request.tier if request else None) or "premium"
-    canonical_tier = normalize_tier(raw_tier)
-    if canonical_tier not in ("guided", "premium"):
-        raise HTTPException(
-            status_code=400,
-            detail="tier must be 'guided' or 'premium'",
-        )
+    # Deprecated field handling: accept known historical values, ignore for routing.
+    if request and request.tier is not None:
+        normalized = normalize_tier(request.tier)
+        if normalized not in ("guided", "premium"):
+            raise HTTPException(status_code=400, detail="tier must be 'guided' or 'premium'")
+    canonical_tier = "premium"
 
     try:
         url = StripeService().create_checkout_session(
@@ -118,6 +115,62 @@ def create_checkout(
         raise HTTPException(status_code=500, detail="Failed to create checkout session")
 
     return {"url": url, "tier": canonical_tier, "billing_period": billing_period}
+
+
+class TrialStatusResponse(BaseModel):
+    has_trial: bool
+    trial_days_remaining: int
+    trial_ends_at: Optional[datetime] = None
+    facts_learned: int
+    findings_discovered: int
+    activities_analyzed: int
+
+
+@router.get("/trial/status", response_model=TrialStatusResponse)
+def get_trial_status(
+    current_user: Athlete = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Return trial countdown and learned-value counts for lockout/banner UX."""
+    now = datetime.now(timezone.utc)
+    trial_ends_at = getattr(current_user, "trial_ends_at", None)
+    has_trial = bool(getattr(current_user, "trial_started_at", None))
+    days_remaining = 0
+    if trial_ends_at is not None:
+        remaining_seconds = (trial_ends_at - now).total_seconds()
+        if remaining_seconds > 0:
+            days_remaining = max(0, int(ceil(remaining_seconds / 86400)))
+
+    facts_learned = (
+        db.query(func.count(AthleteFact.id))
+        .filter(AthleteFact.athlete_id == current_user.id)
+        .scalar()
+        or 0
+    )
+    findings_discovered = (
+        db.query(func.count(CorrelationFinding.id))
+        .filter(
+            CorrelationFinding.athlete_id == current_user.id,
+            CorrelationFinding.is_active.is_(True),
+        )
+        .scalar()
+        or 0
+    )
+    activities_analyzed = (
+        db.query(func.count(Activity.id))
+        .filter(Activity.athlete_id == current_user.id)
+        .scalar()
+        or 0
+    )
+
+    return TrialStatusResponse(
+        has_trial=has_trial,
+        trial_days_remaining=max(0, int(days_remaining)),
+        trial_ends_at=trial_ends_at,
+        facts_learned=max(0, int(facts_learned)),
+        findings_discovered=max(0, int(findings_discovered)),
+        activities_analyzed=max(0, int(activities_analyzed)),
+    )
 
 
 class PlanCheckoutRequest(BaseModel):

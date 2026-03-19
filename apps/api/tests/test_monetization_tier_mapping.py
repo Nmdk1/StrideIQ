@@ -325,7 +325,7 @@ class TestOneTimeTier:
 # =============================================================================
 
 class TestGuidedTierGroupA:
-    """Guided tier: full adaptation access, no premium narratives."""
+    """Guided tier: full adaptation access including workout narratives."""
 
     def test_guided_gets_daily_adaptation(self):
         """Guided athletes get 200 (not 403) on daily intelligence endpoint."""
@@ -360,16 +360,16 @@ class TestGuidedTierGroupA:
         finally:
             _cleanup(athlete)
 
-    def test_guided_no_narratives(self):
-        """Guided athletes get 403 on workout-narrative — that's premium only."""
+    def test_guided_gets_narratives(self):
+        """Guided athletes can access workout-narrative after monetization reset."""
         athlete = _make_athlete("guided")
         try:
             resp = client.get(
                 "/v1/intelligence/workout-narrative/2026-03-10",
                 headers=_headers(athlete),
             )
-            assert resp.status_code == 403, (
-                f"Workout narratives must be premium-only, but guided got {resp.status_code}"
+            assert resp.status_code != 403, (
+                f"Workout narratives should be guided+, but guided got {resp.status_code}"
             )
         finally:
             _cleanup(athlete)

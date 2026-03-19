@@ -194,6 +194,9 @@ class Settings(BaseSettings):
     # Legacy price ID kept for backward-compat subscription matching only.
     # New checkouts do NOT use this; existing subscribers still reconcile against it.
     STRIPE_PRICE_PRO_MONTHLY_ID: Optional[str] = Field(default=None)
+    # Monetization reset (single paid StrideIQ tier).
+    STRIPE_PRICE_STRIDEIQ_MONTHLY_ID: Optional[str] = Field(default=None)
+    STRIPE_PRICE_STRIDEIQ_ANNUAL_ID: Optional[str] = Field(default=None)
     
     # Cloudflare R2 Object Storage (Runtoon photos + generated images)
     # All buckets are private. All access is via signed URLs (15-min TTL).

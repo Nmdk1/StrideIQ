@@ -13,7 +13,7 @@ import asyncio
 import json
 
 from core.database import get_db
-from core.auth import get_current_athlete
+from core.auth import require_tier
 from models import Athlete, CoachChat
 from services.ai_coach import AICoach
 
@@ -62,7 +62,7 @@ class ThreadHistoryResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_coach(
     request: ChatRequest,
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -94,7 +94,7 @@ async def chat_with_coach(
 @router.post("/chat/stream")
 async def chat_with_coach_stream(
     request: ChatRequest,
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -189,7 +189,7 @@ async def chat_with_coach_stream(
 
 @router.post("/new-conversation", response_model=NewConversationResponse)
 async def new_conversation(
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -211,7 +211,7 @@ async def new_conversation(
 @router.get("/context", response_model=ContextResponse)
 async def get_coach_context(
     days: int = 30,
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -227,7 +227,7 @@ async def get_coach_context(
 
 @router.get("/suggestions")
 async def get_suggested_questions(
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -243,7 +243,7 @@ async def get_suggested_questions(
 @router.get("/history", response_model=ThreadHistoryResponse)
 async def get_coach_history(
     limit: int = 50,
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """

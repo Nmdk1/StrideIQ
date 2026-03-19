@@ -368,7 +368,7 @@ class WorkoutNarrativeResponse(BaseModel):
 )
 def get_workout_narrative(
     target_date: date,
-    current_user: Athlete = Depends(require_tier(["premium"])),
+    current_user: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """

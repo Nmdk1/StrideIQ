@@ -30,6 +30,9 @@ class StripeConfig:
     price_guided_annual_id: Optional[str]
     price_premium_monthly_id: Optional[str]
     price_premium_annual_id: Optional[str]
+    # Monetization reset single paid tier.
+    price_strideiq_monthly_id: Optional[str]
+    price_strideiq_annual_id: Optional[str]
     # Legacy price IDs — existing subscribers only; new checkouts do not use these
     price_legacy_pro_monthly_id: Optional[str]
 
@@ -71,6 +74,8 @@ def _get_stripe_config() -> StripeConfig:
         price_guided_annual_id=getattr(settings, "STRIPE_PRICE_GUIDED_ANNUAL_ID", None) or None,
         price_premium_monthly_id=getattr(settings, "STRIPE_PRICE_PREMIUM_MONTHLY_ID", None) or None,
         price_premium_annual_id=getattr(settings, "STRIPE_PRICE_PREMIUM_ANNUAL_ID", None) or None,
+        price_strideiq_monthly_id=getattr(settings, "STRIPE_PRICE_STRIDEIQ_MONTHLY_ID", None) or None,
+        price_strideiq_annual_id=getattr(settings, "STRIPE_PRICE_STRIDEIQ_ANNUAL_ID", None) or None,
         price_legacy_pro_monthly_id=getattr(settings, "STRIPE_PRICE_PRO_MONTHLY_ID", None) or None,
     )
 
@@ -85,6 +90,8 @@ def build_price_to_tier(cfg: StripeConfig) -> dict[str, str]:
     """
     mapping: dict[str, str] = {}
     pairs: list[tuple[Optional[str], str]] = [
+        (cfg.price_strideiq_monthly_id, "premium"),
+        (cfg.price_strideiq_annual_id, "premium"),
         (cfg.price_guided_monthly_id, "guided"),
         (cfg.price_guided_annual_id, "guided"),
         (cfg.price_premium_monthly_id, "premium"),
@@ -247,8 +254,8 @@ class StripeService:
         lookup: dict[tuple[str, str], Optional[str]] = {
             ("guided", "monthly"): self.cfg.price_guided_monthly_id,
             ("guided", "annual"): self.cfg.price_guided_annual_id,
-            ("premium", "monthly"): self.cfg.price_premium_monthly_id,
-            ("premium", "annual"): self.cfg.price_premium_annual_id,
+            ("premium", "monthly"): self.cfg.price_strideiq_monthly_id or self.cfg.price_premium_monthly_id,
+            ("premium", "annual"): self.cfg.price_strideiq_annual_id or self.cfg.price_premium_annual_id,
         }
         price_id = lookup.get((canonical_tier, billing_period))
         if not price_id:

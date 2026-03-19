@@ -591,8 +591,8 @@ class TestWorkoutNarrativePremiumOnly:
                 f"/v1/intelligence/workout-narrative/{date.today()}",
                 headers=_headers(athlete),
             )
-            assert resp.status_code == 403, (
-                f"Guided should not access workout narrative (premium only), got {resp.status_code}"
+            assert resp.status_code != 403, (
+                f"Guided should access workout narrative after monetization reset, got {resp.status_code}"
             )
         finally:
             _cleanup(athlete)
