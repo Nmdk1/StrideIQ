@@ -11,6 +11,7 @@
  */
 
 import React, { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 import { useUnits } from '@/lib/context/UnitsContext';
 
 interface MiniPaceChartProps {
@@ -22,28 +23,10 @@ interface MiniPaceChartProps {
   height?: number;
 }
 
-type ClassificationStyle = {
-  line: string;
-  area: string;
-};
-
-export function getWorkoutClassificationStyle(workoutClassification?: string | null): ClassificationStyle {
-  const raw = (workoutClassification || '').toLowerCase();
-  if (raw.includes('race')) return { line: '#f59e0b', area: 'rgba(245, 158, 11, 0.22)' };
-  if (raw.includes('threshold') || raw.includes('tempo')) return { line: '#f59e0b', area: 'rgba(245, 158, 11, 0.20)' };
-  if (raw.includes('interval') || raw.includes('hill')) return { line: '#f97316', area: 'rgba(249, 115, 22, 0.20)' };
-  if (raw.includes('strides') || raw.includes('fartlek')) return { line: '#a78bfa', area: 'rgba(167, 139, 250, 0.20)' };
-  if (raw.includes('progression')) return { line: '#2dd4bf', area: 'rgba(45, 212, 191, 0.20)' };
-  if (raw.includes('long')) return { line: '#60a5fa', area: 'rgba(96, 165, 250, 0.20)' };
-  if (raw.includes('easy') || raw.includes('recovery')) return { line: '#94a3b8', area: 'rgba(148, 163, 184, 0.18)' };
-  return { line: '#94a3b8', area: 'rgba(148, 163, 184, 0.18)' };
-}
-
 export function MiniPaceChart({
   paceStream,
-  effortIntensity: _effortIntensity,
+  effortIntensity,
   elevationStream,
-  workoutClassification,
   heatAdjustmentPct,
   height = 140,
 }: MiniPaceChartProps) {
@@ -99,6 +82,38 @@ export function MiniPaceChart({
     return { n, paceNorm, adjustedNorm, elevNorm };
   }, [paceStream, elevationStream, heatAdjustmentPct]);
 
+  const effortGradientStops = useMemo(() => {
+    if (!chartData || !effortIntensity || effortIntensity.length === 0) return null;
+    const n = chartData.n;
+    if (n <= 0) return null;
+
+    const resampled = effortIntensity.length === n
+      ? effortIntensity
+      : _resample(effortIntensity, n);
+
+    const maxStops = 40;
+    const step = Math.max(1, Math.floor(n / maxStops));
+    const stops: Array<{ offset: string; color: string }> = [];
+    const denominator = Math.max(1, n - 1);
+
+    for (let i = 0; i < n; i += step) {
+      const raw = resampled[i];
+      const safe = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0.5;
+      const offset = ((i / denominator) * 100).toFixed(1);
+      stops.push({ offset: `${offset}%`, color: effortToColor(safe) });
+    }
+
+    const lastOffset = '100%';
+    if (stops.length === 0 || stops[stops.length - 1].offset !== lastOffset) {
+      const raw = resampled[n - 1];
+      const safe = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0.5;
+      stops.push({ offset: lastOffset, color: effortToColor(safe) });
+    }
+
+    return stops;
+  }, [effortIntensity, chartData]);
+
+  const lineGradientId = `paceLineGrad-${useId()}`;
   const areaGradientId = `paceAreaGrad-${useId()}`;
   const glowFilterId = `paceGlow-${useId()}`;
 
@@ -127,7 +142,6 @@ export function MiniPaceChart({
   if (!chartData) return null;
 
   const { n, paceNorm, adjustedNorm, elevNorm } = chartData;
-  const classStyle = getWorkoutClassificationStyle(workoutClassification);
   const pad = { top: 8, bottom: 8 };
   const drawH = height - pad.top - pad.bottom;
   const xStep = 100 / (n - 1);
@@ -194,14 +208,29 @@ export function MiniPaceChart({
         style={{ height, display: 'block' }}
       >
         <defs>
-          <linearGradient id={areaGradientId} x1="0" y1="0" x2="0" y2="1">
-            {[
-              { offset: '0%', color: classStyle.area },
-              { offset: '100%', color: 'rgba(15,23,42,0.04)' },
-            ].map((s, i) => (
-              <stop key={i} offset={s.offset} stopColor={s.color} />
-            ))}
-          </linearGradient>
+          {effortGradientStops && (
+            <>
+              <linearGradient id={lineGradientId} x1="0" y1="0" x2="1" y2="0">
+                {effortGradientStops.map((s, i) => (
+                  <stop key={i} offset={s.offset} stopColor={s.color} />
+                ))}
+              </linearGradient>
+              <linearGradient id={areaGradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop
+                  offset="0%"
+                  stopColor={effortGradientStops[Math.floor(effortGradientStops.length / 2)]?.color ?? '#94a3b8'}
+                  stopOpacity="0.25"
+                />
+                <stop offset="100%" stopColor="rgba(15,23,42,0.04)" />
+              </linearGradient>
+            </>
+          )}
+          {!effortGradientStops && (
+            <linearGradient id={areaGradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(148,163,184,0.20)" />
+              <stop offset="100%" stopColor="rgba(15,23,42,0.04)" />
+            </linearGradient>
+          )}
           {/* Glow filter for the pace line */}
           <filter id={glowFilterId} x="-10%" y="-10%" width="120%" height="120%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="blur" />
@@ -228,11 +257,11 @@ export function MiniPaceChart({
           data-testid="pace-area"
         />
 
-        {/* Pace line — classification colored */}
+        {/* Pace line — effort gradient (fallback slate) */}
         <path
           d={pacePath}
           fill="none"
-          stroke={classStyle.line}
+          stroke={effortGradientStops ? `url(#${lineGradientId})` : '#94a3b8'}
           strokeWidth="2.5"
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -244,8 +273,7 @@ export function MiniPaceChart({
           <path
             d={adjustedPath}
             fill="none"
-            stroke={classStyle.line}
-            strokeOpacity="0.45"
+            stroke="rgba(255,255,255,0.45)"
             strokeWidth="1.5"
             strokeDasharray="4 3"
             vectorEffect="non-scaling-stroke"

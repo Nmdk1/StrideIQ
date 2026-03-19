@@ -145,8 +145,8 @@ describe('L1-4: Effort gradient canvas renders with stream data', () => {
 
     expect(screen.getByTestId('mini-pace-chart')).toBeInTheDocument();
     expect(screen.getByTestId('elevation-fill')).toBeInTheDocument();
-    // End-to-end flow: LastRunHero passes workout_classification to MiniPaceChart style map
-    expect(screen.getByTestId('pace-line').getAttribute('stroke')).toBe('#f59e0b');
+    // End-to-end flow: chart path renders with effort-gradient stroke
+    expect(screen.getByTestId('pace-line').getAttribute('stroke')).toMatch(/^url\(#paceLineGrad-/);
     // Falls back to MiniEffortCanvas when pace_stream absent
     expect(screen.queryByTestId('hero-effort-gradient')).not.toBeInTheDocument();
   });

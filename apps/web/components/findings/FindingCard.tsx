@@ -72,7 +72,8 @@ export default function FindingCard({
   const safeImplication = hasRawStatsJargon(implication) ? 'Action guidance is available in coach context.' : implication;
 
   const confirmations = Math.max(0, timesConfirmed || 0);
-  const arcRatio = Math.min(confirmations / 60, 0.95);
+  const rawRatio = Math.min(confirmations / 25, 0.95);
+  const arcRatio = confirmations > 0 ? Math.max(0.12, rawRatio) : 0;
   const dash = arcRatio * ARC_CIRCUMFERENCE;
   const showExpansion = expandable && !isColdStart;
   const askCoachHref = `/coach?q=${encodeURIComponent(safeText || '')}`;
@@ -97,7 +98,7 @@ export default function FindingCard({
               cy="26"
               r={ARC_RADIUS}
               fill="none"
-              stroke="rgba(255,255,255,0.06)"
+              stroke="rgba(255,255,255,0.12)"
               strokeWidth="3"
             />
             {!isColdStart && (
@@ -107,7 +108,7 @@ export default function FindingCard({
                 r={ARC_RADIUS}
                 fill="none"
                 stroke={visual.color}
-                strokeWidth="3"
+                strokeWidth="4"
                 strokeLinecap="round"
                 strokeDasharray={`${dash} ${ARC_CIRCUMFERENCE}`}
                 transform="rotate(-90 26 26)"

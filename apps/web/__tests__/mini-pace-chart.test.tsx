@@ -2,12 +2,12 @@
  * MiniPaceChart — Unit tests for the home hero pace chart.
  *
  * Tests:
- * - Renders SVG with classification-colored pace line + area fill
+ * - Renders SVG with effort-gradient pace line + area fill
  * - Renders elevation fill when elevation_stream is present
  * - Does not render elevation fill when elevation_stream is absent
  * - Returns null when paceStream is empty
  * - Handles mismatched array lengths gracefully (resamples)
- * - Classification color mapping and fallback behavior
+ * - Fallback behavior when effort stream is missing
  * - Heat-adjusted overlay appears only when threshold passes
  */
 
@@ -26,7 +26,12 @@ jest.mock('@/lib/context/UnitsContext', () => ({
   }),
 }));
 
-import { MiniPaceChart, getWorkoutClassificationStyle } from '@/components/home/MiniPaceChart';
+jest.mock('@/components/activities/rsi/utils/effortColor', () => ({
+  effortToColor: jest.fn((v: number) => `rgb(${Math.round(v * 255)}, 100, 80)`),
+}));
+
+import { MiniPaceChart } from '@/components/home/MiniPaceChart';
+import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -57,8 +62,7 @@ describe('MiniPaceChart', () => {
     const paceLine = screen.getByTestId('pace-line');
     expect(paceLine).toBeInTheDocument();
     expect(paceLine.getAttribute('d')).toMatch(/^M /);
-    // Solid classification stroke (not per-point gradient)
-    expect(paceLine.getAttribute('stroke')).toBe('#94a3b8');
+    expect(paceLine.getAttribute('stroke')).toMatch(/^url\(#paceLineGrad-/);
 
     // Area fill exists
     const paceArea = screen.getByTestId('pace-area');
@@ -121,7 +125,7 @@ describe('MiniPaceChart', () => {
     expect(screen.getByTestId('elevation-fill')).toBeInTheDocument();
   });
 
-  test('does not use line linearGradient for pace coloring', () => {
+  test('uses line linearGradient for per-point effort coloring', () => {
     render(
       <MiniPaceChart
         paceStream={PACE_50}
@@ -132,19 +136,20 @@ describe('MiniPaceChart', () => {
 
     const svg = screen.getByTestId('mini-pace-chart');
     const lineGradient = svg.querySelector('linearGradient[id^="paceLineGrad-"]');
-    expect(lineGradient).toBeNull();
-    expect(screen.getByTestId('pace-line').getAttribute('stroke')).not.toMatch(/^url\(#/);
+    expect(lineGradient).not.toBeNull();
+    expect(screen.getByTestId('pace-line').getAttribute('stroke')).toMatch(/^url\(#paceLineGrad-/);
+    expect((effortToColor as jest.Mock).mock.calls.length).toBeGreaterThan(0);
   });
 
-  test('maps workout classification to expected line colors', () => {
-    expect(getWorkoutClassificationStyle('easy').line).toBe('#94a3b8');
-    expect(getWorkoutClassificationStyle('long_run').line).toBe('#60a5fa');
-    expect(getWorkoutClassificationStyle('progression').line).toBe('#2dd4bf');
-    expect(getWorkoutClassificationStyle('strides').line).toBe('#a78bfa');
-    expect(getWorkoutClassificationStyle('tempo').line).toBe('#f59e0b');
-    expect(getWorkoutClassificationStyle('intervals').line).toBe('#f97316');
-    expect(getWorkoutClassificationStyle('race').line).toBe('#f59e0b');
-    expect(getWorkoutClassificationStyle('unknown_value').line).toBe('#94a3b8');
+  test('falls back to slate stroke when effort stream is empty', () => {
+    render(
+      <MiniPaceChart
+        paceStream={PACE_50}
+        effortIntensity={[]}
+        height={140}
+      />
+    );
+    expect(screen.getByTestId('pace-line').getAttribute('stroke')).toBe('#94a3b8');
   });
 
   test('renders dashed heat-adjusted overlay only when adjustment > 3', () => {

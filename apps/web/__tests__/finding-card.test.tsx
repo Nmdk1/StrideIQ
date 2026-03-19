@@ -5,6 +5,8 @@ import '@testing-library/jest-dom';
 import FindingCard, { getDomainVisual } from '@/components/findings/FindingCard';
 
 describe('FindingCard', () => {
+  const ARC_CIRCUMFERENCE = 2 * Math.PI * 22;
+
   test('arc fill scales with confirmations', () => {
     const { rerender } = render(
       <FindingCard
@@ -29,6 +31,21 @@ describe('FindingCard', () => {
     const earlyValue = Number((earlyDash.split(' ')[0] || '0'));
     const lateValue = Number((lateDash.split(' ')[0] || '0'));
     expect(lateValue).toBeGreaterThan(earlyValue);
+  });
+
+  test('minimum arc is visible with one confirmation', () => {
+    render(
+      <FindingCard
+        text="Early pattern signal."
+        domain="pace"
+        confidenceTier="confirmed"
+        timesConfirmed={1}
+      />
+    );
+    const dashArray = screen.getByTestId('finding-arc-fill').getAttribute('stroke-dasharray') || '';
+    const dashValue = Number((dashArray.split(' ')[0] || '0'));
+    const minimumExpected = ARC_CIRCUMFERENCE * 0.12;
+    expect(dashValue).toBeGreaterThanOrEqual(minimumExpected - 0.001);
   });
 
   test('maps domain to visual key', () => {
