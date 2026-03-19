@@ -1,8 +1,8 @@
 /**
  * ADR-064 effort intensity → color mapping.
  *
- * 6-stop muted F1 palette: steel-blue → teal → warm amber → orange → red → deep crimson.
- * All stops have lightness ≤ 45% and saturation ≤ 75% for dark-background rendering.
+ * 7-stop muted F1 palette: steel-blue → teal → warm amber → orange → red → deep crimson.
+ * All stops have lightness <= 45% and saturation <= 75% for dark-background rendering.
  * Input: effort scalar in [0.0, 1.0].
  * Output: CSS rgb() string.
  *
@@ -56,8 +56,21 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+// Monotonic display remap to increase visible separation in aerobic progressions
+// (roughly 0.25-0.60 effort) without turning easy runs warm.
+function remapEffortForDisplay(e: number): number {
+  if (e <= 0.25) {
+    return lerp(0.0, 0.22, e / 0.25);
+  }
+  if (e <= 0.60) {
+    return lerp(0.22, 0.72, (e - 0.25) / 0.35);
+  }
+  return lerp(0.72, 1.0, (e - 0.60) / 0.40);
+}
+
 export function effortToColor(effort: number): string {
-  const e = Math.max(0, Math.min(1, effort));
+  const clamped = Math.max(0, Math.min(1, effort));
+  const e = remapEffortForDisplay(clamped);
 
   // Find surrounding stops
   for (let i = 0; i < STOPS.length - 1; i++) {
