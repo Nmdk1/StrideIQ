@@ -31,6 +31,7 @@ from models import (
 )
 from services.ai_coach import AICoach
 from services import coach_tools
+from services.plan_lifecycle import get_active_plan_for_athlete
 
 router = APIRouter(prefix="/v1/calendar", tags=["Calendar"])
 
@@ -679,10 +680,7 @@ def get_calendar(
         end_date = next_month.replace(day=1) - timedelta(days=1)
     
     # Get active training plan
-    active_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == current_user.id,
-        TrainingPlan.status == "active"
-    ).first()
+    active_plan = get_active_plan_for_athlete(db, current_user.id)
     
     # Get planned workouts in range
     planned_workouts = {}
@@ -881,10 +879,7 @@ def get_calendar_day(
     - All insights
     """
     # Get active plan and planned workout
-    active_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == current_user.id,
-        TrainingPlan.status == "active"
-    ).first()
+    active_plan = get_active_plan_for_athlete(db, current_user.id)
     
     planned = None
     if active_plan:
@@ -1182,10 +1177,7 @@ def _build_coach_context(
     }
     
     # Get active plan
-    active_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == athlete.id,
-        TrainingPlan.status == "active"
-    ).first()
+    active_plan = get_active_plan_for_athlete(db, athlete.id)
     
     if active_plan:
         context["active_plan"] = {
@@ -1276,10 +1268,7 @@ def get_calendar_week(
 ):
     """Get detailed view of a specific training week."""
     # Get active plan
-    active_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == current_user.id,
-        TrainingPlan.status == "active"
-    ).first()
+    active_plan = get_active_plan_for_athlete(db, current_user.id)
     
     if not active_plan:
         raise HTTPException(status_code=404, detail="No active training plan")

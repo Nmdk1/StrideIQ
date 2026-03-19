@@ -10,6 +10,7 @@ from celery import shared_task
 
 from core.database import get_db_sync
 from models import TrainingPlan
+from services.plan_lifecycle import complete_expired_active_plans_for_athlete
 
 
 def _complete_expired_plans_in_db(db, *, today: date | None = None) -> int:
@@ -17,23 +18,24 @@ def _complete_expired_plans_in_db(db, *, today: date | None = None) -> int:
     Internal implementation that operates on a caller-provided DB session.
     """
     effective_today = today or date.today()
-    stale_active_plans = (
-        db.query(TrainingPlan)
+    athlete_ids = (
+        db.query(TrainingPlan.athlete_id)
         .filter(
             TrainingPlan.status == "active",
             TrainingPlan.goal_race_date < effective_today,
         )
+        .distinct()
         .all()
     )
-
-    if not stale_active_plans:
+    if not athlete_ids:
         return 0
 
-    for plan in stale_active_plans:
-        plan.status = "completed"
-
-    db.commit()
-    return len(stale_active_plans)
+    updated_total = 0
+    for (athlete_id,) in athlete_ids:
+        updated_total += complete_expired_active_plans_for_athlete(
+            db, athlete_id, today=effective_today
+        )
+    return updated_total
 
 
 @shared_task(name="tasks.complete_expired_plans")

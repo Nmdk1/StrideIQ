@@ -113,3 +113,20 @@ def test_complete_expired_plans_is_wired_in_beat_schedule():
     assert isinstance(schedule, crontab)
     assert schedule._orig_hour == 2
     assert schedule._orig_minute == 0
+
+
+def test_get_active_plan_for_athlete_auto_completes_stale_active(db_session, test_athlete):
+    from services.plan_lifecycle import get_active_plan_for_athlete
+
+    stale = _create_plan(
+        db_session,
+        test_athlete.id,
+        status="active",
+        goal_race_date=date.today() - timedelta(days=3),
+    )
+
+    active = get_active_plan_for_athlete(db_session, test_athlete.id)
+    db_session.refresh(stale)
+
+    assert active is None
+    assert stale.status == "completed"

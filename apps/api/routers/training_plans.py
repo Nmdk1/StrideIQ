@@ -20,6 +20,7 @@ from core.database import get_db
 from core.auth import get_current_athlete
 from models import Athlete, Activity, TrainingPlan, PlannedWorkout
 from services.plan_generator import PlanGenerator
+from services.plan_lifecycle import get_active_plan_for_athlete
 
 router = APIRouter(prefix="/v1/training-plans", tags=["Training Plans"])
 
@@ -182,10 +183,7 @@ async def get_current_plan(
     db: Session = Depends(get_db),
 ):
     """Get the athlete's current active training plan."""
-    plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == athlete.id,
-        TrainingPlan.status == "active"
-    ).first()
+    plan = get_active_plan_for_athlete(db, athlete.id)
     
     if not plan:
         return None
@@ -215,10 +213,7 @@ async def get_current_week(
     db: Session = Depends(get_db),
 ):
     """Get this week's workouts from the current plan."""
-    plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == athlete.id,
-        TrainingPlan.status == "active"
-    ).first()
+    plan = get_active_plan_for_athlete(db, athlete.id)
     
     if not plan:
         return None
@@ -296,10 +291,7 @@ async def get_calendar(
             end_date = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
     
     # Get current plan
-    plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == athlete.id,
-        TrainingPlan.status == "active"
-    ).first()
+    plan = get_active_plan_for_athlete(db, athlete.id)
     
     # Get planned workouts in range
     planned = {}

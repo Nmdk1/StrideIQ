@@ -26,6 +26,7 @@ from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
 from models import Athlete, Activity, ActivityStream, PlannedWorkout, TrainingPlan, CalendarInsight, DailyCheckin
 from services.n1_insight_generator import friendly_signal_name
+from services.plan_lifecycle import get_active_plan_for_athlete
 
 logger = logging.getLogger(__name__)
 
@@ -2591,10 +2592,7 @@ async def get_home_data(
     today_workout = TodayWorkout(has_workout=False)
 
     # Find active plan
-    active_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == current_user.id,
-        TrainingPlan.status == "active"
-    ).first()
+    active_plan = get_active_plan_for_athlete(db, current_user.id)
 
     if active_plan:
         # Find today's planned workout
