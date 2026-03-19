@@ -40,13 +40,16 @@ function hslToRgb(h: number, s: number, l: number): RGB {
   return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
 }
 
-// 6-stop muted palette — all L ≤ 45%, all S ≤ 75%
+// 7-stop muted palette tuned to avoid muddy green compression in easy->moderate.
+// We intentionally keep a tight transition between cool and warm regimes so
+// progressive aerobic runs read as cool->moderate variation (not flat green).
 const STOPS: Array<{ t: number; color: RGB }> = [
   { t: 0.0,  color: hslToRgb(205, 55, 35) },   // Steel blue (recovery)
-  { t: 0.3,  color: hslToRgb(175, 45, 32) },   // Muted teal (easy)
-  { t: 0.5,  color: hslToRgb(38,  60, 38) },   // Warm amber (moderate)
-  { t: 0.7,  color: hslToRgb(18,  62, 36) },   // Burnt orange (tempo)
-  { t: 0.85, color: hslToRgb(5,   65, 35) },   // Red-orange (threshold)
+  { t: 0.22, color: hslToRgb(194, 50, 34) },   // Blue-cyan (easy)
+  { t: 0.42, color: hslToRgb(182, 44, 33) },   // Teal (steady aerobic)
+  { t: 0.47, color: hslToRgb(40,  56, 39) },   // Amber onset (moderate)
+  { t: 0.67, color: hslToRgb(20,  62, 36) },   // Burnt orange (tempo)
+  { t: 0.84, color: hslToRgb(6,   66, 35) },   // Red-orange (threshold)
   { t: 1.0,  color: hslToRgb(350, 70, 28) },   // Deep crimson (max)
 ];
 
