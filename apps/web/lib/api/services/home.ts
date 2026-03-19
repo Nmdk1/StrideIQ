@@ -125,6 +125,8 @@ export interface HomeFinding {
   confidence_tier: string;
   domain: string;
   times_confirmed: number;
+  evidence_summary?: string | null;
+  implication_summary?: string | null;
 }
 
 export type BriefingState = 'fresh' | 'stale' | 'missing' | 'refreshing' | 'consent_required';

@@ -75,7 +75,7 @@ function groupFindings(
     bucket.set(domain, existing);
   }
 
-  return [...bucket.values()]
+  return Array.from(bucket.values())
     .map((group) => ({
       ...group,
       findings: group.findings.sort((a, b) => b.timesConfirmed - a.timesConfirmed),

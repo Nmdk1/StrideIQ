@@ -813,7 +813,8 @@ export function RunShapeCanvas({
     if (heatAdjustmentPct != null && heatAdjustmentPct > 3) {
       const factor = 1 + (heatAdjustmentPct / 100);
       for (let i = 0; i < raw.length; i++) {
-        raw[i].adjustedPace = raw[i].pace != null ? raw[i].pace / factor : null;
+        const pointPace = raw[i].pace;
+        raw[i].adjustedPace = pointPace != null ? pointPace / factor : null;
       }
     }
 
