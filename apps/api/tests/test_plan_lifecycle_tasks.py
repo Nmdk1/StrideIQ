@@ -25,7 +25,7 @@ def _create_plan(db_session, athlete_id, *, status: str, goal_race_date: date):
 
 
 def test_complete_expired_plans_transitions_past_race_date(db_session, test_athlete):
-    from tasks.plan_lifecycle_tasks import complete_expired_plans
+    from tasks.plan_lifecycle_tasks import _complete_expired_plans_in_db
 
     stale = _create_plan(
         db_session,
@@ -34,7 +34,7 @@ def test_complete_expired_plans_transitions_past_race_date(db_session, test_athl
         goal_race_date=date.today() - timedelta(days=1),
     )
 
-    updated_count = complete_expired_plans()
+    updated_count = _complete_expired_plans_in_db(db_session)
     db_session.refresh(stale)
 
     assert updated_count >= 1
@@ -42,7 +42,7 @@ def test_complete_expired_plans_transitions_past_race_date(db_session, test_athl
 
 
 def test_complete_expired_plans_ignores_future_race(db_session, test_athlete):
-    from tasks.plan_lifecycle_tasks import complete_expired_plans
+    from tasks.plan_lifecycle_tasks import _complete_expired_plans_in_db
 
     future = _create_plan(
         db_session,
@@ -51,7 +51,7 @@ def test_complete_expired_plans_ignores_future_race(db_session, test_athlete):
         goal_race_date=date.today() + timedelta(days=7),
     )
 
-    updated_count = complete_expired_plans()
+    updated_count = _complete_expired_plans_in_db(db_session)
     db_session.refresh(future)
 
     assert updated_count == 0
@@ -59,7 +59,7 @@ def test_complete_expired_plans_ignores_future_race(db_session, test_athlete):
 
 
 def test_complete_expired_plans_ignores_non_active_statuses(db_session, test_athlete):
-    from tasks.plan_lifecycle_tasks import complete_expired_plans
+    from tasks.plan_lifecycle_tasks import _complete_expired_plans_in_db
 
     completed = _create_plan(
         db_session,
@@ -74,7 +74,7 @@ def test_complete_expired_plans_ignores_non_active_statuses(db_session, test_ath
         goal_race_date=date.today() - timedelta(days=10),
     )
 
-    updated_count = complete_expired_plans()
+    updated_count = _complete_expired_plans_in_db(db_session)
     db_session.refresh(completed)
     db_session.refresh(cancelled)
 
@@ -84,7 +84,7 @@ def test_complete_expired_plans_ignores_non_active_statuses(db_session, test_ath
 
 
 def test_complete_expired_plans_idempotent(db_session, test_athlete):
-    from tasks.plan_lifecycle_tasks import complete_expired_plans
+    from tasks.plan_lifecycle_tasks import _complete_expired_plans_in_db
 
     stale = _create_plan(
         db_session,
@@ -93,8 +93,8 @@ def test_complete_expired_plans_idempotent(db_session, test_athlete):
         goal_race_date=date.today() - timedelta(days=2),
     )
 
-    first = complete_expired_plans()
-    second = complete_expired_plans()
+    first = _complete_expired_plans_in_db(db_session)
+    second = _complete_expired_plans_in_db(db_session)
     db_session.refresh(stale)
 
     assert first >= 1
