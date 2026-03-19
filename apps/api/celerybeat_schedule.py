@@ -73,6 +73,11 @@ beat_schedule = {
         'task': 'tasks.backfill_athlete_timezones',
         'schedule': crontab(hour=3, minute=0),
     },
+    # Plan lifecycle cleanup — complete active plans once race date has passed.
+    'complete-expired-plans': {
+        'task': 'tasks.complete_expired_plans',
+        'schedule': crontab(hour=2, minute=0),
+    },
 }
 
 
