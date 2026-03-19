@@ -74,6 +74,10 @@ export interface RunShapeCanvasProps {
   provider?: string | null;
   /** Device model for Garmin attribution in the splits footer (e.g. "forerunner165") */
   deviceName?: string | null;
+  /** Show weather-adjusted pace overlay when > 3% */
+  heatAdjustmentPct?: number | null;
+  /** Optional ambient temperature context for overlay label */
+  temperatureF?: number | null;
 }
 
 interface ChartPoint {
@@ -690,7 +694,14 @@ function LabModePanel({
 // RunShapeCanvas (main export)
 // ---------------------------------------------------------------------------
 
-export function RunShapeCanvas({ activityId, splits, provider, deviceName }: RunShapeCanvasProps) {
+export function RunShapeCanvas({
+  activityId,
+  splits,
+  provider,
+  deviceName,
+  heatAdjustmentPct,
+  temperatureF,
+}: RunShapeCanvasProps) {
   const { data, isLoading, error, refetch } = useStreamAnalysis(activityId);
 
   // Toggle state (AC-4): survives resize by design (useState)
@@ -782,6 +793,7 @@ export function RunShapeCanvas({ activityId, splits, provider, deviceName }: Run
       cadence: p.cadence ?? null,
       effort: p.effort ?? 0,
       smoothedPace: null as number | null,
+      adjustedPace: null as number | null,
     }));
 
     // Centered moving average so the line reflects the run's shape, not GPS noise
@@ -798,8 +810,15 @@ export function RunShapeCanvas({ activityId, splits, provider, deviceName }: Run
       raw[i].smoothedPace = count > 0 ? sum / count : null;
     }
 
+    if (heatAdjustmentPct != null && heatAdjustmentPct > 3) {
+      const factor = 1 + (heatAdjustmentPct / 100);
+      for (let i = 0; i < raw.length; i++) {
+        raw[i].adjustedPace = raw[i].pace != null ? raw[i].pace / factor : null;
+      }
+    }
+
     return raw;
-  }, [rawStream]);
+  }, [rawStream, heatAdjustmentPct]);
 
   // --- Derived values ---
   const maxTime = useMemo(() => {
@@ -983,6 +1002,7 @@ export function RunShapeCanvas({ activityId, splits, provider, deviceName }: Run
   }
 
   const isTier4 = analysis.cross_run_comparable === false;
+  const showAdjustedOverlay = heatAdjustmentPct != null && heatAdjustmentPct > 3;
 
   // Pace line stroke: effort gradient or slate-400 fallback
   const PACE_FALLBACK_COLOR = '#94a3b8'; // slate-400
@@ -1136,6 +1156,18 @@ export function RunShapeCanvas({ activityId, splits, provider, deviceName }: Run
               strokeWidth={2.5}
               isAnimationActive={false}
             />
+            {showAdjustedOverlay && (
+              <Line
+                yAxisId="pace"
+                type="monotone"
+                dataKey="adjustedPace"
+                stroke="rgba(255,255,255,0.55)"
+                dot={false}
+                strokeWidth={1.6}
+                strokeDasharray="6 4"
+                isAnimationActive={false}
+              />
+            )}
 
             {/* AC-4: Optional cadence trace */}
             {showCadence && (
@@ -1178,6 +1210,14 @@ export function RunShapeCanvas({ activityId, splits, provider, deviceName }: Run
           style={{ display: 'none' }}
           aria-hidden="true"
         />
+        {showAdjustedOverlay && (
+          <div
+            data-testid="trace-adjusted-pace"
+            data-adjustment-factor={(1 + ((heatAdjustmentPct || 0) / 100)).toFixed(4)}
+            style={{ display: 'none' }}
+            aria-hidden="true"
+          />
+        )}
         {hasEffortGradient && (
           <div data-testid="pace-effort-gradient-def" style={{ display: 'none' }} aria-hidden="true" />
         )}
@@ -1198,6 +1238,11 @@ export function RunShapeCanvas({ activityId, splits, provider, deviceName }: Run
           showGrade={showGrade}
         />
       </div>
+      {showAdjustedOverlay && (
+        <p className="mt-2 text-xs text-slate-400" data-testid="adjusted-pace-label">
+          Adjusted for heat{temperatureF != null ? ` (${Math.round(temperatureF)}F)` : ''}: dashed line estimates pace in neutral conditions.
+        </p>
+      )}
 
       {/* A2: HR unreliable note */}
       {analysis.hr_reliable === false && analysis.hr_note && (

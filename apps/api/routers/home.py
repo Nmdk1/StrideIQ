@@ -176,6 +176,7 @@ class LastRun(BaseModel):
     athlete_title: Optional[str] = None
     resolved_title: Optional[str] = None
     heat_adjustment_pct: Optional[float] = None
+    workout_classification: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -2466,6 +2467,15 @@ def compute_last_run(
     from routers.activities import resolve_activity_title
     resolved = resolve_activity_title(latest)
 
+    workout_classification = None
+    run_shape = getattr(latest, "run_shape", None)
+    if isinstance(run_shape, dict):
+        summary = run_shape.get("summary")
+        if isinstance(summary, dict):
+            candidate = summary.get("workout_classification")
+            if isinstance(candidate, str) and candidate.strip():
+                workout_classification = candidate.strip()
+
     last_run = LastRun(
         activity_id=str(latest.id),
         name=latest.name or "Run",
@@ -2481,6 +2491,7 @@ def compute_last_run(
         athlete_title=getattr(latest, "athlete_title", None),
         resolved_title=resolved,
         heat_adjustment_pct=getattr(latest, "heat_adjustment_pct", None),
+        workout_classification=workout_classification,
     )
 
     # Enrich with stream analysis data when available — serve from cache

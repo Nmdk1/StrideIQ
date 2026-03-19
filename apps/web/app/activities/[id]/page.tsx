@@ -375,7 +375,14 @@ export default function ActivityDetailPage() {
 
         {/* ── 2. Run Shape Canvas (Hero) ── */}
         <div className="mb-6">
-          <RunShapeCanvas activityId={activityId} splits={splits ?? null} provider={activity.provider} deviceName={activity.device_name} />
+          <RunShapeCanvas
+            activityId={activityId}
+            splits={splits ?? null}
+            provider={activity.provider}
+            deviceName={activity.device_name}
+            heatAdjustmentPct={activity.heat_adjustment_pct}
+            temperatureF={activity.temperature_f}
+          />
         </div>
 
         {/* ── 3. Coachable Moments (gated: confidence >= 0.8 AND moments.length > 0) ── */}

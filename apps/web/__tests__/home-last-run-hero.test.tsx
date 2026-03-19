@@ -137,6 +137,7 @@ describe('L1-4: Effort gradient canvas renders with stream data', () => {
   test('renders MiniPaceChart when pace_stream is available', () => {
     const runWithPace: LastRun = {
       ...LAST_RUN_WITH_STREAM,
+      workout_classification: 'tempo',
       pace_stream: Array.from({ length: 50 }, (_, i) => 300 + (i % 10) * 5),
       elevation_stream: Array.from({ length: 50 }, (_, i) => 40 + Math.sin(i / 5) * 10),
     };
@@ -144,6 +145,8 @@ describe('L1-4: Effort gradient canvas renders with stream data', () => {
 
     expect(screen.getByTestId('mini-pace-chart')).toBeInTheDocument();
     expect(screen.getByTestId('elevation-fill')).toBeInTheDocument();
+    // End-to-end flow: LastRunHero passes workout_classification to MiniPaceChart style map
+    expect(screen.getByTestId('pace-line').getAttribute('stroke')).toBe('#f59e0b');
     // Falls back to MiniEffortCanvas when pace_stream absent
     expect(screen.queryByTestId('hero-effort-gradient')).not.toBeInTheDocument();
   });

@@ -11,35 +11,40 @@
  */
 
 import React, { useCallback, useId, useMemo, useRef, useState } from 'react';
-import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 import { useUnits } from '@/lib/context/UnitsContext';
 
 interface MiniPaceChartProps {
   paceStream: number[];
   effortIntensity: number[];
   elevationStream?: number[] | null;
+  workoutClassification?: string | null;
+  heatAdjustmentPct?: number | null;
   height?: number;
 }
 
-/** Boost an effortToColor result for hero rendering — increase lightness. */
-function effortToHeroColor(effort: number, alpha = 1): string {
-  const base = effortToColor(effort);
-  // Parse rgb values, boost lightness by blending toward white
-  const match = base.match(/rgb\((\d+),(\d+),(\d+)\)/);
-  if (!match) return base;
-  const [, rs, gs, bs] = match;
-  const boost = 1.4; // 40% brighter
-  const r = Math.min(255, Math.round(parseInt(rs) * boost));
-  const g = Math.min(255, Math.round(parseInt(gs) * boost));
-  const b = Math.min(255, Math.round(parseInt(bs) * boost));
-  if (alpha < 1) return `rgba(${r},${g},${b},${alpha})`;
-  return `rgb(${r},${g},${b})`;
+type ClassificationStyle = {
+  line: string;
+  area: string;
+};
+
+export function getWorkoutClassificationStyle(workoutClassification?: string | null): ClassificationStyle {
+  const raw = (workoutClassification || '').toLowerCase();
+  if (raw.includes('race')) return { line: '#f59e0b', area: 'rgba(245, 158, 11, 0.22)' };
+  if (raw.includes('threshold') || raw.includes('tempo')) return { line: '#f59e0b', area: 'rgba(245, 158, 11, 0.20)' };
+  if (raw.includes('interval') || raw.includes('hill')) return { line: '#f97316', area: 'rgba(249, 115, 22, 0.20)' };
+  if (raw.includes('strides') || raw.includes('fartlek')) return { line: '#a78bfa', area: 'rgba(167, 139, 250, 0.20)' };
+  if (raw.includes('progression')) return { line: '#2dd4bf', area: 'rgba(45, 212, 191, 0.20)' };
+  if (raw.includes('long')) return { line: '#60a5fa', area: 'rgba(96, 165, 250, 0.20)' };
+  if (raw.includes('easy') || raw.includes('recovery')) return { line: '#94a3b8', area: 'rgba(148, 163, 184, 0.18)' };
+  return { line: '#94a3b8', area: 'rgba(148, 163, 184, 0.18)' };
 }
 
 export function MiniPaceChart({
   paceStream,
-  effortIntensity,
+  effortIntensity: _effortIntensity,
   elevationStream,
+  workoutClassification,
+  heatAdjustmentPct,
   height = 140,
 }: MiniPaceChartProps) {
   const { formatPace } = useUnits();
@@ -64,7 +69,21 @@ export function MiniPaceChart({
     const padMax = Math.min(paceMax, actualMax + range * 0.1);
 
     // 0 = slow/bottom, 1 = fast/top (using smoothed data for shape)
-    const paceNorm = smoothed.map(p => 1 - (p - padMin) / (padMax - padMin || 1));
+    const paceNorm = smoothed.map((p) => {
+      const v = 1 - (p - padMin) / (padMax - padMin || 1);
+      return Math.max(0, Math.min(1, v));
+    });
+
+    let adjustedNorm: number[] | null = null;
+    if (heatAdjustmentPct != null && heatAdjustmentPct > 3) {
+      const factor = 1 + (heatAdjustmentPct / 100);
+      const adjustedRaw = clamped.map((p) => p / factor);
+      const adjustedSmoothed = _smooth(adjustedRaw, Math.max(3, Math.round(n / 40)));
+      adjustedNorm = adjustedSmoothed.map((p) => {
+        const v = 1 - (p - padMin) / (padMax - padMin || 1);
+        return Math.max(0, Math.min(1, v));
+      });
+    }
 
     let elevNorm: number[] | null = null;
     if (elevationStream && elevationStream.length > 0) {
@@ -77,10 +96,9 @@ export function MiniPaceChart({
       elevNorm = elev.map(e => ((e - eMin) / eRange) * 0.35);
     }
 
-    return { n, paceNorm, elevNorm, padMin, padMax };
-  }, [paceStream, elevationStream]);
+    return { n, paceNorm, adjustedNorm, elevNorm };
+  }, [paceStream, elevationStream, heatAdjustmentPct]);
 
-  const lineGradientId = `paceLineGrad-${useId()}`;
   const areaGradientId = `paceAreaGrad-${useId()}`;
   const glowFilterId = `paceGlow-${useId()}`;
 
@@ -108,7 +126,8 @@ export function MiniPaceChart({
 
   if (!chartData) return null;
 
-  const { n, paceNorm, elevNorm } = chartData;
+  const { n, paceNorm, adjustedNorm, elevNorm } = chartData;
+  const classStyle = getWorkoutClassificationStyle(workoutClassification);
   const pad = { top: 8, bottom: 8 };
   const drawH = height - pad.top - pad.bottom;
   const xStep = 100 / (n - 1);
@@ -128,6 +147,15 @@ export function MiniPaceChart({
   const areaPath = pacePath +
     ` L ${pacePoints[pacePoints.length - 1].x.toFixed(2)} ${height}` +
     ` L ${pacePoints[0].x.toFixed(2)} ${height} Z`;
+  const adjustedPath = adjustedNorm
+    ? adjustedNorm
+      .map((py, i) => {
+        const x = i * xStep;
+        const y = pad.top + (1 - py) * drawH;
+        return `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+      })
+      .join(' ')
+    : null;
 
   // Elevation fill path
   let elevPath: string | null = null;
@@ -142,28 +170,8 @@ export function MiniPaceChart({
       ` L 100 ${height} Z`;
   }
 
-  // Gradient stops — colored by PACE (slow=blue, fast=red), not HR effort
-  // paceNorm is 0 (slowest) to 1 (fastest) within this run's range
-  const maxStops = 40;
-  const stopStep = Math.max(1, Math.floor(n / maxStops));
-  const lineStops: Array<{ offset: string; color: string }> = [];
-  const areaStops: Array<{ offset: string; color: string }> = [];
-  for (let i = 0; i < n; i += stopStep) {
-    const paceIntensity = paceNorm[i] ?? 0.5; // 0=slow/blue, 1=fast/red
-    const off = `${((i / (n - 1)) * 100).toFixed(1)}%`;
-    lineStops.push({ offset: off, color: effortToHeroColor(paceIntensity) });
-    areaStops.push({ offset: off, color: effortToHeroColor(paceIntensity, 0.25) });
-  }
-  // Ensure last stop
-  const lastP = paceNorm[paceNorm.length - 1] ?? 0.5;
-  if (!lineStops.length || lineStops[lineStops.length - 1].offset !== '100.0%') {
-    lineStops.push({ offset: '100.0%', color: effortToHeroColor(lastP) });
-    areaStops.push({ offset: '100.0%', color: effortToHeroColor(lastP, 0.25) });
-  }
-
   // Hover data
   const hoverPace = hover ? paceStream[hover.idx] : null;
-  const hoverEffort = hover ? (effortIntensity[hover.idx] ?? 0.5) : null;
   const hoverY = hover ? pacePoints[hover.idx]?.y : null;
 
   return (
@@ -186,15 +194,11 @@ export function MiniPaceChart({
         style={{ height, display: 'block' }}
       >
         <defs>
-          {/* Line gradient — boosted colors */}
-          <linearGradient id={lineGradientId} x1="0" y1="0" x2="1" y2="0">
-            {lineStops.map((s, i) => (
-              <stop key={i} offset={s.offset} stopColor={s.color} />
-            ))}
-          </linearGradient>
-          {/* Area gradient — same colors at 25% alpha */}
-          <linearGradient id={areaGradientId} x1="0" y1="0" x2="1" y2="0">
-            {areaStops.map((s, i) => (
+          <linearGradient id={areaGradientId} x1="0" y1="0" x2="0" y2="1">
+            {[
+              { offset: '0%', color: classStyle.area },
+              { offset: '100%', color: 'rgba(15,23,42,0.04)' },
+            ].map((s, i) => (
               <stop key={i} offset={s.offset} stopColor={s.color} />
             ))}
           </linearGradient>
@@ -224,11 +228,11 @@ export function MiniPaceChart({
           data-testid="pace-area"
         />
 
-        {/* Pace line — thick, glowing, effort-colored */}
+        {/* Pace line — classification colored */}
         <path
           d={pacePath}
           fill="none"
-          stroke={`url(#${lineGradientId})`}
+          stroke={classStyle.line}
           strokeWidth="2.5"
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -236,6 +240,18 @@ export function MiniPaceChart({
           filter={`url(#${glowFilterId})`}
           data-testid="pace-line"
         />
+        {adjustedPath && (
+          <path
+            d={adjustedPath}
+            fill="none"
+            stroke={classStyle.line}
+            strokeOpacity="0.45"
+            strokeWidth="1.5"
+            strokeDasharray="4 3"
+            vectorEffect="non-scaling-stroke"
+            data-testid="mini-adjusted-pace-line"
+          />
+        )}
 
         {/* Hover crosshair */}
         {hover && (
@@ -264,7 +280,7 @@ export function MiniPaceChart({
       </svg>
 
       {/* Hover tooltip — positioned above the chart */}
-      {hover && hoverPace != null && hoverEffort != null && (
+      {hover && hoverPace != null && (
         <div
           className="absolute top-1 pointer-events-none"
           style={{

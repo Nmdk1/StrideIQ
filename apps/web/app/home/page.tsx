@@ -15,6 +15,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useHomeData, useQuickCheckin, useInvalidateHome } from '@/lib/hooks/queries/home';
 import { LastRunHero } from '@/components/home/LastRunHero';
 import { CompactPMC } from '@/components/home/CompactPMC';
+import FindingCard from '@/components/findings/FindingCard';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -557,32 +558,19 @@ export default function HomePage() {
 
           {/* Finding or Cold-Start */}
           {data.finding ? (
-            <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-4 py-3.5">
-              <div className="flex items-start gap-2.5">
-                <span className="text-lg flex-shrink-0" aria-hidden="true">🔬</span>
-                <div>
-                  <p className="text-sm text-slate-300 leading-relaxed">{data.finding.text}</p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {data.finding.confidence_tier === 'strong' ? 'Strong pattern' : 'Confirmed pattern'} · {data.finding.domain.replace(/_/g, ' ')}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <Link href="/progress" className="block transition-transform hover:translate-y-[-1px]">
+              <FindingCard
+                text={data.finding.text}
+                domain={data.finding.domain}
+                confidenceTier={data.finding.confidence_tier}
+                timesConfirmed={data.finding.times_confirmed}
+                evidence={data.finding.evidence_summary}
+                implication={data.finding.implication_summary}
+                expandable={false}
+              />
+            </Link>
           ) : !data.has_correlations && has_any_activities ? (
-            <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-4 py-3.5">
-              <div className="flex items-start gap-2.5">
-                <span className="text-lg flex-shrink-0" aria-hidden="true">📊</span>
-                <div>
-                  <p className="text-sm text-slate-400">
-                    {total_activities < 10
-                      ? 'Getting started — keep logging runs and check-ins so the engine can learn your patterns.'
-                      : total_activities < 30
-                        ? 'Patterns forming — the more data you log, the sharper the findings.'
-                        : 'Analysis in progress — confirmed findings will appear here soon.'}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <FindingCard expandable={false} activityCount={total_activities} />
           ) : null}
 
           {/* This Week */}

@@ -117,6 +117,7 @@ export interface LastRun {
   athlete_title?: string | null;
   resolved_title?: string | null;
   heat_adjustment_pct?: number | null;
+  workout_classification?: string | null;
 }
 
 export interface HomeFinding {
