@@ -219,6 +219,8 @@ def get_stream_analysis(
         max_hr=getattr(current_user, "max_hr", None),
         resting_hr=getattr(current_user, "resting_hr", None),
         threshold_hr=getattr(current_user, "threshold_hr", None),
+        threshold_pace_per_km=getattr(current_user, "threshold_pace_per_km", None),
+        rpi=getattr(current_user, "rpi", None),
     )
 
     # --- Resolve linked planned workout (additive) ---

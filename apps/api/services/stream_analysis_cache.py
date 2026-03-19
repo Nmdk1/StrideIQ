@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 # v2: A2 HR sanity check — adds hr_reliable/hr_note, pace-based fallback
 # v3: A3 Moment narratives — adds narrative field to moments
 # v4: Cadence in segment averages — populates avg_cadence per segment
-CURRENT_ANALYSIS_VERSION = 4
+# v5: Effort semantics recalibrated to pace-first N=1 mapping with bounded HR modulation
+CURRENT_ANALYSIS_VERSION = 5
 
 
 def get_or_compute_analysis(

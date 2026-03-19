@@ -2511,6 +2511,8 @@ def compute_last_run(
                     max_hr=getattr(athlete, "max_hr", None),
                     resting_hr=getattr(athlete, "resting_hr", None),
                     threshold_hr=getattr(athlete, "threshold_hr", None),
+                    threshold_pace_per_km=getattr(athlete, "threshold_pace_per_km", None),
+                    rpi=getattr(athlete, "rpi", None),
                 )
 
                 # Serve from cache (or compute + cache on first hit)

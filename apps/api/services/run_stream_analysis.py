@@ -34,9 +34,12 @@ from __future__ import annotations
 
 import logging
 import statistics
+import bisect
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+
+from services.rpi_calculator import calculate_training_paces
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +91,11 @@ class AthleteContext:
     resting_hr: Optional[int] = None
     threshold_hr: Optional[int] = None
     threshold_pace_per_km: Optional[float] = None
+    rpi: Optional[float] = None
+    easy_pace_per_km: Optional[float] = None
+    marathon_pace_per_km: Optional[float] = None
+    interval_pace_per_km: Optional[float] = None
+    repetition_pace_per_km: Optional[float] = None
 
 
 def _resolve_tier(ctx: Optional[AthleteContext]) -> Tuple[str, List[str]]:
@@ -225,23 +233,14 @@ def _compute_effort_array(
     tier: str,
     ctx: Optional[AthleteContext],
 ) -> List[float]:
-    """Compute effort intensity for every point in the stream.
+    """Compute effort intensity per point with N=1 pace-first semantics.
 
-    Performance:
-        Tiers 1-3: O(n) — single pass, constant-time per point.
-        Tier 4: O(n log n) — pre-sorts hr_series, uses bisect for each lookup.
-
-    Args:
-        stream_data: channel name -> list of values.
-        point_count: number of data points (avoids fragile channel iteration).
-        tier: one of _VALID_TIERS.
-        ctx: athlete physiological context.
-
-    Returns:
-        List of floats with length == point_count, each in [0.0, 1.0].
+    Resolution order (deterministic):
+        1) Pace profile anchors (RPI-derived or explicit pace anchors) with bounded HR modulation
+        2) HR tier ladder
+        3) Stream-relative HR percentile (tier 4)
+        4) Zero fallback when channels are absent
     """
-    import bisect
-
     hr_series = stream_data.get("heartrate")
     velocity_series = stream_data.get("velocity_smooth")
     has_hr = hr_series is not None and len(hr_series) > 0
@@ -252,6 +251,150 @@ def _compute_effort_array(
 
     if ctx is None:
         ctx = AthleteContext()
+
+    def _to_sec_per_km(value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return None
+        if v <= 0:
+            return None
+        # Defensive normalization: tolerate minutes/km accidentally passed in.
+        if v < 30:
+            v *= 60.0
+        return v
+
+    def _sec_per_km_from_sec_per_mile(value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            sec_mile = float(value)
+        except (TypeError, ValueError):
+            return None
+        if sec_mile <= 0:
+            return None
+        return sec_mile / 1.60934
+
+    def _resolve_pace_anchors() -> Optional[Dict[str, float]]:
+        threshold = _to_sec_per_km(ctx.threshold_pace_per_km)
+        anchors = {
+            "easy": _to_sec_per_km(ctx.easy_pace_per_km),
+            "marathon": _to_sec_per_km(ctx.marathon_pace_per_km),
+            "threshold": threshold,
+            "interval": _to_sec_per_km(ctx.interval_pace_per_km),
+            "repetition": _to_sec_per_km(ctx.repetition_pace_per_km),
+        }
+
+        if ctx.rpi is not None and ctx.rpi > 0:
+            try:
+                paces = calculate_training_paces(float(ctx.rpi))
+            except Exception:
+                paces = {}
+            if paces:
+                # training_paces outputs canonical raw seconds as sec/mile values.
+                if anchors["easy"] is None:
+                    anchors["easy"] = _sec_per_km_from_sec_per_mile(
+                        paces.get("easy_pace_high") or paces.get("easy_pace_low")
+                    )
+                if anchors["marathon"] is None:
+                    anchors["marathon"] = _sec_per_km_from_sec_per_mile(paces.get("marathon_pace"))
+                if anchors["threshold"] is None:
+                    anchors["threshold"] = _sec_per_km_from_sec_per_mile(paces.get("threshold_pace"))
+                if anchors["interval"] is None:
+                    anchors["interval"] = _sec_per_km_from_sec_per_mile(paces.get("interval_pace"))
+                if anchors["repetition"] is None:
+                    anchors["repetition"] = _sec_per_km_from_sec_per_mile(paces.get("repetition_pace"))
+
+        threshold = anchors["threshold"]
+        if threshold is None:
+            if anchors["marathon"] is not None:
+                threshold = anchors["marathon"] / 1.07
+            elif anchors["interval"] is not None:
+                threshold = anchors["interval"] / 0.92
+            elif anchors["easy"] is not None:
+                threshold = anchors["easy"] / 1.22
+            elif anchors["repetition"] is not None:
+                threshold = anchors["repetition"] / 0.86
+            anchors["threshold"] = threshold
+
+        if threshold is None:
+            return None
+
+        if anchors["easy"] is None:
+            anchors["easy"] = threshold * 1.22
+        if anchors["marathon"] is None:
+            anchors["marathon"] = threshold * 1.07
+        if anchors["interval"] is None:
+            anchors["interval"] = threshold * 0.92
+        if anchors["repetition"] is None:
+            anchors["repetition"] = threshold * 0.86
+
+        # Enforce monotonic pace ordering (sec/km, slower -> faster).
+        anchors["easy"] = max(anchors["easy"], anchors["marathon"] + 5.0)
+        anchors["marathon"] = max(anchors["marathon"], anchors["threshold"] + 4.0)
+        anchors["interval"] = min(anchors["interval"], anchors["threshold"] - 4.0)
+        anchors["repetition"] = min(anchors["repetition"], anchors["interval"] - 3.0)
+
+        if anchors["repetition"] <= 0:
+            return None
+        return anchors
+
+    def _compute_hr_effort(hr_val: float) -> float:
+        if tier == "tier1_threshold_hr":
+            if t1_denom is not None:
+                return _clamp01(hr_val / t1_denom)
+            return 0.0
+        if tier == "tier2_estimated_hrr":
+            if t2_denom is not None:
+                return _clamp01((hr_val - t2_resting) / t2_denom)
+            return 0.0
+        if tier == "tier3_max_hr":
+            if t3_denom is not None:
+                return _clamp01(hr_val / t3_denom)
+            return 0.0
+        if tier == "tier4_stream_relative":
+            if sorted_hr is not None and hr_count > 0:
+                rank = bisect.bisect_left(sorted_hr, hr_val)
+                return _clamp01(rank / hr_count)
+            return 0.0
+        return 0.0
+
+    def _pace_effort_from_velocity(velocity_m_s: float, anchors: Dict[str, float]) -> float:
+        pace_sec_km = 1000.0 / max(velocity_m_s, 0.3)
+        easy = anchors["easy"]
+        marathon = anchors["marathon"]
+        threshold = anchors["threshold"]
+        interval = anchors["interval"]
+        repetition = anchors["repetition"]
+
+        if pace_sec_km >= easy:
+            slow_end = easy * 1.18
+            if pace_sec_km >= slow_end:
+                return 0.08
+            t = (slow_end - pace_sec_km) / max(slow_end - easy, 1e-6)
+            return _clamp01(0.08 + (0.20 - 0.08) * t)
+
+        if pace_sec_km >= marathon:
+            t = (easy - pace_sec_km) / max(easy - marathon, 1e-6)
+            return _clamp01(0.20 + (0.40 - 0.20) * t)
+
+        if pace_sec_km >= threshold:
+            t = (marathon - pace_sec_km) / max(marathon - threshold, 1e-6)
+            return _clamp01(0.40 + (0.70 - 0.40) * t)
+
+        if pace_sec_km >= interval:
+            t = (threshold - pace_sec_km) / max(threshold - interval, 1e-6)
+            return _clamp01(0.70 + (0.88 - 0.70) * t)
+
+        if pace_sec_km >= repetition:
+            t = (interval - pace_sec_km) / max(interval - repetition, 1e-6)
+            return _clamp01(0.88 + (1.00 - 0.88) * t)
+
+        return 1.0
+
+    pace_anchors = _resolve_pace_anchors()
 
     # --- Tier 4 optimisation: pre-sort + bisect for O(n log n) total ---
     sorted_hr: Optional[List[float]] = None
@@ -279,49 +422,40 @@ def _compute_effort_array(
     elif tier == "tier3_max_hr" and ctx.max_hr and ctx.max_hr > 0:
         t3_denom = float(ctx.max_hr)
 
-    # --- Velocity fallback denominators ---
-    vel_denom: Optional[float] = None
-    if ctx.threshold_pace_per_km and ctx.threshold_pace_per_km > 0:
-        tv = 1000.0 / ctx.threshold_pace_per_km
-        if tv > 0:
-            vel_denom = tv
-
     effort = [0.0] * point_count
     for i in range(point_count):
         hr_val = float(hr_series[i]) if has_hr and i < len(hr_series) else None
         vel_val = float(velocity_series[i]) if has_vel and i < len(velocity_series) else None
 
-        # --- No HR: velocity fallback ---
-        if hr_val is None:
-            if vel_val is not None and vel_denom is not None:
-                effort[i] = _clamp01(vel_val / vel_denom)
-            # else stays 0.0
+        # Tier P / PT: pace-first semantics with bounded HR modulation.
+        if pace_anchors is not None and vel_val is not None:
+            pace_effort = _pace_effort_from_velocity(vel_val, pace_anchors)
+            if hr_val is not None:
+                hr_effort = _compute_hr_effort(hr_val)
+                delta = (hr_effort - pace_effort) * 0.25
+                # Keep HR influence bounded; easy-pace blocks must not become hard by HR alone.
+                max_up = 0.04 if pace_effort < 0.45 else 0.08
+                max_down = 0.06
+                delta = max(-max_down, min(max_up, delta))
+                adjusted = _clamp01(pace_effort + delta)
+                if pace_effort <= 0.35:
+                    adjusted = min(adjusted, 0.55)
+                effort[i] = adjusted
+            else:
+                effort[i] = pace_effort
             continue
 
-        # --- Tier 1 ---
-        if tier == "tier1_threshold_hr":
-            if t1_denom is not None:
-                effort[i] = _clamp01(hr_val / t1_denom)
+        # HR-tier fallback path.
+        if hr_val is not None:
+            effort[i] = _compute_hr_effort(hr_val)
             continue
 
-        # --- Tier 2 ---
-        if tier == "tier2_estimated_hrr":
-            if t2_denom is not None:
-                effort[i] = _clamp01((hr_val - t2_resting) / t2_denom)
-            continue
-
-        # --- Tier 3 ---
-        if tier == "tier3_max_hr":
-            if t3_denom is not None:
-                effort[i] = _clamp01(hr_val / t3_denom)
-            continue
-
-        # --- Tier 4: bisect on pre-sorted array → O(log n) per point ---
-        if tier == "tier4_stream_relative":
-            if sorted_hr is not None and hr_count > 0:
-                rank = bisect.bisect_left(sorted_hr, hr_val)
-                effort[i] = _clamp01(rank / hr_count)
-            continue
+        # Last-resort fallback for missing HR: threshold-pace velocity ratio when available.
+        threshold_sec_km = _to_sec_per_km(ctx.threshold_pace_per_km)
+        if vel_val is not None and threshold_sec_km is not None and threshold_sec_km > 0:
+            tv = 1000.0 / threshold_sec_km
+            if tv > 0:
+                effort[i] = _clamp01(vel_val / tv)
 
     return effort
 

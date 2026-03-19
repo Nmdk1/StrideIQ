@@ -4543,6 +4543,8 @@ def analyze_run_streams(
             max_hr=athlete.max_hr,
             resting_hr=athlete.resting_hr,
             threshold_hr=athlete.threshold_hr,
+            threshold_pace_per_km=getattr(athlete, "threshold_pace_per_km", None),
+            rpi=getattr(athlete, "rpi", None),
         )
 
     # --- Resolve linked planned workout (additive) ---
