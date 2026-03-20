@@ -486,11 +486,16 @@ export default function HomePage() {
           {(coach_briefing?.morning_voice || coach_briefing?.coach_noticed) ? (
             <div data-testid="morning-voice" className="px-1 py-2 space-y-2">
               {coach_briefing.morning_voice ? (
-                <p className="text-base text-slate-300 leading-relaxed">
+                <p className="text-base text-slate-300 leading-relaxed" data-testid="morning-voice-primary">
                   {coach_briefing.morning_voice}
                 </p>
               ) : coach_briefing.coach_noticed ? (
-                <p className="text-base text-slate-300 leading-relaxed">
+                <p className="text-base text-slate-300 leading-relaxed" data-testid="morning-voice-primary">
+                  {coach_briefing.coach_noticed}
+                </p>
+              ) : null}
+              {coach_briefing.morning_voice && coach_briefing.coach_noticed ? (
+                <p className="text-sm text-slate-500 leading-relaxed" data-testid="coach-noticed-secondary">
                   {coach_briefing.coach_noticed}
                 </p>
               ) : null}

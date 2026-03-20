@@ -12,6 +12,7 @@ ADR-020: Home Experience Phase 1 Enhancement
 """
 
 from datetime import date, timedelta, datetime, timezone
+from statistics import mean, median, pstdev
 from typing import Optional, List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -691,6 +692,76 @@ def _get_garmin_sleep_h_for_last_night(
     except Exception as e:
         logger.warning("_get_garmin_sleep_h_for_last_night failed (non-blocking): %s", e)
         return None, "unknown", False
+
+
+def _build_sleep_baseline_guidance(
+    athlete_id: str,
+    db: Session,
+    *,
+    last_night_sleep_h: Optional[float],
+) -> Optional[str]:
+    """
+    Build sleep-baseline prompt guidance from GarminDay history.
+
+    Contract:
+    - Use 90-day GarminDay.sleep_total_s history (Python stats, not DB percentile/stddev).
+    - Require n >= 14 to inject any baseline guidance.
+    - noteworthy threshold = max(1.0h, pstdev).
+    """
+    if last_night_sleep_h is None:
+        return None
+
+    try:
+        from models import Athlete as _Athlete, GarminDay as _GarminDay
+        from services.timezone_utils import get_athlete_timezone, athlete_local_today
+
+        athlete = db.query(_Athlete).filter(_Athlete.id == athlete_id).first()
+        athlete_tz = get_athlete_timezone(athlete)
+        local_today = athlete_local_today(athlete_tz)
+        start_date = local_today - timedelta(days=89)
+
+        rows = (
+            db.query(_GarminDay)
+            .filter(
+                _GarminDay.athlete_id == athlete_id,
+                _GarminDay.calendar_date >= start_date,
+                _GarminDay.calendar_date <= local_today,
+                _GarminDay.sleep_total_s.isnot(None),
+            )
+            .order_by(_GarminDay.calendar_date.desc())
+            .all()
+        )
+        sleep_hours = [
+            round(float(r.sleep_total_s) / 3600.0, 2)
+            for r in rows
+            if r.sleep_total_s is not None
+        ]
+        n = len(sleep_hours)
+        if n < 14:
+            return None
+
+        baseline_median = median(sleep_hours)
+        baseline_avg = mean(sleep_hours)
+        baseline_std = pstdev(sleep_hours) if n > 1 else 0.0
+        threshold = max(1.0, baseline_std)
+        deviation = abs(last_night_sleep_h - baseline_median)
+
+        guidance_lines = [
+            "=== SLEEP BASELINE CONTEXT (90 days) ===",
+            (
+                "SLEEP_BASELINE_STATS: "
+                f"n={n}, median={baseline_median:.2f}h, avg={baseline_avg:.2f}h, std={baseline_std:.2f}h, "
+                f"last_night={last_night_sleep_h:.2f}h, deviation={deviation:.2f}h, threshold={threshold:.2f}h"
+            ),
+        ]
+        if deviation < threshold:
+            guidance_lines.append("Sleep is NOT newsworthy today. Lead with something else.")
+        else:
+            guidance_lines.append("This IS noteworthy; frame as deviation from personal norm.")
+        return "\n".join(guidance_lines)
+    except Exception as e:
+        logger.debug("Sleep baseline context skipped (non-blocking): %s", e)
+        return None
 
 
 def validate_sleep_claims(
@@ -1744,6 +1815,11 @@ def generate_coach_home_briefing(
             "GROUNDING_RULE: Any numeric sleep claim in your output MUST match one of the sources above within 30 minutes.",
         ])
     parts.extend(sleep_parts + [""])
+    baseline_guidance = _build_sleep_baseline_guidance(
+        athlete_id, db, last_night_sleep_h=garmin_sleep_h
+    )
+    if baseline_guidance:
+        parts.extend([baseline_guidance, ""])
 
     logger.debug(
         "Sleep grounding: athlete=%s garmin_sleep_h=%s checkin_sleep_h=%s",
@@ -1857,7 +1933,7 @@ def generate_coach_home_briefing(
         "week_assessment": f"Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.{_lane('')}",
         "checkin_reaction": f"Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.{_lane(checkin_summary)}",
         "race_assessment": f"Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.{_lane(race_summary)}",
-        "morning_voice": f"This is the most important surface in the product — the first thing the athlete reads every morning, updated after every activity. Give their data a voice by connecting a personal fingerprint pattern to today's context. Say what needs to be said — no arbitrary length limit. ONE paragraph only (no second paragraph). No restatement of a prior sentence. Example of GOOD: '6.8 hours of sleep last night. Your body tends to run easier the day after 7+ hours — today might not get that boost, so keep the effort honest.' Example of BAD: '38.3 miles through 5 runs this week. Your pacing has been consistent.' Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. NEVER say 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
+        "morning_voice": f"This is the most important surface in the product — the first thing the athlete reads every morning, updated after every activity. Give their data a voice by connecting a personal fingerprint pattern to today's context. Say what needs to be said — no arbitrary length limit. ONE paragraph only (no second paragraph). No restatement of a prior sentence. Rotate style and lead with what is most meaningful today — sleep is only primary when explicitly noteworthy. Example set (rotate, do NOT default to sleep): (1) training performance: '48.2 miles through 6 runs this week, and your aerobic pace held steady while HR stayed in range — keep today's easy run truly easy to absorb that work.' (2) environmental: 'You handled 74F with only a small pace drift yesterday; if heat climbs again today, cap effort by breath, not split.' (3) recovery: 'Readiness dropped from 4 to 2 this morning after two quality days — keep today's load light so tomorrow can carry quality.' (4) load: 'You stacked 3 harder days in 5 days; an easy session today keeps this block progressing instead of flattening out.' (5) sleep (only when noteworthy): '5.2 hours is 1.4h below your 90-day median, so sleep is the key context today — keep effort controlled and protect tonight.' Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. NEVER say 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
         "workout_why": f"One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.{_lane(today_summary)}",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]

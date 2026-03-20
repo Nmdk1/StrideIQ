@@ -536,3 +536,75 @@ class TestFalsePositivePrevention:
         result = validate_sleep_claims(text, garmin_sleep_h=None, checkin_sleep_h=None)
 
         assert result["valid"] is True
+
+
+# ===========================================================================
+# Fix 5 — Sleep baseline guidance injection logic
+# ===========================================================================
+class TestSleepBaselineGuidance:
+    ATHLETE_ID = "11111111-1111-1111-1111-111111111111"
+
+    @staticmethod
+    def _mock_db_for_sleep_hours(hours: list[float]) -> MagicMock:
+        mock_db = MagicMock()
+        mock_athlete = MagicMock()
+        mock_athlete.timezone = "UTC"
+        rows = []
+        for h in hours:
+            row = MagicMock()
+            row.sleep_total_s = int(h * 3600)
+            rows.append(row)
+
+        def query_side_effect(model):
+            q = MagicMock()
+            table = getattr(model, "__tablename__", "")
+            if table == "athlete":
+                q.filter.return_value.first.return_value = mock_athlete
+            elif table == "garmin_day":
+                q.filter.return_value.order_by.return_value.all.return_value = rows
+            else:
+                q.filter.return_value.first.return_value = None
+                q.filter.return_value.order_by.return_value.first.return_value = None
+                q.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+            return q
+
+        mock_db.query.side_effect = query_side_effect
+        return mock_db
+
+    def test_within_normal_baseline_injects_sleep_not_newsworthy(self):
+        from routers.home import _build_sleep_baseline_guidance
+
+        db = self._mock_db_for_sleep_hours([7.0] * 20)
+        guidance = _build_sleep_baseline_guidance(
+            self.ATHLETE_ID,
+            db,
+            last_night_sleep_h=7.4,
+        )
+
+        assert guidance is not None
+        assert "Sleep is NOT newsworthy today. Lead with something else." in guidance
+
+    def test_outside_normal_baseline_injects_sleep_is_noteworthy(self):
+        from routers.home import _build_sleep_baseline_guidance
+
+        db = self._mock_db_for_sleep_hours([7.0] * 20)
+        guidance = _build_sleep_baseline_guidance(
+            self.ATHLETE_ID,
+            db,
+            last_night_sleep_h=5.2,
+        )
+
+        assert guidance is not None
+        assert "This IS noteworthy; frame as deviation from personal norm." in guidance
+
+    def test_under_14_nights_skips_baseline_context(self):
+        from routers.home import _build_sleep_baseline_guidance
+
+        db = self._mock_db_for_sleep_hours([7.0] * 10)
+        guidance = _build_sleep_baseline_guidance(
+            self.ATHLETE_ID,
+            db,
+            last_night_sleep_h=6.0,
+        )
+
+        assert guidance is None

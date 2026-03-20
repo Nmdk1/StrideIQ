@@ -218,23 +218,32 @@ describe('Home Page Voice: Voice rendering', () => {
     expect(voiceEl).toHaveTextContent('48 miles across 6 runs this week');
   });
 
-  test('Coach noticed card is not separately rendered (absorbed into morning_voice per H2/H4)', () => {
-    const { container } = render(<HomePage />);
-
-    // CoachNoticedCard is no longer rendered as a separate element —
-    // intelligence is absorbed into morning_voice (spec H2/H4)
-    const coachNoticedElements = container.querySelectorAll('*');
-    const found = Array.from(coachNoticedElements).some(
-      (el) => el.textContent?.includes('Coach noticed')
+  test('renders both morning_voice and coach_noticed when both exist', () => {
+    render(<HomePage />);
+    expect(screen.getByTestId('morning-voice-primary')).toHaveTextContent(
+      '48 miles across 6 runs this week'
     );
-    expect(found).toBe(false);
+    expect(screen.getByTestId('coach-noticed-secondary')).toHaveTextContent(
+      'Strong consistency this week.'
+    );
   });
 
-  test('when morning_voice exists, coach_noticed text is not rendered as second paragraph', () => {
+  test('when only coach_noticed exists, it renders as primary voice', () => {
+    jest.spyOn(require('@/lib/hooks/queries/home'), 'useHomeData').mockReturnValue({
+      data: {
+        ...mockHomeData,
+        coach_briefing: {
+          ...mockHomeData.coach_briefing,
+          morning_voice: '',
+          coach_noticed: 'Only coach noticed today.',
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
     render(<HomePage />);
-    const voiceEl = screen.getByTestId('morning-voice');
-    expect(voiceEl).toHaveTextContent('48 miles across 6 runs this week');
-    expect(voiceEl).not.toHaveTextContent('Strong consistency this week.');
+    expect(screen.getByTestId('morning-voice-primary')).toHaveTextContent('Only coach noticed today.');
+    expect(screen.queryByTestId('coach-noticed-secondary')).not.toBeInTheDocument();
   });
 });
 
