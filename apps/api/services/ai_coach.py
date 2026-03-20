@@ -1262,6 +1262,11 @@ If you need more data to answer well, call the tools. That's why they're there."
         
         # Contract note: _build_coach_system_prompt() internally injects
         # _get_fresh_athlete_facts + banned opener policy strings used by tests.
+        # Prompt anchors kept here for structural regression tests:
+        # - date grounding via _today.isoformat() / today context
+        # - ZERO-HALLUCINATION rule
+        # - USE THEM PROACTIVELY tool mandate
+        # - PERSONAL FINGERPRINT section
         # BANNED OPENERS (must stay in premium prompt contract):
         # "Here's what the data actually shows"
         # "Here's what the data shows"
