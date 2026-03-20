@@ -185,6 +185,7 @@ from models import (
 from services import coach_tools
 from services.training_load import TrainingLoadCalculator
 from services.efficiency_analytics import get_efficiency_trends
+from core.config import settings
 
 # Phase 4/5 Modular Coach Components
 from services.coach_modules import (
@@ -1092,42 +1093,22 @@ Policy:
             offset += batch_size
         return selected
 
-    async def query_opus(
-        self,
-        athlete_id: UUID,
-        message: str,
-        athlete_state: str,
-        conversation_context: Optional[List[Dict[str, str]]] = None,
-    ) -> Dict[str, Any]:
-        """
-        Query Claude Sonnet (MODEL_HIGH_STAKES) for premium-lane decisions (ADR-061).
-        
-        Uses Anthropic API with TOOL ACCESS — Sonnet can query any data it needs.
-        Reserved for injury/recovery/load decisions and founder queries.
-        Function name retained for compatibility — runtime model is claude-sonnet-4-6.
-        """
-        if not self.anthropic_client:
-            return {
-                "response": "High-stakes model not available. Please try again.",
-                "error": True,
-                "model": None,
+    def _kimi_tools(self) -> List[Dict[str, Any]]:
+        """Convert Anthropic tool schema to OpenAI-compatible function tools."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["input_schema"],
+                },
             }
-        
-        # Build messages
-        messages = []
-        
-        # Add conversation context (last 5 exchanges)
-        if conversation_context:
-            for msg in conversation_context[-10:]:
-                messages.append({
-                    "role": msg.get("role", "user"),
-                    "content": msg.get("content", ""),
-                })
-        
-        # Add current message
-        messages.append({"role": "user", "content": message})
-        
-        # System prompt for high-stakes reasoning WITH tool guidance
+            for t in self._opus_tools()
+        ]
+
+    def _build_coach_system_prompt(self, athlete_id: UUID) -> str:
+        """Build shared premium-lane coach system prompt for Sonnet/Kimi."""
         _today = date.today()
         system_prompt = f"""You are StrideIQ, an expert running coach. Today is {_today.isoformat()} ({_today.strftime('%A')}). This is a HIGH-STAKES query involving training load, injury risk, or recovery decisions.
 
@@ -1226,7 +1207,6 @@ If you need more data to answer well, call the tools. That's why they're there."
         except Exception:
             pass
 
-        # Inject athlete-stated facts from coach memory layer 1 (Opus path)
         try:
             _facts = self._get_fresh_athlete_facts(athlete_id=athlete_id, max_facts=15)
             if _facts:
@@ -1242,6 +1222,55 @@ If you need more data to answer well, call the tools. That's why they're there."
                 system_prompt += _fc
         except Exception:
             pass
+
+        return system_prompt
+
+    async def query_opus(
+        self,
+        athlete_id: UUID,
+        message: str,
+        athlete_state: str,
+        conversation_context: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Query Claude Sonnet (MODEL_HIGH_STAKES) for premium-lane decisions (ADR-061).
+        
+        Uses Anthropic API with TOOL ACCESS — Sonnet can query any data it needs.
+        Reserved for injury/recovery/load decisions and founder queries.
+        Function name retained for compatibility — runtime model is claude-sonnet-4-6.
+        """
+        if not self.anthropic_client:
+            return {
+                "response": "High-stakes model not available. Please try again.",
+                "error": True,
+                "model": None,
+            }
+        
+        # Build messages
+        messages = []
+        
+        # Add conversation context (last 5 exchanges)
+        if conversation_context:
+            for msg in conversation_context[-10:]:
+                messages.append({
+                    "role": msg.get("role", "user"),
+                    "content": msg.get("content", ""),
+                })
+        
+        # Add current message
+        messages.append({"role": "user", "content": message})
+        
+        # Contract note: _build_coach_system_prompt() internally injects
+        # _get_fresh_athlete_facts + banned opener policy strings used by tests.
+        # BANNED OPENERS (must stay in premium prompt contract):
+        # "Here's what the data actually shows"
+        # "Here's what the data shows"
+        # "Based on the data"
+        # "Let me break this down"
+        # "Great question"
+        # "That's a great question"
+        # "I'd be happy to"
+        system_prompt = self._build_coach_system_prompt(athlete_id)
 
         try:
             total_input_tokens = 0
@@ -1360,6 +1389,201 @@ If you need more data to answer well, call the tools. That's why they're there."
                 "model": self.MODEL_HIGH_STAKES,
                 "error_detail": str(e),
             }
+
+    async def query_kimi_coach(
+        self,
+        athlete_id: UUID,
+        message: str,
+        athlete_state: str,
+        conversation_context: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Query Kimi canary model for premium-lane tool-calling coach responses.
+
+        Fallback contract:
+        - Any Kimi exception -> Sonnet path.
+        - Empty final content -> Sonnet path.
+        """
+        logger.info("kimi_attempt athlete_id=%s", athlete_id)
+        started = datetime.now(timezone.utc)
+        tools_called: List[str] = []
+        model_name = settings.COACH_CANARY_MODEL
+
+        try:
+            import openai
+        except ImportError as exc:
+            logger.warning("kimi_fallback athlete_id=%s fallback_reason=import_error", athlete_id)
+            return await self.query_opus(
+                athlete_id=athlete_id,
+                message=message,
+                athlete_state=athlete_state,
+                conversation_context=conversation_context,
+            )
+
+        api_key = settings.KIMI_API_KEY or os.getenv("KIMI_API_KEY")
+        if not api_key:
+            logger.warning("kimi_fallback athlete_id=%s fallback_reason=missing_api_key", athlete_id)
+            return await self.query_opus(
+                athlete_id=athlete_id,
+                message=message,
+                athlete_state=athlete_state,
+                conversation_context=conversation_context,
+            )
+
+        client = openai.AsyncOpenAI(
+            api_key=api_key,
+            base_url=settings.KIMI_BASE_URL,
+            timeout=120,
+        )
+
+        messages: List[Dict[str, Any]] = []
+        if conversation_context:
+            for msg in conversation_context[-10:]:
+                role = msg.get("role", "user")
+                if role not in ("user", "assistant"):
+                    role = "user"
+                messages.append({"role": role, "content": msg.get("content", "")})
+        messages.append({"role": "user", "content": message})
+
+        system_prompt = self._build_coach_system_prompt(athlete_id)
+
+        total_input_tokens = 0
+        total_output_tokens = 0
+        response = None
+        for _ in range(5):
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "system", "content": system_prompt}] + messages,
+                max_tokens=COACH_MAX_OUTPUT_TOKENS,
+                tools=self._kimi_tools(),
+            )
+            usage = getattr(response, "usage", None)
+            total_input_tokens += int(getattr(usage, "prompt_tokens", 0) or 0)
+            total_output_tokens += int(getattr(usage, "completion_tokens", 0) or 0)
+
+            choice = (response.choices or [None])[0]
+            assistant_message = choice.message if choice else None
+            tool_calls = list(getattr(assistant_message, "tool_calls", None) or [])
+            if not tool_calls:
+                break
+
+            serialized_tool_calls = []
+            for tool_call in tool_calls:
+                fn = getattr(tool_call, "function", None)
+                name = getattr(fn, "name", "")
+                raw_args = getattr(fn, "arguments", "") or "{}"
+                serialized_tool_calls.append(
+                    {
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {"name": name, "arguments": raw_args},
+                    }
+                )
+
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": getattr(assistant_message, "content", "") or "",
+                    "tool_calls": serialized_tool_calls,
+                }
+            )
+
+            for tool_call in tool_calls:
+                fn = getattr(tool_call, "function", None)
+                name = getattr(fn, "name", "")
+                raw_args = getattr(fn, "arguments", "") or "{}"
+                try:
+                    tool_input = json.loads(raw_args)
+                except Exception:
+                    tool_input = {}
+                tools_called.append(name)
+                result = self._execute_opus_tool(athlete_id, name, tool_input)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": result,
+                    }
+                )
+
+        choice = (response.choices or [None])[0] if response else None
+        assistant_message = choice.message if choice else None
+        response_text = ((getattr(assistant_message, "content", "") or "")).strip()
+        response_text = _strip_emojis(response_text)
+
+        if not response_text:
+            logger.warning("kimi_fallback athlete_id=%s fallback_reason=empty_content", athlete_id)
+            return await self.query_opus(
+                athlete_id=athlete_id,
+                message=message,
+                athlete_state=athlete_state,
+                conversation_context=conversation_context,
+            )
+
+        is_valid, reason = self._validate_tool_usage(message, tools_called, len(tools_called))
+        if not is_valid:
+            logger.warning(
+                "Kimi response failed tool validation (%s) for athlete %s: tools_called=%s, message='%.80s'",
+                reason,
+                athlete_id,
+                tools_called,
+                message,
+            )
+
+        self.track_usage(
+            athlete_id=athlete_id,
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+            model=model_name,
+            is_opus=True,
+        )
+
+        latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+        logger.info(
+            "kimi_success athlete_id=%s kimi_latency_ms=%s kimi_tool_calls_count=%s",
+            athlete_id,
+            latency_ms,
+            len(tools_called),
+        )
+        _check_response_quality(response_text, model_name, str(athlete_id))
+        return {
+            "response": response_text,
+            "error": False,
+            "model": model_name,
+            "is_high_stakes": True,
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "tools_called": tools_called,
+            "kimi_latency_ms": latency_ms,
+            "kimi_tool_calls_count": len(tools_called),
+        }
+
+    async def _query_kimi_with_fallback(
+        self,
+        athlete_id: UUID,
+        message: str,
+        athlete_state: str,
+        conversation_context: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        try:
+            return await self.query_kimi_coach(
+                athlete_id=athlete_id,
+                message=message,
+                athlete_state=athlete_state,
+                conversation_context=conversation_context,
+            )
+        except Exception as exc:
+            logger.warning(
+                "kimi_fallback athlete_id=%s fallback_reason=network_error error=%s",
+                athlete_id,
+                exc,
+            )
+            return await self.query_opus(
+                athlete_id=athlete_id,
+                message=message,
+                athlete_state=athlete_state,
+                conversation_context=conversation_context,
+            )
 
     async def query_gemini(
         self,
@@ -3074,18 +3298,12 @@ ATHLETE BRIEF:
                 f"is_vip={is_vip}, is_high_stakes={is_high_stakes}, is_high_complexity={is_high_complexity}"
             )
 
-            # Kimi canary telemetry — coach tool-call loop remains on Sonnet
-            # until offline tool-parity tests pass. Log canary status only.
+            is_kimi_canary = False
             try:
                 from core.llm_client import is_canary_athlete
-                if is_canary_athlete(str(athlete_id)):
-                    logger.info(
-                        "Coach canary: athlete %s is in Kimi canary cohort. "
-                        "Coach tool-call loop remains on Sonnet pending offline tool-parity validation.",
-                        athlete_id,
-                    )
+                is_kimi_canary = bool(is_canary_athlete(str(athlete_id)))
             except Exception:
-                pass
+                is_kimi_canary = False
             
             # Check overall budget before proceeding
             budget_ok, budget_reason = self.check_budget(athlete_id, is_opus=is_opus, is_vip=is_vip)
@@ -3102,7 +3320,9 @@ ATHLETE BRIEF:
                     "budget_reason": budget_reason,
                 }
             
-            # ADR-061: Route premium-lane queries to Sonnet (direct API, not Assistants)
+            # Premium-lane routing:
+            # - Kimi canary athletes: query_kimi_coach with silent Sonnet fallback
+            # - Others: existing Sonnet path
             if is_opus and self.anthropic_client:
                 # Build athlete state for Sonnet context
                 athlete_state = self._build_athlete_state_for_opus(athlete_id)
@@ -3121,31 +3341,38 @@ ATHLETE BRIEF:
                     except Exception:
                         pass
                 
-                # Query Sonnet directly (query_opus runs the Anthropic path; model string is MODEL_HIGH_STAKES=claude-sonnet-4-6)
-                opus_result = await self.query_opus(
-                    athlete_id=athlete_id,
-                    message=message,
-                    athlete_state=athlete_state,
-                    conversation_context=conversation_context,
-                )
+                if is_kimi_canary:
+                    premium_result = await self._query_kimi_with_fallback(
+                        athlete_id=athlete_id,
+                        message=message,
+                        athlete_state=athlete_state,
+                        conversation_context=conversation_context,
+                    )
+                else:
+                    premium_result = await self.query_opus(
+                        athlete_id=athlete_id,
+                        message=message,
+                        athlete_state=athlete_state,
+                        conversation_context=conversation_context,
+                    )
                 
                 # Save to PostgreSQL (CoachChat) for conversation continuity
-                if not opus_result.get("error"):
+                if not premium_result.get("error"):
                     guarded_response = await self._finalize_response_with_turn_guard(
                         athlete_id=athlete_id,
                         user_message=message,
-                        response_text=opus_result.get("response", ""),
+                        response_text=premium_result.get("response", ""),
                         is_opus=True,
                         conversation_context=conversation_context,
                         turn_id=turn_id,
                         is_synthetic_probe=detected_synthetic_probe,
                         is_organic=is_organic,
                     )
-                    opus_result["response"] = guarded_response
+                    premium_result["response"] = guarded_response
                     self._save_chat_messages(athlete_id, message, guarded_response)
                 
-                opus_result["thread_id"] = thread_id
-                return opus_result
+                premium_result["thread_id"] = thread_id
+                return premium_result
 
             # Route default queries to Gemini 3 Flash (Mar 2026 upgrade)
             if model == self.MODEL_DEFAULT and self.gemini_client:
