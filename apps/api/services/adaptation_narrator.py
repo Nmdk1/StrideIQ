@@ -33,6 +33,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from services.narration_scorer import NarrationScorer, NarrationScoreResult
+from core.config import settings
+from core.llm_client import call_llm
 
 # Check if Google GenAI is available
 try:
@@ -59,6 +61,11 @@ NARRATOR_TEMPERATURE = 0.3          # Low temp for factual accuracy
 NARRATOR_MAX_TOKENS = 200           # 2-3 sentences max
 NARRATION_MIN_SCORE = 0.67          # Below this → suppress (at least 2/3 criteria pass)
 NARRATION_CONTRADICTION_THRESHOLD = True  # Any contradiction → suppress
+
+
+def _resolved_narrator_model() -> str:
+    """Resolve low-stakes narrator model via config/env."""
+    return settings.ADAPTATION_NARRATOR_MODEL or NARRATOR_MODEL
 
 
 # ---------------------------------------------------------------------------
@@ -347,11 +354,31 @@ class AdaptationNarrator:
 
     def _call_llm(self, user_prompt: str) -> Tuple[str, int, int, int]:
         """
-        Call Gemini Flash and return (text, input_tokens, output_tokens, latency_ms).
+        Call narration model and return (text, input_tokens, output_tokens, latency_ms).
 
         If no client is available (test/dry-run mode), raises RuntimeError.
         Supports both real Gemini clients and mock clients (for testing).
         """
+        model_name = _resolved_narrator_model()
+
+        # Non-Gemini model families route through centralized abstraction.
+        if not model_name.startswith("gemini"):
+            result = call_llm(
+                model=model_name,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_prompt}],
+                max_tokens=NARRATOR_MAX_TOKENS,
+                temperature=NARRATOR_TEMPERATURE,
+                response_mode="text",
+                timeout_s=60,
+            )
+            return (
+                result["text"],
+                int(result["input_tokens"]),
+                int(result["output_tokens"]),
+                int(result["latency_ms"]),
+            )
+
         if self.client is None:
             raise RuntimeError(
                 "No Gemini client available. "
@@ -384,7 +411,7 @@ class AdaptationNarrator:
             }
 
         response = self.client.models.generate_content(
-            model=NARRATOR_MODEL,
+            model=model_name,
             contents=contents,
             config=config,
         )

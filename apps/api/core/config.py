@@ -223,6 +223,9 @@ class Settings(BaseSettings):
     # Model selection per call site — change via env to switch providers
     BRIEFING_PRIMARY_MODEL: str = Field(default="claude-sonnet-4-6")
     KNOWLEDGE_PRIMARY_MODEL: str = Field(default="claude-sonnet-4-6")
+    # Low-stakes async narratives (default unchanged: Gemini Flash)
+    ADAPTATION_NARRATOR_MODEL: str = Field(default="gemini-2.5-flash")
+    WORKOUT_NARRATIVE_MODEL: str = Field(default="gemini-2.5-flash")
 
     # Kimi briefing canary model
     KIMI_CANARY_MODEL: str = Field(default="kimi-k2-turbo-preview")

@@ -23,6 +23,8 @@ from uuid import UUID
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
+from core.config import settings
+from core.llm_client import call_llm
 
 try:
     from google import genai  # module-level so tests can patch services.workout_narrative_generator.genai
@@ -47,6 +49,11 @@ KILL_SWITCH_3B_ENV = "STRIDEIQ_3B_KILL_SWITCH"
 # Phases / workout types where intensity encouragement is inappropriate
 NO_INTENSITY_PHASES = {"taper", "recovery"}
 NO_INTENSITY_AFTER = {"long", "long_run", "long_mp", "long_hmp"}
+
+
+def _resolved_workout_narrative_model() -> str:
+    """Resolve workout narrative model via config/env."""
+    return settings.WORKOUT_NARRATIVE_MODEL or NARRATIVE_MODEL
 
 # ---------------------------------------------------------------------------
 # System prompt for Gemini
@@ -305,7 +312,26 @@ def _call_llm(
     client: Any,
     user_prompt: str,
 ) -> Tuple[str, int, int, int]:
-    """Call Gemini Flash.  Returns (text, input_tokens, output_tokens, latency_ms)."""
+    """Call configured narrative model. Returns (text, input_tokens, output_tokens, latency_ms)."""
+    model_name = _resolved_workout_narrative_model()
+
+    if not model_name.startswith("gemini"):
+        result = call_llm(
+            model=model_name,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            max_tokens=NARRATIVE_MAX_TOKENS,
+            temperature=NARRATIVE_TEMPERATURE,
+            response_mode="text",
+            timeout_s=60,
+        )
+        return (
+            result["text"],
+            int(result["input_tokens"]),
+            int(result["output_tokens"]),
+            int(result["latency_ms"]),
+        )
+
     if client is None:
         raise RuntimeError("No Gemini client provided.")
 
@@ -333,7 +359,7 @@ def _call_llm(
         }
 
     response = client.models.generate_content(
-        model=NARRATIVE_MODEL,
+        model=model_name,
         contents=contents,
         config=config,
     )

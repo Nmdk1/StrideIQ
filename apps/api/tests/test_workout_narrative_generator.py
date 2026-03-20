@@ -378,3 +378,28 @@ class TestGenerateWorkoutNarrative:
         client = _mock_llm_response("")
         result = generate_workout_narrative(uuid4(), date.today(), db, gemini_client=client)
         assert result.suppressed is True
+
+
+class TestLowRiskModelRouting:
+    def test_non_gemini_model_uses_central_llm_client(self, monkeypatch):
+        from services import workout_narrative_generator as module
+
+        monkeypatch.setattr(
+            module.settings,
+            "WORKOUT_NARRATIVE_MODEL",
+            "kimi-k2-turbo-preview",
+            raising=False,
+        )
+        fake = {
+            "text": "Workout narrative from centralized client.",
+            "input_tokens": 9,
+            "output_tokens": 6,
+            "latency_ms": 35,
+        }
+        monkeypatch.setattr(module, "call_llm", lambda **kwargs: fake)
+
+        text, in_tok, out_tok, lat = module._call_llm(client=None, user_prompt="prompt")
+        assert text == "Workout narrative from centralized client."
+        assert in_tok == 9
+        assert out_tok == 6
+        assert lat == 35
