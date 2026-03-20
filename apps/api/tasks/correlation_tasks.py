@@ -21,7 +21,6 @@ from core.database import SessionLocal
 from models import Athlete, Activity, CorrelationFinding
 
 logger = logging.getLogger(__name__)
-_FIRST_SESSION_SWEEP_LOCK_TTL_S = 600
 _BACKFILL_PROGRESS_TTL_S = 24 * 60 * 60
 
 ALL_OUTPUT_METRICS = [
@@ -37,26 +36,8 @@ ALL_OUTPUT_METRICS = [
 ]
 
 
-def _first_session_lock_key(athlete_id: str) -> str:
-    return f"first_session_sweep_lock:{athlete_id}"
-
-
 def _backfill_progress_key(athlete_id: str) -> str:
     return f"backfill_progress:{athlete_id}"
-
-
-def _try_acquire_first_session_lock(athlete_id: str) -> bool:
-    r = get_redis_client()
-    if not r:
-        return True
-    return bool(
-        r.set(
-            _first_session_lock_key(athlete_id),
-            "1",
-            ex=_FIRST_SESSION_SWEEP_LOCK_TTL_S,
-            nx=True,
-        )
-    )
 
 
 def _progress_hset(athlete_id: str, field: str, value: str) -> None:
@@ -66,6 +47,20 @@ def _progress_hset(athlete_id: str, field: str, value: str) -> None:
     key = _backfill_progress_key(athlete_id)
     r.hset(key, field, value)
     r.expire(key, _BACKFILL_PROGRESS_TTL_S)
+
+
+def _refresh_living_fingerprint_for_athlete(athlete_id: str, db) -> int:
+    """
+    Refresh fingerprint findings for one athlete only.
+    """
+    from services.race_input_analysis import mine_race_inputs
+    from services.finding_persistence import store_all_findings
+
+    findings, _gaps = mine_race_inputs(athlete_id, db)
+    if findings:
+        store_all_findings(athlete_id, findings, db)
+        db.commit()
+    return len(findings or [])
 
 
 def _aggregate_output_for_metric(
@@ -238,10 +233,19 @@ def run_athlete_first_session_sweep(self, athlete_id: str) -> Dict:
     try:
         run_count = (
             db.query(Activity.id)
-            .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
+                Activity.is_duplicate == False,  # noqa: E712
+            )
             .count()
         )
         if run_count < 10:
+            try:
+                _progress_hset(athlete_id, "sweep_complete", "true")
+                _progress_hset(athlete_id, "findings_count", "0")
+            except Exception:
+                pass
             logger.info(
                 "First-session sweep skipped for athlete %s (insufficient runs=%d)",
                 athlete_id,
@@ -266,13 +270,11 @@ def run_athlete_first_session_sweep(self, athlete_id: str) -> Dict:
             db.rollback()
             logger.warning("First-session layer pass failed for %s: %s", athlete_id, exc)
 
-        # Reuse existing supported fingerprint refresh task path.
+        # Refresh fingerprint findings for this athlete only.
         try:
-            from tasks.intelligence_tasks import refresh_living_fingerprint
-
-            refresh_living_fingerprint.delay()
+            _refresh_living_fingerprint_for_athlete(athlete_id, db)
         except Exception as exc:
-            logger.warning("First-session fingerprint refresh enqueue failed for %s: %s", athlete_id, exc)
+            logger.warning("First-session fingerprint refresh failed for %s: %s", athlete_id, exc)
 
         # Always refresh briefing cache so first-session voice can pick up new data.
         try:

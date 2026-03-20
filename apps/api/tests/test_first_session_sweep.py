@@ -28,27 +28,49 @@ def _mock_db_with_counts(run_count: int, findings_count: int):
 def test_first_session_sweep_insufficient_data():
     db = _mock_db_with_counts(run_count=5, findings_count=0)
     with patch("tasks.correlation_tasks.SessionLocal", return_value=db), \
-         patch("tasks.correlation_tasks._try_acquire_first_session_lock", return_value=True):
+         patch("tasks.correlation_tasks._progress_hset") as mock_progress:
         result = run_athlete_first_session_sweep.run("athlete-1")
 
     assert result["status"] == "insufficient_data"
     assert result["runs"] == 5
+    assert mock_progress.call_count == 2
+    mock_progress.assert_any_call("athlete-1", "sweep_complete", "true")
+    mock_progress.assert_any_call("athlete-1", "findings_count", "0")
 
 
 def test_first_session_sweep_runs_all_metrics():
     db = _mock_db_with_counts(run_count=12, findings_count=4)
     with patch("tasks.correlation_tasks.SessionLocal", return_value=db), \
-         patch("tasks.correlation_tasks._try_acquire_first_session_lock", return_value=True), \
          patch("services.correlation_engine.analyze_correlations") as mock_analyze, \
          patch("tasks.correlation_tasks._run_layer_pass", return_value=1), \
          patch("tasks.correlation_tasks._progress_hset"), \
-         patch("tasks.intelligence_tasks.refresh_living_fingerprint") as mock_refresh, \
+         patch("tasks.correlation_tasks._refresh_living_fingerprint_for_athlete") as mock_refresh, \
          patch("services.home_briefing_cache.mark_briefing_dirty"), \
          patch("tasks.home_briefing_tasks.enqueue_briefing_refresh"):
-        mock_refresh.delay = MagicMock()
         result = run_athlete_first_session_sweep.run("athlete-1")
 
     assert result["status"] == "ok"
     assert result["runs"] == 12
     assert result["findings_count"] == 4
     assert mock_analyze.call_count == len(ALL_OUTPUT_METRICS)
+    mock_refresh.assert_called_once_with("athlete-1", db)
+
+
+def test_first_session_sweep_does_not_trigger_global_fingerprint_refresh():
+    db = _mock_db_with_counts(run_count=12, findings_count=0)
+    with patch("tasks.correlation_tasks.SessionLocal", return_value=db), \
+         patch("services.correlation_engine.analyze_correlations"), \
+         patch("tasks.correlation_tasks._run_layer_pass", return_value=0), \
+         patch("tasks.correlation_tasks._refresh_living_fingerprint_for_athlete"), \
+         patch("tasks.intelligence_tasks.refresh_living_fingerprint") as mock_global_refresh, \
+         patch("services.home_briefing_cache.mark_briefing_dirty"), \
+         patch("tasks.home_briefing_tasks.enqueue_briefing_refresh"), \
+         patch("tasks.correlation_tasks._progress_hset"):
+        run_athlete_first_session_sweep.run("athlete-1")
+
+    mock_global_refresh.delay.assert_not_called()
+
+
+def test_first_session_sweep_run_count_excludes_duplicates():
+    source = __import__("inspect").getsource(run_athlete_first_session_sweep)
+    assert "Activity.is_duplicate == False" in source
