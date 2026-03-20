@@ -54,6 +54,12 @@ class LLMResponse(TypedDict):
     finish_reason: Optional[str]
 
 
+def _is_kimi_reasoning_model(model: str) -> bool:
+    """Kimi reasoning models require temperature omission."""
+    m = (model or "").strip().lower()
+    return m == "kimi-k2.5" or m.startswith("kimi-k2.5-")
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers — lazy imports to avoid hard deps at module load
 # ---------------------------------------------------------------------------
@@ -143,13 +149,14 @@ def _call_kimi(
     extra_kwargs: dict = {}
     if response_mode == "json":
         extra_kwargs["response_format"] = {"type": "json_object"}
+    if not _is_kimi_reasoning_model(model):
+        extra_kwargs["temperature"] = temperature
 
     t0 = time.monotonic()
     response = client.chat.completions.create(
         model=model,
         messages=oai_messages,
         max_tokens=max_tokens,
-        temperature=temperature,
         **extra_kwargs,
     )
     latency_ms = (time.monotonic() - t0) * 1000

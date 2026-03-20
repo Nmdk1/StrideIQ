@@ -70,6 +70,13 @@ class TestProviderRouting:
         with pytest.raises(ValueError, match="Unknown model family"):
             _provider_for_model("gpt-4-turbo")
 
+    def test_kimi_reasoning_model_detection(self):
+        from core.llm_client import _is_kimi_reasoning_model
+
+        assert _is_kimi_reasoning_model("kimi-k2.5") is True
+        assert _is_kimi_reasoning_model("kimi-k2.5-preview") is True
+        assert _is_kimi_reasoning_model("kimi-k2-turbo-preview") is False
+
 
 # ---------------------------------------------------------------------------
 # call_llm — happy path
