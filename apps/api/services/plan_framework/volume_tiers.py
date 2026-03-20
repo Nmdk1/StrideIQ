@@ -239,6 +239,7 @@ class VolumeTierClassifier:
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             Activity.sport == "run",
+            Activity.is_duplicate == False,  # noqa: E712
             Activity.start_time >= four_weeks_ago
         ).all()
         

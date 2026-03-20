@@ -362,7 +362,8 @@ class FitnessBankCalculator:
         # Get all running activities (full history)
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
-            Activity.sport.ilike("run")
+            Activity.sport.ilike("run"),
+            Activity.is_duplicate == False,  # noqa: E712
         ).order_by(Activity.start_time.desc()).all()
         
         if not activities:
@@ -413,7 +414,7 @@ class FitnessBankCalculator:
         
         # Detect constraints
         constraint_type, constraint_details, is_returning = self._detect_constraint(
-            peaks, current_weekly, activities
+            peaks, current_weekly, activities, races
         )
         
         # Detect training patterns
@@ -748,11 +749,19 @@ class FitnessBankCalculator:
         else:
             return ExperienceLevel.BEGINNER
     
-    def _detect_constraint(self, peaks: Dict, current_weekly: float, 
-                          activities: List) -> Tuple[ConstraintType, Optional[str], bool]:
+    def _has_recent_race(self, races: List[RacePerformance], days: int = 21) -> bool:
+        cutoff = date.today() - timedelta(days=days)
+        return any(r.date >= cutoff for r in races)
+
+    def _detect_constraint(self, peaks: Dict, current_weekly: float,
+                          activities: List, races: List[RacePerformance]) -> Tuple[ConstraintType, Optional[str], bool]:
         """Detect what's limiting the athlete."""
         peak_weekly = peaks["peak_weekly"]
-        
+
+        # Post-race recovery should never be misclassified as injury/detraining.
+        if self._has_recent_race(races, days=21):
+            return ConstraintType.NONE, None, False
+
         if current_weekly < 0.1:
             # No recent running at all
             return ConstraintType.INJURY, "no recent activity", True
