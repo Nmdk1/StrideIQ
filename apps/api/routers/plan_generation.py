@@ -2101,6 +2101,8 @@ class ConstraintAwarePlanRequest(BaseModel):
     goal_time_seconds: Optional[int] = Field(None, ge=600, description="Goal race time in seconds")
     tune_up_races: Optional[List[TuneUpRace]] = Field(None, description="Tune-up races before goal race")
     race_name: Optional[str] = Field(None, description="Goal race name")
+    target_peak_weekly_miles: Optional[float] = Field(None, ge=10, le=200, description="Optional athlete-requested peak weekly mileage")
+    target_peak_weekly_range: Optional[Dict[str, float]] = Field(None, description="Optional athlete-requested peak weekly mileage range")
 
 
 def _save_constraint_aware_plan(
@@ -2331,6 +2333,7 @@ async def create_constraint_aware_plan(
     # Generate plan using Constraint-Aware Planner
     try:
         from services.constraint_aware_planner import generate_constraint_aware_plan
+        from services.plan_quality_gate import evaluate_constraint_aware_plan
         
         plan = generate_constraint_aware_plan(
             athlete_id=athlete.id,
@@ -2338,8 +2341,34 @@ async def create_constraint_aware_plan(
             race_distance=request.race_distance.lower(),
             db=db,
             goal_time=str(request.goal_time_seconds) if request.goal_time_seconds else None,
-            tune_up_races=tune_ups
+            tune_up_races=tune_ups,
+            target_peak_weekly_miles=request.target_peak_weekly_miles,
+            target_peak_weekly_range=request.target_peak_weekly_range,
         )
+
+        gate = evaluate_constraint_aware_plan(plan)
+        if not gate.passed:
+            fallback_peak = float((plan.volume_contract or {}).get("band_max") or 0) * 0.95
+            plan = generate_constraint_aware_plan(
+                athlete_id=athlete.id,
+                race_date=request.race_date,
+                race_distance=request.race_distance.lower(),
+                db=db,
+                goal_time=str(request.goal_time_seconds) if request.goal_time_seconds else None,
+                tune_up_races=tune_ups,
+                target_peak_weekly_miles=fallback_peak if fallback_peak > 0 else None,
+                quality_gate_fallback=True,
+                quality_gate_reasons=gate.reasons,
+            )
+            second_gate = evaluate_constraint_aware_plan(plan)
+            if not second_gate.passed:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "reason": "Plan quality gate failed after one fallback regeneration.",
+                        "quality_gate_reasons": second_gate.reasons,
+                    },
+                )
         
         # Save plan to database
         saved_plan = _save_constraint_aware_plan(db, athlete.id, plan, race_name=request.race_name)
@@ -2374,6 +2403,9 @@ async def create_constraint_aware_plan(
                 "rationale_tags": plan.prediction_rationale_tags,
                 "scenarios": plan.prediction_scenarios,
             },
+            "volume_contract": plan.volume_contract,
+            "quality_gate_fallback": plan.quality_gate_fallback,
+            "quality_gate_reasons": plan.quality_gate_reasons,
             "personalization": {
                 "notes": plan.counter_conventional_notes,
                 "tune_up_races": plan.tune_up_races

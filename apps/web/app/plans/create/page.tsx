@@ -41,6 +41,9 @@ interface PlanFormData {
   injury_history: string;
   goal_time_seconds?: number;
   tune_up_races: TuneUpRace[];
+  target_peak_weekly_miles?: number;
+  target_peak_weekly_min?: number;
+  target_peak_weekly_max?: number;
 }
 
 interface ModelDrivenPreview {
@@ -99,6 +102,9 @@ export default function CreatePlanPage() {
     experience_level: 'intermediate',
     injury_history: '',
     tune_up_races: [],
+    target_peak_weekly_miles: undefined,
+    target_peak_weekly_min: undefined,
+    target_peak_weekly_max: undefined,
   });
   const [constraintAwareResult, setConstraintAwareResult] = useState<import('@/lib/api/services/plans').ConstraintAwarePlanResponse | null>(null);
   const [constraintAwarePreview, setConstraintAwarePreview] = useState<import('@/lib/api/services/plans').ConstraintAwarePreview | null>(null);
@@ -175,6 +181,11 @@ export default function CreatePlanPage() {
         goal_time_seconds: formData.goal_time_seconds,
         race_name: formData.race_name || undefined,
         tune_up_races: formData.tune_up_races.length > 0 ? formData.tune_up_races : undefined,
+        target_peak_weekly_miles: formData.target_peak_weekly_miles || undefined,
+        target_peak_weekly_range:
+          formData.target_peak_weekly_min && formData.target_peak_weekly_max
+            ? { min: formData.target_peak_weekly_min, max: formData.target_peak_weekly_max }
+            : undefined,
       });
       
       setConstraintAwareResult(result);
@@ -786,6 +797,21 @@ export default function CreatePlanPage() {
                     className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
                   />
                 </div>
+
+                {/* Athlete peak mileage override */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Peak Weekly Mileage Override (optional)</label>
+                  <input
+                    type="number"
+                    min={10}
+                    max={200}
+                    value={formData.target_peak_weekly_miles ?? ''}
+                    onChange={(e) => setFormData({ ...formData, target_peak_weekly_miles: e.target.value ? Number(e.target.value) : undefined })}
+                    placeholder="e.g. 68"
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                  />
+                  <div className="text-xs text-slate-500 mt-2">If outside safety/plausibility bounds, we clamp and show the exact reason.</div>
+                </div>
               </div>
             </div>
           )}
@@ -1009,6 +1035,24 @@ export default function CreatePlanPage() {
                     <div className="text-xs text-slate-500">peak week</div>
                   </div>
                 </div>
+
+                {/* Volume contract */}
+                {constraintAwareResult.volume_contract && (
+                  <div className="bg-slate-900 rounded-xl p-5">
+                    <div className="text-sm text-slate-400 mb-2">Volume Contract</div>
+                    <div className="text-sm text-slate-300">
+                      Band: {constraintAwareResult.volume_contract.band_min} - {constraintAwareResult.volume_contract.band_max} mpw
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Source: {constraintAwareResult.volume_contract.source.replace('_', ' ')} | Peak confidence: {constraintAwareResult.volume_contract.peak_confidence}
+                    </div>
+                    {constraintAwareResult.volume_contract.clamped && (
+                      <div className="text-xs text-amber-400 mt-2">
+                        {constraintAwareResult.volume_contract.clamp_reason || 'Requested override was clamped for safety.'}
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 {/* Personalized Insights */}
                 {constraintAwareResult.personalization.notes.length > 0 && (

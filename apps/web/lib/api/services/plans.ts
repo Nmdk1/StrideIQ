@@ -124,6 +124,8 @@ export interface ConstraintAwarePlanRequest {
   goal_time_seconds?: number;
   tune_up_races?: TuneUpRace[];
   race_name?: string;
+  target_peak_weekly_miles?: number;
+  target_peak_weekly_range?: { min: number; max: number };
 }
 
 export interface FitnessBank {
@@ -189,6 +191,18 @@ export interface ConstraintAwarePlanResponse {
       aggressive: { time: string; confidence: 'low' | 'medium' | 'high' };
     };
   };
+  volume_contract: {
+    band_min: number;
+    band_max: number;
+    source: 'trusted_recent_band' | 'trusted_peak' | 'athlete_override';
+    peak_confidence: 'high' | 'medium' | 'low';
+    requested_peak?: number | null;
+    applied_peak?: number | null;
+    clamped?: boolean;
+    clamp_reason?: string | null;
+  };
+  quality_gate_fallback?: boolean;
+  quality_gate_reasons?: string[];
   personalization: {
     notes: string[];
     tune_up_races: TuneUpRace[];

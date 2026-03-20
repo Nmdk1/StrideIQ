@@ -13,7 +13,7 @@ Produces exceptional, personalized plans from N=1 data.
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple, Any
 from uuid import UUID
 import logging
 
@@ -71,6 +71,9 @@ class ConstraintAwarePlan:
     prediction_scenarios: Dict[str, Dict[str, str]]
     prediction_rationale_tags: List[str]
     prediction_uncertainty_reason: Optional[str]
+    volume_contract: Dict[str, Any] = field(default_factory=dict)
+    quality_gate_fallback: bool = False
+    quality_gate_reasons: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict:
         return {
@@ -93,7 +96,10 @@ class ConstraintAwarePlan:
                 "uncertainty_reason": self.prediction_uncertainty_reason,
                 "rationale_tags": self.prediction_rationale_tags,
                 "scenarios": self.prediction_scenarios,
-            }
+            },
+            "volume_contract": self.volume_contract,
+            "quality_gate_fallback": self.quality_gate_fallback,
+            "quality_gate_reasons": self.quality_gate_reasons,
         }
 
 
@@ -118,7 +124,11 @@ class ConstraintAwarePlanner:
                      race_date: date,
                      race_distance: str,
                      goal_time: Optional[str] = None,
-                     tune_up_races: Optional[List[Dict]] = None) -> ConstraintAwarePlan:
+                     tune_up_races: Optional[List[Dict]] = None,
+                     target_peak_weekly_miles: Optional[float] = None,
+                     target_peak_weekly_range: Optional[Dict[str, float]] = None,
+                     quality_gate_fallback: bool = False,
+                     quality_gate_reasons: Optional[List[str]] = None) -> ConstraintAwarePlan:
         """
         Generate a complete constraint-aware plan.
         """
@@ -129,6 +139,15 @@ class ConstraintAwarePlanner:
         logger.info(f"Fitness Bank: peak={bank.peak_weekly_miles:.0f}mpw, "
                    f"current={bank.current_weekly_miles:.0f}mpw, "
                    f"constraint={bank.constraint_type.value}")
+        rationale_tags: List[str] = []
+        volume_contract = self._build_volume_contract(
+            bank=bank,
+            race_distance=race_distance,
+            target_peak_weekly_miles=target_peak_weekly_miles,
+            target_peak_weekly_range=target_peak_weekly_range,
+        )
+        if volume_contract.get("source") == "trusted_recent_band":
+            rationale_tags.append("untrusted_peak_suppressed")
         
         # 2. Generate week themes
         themes = self.theme_generator.generate(
@@ -150,7 +169,8 @@ class ConstraintAwarePlanner:
         weeks = []
         
         for theme_plan in themes:
-            target_miles = theme_plan.target_volume_pct * bank.peak_weekly_miles
+            target_miles = theme_plan.target_volume_pct * float(volume_contract.get("applied_peak", bank.peak_weekly_miles))
+            target_miles = self._apply_volume_contract_bounds(target_miles, volume_contract)
             
             # Only clamp early weeks if injury return - allow progression to peak
             if bank.constraint_type == ConstraintType.INJURY and theme_plan.week_number <= 4:
@@ -183,11 +203,12 @@ class ConstraintAwarePlanner:
         notes = self._generate_insights(bank, themes, tune_up_races)
         
         # 7. Calculate predictions
-        predicted, ci, scenarios, rationale_tags, uncertainty_reason = self._predict_race(
+        predicted, ci, scenarios, prediction_rationale_tags, uncertainty_reason = self._predict_race(
             bank,
             race_distance,
             goal_time,
         )
+        prediction_rationale_tags = list(dict.fromkeys(prediction_rationale_tags + rationale_tags))
         
         total_miles = sum(w.total_miles for w in weeks)
         
@@ -206,9 +227,94 @@ class ConstraintAwarePlanner:
             predicted_time=predicted,
             prediction_ci=ci,
             prediction_scenarios=scenarios,
-            prediction_rationale_tags=rationale_tags,
+            prediction_rationale_tags=prediction_rationale_tags,
             prediction_uncertainty_reason=uncertainty_reason,
+            volume_contract=volume_contract,
+            quality_gate_fallback=quality_gate_fallback,
+            quality_gate_reasons=quality_gate_reasons or [],
         )
+
+    def _is_peak_plausible(self, peak: float, band_min: float, band_max: float, peak_confidence: str) -> bool:
+        if peak <= 0:
+            return False
+        if peak_confidence == "low":
+            return False
+        if band_max <= 0:
+            return True
+        return peak <= band_max * 1.35
+
+    def _build_volume_contract(
+        self,
+        *,
+        bank: FitnessBank,
+        race_distance: str,
+        target_peak_weekly_miles: Optional[float],
+        target_peak_weekly_range: Optional[Dict[str, float]],
+    ) -> Dict[str, Any]:
+        band_center = bank.recent_8w_median_weekly_miles or bank.current_weekly_miles or bank.peak_weekly_miles
+        band_max = bank.recent_16w_p90_weekly_miles or max(band_center, bank.current_weekly_miles)
+        if band_max <= 0:
+            band_max = max(25.0, bank.current_weekly_miles or 0.0, bank.peak_weekly_miles * 0.8)
+        band_min = max(10.0, min(band_center, band_max) * 0.9)
+        requested_peak = None
+        if target_peak_weekly_miles is not None:
+            requested_peak = float(target_peak_weekly_miles)
+        elif target_peak_weekly_range:
+            rmin = float(target_peak_weekly_range.get("min", 0) or 0)
+            rmax = float(target_peak_weekly_range.get("max", 0) or 0)
+            if rmin > 0 and rmax > 0:
+                requested_peak = (rmin + rmax) / 2.0
+            elif rmax > 0:
+                requested_peak = rmax
+            elif rmin > 0:
+                requested_peak = rmin
+
+        peak_plausible = self._is_peak_plausible(
+            bank.peak_weekly_miles,
+            band_min,
+            band_max,
+            bank.peak_confidence,
+        )
+        source = "trusted_peak" if peak_plausible else "trusted_recent_band"
+        applied_peak = bank.peak_weekly_miles if peak_plausible else band_max
+
+        clamped = False
+        clamp_reason = None
+        if requested_peak is not None:
+            source = "athlete_override"
+            override_floor = max(10.0, band_min * 0.8)
+            override_ceiling = max(override_floor, band_max * 1.2)
+            applied_peak = max(override_floor, min(override_ceiling, requested_peak))
+            clamped = abs(applied_peak - requested_peak) > 1e-6
+            if clamped:
+                clamp_reason = (
+                    f"Requested peak {requested_peak:.1f}mpw outside safety band "
+                    f"{override_floor:.1f}-{override_ceiling:.1f}mpw."
+                )
+
+        # 10K plans can remain high-mileage; only soften extreme long-distance spillover.
+        if race_distance.lower() == "10k" and source != "athlete_override":
+            applied_peak = min(applied_peak, max(band_max, band_center))
+
+        return {
+            "band_min": round(band_min, 1),
+            "band_max": round(band_max, 1),
+            "source": source,
+            "peak_confidence": bank.peak_confidence,
+            "requested_peak": round(requested_peak, 1) if requested_peak is not None else None,
+            "applied_peak": round(applied_peak, 1),
+            "clamped": clamped,
+            "clamp_reason": clamp_reason,
+        }
+
+    def _apply_volume_contract_bounds(self, target_miles: float, volume_contract: Dict[str, Any]) -> float:
+        band_min = float(volume_contract.get("band_min", 0) or 0)
+        band_max = float(volume_contract.get("band_max", 0) or 0)
+        if band_max <= 0:
+            return target_miles
+        lower = max(8.0, band_min * 0.75)
+        upper = max(lower, band_max * 1.10)
+        return max(lower, min(upper, target_miles))
     
     def _apply_constraint_overrides(self,
                                    themes: List[WeekThemePlan],
@@ -622,6 +728,16 @@ class ConstraintAwarePlanner:
             },
             prediction_rationale_tags=["insufficient_data"],
             prediction_uncertainty_reason="Very short prep window; prediction not reliable.",
+            volume_contract={
+                "band_min": 20.0,
+                "band_max": 40.0,
+                "source": "trusted_recent_band",
+                "peak_confidence": bank.peak_confidence,
+                "requested_peak": None,
+                "applied_peak": 40.0,
+                "clamped": False,
+                "clamp_reason": None,
+            },
         )
 
 
@@ -635,7 +751,11 @@ def generate_constraint_aware_plan(
     race_distance: str,
     db: Session,
     goal_time: Optional[str] = None,
-    tune_up_races: Optional[List[Dict]] = None
+    tune_up_races: Optional[List[Dict]] = None,
+    target_peak_weekly_miles: Optional[float] = None,
+    target_peak_weekly_range: Optional[Dict[str, float]] = None,
+    quality_gate_fallback: bool = False,
+    quality_gate_reasons: Optional[List[str]] = None,
 ) -> ConstraintAwarePlan:
     """Generate a constraint-aware plan for an athlete."""
     
@@ -645,5 +765,9 @@ def generate_constraint_aware_plan(
         race_date=race_date,
         race_distance=race_distance,
         goal_time=goal_time,
-        tune_up_races=tune_up_races
+        tune_up_races=tune_up_races,
+        target_peak_weekly_miles=target_peak_weekly_miles,
+        target_peak_weekly_range=target_peak_weekly_range,
+        quality_gate_fallback=quality_gate_fallback,
+        quality_gate_reasons=quality_gate_reasons,
     )

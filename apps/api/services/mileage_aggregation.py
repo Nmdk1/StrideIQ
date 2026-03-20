@@ -163,3 +163,45 @@ def compute_peak_and_current_weekly_miles(
     current_weekly = (sum(trailing) / len(trailing)) if trailing else 0.0
     return peak_weekly, current_weekly
 
+
+def compute_recent_weekly_band(
+    activities: List,
+    now: Optional[date] = None,
+) -> Tuple[float, float]:
+    """
+    Return (recent_8w_median_weekly_miles, recent_16w_p90_weekly_miles).
+    """
+    if now is None:
+        now = date.today()
+
+    weekly_miles = compute_weekly_mileage(activities)
+    if not weekly_miles:
+        return 0.0, 0.0
+
+    eight_weeks_ago = now - timedelta(days=56)
+    sixteen_weeks_ago = now - timedelta(days=112)
+    weekly_8w = [m for ws, m in weekly_miles.items() if ws >= eight_weeks_ago]
+    weekly_16w = [m for ws, m in weekly_miles.items() if ws >= sixteen_weeks_ago]
+
+    def _median(values: List[float]) -> float:
+        if not values:
+            return 0.0
+        s = sorted(values)
+        n = len(s)
+        mid = n // 2
+        if n % 2 == 0:
+            return (s[mid - 1] + s[mid]) / 2.0
+        return s[mid]
+
+    def _percentile(values: List[float], pct: float) -> float:
+        if not values:
+            return 0.0
+        s = sorted(values)
+        if len(s) == 1:
+            return s[0]
+        idx = int(round((len(s) - 1) * pct))
+        idx = max(0, min(len(s) - 1, idx))
+        return s[idx]
+
+    return _median(weekly_8w), _percentile(weekly_16w, 0.90)
+

@@ -29,6 +29,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from models import Athlete, IntakeQuestionnaire, TrainingPlan, PlannedWorkout, AthleteTrainingPaceProfile, AthleteRaceResultAnchor
+from services.plan_quality_gate import evaluate_starter_plan_quality
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,89 @@ def _goal_date_from_intake(responses: dict) -> Optional[date]:
     s = responses.get("goal_event_date")
     if not s:
         return None
+
+
+def _apply_cold_start_guardrails(plan):
+    """
+    Cold-start guardrails:
+    - week 1 total <= 25 mi
+    - week 1 long run <= 8 mi
+    - first 4 weeks ramp <= +15%
+    """
+    if not plan or not getattr(plan, "workouts", None):
+        return plan
+
+    week_totals = {}
+    week_longs = {}
+    for w in plan.workouts:
+        miles = float(w.distance_miles or 0)
+        week_totals[w.week] = week_totals.get(w.week, 0.0) + miles
+        if w.workout_type in ("long", "long_mp", "long_hmp"):
+            week_longs[w.week] = max(week_longs.get(w.week, 0.0), miles)
+
+    # Week 1 caps
+    w1_total = week_totals.get(1, 0.0)
+    if w1_total > 25.0 and w1_total > 0:
+        scale = 25.0 / w1_total
+        for w in plan.workouts:
+            if w.week == 1 and w.workout_type != "rest" and w.distance_miles:
+                w.distance_miles = max(2.0, round(float(w.distance_miles) * scale, 1))
+                if w.duration_minutes:
+                    w.duration_minutes = max(20, int(w.duration_minutes * scale))
+
+    for w in plan.workouts:
+        if w.week == 1 and w.workout_type in ("long", "long_mp", "long_hmp") and w.distance_miles:
+            w.distance_miles = min(float(w.distance_miles), 8.0)
+
+    # Re-normalize week 1 after long-run clamp to ensure strict 25mi cap.
+    week1_total = sum(float(w.distance_miles or 0) for w in plan.workouts if w.week == 1)
+    if week1_total > 25.0 and week1_total > 0:
+        non_long = [w for w in plan.workouts if w.week == 1 and w.workout_type not in ("long", "long_mp", "long_hmp")]
+        non_long_total = sum(float(w.distance_miles or 0) for w in non_long)
+        remaining = 25.0 - sum(float(w.distance_miles or 0) for w in plan.workouts if w.week == 1 and w.workout_type in ("long", "long_mp", "long_hmp"))
+        if non_long_total > 0 and remaining > 0:
+            scale = remaining / non_long_total
+            for w in non_long:
+                if w.distance_miles:
+                    w.distance_miles = max(2.0, round(float(w.distance_miles) * scale, 1))
+        # Final deterministic correction for rounding drift.
+        week1_total = sum(float(w.distance_miles or 0) for w in plan.workouts if w.week == 1)
+        overflow = round(week1_total - 25.0, 2)
+        if overflow > 0:
+            adjustable = [w for w in plan.workouts if w.week == 1 and w.workout_type not in ("long", "long_mp", "long_hmp") and float(w.distance_miles or 0) > 2.0]
+            if adjustable:
+                w = max(adjustable, key=lambda x: float(x.distance_miles or 0))
+                w.distance_miles = max(2.0, round(float(w.distance_miles or 0) - overflow, 1))
+
+    # Rebuild totals after week 1 caps
+    week_totals = {}
+    for w in plan.workouts:
+        week_totals[w.week] = week_totals.get(w.week, 0.0) + float(w.distance_miles or 0)
+
+    # Ramp cap for first 4 weeks
+    for wk in (2, 3, 4):
+        prev = max(week_totals.get(wk - 1, 0.0), 1.0)
+        cur = week_totals.get(wk, 0.0)
+        allowed = prev * 1.15
+        if cur > allowed and cur > 0:
+            scale = allowed / cur
+            for w in plan.workouts:
+                if w.week == wk and w.workout_type != "rest" and w.distance_miles:
+                    w.distance_miles = max(2.0, round(float(w.distance_miles) * scale, 1))
+                    if w.duration_minutes:
+                        w.duration_minutes = max(20, int(w.duration_minutes * scale))
+            week_totals[wk] = allowed
+
+    # Keep summary values coherent.
+    plan.total_miles = sum(float(w.distance_miles or 0) for w in plan.workouts)
+    if hasattr(plan, "weekly_volumes") and isinstance(plan.weekly_volumes, list):
+        weekly = []
+        for i in range(1, max(week_totals.keys()) + 1):
+            weekly.append(round(week_totals.get(i, 0.0), 1))
+        plan.weekly_volumes = weekly
+        if weekly:
+            plan.peak_volume = max(weekly)
+    return plan
     try:
         return date.fromisoformat(str(s))
     except Exception:
@@ -143,10 +227,14 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
             .filter(AthleteRaceResultAnchor.athlete_id == athlete.id)
             .first()
         )
+        has_valid_anchor = bool(anchor and anchor.distance_key and anchor.time_seconds and int(anchor.time_seconds) >= 600)
+        from models import Activity
+        activity_runs = db.query(Activity).filter(Activity.athlete_id == athlete.id, Activity.sport.ilike("run")).count()
+        is_cold_start = activity_runs == 0 and not has_valid_anchor
 
         plan = None
         generation_kind = "starter_v1_effort"
-        if anchor and anchor.distance_key and anchor.time_seconds and int(anchor.time_seconds) >= 600:
+        if has_valid_anchor:
             try:
                 plan = gen.generate_semi_custom(
                     distance=goal_distance,
@@ -164,8 +252,9 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
 
         # Fallback: effort-based standard plan (still better than empty calendar).
         if plan is None:
+            effective_weekly = min(weekly_miles, 25.0) if is_cold_start else weekly_miles
             tier = gen.tier_classifier.classify(
-                current_weekly_miles=float(weekly_miles),
+                current_weekly_miles=float(effective_weekly),
                 goal_distance=goal_distance,
                 athlete_id=athlete.id,
             )
@@ -176,6 +265,27 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
                 days_per_week=days_per_week,
                 start_date=start_date,
             )
+        if is_cold_start:
+            plan = _apply_cold_start_guardrails(plan)
+            gate = evaluate_starter_plan_quality(plan)
+            if not gate.passed:
+                # Single retry with stricter intent floor.
+                tier = gen.tier_classifier.classify(
+                    current_weekly_miles=20.0,
+                    goal_distance=goal_distance,
+                    athlete_id=athlete.id,
+                )
+                plan = gen.generate_standard(
+                    distance=goal_distance,
+                    duration_weeks=duration_weeks,
+                    tier=tier.value,
+                    days_per_week=days_per_week,
+                    start_date=start_date,
+                )
+                plan = _apply_cold_start_guardrails(plan)
+                gate2 = evaluate_starter_plan_quality(plan)
+                if not gate2.passed:
+                    raise ValueError(f"starter_plan_quality_gate_failed: {gate2.reasons}")
 
         # Use pace profile scalar as baseline_rpi if available (does not change plan paces).
         pace_prof = (

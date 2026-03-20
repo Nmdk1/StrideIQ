@@ -380,6 +380,9 @@ class WorkoutPrescriptionGenerator:
         self.long_run_start = self.long_run_current  # Redirect old references
         self.long_run_peak_target = self.long_run_peak
         self.long_run_cap = self.long_run_peak
+        if self.race_distance == "10k":
+            # Keep high-mileage athletes high-mileage, but avoid marathon-style long-run dominance.
+            self.long_run_cap = min(self.long_run_cap, 16.0)
         
         self.use_mp_long_runs = self.USE_RACE_PACE_LONG_RUNS.get(self.race_distance, True)
         self.quality_focus = self.QUALITY_FOCUS.get(self.race_distance, ["threshold"])
@@ -660,12 +663,18 @@ class WorkoutPrescriptionGenerator:
         """
         # Long run: Use progressive calculation (or fallback to 28% if not provided)
         long_miles = progressive_long if progressive_long is not None else target * 0.28
+        if self.race_distance == "10k":
+            long_miles = min(long_miles, target * 0.24)
         
         # Quality: ~15% of weekly
         quality_miles = target * 0.15
+        if self.race_distance == "10k":
+            quality_miles = min(quality_miles, target * 0.13)
         
         # Secondary quality if add_mp
         secondary_miles = target * 0.12 if add_mp else 0
+        if self.race_distance == "10k":
+            secondary_miles = min(secondary_miles, target * 0.10)
         
         # Easy runs fill the rest
         remaining = target - long_miles - quality_miles - secondary_miles
@@ -734,9 +743,13 @@ class WorkoutPrescriptionGenerator:
         """
         # MP long run: Use progressive calculation
         long_miles = progressive_long if progressive_long is not None else target * 0.30
+        if self.race_distance == "10k":
+            long_miles = min(long_miles, target * 0.24)
         
         # Threshold: ~10%
         threshold_miles = target * 0.10
+        if self.race_distance == "10k":
+            threshold_miles = min(threshold_miles, target * 0.12)
         
         # Easy fills rest
         remaining = target - long_miles - threshold_miles
@@ -765,9 +778,13 @@ class WorkoutPrescriptionGenerator:
         """Assign peak week: maximum quality."""
         # Peak long run: Use progressive calculation (peak should be longest)
         long_miles = progressive_long if progressive_long is not None else target * 0.32
+        if self.race_distance == "10k":
+            long_miles = min(long_miles, target * 0.25)
         
         # Full threshold: ~15%
         threshold_miles = target * 0.15
+        if self.race_distance == "10k":
+            threshold_miles = min(threshold_miles, target * 0.13)
         
         # Easy + strides on one day
         strides_day = (quality_day - 2) % 7
@@ -1165,6 +1182,14 @@ class WorkoutPrescriptionGenerator:
             # Pick one that fits target miles
             suitable = [s for s in structures if abs(s.total_miles - miles) < 3]
             structure = random.choice(suitable) if suitable else structures[0]
+        if self.race_distance == "10k" and structure.quality_miles > 6.0:
+            capped = [s for s in structures if s.quality_miles <= 6.0]
+            if capped:
+                structure = random.choice(capped)
+        if self.race_distance == "10k" and structure.total_miles > 8.0:
+            total_capped = [s for s in structures if s.total_miles <= 8.0]
+            if total_capped:
+                structure = random.choice(total_capped)
         
         # Fill in paces
         warm = 2
@@ -1180,7 +1205,7 @@ class WorkoutPrescriptionGenerator:
             workout_type="threshold",
             name=structure.name,
             description=desc,
-            target_miles=structure.total_miles,
+            target_miles=min(structure.total_miles, 8.0) if self.race_distance == "10k" else structure.total_miles,
             intensity=structure.intensity,
             paces={"threshold": self.pace_strs["threshold"], "easy": self.pace_strs["easy"]},
             notes=[],

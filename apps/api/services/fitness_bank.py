@@ -19,6 +19,7 @@ import logging
 from sqlalchemy.orm import Session
 from services.mileage_aggregation import (
     compute_peak_and_current_weekly_miles,
+    compute_recent_weekly_band,
     get_canonical_run_activities,
 )
 
@@ -121,6 +122,9 @@ class FitnessBank:
     weeks_to_race_ready: int             # Weeks to be competitive
     sustainable_peak_weekly: float        # What they can sustain for 4+ weeks
     recent_quality_sessions_28d: int = 0
+    recent_8w_median_weekly_miles: float = 0.0
+    recent_16w_p90_weekly_miles: float = 0.0
+    peak_confidence: str = "medium"
     
     def to_dict(self) -> Dict:
         return {
@@ -154,6 +158,11 @@ class FitnessBank:
                 "weeks_to_80pct": self.weeks_to_80pct_ctl,
                 "weeks_to_race_ready": self.weeks_to_race_ready,
                 "sustainable_peak": round(self.sustainable_peak_weekly, 0)
+            },
+            "volume_contract": {
+                "recent_8w_median_weekly_miles": round(self.recent_8w_median_weekly_miles, 1),
+                "recent_16w_p90_weekly_miles": round(self.recent_16w_p90_weekly_miles, 1),
+                "peak_confidence": self.peak_confidence,
             }
         }
 
@@ -268,6 +277,9 @@ def _fitness_bank_to_dict(bank: "FitnessBank") -> dict:
         "weeks_to_race_ready": bank.weeks_to_race_ready,
         "sustainable_peak_weekly": bank.sustainable_peak_weekly,
         "recent_quality_sessions_28d": bank.recent_quality_sessions_28d,
+        "recent_8w_median_weekly_miles": bank.recent_8w_median_weekly_miles,
+        "recent_16w_p90_weekly_miles": bank.recent_16w_p90_weekly_miles,
+        "peak_confidence": bank.peak_confidence,
     }
 
 
@@ -318,6 +330,9 @@ def _fitness_bank_from_dict(d: dict) -> "FitnessBank":
         weeks_to_race_ready=int(d["weeks_to_race_ready"]),
         sustainable_peak_weekly=float(d["sustainable_peak_weekly"]),
         recent_quality_sessions_28d=int(d.get("recent_quality_sessions_28d", 0)),
+        recent_8w_median_weekly_miles=float(d.get("recent_8w_median_weekly_miles", 0.0)),
+        recent_16w_p90_weekly_miles=float(d.get("recent_16w_p90_weekly_miles", 0.0)),
+        peak_confidence=str(d.get("peak_confidence", "medium")),
     )
 
 
@@ -418,8 +433,15 @@ class FitnessBankCalculator:
         # Calculate peak capabilities
         peaks = self._calculate_peak_capabilities(activities)
         canonical_peak_weekly, canonical_current_weekly = compute_peak_and_current_weekly_miles(activities)
+        recent_8w_median, recent_16w_p90 = compute_recent_weekly_band(activities)
         if canonical_peak_weekly > 0:
             peaks["peak_weekly"] = canonical_peak_weekly
+        peak_confidence = self._assess_peak_confidence(
+            peak_weekly=peaks["peak_weekly"],
+            recent_8w_median=recent_8w_median,
+            recent_16w_p90=recent_16w_p90,
+            dedupe_meta=dedupe_meta,
+        )
         
         # Extract race performances
         races = self._extract_race_performances(activities)
@@ -487,6 +509,9 @@ class FitnessBankCalculator:
             weeks_to_race_ready=weeks_to_race,
             sustainable_peak_weekly=sustainable,
             recent_quality_sessions_28d=recent_quality_sessions,
+            recent_8w_median_weekly_miles=recent_8w_median,
+            recent_16w_p90_weekly_miles=recent_16w_p90,
+            peak_confidence=peak_confidence,
         )
         try:
             set_cache(_cache_key, _fitness_bank_to_dict(result), ttl=900)
@@ -963,7 +988,41 @@ class FitnessBankCalculator:
             weeks_to_race_ready=0,
             sustainable_peak_weekly=25.0,
             recent_quality_sessions_28d=0,
+            recent_8w_median_weekly_miles=0.0,
+            recent_16w_p90_weekly_miles=0.0,
+            peak_confidence="low",
         )
+
+    def _assess_peak_confidence(
+        self,
+        *,
+        peak_weekly: float,
+        recent_8w_median: float,
+        recent_16w_p90: float,
+        dedupe_meta: Dict[str, int],
+    ) -> str:
+        """
+        Confidence heuristic for whether historical peak should drive planning.
+        """
+        if peak_weekly <= 0:
+            return "low"
+
+        if recent_16w_p90 <= 0 or recent_8w_median <= 0:
+            return "medium"
+
+        # Plausibility against recent operating band.
+        if peak_weekly > recent_16w_p90 * 1.8:
+            return "low"
+
+        # If fallback dedupe still collapses many rows, reduce trust in raw peak.
+        collapsed = int(dedupe_meta.get("dedupe_pairs_collapsed", 0) or 0)
+        if collapsed >= 10 and peak_weekly > recent_16w_p90 * 1.4:
+            return "low"
+
+        if peak_weekly > recent_16w_p90 * 1.35:
+            return "medium"
+
+        return "high"
 
 
 # =============================================================================
