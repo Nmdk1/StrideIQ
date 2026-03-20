@@ -9,8 +9,9 @@ from celery import Task
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from core.database import get_db_sync
+from core.cache import get_redis_client
 from tasks import celery_app
-from models import Athlete, Activity, ActivitySplit, ActivityStream
+from models import Athlete, Activity, ActivitySplit, ActivityStream, CorrelationFinding
 from services.strava_service import poll_activities, poll_activities_page, get_activity_laps, get_activity_details, get_activity_streams, get_strava_read_budget_remaining
 from services.strava_pbs import sync_strava_best_efforts
 from services.athlete_metrics import calculate_athlete_derived_signals
@@ -100,6 +101,63 @@ def _extract_strava_mile_splits_from_details(details: dict) -> list[dict]:
             }
         )
     return out
+
+
+_FIRST_SESSION_SWEEP_LOCK_TTL_S = 600
+
+
+def _first_session_lock_key(athlete_id: str) -> str:
+    return f"first_session_sweep_lock:{athlete_id}"
+
+
+def _try_acquire_first_session_lock(athlete_id: str) -> bool:
+    client = get_redis_client()
+    if not client:
+        return True
+    return bool(
+        client.set(
+            _first_session_lock_key(athlete_id),
+            "1",
+            ex=_FIRST_SESSION_SWEEP_LOCK_TTL_S,
+            nx=True,
+        )
+    )
+
+
+def _maybe_enqueue_first_session_sweep_for_athlete(
+    db: Session,
+    athlete_id: str,
+    *,
+    created_count: int,
+    updated_count: int,
+) -> bool:
+    """
+    Provider-agnostic first-session trigger logic for Strava ingests.
+    """
+    if int(created_count) + int(updated_count) < 3:
+        return False
+    has_findings = (
+        db.query(CorrelationFinding.id)
+        .filter(CorrelationFinding.athlete_id == athlete_id)
+        .first()
+    )
+    if has_findings:
+        return False
+    if not _try_acquire_first_session_lock(str(athlete_id)):
+        return False
+
+    from tasks.correlation_tasks import run_athlete_first_session_sweep
+
+    run_athlete_first_session_sweep.apply_async(
+        args=[str(athlete_id)],
+        countdown=30,
+    )
+    logger.info(
+        "Strava first-session sweep enqueued for athlete %s (batch=%d)",
+        athlete_id,
+        int(created_count) + int(updated_count),
+    )
+    return True
 
 
 def _calculate_performance_metrics(activity, athlete, db):
@@ -1009,6 +1067,21 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         # show an up-to-date "Last sync" immediately.
         athlete.last_strava_sync = datetime.now(timezone.utc)
         db.commit()
+
+        # First-session parity trigger: when meaningful first batch lands, enqueue targeted sweep.
+        try:
+            _maybe_enqueue_first_session_sweep_for_athlete(
+                db,
+                str(athlete.id),
+                created_count=int(synced_new),
+                updated_count=int(updated_existing),
+            )
+        except Exception as first_session_exc:
+            logger.warning(
+                "Strava first-session trigger failed for athlete %s: %s",
+                athlete.id,
+                first_session_exc,
+            )
 
         # Return SUCCESS now so the frontend clears the spinner.
         # Heavy post-processing (PB sync, insights, derived signals) runs

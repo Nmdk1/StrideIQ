@@ -52,6 +52,23 @@ def normal_user():
     return athlete
 
 
+@pytest.fixture
+def garmin_user():
+    db = SessionLocal()
+    athlete = Athlete(
+        email=f"garmin_actions_{uuid4()}@example.com",
+        display_name="Garmin User",
+        subscription_tier="free",
+        role="athlete",
+        garmin_connected=True,
+    )
+    db.add(athlete)
+    db.commit()
+    db.refresh(athlete)
+    db.close()
+    return athlete
+
+
 def _latest_audit(db, *, actor_id, target_id, action: str):
     return (
         db.query(AdminAuditEvent)
@@ -214,4 +231,67 @@ def test_block_prevents_auth_and_is_audited(admin_headers, admin_user, normal_us
     )
     assert resp2.status_code == 200
     assert resp2.json()["is_blocked"] is False
+
+
+def test_admin_garmin_deep_backfill_success_and_audited(admin_headers, admin_user, garmin_user, monkeypatch):
+    from tasks import garmin_webhook_tasks
+
+    task_mock = Mock()
+    task_mock.id = "task_deep_123"
+    monkeypatch.setattr(garmin_webhook_tasks.request_deep_garmin_backfill_task, "apply_async", lambda *a, **k: task_mock)
+
+    resp = client.post(
+        f"/v1/admin/users/{garmin_user.id}/garmin/deep-backfill",
+        json={"reason": "support backfill"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["success"] is True
+    assert body["queued"] is True
+    assert body["task_id"] == "task_deep_123"
+
+    db = SessionLocal()
+    try:
+        ev = _latest_audit(db, actor_id=admin_user.id, target_id=garmin_user.id, action="garmin.deep_backfill")
+        assert ev is not None
+        assert ev.reason == "support backfill"
+        assert ev.payload["task_id"] == "task_deep_123"
+    finally:
+        db.close()
+
+
+def test_admin_garmin_deep_backfill_user_not_found(admin_headers):
+    resp = client.post(
+        f"/v1/admin/users/{uuid4()}/garmin/deep-backfill",
+        json={"reason": "missing user"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 404
+
+
+def test_admin_garmin_deep_backfill_requires_connected(admin_headers, normal_user):
+    resp = client.post(
+        f"/v1/admin/users/{normal_user.id}/garmin/deep-backfill",
+        json={"reason": "not connected"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 400
+    assert "Garmin not connected" in resp.text
+
+
+def test_admin_garmin_deep_backfill_impersonation_blocked(admin_user, garmin_user):
+    impersonation_token = create_access_token(
+        {
+            "sub": str(admin_user.id),
+            "is_impersonation": True,
+            "impersonated_by": str(uuid4()),
+        }
+    )
+    resp = client.post(
+        f"/v1/admin/users/{garmin_user.id}/garmin/deep-backfill",
+        json={"reason": "impersonation should fail"},
+        headers={"Authorization": f"Bearer {impersonation_token}"},
+    )
+    assert resp.status_code == 403
 

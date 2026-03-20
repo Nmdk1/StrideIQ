@@ -21,6 +21,14 @@ export interface GarminDisconnectResponse {
   message: string;
 }
 
+export interface GarminBackfillProgress {
+  in_progress: boolean;
+  activities_ingested: number;
+  health_records_ingested: number;
+  sweep_complete: boolean;
+  findings_count: number;
+}
+
 export const garminService = {
   /**
    * Get Garmin Connect connection status
@@ -42,5 +50,12 @@ export const garminService = {
    */
   async disconnect(): Promise<GarminDisconnectResponse> {
     return apiClient.post<GarminDisconnectResponse>('/v1/garmin/disconnect');
+  },
+
+  /**
+   * Get first-session Garmin backfill progress.
+   */
+  async getBackfillProgress(): Promise<GarminBackfillProgress> {
+    return apiClient.get<GarminBackfillProgress>('/v1/garmin/backfill-progress');
   },
 } as const;

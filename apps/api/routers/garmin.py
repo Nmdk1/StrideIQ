@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from core.auth import get_current_user
+from core.cache import get_redis_client
 from core.config import settings
 from core.database import get_db
 from core.feature_flags import is_feature_enabled
@@ -43,7 +44,10 @@ from services.garmin_oauth import (
 )
 from services.oauth_state import create_oauth_state, verify_oauth_state
 from services.token_encryption import decrypt_token
-from tasks.garmin_webhook_tasks import request_garmin_backfill_task
+from tasks.garmin_webhook_tasks import (
+    request_deep_garmin_backfill_task,
+    request_garmin_backfill_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +173,7 @@ def garmin_callback(
     athlete = db.query(Athlete).filter(Athlete.id == athlete_id_str).first()
     if not athlete:
         return RedirectResponse(url="/settings?garmin=error&reason=athlete_not_found", status_code=302)
+    was_connected = bool(athlete.garmin_connected)
 
     # --- Feature flag gate (defense in depth) ---
     # Prevents token storage and backfill for non-allowlisted athletes even if
@@ -232,15 +237,20 @@ def garmin_callback(
     except Exception as exc:
         logger.error(f"Failed to write Garmin connect audit log for athlete {athlete_id_str}: {exc}")
 
-    # --- Trigger 90-day initial backfill (D7) — fire-and-forget ---
+    # --- Trigger standard + deep backfill (D7 + first-session hook) ---
     # Backfill is async: Garmin returns 202 per endpoint and pushes historical
     # data to the D4 webhook endpoints. The callback does not wait for backfill.
     try:
         request_garmin_backfill_task.delay(athlete_id_str)
-        logger.info("Garmin backfill task enqueued for athlete %s", athlete_id_str)
+        request_deep_garmin_backfill_task.apply_async(
+            args=[athlete_id_str],
+            kwargs={"target_days_back": 730},
+            countdown=60,
+        )
+        logger.info("Garmin standard + deep backfill tasks enqueued for athlete %s", athlete_id_str)
     except Exception as exc:
         logger.warning(
-            "Could not enqueue Garmin backfill task for athlete %s: %s",
+            "Could not enqueue Garmin backfill tasks for athlete %s: %s",
             athlete_id_str,
             exc,
         )
@@ -260,8 +270,17 @@ def garmin_callback(
             exc,
         )
 
-    sep = "&" if "?" in return_to else "?"
-    redirect_url = _web_redirect(request, f"{return_to}{sep}garmin=connected")
+    activity_count = (
+        db.query(Activity.id)
+        .filter(Activity.athlete_id == athlete.id)
+        .count()
+    )
+    is_fresh_connect_flow = (not was_connected)
+    if is_fresh_connect_flow and activity_count == 0:
+        redirect_url = _web_redirect(request, "/welcome?garmin=connected")
+    else:
+        sep = "&" if "?" in return_to else "?"
+        redirect_url = _web_redirect(request, f"{return_to}{sep}garmin=connected")
     return RedirectResponse(url=redirect_url, status_code=302)
 
 
@@ -295,6 +314,42 @@ def get_garmin_status(
             "garmin_connect_enabled", str(current_user.id), db
         ),
     }
+
+
+@router.get("/backfill-progress")
+def get_backfill_progress(
+    current_user: Athlete = Depends(get_current_user),
+):
+    """
+    Return backfill progress for first-session UX.
+    """
+    safe_zero = {
+        "in_progress": False,
+        "activities_ingested": 0,
+        "health_records_ingested": 0,
+        "sweep_complete": False,
+        "findings_count": 0,
+    }
+    try:
+        client = get_redis_client()
+        if not client:
+            return safe_zero
+        data = client.hgetall(f"backfill_progress:{current_user.id}") or {}
+        if not data:
+            return safe_zero
+        activities = int(data.get("activities_ingested", "0") or 0)
+        health = int(data.get("health_records_ingested", "0") or 0)
+        sweep_complete = (data.get("sweep_complete", "false") == "true")
+        findings = int(data.get("findings_count", "0") or 0)
+        return {
+            "in_progress": bool(activities > 0 or health > 0) and not sweep_complete,
+            "activities_ingested": activities,
+            "health_records_ingested": health,
+            "sweep_complete": sweep_complete,
+            "findings_count": findings,
+        }
+    except Exception:
+        return safe_zero
 
 
 # ---------------------------------------------------------------------------

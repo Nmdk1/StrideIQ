@@ -690,6 +690,54 @@ class TestLastGarminSyncUpdate:
         mock_enq.assert_not_called()
 
 
+class TestFirstSessionSweepTrigger:
+    def test_first_session_sweep_enqueued_on_new_athlete_batch(self):
+        from tasks.garmin_webhook_tasks import process_garmin_activity_task
+
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+        mock_db.query.return_value.filter.return_value.first.side_effect = [
+            None,  # idempotency check activity 1
+            None,  # idempotency check activity 2
+            None,  # idempotency check activity 3
+            None,  # findings existence probe (no findings)
+        ]
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("tasks.garmin_webhook_tasks._try_acquire_first_session_lock", return_value=True), \
+             patch("tasks.correlation_tasks.run_athlete_first_session_sweep") as mock_sweep:
+            mock_sweep.apply_async = MagicMock()
+            # 3 created activities triggers threshold.
+            payload = [{**_RUNNING_RAW, "summaryId": "s1"}, {**_RUNNING_RAW, "summaryId": "s2"}, {**_RUNNING_RAW, "summaryId": "s3"}]
+            process_garmin_activity_task.run(ATHLETE_ID, payload)
+
+        mock_sweep.apply_async.assert_called_once()
+
+    def test_first_session_sweep_not_enqueued_when_findings_exist(self):
+        from tasks.garmin_webhook_tasks import process_garmin_activity_task
+
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+        mock_db.query.return_value.filter.return_value.first.side_effect = [
+            None,          # idempotency check activity 1
+            None,          # idempotency check activity 2
+            None,          # idempotency check activity 3
+            MagicMock(),   # findings existence probe
+        ]
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("tasks.correlation_tasks.run_athlete_first_session_sweep") as mock_sweep:
+            mock_sweep.apply_async = MagicMock()
+            payload = [{**_RUNNING_RAW, "summaryId": "s1"}, {**_RUNNING_RAW, "summaryId": "s2"}, {**_RUNNING_RAW, "summaryId": "s3"}]
+            process_garmin_activity_task.run(ATHLETE_ID, payload)
+
+        mock_sweep.apply_async.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # D5.2: process_garmin_activity_detail_task — stream ingestion
 # ---------------------------------------------------------------------------

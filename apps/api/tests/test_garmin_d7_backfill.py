@@ -235,12 +235,20 @@ class TestBackfillTask:
     """Unit tests for request_garmin_backfill_task in garmin_webhook_tasks.py."""
 
     def test_task_exists_in_module(self):
-        from tasks.garmin_webhook_tasks import request_garmin_backfill_task
+        from tasks.garmin_webhook_tasks import (
+            request_deep_garmin_backfill_task,
+            request_garmin_backfill_task,
+        )
         assert request_garmin_backfill_task is not None
+        assert request_deep_garmin_backfill_task is not None
 
     def test_task_name_is_correct(self):
-        from tasks.garmin_webhook_tasks import request_garmin_backfill_task
+        from tasks.garmin_webhook_tasks import (
+            request_deep_garmin_backfill_task,
+            request_garmin_backfill_task,
+        )
         assert request_garmin_backfill_task.name == "request_garmin_backfill_task"
+        assert request_deep_garmin_backfill_task.name == "request_deep_garmin_backfill_task"
 
     def test_athlete_not_found_returns_skipped(self):
         from tasks.garmin_webhook_tasks import request_garmin_backfill_task
@@ -316,6 +324,20 @@ class TestBackfillTask:
 
         mock_db.close.assert_called()
 
+    def test_deep_backfill_task_calls_service(self):
+        from tasks.garmin_webhook_tasks import request_deep_garmin_backfill_task
+
+        mock_db = MagicMock()
+        mock_athlete = _make_mock_athlete()
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("tasks.garmin_webhook_tasks.request_deep_garmin_backfill") as mock_service:
+            mock_service.return_value = {"status": "ok", "accepted": 3, "failed": 0}
+            result = request_deep_garmin_backfill_task.run(ATHLETE_ID, target_days_back=730)
+
+        assert result["status"] == "ok"
+        mock_service.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # OAuth callback triggers backfill
@@ -327,7 +349,7 @@ class TestCallbackTriggersBackfill:
     must be enqueued. On error paths it must NOT be enqueued.
     """
 
-    def test_backfill_task_enqueued_on_successful_connect(self):
+    def test_backfill_tasks_enqueued_on_successful_connect(self):
         """
         Successful callback must dispatch request_garmin_backfill_task.delay(athlete_id).
         """
@@ -363,9 +385,11 @@ class TestCallbackTriggersBackfill:
              patch("routers.garmin.get_user_permissions", return_value=["ACTIVITY_EXPORT", "HEALTH_EXPORT"]), \
              patch("routers.garmin._store_token_data"), \
              patch("routers.garmin.request_garmin_backfill_task") as mock_task, \
+             patch("routers.garmin.request_deep_garmin_backfill_task") as mock_deep_task, \
              patch("routers.garmin.ConsentAuditLog"), \
              patch("routers.garmin.logger"):
             mock_task.delay = MagicMock()
+            mock_deep_task.apply_async = MagicMock()
             response = garmin_callback(
                 request=mock_request,
                 code="auth-code",
@@ -375,6 +399,7 @@ class TestCallbackTriggersBackfill:
             )
 
         mock_task.delay.assert_called_once_with(ATHLETE_ID)
+        mock_deep_task.apply_async.assert_called_once()
 
     def test_backfill_not_enqueued_on_missing_code(self):
         """Error path (missing code) must not enqueue backfill."""
@@ -387,8 +412,10 @@ class TestCallbackTriggersBackfill:
         mock_request.base_url.__str__ = lambda s: "http://localhost/"
         mock_db = MagicMock()
 
-        with patch("routers.garmin.request_garmin_backfill_task") as mock_task:
+        with patch("routers.garmin.request_garmin_backfill_task") as mock_task, \
+             patch("routers.garmin.request_deep_garmin_backfill_task") as mock_deep_task:
             mock_task.delay = MagicMock()
+            mock_deep_task.apply_async = MagicMock()
             response = garmin_callback(
                 request=mock_request,
                 code=None,    # missing code → early redirect
@@ -398,6 +425,7 @@ class TestCallbackTriggersBackfill:
             )
 
         mock_task.delay.assert_not_called()
+        mock_deep_task.apply_async.assert_not_called()
 
     def test_backfill_not_enqueued_on_provider_error(self):
         """Provider error param must not enqueue backfill."""
@@ -410,8 +438,10 @@ class TestCallbackTriggersBackfill:
         mock_request.base_url.__str__ = lambda s: "http://localhost/"
         mock_db = MagicMock()
 
-        with patch("routers.garmin.request_garmin_backfill_task") as mock_task:
+        with patch("routers.garmin.request_garmin_backfill_task") as mock_task, \
+             patch("routers.garmin.request_deep_garmin_backfill_task") as mock_deep_task:
             mock_task.delay = MagicMock()
+            mock_deep_task.apply_async = MagicMock()
             response = garmin_callback(
                 request=mock_request,
                 code=None,
@@ -421,6 +451,7 @@ class TestCallbackTriggersBackfill:
             )
 
         mock_task.delay.assert_not_called()
+        mock_deep_task.apply_async.assert_not_called()
 
     def test_backfill_task_import_in_callback_module(self):
         """

@@ -29,8 +29,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from tasks import celery_app
+from core.cache import get_redis_client
 from core.database import get_db_sync
-from models import Activity, ActivitySplit, ActivityStream, Athlete, GarminDay
+from models import Activity, ActivitySplit, ActivityStream, Athlete, CorrelationFinding, GarminDay
 from services.garmin_adapter import (
     adapt_activity_summary,
     adapt_activity_detail_envelope,
@@ -43,9 +44,11 @@ from services.garmin_adapter import (
     adapt_user_metrics,
 )
 from services.activity_deduplication import match_activities, TIME_WINDOW_S
-from services.garmin_backfill import request_garmin_backfill
+from services.garmin_backfill import request_deep_garmin_backfill, request_garmin_backfill
 
 logger = logging.getLogger(__name__)
+_BACKFILL_PROGRESS_TTL_S = 24 * 60 * 60
+_FIRST_SESSION_SWEEP_LOCK_TTL_S = 600
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +122,49 @@ def _apply_garmin_fields_to_activity(existing: Activity, adapted: Dict[str, Any]
 def _set_if_not_none(obj, attr: str, value: Any) -> None:
     if value is not None:
         setattr(obj, attr, value)
+
+
+def _backfill_progress_key(athlete_id: str) -> str:
+    return f"backfill_progress:{athlete_id}"
+
+
+def _first_session_lock_key(athlete_id: str) -> str:
+    return f"first_session_sweep_lock:{athlete_id}"
+
+
+def _progress_hincr(athlete_id: str, field: str, amount: int) -> None:
+    if amount <= 0:
+        return
+    r = get_redis_client()
+    if not r:
+        return
+    key = _backfill_progress_key(athlete_id)
+    r.hincrby(key, field, int(amount))
+    r.expire(key, _BACKFILL_PROGRESS_TTL_S)
+
+
+def _progress_hset(athlete_id: str, field: str, value: str) -> None:
+    r = get_redis_client()
+    if not r:
+        return
+    key = _backfill_progress_key(athlete_id)
+    r.hset(key, field, value)
+    r.expire(key, _BACKFILL_PROGRESS_TTL_S)
+
+
+def _try_acquire_first_session_lock(athlete_id: str) -> bool:
+    """Acquire idempotency lock; False means a sweep is already in-flight/recent."""
+    r = get_redis_client()
+    if not r:
+        return True
+    return bool(
+        r.set(
+            _first_session_lock_key(athlete_id),
+            "1",
+            ex=_FIRST_SESSION_SWEEP_LOCK_TTL_S,
+            nx=True,
+        )
+    )
 
 
 def _create_activity_from_adapted(adapted: Dict[str, Any], athlete_id) -> Activity:
@@ -571,6 +617,11 @@ def process_garmin_activity_task(
         # Ensure home coach briefing reflects newly ingested activities.
         # We only trigger when data actually changed (created/updated), not for all-skipped payloads.
         if created > 0 or updated > 0:
+            # Progress contract for first-session UX.
+            try:
+                _progress_hincr(str(athlete_id), "activities_ingested", created + updated)
+            except Exception:
+                pass
             try:
                 from services.home_briefing_cache import mark_briefing_dirty
                 from tasks.home_briefing_tasks import enqueue_briefing_refresh
@@ -587,6 +638,39 @@ def process_garmin_activity_task(
                     athlete_id,
                     refresh_exc,
                 )
+
+            # First-session trigger: meaningful initial batch and no existing findings.
+            if created + updated >= 3:
+                try:
+                    from tasks.correlation_tasks import run_athlete_first_session_sweep
+                    has_finding = (
+                        db.query(CorrelationFinding.id)
+                        .filter(CorrelationFinding.athlete_id == athlete.id)
+                        .first()
+                    )
+                    if not has_finding:
+                        if _try_acquire_first_session_lock(str(athlete_id)):
+                            run_athlete_first_session_sweep.apply_async(
+                                args=[str(athlete_id)],
+                                countdown=30,
+                            )
+                            logger.info(
+                                "First-session sweep enqueued for athlete %s (created=%d updated=%d)",
+                                athlete_id,
+                                created,
+                                updated,
+                            )
+                        else:
+                            logger.info(
+                                "First-session sweep enqueue skipped (lock held) for athlete %s",
+                                athlete_id,
+                            )
+                except Exception as sweep_exc:
+                    logger.warning(
+                        "First-session sweep trigger failed for athlete %s: %s",
+                        athlete_id,
+                        sweep_exc,
+                    )
 
         # Runtoon generation is on-demand only (athlete taps "Share Your Run").
         # Auto-generation removed per RUNTOON_SHARE_FLOW_SPEC.md — Mar 2026.
@@ -731,6 +815,46 @@ def request_garmin_backfill_task(self, athlete_id: str) -> Dict[str, Any]:
         db.close()
 
 
+@celery_app.task(
+    name="request_deep_garmin_backfill_task",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=600,
+    time_limit=900,
+    soft_time_limit=840,
+)
+def request_deep_garmin_backfill_task(
+    self,
+    athlete_id: str,
+    target_days_back: int = 730,
+) -> Dict[str, Any]:
+    """
+    Request deep Garmin history in rolling windows (up to target_days_back).
+    """
+    from datetime import timedelta
+
+    db = get_db_sync()
+    try:
+        athlete = _find_athlete_in_db(athlete_id, db)
+        if athlete is None:
+            return {"status": "skipped", "reason": "athlete_not_found"}
+
+        target_start = datetime.now(timezone.utc) - timedelta(days=target_days_back)
+        result = request_deep_garmin_backfill(
+            athlete,
+            db,
+            target_start=target_start,
+            inter_window_delay_s=3.0,
+        )
+        return result
+    except Exception as exc:
+        db.rollback()
+        logger.exception("request_deep_garmin_backfill_task failed for athlete %s: %s", athlete_id, exc)
+        raise self.retry(exc=exc)
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # D6: health tasks — implemented in D6
 # ---------------------------------------------------------------------------
@@ -793,6 +917,11 @@ def process_garmin_health_task(
         # Health data can materially change home coaching context (sleep/HRV/stress).
         # Trigger a briefing refresh when new health records were processed.
         if processed > 0:
+            # Progress contract for first-session UX.
+            try:
+                _progress_hincr(str(athlete_id), "health_records_ingested", processed)
+            except Exception:
+                pass
             try:
                 from services.home_briefing_cache import mark_briefing_dirty
                 from tasks.home_briefing_tasks import enqueue_briefing_refresh

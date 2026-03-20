@@ -16,10 +16,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple
 
 from tasks import celery_app
+from core.cache import get_redis_client
 from core.database import SessionLocal
 from models import Athlete, Activity, CorrelationFinding
 
 logger = logging.getLogger(__name__)
+_FIRST_SESSION_SWEEP_LOCK_TTL_S = 600
+_BACKFILL_PROGRESS_TTL_S = 24 * 60 * 60
 
 ALL_OUTPUT_METRICS = [
     "efficiency",
@@ -32,6 +35,37 @@ ALL_OUTPUT_METRICS = [
     "pb_events",
     "race_pace",
 ]
+
+
+def _first_session_lock_key(athlete_id: str) -> str:
+    return f"first_session_sweep_lock:{athlete_id}"
+
+
+def _backfill_progress_key(athlete_id: str) -> str:
+    return f"backfill_progress:{athlete_id}"
+
+
+def _try_acquire_first_session_lock(athlete_id: str) -> bool:
+    r = get_redis_client()
+    if not r:
+        return True
+    return bool(
+        r.set(
+            _first_session_lock_key(athlete_id),
+            "1",
+            ex=_FIRST_SESSION_SWEEP_LOCK_TTL_S,
+            nx=True,
+        )
+    )
+
+
+def _progress_hset(athlete_id: str, field: str, value: str) -> None:
+    r = get_redis_client()
+    if not r:
+        return
+    key = _backfill_progress_key(athlete_id)
+    r.hset(key, field, value)
+    r.expire(key, _BACKFILL_PROGRESS_TTL_S)
 
 
 def _aggregate_output_for_metric(
@@ -184,5 +218,94 @@ def run_daily_correlation_sweep(self, athlete_ids: List[str] | None = None):
                 db.rollback()
 
         logger.info("Correlation sweep complete for %d athletes", len(ids))
+    finally:
+        db.close()
+
+
+@celery_app.task(
+    name="tasks.run_athlete_first_session_sweep",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=120,
+    soft_time_limit=240,
+    time_limit=300,
+)
+def run_athlete_first_session_sweep(self, athlete_id: str) -> Dict:
+    """
+    Targeted first-session sweep for one athlete after Garmin backfill bursts.
+    """
+    db = SessionLocal()
+    try:
+        run_count = (
+            db.query(Activity.id)
+            .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
+            .count()
+        )
+        if run_count < 10:
+            logger.info(
+                "First-session sweep skipped for athlete %s (insufficient runs=%d)",
+                athlete_id,
+                run_count,
+            )
+            return {"status": "insufficient_data", "runs": run_count}
+
+        from services.correlation_engine import analyze_correlations
+
+        for metric in ALL_OUTPUT_METRICS:
+            try:
+                analyze_correlations(athlete_id, days=90, db=db, output_metric=metric)
+            except Exception as exc:
+                logger.warning("First-session metric failed for %s/%s: %s", athlete_id, metric, exc)
+        db.commit()
+
+        try:
+            processed = _run_layer_pass(athlete_id, db)
+            if processed > 0:
+                db.commit()
+        except Exception as exc:
+            db.rollback()
+            logger.warning("First-session layer pass failed for %s: %s", athlete_id, exc)
+
+        # Reuse existing supported fingerprint refresh task path.
+        try:
+            from tasks.intelligence_tasks import refresh_living_fingerprint
+
+            refresh_living_fingerprint.delay()
+        except Exception as exc:
+            logger.warning("First-session fingerprint refresh enqueue failed for %s: %s", athlete_id, exc)
+
+        # Always refresh briefing cache so first-session voice can pick up new data.
+        try:
+            from services.home_briefing_cache import mark_briefing_dirty
+            from tasks.home_briefing_tasks import enqueue_briefing_refresh
+
+            mark_briefing_dirty(str(athlete_id))
+            enqueue_briefing_refresh(str(athlete_id), force=True, allow_circuit_probe=True)
+        except Exception as exc:
+            logger.warning("First-session briefing refresh failed for %s: %s", athlete_id, exc)
+
+        findings_count = (
+            db.query(CorrelationFinding.id)
+            .filter(
+                CorrelationFinding.athlete_id == athlete_id,
+                CorrelationFinding.is_active == True,  # noqa: E712
+            )
+            .count()
+        )
+        try:
+            _progress_hset(athlete_id, "sweep_complete", "true")
+            _progress_hset(athlete_id, "findings_count", str(int(findings_count)))
+        except Exception:
+            pass
+
+        return {
+            "status": "ok",
+            "runs": run_count,
+            "findings_count": int(findings_count),
+        }
+    except Exception as exc:
+        db.rollback()
+        logger.exception("First-session sweep failed for %s: %s", athlete_id, exc)
+        raise self.retry(exc=exc)
     finally:
         db.close()

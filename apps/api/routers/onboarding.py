@@ -403,7 +403,9 @@ def get_onboarding_status(
     baseline_completed = bool(baseline_row and baseline_row.completed_at)
     return {
         "strava_connected": bool(current_user.strava_access_token),
+        "garmin_connected": bool(current_user.garmin_connected),
         "last_sync": current_user.last_strava_sync.isoformat() if current_user.last_strava_sync else None,
+        "last_garmin_sync": current_user.last_garmin_sync.isoformat() if current_user.last_garmin_sync else None,
         "ingestion_state": snapshot.to_dict() if snapshot else None,
         "history": history,
         "baseline": {

@@ -137,6 +137,10 @@ class RetryIngestionRequest(BaseModel):
     pages: int = Field(default=5, ge=1, le=50, description="Strava index backfill pages (bounded)")
 
 
+class DeepBackfillRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, description="Why deep backfill was queued (audited)")
+
+
 class BlockUserRequest(BaseModel):
     blocked: bool = Field(..., description="Whether the user is blocked")
     reason: Optional[str] = Field(default=None, description="Why this block/unblock was performed (audited)")
@@ -1418,6 +1422,44 @@ def retry_ingestion(
 
     db.commit()
     return {"success": True, "queued": True, "index_task_id": index_task.id, "sync_task_id": sync_task.id}
+
+
+@router.post("/users/{user_id}/garmin/deep-backfill")
+def enqueue_garmin_deep_backfill(
+    user_id: UUID,
+    request: DeepBackfillRequest,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("garmin.deep_backfill")),
+    current_user: Athlete = Depends(require_permission("ingestion.retry")),
+    db: Session = Depends(get_db),
+):
+    """
+    Support action: enqueue deep Garmin backfill for an existing connected user.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not bool(getattr(target, "garmin_connected", False)):
+        raise HTTPException(status_code=400, detail="Garmin not connected")
+
+    from tasks.garmin_webhook_tasks import request_deep_garmin_backfill_task
+    from services.admin_audit import record_admin_audit_event
+
+    task = request_deep_garmin_backfill_task.apply_async(
+        args=[str(target.id)],
+        kwargs={"target_days_back": 730},
+    )
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="garmin.deep_backfill",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"target_days_back": 730, "task_id": task.id},
+    )
+    db.commit()
+    return {"success": True, "queued": True, "task_id": task.id}
 
 
 @router.post("/users/{user_id}/plans/starter/regenerate")
