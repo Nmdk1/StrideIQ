@@ -43,6 +43,7 @@ from services.race_predictor import (
     RacePrediction
 )
 from services.rpi_calculator import calculate_training_paces
+from services.mileage_aggregation import get_canonical_run_activities
 
 logger = logging.getLogger(__name__)
 
@@ -888,17 +889,15 @@ class ModelDrivenPlanGenerator:
             - training_patterns: detected patterns (e.g., "interval_saturday", "long_sunday")
             - is_returning_from_injury: Whether recent volume is much lower
         """
-        from models import Activity
-        from datetime import datetime
-        
         end_date = date.today()
         year_ago = end_date - timedelta(days=365)
-        
-        activities = self.db.query(Activity).filter(
-            Activity.athlete_id == athlete_id,
-            Activity.start_time >= datetime.combine(year_ago, datetime.min.time()),
-            Activity.sport.ilike("run")
-        ).order_by(Activity.start_time.desc()).all()
+
+        activities, _ = get_canonical_run_activities(
+            athlete_id,
+            self.db,
+            start_time=datetime.combine(year_ago, datetime.min.time()),
+            require_trusted_duplicate_flags=False,
+        )
         
         if not activities:
             return self._get_default_baseline()

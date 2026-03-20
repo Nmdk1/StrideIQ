@@ -17,6 +17,10 @@ from uuid import UUID
 import logging
 
 from sqlalchemy.orm import Session
+from services.mileage_aggregation import (
+    compute_peak_and_current_weekly_miles,
+    get_canonical_run_activities,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +120,7 @@ class FitnessBank:
     weeks_to_80pct_ctl: int              # Weeks to recover 80% of peak CTL
     weeks_to_race_ready: int             # Weeks to be competitive
     sustainable_peak_weekly: float        # What they can sustain for 4+ weeks
+    recent_quality_sessions_28d: int = 0
     
     def to_dict(self) -> Dict:
         return {
@@ -132,7 +137,8 @@ class FitnessBank:
                 "ctl": round(self.current_ctl, 0),
                 "atl": round(self.current_atl, 0),
                 "long_run": round(self.current_long_run_miles, 1),
-                "avg_long_run": round(self.average_long_run_miles, 1)
+                "avg_long_run": round(self.average_long_run_miles, 1),
+                "quality_sessions_28d": int(self.recent_quality_sessions_28d),
             },
             "best_rpi": round(self.best_rpi, 1),
             "races": [r.to_dict() for r in self.race_performances[:5]],
@@ -261,6 +267,7 @@ def _fitness_bank_to_dict(bank: "FitnessBank") -> dict:
         "weeks_to_80pct_ctl": bank.weeks_to_80pct_ctl,
         "weeks_to_race_ready": bank.weeks_to_race_ready,
         "sustainable_peak_weekly": bank.sustainable_peak_weekly,
+        "recent_quality_sessions_28d": bank.recent_quality_sessions_28d,
     }
 
 
@@ -310,6 +317,7 @@ def _fitness_bank_from_dict(d: dict) -> "FitnessBank":
         weeks_to_80pct_ctl=int(d["weeks_to_80pct_ctl"]),
         weeks_to_race_ready=int(d["weeks_to_race_ready"]),
         sustainable_peak_weekly=float(d["sustainable_peak_weekly"]),
+        recent_quality_sessions_28d=int(d.get("recent_quality_sessions_28d", 0)),
     )
 
 
@@ -355,16 +363,24 @@ class FitnessBankCalculator:
             except Exception:
                 pass  # Cache corruption — recompute
 
-        from models import Activity
         from services.individual_performance_model import get_or_calibrate_model
         from services.training_load import TrainingLoadCalculator
-        
-        # Get all running activities (full history)
-        activities = self.db.query(Activity).filter(
-            Activity.athlete_id == athlete_id,
-            Activity.sport.ilike("run"),
-            Activity.is_duplicate == False,  # noqa: E712
-        ).order_by(Activity.start_time.desc()).all()
+
+        # Full-history fitness bank slices include legacy ingestion windows where
+        # duplicate flags may be stale/untrusted. Use canonical fallback mode here.
+        activities, dedupe_meta = get_canonical_run_activities(
+            athlete_id,
+            self.db,
+            require_trusted_duplicate_flags=False,
+        )
+        if dedupe_meta.get("dedupe_pairs_collapsed", 0) > 0:
+            logger.warning(
+                "FitnessBank fallback dedupe used for athlete %s: collapsed=%s source=%s output=%s",
+                athlete_id,
+                dedupe_meta["dedupe_pairs_collapsed"],
+                dedupe_meta["source_count"],
+                dedupe_meta["output_count"],
+            )
         
         if not activities:
             return self._default_fitness_bank(str(athlete_id))
@@ -401,13 +417,16 @@ class FitnessBankCalculator:
         
         # Calculate peak capabilities
         peaks = self._calculate_peak_capabilities(activities)
+        canonical_peak_weekly, canonical_current_weekly = compute_peak_and_current_weekly_miles(activities)
+        if canonical_peak_weekly > 0:
+            peaks["peak_weekly"] = canonical_peak_weekly
         
         # Extract race performances
         races = self._extract_race_performances(activities)
         best_rpi, best_race = self._find_best_race(races)
         
-        # Calculate current weekly volume
-        current_weekly = self._calculate_current_weekly(activities)
+        # Calculate current weekly volume from canonical utility
+        current_weekly = canonical_current_weekly
         
         # Determine experience level
         experience = self._determine_experience(peaks, races)
@@ -436,6 +455,7 @@ class FitnessBankCalculator:
         
         # Calculate current and average long run (ADR-038: N=1 long run progression)
         current_long, average_long = self._calculate_current_long_run(activities)
+        recent_quality_sessions = self._calculate_recent_quality_sessions(activities)
         
         result = FitnessBank(
             athlete_id=str(athlete_id),
@@ -465,14 +485,15 @@ class FitnessBankCalculator:
             typical_rest_days=patterns.get("rest_days", []),
             weeks_to_80pct_ctl=weeks_to_80pct,
             weeks_to_race_ready=weeks_to_race,
-            sustainable_peak_weekly=sustainable
+            sustainable_peak_weekly=sustainable,
+            recent_quality_sessions_28d=recent_quality_sessions,
         )
         try:
             set_cache(_cache_key, _fitness_bank_to_dict(result), ttl=900)
         except Exception:
             pass  # Non-critical — cache write failure must not break the response
         return result
-    
+
     def _calculate_peak_capabilities(self, activities: List) -> Dict:
         """Calculate peak capabilities from all activities."""
         
@@ -733,6 +754,23 @@ class FitnessBankCalculator:
         )
         
         return current, average
+
+    def _calculate_recent_quality_sessions(self, activities: List) -> int:
+        """Count quality sessions in the trailing 28 days."""
+        today = date.today()
+        cutoff = today - timedelta(days=28)
+        count = 0
+        for a in activities:
+            if a.start_time.date() < cutoff:
+                continue
+            workout_type = (a.workout_type or "").lower()
+            name_lower = (a.name or "").lower()
+            if workout_type in ("interval", "intervals", "tempo", "threshold", "race_pace", "speed"):
+                count += 1
+                continue
+            if any(k in name_lower for k in ("interval", "tempo", "threshold", "@ mp", "marathon pace", "track", "fartlek", "race")):
+                count += 1
+        return count
     
     def _determine_experience(self, peaks: Dict, races: List[RacePerformance]) -> ExperienceLevel:
         """Determine experience level from history."""
@@ -923,7 +961,8 @@ class FitnessBankCalculator:
             typical_rest_days=[0, 4],
             weeks_to_80pct_ctl=0,
             weeks_to_race_ready=0,
-            sustainable_peak_weekly=25.0
+            sustainable_peak_weekly=25.0,
+            recent_quality_sessions_28d=0,
         )
 
 

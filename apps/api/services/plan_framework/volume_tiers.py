@@ -19,6 +19,7 @@ from uuid import UUID
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
+from services.mileage_aggregation import get_canonical_run_activities
 
 from .constants import VolumeTier, Distance, VOLUME_TIER_THRESHOLDS
 
@@ -230,18 +231,15 @@ class VolumeTierClassifier:
         """
         if not self.db:
             return None
-        
-        from models import Activity
-        
-        # Look at last 4 weeks
+
+        # Look at last 4 weeks (trusted duplicate flags path).
         four_weeks_ago = datetime.utcnow() - timedelta(days=28)
-        
-        activities = self.db.query(Activity).filter(
-            Activity.athlete_id == athlete_id,
-            Activity.sport == "run",
-            Activity.is_duplicate == False,  # noqa: E712
-            Activity.start_time >= four_weeks_ago
-        ).all()
+        activities, _ = get_canonical_run_activities(
+            athlete_id,
+            self.db,
+            start_time=four_weeks_ago,
+            require_trusted_duplicate_flags=True,
+        )
         
         if not activities:
             return None

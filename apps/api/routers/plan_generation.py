@@ -2369,7 +2369,10 @@ async def create_constraint_aware_plan(
             },
             "prediction": {
                 "time": plan.predicted_time,
-                "confidence_interval": plan.prediction_ci
+                "confidence_interval": plan.prediction_ci,
+                "uncertainty_reason": plan.prediction_uncertainty_reason,
+                "rationale_tags": plan.prediction_rationale_tags,
+                "scenarios": plan.prediction_scenarios,
             },
             "personalization": {
                 "notes": plan.counter_conventional_notes,

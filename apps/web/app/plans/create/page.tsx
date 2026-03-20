@@ -922,12 +922,53 @@ export default function CreatePlanPage() {
                 <div className="bg-slate-900 rounded-xl p-5">
                   <div className="text-sm text-slate-400 mb-1">Predicted Finish</div>
                   <div className="text-3xl font-bold text-white">
-                    {constraintAwareResult.prediction.time || 'N/A'}
+                    {constraintAwareResult.prediction.scenarios?.base?.time || constraintAwareResult.prediction.time || 'N/A'}
                   </div>
                   <div className="text-sm text-slate-400 mt-1">
                     {constraintAwareResult.prediction.confidence_interval}
                   </div>
+                  {constraintAwareResult.prediction.uncertainty_reason && (
+                    <div className="text-xs text-amber-400 mt-2">
+                      {constraintAwareResult.prediction.uncertainty_reason}
+                    </div>
+                  )}
+                  {constraintAwareResult.prediction.rationale_tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {constraintAwareResult.prediction.rationale_tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="px-2 py-1 rounded bg-slate-800 text-slate-300 text-xs"
+                        >
+                          {tag.replace('_', ' ')}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
+                {/* Scenario Predictions */}
+                {constraintAwareResult.prediction.scenarios && (
+                  <div className="bg-slate-900 rounded-xl p-5">
+                    <div className="text-sm text-slate-400 mb-3">Prediction Scenarios</div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-lg border border-slate-700/50 p-3">
+                        <div className="text-xs text-slate-500">Conservative</div>
+                        <div className="text-lg font-bold text-white">{constraintAwareResult.prediction.scenarios.conservative.time}</div>
+                        <div className="text-xs text-slate-400">{constraintAwareResult.prediction.scenarios.conservative.confidence}</div>
+                      </div>
+                      <div className="rounded-lg border border-emerald-700/50 p-3 bg-emerald-900/10">
+                        <div className="text-xs text-slate-500">Base</div>
+                        <div className="text-lg font-bold text-emerald-300">{constraintAwareResult.prediction.scenarios.base.time}</div>
+                        <div className="text-xs text-slate-400">{constraintAwareResult.prediction.scenarios.base.confidence}</div>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/50 p-3">
+                        <div className="text-xs text-slate-500">Aggressive</div>
+                        <div className="text-lg font-bold text-white">{constraintAwareResult.prediction.scenarios.aggressive.time}</div>
+                        <div className="text-xs text-slate-400">{constraintAwareResult.prediction.scenarios.aggressive.confidence}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 {/* Model Parameters */}
                 <div className="bg-slate-900 rounded-xl p-5">

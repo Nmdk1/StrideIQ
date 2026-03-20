@@ -181,6 +181,13 @@ export interface ConstraintAwarePlanResponse {
   prediction: {
     time: string;
     confidence_interval: string;
+    uncertainty_reason?: string | null;
+    rationale_tags: string[];
+    scenarios: {
+      conservative: { time: string; confidence: 'low' | 'medium' | 'high' };
+      base: { time: string; confidence: 'low' | 'medium' | 'high' };
+      aggressive: { time: string; confidence: 'low' | 'medium' | 'high' };
+    };
   };
   personalization: {
     notes: string[];

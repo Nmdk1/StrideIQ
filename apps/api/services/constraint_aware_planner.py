@@ -68,6 +68,9 @@ class ConstraintAwarePlan:
     # Predicted outcomes
     predicted_time: Optional[str]
     prediction_ci: Optional[str]
+    prediction_scenarios: Dict[str, Dict[str, str]]
+    prediction_rationale_tags: List[str]
+    prediction_uncertainty_reason: Optional[str]
     
     def to_dict(self) -> Dict:
         return {
@@ -86,7 +89,10 @@ class ConstraintAwarePlan:
             "insights": self.counter_conventional_notes,
             "prediction": {
                 "time": self.predicted_time,
-                "ci": self.prediction_ci
+                "ci": self.prediction_ci,
+                "uncertainty_reason": self.prediction_uncertainty_reason,
+                "rationale_tags": self.prediction_rationale_tags,
+                "scenarios": self.prediction_scenarios,
             }
         }
 
@@ -177,7 +183,11 @@ class ConstraintAwarePlanner:
         notes = self._generate_insights(bank, themes, tune_up_races)
         
         # 7. Calculate predictions
-        predicted, ci = self._predict_race(bank, race_distance, goal_time)
+        predicted, ci, scenarios, rationale_tags, uncertainty_reason = self._predict_race(
+            bank,
+            race_distance,
+            goal_time,
+        )
         
         total_miles = sum(w.total_miles for w in weeks)
         
@@ -194,7 +204,10 @@ class ConstraintAwarePlanner:
             model_confidence=self._assess_confidence(bank),
             counter_conventional_notes=notes,
             predicted_time=predicted,
-            prediction_ci=ci
+            prediction_ci=ci,
+            prediction_scenarios=scenarios,
+            prediction_rationale_tags=rationale_tags,
+            prediction_uncertainty_reason=uncertainty_reason,
         )
     
     def _apply_constraint_overrides(self,
@@ -440,38 +453,129 @@ class ConstraintAwarePlanner:
         
         return notes
     
-    def _predict_race(self, bank: FitnessBank, distance: str, 
-                      goal_time: Optional[str]) -> tuple:
-        """Predict race time based on fitness bank."""
-        
+    def _format_time_seconds(self, total_seconds: int) -> str:
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        if hours > 0:
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes}:{seconds:02d}"
+
+    def _scenario_confidence(
+        self,
+        *,
+        races_count: int,
+        quality_sessions_28d: int,
+        is_injury_return: bool,
+    ) -> str:
+        """
+        Confidence is monotonic with quality continuity: if quality continuity
+        decreases while other factors are unchanged, confidence cannot increase.
+        """
+        race_score = 2 if races_count >= 3 else (1 if races_count >= 1 else 0)
+        quality_score = 2 if quality_sessions_28d >= 6 else (1 if quality_sessions_28d >= 3 else 0)
+        injury_penalty = 1 if is_injury_return else 0
+        score = min(race_score, quality_score) - injury_penalty
+        if score >= 2:
+            return "high"
+        if score >= 1:
+            return "medium"
+        return "low"
+
+    def _predict_race(self, bank: FitnessBank, distance: str, goal_time: Optional[str]) -> tuple:
+        """Predict race time using conservative/base/aggressive scenarios."""
         from services.fitness_bank import rpi_equivalent_time
-        
+
         distance_m = {
             "5k": 5000, "10k": 10000, "10_mile": 16093,
             "half": 21097, "marathon": 42195
         }.get(distance, 42195)
-        
-        # Predict from best RPI
-        predicted_sec = rpi_equivalent_time(bank.best_rpi, distance_m)
-        
-        hours = predicted_sec // 3600
-        minutes = (predicted_sec % 3600) // 60
-        seconds = predicted_sec % 60
-        
-        if hours > 0:
-            predicted = f"{hours}:{minutes:02d}:{seconds:02d}"
-        else:
-            predicted = f"{minutes}:{seconds:02d}"
-        
-        # Confidence interval based on data quality
-        if bank.constraint_type == ConstraintType.INJURY:
-            ci = "±5-8 min (injury recovery uncertainty)"
-        elif len(bank.race_performances) >= 3:
-            ci = "±2-3 min"
-        else:
-            ci = "±4-5 min"
-        
-        return predicted, ci
+
+        races_count = len(bank.race_performances)
+        is_injury_return = bank.constraint_type == ConstraintType.INJURY
+        quality_sessions_28d = int(getattr(bank, "recent_quality_sessions_28d", 0) or 0)
+        current_ratio = (
+            bank.current_weekly_miles / bank.peak_weekly_miles
+            if bank.peak_weekly_miles > 0
+            else 1.0
+        )
+
+        rationale_tags: List[str] = ["proven_peak"]
+        if races_count > 0:
+            rationale_tags.append("recent_form")
+        if is_injury_return:
+            rationale_tags.append("injury_return")
+        if quality_sessions_28d < 3:
+            rationale_tags.append("quality_gap")
+
+        base_rpi = bank.best_rpi
+        if is_injury_return:
+            base_rpi -= 1.0
+        if current_ratio < 0.6:
+            base_rpi -= 0.8
+        elif current_ratio < 0.75:
+            base_rpi -= 0.4
+
+        if quality_sessions_28d == 0:
+            base_rpi -= 1.5
+        elif quality_sessions_28d <= 2:
+            base_rpi -= 0.9
+        elif quality_sessions_28d <= 4:
+            base_rpi -= 0.4
+
+        conservative_rpi = base_rpi - (1.0 if is_injury_return else 0.5)
+        aggressive_rpi = max(base_rpi + (0.5 if quality_sessions_28d >= 3 else 0.15), bank.best_rpi - 0.2)
+
+        # Keep ranges sane.
+        conservative_rpi = max(20.0, conservative_rpi)
+        base_rpi = max(20.0, base_rpi)
+        aggressive_rpi = min(85.0, aggressive_rpi)
+
+        conservative_sec = rpi_equivalent_time(conservative_rpi, distance_m)
+        base_sec = rpi_equivalent_time(base_rpi, distance_m)
+        aggressive_sec = rpi_equivalent_time(aggressive_rpi, distance_m)
+
+        scenarios = {
+            "conservative": {
+                "time": self._format_time_seconds(conservative_sec),
+                "confidence": self._scenario_confidence(
+                    races_count=races_count,
+                    quality_sessions_28d=max(0, quality_sessions_28d - 1),
+                    is_injury_return=is_injury_return,
+                ),
+            },
+            "base": {
+                "time": self._format_time_seconds(base_sec),
+                "confidence": self._scenario_confidence(
+                    races_count=races_count,
+                    quality_sessions_28d=quality_sessions_28d,
+                    is_injury_return=is_injury_return,
+                ),
+            },
+            "aggressive": {
+                "time": self._format_time_seconds(aggressive_sec),
+                "confidence": self._scenario_confidence(
+                    races_count=races_count,
+                    quality_sessions_28d=quality_sessions_28d,
+                    is_injury_return=is_injury_return,
+                ),
+            },
+        }
+
+        predicted = scenarios["base"]["time"]
+        ci_minutes_low = max(1, int((base_sec - conservative_sec) / 60))
+        ci_minutes_high = max(1, int((aggressive_sec - base_sec) / 60))
+        ci = f"-{ci_minutes_low}/+{ci_minutes_high} min"
+
+        uncertainty_reason = None
+        if is_injury_return and quality_sessions_28d < 3:
+            uncertainty_reason = "Return-from-injury with limited recent quality continuity."
+        elif quality_sessions_28d < 3:
+            uncertainty_reason = "Limited recent quality continuity increases uncertainty."
+        elif races_count < 2:
+            uncertainty_reason = "Limited race-history depth increases uncertainty."
+
+        return predicted, ci, scenarios, rationale_tags, uncertainty_reason
     
     def _assess_confidence(self, bank: FitnessBank) -> str:
         """Assess model confidence based on data."""
@@ -510,7 +614,14 @@ class ConstraintAwarePlanner:
             model_confidence="low",
             counter_conventional_notes=["Very short prep — trust your banked fitness."],
             predicted_time=None,
-            prediction_ci=None
+            prediction_ci=None,
+            prediction_scenarios={
+                "conservative": {"time": "N/A", "confidence": "low"},
+                "base": {"time": "N/A", "confidence": "low"},
+                "aggressive": {"time": "N/A", "confidence": "low"},
+            },
+            prediction_rationale_tags=["insufficient_data"],
+            prediction_uncertainty_reason="Very short prep window; prediction not reliable.",
         )
 
 
