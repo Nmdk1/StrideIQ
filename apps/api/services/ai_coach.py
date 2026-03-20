@@ -1490,6 +1490,7 @@ If you need more data to answer well, call the tools. That's why they're there."
                     "role": "assistant",
                     "content": getattr(assistant_message, "content", "") or "",
                     "tool_calls": serialized_tool_calls,
+                    "reasoning_content": getattr(assistant_message, "reasoning_content", "") or "",
                 }
             )
 
