@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # P2: weighted easy fill — quality/long neighbors (docs/specs/PLAN_COACHED_OUTPUT_AND_LOAD_CONTRACT.md).
 _EASY_FILL_QUALITY_TYPES = frozenset({
     "threshold", "threshold_intervals", "intervals",
-    "long_mp", "long_hmp", "hills", "repetitions", "tempo",
+    "long_mp", "long_hmp", "mp_touch", "hills", "repetitions", "tempo",
 })
 _EASY_FILL_LONG_TYPES = frozenset({"long", "long_mp", "long_hmp"})
 

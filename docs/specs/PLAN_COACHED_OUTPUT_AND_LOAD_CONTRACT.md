@@ -99,13 +99,15 @@ Current validators use **long ≤ ~30% of week**. Treat as:
 - **Legacy scaler calls** (no `plan_week` / `duration_weeks`): old `% of week` behavior for tests.  
 - **Code:** `workout_scaler._scale_long_run`, `WorkoutScaler.scale_workout(..., duration_weeks, is_cutback, previous_easy_long_mi, history_override)`, `generator._generate_week` + `easy_long_state`.
 
+**8 mi floor vs 35% weekly soft cap (explicit):** Order in scaler is `min(..., weekly_soft_cap)` **then** `max(MIN_STANDARD_EASY_LONG_MILES, ...)`. On very low-volume weeks the **8 mi floor can exceed 35% of weekly miles** (founder policy: no shorter standard easy long). Relaxed `B1-LR-PCT` may warn/fail until validator tiering matches this policy — do not “fix” by silently dropping below 8 without founder sign-off.
+
 **Remaining (P4):** merge `L30_max_easy_long` into baseline when generating from synced history.
 
 ### P2 — Weighted easy fill (`generator.py`) — **implemented**
 
 **Intent:** Same weekly total; **vary** easy days by **same-week** adjacency:
 
-- Day after quality: **0.7** share weight  
+- Day after quality: **0.7** share weight (includes **`mp_touch`** — same as other quality stems)  
 - Day before long (`long` / `long_mp` / `long_hmp`): **0.8**  
 - Both: **0.56** (0.7×0.8)  
 - Standalone easy: **1.2**  
