@@ -1,11 +1,13 @@
-# Easy / recovery / rest pilot — variant definitions (v1)
+# Easy / recovery / rest / neuromuscular-touch pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.16  
-**Stems covered:** `easy`, `recovery`, `easy_strides`, `rest`
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.17  
+**Stems in this file:** `easy`, `recovery`, `easy_strides`, `rest`, **`hills`** (alias **`hill_sprints`**), **`strides`**
 
-**Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `scale_workout` accepts **`easy`**, **`easy_run`**, **`recovery`** (all routed through `_scale_easy`), **`easy_strides`** (`_scale_easy_with_strides`), **`rest`** (`_scale_rest`). Treat **`easy_run`** as an alias of **`easy`** for mapping tables; do not invent a separate variant id for the alias.
+**Why `hills` / `strides` live here:** Same coaching bucket as easy days—**mostly easy running** plus a **short, low-CNS-debt** power touch. Engine categories may show `SPEED` for some of these; product narrative still treats them as **not** VO2 day and **not** threshold.
 
-**SME approval:** **Founder approved** all **four** Pilot 3 easy-family variants **2026-03-20** (session: batch “approve”). Each row below is **`sme_status: approved`** for KB / product-copy purposes; runtime wiring remains gated per spec §2. Future edits: **do not** infer promotion—explicit founder sign-off per `id`.
+**Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — **`easy`**, **`easy_run`**, **`recovery`** → `_scale_easy`; **`easy_strides`** → `_scale_easy_with_strides`; **`rest`** → `_scale_rest`; **`hills`** / **`hill_sprints`** → `_scale_hills`; **`strides`** → `_scale_strides`. Treat **`easy_run`** as an alias of **`easy`** for mapping tables; do not invent a separate variant id for the alias.
+
+**SME approval:** **Founder approved** the **four** core easy/rest variants **2026-03-20** (batch “approve”). **Two** neuromuscular-touch variants (**`easy_run_hill_sprints_neuromuscular`**, **`strides_after_easy_neuromuscular`**) are **`draft`** until explicit founder sign-off per `id`. Rollup table is authoritative for each row’s status. Runtime wiring remains gated per spec §2.
 
 ---
 
@@ -19,7 +21,7 @@
 
 **Relationship to quality**
 
-- Easy days **anchor** the week around threshold, long, and VO2 work. See **`threshold_pilot_v1.md`** cross-cutting logic: many athletes benefit from **strides on one or two easy days** (`easy_strides`) rather than adding another heavy quality session.
+- Easy days **anchor** the week around threshold, long, and VO2 work. See **`threshold_pilot_v1.md`** cross-cutting logic: many athletes benefit from **strides on one or two easy days** (`easy_strides`) rather than adding another heavy quality session. **Hill sprints after easy** (`hills`) are a parallel tool—**power and hip drive** with **walk-back** recovery—not a second threshold session.
 
 **Display names**
 
@@ -52,7 +54,7 @@
 
 - **stem:** `recovery`
 - **display_name:** Recovery run
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `E`
 - **definition:** **Extra-conservative** easy day—same **ceiling** rule as `easy`, but **intent** is active recovery after load or life stress; **shorter** and **slower** bias is normal even when the scaler maps to similar distances as generic easy in code today.
 - **execution:** Same movement pattern as easy; **emphasis** on **relaxation**, **mobility**, and **patience**—often **shorter duration** or **lower** volume than staple easy when N=1 selection applies. **No** quality pickup unless a distinct `easy_strides` variant is explicitly chosen.
@@ -90,6 +92,48 @@
 
 ---
 
+## `easy_run_hill_sprints_neuromuscular`
+
+- **stem:** `hills` (alias input: `hill_sprints`)
+- **display_name:** Easy run with hill sprints
+- **sme_status:** `draft`
+- **volume_family:** `composite`
+- **definition:** **Easy** aerobic base plus **very short** uphill sprints—**alactic / power**, full recovery between reps. **Not** hill repeats at VO2; **not** a threshold substitute.
+- **execution:** **Easy** warm-up volume at or below easy ceiling, then **steep-enough** hills for **~8–12 s** maximal **uphill** pushes (engine sketch: **6–10× ~10 s** with **~90 s** walk/jog back / full recovery—tier scales reps in `_scale_hills`). **Walk-back** or easy loop back is mandatory so each rep starts **fresh**. Easy portion stays **true easy**—do not “preload fatigue” before sprints.
+- **primary_adaptations:** Power, hip extension, neuromuscular recruitment; economy on rolling courses; tendon/stiffness stimulus **when** dosage matches tolerance.
+- **systems_stressed:** CNS **brief** spikes; calves / Achilles / plantar on steep push-off; **eccentric** load on downhills if route choice is poor.
+- **benefits:** High **value-per-minute** for speed–power without a long anaerobic bill—especially for marathon–half athletes who skip track work.
+- **risks:** **Too long** reps (becomes VO2 hill work); **too many** reps; poor surface (wet brick, unstable footing); stacking with **heavy** lower-leg week without tapering hill dose.
+- **when_to_avoid:** Acute calf / Achilles / foot pain; **injury_return** until running easy is consistently pain-free; no suitable hill (then use **`easy_strides`** on flat or mild grade).
+- **n1_selection_notes:** Often **1×/week** max for non–power-specialist distance runners; alternate weeks with **`easy_strides`** if weekly load is sensitive. Strong when athlete races on **hilly** courses or responds well to **stiffness** work.
+- **typical_build_context_tags:** `full_featured_healthy`, `base_building`, `race_specific` (rolling race), `peak_fitness`, `minimal_sharpen` (fewer reps), `durability_rebuild` (omit or SME-microdose only)
+- **typical_placement:** Mid-week or **not** the day before key long run unless athlete-proven pattern.
+- **pairs_poorly_with:** Second **CNS-heavy** day back-to-back for fragile athletes; long **downhill** session same week without recovery narrative.
+- **source_notes:** Tier B — short hill sprint / alactic hill patterns; align copy with **FAST uphill, easy everything else**.
+
+---
+
+## `strides_after_easy_neuromuscular`
+
+- **stem:** `strides`
+- **display_name:** Strides (after easy running)
+- **sme_status:** `draft`
+- **volume_family:** `E`
+- **definition:** Session anchored on **easy running** with **strides** at the end—same **coaching job** as **`easy_strides_neuromuscular_touch`**, but routed on the engine’s standalone **`strides`** `workout_type` (legacy / alternate dispatch). Selection and narrative should **converge** with `easy_strides` unless a deliberate distinction is kept (e.g. fixed session template vs weekly-volume-scaled easy block).
+- **execution:** **Easy** segment at or below easy ceiling, then **6–8× ~20–30 s** relaxed-fast strides with **full** recovery (engine sketch: **~5 mi** easy + strides in `_scale_strides`—treat as **illustrative**; N=1 and volume coherence may prefer **`easy_strides`** scaling instead).
+- **primary_adaptations:** Turnover, neuromuscular coordination, light speed exposure—**not** VO2.
+- **systems_stressed:** Brief low-volume power spikes; hamstring / calf if athlete **over-kicks**.
+- **benefits:** Same family as **`easy_strides`**—cheap speed maintenance when **one** quality day/week pattern is in use.
+- **risks:** Duplicate prescription if planner emits **both** `strides` and `easy_strides` in the same week without intent; athlete confuses with **interval** day.
+- **when_to_avoid:** Same contraindications as **`easy_strides_neuromuscular_touch`**.
+- **n1_selection_notes:** Prefer **one** strides-pattern variant per week for most athletes unless high-volume and proven tolerance. If registry wiring keeps **two** stems, default **volume-scaled** `easy_strides` for plan coherence; reserve `strides` for explicit “strides session” slots if the phase builder still emits them.
+- **typical_build_context_tags:** `full_featured_healthy`, `base_building`, `race_specific`, `peak_fitness`, `minimal_sharpen` (fewer reps), `durability_rebuild` (optional, fewer reps + SME)
+- **typical_placement:** Same as **`easy_strides_neuromuscular_touch`**.
+- **pairs_poorly_with:** Redundant pairing with **`easy_strides`** same week without SME intent; dense **VO2** adjacent without recovery.
+- **source_notes:** Tier B — easy + strides session patterns; document **stem coexistence** in Phase 2 **ID → engine map** to prevent silent drift.
+
+---
+
 ## `rest_day_complete`
 
 - **stem:** `rest`
@@ -118,6 +162,8 @@
 | `easy_conversational_staple` | `easy` | `E` | `approved` |
 | `recovery_run_aerobic` | `recovery` | `E` | `approved` |
 | `easy_strides_neuromuscular_touch` | `easy_strides` | `E` | `approved` |
+| `easy_run_hill_sprints_neuromuscular` | `hills` | `composite` | `draft` |
+| `strides_after_easy_neuromuscular` | `strides` | `E` | `draft` |
 | `rest_day_complete` | `rest` | `composite` | `approved` |
 
-**Counts:** 4 approved / 0 draft.
+**Counts:** 4 approved / 2 draft.

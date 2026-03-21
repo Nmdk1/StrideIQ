@@ -16,11 +16,11 @@
 |-------|-------------------|---------------|
 | Threshold | **Approved** (9 variants) | `threshold_pilot_v1.md` |
 | Long / medium-long / MP / HMP | **Approved** (8 variants) | `long_run_pilot_v1.md` |
-| Easy / recovery / easy+strides / rest | **Approved** (4 variants) | `easy_pilot_v1.md` |
+| Easy / recovery / easy+strides / rest / hills / strides | **Partial** — **4** approved + **2** draft neuromuscular rows | `easy_pilot_v1.md` (rollup) |
 | VO2 intervals | Not started | future `intervals_pilot_v1.md` |
-| Reps / strides / hills | Deferred per spec | after core pilots stable |
+| Repetitions stem + long hill-repeat progressions | Deferred per spec | after core pilots stable; short **easy + hill sprints** KB’d as **`draft`** in Pilot 3 |
 
-**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry v0.2.16:** threshold, long-family, and easy-family pilots **fully** **`approved`**; **VO2** and any other **v1** tracks still **required** before Phase 3. KB variants are **inputs to deterministic plan construction** (spec §7.0).
+**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry v0.2.17:** threshold + long-family **fully** **`approved`**; easy pilot **4**× **`approved`** + **2**× **`draft`** (`hills`, `strides` rows); **VO2** and any other **v1** tracks still **required** before Phase 3. KB variants are **inputs to deterministic plan construction** (spec §7.0).
 
 ---
 
