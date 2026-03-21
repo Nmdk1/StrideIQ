@@ -1,6 +1,6 @@
 # Easy / recovery / rest / neuromuscular-touch pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.20
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.21
 **Stems in this file:** `easy`, `recovery`, `easy_strides`, `rest`, **`hills`** (alias **`hill_sprints`**), **`strides`**
 
 **Why `hills` / `strides` live here:** Same **session architecture** as easy days—**easy (or compatible aerobic) first**, neuromuscular touch **only at the end**. Founder intent: these touches primarily support **running economy** and **safe neuromuscular adaptation** (including options that would be **higher injury risk on flat ground** at similar intent). Engine categories may show `SPEED` for some stems; product narrative still treats them as **not** a VO2 day and **not** a threshold substitute.

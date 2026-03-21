@@ -1,4 +1,4 @@
-# Workout Fluency Registry — Specification v0.2.20
+# Workout Fluency Registry — Specification v0.2.21
 
 **Status:** Draft — **builder-safe for pilot KB work**; production wiring remains gated (see §2).  
 **Date:** 2026-03-22  
@@ -202,7 +202,7 @@ Agents must **not** copy these as defaults for all users; they inform **tags** a
 
 ---
 
-## 7. Schema: required fields per variant (v0.2.20)
+## 7. Schema: required fields per variant (v0.2.21)
 
 ### 7.0 Consumption model (deterministic plan construction)
 
@@ -268,7 +268,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ## 8. Machine registry (phase 2 — format TBD)
 
-**v0.2.20 KB pilot delivers:** Threshold **approved**; long-family **`long_run_pilot_v1.md`**: **8**× **`approved`** + **1**× **`draft`** (`long_mp_over_under_alternating_miles`). **Pilot 3** **`easy_pilot_v1.md`**: **4**× **`approved`** + **2**× **`draft`**. **Pilot 4** **`intervals_pilot_v1.md`**: **9**× **`approved`** + **3**× **`draft`** (`draft`: pyramid ladder, mile repeats, 3×2 mi — KB-forward / advanced N-of-1; **not** all in `workout_scaler` yet). **§7.0** — KB prose is input to **deterministic** plan construction. **Remaining v1 stems** (**`repetitions`** …) per build sequence / defer — Phase 1 exit still requires **SME approval** of **v1-scoped** **`draft`** rows **before** Phase 3 wiring.
+**v0.2.21 KB pilot delivers:** Threshold **approved**; long-family **`long_run_pilot_v1.md`**: **8**× **`approved`** + **1**× **`draft`** (`long_mp_over_under_alternating_miles`). **Pilot 3** **`easy_pilot_v1.md`**: **4**× **`approved`** + **2**× **`draft`**. **Pilot 4** **`intervals_pilot_v1.md`**: **9**× **`approved`** + **3**× **`draft`** (`draft`: pyramid ladder, mile repeats, 3×2 mi — KB-forward / advanced N-of-1; **not** all in `workout_scaler` yet). **Pilot 5** **`repetitions_pilot_v1.md`**: **2**× **`approved`** (200m early / 300m late — matches `_scale_repetitions`). **Stem inventory:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/STEM_COVERAGE.md`. **§7.0** — KB prose is input to **deterministic** plan construction. Phase 1 exit still requires **SME approval** of **v1-scoped** **`draft`** rows **before** Phase 3 wiring.
 
 **v0.3+ delivers:** Single validated artifact (`workout_registry.yaml` or JSON) with schema version, consumed by tests first, then optionally by Python loader — **subject to §2**.
 
@@ -286,13 +286,15 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 **Pilot 4 (fourth):** **VO2 / intervals** — stem **`intervals`** (aliases **`interval`**, **`vo2max`**). **KB:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/intervals_pilot_v1.md` — **9**× **`approved`** (founder SME **2026-03-22**) + **3**× **`draft`** (advanced / engine-gap rows; explicit promotion still required per `id`). Header **StrideIQ intervals & weekly structure** documents dual-quality vs single-quality defaults, **intervals-only spine**, recovery modality philosophy, and taper-touch options—parity with threshold / long / easy pilots.
 
+**Pilot 5 (fifth):** **Repetitions** — stem **`repetitions`** (alias **`reps`**). **KB:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/repetitions_pilot_v1.md` — **2**× **`approved`** (matches current `_scale_repetitions` progression). **Inventory table:** `variants/STEM_COVERAGE.md`.
+
 **Build sequencing:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md` — **define all (in scope) → build tools (registry, validators, tests) → wire runtime** (§2 / P0).
 
-**Defer:** Full **`repetitions`** stem microvariants and **sustained / VO2 hill-repeat** progressions until core pilots + Phase 2 mapping are stable—distinct from **short easy + hill sprints** already KB’d as **`draft`** variants.
+**Defer:** **Sustained / VO2 hill-repeat** progressions (long uphill rep blocks) until Phase 2 mapping is stable—distinct from **short easy + hill sprints** already KB’d as **`draft`** variants in Pilot 3.
 
 ---
 
-## 10. Acceptance criteria (v0.2.20 doc + KB pilot)
+## 10. Acceptance criteria (v0.2.21 doc + KB pilot)
 
 - [x] Founder confirms **`build_context_tag` enum** (§6.3) as used in Pilot 1 — **2026-03-22** (implicit in approval of tagged pilot content).
 - [x] Founder confirms **`sme_status` enum** and rule: only **`approved`** in any shipping wiring path — **2026-03-22**.
@@ -309,13 +311,14 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 - [x] Agents add **Pilot 4** intervals / VO2 variant docs — `intervals_pilot_v1.md` (**12** variants; **9** **`approved`**, **3** **`draft`** as of **2026-03-22**; includes scaler-gap patterns documented per pilot header).
 - [x] Founder SME **approves** Pilot 4 **core** rows (**9** `id`s) — **2026-03-22** (weekly complementarity with threshold, **1200m 10K rhythm** as sparse race touch, intervals-only spine, recovery modality, taper alternatives).
 - [ ] Founder SME **approves** Pilot 4 **advanced** rows (`vo2_pyramid_ladder_float_recovery`, `vo2_mile_repeats`, `vo2_3x2mi_long_reps`).
+- [x] Agents add **Pilot 5** repetitions variant docs — `repetitions_pilot_v1.md` (**2** variants, **`approved`** **2026-03-22**; matches `_scale_repetitions`).
 - [x] Cross-links from `WORKOUT_LIBRARY.md` to variant docs (index + authority note—no mass rewrite).
 - [x] **§2 execution gate** operationalized: PR checklist (`WORKOUT_FLUENCY_REGISTRY_PR_CHECKLIST.md`) + CI job `p0-plan-registry-gate` (see §2.1).
 - [ ] Authors of **runtime** PRs still must paste **`P0-GATE:`** attestation in the PR body when CI applies (human process; CI enforces presence only).
 
 ---
 
-## 11. Acceptance criteria (wiring phase — beyond v0.2.20 KB)
+## 11. Acceptance criteria (wiring phase — beyond v0.2.21 KB)
 
 - [ ] **Mapping table** checked in: registry `id` → current `workout_type` strings (and aliases) as accepted by `WorkoutScaler.scale_workout` and any `phase_builder` call sites — **before** merge of consumer code.
 - [ ] `workout_scaler` methods or dispatch reference `workout_variant_id` (internal) even if API still exposes stem.
@@ -325,7 +328,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 12. Explicit non-goals (v0.2.20)
+## 12. Explicit non-goals (v0.2.21)
 
 - Replacing `plan_validation_helpers.py` with prose.
 - LLM-generated definitions without SME sign-off.
@@ -376,7 +379,8 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 | 0.2.18 | 2026-03-20 | **Pilot 4** KB: `intervals_pilot_v1.md` (**9**× **`draft`** `intervals` variants); §8–§9–§10; links **weekly stimulus ledger** concept to **`easy_pilot_v1.md`**; Phase 1 exit still gated on founder **approval** of **v1-scoped** pilots. |
 | 0.2.19 | 2026-03-20 | **Intervals pilot** +**3** **`draft`** rows (pyramid ladder w/ float, mile repeats, 3×2 mi)—**engine gaps** flagged; **long_run_pilot_v1.md** +**1** **`draft`** (`long_mp_over_under_alternating_miles`); Pilot 2 rollup now **8** **`approved`** + **1** **`draft`**; §8–§9–§10 counts. |
 | 0.2.20 | 2026-03-22 | **Pilot 4 SME promotion:** **`intervals_pilot_v1.md`** — **9** variants **`approved`** (threshold/interval weekly split, **1200m** down-rank when threshold saturated, intervals-only spine, 400m multiples guidance, recovery modality, faster-than-interval = 5K context, taper stride/400 alternatives); **3** remain **`draft`**; §8–§9–§10 + **`WORKOUT_FLUENCY_BUILD_SEQUENCE.md`** counts aligned. |
+| 0.2.21 | 2026-03-22 | **Pilot 5:** **`repetitions_pilot_v1.md`** — **2**× **`approved`**; **`STEM_COVERAGE.md`** stem→pilot inventory; build sequence repetitions row; §8–§9–§10. |
 
 ---
 
-*End of v0.2.20 — Pilot 1 threshold **approved**; Pilot 2 long **8** **`approved`** + **1** **`draft`**; Pilot 3 **4** **`approved`** + **2** neuromuscular **`draft`**; Pilot 4 **9** **`approved`** + **3** **`draft`**; **`repetitions`** / deferred tracks per build sequence; product voice is StrideIQ synthesis, not third-party bibliography.*
+*End of v0.2.21 — Pilot 1 threshold **approved**; Pilot 2 long **8** **`approved`** + **1** **`draft`**; Pilot 3 **4** **`approved`** + **2** neuromuscular **`draft`**; Pilot 4 **9** **`approved`** + **3** **`draft`**; Pilot 5 repetitions **2** **`approved`**; deferred: long sustained VO2 hill-repeat progressions per §9; product voice is StrideIQ synthesis, not third-party bibliography.*

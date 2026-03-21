@@ -3,7 +3,7 @@
 **Sources:** Synthesized from established coaching methodologies (Sources A-H)
 **Purpose:** Comprehensive classification of all run/workout types for automatic tagging and analysis
 
-**See also (StrideIQ specs):** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` — v0.2.20: per-variant depth, **closed** `build_context_tag` enum + precedence, `sme_status`, P0 execution gate for runtime wiring, threshold-first pilot, §13 watch-mode drift signals (athlete-first; distance weak axis). **Per-variant KB (pilot):** `workouts/variants/README.md`.
+**See also (StrideIQ specs):** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` — v0.2.21: per-variant depth, **closed** `build_context_tag` enum + precedence, `sme_status`, P0 execution gate for runtime wiring, threshold-first pilot, §13 watch-mode drift signals (athlete-first; distance weak axis). **Per-variant KB (pilot):** `workouts/variants/README.md`.
 
 **Authority & N=1:** Tables in this file are **population-style** summaries for classification and tagging—not athlete-specific prescriptions and **not** guaranteed to meet the strict source-admissibility bar in the fluency spec. When a `workout_variant_id` is defined under `workouts/variants/`, **that variant document is authoritative for that ID** for execution, risks, tags, and SME status; keep this library as the breadth map and link outward rather than duplicating deep definitions here.
 
@@ -178,6 +178,7 @@
 - **Intensity:** Faster than 5K pace
 - **Purpose:** Speed, economy, anaerobic power
 - **Limit:** Max 5% of weekly mileage OR 5 miles
+- **Variant KB (plan engine):** [`workouts/variants/repetitions_pilot_v1.md`](variants/repetitions_pilot_v1.md) — matches `_scale_repetitions` (200m early → 300m progression). **Stem map:** [`workouts/variants/STEM_COVERAGE.md`](variants/STEM_COVERAGE.md).
 
 ### Strides
 - **Distance:** 80-120m

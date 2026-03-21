@@ -18,9 +18,10 @@
 | Long / medium-long / MP / HMP | **8** `approved` + **1** `draft` (MP over-under miles) | `long_run_pilot_v1.md` |
 | Easy / recovery / easy+strides / rest / hills / strides | **Partial** — **4** approved + **2** draft neuromuscular rows | `easy_pilot_v1.md` (rollup) |
 | VO2 intervals | **9** `approved` + **3** `draft` (advanced / engine-forward) | `intervals_pilot_v1.md` |
-| Repetitions stem + long hill-repeat progressions | Deferred per spec | after core pilots stable; short **easy + hill sprints** KB’d as **`draft`** in Pilot 3 |
+| Repetitions | **2** `approved` | `repetitions_pilot_v1.md` |
+| Long hill-repeat progressions (sustained VO2 hills) | Deferred per spec | after core pilots + Phase 2 map stable |
 
-**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry v0.2.20 (2026-03-22):** threshold **fully** **`approved`**; long pilot **8**× **`approved`** + **1**× **`draft`**; easy pilot **4**× **`approved`** + **2**× **`draft`**; intervals pilot **9**× **`approved`** + **3**× **`draft`**; **`repetitions`** / other deferred rows still per table above. **SME-approve** remaining **`draft`** rows in founder **v1** scope before Phase 3. KB variants are **inputs to deterministic plan construction** (spec §7.0).
+**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry v0.2.21 (2026-03-22):** threshold **fully** **`approved`**; long pilot **8**× **`approved`** + **1**× **`draft`**; easy pilot **4**× **`approved`** + **2**× **`draft`**; intervals pilot **9**× **`approved`** + **3**× **`draft`**; **repetitions** pilot **2**× **`approved`**; long **sustained VO2 hill-repeat** progressions still deferred per table. **SME-approve** remaining **`draft`** rows in founder **v1** scope before Phase 3. KB variants are **inputs to deterministic plan construction** (spec §7.0).
 
 ---
 
