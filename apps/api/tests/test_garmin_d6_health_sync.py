@@ -563,12 +563,12 @@ class TestHealthBriefingRefreshTrigger:
 
         with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
              patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
-             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
+             patch("tasks.garmin_webhook_tasks._coalesced_home_briefing_refresh") as mock_coalesced:
             result = process_garmin_health_task.run(ATHLETE_ID, "hrv", _HRV_RAW)
 
         assert result["processed"] == 1
         mock_dirty.assert_called_once_with(ATHLETE_ID)
-        mock_enq.assert_called_once_with(ATHLETE_ID, force=True)
+        mock_coalesced.assert_called_once_with(ATHLETE_ID)
 
     def test_refresh_not_triggered_when_nothing_processed(self):
         from tasks.garmin_webhook_tasks import process_garmin_health_task
@@ -579,12 +579,12 @@ class TestHealthBriefingRefreshTrigger:
 
         with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
              patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
-             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
+             patch("tasks.garmin_webhook_tasks._coalesced_home_briefing_refresh") as mock_coalesced:
             result = process_garmin_health_task.run(ATHLETE_ID, "hrv", bad_item)
 
         assert result["processed"] == 0
         mock_dirty.assert_not_called()
-        mock_enq.assert_not_called()
+        mock_coalesced.assert_not_called()
 
 
 class _FakeRedisCoalesce:
