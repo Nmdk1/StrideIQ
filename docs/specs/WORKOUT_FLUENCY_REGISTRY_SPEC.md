@@ -1,4 +1,4 @@
-# Workout Fluency Registry — Specification v0.2.17
+# Workout Fluency Registry — Specification v0.2.18
 
 **Status:** Draft — **builder-safe for pilot KB work**; production wiring remains gated (see §2).  
 **Date:** 2026-03-20  
@@ -202,7 +202,7 @@ Agents must **not** copy these as defaults for all users; they inform **tags** a
 
 ---
 
-## 7. Schema: required fields per variant (v0.2.17)
+## 7. Schema: required fields per variant (v0.2.18)
 
 ### 7.0 Consumption model (deterministic plan construction)
 
@@ -268,7 +268,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ## 8. Machine registry (phase 2 — format TBD)
 
-**v0.2.17 KB pilot delivers:** Threshold variant markdown **SME-approved**; long-family **`long_run_pilot_v1.md`**: **8**× **`approved`**. **Pilot 3** **`easy_pilot_v1.md`**: **6** variant rows — **4**× **`approved`** (`easy`, `recovery`, `easy_strides`, `rest`, founder **2026-03-20**) + **2**× **`draft`** (`hills`, `strides` neuromuscular-touch rows—awaiting founder SME). **§7.0** — KB prose is input to **deterministic** plan construction. **Remaining v1 stems** (VO2 / intervals primary track; **`repetitions`** stem and rich **hill-repeat** progressions still per build sequence / defer) — **not** complete until those pilots exist and SME-**approve** per founder scope **before** Phase 3 wiring.
+**v0.2.18 KB pilot delivers:** Threshold **approved**; long-family **8**× **`approved`**. **Pilot 3** **`easy_pilot_v1.md`**: **4**× **`approved`** + **2**× **`draft`** neuromuscular rows (awaiting founder SME). **Pilot 4** **`intervals_pilot_v1.md`**: **9**× **`draft`** (`intervals` / `vo2max` stem family—awaiting founder SME). **§7.0** — KB prose is input to **deterministic** plan construction. **Remaining v1 stems** (**`repetitions`** and rich **hill-repeat** progressions per build sequence / defer) — Phase 1 exit still requires **SME approval** of pilots in founder **v1** scope **before** Phase 3 wiring.
 
 **v0.3+ delivers:** Single validated artifact (`workout_registry.yaml` or JSON) with schema version, consumed by tests first, then optionally by Python loader — **subject to §2**.
 
@@ -284,13 +284,15 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 **Pilot 3 (third):** **Easy + rest + neuromuscular touch** — **`easy`** (incl. legacy **`easy_run`** alias), **`recovery`**, **`easy_strides`**, **`rest`**, plus engine stems **`hills`** / **`hill_sprints`**, **`strides`** (documented in the same KB file for coaching continuity). **KB:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/easy_pilot_v1.md` — see rollup: **4**× **`approved`** + **2**× **`draft`** (hill sprints + standalone strides rows) until founder promotes those `id`s. Future edits: **do not** infer promotion—explicit founder sign-off per `id`.
 
+**Pilot 4 (fourth):** **VO2 / intervals** — stem **`intervals`** (aliases **`interval`**, **`vo2max`**). **KB:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/intervals_pilot_v1.md` (**9** variants, all **`draft`** until explicit founder approval per `id`).
+
 **Build sequencing:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md` — **define all (in scope) → build tools (registry, validators, tests) → wire runtime** (§2 / P0).
 
 **Defer:** Full **`repetitions`** stem microvariants and **sustained / VO2 hill-repeat** progressions until core pilots + Phase 2 mapping are stable—distinct from **short easy + hill sprints** already KB’d as **`draft`** variants.
 
 ---
 
-## 10. Acceptance criteria (v0.2.17 doc + KB pilot)
+## 10. Acceptance criteria (v0.2.18 doc + KB pilot)
 
 - [x] Founder confirms **`build_context_tag` enum** (§6.3) as used in Pilot 1 — **2026-03-22** (implicit in approval of tagged pilot content).
 - [x] Founder confirms **`sme_status` enum** and rule: only **`approved`** in any shipping wiring path — **2026-03-22**.
@@ -302,13 +304,15 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 - [x] Founder SME **approves** Pilot 3 **core** rows — **2026-03-20** (batch approval of four ids; do not infer for **other** pilots).
 - [x] Agents add Pilot 3 **neuromuscular-touch** rows for **`hills`** and **`strides`** stems — `easy_pilot_v1.md` (**2** variants, **`draft`** until founder promotes each `id`).
 - [ ] Founder SME **approves** Pilot 3 neuromuscular-touch rows (`easy_run_hill_sprints_neuromuscular`, `strides_after_easy_neuromuscular`).
+- [x] Agents add **Pilot 4** intervals / VO2 variant docs — `intervals_pilot_v1.md` (**9** variants, all **`draft`** until founder promotes each `id`).
+- [ ] Founder SME **approves** Pilot 4 rows (explicit per `id`).
 - [x] Cross-links from `WORKOUT_LIBRARY.md` to variant docs (index + authority note—no mass rewrite).
 - [x] **§2 execution gate** operationalized: PR checklist (`WORKOUT_FLUENCY_REGISTRY_PR_CHECKLIST.md`) + CI job `p0-plan-registry-gate` (see §2.1).
 - [ ] Authors of **runtime** PRs still must paste **`P0-GATE:`** attestation in the PR body when CI applies (human process; CI enforces presence only).
 
 ---
 
-## 11. Acceptance criteria (wiring phase — beyond v0.2.17 KB)
+## 11. Acceptance criteria (wiring phase — beyond v0.2.18 KB)
 
 - [ ] **Mapping table** checked in: registry `id` → current `workout_type` strings (and aliases) as accepted by `WorkoutScaler.scale_workout` and any `phase_builder` call sites — **before** merge of consumer code.
 - [ ] `workout_scaler` methods or dispatch reference `workout_variant_id` (internal) even if API still exposes stem.
@@ -318,7 +322,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 12. Explicit non-goals (v0.2.17)
+## 12. Explicit non-goals (v0.2.18)
 
 - Replacing `plan_validation_helpers.py` with prose.
 - LLM-generated definitions without SME sign-off.
@@ -366,7 +370,8 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 | 0.2.15 | 2026-03-20 | **Pilot 3** KB started: `easy_pilot_v1.md` (**4** variants, all **`draft`**) covering `easy` / `easy_run` alias, `recovery`, `easy_strides`, `rest`; §8–§9–§10 updated; easy-family **SME approval** still **open** (row-by-row). |
 | 0.2.16 | 2026-03-20 | Pilot 3 **complete SME approval:** all **4** easy-family variants **`approved`** (`easy_pilot_v1.md`); §8–§9–§10, rollup; **Phase 1** still **open** until VO2 / remaining **v1** tracks per `WORKOUT_FLUENCY_BUILD_SEQUENCE.md`. |
 | 0.2.17 | 2026-03-20 | Pilot 3 **extended:** `easy_pilot_v1.md` adds **`hills`** + **`strides`** neuromuscular-touch variant rows (**`draft`**); reconcile **`recovery`** row `sme_status` with rollup; §8–§9 deferral language narrowed (reps / long hill-repeat progressions still deferred). |
+| 0.2.18 | 2026-03-20 | **Pilot 4** KB: `intervals_pilot_v1.md` (**9**× **`draft`** `intervals` variants); §8–§9–§10; links **weekly stimulus ledger** concept to **`easy_pilot_v1.md`**; Phase 1 exit still gated on founder **approval** of **v1-scoped** pilots. |
 
 ---
 
-*End of v0.2.17 — Pilots 1–3 **core** easy KB **approved**; **two** Pilot 3 neuromuscular rows **`draft`**; **VO2** / remaining v1 tracks per build sequence **before** Phase 3 wiring; product voice is StrideIQ synthesis, not third-party bibliography.*
+*End of v0.2.18 — Pilots 1–2 **approved**; Pilot 3 **partially** **`approved`** + **2** neuromuscular **`draft`**; Pilot 4 intervals **KB present**, all **`draft`**; **`repetitions`** / deferred tracks per build sequence; product voice is StrideIQ synthesis, not third-party bibliography.*
