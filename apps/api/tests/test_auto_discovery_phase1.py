@@ -906,8 +906,16 @@ class TestMigrationIntegrity:
         assert m.revision == "auto_discovery_phase1_001"
         assert m.down_revision == "phase3c_001"
 
-    def test_ci_heads_check_updated_to_phase1(self):
-        import importlib.util, os
+    def test_ci_heads_check_matches_alembic_graph(self):
+        """EXPECTED_HEADS must equal Alembic ScriptDirectory heads (single source of truth)."""
+        import importlib.util
+        import os
+        import sys
+        from pathlib import Path
+
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
         heads_path = os.path.join(
             os.path.dirname(__file__), "..", "..", "..", ".github",
             "scripts", "ci_alembic_heads_check.py",
@@ -915,9 +923,19 @@ class TestMigrationIntegrity:
         spec = importlib.util.spec_from_file_location("ci", heads_path)
         ci = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(ci)
-        # Phase 1 migration is the direct ancestor; CI head tracks the latest.
+
+        api_root = Path(__file__).resolve().parents[1]
+        sys.path.insert(0, str(api_root))
+        cfg = Config(str(api_root / "alembic.ini"))
+        cfg.set_main_option("script_location", str(api_root / "alembic"))
+        script = ScriptDirectory.from_config(cfg)
+        actual_heads = set(script.get_heads())
+
         assert ci.EXPECTED_HEADS, "EXPECTED_HEADS must not be empty"
-        assert "admin_tier_override_001" in ci.EXPECTED_HEADS or "auto_discovery_phase1_001" in ci.EXPECTED_HEADS
+        assert ci.EXPECTED_HEADS == actual_heads, (
+            f"Update EXPECTED_HEADS in ci_alembic_heads_check.py to match Alembic: "
+            f"expected {actual_heads!r}, got {ci.EXPECTED_HEADS!r}"
+        )
 
     def test_new_models_importable(self):
         from models import AutoDiscoveryChangeLog, AthleteInvestigationConfig, AutoDiscoveryScanCoverage
