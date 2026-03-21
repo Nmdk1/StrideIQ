@@ -16,7 +16,7 @@ from typing import List, Dict, Optional, Tuple
 import logging
 import random
 
-from services.fitness_bank import FitnessBank, ExperienceLevel
+from services.fitness_bank import ConstraintType, FitnessBank, ExperienceLevel
 from services.rpi_calculator import calculate_training_paces
 from services.week_theme_generator import WeekTheme
 
@@ -357,11 +357,32 @@ class WorkoutPrescriptionGenerator:
 
         # High-mileage athletes with proven long-run history should not get
         # artificially low long-run starts from noisy recent slices.
-        if self.race_distance == "10k" and bank.current_weekly_miles >= 45 and bank.peak_long_run_miles >= 15:
-            self.long_run_current = max(
-                self.long_run_current,
-                min(15.0, bank.peak_long_run_miles * 0.85),
-            )
+        if self.race_distance == "10k":
+            # Locked personal-floor contract for high-data athletes.
+            def _as_float(value, default=0.0):
+                try:
+                    return float(value)
+                except Exception:
+                    return default
+
+            run_count_16w = int(_as_float(getattr(bank, "recent_16w_run_count", 0), 0.0))
+            peak_long = _as_float(getattr(bank, "peak_long_run_miles", 0.0), 0.0)
+            current_weekly = _as_float(getattr(bank, "current_weekly_miles", 0.0), 0.0)
+
+            has_high_data = run_count_16w >= 24 and peak_long >= 13
+            has_high_mileage_history = current_weekly >= 45 and peak_long >= 15
+
+            if has_high_data or has_high_mileage_history:
+                personal_floor = max(
+                    _as_float(getattr(bank, "recent_8w_p75_long_run_miles", 0.0), 0.0),
+                    _as_float(getattr(bank, "recent_16w_p50_long_run_miles", 0.0), 0.0),
+                )
+                if personal_floor <= 0 and has_high_mileage_history:
+                    personal_floor = min(15.0, peak_long * 0.85)
+                if bank.constraint_type == ConstraintType.INJURY:
+                    personal_floor = max(10.0, personal_floor * 0.90)
+                if personal_floor > 0:
+                    self.long_run_current = max(self.long_run_current, personal_floor)
         
         # Peak target: use proven capability but respect distance-specific appropriateness
         distance_peak_target = self.LONG_RUN_PEAK_TARGETS.get(self.race_distance, 18)
