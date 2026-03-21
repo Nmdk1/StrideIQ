@@ -128,25 +128,101 @@ That is **by design** for Phase 3 wiring; **selection** is Phase 3+ / Phase 4 pe
 
 ---
 
-## 7. Delta bridge — recommended sequence
+## 7. Delta bridge — **concrete** (strict validator + files + order)
 
-### Tier A — Make the **framework** defensible (all distances)
+This section replaces generic “tiers” with **observed `PlanValidator(strict=True)` rule IDs**, **which plan shape triggers them**, and **where to edit**.
 
-1. **Run matrix in `strict=True`** on a branch; collect **failures** → single backlog ordered by severity (injury risk first).
-2. **Fix `generator` / `workout_scaler`** where rules contradict **PLAN_GENERATION_FRAMEWORK.md** / Source B.
-3. **Volume fill:** audit **easy fill** interactions with **low-volume** and **taper** weeks (common “looks insane” source).
-4. **Half / 10K / 5K:** explicit review of **`_get_secondary_quality`** and **7-day `quality_or_easy`** — highest risk of **double quality** or **wrong touch**.
+### 7.0 Evidence snapshot (local, `generate_standard`, start Monday 2026-03-02)
 
-### Tier B — Recovery spec P0 (production failures)
+| Case | Failures | Rule IDs (first) |
+|------|----------|-------------------|
+| marathon, **mid**, 18w, 6d | 2 | **B1-MP-PCT** (MP work > 20% of that week’s miles) |
+| marathon, **high**, 18w, 6d | 5 | **B1-LR-PCT** (long run > 30% of weekly after easy-fill totals) |
+| marathon, **low**, 18w, 5d | 1 | **MP-TOTAL-LOW** (total MP miles < 40 mi spec minimum) |
+| marathon, **builder**, 18w, 5d | 3 | **B1-MP-PCT**, **VAL-NO-CUTBACK**, **MP-TOTAL-LOW** |
+| half, **mid**, 16w, 6d | 0 | — |
+| half, **builder**, 16w, 5d | 1 | **VAL-NO-CUTBACK** |
+| 10k, **mid**, 12w, 6d | 0 | — |
+| 10k, **builder**, 12w, 5d | 3 | **B1-I-PCT**, **B1-I-PCT**, **VAL-NO-CUTBACK** |
+| 5k, **mid**, 12w, 6d | 0 | — |
+| 5k, **high**, 12w, 6d | 0 | — |
 
-5. **P0-A** fallback intent — **constraint-aware** + router.  
-6. **P0-B / P0-C** — **`plan_quality_gate`** + prescription **distance-aware** thresholds and **long-run floor**.  
-7. **P0-D** — **endpoint-level** tests with fallback branch.
+**Interpretation:** Shorter-distance **mid/high 6d** plans already satisfy **strict Source B + structure** in this slice. The **immediate strict gap** is **marathon (MP %, long %, MP accumulation, cutbacks on low days/week)** and **10k builder interval % + cutback detection**.
 
-### Tier C — Use registry to **tighten** logic (after A/B moving)
+---
 
-8. **Map** each scaler “shape” to **one default variant** + **alternates** by `build_context_tag` (injury_return, minimal_sharpen, etc.) — requires **`AthletePlanProfile`** or equivalent signal.
-9. **Phase 4** eligibility matrix tests **replace** snapshot stubs per fluency spec.
+### Bridge item 1 — **B1-MP-PCT** (marathon mid+)
+
+- **Symptom:** MP work in `long_mp` session exceeds **20%** of that week’s **total** miles (validator: `plan_validation_helpers.assert_source_b_limits`).
+- **Likely cause:** `WorkoutScaler._scale_mp_long_run` prescribes **MP miles** that are correct in isolation but **too large vs actual `weekly_volume`** for that week (especially after `_generate_week` easy-fill inflates week totals).
+- **Edit locus:** `apps/api/services/plan_framework/workout_scaler.py` (`_scale_mp_long_run`, `_create_mp_option_b`) and/or **pass effective week target** into scaler from `generator.py` `_generate_week` so MP block is capped **after** knowing filled week total (may require two-pass or cap MP as % of `weekly_volume`).
+- **Done when:** `PlanValidator(strict=True)` clean for **marathon mid 18w 6d** on fixed start date; add/regress **parametrized strict test** for the week numbers that failed.
+
+---
+
+### Bridge item 2 — **B1-LR-PCT** (marathon high)
+
+- **Symptom:** Long run > **30%** of weekly miles (often **24 mi / 75 mi** class ratios).
+- **Likely cause:** `LONG_RUN_PEAKS` + `_scale_long_run` (% of week) **combined** with `_generate_week` easy-fill: fill pushes week total up but long already at peak → **long share** breaches strict 30%.
+- **Edit locus:** `generator.py` end-of-week volume fill (easy_types loop): **recompute long share** or **cap long** when enforcing weekly total; alternatively **raise weekly_volume target** from classifier so long % falls — pick one philosophy (prefer **explicit cap** so spec is satisfied).
+- **Done when:** strict clean for **marathon high 18w 6d**; regression test pins worst week.
+
+---
+
+### Bridge item 3 — **MP-TOTAL-LOW** (marathon low / builder)
+
+- **Symptom:** Sum of MP-quality miles across plan **< 40 mi** (`assert_mp_total`).
+- **Likely cause:** Too few `long_mp` weeks or **too short** MP segments vs spec expectation for 18w marathon.
+- **Edit locus:** `phase_builder.py` (race_specific / marathon_specific week count), `generator.py` `mp_week` progression and alternation, `workout_scaler.py` MP progression tables.
+- **Done when:** strict clean for **marathon low 18w 5d** and **builder** case, or **documented waiver** in validator for true low-volume marathon if SME decides 40 mi floor is inappropriate for builder (then change **spec + test**, not silent drift).
+
+---
+
+### Bridge item 4 — **VAL-NO-CUTBACK** (builder + 5d, multi-distance)
+
+- **Symptom:** `assert_cutback_pattern` finds **no cutback weeks** in 12–18w plans.
+- **Likely cause:** `generator.py` cutback flags not firing for **5-day** structures or **builder tier frequency**; or validator expectation mismatch.
+- **Edit locus:** `generator.py` (cutback / `is_cutback` propagation from `volume_tiers` / `CUTBACK_RULES`), then **`assert_cutback_pattern`** in `plan_validation_helpers.py` only if generator is correct and test is wrong.
+- **Done when:** strict clean for **marathon builder 18w 5d**, **half builder 16w 5d**, **10k builder 12w 5d**.
+
+---
+
+### Bridge item 5 — **B1-I-PCT** (10k builder)
+
+- **Symptom:** Interval **work** miles > **8%** of week when **weekly_volume ~28 mi** (small denominator).
+- **Likely cause:** `_scale_10k_intervals` / rep count uses **max_i_miles** but **floor** on reps produces ~3 mi VO2 work → breaches **8%** at low volume.
+- **Edit locus:** `workout_scaler.py` `_scale_10k_intervals` (and 5k sibling if same pattern): **hard cap** interval work miles to `min(8% * weekly_volume, interval_abs_mi)` **before** finalizing reps.
+- **Done when:** strict clean for **10k builder 12w 5d**.
+
+---
+
+### Bridge item 6 — Recovery spec **P0-A** (constraint-aware / fallback)
+
+- **Spec:** `PLAN_GENERATION_VISION_ALIGNMENT_RECOVERY_SPEC.md` §5 P0-A (athlete peak intent preserved through fallback).
+- **Files:** `apps/api/routers/plan_generation.py`, `apps/api/services/constraint_aware_planner.py` (search: fallback, regenerate, `target_peak`).
+- **Done when:** tests **P0-A** in spec §6 pass (preserve override on fallback); payload contract **422** with listed fields when hard-block.
+
+---
+
+### Bridge item 7 — Recovery spec **P0-B / P0-C** (gates + long-run floor)
+
+- **Files:** `apps/api/services/plan_quality_gate.py`, `apps/api/services/workout_prescription.py`.
+- **Done when:** spec tests **10k false flag**, **high-data long-run floor** pass; marathon/half not damaged by 10k-only thresholds.
+
+---
+
+### Bridge item 8 — Recovery spec **P0-D** (endpoint cohort tests)
+
+- **Files:** new module under `apps/api/tests/` per spec §6 list; exercise **full HTTP path** including fallback branch.
+- **Done when:** CI runs them green.
+
+---
+
+### Bridge item 9 — Registry **after** items 1–5 (optional sequencing)
+
+- **Not parallel to 1–5:** `workout_variant_dispatch.py` does **not** fix B1-* or cutbacks.
+- **Next use:** introduce **`resolve_eligible_variant_ids(stem, athlete_context)`** (new module) fed by **`AthletePlanProfile`** + registry tags; then **swap** scaler **prescription** only where SME approves (Phase 3 exit scope).
+- **Done when:** contract tests per `WORKOUT_FLUENCY_REGISTRY_SPEC` §9 / Phase 4 matrix (separate milestone).
 
 ---
 
@@ -170,8 +246,7 @@ That is **by design** for Phase 3 wiring; **selection** is Phase 3+ / Phase 4 pe
 
 ## 9. Closing
 
-- **“All distances, all variations”** in **one** audit means: **framework matrix** (standard) is shared; **paid / elite** paths add **different failure modes** (gates, Fitness Bank, fallbacks).  
-- **Registry work** gives you **IDs and KB linkage**; **competence** is **`PlanGenerator` + scaler + gates + athlete truth**.  
-- The **bridge** is **strict validators → fix code → recovery P0 → then eligibility-driven variant choice**.
+- The **delta bridge** is now **ordered by measured strict failures** (§7.0–7.5) then **recovery P0 file targets** (§7.6–7.8) then **registry selection** (§7.9).  
+- Re-run the §7.0 table after each bridge item; update the table in this doc when counts change.
 
-*This document is an audit snapshot; update it when strict matrix goes green or P0 items ship.*
+*Update this document when strict matrix goes green or P0 items ship.*
