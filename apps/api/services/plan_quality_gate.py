@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 
 @dataclass
@@ -32,7 +32,7 @@ def evaluate_constraint_aware_plan(plan: Any) -> QualityGateResult:
             week_total = max(week.total_miles, 1.0)
             for day in week.days:
                 if day.workout_type == "long":
-                    if day.target_miles > 16.0 or day.target_miles / week_total > 0.30:
+                    if day.target_miles > 18.0 or day.target_miles / week_total > 0.33:
                         reasons.append(
                             f"10K long-run dominance breach in week {week.week_number}: "
                             f"{day.target_miles:.1f}mi."

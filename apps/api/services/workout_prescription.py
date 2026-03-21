@@ -354,6 +354,14 @@ class WorkoutPrescriptionGenerator:
             self.long_run_current,
             distance_minimums.get(self.race_distance, 8.0)
         )
+
+        # High-mileage athletes with proven long-run history should not get
+        # artificially low long-run starts from noisy recent slices.
+        if self.race_distance == "10k" and bank.current_weekly_miles >= 45 and bank.peak_long_run_miles >= 15:
+            self.long_run_current = max(
+                self.long_run_current,
+                min(15.0, bank.peak_long_run_miles * 0.85),
+            )
         
         # Peak target: use proven capability but respect distance-specific appropriateness
         distance_peak_target = self.LONG_RUN_PEAK_TARGETS.get(self.race_distance, 18)

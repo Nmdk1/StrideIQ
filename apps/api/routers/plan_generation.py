@@ -2349,6 +2349,11 @@ async def create_constraint_aware_plan(
         gate = evaluate_constraint_aware_plan(plan)
         if not gate.passed:
             fallback_peak = float((plan.volume_contract or {}).get("band_max") or 0) * 0.95
+            # Never silently replace explicit athlete intent during fallback.
+            fallback_requested_peak = request.target_peak_weekly_miles
+            fallback_requested_range = request.target_peak_weekly_range
+            if fallback_requested_peak is None and fallback_requested_range is None:
+                fallback_requested_peak = fallback_peak if fallback_peak > 0 else None
             plan = generate_constraint_aware_plan(
                 athlete_id=athlete.id,
                 race_date=request.race_date,
@@ -2356,7 +2361,8 @@ async def create_constraint_aware_plan(
                 db=db,
                 goal_time=str(request.goal_time_seconds) if request.goal_time_seconds else None,
                 tune_up_races=tune_ups,
-                target_peak_weekly_miles=fallback_peak if fallback_peak > 0 else None,
+                target_peak_weekly_miles=fallback_requested_peak,
+                target_peak_weekly_range=fallback_requested_range,
                 quality_gate_fallback=True,
                 quality_gate_reasons=gate.reasons,
             )

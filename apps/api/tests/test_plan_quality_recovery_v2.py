@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from services.constraint_aware_planner import ConstraintAwarePlanner
 from services.fitness_bank import ConstraintType, ExperienceLevel, FitnessBank
+from services.plan_quality_gate import evaluate_constraint_aware_plan
 from services.plan_framework.constants import PlanTier
 from services.plan_framework.generator import GeneratedPlan, GeneratedWorkout
 from services.starter_plan import _apply_cold_start_guardrails
@@ -98,7 +99,11 @@ def test_10k_workout_mix_differs_from_marathon_at_similar_mileage():
     )
     tenk_long = max((d.target_miles for d in wk10.days if d.workout_type == "long"), default=0)
     mara_long = max((d.target_miles for d in wkm.days if d.workout_type == "long"), default=0)
-    assert tenk_long <= mara_long
+    tenk_threshold = [d.target_miles for d in wk10.days if d.workout_type in ("threshold", "threshold_short")]
+    mara_threshold = [d.target_miles for d in wkm.days if d.workout_type in ("threshold", "threshold_short")]
+    assert tenk_long <= 18.0
+    assert max(tenk_threshold or [0]) <= 8.0
+    assert len(tenk_threshold) >= len(mara_threshold)
 
 
 def test_no_marathon_style_session_sizes_in_10k_block():
@@ -217,3 +222,30 @@ def test_prediction_contract_unchanged():
     assert "rationale_tags" in prediction
     assert "scenarios" in prediction
     assert "uncertainty_reason" in prediction
+
+
+def test_high_mileage_runner_keeps_long_run_floor():
+    bank = _bank(current_long_run_miles=10.0, peak_long_run_miles=20.0, current_weekly_miles=62.0)
+    gen = WorkoutPrescriptionGenerator(bank, race_distance="10k")
+    assert gen.long_run_current >= 15.0
+
+
+def test_quality_gate_allows_reasonable_high_mileage_10k_long_run():
+    week = type("Week", (), {})()
+    week.week_number = 2
+    week.total_miles = 60.0
+    long_day = type("Day", (), {})()
+    long_day.workout_type = "long"
+    long_day.target_miles = 16.5
+    t_day = type("Day", (), {})()
+    t_day.workout_type = "threshold"
+    t_day.target_miles = 8.0
+    week.days = [long_day, t_day]
+
+    plan = type("Plan", (), {})()
+    plan.weeks = [week]
+    plan.race_distance = "10k"
+    plan.volume_contract = {"band_max": 60.0}
+
+    result = evaluate_constraint_aware_plan(plan)
+    assert result.passed is True, result.reasons
