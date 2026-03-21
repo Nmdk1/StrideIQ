@@ -18,8 +18,15 @@
 **Not threshold, not strides**
 
 - **VO2 / intervals** days are **structured quality**: repeated work bouts with **defined** recovery—not a continuous threshold block, not 15–30 s neuromuscular touches at the end of easy.
-- **Pace:** derive from the **Training Pace Calculator** (or equivalent product anchor) for **interval / VO2** zone; prescribed as a **band** where the product supports it, with **conditions** (heat, hills, cumulative fatigue) affecting **realization** like threshold (see **`threshold_pilot_v1.md`** environment themes).
 - **Controlled hardness:** “Hard but controlled”—**not** all-out sprinting rep 1 and collapsing; mechanics stay **smooth**; last rep **quality**, not desperation, unless SME-intended peaking context.
+
+### Pace from the Training Pace Calculator (same anchor weighting as threshold)
+
+- **Single anchor chain for prescription:** Interval / VO2 paces come from the **Training Pace Calculator** using the **same recent-race anchor rules and priority** as **threshold** (see **`threshold_pilot_v1.md`** — *StrideIQ pace & environment*): best **recent race** within the **last 6 months** — **5K PR** when it qualifies; if not, **1 mile or 10K** (when more than one qualifies, prefer the **shorter** race as calculator input). From that anchor, use the calculator’s **interval / VO2** outputs for session prescription—**do not** silently use a different anchor for intervals than for threshold unless the product defines an explicit, athlete-visible override.
+- **Bands:** where the product shows numeric ranges, treat **interval** prescription with the same **±5 seconds per mile** band **philosophy** as threshold (effort + context over split-chasing)—exact UX is product-owned; the **intent** is **banded tolerance**, not a single nail-every-split number.
+- **Execution reality:** heat, hills, wind, surface, cumulative fatigue — same **post-hoc and during-run** honesty as threshold pilot themes; naive “you missed pace” without context erodes trust.
+
+**Founder conviction (product why):** Intervals, **chosen intelligently** and **recovered from**, build a **large aerobic engine** and speed **ceiling**; they are **complementary** to **threshold** work, not a substitute. Neglecting threshold can leave **sustained-hard** ability undertrained; addressing threshold alongside intervals is how many athletes **break the next plateau**. (Founder lived experience: a **late-start** return to training with **intervals as a centerpiece** drove a massive jump in fitness; **national-level** results at **masters** age; **threshold** emphasis added later to open **new** ceilings—**N-of-1** illustration, not a promise for every athlete.)
 
 **Volume discipline**
 
