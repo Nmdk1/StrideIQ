@@ -79,18 +79,18 @@
 - **display_name:** Progressive long (easy → moderate)
 - **sme_status:** `draft`
 - **volume_family:** `composite`
-- **definition:** Mostly **easy** long run with a **late** segment that progresses to **steady moderate** (not necessarily goal marathon pace)—teaches patience and finishing rhythm without full race specificity.
-- **execution:** Early bulk easy; final **~15–25%** smooth progression toward moderate/steady; no sprint finish. Cool down easy if structure wraps inside single run.
-- **primary_adaptations:** Aerobic + late neuromuscular engagement; mental discipline.
+- **definition:** Mostly **easy** long run with a **late** segment that **smoothly** picks up to **steady moderate**—**not** marathon- or half-marathon **race pace**, and **not** **threshold** work (StrideIQ does not use “tempo” as a system term—§4.2). Teaches patience and a controlled **finish rhythm** without full race specificity.
+- **execution:** Early bulk **easy** at true conversational effort—**stops** for fluid/fuel/bathroom on the easy bulk are fine (same philosophy as **`long_easy_aerobic_staple`**). Final **~15–25%** of the run: **gradual** shift toward **moderate/steady**; **no** kick or sprint. If the top feels like **threshold**, the progression was too aggressive or started too early. Post-run: judge effort and pace with **terrain, weather, and fatigue** context.
+- **primary_adaptations:** Aerobic base + late neuromuscular engagement; pacing discipline.
 - **systems_stressed:** Slightly higher late-load than pure easy long; still lower than MP/HMP blocks.
-- **benefits:** Bridge toward race-specific longs; useful for athletes who fade mentally late.
-- **risks:** Starting the “easy” portion too fast; turning moderate into **threshold** by mistake.
-- **when_to_avoid:** **`injury_return`** until easy longs are consistently tolerated.
-- **n1_selection_notes:** Fits **`base_building`** → early **`race_specific`**; distinct from **`long_hmp`** (different pace intent).
+- **benefits:** Bridges toward race-specific longs; useful when athletes start too hot or need a **controlled** late pick-up without MP/HMP stress.
+- **risks:** **Easy** miles too fast; late segment drifts into **threshold** by mistake; **single-session spike** if total duration or late-quality jump far beyond recent longest or typical quality load.
+- **when_to_avoid:** **`injury_return`** until easy longs (and easy bulk discipline) are consistently tolerated; acute flare patterns with late-hard running.
+- **n1_selection_notes:** Strong fit **`base_building`** → early **`race_specific`**; **`peak_fitness`** / **`full_featured_healthy`** when programming calls for **moderate** finish only. Distinct from **`long_hmp_finish_half_marathon`** and **`long_fast_finish_race_pace_touch`** (those carry **race-pace** intent—this one does **not**).
 - **typical_build_context_tags:** `base_building`, `race_specific`, `full_featured_healthy`, `peak_fitness`
-- **typical_placement:** Mid-base through early specific.
-- **pairs_poorly_with:** Standalone threshold continuous **next morning** for low-tolerance athletes without SME intent.
-- **source_notes:** Tier B — licensed corpus; progression long / stamina progression patterns.
+- **typical_placement:** Mid-base through early specific; occasional use later when **easy** long + **light** rhythm work is indicated.
+- **pairs_poorly_with:** Standalone **threshold**-dense day **next morning** for low-tolerance athletes without explicit plan intent.
+- **source_notes:** Tier A — founder SME primary (Michael Shaffer), aligned with easy-long / session-load principles; internal ref: [`forget-the-10-rule`](https://mbshaf.substack.com/p/forget-the-10-rule) — spec §4.4.
 
 ---
 
@@ -100,18 +100,18 @@
 - **display_name:** Fast-finish long (race-pace touch)
 - **sme_status:** `draft`
 - **volume_family:** `composite`
-- **definition:** Easy bulk with a **short** finish at **goal race pace or slightly faster**—race-specific **touch**, not a second time trial inside the long run.
-- **execution:** Preserve large easy majority; final **~2–4 mi** (or ~10–15 min) at **goal pace** only when athlete tolerates; requires fueling discipline and honest easy pace early.
-- **primary_adaptations:** Late-race neuromuscular and metabolic specificity; confidence.
-- **systems_stressed:** High eccentric/load spike in final segment; glycogen demand.
-- **benefits:** Teaches closing when tired; time-efficient specificity.
-- **risks:** Doing “fast finish” **every** week; starting easy too hard; blurring into full MP long.
-- **when_to_avoid:** **`injury_return`**; low durability; heat without adjusted expectations.
-- **n1_selection_notes:** Reserve for **`race_specific`** / **`peak_fitness`**; frequency should be **low** vs easy long staple.
+- **definition:** **Large easy bulk** with a **short** finish at **goal race pace for the target event** (from **Training Pace Calculator** / goal race anchor)—a **touch** of specificity, **not** a second race inside the long run. **Not** a continuous **MP block** (see **`long_mp_continuous_marathon`**) and **not** **threshold**.
+- **execution:** Keep the **majority** truly easy—**stops** for fuel/fluid on the easy bulk are compatible with the intent. Final **~2–4 mi** (or **~10–15 min**) at **goal pace** only when tolerance and weekly structure support it; **±5 s/mi** band around calculator pace when the product surfaces numbers—**conditions** still explain splits. Requires **early** discipline so the finish is the **only** hard segment.
+- **primary_adaptations:** Late-race neuromuscular and metabolic specificity; confidence closing on tired legs.
+- **systems_stressed:** Eccentric and metabolic **spike** in the final segment; glycogen demand.
+- **benefits:** Time-efficient **race-pace rehearsal** without full MP/HMP long architecture.
+- **risks:** Scheduling **every** week; easy miles too fast; morphing into **full MP long** or **threshold** by accident; **spike injury risk** if total long or finish segment jumps abruptly vs recent longest / recent quality.
+- **when_to_avoid:** **`injury_return`**; low durability; extreme heat without adjusted expectations; novice athletes without easy-long discipline.
+- **n1_selection_notes:** Reserve for **`race_specific`** / **`peak_fitness`**; **low frequency** vs **`long_easy_aerobic_staple`**. Match **pace** to the **goal distance** (e.g. marathon goal vs half goal)—do not use **threshold** as a proxy.
 - **typical_build_context_tags:** `race_specific`, `peak_fitness`, `full_featured_healthy`
-- **typical_placement:** Late base / specific phase; not weekly default.
-- **pairs_poorly_with:** **`long_mp`** or **`long_hmp`** in same microcycle without SME volume check.
-- **source_notes:** Tier B — licensed corpus; race-pace-touch finish in long run (internal QA — spec §4.4).
+- **typical_placement:** Late base / specific; **not** the weekly default.
+- **pairs_poorly_with:** **`long_mp_continuous_marathon`**, **`long_mp_intervals_in_long`**, or **`long_hmp_finish_half_marathon`** in the same microcycle without explicit volume/tolerance rationale.
+- **source_notes:** Tier A — founder SME primary (Michael Shaffer); internal ref: [`forget-the-10-rule`](https://mbshaf.substack.com/p/forget-the-10-rule) — spec §4.4.
 
 ---
 
@@ -120,19 +120,19 @@
 - **stem:** `medium_long`
 - **display_name:** Medium-long run (aerobic)
 - **sme_status:** `draft`
-- **volume_family:** `long`
-- **definition:** Mid-week **endurance sandwich**—longer than daily easy, shorter than weekend long; **all easy** unless a different variant is explicitly chosen.
-- **execution:** Conversational easy; typically **~70–75%** of weekend long distance conceptually (engine uses tier/week context); no quality bolt-on unless programmed elsewhere.
-- **primary_adaptations:** Aerobic volume without peak long-run musculoskeletal dose.
-- **systems_stressed:** Moderate time on feet; recovery cost lower than peak long.
-- **benefits:** Supports higher weekly mileage with distributed load.
-- **risks:** Pace creep; scheduling too close to hard days for fragile athletes.
-- **when_to_avoid:** When athlete needs **maximum** simplicity (combine into easy days) per SME.
-- **n1_selection_notes:** **`base_building`**, **`full_featured_healthy`**, **`race_specific`** (volume support).
+- **volume_family:** `long` (stem family **`medium_long`**; aerobic accounting often `E`)
+- **definition:** Mid-week **endurance layer**—**longer than** a typical **single** easy day, **shorter than** the **peak** weekly long; **all easy** unless another variant is explicitly selected. Same **stop tolerance** as **`long_easy_aerobic_staple`** (fluid, fuel, bathroom, brief regrouping).
+- **execution:** True **conversational** easy. Engine often targets **~70–75%** of weekend long **distance** as a **conceptual** anchor—**N=1 scaling** still applies (high daily mileage athletes may use **time** or % of week more than a fixed fraction). **No** embedded quality here. Avoid **pace creep** into steady moderate.
+- **primary_adaptations:** Aerobic volume with **lower** peak musculoskeletal dose than the longest run.
+- **systems_stressed:** Moderate time on feet; recovery cost typically **below** peak long.
+- **benefits:** Spreads weekly load; supports durability and mileage **without** always stacking duration on one day.
+- **risks:** Scheduling **too close** to hard sessions for fragile athletes; **spike** if MLR duration jumps far above recent mid-week norms; pace creep.
+- **when_to_avoid:** When **maximum** simplicity is needed (fold into plain easy days); acute injury patterns where **any** extra duration mid-week hurts.
+- **n1_selection_notes:** **`base_building`**, **`full_featured_healthy`**, **`race_specific`** (volume support without weekend-only architecture). **`durability_rebuild`**: use **shorter** MLR. For **newer** athletes, “medium-long” still scales off **typical** easy-day length—see principles (e.g. **> ~2×** daily easy when daily volume is small; **not** linear at high daily mileage).
 - **typical_build_context_tags:** `base_building`, `full_featured_healthy`, `race_specific`, `durability_rebuild` (shorter MLR)
 - **typical_placement:** Mid-week.
-- **pairs_poorly_with:** Threshold intervals **same day**; long MP **next day** without recovery rationale.
-- **source_notes:** Tier B — licensed corpus; medium-long as easy aerobic endurance.
+- **pairs_poorly_with:** **Threshold intervals** or **VO2** **same day**; **`long_mp`** or heavy quality **next day** without recovery rationale.
+- **source_notes:** Tier A — founder SME primary (Michael Shaffer), consistent with easy-long / distributed-load framing; internal ref: [`forget-the-10-rule`](https://mbshaf.substack.com/p/forget-the-10-rule) — spec §4.4.
 
 ---
 
@@ -142,18 +142,18 @@
 - **display_name:** Long run with continuous marathon-pace block
 - **sme_status:** `draft`
 - **volume_family:** `composite`
-- **definition:** Long run containing a **continuous** segment at **marathon goal pace** after easy warm-up—marathon **specific endurance**.
-- **execution:** Aligns with scaler progression concept (easy WU, then MP block, easy CD); total run capped by **peak long** and engine **MP volume limits**. Narrative must state **MP is goal race pace**, not threshold.
-- **primary_adaptations:** Marathon-specific metabolic and musculoskeletal durability at goal pace.
-- **systems_stressed:** High glycogen demand; significant eccentric load if course hilly.
-- **benefits:** Direct rehearsal of race rhythm; efficient specificity per mile at MP.
-- **risks:** Too frequent MP longs; MP pace set too aggressively vs current fitness; heat/hills ignored in review.
-- **when_to_avoid:** Half-focused athletes unless SME repurposes; **`injury_return`**; early base before easy longs are solid.
-- **n1_selection_notes:** **`race_specific`**, **`peak_fitness`** for marathoners; pair with easy weeks and cutbacks.
+- **definition:** Long run with a **continuous** block at **marathon goal pace** after an **easy** warm-up—**marathon-specific endurance**. **MP** comes from **Training Pace Calculator** / marathon goal anchor—**not** **threshold** pace and **not** “tempo” language (§4.2).
+- **execution:** Easy warm-up (stops for fuel/fluid **before** MP block are fine). **MP** segment: use **±5 s/mi** band around calculator MP when numeric ranges are shown—**effort + context** over split-chasing on rolling terrain / heat / wind. Easy cool-down. Total run and **MP minutes/miles** capped by **peak long** rules and engine **MP volume limits**; progression should respect **recent longest run** and **recent MP exposure** (avoid **single-session** and **single-block** spikes vs what the athlete has tolerated).
+- **primary_adaptations:** Marathon-specific metabolic and musculoskeletal durability at **goal** marathon rhythm.
+- **systems_stressed:** High glycogen demand; eccentric load **especially** if hilly or if form degrades late.
+- **benefits:** Direct rehearsal of **race rhythm** at goal MP; efficient specificity per mile at the target event pace.
+- **risks:** **Too frequent** MP longs; MP set **too fast** vs current fitness; ignoring **heat, hills, dehydration** in post-run review; stacking with other dense quality without recovery.
+- **when_to_avoid:** **Half-marathon–primary** athletes unless explicitly repurposed; **`injury_return`**; early base before **easy** longs and **easy** discipline are solid; low durability / low data confidence on appropriate MP.
+- **n1_selection_notes:** **`race_specific`**, **`peak_fitness`** for **marathon** focus; alternate with **`long_easy_aerobic_staple`** and cutback weeks. Often **one** primary MP-long architecture in a microcycle unless volume/tolerance clearly support more.
 - **typical_build_context_tags:** `race_specific`, `peak_fitness`, `full_featured_healthy`
-- **typical_placement:** Specific phase; progression over **mp_week**-style sequencing in engine.
-- **pairs_poorly_with:** **`long_hmp`** heavy week; threshold continuous **adjacent** without plan intent.
-- **source_notes:** Tier B — licensed corpus; continuous MP-in-long progression (conceptual alignment with `workout_scaler`; spec §4.4).
+- **typical_placement:** Marathon **specific** phase; progression aligned with engine **mp_week**-style sequencing where applicable.
+- **pairs_poorly_with:** Dense **`long_hmp_finish_half_marathon`** week; **`long_mp_intervals_in_long`** **plus** this variant without volume rationale; **threshold**-heavy adjacent days for fragile athletes without intent.
+- **source_notes:** Tier A — founder SME primary (Michael Shaffer); scaler alignment (`workout_scaler`); internal ref: [`forget-the-10-rule`](https://mbshaf.substack.com/p/forget-the-10-rule) — spec §4.4.
 
 ---
 
@@ -163,18 +163,18 @@
 - **display_name:** Long run with MP intervals (easy between)
 - **sme_status:** `draft`
 - **volume_family:** `composite`
-- **definition:** Same marathon specificity intent as continuous MP block, but **fractionated**—e.g. **2×3 mi @ MP** with **1 mi easy** between—lower continuous MP stress, useful early in MP introduction or for athletes who break on long continuous MP.
-- **execution:** Warm up easy; MP reps with **honest** easy jog between; cool down easy. Total MP miles still capped by weekly rules.
-- **primary_adaptations:** MP rhythm with partial recovery; neuromuscular practice at goal pace.
-- **systems_stressed:** Transitions add load; still high metabolic demand.
-- **benefits:** Psychologically chunked; can reduce injury risk vs first long continuous MP for some athletes.
-- **risks:** Easy “float” becomes steady moderate; total MP volume creep.
-- **when_to_avoid:** Same contraindications as continuous MP long; novices.
-- **n1_selection_notes:** Often **`race_specific`** **before** longest continuous MP weeks; good bridge in **`peak_fitness`** mesocycles.
+- **definition:** Same **marathon specificity** as **`long_mp_continuous_marathon`**, but **broken** into reps with **easy** running between—e.g. **2 × 3 mi @ MP** with **~1 mi easy** between (illustrative). Reduces **continuous** MP musculoskeletal and metabolic stress; useful when introducing MP in-long or when athletes struggle to hold **one** long MP segment.
+- **execution:** Warm up easy. **MP** reps at calculator MP (**±5 s/mi** when surfaced); **honest** easy **jog** between—**not** a steady moderate “float.” Brief **stop** for fuel between reps is acceptable if it preserves **true** easy between. Cool down easy. **Total MP** miles/minutes still capped by weekly / session rules; watch **transitions** (they add **mechanical** load).
+- **primary_adaptations:** MP rhythm with **partial** recovery; neuromuscular practice at goal pace in **repeat** form.
+- **systems_stressed:** Transitions + **accelerations** add load; still **high** metabolic demand.
+- **benefits:** **Chunked** psychology; for some athletes, **lower** risk than the first **long continuous** MP exposure.
+- **risks:** “Easy” between becomes **moderate**; **total MP** volume **creep** across the week; **spike** if combined MP time jumps vs recent history.
+- **when_to_avoid:** Same family contraindications as **`long_mp_continuous_marathon`**; **novices** without easy-long foundation; **`injury_return`** unless explicitly progressed.
+- **n1_selection_notes:** Often **`race_specific`** **before** the longest **continuous** MP weeks; bridge in **`peak_fitness`** / **`full_featured_healthy`** marathon blocks.
 - **typical_build_context_tags:** `race_specific`, `peak_fitness`, `full_featured_healthy`
-- **typical_placement:** Early specific → mid specific.
-- **pairs_poorly_with:** Double MP sessions same week without volume support.
-- **source_notes:** Tier B — licensed corpus; fractional MP in long run; maps to scaler structured MP pattern (spec §4.4).
+- **typical_placement:** Early **specific** → mid **specific**.
+- **pairs_poorly_with:** **`long_mp_continuous_marathon`** **plus** this pattern in the same week without volume support; stacked **MP** elsewhere without rationale.
+- **source_notes:** Tier A — founder SME primary (Michael Shaffer); maps to scaler structured MP pattern; internal ref: [`forget-the-10-rule`](https://mbshaf.substack.com/p/forget-the-10-rule) — spec §4.4.
 
 ---
 
@@ -184,18 +184,18 @@
 - **display_name:** Long run with half-marathon pace finish
 - **sme_status:** `draft`
 - **volume_family:** `composite`
-- **definition:** Long run where the **final segment** is at **half-marathon goal pace**—**higher** intensity than MP work; **not** threshold prescription.
-- **execution:** Easy for early miles; **HMP** segment grows through phase (engine: ~3→4→6→8 mi caps vs total long). Pace from **HMP / race calculator**, not T pace.
-- **primary_adaptations:** HM-specific durability and lactate handling at race effort.
-- **systems_stressed:** High late-run load; greater than MP long for same duration at quality.
-- **benefits:** Specific to HM and 10-mile oriented athletes; strong race-prep stimulus.
-- **risks:** Confusing **HMP** with **threshold** or **10K** pace; doing too often on tired legs.
-- **when_to_avoid:** Marathon athletes unless SME repurposes; **`injury_return`**; early base.
-- **n1_selection_notes:** **`race_specific`**, **`peak_fitness`** for **half** focus; ensure weekly structure tolerates late-race quality.
+- **definition:** Long run with a **late** segment at **half-marathon goal pace**—**harder** than **MP** work and **distinct** from **threshold** prescription (do **not** derive HMP from **threshold** pace; §4.2—no “tempo” vocabulary).
+- **execution:** Early miles **easy**—**stops** on the easy bulk OK. **HMP** finish: pace from **Training Pace Calculator** / HM goal (**±5 s/mi** when surfaced). Engine may progress **~3 → 4 → 6 → 8 mi** style caps **vs** total long—treat as **illustrative**; **N=1** tolerance governs. Cool down easy after the HMP segment when programmed.
+- **primary_adaptations:** HM-specific **durability** and **rhythm** at race effort; lactate handling at **HM** intensity (not generic “hard”).
+- **systems_stressed:** **High** late-run load—typically **greater** stress than **MP**-quality at comparable **duration** at quality.
+- **benefits:** Strong **HM / 10-mile–oriented** race-prep stimulus; teaches **closing** at **HM** rhythm after volume.
+- **risks:** Confusing **HMP** with **threshold** or **10K** pace; programming **too often** on tired legs; **spike** if HMP-mileage jumps vs recent history.
+- **when_to_avoid:** **Marathon-primary** athletes unless explicitly repurposed; **`injury_return`**; early base; athletes without **easy** bulk discipline.
+- **n1_selection_notes:** **`race_specific`**, **`peak_fitness`** for **half** focus; ensure the **week** tolerates **late** quality. Not the default for marathon blocks.
 - **typical_build_context_tags:** `race_specific`, `peak_fitness`, `full_featured_healthy`
-- **typical_placement:** Late base / specific for HM.
-- **pairs_poorly_with:** **`long_mp`** in same week for single-distance focus athletes without SME.
-- **source_notes:** Tier B — HM-specific long-run finishes; aligns with scaler `_scale_hmp_long_run`.
+- **typical_placement:** Late base / **specific** for **HM**.
+- **pairs_poorly_with:** Dense **`long_mp_continuous_marathon`** / **`long_mp_intervals_in_long`** in the same week for **single-distance** focus athletes without explicit rationale.
+- **source_notes:** Tier A — founder SME primary (Michael Shaffer); aligns with scaler `_scale_hmp_long_run`; internal ref: [`forget-the-10-rule`](https://mbshaf.substack.com/p/forget-the-10-rule) — spec §4.4.
 
 ---
 
@@ -205,18 +205,18 @@
 - **display_name:** Cutdown long (segments pick up pace)
 - **sme_status:** `draft`
 - **volume_family:** `composite`
-- **definition:** Multiple **segments** within the long run, each **slightly faster** than the last—starts very easy, ends **steady hard** but still **controlled** (not an all-out sprint finish unless SME explicitly programs SFF separately).
-- **execution:** Example pattern: 4–6 segments with **small** pace steps; must remain **aerobic-to-steady** unless labeled as race-pace variant. Requires strong pacing literacy.
-- **primary_adaptations:** Pacing skill; gradual recruitment; mental engagement.
-- **systems_stressed:** Cumulative fatigue across segments; easy to overrun into **threshold**.
-- **benefits:** Variety for athletes bored by pure easy long; teaches even effort shifts.
-- **risks:** **Huge** misuse surface—athletes treat as **interval** workout; coach/system must cap top intensity.
-- **when_to_avoid:** **`injury_return`**; athletes who cannot hold easy early.
-- **n1_selection_notes:** **`full_featured_healthy`**, **`race_specific`** for advanced; **not** a default population long.
+- **definition:** **Several** segments in **one** long run, each **a bit faster** than the last—starts **very easy**, ends **steady hard** but **controlled**. **Not** an interval session and **not** **threshold** reps; **not** a race-pace **MP/HMP** variant unless explicitly **re-labeled** to that family. **No** all-out sprint finish here.
+- **execution:** Example: **4–6** segments with **small** pace steps; early segments must stay **truly easy**. **Stops** between segments for fuel/fluid are acceptable if they don’t turn the run into **interval** training psychologically. **Top** end stays **steady hard / aerobic-steady**—if it becomes **threshold**, steps were too large or easy baseline was too fast. Requires **strong** pacing literacy and conservative **first** segment.
+- **primary_adaptations:** Pacing skill; progressive recruitment; engagement on long days without **race-pace** load.
+- **systems_stressed:** **Cumulative** fatigue across steps; high misuse risk—**easy** to bleed into **threshold**.
+- **benefits:** Variety; teaches **discipline** on **small** gear changes without MP/HMP stress.
+- **risks:** Athletes **hammer** each rep; **coach/system** must **cap** top intensity and **step size**; **spike** risk if total **quality-equivalent** load jumps vs recent long runs.
+- **when_to_avoid:** **`injury_return`**; athletes who **cannot** hold **easy** early; low self-regulation / always-overpace profiles until basics improve.
+- **n1_selection_notes:** **`full_featured_healthy`**, **`race_specific`**, **`peak_fitness`** for **advanced** athletes—**not** a default population long. **`base_building`**: only **mild** cutdown with explicit SME intent.
 - **typical_build_context_tags:** `race_specific`, `peak_fitness`, `full_featured_healthy`, `base_building` (mild cutdown only + SME)
-- **typical_placement:** Mid-late segment of season.
-- **pairs_poorly_with:** Heavy **`alternating_threshold_on_minutes`** same week for fragile athletes.
-- **source_notes:** Tier C + SME — cutdown / wave long formats vary widely; no public attribution (§4.4).
+- **typical_placement:** Mid–late season segments for athletes who tolerate **complex** long-run structure.
+- **pairs_poorly_with:** Dense **`alternating_threshold_on_minutes`** or other **threshold**-heavy weeks for fragile athletes without rationale.
+- **source_notes:** Tier A — founder SME primary (Michael Shaffer); format family varies widely in the wild—this row is **StrideIQ’s controlled** definition; internal ref: [`forget-the-10-rule`](https://mbshaf.substack.com/p/forget-the-10-rule) — spec §4.4.
 
 ---
 
@@ -235,4 +235,4 @@
 
 ---
 
-*Pilot v1 — 8 long-family variants. **`draft`** until founder explicit SME sign-off; runtime wiring still §2 / P0.*
+*Pilot v1 — 8 long-family variants. **`sme_status` per row** (see header + table); runtime wiring still §2 / P0.*
