@@ -13,13 +13,13 @@
 | Track | Status (rolling) | Files / notes |
 |-------|-------------------|---------------|
 | Threshold | **Approved** (9 variants) | `threshold_pilot_v1.md` |
-| Long / medium-long / MP / HMP | **Draft KB** (8 variants — await explicit founder SME) | `long_run_pilot_v1.md` |
+| Long / medium-long / MP / HMP | **Partial SME** (1/8 **approved**, 7 **`draft`**) | `long_run_pilot_v1.md` |
 | Easy / recovery / easy+strides | Not started | future `easy_pilot_v1.md` |
 | VO2 intervals | Not started | future `intervals_pilot_v1.md` |
 | Reps / strides / hills | Deferred per spec | after core pilots stable |
 | Rest | Optional one-liner | trivial |
 
-**Exit Phase 1 when:** Founder SME has **`approved`** each pilot file you care about for v1 product scope (not every stem on day one—scope v1 explicitly). **As of registry v0.2.10:** threshold pilot **approved**; long-family pilot **`draft`** until founder explicit sign-off; easy / VO2 / etc. still **not started** until scoped.
+**Exit Phase 1 when:** Founder SME has **`approved`** each pilot file you care about for v1 product scope (not every stem on day one—scope v1 explicitly). **As of registry v0.2.11:** threshold pilot **approved**; long-family pilot **per-variant SME** (`long_easy_aerobic_staple` **approved** 2026-03-20; other ids **`draft`**); easy / VO2 / etc. still **not started** until scoped.
 
 ---
 

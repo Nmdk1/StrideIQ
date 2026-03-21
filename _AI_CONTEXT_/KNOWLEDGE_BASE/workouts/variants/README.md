@@ -1,6 +1,6 @@
 # Workout variant KB (pilot)
 
-**Spec:** [`docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md`](../../../../docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md) (v0.2.10)
+**Spec:** [`docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md`](../../../../docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md) (v0.2.11)
 
 **Purpose:** Per-variant depth (execution, risks, N=1 notes, closed `build_context_tag` set) for plan intelligence and future registry wiring. This directory is **KB**, not runtime code.
 
@@ -11,12 +11,12 @@
 | File | Scope | Status |
 |------|--------|--------|
 | [`threshold_pilot_v1.md`](threshold_pilot_v1.md) | Pilot 1 — threshold / threshold_intervals | **9 variants `sme_status: approved`** (founder 2026-03-22) |
-| [`long_run_pilot_v1.md`](long_run_pilot_v1.md) | Pilot 2 — long / medium_long / long_mp / long_hmp | **8 variants `sme_status: draft`** — await founder SME |
+| [`long_run_pilot_v1.md`](long_run_pilot_v1.md) | Pilot 2 — long / medium_long / long_mp / long_hmp | **1/8 `approved`** (`long_easy_aerobic_staple`, 2026-03-20); **7 `draft`** — see file header |
 
 ## Authority
 
 - Breadth taxonomy remains in [`../WORKOUT_LIBRARY.md`](../WORKOUT_LIBRARY.md); **where a variant exists here, these definitions override** population-style summaries in the library for that variant ID.
-- Pilot 1 threshold rows are **`approved`** (see `threshold_pilot_v1.md`). Pilot 2 long-family rows are **`draft`** until founder explicit SME sign-off (`long_run_pilot_v1.md`). Additional pilots remain **`draft`** until founder sign-off. Runtime wiring still follows spec §2 (P0 gate).
+- Pilot 1 threshold rows are **`approved`** (see `threshold_pilot_v1.md`). Pilot 2 long-family: **per-variant** SME sign-off in `long_run_pilot_v1.md` (header lists approved ids); remaining rows stay **`draft`**. Additional pilots remain **`draft`** until founder sign-off. Runtime wiring still follows spec §2 (P0 gate).
 
 ## PR / gate
 

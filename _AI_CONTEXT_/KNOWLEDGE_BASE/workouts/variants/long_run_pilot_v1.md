@@ -1,11 +1,11 @@
 # Long-run pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.10 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.11 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
 **Stems covered:** `long`, `medium_long`, `long_mp`, `long_hmp` (aliases per `workout_scaler.py`: `long_run`, `marathon_pace_long`, etc.)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `_scale_long_run`, `_scale_medium_long`, `_scale_mp_long_run`, `_scale_hmp_long_run`.
 
-**SME approval:** All eight rows are **`sme_status: draft`** until the founder **explicitly** signs off (PR comment, session note, or direct edit)—not inferred from agent momentum. **Do not** promote to `approved` without that. Runtime wiring remains gated per `WORKOUT_FLUENCY_REGISTRY_SPEC.md` §2 regardless.
+**SME approval:** Each row carries its own **`sme_status`**. **Do not** promote to `approved` without **explicit** founder sign-off for that id (session, PR comment, or direct edit)—not inferred from agent momentum. **Approved so far:** `long_easy_aerobic_staple` — founder SME **2026-03-20** (session). Runtime wiring remains gated per `WORKOUT_FLUENCY_REGISTRY_SPEC.md` §2 regardless.
 
 **Cross-reference:** Embedded **threshold** quality in the **last** portion of a long day is also described in `threshold_pilot_v1.md` (`progressive_threshold_25_40`). Prefer **one** canonical variant for “quality in the long run” unless SME splits long-stem vs threshold-stem dispatch.
 
@@ -56,7 +56,7 @@
 
 - **stem:** `long`
 - **display_name:** Easy long run
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `long` (aerobic accounting often `E` in volume summaries—keep **`long`** as stem family here)
 - **definition:** The default **weekly** long run—**steady easy** effort for the moving portions, **no deliberate race-pace block**. Builds endurance and fat oxidation without adding race-specific stress. **Stops** for fluid, fuel, bathroom, or brief regrouping (including short walking) are **normal** and compatible with this variant.
 - **execution:** Ease into conversational pace; hold easy for the run as a whole. **Stop as needed** for hydration and fuel on longer outings—especially heat or high sweat loss—without treating the session as “broken.” Cap distance/time per weekly volume, peak rules, and **recent longest-run progression** (avoid abrupt single-session spikes vs what the athlete has tolerated in the prior few weeks). Narrative: prioritize **effort + context**, not uninterrupted clock purity.
@@ -69,7 +69,7 @@
 - **typical_build_context_tags:** `base_building`, `durability_rebuild`, `injury_return`, `full_featured_healthy`, `minimal_sharpen` (shortened), `race_specific` (easy long while quality is expressed on other days or as embedded work elsewhere)
 - **typical_placement:** Weekly for most competitive distance runners; often weekend; backbone from 5K through marathon **when** a long day fits the athlete’s architecture.
 - **pairs_poorly_with:** Heavy VO2 or long MP block **same day**; racing long hard mid-week without recovery context.
-- **source_notes:** Tier A — SME primary for stop tolerance, scalable “long” definition, session-spike caution, and injury-return N=1 framing. Internal builder ref (not athlete-facing bibliography): load/injury synthesis [`forget-the-10-rule`](https://mbshaf.substack.com/p/forget-the-10-rule) — spec §4.4 (no third-party program names in user surfaces).
+- **source_notes:** Tier A — founder SME primary (Michael Shaffer) for stop tolerance, scalable “long” definition, session-spike caution, and injury-return N=1 framing. Founder-authored builder ref (not athlete-facing bibliography): [`forget-the-10-rule`](https://mbshaf.substack.com/p/forget-the-10-rule) — spec §4.4 (no third-party program names in user surfaces).
 
 ---
 
@@ -224,7 +224,7 @@
 
 | `id` | `stem` | `volume_family` | `sme_status` |
 |------|--------|-----------------|--------------|
-| `long_easy_aerobic_staple` | long | long | draft |
+| `long_easy_aerobic_staple` | long | long | approved |
 | `long_progressive_moderate_finish` | long | composite | draft |
 | `long_fast_finish_race_pace_touch` | long | composite | draft |
 | `medium_long_aerobic_staple` | medium_long | long | draft |
