@@ -43,7 +43,7 @@
 
 ## Phase 3 — Wire (runtime)
 
-**Status:** **Active** — next fluency workstream is runtime wiring (subject to §2 P0).
+**Status:** **Active** — core wiring shipped (**2026-03-21**): deterministic `workout_variant_id` dispatch from scaler-shaped titles/segments, `GeneratedWorkout.workout_variant_id`, nullable `planned_workout.workout_variant_id` + migration, `_save_plan` persistence, calendar/preview fields; CI tests cover dispatch, generator, and DB save path. **Still open for Phase 3 exit:** narrative/UI surfacing where tier allows, Path D scenario tests, production migration + smoke.
 
 **Prerequisite:** Phase 1 **complete for all v1-scoped stems** (founder gate above) **and** Phase 2 **green** — do not wire half the toolbox.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -107,4 +108,31 @@ def test_generator_sets_workout_variant_ids():
     assert non_rest, "expected at least one non-rest workout"
     assert all(w.workout_variant_id is not None for w in non_rest), (
         "framework workouts should resolve a variant id when registry is present"
+    )
+
+
+@pytest.mark.skipif(not REGISTRY_PATH.is_file(), reason="workout_registry.json not in workspace")
+def test_save_plan_persists_workout_variant_ids(db_session, test_athlete):
+    """framework_v2 _save_plan writes workout_variant_id to planned_workout rows."""
+    from models import PlannedWorkout
+    from routers.plan_generation import _save_plan
+    from services.plan_framework.generator import PlanGenerator
+
+    gen = PlanGenerator(None)
+    plan = gen.generate_standard(
+        distance="10k",
+        duration_weeks=6,
+        tier="mid",
+        days_per_week=5,
+        start_date=date(2026, 4, 6),
+    )
+    db_plan = _save_plan(db_session, test_athlete.id, plan)
+    rows = (
+        db_session.query(PlannedWorkout)
+        .filter(PlannedWorkout.plan_id == db_plan.id)
+        .all()
+    )
+    assert rows, "expected stored planned workouts (non-rest)"
+    assert all(r.workout_variant_id for r in rows), (
+        "DB rows should carry resolved variant ids when registry is present"
     )
