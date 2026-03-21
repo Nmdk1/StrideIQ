@@ -37,7 +37,7 @@
 
 - Prescribe **MP** and **HMP** from the **Training Pace Calculator** using the athlete’s **goal race** (or best defensible race anchor the product already uses for those distances)—not from threshold pace. **MP ≠ threshold** in copy or logic.
 - **Band (per mile, when the product surfaces a numeric range):** treat **±5 seconds per mile** around calculator MP or HMP as the same **execution tolerance** philosophy as threshold sessions unless SME narrows or widens for a specific variant—effort + context still beat split-chasing.
-- **MP over-under miles (alternating):** some long runs alternate **mile** segments **faster** then **slower** than goal **MP** by a **small fixed offset** (founder exemplar **~15–20 s/mi** each way)—see **`long_mp_over_under_alternating_miles`**. **Structured MP rhythm**, not threshold reps and not an easy long mislabeled.
+- **MP over-under miles (alternating):** **advanced** marathoners—typically **2nd / 3rd+** marathon **build**, many long runs **already** in the legs—may use alternating **mile** segments **faster** then **slower** than goal **MP** by a **small fixed offset** (founder exemplar **~15–20 s/mi** each way)—see **`long_mp_over_under_alternating_miles`**. **Plateau / engagement** tool, **not** a first-build default. **Structured MP rhythm**, not threshold reps and not an easy long mislabeled.
 
 **Easy and progressive longs:**
 
@@ -234,18 +234,18 @@
 - **display_name:** Long run — MP over-under miles
 - **sme_status:** `draft`
 - **volume_family:** `composite`
-- **definition:** Within a **long run** with **easy** warm-up and cool-down, the **main set** alternates **full mile** segments: one mile **~15–20 s/mi faster** than calculator **goal MP**, the next mile **~15–20 s/mi slower** than **MP**—repeat for **8–18 miles** of **over-under** work (founder range; **N=1** adjusts **offset**, **mile count**, and **total long** distance). Teaches **MP rhythm**, **discipline**, and **fueling** under **oscillating** pace—**not** cruise **threshold** intervals and **not** a progressive **cutdown** (`long_cutdown_aerobic_to_steady`).
+- **definition:** For **advanced** marathoners in **their second, third, or later marathon build** who already have **many long runs** behind them—**plateau-breaking** and **interest** on **MP** long days, not a **first-marathon** tool. Within a **long run** with **easy** warm-up and cool-down, the **main set** alternates **full mile** segments: one mile **~15–20 s/mi faster** than calculator **goal MP**, the next mile **~15–20 s/mi slower** than **MP**—repeat for **8–18 miles** of **over-under** work (founder range; **N=1** adjusts **offset**, **mile count**, and **total long** distance). Teaches **MP rhythm**, **discipline**, and **fueling** under **oscillating** pace—**not** cruise **threshold** intervals and **not** a progressive **cutdown** (`long_cutdown_aerobic_to_steady`).
 - **execution:** Easy warm-up (distance **N=1**); then **mile A** (MP **minus** offset), **mile B** (MP **plus** offset), alternating; easy cool-down. **±5 s/mi** band philosophy around **each** target mile still applies where the product shows bands—**conditions** change realized splits. **Stops** for fuel/fluid allowed per long-run principles. **Engine:** *not implemented* in `_scale_mp_long_run` today—requires **segmented** long prescription in a future builder.
 - **primary_adaptations:** **Marathon** pace ** literacy**; **glycogen** management across **rolling** effort; mental **rhythm** under **small** pace oscillation.
 - **systems_stressed:** **Sustained** load with **pace changes** each mile—mechanical and metabolic; **higher** error rate than **steady MP** blocks if athlete **chases** splits without context.
-- **benefits:** **Race-specific** **rhythm** practice for athletes who **flatline** or **drift** on steady MP; **engagement** on long **MP** days.
+- **benefits:** **Race-specific** **rhythm** practice for athletes who **flatline** or **drift** on steady MP; **mental engagement** and **novelty** for veterans who “already know” steady MP longs; **plateau disruption** when tolerance and history support it.
 - **risks:** **Too large** offset → **threshold** / **easy** drift; **too many** miles for current tolerance; **stacking** with **`vo2_3x2mi_long_reps`** or dense **MP** volume same week.
-- **when_to_avoid:** **`injury_return`**; athletes who **cannot** hold **two** distinct **gears**; **minimal_sharpen** full dose; **no** recent **steady MP** foundation.
-- **n1_selection_notes:** **`race_specific`**, **`peak_fitness`** for **marathon-primary** with **proven** **MP** exposure; **ledger** must **count** this as **major** **long** quality—not “just easy miles.”
+- **when_to_avoid:** **First marathon build** or **few** lifetime long runs; **`injury_return`**; athletes who **cannot** hold **two** distinct **gears**; **minimal_sharpen** full dose; **no** recent **steady MP** foundation; **novice** or **low-mileage** profiles defaulting to simpler **`long_mp_continuous_marathon`** or **`long_easy_aerobic_staple`** first.
+- **n1_selection_notes:** **`race_specific`**, **`peak_fitness`** for **marathon-primary** athletes with **multiple** marathon **cycles** and **deep** long-run history—**selection matrix** should require **evidence** of tolerance (e.g. successful **steady MP** longs, volume, no red injury flags), not age alone. **Ledger** must **count** this as **major** **long** quality—not “just easy miles.” **Founder exemplar:** appropriate for a **Boston** (or similar) **build** when the athlete is **not** new to marathon-specific long work.
 - **typical_build_context_tags:** `race_specific`, `peak_fitness`, `full_featured_healthy`, `base_building` (shortened over-under segment + SME)
 - **typical_placement:** **Specific** phase **long**; **not** every week.
 - **pairs_poorly_with:** **`vo2_3x2mi_long_reps`** same week without SME; **`long_mp_continuous_marathon`** **dress-rehearsal** week overload without rationale.
-- **source_notes:** Tier A — founder pattern **2026-03-20** (15–20 s/mi, 8–18 mi alternating block); Tier B — over-under / wave long formats exist widely—this id is **StrideIQ’s MP-centered** definition.
+- **source_notes:** Tier A — founder pattern **2026-03-20** (15–20 s/mi, 8–18 mi alternating block); founder **population gate** **2026-03-20** (advanced, **2nd+** marathon build, long-run **mileage**, plateau / engagement—including founder **Boston** build intent); Tier B — over-under / wave long formats exist widely—this id is **StrideIQ’s MP-centered** definition.
 
 ---
 
