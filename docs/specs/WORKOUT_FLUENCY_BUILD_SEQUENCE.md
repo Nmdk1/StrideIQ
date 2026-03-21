@@ -21,7 +21,7 @@
 | Repetitions | **2** `approved` | `repetitions_pilot_v1.md` |
 | Long hill-repeat progressions (sustained VO2 hills) | Deferred per spec | after core pilots + Phase 2 map stable |
 
-**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry spec v0.2.23 (2026-03-22; Phase 1 closure landed in rev 0.2.22):** v1-scoped pilot KB has **no** remaining **`draft`** rows in threshold, long, easy, intervals, or repetitions pilots (**38** variant rows **`approved`** in those files). Long **sustained VO2 hill-repeat** progressions remain **deferred** per table (not a pilot-file stub). Phase 2 tools + §2 P0 gate still apply before Phase 3 wiring. KB variants are **inputs to deterministic plan construction** (spec §7.0).
+**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry spec v0.2.24 (2026-03-22; Phase 1 closure landed in rev 0.2.22):** v1-scoped pilot KB has **no** remaining **`draft`** rows in threshold, long, easy, intervals, or repetitions pilots (**38** variant rows **`approved`** in those files). Long **sustained VO2 hill-repeat** progressions remain **deferred** per table (not a pilot-file stub). Phase 2 tools + §2 P0 gate still apply before Phase 3 wiring. KB variants are **inputs to deterministic plan construction** (spec §7.0).
 
 ---
 
@@ -31,15 +31,14 @@
 
 **Shipped (2026-03-22):**
 
-- **Artifact:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/workout_registry.json` — v1 **38** SME-**`approved`** rows (`id`, `stem`, `volume_family`, `sme_status`, `pilot` source file). Prose stays in `*_pilot_v1.md`.
-- **CI tests:** `apps/api/tests/test_workout_registry.py` — unique ids; closed **`volume_family`** / **`sme_status`**; **`stem` → `workout_type`** ⊆ `WorkoutScaler.scale_workout` dispatch; **`## \`id\``** header set matches JSON per pilot.
+- **Artifact:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/workout_registry.json` — schema **0.2**; v1 **38** SME-**`approved`** rows (`id`, `stem`, `volume_family`, `sme_status`, `pilot`, sorted **`build_context_tags`** ⊆ §6.3). Prose stays in `*_pilot_v1.md`.
+- **CI tests:** `apps/api/tests/test_workout_registry.py` — unique ids; closed enums; **`stem` → `workout_type`** ⊆ `WorkoutScaler.scale_workout` dispatch; **`## \`id\``** header set matches JSON per pilot; **JSON ↔ pilot `typical_build_context_tags` parity** (incl. Same-as references); **eligibility snapshot** stubs (primary tag + stem).
 - **Engine stem inventory (existing):** `STEM_COVERAGE.md` + `test_stem_coverage_sync.py` — scaler/generator emission strings.
 
 **Still open (v0.3+ / wiring):**
 
-1. **`build_context_tag`** validation against §6.3 on every row (today: KB prose only).
-2. **Eligibility matrix contract tests** — fixture athlete + resolved primary tag → expected eligible variant set (or suppressed); no LLM.
-3. **Optional:** CLI or codegen that regenerates JSON from markdown.
+1. **Full eligibility matrix** — richer fixture athletes + suppressed outcomes; not only tag ∩ stem snapshots.
+2. **Optional:** CLI or codegen that regenerates JSON from markdown (or extends artifact with full §7 fields).
 
 **Exit Phase 2 when:** CI runs **`test_workout_registry.py`** + **`test_stem_coverage_sync.py`** green on `main` (and repo’s standard API test job includes them — they live under `apps/api/tests/`).
 

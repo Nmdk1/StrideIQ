@@ -1,49 +1,513 @@
 {
-  "schema_version": "0.1",
-  "spec_ref": "docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md v0.2.23",
-  "description": "Phase 2 machine index of SME-approved v1 pilot variants. Prose remains canonical in *_pilot_v1.md; this file is for CI validation and future registry loaders.",
+  "schema_version": "0.2",
+  "spec_ref": "docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md v0.2.24",
+  "description": "Phase 2 machine index of SME-approved v1 pilot variants (schema 0.2: adds build_context_tags mirrored from pilot typical_build_context_tags). Prose remains canonical in *_pilot_v1.md.",
   "variants": [
-    {"id": "threshold_continuous_progressive", "stem": "threshold", "volume_family": "T", "sme_status": "approved", "pilot": "threshold_pilot_v1.md"},
-    {"id": "progressive_threshold_25_40", "stem": "threshold", "volume_family": "T", "sme_status": "approved", "pilot": "threshold_pilot_v1.md"},
-    {"id": "threshold_continuous_short_block", "stem": "threshold", "volume_family": "T", "sme_status": "approved", "pilot": "threshold_pilot_v1.md"},
-    {"id": "broken_threshold_two_blocks", "stem": "threshold", "volume_family": "T", "sme_status": "approved", "pilot": "threshold_pilot_v1.md"},
-    {"id": "cruise_intervals_classic", "stem": "threshold_intervals", "volume_family": "T", "sme_status": "approved", "pilot": "threshold_pilot_v1.md"},
-    {"id": "threshold_intervals_5_to_6_min", "stem": "threshold_intervals", "volume_family": "T", "sme_status": "approved", "pilot": "threshold_pilot_v1.md"},
-    {"id": "threshold_intervals_8_to_12_min", "stem": "threshold_intervals", "volume_family": "T", "sme_status": "approved", "pilot": "threshold_pilot_v1.md"},
-    {"id": "threshold_float_recovery_intervals", "stem": "threshold_intervals", "volume_family": "T", "sme_status": "approved", "pilot": "threshold_pilot_v1.md"},
-    {"id": "alternating_threshold_on_minutes", "stem": "threshold_intervals", "volume_family": "T", "sme_status": "approved", "pilot": "threshold_pilot_v1.md"},
-
-    {"id": "long_easy_aerobic_staple", "stem": "long", "volume_family": "long", "sme_status": "approved", "pilot": "long_run_pilot_v1.md"},
-    {"id": "long_progressive_moderate_finish", "stem": "long", "volume_family": "composite", "sme_status": "approved", "pilot": "long_run_pilot_v1.md"},
-    {"id": "long_fast_finish_race_pace_touch", "stem": "long", "volume_family": "composite", "sme_status": "approved", "pilot": "long_run_pilot_v1.md"},
-    {"id": "long_mp_over_under_alternating_miles", "stem": "long_mp", "volume_family": "composite", "sme_status": "approved", "pilot": "long_run_pilot_v1.md"},
-    {"id": "medium_long_aerobic_staple", "stem": "medium_long", "volume_family": "long", "sme_status": "approved", "pilot": "long_run_pilot_v1.md"},
-    {"id": "long_mp_continuous_marathon", "stem": "long_mp", "volume_family": "composite", "sme_status": "approved", "pilot": "long_run_pilot_v1.md"},
-    {"id": "long_mp_intervals_in_long", "stem": "long_mp", "volume_family": "composite", "sme_status": "approved", "pilot": "long_run_pilot_v1.md"},
-    {"id": "long_hmp_finish_half_marathon", "stem": "long_hmp", "volume_family": "composite", "sme_status": "approved", "pilot": "long_run_pilot_v1.md"},
-    {"id": "long_cutdown_aerobic_to_steady", "stem": "long", "volume_family": "composite", "sme_status": "approved", "pilot": "long_run_pilot_v1.md"},
-
-    {"id": "easy_conversational_staple", "stem": "easy", "volume_family": "E", "sme_status": "approved", "pilot": "easy_pilot_v1.md"},
-    {"id": "recovery_run_aerobic", "stem": "recovery", "volume_family": "E", "sme_status": "approved", "pilot": "easy_pilot_v1.md"},
-    {"id": "easy_strides_neuromuscular_touch", "stem": "easy_strides", "volume_family": "E", "sme_status": "approved", "pilot": "easy_pilot_v1.md"},
-    {"id": "easy_run_hill_sprints_neuromuscular", "stem": "hills", "volume_family": "composite", "sme_status": "approved", "pilot": "easy_pilot_v1.md"},
-    {"id": "strides_after_easy_neuromuscular", "stem": "strides", "volume_family": "E", "sme_status": "approved", "pilot": "easy_pilot_v1.md"},
-    {"id": "rest_day_complete", "stem": "rest", "volume_family": "composite", "sme_status": "approved", "pilot": "easy_pilot_v1.md"},
-
-    {"id": "vo2_400m_short_reps_development", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_800m_reps_development", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_1000m_reps_classic", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_1200m_10k_race_rhythm", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_5k_peak_1000_development", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_conservative_low_dose", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_minimal_sharpen_micro_touch", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_light_touch_after_threshold_week", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_peak_fitness_sustained_reps", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_pyramid_ladder_float_recovery", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_mile_repeats", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-    {"id": "vo2_3x2mi_long_reps", "stem": "intervals", "volume_family": "I", "sme_status": "approved", "pilot": "intervals_pilot_v1.md"},
-
-    {"id": "reps_200m_neuromuscular_early", "stem": "repetitions", "volume_family": "R", "sme_status": "approved", "pilot": "repetitions_pilot_v1.md"},
-    {"id": "reps_300m_economy_late", "stem": "repetitions", "volume_family": "R", "sme_status": "approved", "pilot": "repetitions_pilot_v1.md"}
+    {
+      "id": "threshold_continuous_progressive",
+      "stem": "threshold",
+      "volume_family": "T",
+      "sme_status": "approved",
+      "pilot": "threshold_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "injury_return",
+        "minimal_sharpen",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "progressive_threshold_25_40",
+      "stem": "threshold",
+      "volume_family": "T",
+      "sme_status": "approved",
+      "pilot": "threshold_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "threshold_continuous_short_block",
+      "stem": "threshold",
+      "volume_family": "T",
+      "sme_status": "approved",
+      "pilot": "threshold_pilot_v1.md",
+      "build_context_tags": [
+        "durability_rebuild",
+        "full_featured_healthy",
+        "injury_return",
+        "minimal_sharpen"
+      ]
+    },
+    {
+      "id": "broken_threshold_two_blocks",
+      "stem": "threshold",
+      "volume_family": "T",
+      "sme_status": "approved",
+      "pilot": "threshold_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "cruise_intervals_classic",
+      "stem": "threshold_intervals",
+      "volume_family": "T",
+      "sme_status": "approved",
+      "pilot": "threshold_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "threshold_intervals_5_to_6_min",
+      "stem": "threshold_intervals",
+      "volume_family": "T",
+      "sme_status": "approved",
+      "pilot": "threshold_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "threshold_intervals_8_to_12_min",
+      "stem": "threshold_intervals",
+      "volume_family": "T",
+      "sme_status": "approved",
+      "pilot": "threshold_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "threshold_float_recovery_intervals",
+      "stem": "threshold_intervals",
+      "volume_family": "T",
+      "sme_status": "approved",
+      "pilot": "threshold_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "alternating_threshold_on_minutes",
+      "stem": "threshold_intervals",
+      "volume_family": "T",
+      "sme_status": "approved",
+      "pilot": "threshold_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "long_easy_aerobic_staple",
+      "stem": "long",
+      "volume_family": "long",
+      "sme_status": "approved",
+      "pilot": "long_run_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "injury_return",
+        "minimal_sharpen",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "long_progressive_moderate_finish",
+      "stem": "long",
+      "volume_family": "composite",
+      "sme_status": "approved",
+      "pilot": "long_run_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "long_fast_finish_race_pace_touch",
+      "stem": "long",
+      "volume_family": "composite",
+      "sme_status": "approved",
+      "pilot": "long_run_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "long_mp_over_under_alternating_miles",
+      "stem": "long_mp",
+      "volume_family": "composite",
+      "sme_status": "approved",
+      "pilot": "long_run_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "medium_long_aerobic_staple",
+      "stem": "medium_long",
+      "volume_family": "long",
+      "sme_status": "approved",
+      "pilot": "long_run_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "long_mp_continuous_marathon",
+      "stem": "long_mp",
+      "volume_family": "composite",
+      "sme_status": "approved",
+      "pilot": "long_run_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "long_mp_intervals_in_long",
+      "stem": "long_mp",
+      "volume_family": "composite",
+      "sme_status": "approved",
+      "pilot": "long_run_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "long_hmp_finish_half_marathon",
+      "stem": "long_hmp",
+      "volume_family": "composite",
+      "sme_status": "approved",
+      "pilot": "long_run_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "long_cutdown_aerobic_to_steady",
+      "stem": "long",
+      "volume_family": "composite",
+      "sme_status": "approved",
+      "pilot": "long_run_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "easy_conversational_staple",
+      "stem": "easy",
+      "volume_family": "E",
+      "sme_status": "approved",
+      "pilot": "easy_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "injury_return",
+        "minimal_sharpen",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "recovery_run_aerobic",
+      "stem": "recovery",
+      "volume_family": "E",
+      "sme_status": "approved",
+      "pilot": "easy_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "injury_return",
+        "minimal_sharpen"
+      ]
+    },
+    {
+      "id": "easy_strides_neuromuscular_touch",
+      "stem": "easy_strides",
+      "volume_family": "E",
+      "sme_status": "approved",
+      "pilot": "easy_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "minimal_sharpen",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "easy_run_hill_sprints_neuromuscular",
+      "stem": "hills",
+      "volume_family": "composite",
+      "sme_status": "approved",
+      "pilot": "easy_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "minimal_sharpen",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "strides_after_easy_neuromuscular",
+      "stem": "strides",
+      "volume_family": "E",
+      "sme_status": "approved",
+      "pilot": "easy_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "minimal_sharpen",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "rest_day_complete",
+      "stem": "rest",
+      "volume_family": "composite",
+      "sme_status": "approved",
+      "pilot": "easy_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "injury_return",
+        "minimal_sharpen",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_400m_short_reps_development",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "injury_return",
+        "minimal_sharpen",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_800m_reps_development",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "minimal_sharpen",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_1000m_reps_classic",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "durability_rebuild",
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_1200m_10k_race_rhythm",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_5k_peak_1000_development",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_conservative_low_dose",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "durability_rebuild",
+        "full_featured_healthy",
+        "injury_return",
+        "minimal_sharpen"
+      ]
+    },
+    {
+      "id": "vo2_minimal_sharpen_micro_touch",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "minimal_sharpen",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_light_touch_after_threshold_week",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_peak_fitness_sustained_reps",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_pyramid_ladder_float_recovery",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_mile_repeats",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "vo2_3x2mi_long_reps",
+      "stem": "intervals",
+      "volume_family": "I",
+      "sme_status": "approved",
+      "pilot": "intervals_pilot_v1.md",
+      "build_context_tags": [
+        "full_featured_healthy",
+        "peak_fitness",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "reps_200m_neuromuscular_early",
+      "stem": "repetitions",
+      "volume_family": "R",
+      "sme_status": "approved",
+      "pilot": "repetitions_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "minimal_sharpen",
+        "race_specific"
+      ]
+    },
+    {
+      "id": "reps_300m_economy_late",
+      "stem": "repetitions",
+      "volume_family": "R",
+      "sme_status": "approved",
+      "pilot": "repetitions_pilot_v1.md",
+      "build_context_tags": [
+        "base_building",
+        "full_featured_healthy",
+        "minimal_sharpen",
+        "peak_fitness",
+        "race_specific"
+      ]
+    }
   ]
 }
