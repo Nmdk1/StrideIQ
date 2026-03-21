@@ -1,15 +1,15 @@
 # Long-run pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.18 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.19 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
 **Stems covered:** `long`, `medium_long`, `long_mp`, `long_hmp` (aliases per `workout_scaler.py`: `long_run`, `marathon_pace_long`, etc.)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `_scale_long_run`, `_scale_medium_long`, `_scale_mp_long_run`, `_scale_hmp_long_run`.
 
 **Primary consumer:** **Deterministic planning pipelines** (selection matrix → plan constants → **CI**). This file is **SME-grounded machine-ingestible spec**: a **toolbox** of blocks mapped by tags, athlete signals, caps, and `pairs_poorly_with` / `when_to_avoid`. Prose must stay **extractable**—stable **`id`**, closed **`typical_build_context_tags`**, explicit constraints—so Phase 2 can compile Markdown → validated registry without reinterpretation drift. **Human-readable narrative is secondary** to that goal, except **`display_name`** and other **athlete-facing** strings derived from these rows (product copy).
 
-**SME approval:** All **eight** Pilot 2 long-family variant ids are **`sme_status: approved`** — founder SME **`long_easy_aerobic_staple`** **2026-03-20** (session); remaining **seven** ids **2026-03-22** (explicit “approve all 7”). **Do not** promote future rows without **explicit** founder sign-off. Runtime wiring remains gated per `WORKOUT_FLUENCY_REGISTRY_SPEC.md` §2 regardless.
+**SME approval:** **Eight** Pilot 2 long-family variant ids are **`sme_status: approved`** — founder SME **`long_easy_aerobic_staple`** **2026-03-20** (session); remaining **seven** ids **2026-03-22** (explicit “approve all 7”). **Extension:** **`long_mp_over_under_alternating_miles`** is **`draft`** (founder-supplied **2026-03-20** pattern)—**awaiting explicit promotion**. **Do not** promote any row without **explicit** founder sign-off. Runtime wiring remains gated per `WORKOUT_FLUENCY_REGISTRY_SPEC.md` §2 regardless.
 
-**Authoritative status (this file + summary table):** **Truth:** **8** rows **`approved`**, **0** **`draft`** (rollup below). This table is the **source of truth** for Pilot 2 counts. (Historical: spec **v0.2.9** briefly claimed full approval without Q&A—**reverted** in v0.2.10; current state supersedes.)
+**Authoritative status (this file + summary table):** **Truth:** **8** rows **`approved`** + **1** row **`draft`** (rollup below). This table is the **source of truth** for Pilot 2 counts. (Historical: spec **v0.2.9** briefly claimed full approval without Q&A—**reverted** in v0.2.10; current state supersedes.)
 
 **`draft` / `approved` (general):** Other pilot files may still use **`draft`** until promoted; **`approved`** means SME-cleared for KB / registry **shipping slice** (Phase 2+)—not permission to bypass §2 for runtime wiring.
 
@@ -17,7 +17,7 @@
 
 ---
 
-## StrideIQ long-run principles (founder Q&A incorporated; Pilot 2 all rows **`approved`** — see rollup)
+## StrideIQ long-run principles (founder Q&A incorporated; **8** rows **`approved`**, **1** MP over-under row **`draft`** — see rollup)
 
 - **Easy long** is the **weekly structural anchor** for most athletes—time on feet, aerobic load, durability. Pace is **easy conversational**; use **Training Pace Calculator** (goal race or best recent race anchor) and RPE as context, not race effort on the easy bulk.
 - **Most runners should have a long run** in the week; what counts as “long” **scales with the athlete**. For **newer** runners, a pragmatic floor is **more than double** a typical **single** easy day (when daily volume is small). For **high-mileage** athletes, “double daily” stops being meaningful—long is **no longer linear** off daily miles; use **time on feet**, recent longest session, and plan caps instead.
@@ -31,12 +31,13 @@
 
 ## StrideIQ prescription & environment (long-family)
 
-**Cross-cutting (SME session):** MP/HMP from **Training Pace Calculator** / goal race—not threshold. **±5 s/mi** band when numeric ranges are shown. All eight rows incorporate **2026-03-20** founder Q&A (plus **2026-03-22** promotion of the final seven ids).
+**Cross-cutting (SME session):** MP/HMP from **Training Pace Calculator** / goal race—not threshold. **±5 s/mi** band when numeric ranges are shown. The **eight** **`approved`** rows incorporate **2026-03-20** founder Q&A (plus **2026-03-22** promotion of the final seven ids). The **`draft`** **`long_mp_over_under_alternating_miles`** row captures a **2026-03-20** founder pattern pending explicit promotion.
 
 **Marathon-pace (MP) and half-marathon-pace (HMP) segments in long runs:**
 
 - Prescribe **MP** and **HMP** from the **Training Pace Calculator** using the athlete’s **goal race** (or best defensible race anchor the product already uses for those distances)—not from threshold pace. **MP ≠ threshold** in copy or logic.
 - **Band (per mile, when the product surfaces a numeric range):** treat **±5 seconds per mile** around calculator MP or HMP as the same **execution tolerance** philosophy as threshold sessions unless SME narrows or widens for a specific variant—effort + context still beat split-chasing.
+- **MP over-under miles (alternating):** some long runs alternate **mile** segments **faster** then **slower** than goal **MP** by a **small fixed offset** (founder exemplar **~15–20 s/mi** each way)—see **`long_mp_over_under_alternating_miles`**. **Structured MP rhythm**, not threshold reps and not an easy long mislabeled.
 
 **Easy and progressive longs:**
 
@@ -227,6 +228,27 @@
 
 ---
 
+## `long_mp_over_under_alternating_miles`
+
+- **stem:** `long_mp`
+- **display_name:** Long run — MP over-under miles
+- **sme_status:** `draft`
+- **volume_family:** `composite`
+- **definition:** Within a **long run** with **easy** warm-up and cool-down, the **main set** alternates **full mile** segments: one mile **~15–20 s/mi faster** than calculator **goal MP**, the next mile **~15–20 s/mi slower** than **MP**—repeat for **8–18 miles** of **over-under** work (founder range; **N=1** adjusts **offset**, **mile count**, and **total long** distance). Teaches **MP rhythm**, **discipline**, and **fueling** under **oscillating** pace—**not** cruise **threshold** intervals and **not** a progressive **cutdown** (`long_cutdown_aerobic_to_steady`).
+- **execution:** Easy warm-up (distance **N=1**); then **mile A** (MP **minus** offset), **mile B** (MP **plus** offset), alternating; easy cool-down. **±5 s/mi** band philosophy around **each** target mile still applies where the product shows bands—**conditions** change realized splits. **Stops** for fuel/fluid allowed per long-run principles. **Engine:** *not implemented* in `_scale_mp_long_run` today—requires **segmented** long prescription in a future builder.
+- **primary_adaptations:** **Marathon** pace ** literacy**; **glycogen** management across **rolling** effort; mental **rhythm** under **small** pace oscillation.
+- **systems_stressed:** **Sustained** load with **pace changes** each mile—mechanical and metabolic; **higher** error rate than **steady MP** blocks if athlete **chases** splits without context.
+- **benefits:** **Race-specific** **rhythm** practice for athletes who **flatline** or **drift** on steady MP; **engagement** on long **MP** days.
+- **risks:** **Too large** offset → **threshold** / **easy** drift; **too many** miles for current tolerance; **stacking** with **`vo2_3x2mi_long_reps`** or dense **MP** volume same week.
+- **when_to_avoid:** **`injury_return`**; athletes who **cannot** hold **two** distinct **gears**; **minimal_sharpen** full dose; **no** recent **steady MP** foundation.
+- **n1_selection_notes:** **`race_specific`**, **`peak_fitness`** for **marathon-primary** with **proven** **MP** exposure; **ledger** must **count** this as **major** **long** quality—not “just easy miles.”
+- **typical_build_context_tags:** `race_specific`, `peak_fitness`, `full_featured_healthy`, `base_building` (shortened over-under segment + SME)
+- **typical_placement:** **Specific** phase **long**; **not** every week.
+- **pairs_poorly_with:** **`vo2_3x2mi_long_reps`** same week without SME; **`long_mp_continuous_marathon`** **dress-rehearsal** week overload without rationale.
+- **source_notes:** Tier A — founder pattern **2026-03-20** (15–20 s/mi, 8–18 mi alternating block); Tier B — over-under / wave long formats exist widely—this id is **StrideIQ’s MP-centered** definition.
+
+---
+
 ## Summary table
 
 | `id` | `stem` | `volume_family` | `sme_status` |
@@ -239,9 +261,10 @@
 | `long_mp_intervals_in_long` | long_mp | composite | approved |
 | `long_hmp_finish_half_marathon` | long_hmp | composite | approved |
 | `long_cutdown_aerobic_to_steady` | long | composite | approved |
+| `long_mp_over_under_alternating_miles` | long_mp | composite | draft |
 
-**Rollup:** **`approved`** = **8** (all ids in this table). **`draft`** = **0**.
+**Rollup:** **`approved`** = **8**. **`draft`** = **1** (`long_mp_over_under_alternating_miles`).
 
 ---
 
-*Pilot v1 — 8 long-family variants. **`sme_status` per row** (header + table + rollup above); runtime wiring still §2 / P0.*
+*Pilot v1 — **8** long-family variants **`approved`**; **1** **`draft`** extension. **`sme_status` per row** (header + table + rollup above); runtime wiring still §2 / P0.*

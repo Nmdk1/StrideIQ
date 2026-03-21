@@ -1,9 +1,11 @@
 # Intervals / VO2 pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.18  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.19  
 **Stems covered:** `intervals` (engine aliases: `interval`, `vo2max` — same dispatch in `workout_scaler.scale_workout`)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `_scale_intervals` routes by **goal distance** (`5k`, `10k`, marathon default) and **phase** / **plan_week** / **athlete_ctx** (e.g. high-volume marathon base). Rep lengths **400m → 800m → 1000m** (5K/10K progressions); **1200m @ ~10K race rhythm** in late **10K** paths. **~8%** of weekly volume cap applies to interval prescription in scaler—treat as **engineering guardrail** until registry wiring; N=1 may need stricter caps.
+
+**Engine gaps (founder-supplied, KB ahead of code):** **Pyramid/ladder** sessions, **mile repeats**, and **3×2 mi** (and similar **long-rep**) structures are **not** emitted by `_scale_intervals` today. Rows below capture **intent + selection hooks**; Phase 2 registry + scaler/segment builder must **implement or map** before runtime wiring. Do **not** treat these as live `GeneratedWorkout` shapes until contract tests exist.
 
 **Ledger link:** A scheduled **intervals** session is a **heavy** line item on the **weekly stimulus ledger** (see `easy_pilot_v1.md` **Deterministic selection logic**). It **feeds** end-of-easy **stride gear** choices the same week—avoid redundant “same system twice” without intent.
 
@@ -31,6 +33,7 @@
 - After **heavy threshold** loading, prefer **shorter rep** VO2 touches or **spacing** before stacking another dense day—see variant **`vo2_light_touch_after_threshold_week`**.
 - **Injury_return** / **minimal_sharpen**: fewer reps, shorter reps, or **suppress** VO2 entirely—variants **`vo2_conservative_low_dose`** and **`vo2_minimal_sharpen_micro_touch`** lean here; **veto** when pain or illness dictates.
 - **5K vs 10K vs marathon goal:** engine already branches; variants below **name** those intents for the **matrix** even when segment shapes overlap.
+- **Ladders / mile / 2 mi:** when selected, **ledger** must account for **high** neuromuscular + metabolic load—often **replace or trim** other VO2 that week unless tolerance is proven.
 
 ---
 
@@ -222,6 +225,69 @@
 
 ---
 
+## `vo2_pyramid_ladder_float_recovery`
+
+- **stem:** `intervals`
+- **display_name:** VO2 — pyramid ladder (float recovery)
+- **sme_status:** `draft`
+- **volume_family:** `I`
+- **definition:** **Pyramid ladder** at **interval / VO2** effort: rep distances **ascend then descend** with **easy float** recovery between pieces—founder exemplar **400m → 800m → 1200m → 1 mile → 1200m → 800m → 400m**, **~400m float** (easy jog) between each work piece. **Not** threshold cruise intervals; **not** a single continuous tempo.
+- **execution:** Full warm-up easy; ladder as prescribed; **floats** stay **true easy**—if floats become “moderate,” the session is mis-executed. Cool-down easy. **Rep paces** from calculator **interval** zone (banded); last reps **quality**, not sprint-collapse. **Engine:** *not implemented* in `workout_scaler` — requires **ordered multi-segment** prescription in a future builder.
+- **primary_adaptations:** VO2 **touch** across **multiple** rep lengths in one session; rhythm and **gear-change** literacy; neuromuscular variety.
+- **systems_stressed:** **High** session load—psychological + metabolic; cumulative fatigue **late** in pyramid.
+- **benefits:** **One session** samples **several** time-at-intensity boxes; engaging for athletes who tolerate complexity.
+- **risks:** **Overreach** vs weekly ledger; **racing** early reps; floats too fast; **inappropriate** for low-tolerance or **injury_return** without SME strip-down.
+- **when_to_avoid:** **`injury_return`**, **`minimal_sharpen`** (full ladder), early relationship with VO2 unless shortened ladder; weeks already **dense** in **reps** or **threshold_intervals**.
+- **n1_selection_notes:** **Ledger-heavy**—often **the** VO2 anchor that week; pair with **easy stride gear** that **does not** duplicate **5K rep** stimulus if ladder already **fast-short** heavy.
+- **typical_build_context_tags:** `peak_fitness`, `race_specific`, `full_featured_healthy`, `base_building` (shortened ladder + SME)
+- **typical_placement:** Mid-week quality; **spacing** from long-run **MP** quality.
+- **pairs_poorly_with:** Second **complex** VO2 or **dense threshold** without recovery narrative.
+- **source_notes:** Tier A — founder pattern **2026-03-20** session family; Tier B — pyramid ladder exists widely in coaching practice—StrideIQ id is **this** structure + float rule.
+
+---
+
+## `vo2_mile_repeats`
+
+- **stem:** `intervals`
+- **display_name:** VO2 — mile repeats
+- **sme_status:** `draft`
+- **volume_family:** `I`
+- **definition:** **Repeated miles** at **interval / VO2** (or goal-appropriate **hard aerobic power**) with **defined** jog or time recovery—classic **density** session for athletes who tolerate **longer** reps than 400–800m work.
+- **execution:** Warm-up easy; **N × 1 mile** at prescribed pace band (calculator **interval** or SME-prescribed surrogate); recovery **easy jog** or **standing / walk** per protocol—**full enough** that **last** rep matches intent. Cool-down easy. **Rep count** N-of-1 (often **3–6** range illustrative). **Engine:** *not implemented* as explicit **mile** prescription in `_scale_intervals` (nearest shapes are **1000m / 1200m**)—future scaler or segment template should emit **1609m** (or mile) explicitly.
+- **primary_adaptations:** Sustained VO2 **per rep**; **pacing** discipline at **race-relevant** duration for some goals.
+- **systems_stressed:** **High** per-rep cardiovascular load; eccentric / mechanical if **downhill** bias.
+- **benefits:** **Clear** progression metric (reps @ stability); bridges toward **10K–half** specificity when pace is appropriate.
+- **risks:** **First rep** suicide; **under-recovery** between miles; masking **threshold** mislabeled as VO2.
+- **when_to_avoid:** **`injury_return`**; athletes without **even-split** discipline; same week as **1200m race-rhythm** overload for **10K** without rationale.
+- **n1_selection_notes:** **Ledger** coordinates with **`vo2_1000m_reps_classic`**—avoid **redundant** “long rep” days; **marathon-primary** athletes may use **sparingly** vs **MP** long work.
+- **typical_build_context_tags:** `race_specific`, `peak_fitness`, `full_featured_healthy`, `base_building` (reduced N + SME)
+- **typical_placement:** Mid-week anchor.
+- **pairs_poorly_with:** **`vo2_peak_fitness_sustained_reps`** **stacked** blindly same week.
+- **source_notes:** Tier B — mile repeat session family; StrideIQ **numeric** surfaces should prefer **calculator bands** over single split targets.
+
+---
+
+## `vo2_3x2mi_long_reps`
+
+- **stem:** `intervals`
+- **display_name:** VO2 — 3 × 2 mile (long reps)
+- **sme_status:** `draft`
+- **volume_family:** `I`
+- **definition:** **Three** work segments of **2 miles** each at **prescribed** quality pace—**sustained power** session. Pace may sit **between** classic **threshold** and **VO2** depending on athlete and phase (selector must **not** silently call it “easy”); this row is **interval stem** for **registry / matrix** when the **main set** is **repeated long reps** with **recovery** between.
+- **execution:** Warm-up easy; **3 × 2 mi** with **recovery** (e.g. **800m–1 mi** easy jog or **3–5 min**) between—exact recovery **N=1**. Cool-down easy. **Engine:** *not implemented* in `workout_scaler`; requires **custom segments** and **strict** cap vs weekly volume + **threshold** ledger.
+- **primary_adaptations:** **Sustained** aerobic power; **mental** durability for **long** hard segments.
+- **systems_stressed:** **Very high** session load—glycogen, mechanical fatigue.
+- **benefits:** **Race-specific** strength for **half / marathon** athletes in **specific** blocks when SME-intended—not a default **5K** tool.
+- **risks:** **Massive** overload if combined with **MP long** or **dense threshold**; **pace drift** rep-to-rep.
+- **when_to_avoid:** **`injury_return`**, **`minimal_sharpen`**, low-mileage athletes without **long rep** history.
+- **n1_selection_notes:** **`peak_fitness`**, **`race_specific`** for **high-tolerance** profiles; **one** such session may **dominate** the week’s **quality** budget.
+- **typical_build_context_tags:** `peak_fitness`, `race_specific`, `full_featured_healthy`
+- **typical_placement:** **Specific** mesocycle; **never** adjacent to **unplanned** second **long quality** day.
+- **pairs_poorly_with:** **`long_mp_over_under_alternating_miles`** same week without explicit SME (both are **heavy MP-adjacent** stress families).
+- **source_notes:** Tier A — founder “**3 × 2 mile**” mention **2026-03-20** family; Tier B — pace labeling must stay honest vs **threshold** pilot variants.
+
+---
+
 ## Rollup (authoritative `sme_status`)
 
 | `id` | `stem` | `volume_family` | `sme_status` |
@@ -235,9 +301,12 @@
 | `vo2_minimal_sharpen_micro_touch` | `intervals` | `I` | `draft` |
 | `vo2_light_touch_after_threshold_week` | `intervals` | `I` | `draft` |
 | `vo2_peak_fitness_sustained_reps` | `intervals` | `I` | `draft` |
+| `vo2_pyramid_ladder_float_recovery` | `intervals` | `I` | `draft` |
+| `vo2_mile_repeats` | `intervals` | `I` | `draft` |
+| `vo2_3x2mi_long_reps` | `intervals` | `I` | `draft` |
 
-**Counts:** 0 approved / 9 draft.
+**Counts:** 0 approved / 12 draft.
 
 ---
 
-*Note: Row count is **9** (one more than the spec’s illustrative “≥8”) to separate **5K peak 1K intent** from **marathon-default 1K** and add **ledger-aware** light-touch variant.*
+*Notes: **9** rows align with current `_scale_intervals` shapes; **3** rows (ladder, mile repeats, 3×2 mi) are **KB-forward** until scaler/segments exist. Spec rollup uses **12** total Pilot 4 draft ids.*
