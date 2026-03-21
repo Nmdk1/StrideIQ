@@ -1,13 +1,13 @@
 # Easy / recovery / rest / neuromuscular-touch pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.21
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.22
 **Stems in this file:** `easy`, `recovery`, `easy_strides`, `rest`, **`hills`** (alias **`hill_sprints`**), **`strides`**
 
 **Why `hills` / `strides` live here:** Same **session architecture** as easy days—**easy (or compatible aerobic) first**, neuromuscular touch **only at the end**. Founder intent: these touches primarily support **running economy** and **safe neuromuscular adaptation** (including options that would be **higher injury risk on flat ground** at similar intent). Engine categories may show `SPEED` for some stems; product narrative still treats them as **not** a VO2 day and **not** a threshold substitute.
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — **`easy`**, **`easy_run`**, **`recovery`** → `_scale_easy`; **`easy_strides`** → `_scale_easy_with_strides`; **`rest`** → `_scale_rest`; **`hills`** / **`hill_sprints`** → `_scale_hills`; **`strides`** → `_scale_strides`. Treat **`easy_run`** as an alias of **`easy`** for mapping tables; do not invent a separate variant id for the alias.
 
-**SME approval:** **Founder approved** the **four** core easy/rest variants **2026-03-20** (batch “approve”). **Two** neuromuscular-touch variants (**`easy_run_hill_sprints_neuromuscular`**, **`strides_after_easy_neuromuscular`**) are **`draft`** until explicit founder sign-off per `id`. Rollup table is authoritative for each row’s status. Runtime wiring remains gated per spec §2.
+**SME approval:** **All six** variant ids **`approved`** — core four **2026-03-20**; neuromuscular-touch pair **2026-03-22** (finishing Phase 1 fluency KB). Rollup is authoritative. Runtime wiring remains gated per spec §2.
 
 ---
 
@@ -122,7 +122,7 @@ This block is **input to the selection matrix + plan builder**, not athlete-faci
 
 - **stem:** `hills` (alias input: `hill_sprints`)
 - **display_name:** Easy run with hill sprints
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `composite`
 - **definition:** **Easy** aerobic base plus **very short** uphill sprints at the **end** of the session—**economy + neuromuscular / resilience** loading that is often **safer** than extracting similar neuromuscular stress **on the flat** at higher injury risk. **Alactic** character, full recovery between reps. **Not** VO2 hill repeats; **not** threshold substitute.
 - **execution:** **Easy** volume at or below easy ceiling, then **steep-enough** hills for brief maximal **uphill** pushes (engine sketch: **6–10× ~10 s** with **~90 s** walk/jog back—tier scales reps in `_scale_hills`). **Walk-back** or easy return mandatory. Easy portion stays **true easy** before sprints.
@@ -143,7 +143,7 @@ This block is **input to the selection matrix + plan builder**, not athlete-faci
 
 - **stem:** `strides`
 - **display_name:** Strides (after easy running)
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `E`
 - **definition:** **Same logical prescription** as **`easy_strides_neuromuscular_touch`**: strides **always** come **after** easy (or easy-dominant) running. The **`strides`** stem exists in the engine separately from **`easy_strides`**; **automation target** is **one** planner concept with **unified** selection rules (**Deterministic selection logic**). Keep this row for **ID → engine map** until dispatch is merged.
 - **execution:** Same as **`easy_strides_neuromuscular_touch`** (15–30 s cap, **stride gear**, full recovery, **ledger-driven** gear choice). Engine sketch: `_scale_strides` fixed template—**illustrative** until wiring aligns with volume + gear from the matrix.
@@ -188,8 +188,8 @@ This block is **input to the selection matrix + plan builder**, not athlete-faci
 | `easy_conversational_staple` | `easy` | `E` | `approved` |
 | `recovery_run_aerobic` | `recovery` | `E` | `approved` |
 | `easy_strides_neuromuscular_touch` | `easy_strides` | `E` | `approved` |
-| `easy_run_hill_sprints_neuromuscular` | `hills` | `composite` | `draft` |
-| `strides_after_easy_neuromuscular` | `strides` | `E` | `draft` |
+| `easy_run_hill_sprints_neuromuscular` | `hills` | `composite` | `approved` |
+| `strides_after_easy_neuromuscular` | `strides` | `E` | `approved` |
 | `rest_day_complete` | `rest` | `composite` | `approved` |
 
-**Counts:** 4 approved / 2 draft.
+**Counts:** 6 approved / 0 draft.

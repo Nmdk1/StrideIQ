@@ -1,6 +1,6 @@
 # Intervals / VO2 pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.21 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.22 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
 **Stems covered:** `intervals` (engine aliases: `interval`, `vo2max` — same dispatch in `workout_scaler.scale_workout`)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `_scale_intervals` routes by **goal distance** (`5k`, `10k`, marathon default) and **phase** / **plan_week** / **athlete_ctx** (e.g. high-volume marathon base). Rep lengths **400m → 800m → 1000m** (5K/10K progressions); **1200m @ ~10K race rhythm** in late **10K** paths. **~8%** of weekly volume cap applies to interval prescription in scaler—treat as **engineering guardrail** until registry wiring; N=1 may need stricter caps.
@@ -9,9 +9,9 @@
 
 **Ledger link:** A scheduled **intervals** session is a **heavy** line item on the **weekly stimulus ledger** (see `easy_pilot_v1.md` **Deterministic selection logic**). It **feeds** end-of-easy **stride gear** choices the same week—avoid redundant “same system twice” without intent.
 
-**SME approval:** **Nine** variant ids are **`sme_status: approved`** — founder SME session **2026-03-20** (pace, complementarity, recovery philosophy) plus **intervals-only / dual-quality / 10K–threshold split** **2026-03-22** (chat, condensed below). **Three** ids (**`vo2_pyramid_ladder_float_recovery`**, **`vo2_mile_repeats`**, **`vo2_3x2mi_long_reps`**) remain **`draft`** — advanced patterns, KB-forward or founder N-of-1 chassis; **explicit promotion** required before shipping slice. Runtime wiring remains gated per spec §2.
+**SME approval:** **All twelve** variant ids **`sme_status: approved`** — **2026-03-20** / **2026-03-22** sessions as prior header; **`vo2_pyramid_ladder_float_recovery`**, **`vo2_mile_repeats`**, **`vo2_3x2mi_long_reps`** **2026-03-22** (Phase 1 KB completeness). **KB-complete ≠ runtime-default:** those three remain **high-bar** definitions; **`_scale_intervals` still does not emit them** (see **Engine gaps** above). Runtime wiring remains gated per spec §2.
 
-**Authoritative status:** Rollup table at file end is **source of truth** for counts (**9** approved / **3** draft).
+**Authoritative status:** Rollup table at file end is **source of truth** for counts (**12** approved / **0** draft).
 
 ---
 
@@ -79,7 +79,7 @@
 - After **heavy threshold** loading, prefer **shorter rep** VO2 touches or **spacing** before stacking another dense day—see variant **`vo2_light_touch_after_threshold_week`**.
 - **Injury_return** / **minimal_sharpen**: fewer reps, shorter reps, or **suppress** VO2 entirely—variants **`vo2_conservative_low_dose`** and **`vo2_minimal_sharpen_micro_touch`** lean here; **veto** when pain or illness dictates.
 - **5K vs 10K vs marathon goal:** engine already branches; variants below **name** those intents for the **matrix** even when segment shapes overlap.
-- **Ladders / mile / 2 mi:** when selected, **ledger** must account for **high** neuromuscular + metabolic load—often **replace or trim** other VO2 that week unless tolerance is proven. **Founder personal progression** (e.g. very high-volume **400 → 800 → K → 1200 → mile** ladders with tight rest progression) is **illustrative** and **not** the default population prescription — see **`vo2_mile_repeats`** / advanced **`draft`** rows.
+- **Ladders / mile / 2 mi:** when selected, **ledger** must account for **high** neuromuscular + metabolic load—often **replace or trim** other VO2 that week unless tolerance is proven. **Founder personal progression** (e.g. very high-volume **400 → 800 → K → 1200 → mile** ladders with tight rest progression) is **illustrative** and **not** the default population prescription — see **`vo2_mile_repeats`** / **`vo2_pyramid_ladder_float_recovery`** / **`vo2_3x2mi_long_reps`** (approved **definitions**; still **not** scaler defaults until engine ships).
 
 ---
 
@@ -275,7 +275,7 @@
 
 - **stem:** `intervals`
 - **display_name:** VO2 — pyramid ladder (float recovery)
-- **sme_status:** `draft` *(promotion pending — complex session; engine not implemented)*
+- **sme_status:** `approved` *(complex session; **engine not implemented** — KB definition ahead of `workout_scaler`)*
 - **volume_family:** `I`
 - **definition:** **Pyramid ladder** at **interval / VO2** effort: rep distances **ascend then descend** with **easy float** recovery between pieces—founder exemplar **400m → 800m → 1200m → 1 mile → 1200m → 800m → 400m**, **~400m float** (easy jog) between each work piece. **Not** threshold cruise intervals; **not** a single continuous tempo.
 - **execution:** Full warm-up easy; ladder as prescribed; **floats** stay **true easy**—if floats become “moderate,” the session is mis-executed. Cool-down easy. **Rep paces** from calculator **interval** zone (banded); last reps **quality**, not sprint-collapse. **Engine:** *not implemented* in `workout_scaler` — requires **ordered multi-segment** prescription in a future builder.
@@ -296,7 +296,7 @@
 
 - **stem:** `intervals`
 - **display_name:** VO2 — mile repeats
-- **sme_status:** `draft` *(promotion pending — advanced density; **not** default for most; founder personal high-volume progressions use similar shapes but are **N-of-1**)*
+- **sme_status:** `approved` *(advanced density; **not** default for most; founder personal high-volume progressions use similar shapes but are **N-of-1**; **engine not implemented** for explicit mile prescription)*
 - **volume_family:** `I`
 - **definition:** **Repeated miles** at **interval / VO2** (or goal-appropriate **hard aerobic power**) with **defined** jog or time recovery—classic **density** session for athletes who tolerate **longer** reps than 400–800m work. **Psychological alternatives** (e.g. **2×2 mi** or **3×1 mi** vs **4×1 mi**) are **N-of-1** coaching choices, not universal scaler rules.
 - **execution:** Warm-up easy; **N × 1 mile** at prescribed pace band (calculator **interval** or SME-prescribed surrogate); recovery **easy jog** or **standing / walk** per protocol—**full enough** that **last** rep matches intent. Cool-down easy. **Rep count** N-of-1 (often **3–6** range illustrative). **Engine:** *not implemented* as explicit **mile** prescription in `_scale_intervals` (nearest shapes are **1000m / 1200m**)—future scaler or segment template should emit **1609m** (or mile) explicitly.
@@ -317,7 +317,7 @@
 
 - **stem:** `intervals`
 - **display_name:** VO2 — 3 × 2 mile (long reps)
-- **sme_status:** `draft` *(promotion pending — **very** high load; founder-mentioned pattern; engine not implemented)*
+- **sme_status:** `approved` *(**very** high load; founder-mentioned pattern; **engine not implemented**)*
 - **volume_family:** `I`
 - **definition:** **Three** work segments of **2 miles** each at **prescribed** quality pace—**sustained power** session. Pace may sit **between** classic **threshold** and **VO2** depending on athlete and phase (selector must **not** silently call it “easy”); this row is **interval stem** for **registry / matrix** when the **main set** is **repeated long reps** with **recovery** between.
 - **execution:** Warm-up easy; **3 × 2 mi** with **recovery** (e.g. **800m–1 mi** easy jog or **3–5 min**) between—exact recovery **N=1**. Cool-down easy. **Engine:** *not implemented* in `workout_scaler`; requires **custom segments** and **strict** cap vs weekly volume + **threshold** ledger.
@@ -347,12 +347,12 @@
 | `vo2_minimal_sharpen_micro_touch` | `intervals` | `I` | `approved` |
 | `vo2_light_touch_after_threshold_week` | `intervals` | `I` | `approved` |
 | `vo2_peak_fitness_sustained_reps` | `intervals` | `I` | `approved` |
-| `vo2_pyramid_ladder_float_recovery` | `intervals` | `I` | `draft` |
-| `vo2_mile_repeats` | `intervals` | `I` | `draft` |
-| `vo2_3x2mi_long_reps` | `intervals` | `I` | `draft` |
+| `vo2_pyramid_ladder_float_recovery` | `intervals` | `I` | `approved` |
+| `vo2_mile_repeats` | `intervals` | `I` | `approved` |
+| `vo2_3x2mi_long_reps` | `intervals` | `I` | `approved` |
 
-**Counts:** **9** approved / **3** draft.
+**Counts:** **12** approved / **0** draft.
 
 ---
 
-*Notes: **9** approved rows align with current `_scale_intervals` shapes (plus matrix intent). **3** **`draft`** rows (ladder, mile repeats, 3×2 mi) are **KB-forward** or **advanced N-of-1** until scaler/segments exist and founder promotes. **2026-03-22:** intervals pilot brought to parity with threshold / long / easy pilots for **weekly complementarity**, **intervals-only spine**, **recovery modality philosophy**, and **taper touch options**.*
+*Notes: **9** rows align with current `_scale_intervals` emission (plus matrix intent). **3** additional ids (ladder, mile repeats, 3×2 mi) are **SME-approved KB definitions**; **`_scale_intervals` does not emit them yet** — Phase 2 scaler/segment work + contract tests before runtime. **2026-03-22:** intervals pilot brought to parity with threshold / long / easy pilots for **weekly complementarity**, **intervals-only spine**, **recovery modality philosophy**, and **taper touch options**.*
