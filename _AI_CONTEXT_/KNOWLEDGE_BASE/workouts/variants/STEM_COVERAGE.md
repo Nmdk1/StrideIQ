@@ -4,6 +4,8 @@
 
 **Source of truth for shapes:** `apps/api/services/plan_framework/workout_scaler.py` (`scale_workout`) and `generator.py` (`_get_workout_for_day` return values).
 
+**Drift check:** `apps/api/tests/test_stem_coverage_sync.py` — run `pytest tests/test_stem_coverage_sync.py` from `apps/api` after changing this file or plan_framework `workout_type` strings.
+
 | `workout_type` | Pilot KB file | Notes |
 |----------------|---------------|--------|
 | `threshold` | `threshold_pilot_v1.md` | Continuous T |
@@ -13,7 +15,8 @@
 | `medium_long` | `long_run_pilot_v1.md` | Mid-week endurance |
 | `long_mp` | `long_run_pilot_v1.md` | Option B may emit `long_mp_intervals` — same family |
 | `long_hmp` | `long_run_pilot_v1.md` | |
-| `easy` | `easy_pilot_v1.md` | Alias `easy_run` in scaler |
+| `easy` | `easy_pilot_v1.md` | Generator / default easy slot. |
+| `easy_run` | `easy_pilot_v1.md` | Scaler input alias for **`easy`** (`_scale_easy` pass-through). |
 | `recovery` | `easy_pilot_v1.md` | |
 | `easy_strides` | `easy_pilot_v1.md` | |
 | `rest` | `easy_pilot_v1.md` | |

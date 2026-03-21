@@ -56,6 +56,7 @@ P0-WAIVER-REF: [ticket, date, or one-line founder-scoped reason — required whe
 
 For any PR that adds or changes variant rows in `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/`:
 
+- [ ] If `STEM_COVERAGE.md` or plan_framework `workout_type` emissions change, `pytest tests/test_stem_coverage_sync.py` passes (from `apps/api`).
 - [ ] Every variant has `sme_status` set (`draft` until founder review).
 - [ ] `typical_build_context_tags` uses **only** tags from spec §6.3.
 - [ ] `volume_family` is one of `E`, `M`, `T`, `I`, `R`, `long`, `composite`.
