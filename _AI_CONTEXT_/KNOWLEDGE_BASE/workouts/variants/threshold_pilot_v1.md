@@ -1,6 +1,6 @@
 # Threshold pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.5  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.9  
 **Stems covered:** `threshold` (continuous or broken continuous T-pace work), `threshold_intervals` (repetitions at ~threshold with recoveries)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — canonical emission **`threshold`** / **`threshold_intervals`**. A legacy **`tempo`** string may still be accepted internally for backward compatibility; it is **not** StrideIQ vocabulary (see below).
@@ -39,7 +39,7 @@
 ## Vocabulary (SME — non-negotiable for product language)
 
 - There is **no** “tempo” as a **defined pace** in StrideIQ copy, registry display names, or athlete-facing narrative. Colloquial “tempo” maps to nothing precise.
-- **Threshold** (e.g. Daniels **T**) and **critical velocity / steady-state** formulations (e.g. **McMillan**, **Pfitzinger** lactate-threshold / steady-state work) are **related but distinct** constructs—do not treat the labels as interchangeable without explicit framework context.
+- Coaching literature uses overlapping labels (**threshold pace**, **critical velocity**, **steady-state** / lactate-threshold-adjacent work). They are **related but distinct** constructs—do not treat them as interchangeable in product logic or copy; StrideIQ uses **threshold** / **threshold_intervals** as canonical stems.
 - Use **threshold** / **threshold intervals** / **continuous threshold** / **cruise intervals** (defined variants)—never “tempo” as a system term.
 
 ---
@@ -74,7 +74,7 @@ These patterns are **excellent** for **very advanced** athletes—often **doubli
 - **typical_build_context_tags:** `full_featured_healthy`, `base_building`, `race_specific`, `peak_fitness`, `injury_return` (short blocks only + SME), `minimal_sharpen` (short blocks), `durability_rebuild` (conservative progression only)
 - **typical_placement:** Mid-base through specific; usually **one** primary threshold stimulus per week unless volume and tolerance clearly support more.
 - **pairs_poorly_with:** Heavy VO2 session next day; long marathon-pace segment the same day; race week except experienced athletes under explicit guidance.
-- **source_notes:** Tier B — Daniels threshold (“T”) continuous prescriptions; Pfitzinger lactate-threshold continuous work; McMillan **critical velocity / steady-state** as a **separate** construct—cite framework when product distinguishes them.
+- **source_notes:** Tier B — licensed endurance-training corpus (threshold / steady-state family); distinguish threshold vs other steady-state labels in internal logic only—**no** third-party names in user-facing surfaces (spec §4.4).
 
 **Deprecated id (do not use in new code/docs):** `tempo_continuous_20_40` → use **`threshold_continuous_progressive`**.
 
@@ -97,7 +97,7 @@ These patterns are **excellent** for **very advanced** athletes—often **doubli
 - **typical_build_context_tags:** `base_building`, `race_specific`, `full_featured_healthy`, `durability_rebuild` (only after shorter progressions + SME)
 - **typical_placement:** Base → early specific; optional **final segment of selected long runs** for advanced durability work.
 - **pairs_poorly_with:** All-out long run the next morning; adjacent threshold days for low-tolerance athletes.
-- **source_notes:** Tier B — progression formats in Daniels / Hudson-style stamina work (conceptual).
+- **source_notes:** Tier B — licensed corpus; progressive stamina / threshold-finish patterns (conceptual).
 
 ---
 
@@ -129,7 +129,7 @@ These patterns are **excellent** for **very advanced** athletes—often **doubli
 - **sme_status:** `approved`
 - **volume_family:** `T`
 - **SME population:** **Common** structured threshold work for many **competitive amateurs** when weekly load and tolerance support it—**not** the same rarity as double-threshold / 85+ mpw patterns (see **Advanced / fractured formats**).
-- **definition:** Repeats at **threshold** with **easy jog** recovery (not standing)—classic cruise / Daniels T-repeat rhythm.
+- **definition:** Repeats at **threshold** with **easy jog** recovery (not standing)—classic “cruise” / threshold-repeat rhythm.
 - **execution:** Warm-up; reps at threshold pace (e.g. 4–6 × 5–12 min or mile repeats at T); jog recovery roughly **~1:4 to 1:5** time ratio vs rep; cool-down. Cap total time at threshold to weekly **T%** rules. **Never label this as “continuous threshold”** in copy—it is **`threshold_intervals`**.
 - **primary_adaptations:** Threshold with lower continuous load per bout; rep-to-rep pace discipline.
 - **systems_stressed:** Repeated submax loading; metabolic transitions rep to rep.
@@ -140,7 +140,7 @@ These patterns are **excellent** for **very advanced** athletes—often **doubli
 - **typical_build_context_tags:** `full_featured_healthy`, `base_building`, `race_specific`, `peak_fitness`
 - **typical_placement:** Mid-week in base and specific phases.
 - **pairs_poorly_with:** Heavy eccentric day (long steep downs) prior; VO2 micro-intervals same day.
-- **source_notes:** Tier B — Daniels threshold / cruise repeat prescriptions.
+- **source_notes:** Tier B — licensed corpus; threshold repeat / cruise-style prescriptions.
 
 ---
 
@@ -162,7 +162,7 @@ These patterns are **excellent** for **very advanced** athletes—often **doubli
 - **typical_build_context_tags:** `base_building`, `full_featured_healthy`, `race_specific`, `peak_fitness`
 - **typical_placement:** Early-to-mid phase progression weeks.
 - **pairs_poorly_with:** Long marathon-pace segment later the same day.
-- **source_notes:** Tier B — Daniels T-interval templates; internal scaler early-week shapes (reference).
+- **source_notes:** Tier B — licensed corpus; internal `workout_scaler.py` early-week threshold-interval shapes (reference).
 
 ---
 
@@ -206,7 +206,7 @@ These patterns are **excellent** for **very advanced** athletes—often **doubli
 - **typical_build_context_tags:** `peak_fitness`, `full_featured_healthy`, `race_specific`
 - **typical_placement:** Specific phase; occasional base for advanced athletes.
 - **pairs_poorly_with:** Another double-threshold pattern in the same week without volume to support it.
-- **source_notes:** Tier C conceptual + Tier A structure (common coaching pattern; SME cites when used in product).
+- **source_notes:** Tier C conceptual + Tier A structure (common coaching pattern); no public attribution (§4.4).
 
 **Deprecated id:** `broken_tempo_two_blocks` → **`broken_threshold_two_blocks`**.
 
@@ -230,7 +230,7 @@ These patterns are **excellent** for **very advanced** athletes—often **doubli
 - **typical_build_context_tags:** `race_specific`, `peak_fitness`, `full_featured_healthy`
 - **typical_placement:** Late base / specific; not a first threshold introduction.
 - **pairs_poorly_with:** Already-high average intensity week; strides + hills stacked as second hard CNS day.
-- **source_notes:** Tier B — modern marathon-specific texts (conceptual); SME names sources when promoting to approved.
+- **source_notes:** Tier B — licensed corpus; marathon-specific threshold-repeat variants (conceptual).
 
 ---
 
@@ -252,7 +252,7 @@ These patterns are **excellent** for **very advanced** athletes—often **doubli
 - **typical_build_context_tags:** `full_featured_healthy`, `race_specific`, `peak_fitness`
 - **typical_placement:** Specific phase; occasional late base for advanced athletes.
 - **pairs_poorly_with:** Other high-transition hard sessions same microcycle for fragile athletes.
-- **source_notes:** Tier C + SME required for product claims (format widely discussed; quality varies).
+- **source_notes:** Tier C — format widely used in coaching; quality varies; SME-approved for product claims; no name attribution (§4.4).
 
 ---
 

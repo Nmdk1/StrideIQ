@@ -1,4 +1,4 @@
-# Workout Fluency Registry — Specification v0.2.5
+# Workout Fluency Registry — Specification v0.2.9
 
 **Status:** Draft — **builder-safe for pilot KB work**; production wiring remains gated (see §2).  
 **Date:** 2026-03-20  
@@ -65,31 +65,47 @@ StrideIQ already encodes **volume limits**, **phase shapes**, and **much taxonom
 3. **Suppression over hallucination.** If the registry (or history) doesn’t support a claim, the system does not fabricate “why.”
 4. **Information over celebrity.** Provenance is for **audit**; the bar for inclusion is **accurate, usable definition** vetted by SME—not fame alone.
 5. **Distance is not a straitjacket.** Within physiological reason and individual tolerance, the same race distance may pair with **very different** weekly architectures. The registry encodes **variant eligibility signals** via **`build_context_tag`** (closed enum + precedence — §6.3), not “10K = never long.”
+6. **Corpus, not cult — synthesis owns the product.** Licensed extracts, published endurance literature, and internal research are **raw material**. What ships in StrideIQ is **so transformed** (N=1, engine, safety, voice) that **third-party programs do not merit public credit**—like citing who explained breathing every time a runner inhales. **N=1 history, injury constraints, and athlete intent outrank population templates** when they conflict. SME veto still applies to any claim.
 
 ### 4.1 Source admissibility (agent-executable)
 
-**Ranked tiers (highest admissibility first):**
+**Ranked tiers (highest admissibility first):** Tiers judge **evidence quality for internal QA**, not **marketing attribution**.
 
 | Tier | Admissible as | Examples / notes |
 |------|----------------|------------------|
-| **A** | Primary physiological or prescription claim | SME-written text; or SME-explicitly-approved paraphrase of a named source (logged in `sources` / `source_notes`). |
-| **B** | Primary claim when cited | Named published coaching materials (book chapter, official chart/table from a named author/program). |
-| **C** | Supporting context only (not sole basis for a claim) | Peer-reviewed or widely used coaching physiology references, with citation. |
+| **A** | Primary physiological or prescription claim | SME-written text; or SME-approved paraphrase **tracked internally** (corpus / license record)—**not** surfaced to athletes as “from [person/book].” |
+| **B** | Primary claim when backed | Established endurance-training literature, licensed internal extracts, or structured coaching corpus **referenced by internal catalog / tier in builder docs only**—see §4.4. |
+| **C** | Supporting context only (not sole basis for a claim) | Peer-reviewed physiology or consensus exercise science, cited **without** turning product copy into a bibliography. |
 
 **Explicit disallow (must not be sole or primary support for a claim):**
 
 - Anonymous or unverifiable blogs, social posts, and forum threads.
 - “Copy-template” plans scraped from the web without SME review.
 - LLM-generated definitions or citations **without** SME `sme_status: approved`.
-- Vague attributions (“coaches say…”) without a named, checkable source.
+- Vague attributions (“coaches say…”) with no checkable basis.
+- **Public** name-drops of coaches, books, or commercial programs in athlete-facing strings (§4.4).
 
 **SME veto remains final** for any external claim at any tier.
+
+### 4.4 No public attribution (coaches, books, brands)
+
+- **Athlete-facing copy, registry `display_name`, plan narratives, and API fields intended for the user** must **not** credit or name third-party coaches, books, trademarks, or training “systems.” StrideIQ presents **its own** coaching voice and logic.
+- **`source_notes` in KB markdown** should record **Tier** (A/B/C) and, when needed for compliance, **internal corpus reference ids**—**not** proper-name attribution (e.g. “Tier B — licensed endurance corpus; ref internal KB catalog”).
+- **Legal / licensing** records live **outside** user-visible surfaces (e.g. internal acquisition logs, contracts)—not in workout titles or push notifications.
+- **§5 artifacts** under `coaches/source_*` remain **builder inputs**; they are not an instruction to **quote** those labels to athletes.
 
 ### 4.2 Product vocabulary — threshold family (SME)
 
 - **Do not use “tempo”** as a defined pace, session label, or athlete-facing term. It is not a single physiological anchor; treat it as absent from product copy and registry **display names**.
-- **Threshold** (e.g. Daniels **T**) and **critical velocity / steady-state** work (e.g. McMillan, Pfitzinger lactate-threshold formulations) are **distinct** constructs—do not conflate without explicit framework context.
+- **Threshold** vs **critical velocity / steady-state** (and related labels in historical vs modern texts) are **distinct** constructs—do not conflate. Examples here illustrate **lineage** for disambiguation, not an exclusive list of authorities (principle **#6**, §4.3).
 - **Implementation note:** Legacy code may still accept a historical `tempo` string as an alias for continuous threshold work; that is **backward compatibility only**, not permission to emit “tempo” in UX or KB. Canonical stems remain **`threshold`** and **`threshold_intervals`**.
+
+### 4.3 N=1 vs population coaching systems (product stance)
+
+- **StrideIQ default is N=1:** history, fingerprints, constraints, and athlete choice—not “this week because a book’s template says so.”
+- **Published systems** (classic or modern) supply **language, typical progressions, and starting caps** for cold start and disclosure; they are **not** the only correct mapping for a real athlete.
+- **Deep research** (internal or routed external agent) should **broaden** evidence to **current** coaching practice and physiology—then **SME** decides what enters the registry.
+- **Founder SME** is **veto and product boundary**, not the **sole** source of training wisdom.
 
 ---
 
@@ -180,13 +196,13 @@ The following **illustrate** constraint diversity for **one** athlete; they are 
 
 - **High-volume 10K-oriented block:** Peak **70+ mpw**; long runs **15–18 mi**; sometimes **multiple** long-ish days in a week when rebuilding durability post-injury; primary quality may be **intervals** from short reps through **~2 mi** at ~5K effort, plus **threshold** progressions (~25–40 min), strides, hills—**when healthy and tolerating load**.
 - **Minimal marathon sharpen post-injury:** Mostly **easy** miles; **one** ~10 mi day faster than marathon pace; **one** ~63 mi week; **one** ~20 mi long run; **~2 weeks** pain-free before race—still executed competitively (e.g. AG result, BQ).
-- **Long structured build (Pfitz-style adherence):** High compliance with a published plan can yield strong performances **or** contribute to injury risk depending on individual response—registry should describe **risk factors** (sudden jumps, monolithic templates) without naming individuals’ outcomes as law.
+- **Long structured build (high adherence to a fixed template):** High compliance with a rigid published schedule can yield strong performances **or** contribute to injury risk depending on individual response—registry should describe **risk factors** (sudden jumps, monolithic templates) without treating any template as law.
 
 Agents must **not** copy these as defaults for all users; they inform **tags** and **SME review** of risk fields.
 
 ---
 
-## 7. Schema: required fields per variant (v0.2.5)
+## 7. Schema: required fields per variant (v0.2.9)
 
 Each `workout_variant_id` MUST have the following (prose in KB; structured row in machine registry when introduced).
 
@@ -222,7 +238,7 @@ Each `workout_variant_id` MUST have the following (prose in KB; structured row i
 | `typical_placement` | Phases / week roles (prose) — complements tags. |
 | `pairs_poorly_with` | e.g. heavy VO2 day after maximal long; same-day race; etc. |
 | `volume_family` | **Enum:** `E`, `M`, `T`, `I`, `R`, `long`, `composite` (Source B–aligned). |
-| `source_notes` | Citations per §4.1; empty only if SME-original. |
+| `source_notes` | Tier + internal reference per §4.1 / §4.4; **no** third-party **names** in user-surfaced strings. Empty only if SME-original. |
 | `sme_status` | **Enum:** `draft` \| `approved` \| `vetoed`. Optional later: `deprecated` for registry rows. **Only `approved` variants may be consumed by production wiring or shipping contract tests.** |
 
 ### 7.1 Validation contract (machine registry and CI — when introduced)
@@ -244,7 +260,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ## 8. Machine registry (phase 2 — format TBD)
 
-**v0.2.5 KB pilot delivers:** Threshold-first variant markdown under `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/` (or agreed path), each variant with §7 fields and valid tags.
+**v0.2.9 KB pilot delivers:** Threshold- and long-family variant markdown under `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/` (or agreed path), each variant with §7 fields and valid tags.
 
 **v0.3+ delivers:** Single validated artifact (`workout_registry.yaml` or JSON) with schema version, consumed by tests first, then optionally by Python loader — **subject to §2**.
 
@@ -256,25 +272,28 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 **Pilot 1 (default, highest leverage):** **Threshold** stems and variants — **`threshold`**, **`threshold_intervals`**. Legacy code may still map a historical **`tempo`** input string to continuous threshold work (**§4.2**); product language does **not** use “tempo.” Target **≥8** approved variant rows (can span multiple markdown files).
 
-**Pilot 2 (second):** **Long run** variants (easy, progression, MP-embedded)—after Pilot 1 SME-approved baseline.
+**Pilot 2 (second):** **Long run** variants (easy, progression, MP-embedded)—after Pilot 1 SME-approved baseline. **KB approved:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/long_run_pilot_v1.md` (**8** variants, founder SME **`approved` 2026-03-20**).
+
+**Build sequencing:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md` — **define all (in scope) → build tools (registry, validators, tests) → wire runtime** (§2 / P0).
 
 **Defer:** Full **R** and **hill** microvariants until Pilot 1–2 stable.
 
 ---
 
-## 10. Acceptance criteria (v0.2.5 doc + KB pilot)
+## 10. Acceptance criteria (v0.2.9 doc + KB pilot)
 
 - [x] Founder confirms **`build_context_tag` enum** (§6.3) as used in Pilot 1 — **2026-03-22** (implicit in approval of tagged pilot content).
 - [x] Founder confirms **`sme_status` enum** and rule: only **`approved`** in any shipping wiring path — **2026-03-22**.
 - [x] Founder confirms **source policy** (§4.1) as applied in Pilot 1 — **2026-03-22**.
 - [x] Agents add **Pilot 1** threshold variant docs (≥8 variants), each tagged with §6.3 values and `sme_status` on every variant — see `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/threshold_pilot_v1.md` (**9** variants, **`approved`** founder SME **2026-03-22**).
+- [x] Agents add **Pilot 2** long-family variant docs (8 variants), each tagged with §6.3 values and `sme_status` on every variant — see `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/long_run_pilot_v1.md` (**8** variants, **`approved`** founder SME **2026-03-20**).
 - [x] Cross-links from `WORKOUT_LIBRARY.md` to variant docs (index + authority note—no mass rewrite).
 - [x] **§2 execution gate** operationalized: PR checklist (`WORKOUT_FLUENCY_REGISTRY_PR_CHECKLIST.md`) + CI job `p0-plan-registry-gate` (see §2.1).
 - [ ] Authors of **runtime** PRs still must paste **`P0-GATE:`** attestation in the PR body when CI applies (human process; CI enforces presence only).
 
 ---
 
-## 11. Acceptance criteria (wiring phase — beyond v0.2.2 KB)
+## 11. Acceptance criteria (wiring phase — beyond v0.2.9 KB)
 
 - [ ] **Mapping table** checked in: registry `id` → current `workout_type` strings (and aliases) as accepted by `WorkoutScaler.scale_workout` and any `phase_builder` call sites — **before** merge of consumer code.
 - [ ] `workout_scaler` methods or dispatch reference `workout_variant_id` (internal) even if API still exposes stem.
@@ -284,7 +303,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 12. Explicit non-goals (v0.2.5)
+## 12. Explicit non-goals (v0.2.9)
 
 - Replacing `plan_validation_helpers.py` with prose.
 - LLM-generated definitions without SME sign-off.
@@ -300,7 +319,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 - **Semantic drift** — same `workout_variant_id` diverges in meaning across docs or PRs.
 - **Tag drift** — tags outside §6.3 or precedence intent misapplied.
 - **Safety drift** — `risks` / `when_to_avoid` hollow out while `benefits` stay long.
-- **Source drift** — claims promoted without admissible tier or SME approval.
+- **Source drift** — claims promoted without admissible tier or SME approval; or **attribution drift** — third-party coach/book **names** appearing in user-surfaced copy (violates §4.4).
 - **Mapping drift** — variant text no longer matches engine stems/aliases (`workout_scaler` language).
 - **Promotion drift** — `sme_status: approved` without explicit founder sign-off evidence (comment / PR record).
 
@@ -320,7 +339,11 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 | 0.2.2 | 2026-03-20 | Title/version aligned to revision train; §2.1 explicit “CI = presence only”; §13 watch mode; cross-links updated; §6.3 cross-ref fix (was §5.3); §7–§12 headings/version strings aligned to v0.2.2. |
 | 0.2.4 | 2026-03-21 | §4.2 SME vocabulary (no “tempo”; threshold vs CV/steady-state); pilot variant IDs `threshold_continuous_progressive`, `broken_threshold_two_blocks`; founder pace-calculator, ±5 s/mi band (e.g. 6:30→6:25–6:35), execution/post-hoc factors (wind, sun, surface, fatigue), periodization, narrative, advanced-population scope in `threshold_pilot_v1.md`. |
 | 0.2.5 | 2026-03-22 | Founder SME **approved** all 9 Pilot 1 threshold variants (`sme_status: approved`); §10 founder checkboxes satisfied for KB pilot scope. |
+| 0.2.6 | 2026-03-22 | `WORKOUT_FLUENCY_BUILD_SEQUENCE.md` (define → tools → wire); Pilot 2 `long_run_pilot_v1.md` (8 variants, draft). |
+| 0.2.7 | 2026-03-22 | Principle **#6** corpus-not-cult; Tier **B** modern coach examples; §4.3 N=1 vs population systems; §4.2 vocabulary decoupled from “Daniels/McMillan as ceiling.” |
+| 0.2.8 | 2026-03-22 | §4.4 **no public attribution** (coaches/books/brands); principle **#6** reframed; Tier table + `source_notes` aligned; exemplar de-branded. |
+| 0.2.9 | 2026-03-20 | Pilot 2 **`long_run_pilot_v1.md`**: 8 variants founder SME **`approved`**; prescription/environment block aligned with Pilot 1 (MP/HMP vs threshold, ±5 s/mi band, no “tempo,” fatigue/context); §9–§10 checklist updated. |
 
 ---
 
-*End of v0.2.5 — Pilot 1 threshold KB is **approved** for copy/KB truth; runtime wiring remains subject to §2 and §11.*
+*End of v0.2.9 — Pilot 1 threshold KB **approved**; Pilot 2 long-run KB **approved**; product voice is StrideIQ synthesis, not third-party bibliography.*
