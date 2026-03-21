@@ -40,6 +40,37 @@ from .cache import PlanCacheService
 
 logger = logging.getLogger(__name__)
 
+# P2: weighted easy fill — quality/long neighbors (docs/specs/PLAN_COACHED_OUTPUT_AND_LOAD_CONTRACT.md).
+_EASY_FILL_QUALITY_TYPES = frozenset({
+    "threshold", "threshold_intervals", "intervals",
+    "long_mp", "long_hmp", "hills", "repetitions", "tempo",
+})
+_EASY_FILL_LONG_TYPES = frozenset({"long", "long_mp", "long_hmp"})
+
+
+def _easy_fill_adjacency_weight(day: int, by_day: Dict[int, Any]) -> float:
+    """
+    Relative share weight for an easy slot (same calendar week, Mon=0).
+    Lower = recovery / pre-long compression; higher = standalone aerobic day.
+    """
+    prev_w = by_day.get(day - 1)
+    next_w = by_day.get(day + 1)
+    after_quality = bool(
+        prev_w is not None
+        and (prev_w.workout_type or "") in _EASY_FILL_QUALITY_TYPES
+    )
+    before_long = bool(
+        next_w is not None
+        and (next_w.workout_type or "") in _EASY_FILL_LONG_TYPES
+    )
+    if after_quality and before_long:
+        return 0.56  # 0.7 * 0.8
+    if after_quality:
+        return 0.7
+    if before_long:
+        return 0.8
+    return 1.2
+
 
 def _history_override_easy_long_spike(db: Session, athlete_id: UUID) -> bool:
     """
@@ -1024,30 +1055,79 @@ class PlanGenerator:
             if actual_workout_type == "long":
                 easy_long_state["previous_mi"] = float(workout.distance_miles or 0)
         
-        # --- Volume Fill: scale easy runs to hit weekly volume target ---
-        # Quality and long-run distances are set by the scaler based on
-        # coaching rules.  Easy runs absorb the remainder so the actual
-        # weekly total matches the plan target.  This prevents long runs
-        # from being disproportionately large as a % of actual volume
-        # (especially on 5-day schedules where fewer easy slots exist).
+        # --- Volume Fill: weighted easy miles (P2) — same weekly total, textured days ---
+        self._apply_weighted_easy_volume_fill(week_workouts, weekly_volume)
+        
+        return week_workouts
+
+    def _apply_weighted_easy_volume_fill(
+        self,
+        week_workouts: List[GeneratedWorkout],
+        weekly_volume: float,
+    ) -> None:
+        """
+        Distribute remaining weekly miles across easy / medium_long slots using
+        adjacency weights (Vega): shorter after quality, moderate before long,
+        longer on standalone easy days. Preserves total target when possible
+        within per-slot [3, 12] mi caps.
+        """
         easy_types = {"easy", "easy_strides", "recovery", "medium_long"}
         non_easy_miles = sum(
             w.distance_miles or 0 for w in week_workouts
             if w.workout_type not in easy_types
         )
-        easy_workouts = [w for w in week_workouts if w.workout_type in easy_types
-                         and (w.distance_miles or 0) > 0]
-        if easy_workouts:
-            remaining = weekly_volume - non_easy_miles
-            remaining = max(remaining, len(easy_workouts) * 3)  # min 3mi per easy run
-            per_easy = round(remaining / len(easy_workouts), 1)
-            per_easy = max(per_easy, 3.0)
-            per_easy = min(per_easy, 12.0)  # cap single easy run at 12mi
-            for ew in easy_workouts:
-                ew.distance_miles = per_easy
-                ew.duration_minutes = int(per_easy * 9.5)
-        
-        return week_workouts
+        easy_workouts = [
+            w for w in week_workouts
+            if w.workout_type in easy_types and (w.distance_miles or 0) > 0
+        ]
+        if not easy_workouts:
+            return
+
+        by_day = {w.day: w for w in week_workouts}
+        remaining = float(weekly_volume) - non_easy_miles
+        n = len(easy_workouts)
+        remaining = max(remaining, n * 3.0)
+
+        easy_sorted = sorted(easy_workouts, key=lambda w: w.day)
+        weights = [_easy_fill_adjacency_weight(w.day, by_day) for w in easy_sorted]
+        sw = sum(weights) or 1.0
+        raw = [remaining * (weights[i] / sw) for i in range(n)]
+
+        miles = [max(3.0, min(12.0, round(raw[i], 1))) for i in range(n)]
+        target = round(remaining, 1)
+        delta = round(target - sum(miles), 1)
+
+        idx = sorted(range(n), key=lambda i: weights[i], reverse=True)
+        guard = 0
+        while abs(delta) > 0.05 and guard < 300:
+            guard += 1
+            moved = False
+            if delta > 0:
+                for i in idx:
+                    if delta <= 0:
+                        break
+                    room = 12.0 - miles[i]
+                    if room >= 0.05:
+                        d = min(delta, room, 1.0)
+                        miles[i] = round(miles[i] + d, 1)
+                        delta = round(target - sum(miles), 1)
+                        moved = True
+            else:
+                for i in reversed(idx):
+                    if delta >= 0:
+                        break
+                    room = miles[i] - 3.0
+                    if room >= 0.05:
+                        d = min(-delta, room, 1.0)
+                        miles[i] = round(miles[i] - d, 1)
+                        delta = round(target - sum(miles), 1)
+                        moved = True
+            if not moved:
+                break
+
+        for i, ew in enumerate(easy_sorted):
+            ew.distance_miles = miles[i]
+            ew.duration_minutes = int(miles[i] * 9.5)
     
     def _get_workout_for_day(
         self,

@@ -101,16 +101,17 @@ Current validators use **long ≤ ~30% of week**. Treat as:
 
 **Remaining (P4):** merge `L30_max_easy_long` into baseline when generating from synced history.
 
-### P2 — Weighted easy fill (`generator.py`)
+### P2 — Weighted easy fill (`generator.py`) — **implemented**
 
-**Intent:** Same weekly total; **vary** easy days by adjacency:
+**Intent:** Same weekly total; **vary** easy days by **same-week** adjacency:
 
-- Day after quality: **0.7×** weight  
-- Day before long: **0.8×**  
-- Standalone easy: **1.2×**  
-- Normalize + floors (min mi per easy slot for 5d schedules)
+- Day after quality: **0.7** share weight  
+- Day before long (`long` / `long_mp` / `long_hmp`): **0.8**  
+- Both: **0.56** (0.7×0.8)  
+- Standalone easy: **1.2**  
+- **Normalize** to hit `weekly_volume` remainder after non-easy miles; per-slot **[3, 12]** mi; iterative nudge if clamping drifts total.
 
-**Tests:** ordering properties (e.g. recovery day ≤ mid-week easy when structure fixed); sum invariants.
+**Code:** `PlanGenerator._apply_weighted_easy_volume_fill`, `_easy_fill_adjacency_weight`, `_EASY_FILL_*` type sets in `generator.py`.
 
 ### P3 — Progression narrative (scaler titles/descriptions)
 
@@ -159,7 +160,7 @@ See **D1**, **D2** table, **D4** gates, **P1**, **P5** above. Founder amendment:
 ## Implementation order (recommended)
 
 1. ~~P1 scaler curve + clamps~~ **done**  
-2. P2 weighted easy fill.  
+2. ~~P2 weighted easy fill~~ **done**  
 3. P3 narrative templates.  
 4. P4 `LoadContext` + 30d spike + `max(L30, previous_planned)` baseline.  
 5. P5 adaptation hook (≥3wk / 70% gate).
