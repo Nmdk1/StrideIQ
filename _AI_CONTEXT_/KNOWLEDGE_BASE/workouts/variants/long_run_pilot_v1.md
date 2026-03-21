@@ -53,7 +53,7 @@
 
 - **stem:** `long`
 - **display_name:** Easy aerobic long run
-- **sme_status:** `approved`
+- **sme_status:** `draft`
 - **volume_family:** `long` (aerobic accounting often `E`)
 - **definition:** The default long run—**steady easy** effort start to finish, no deliberate race-pace block. Builds endurance and fat oxidation without adding race-specific stress.
 - **execution:** Warm up into easy conversational pace; hold easy throughout; optional walk breaks only if athlete/program uses them. Fuel and hydrate for duration; cap distance per weekly volume and peak rules.
@@ -74,7 +74,7 @@
 
 - **stem:** `long`
 - **display_name:** Progressive long (easy → moderate)
-- **sme_status:** `approved`
+- **sme_status:** `draft`
 - **volume_family:** `composite`
 - **definition:** Mostly **easy** long run with a **late** segment that progresses to **steady moderate** (not necessarily goal marathon pace)—teaches patience and finishing rhythm without full race specificity.
 - **execution:** Early bulk easy; final **~15–25%** smooth progression toward moderate/steady; no sprint finish. Cool down easy if structure wraps inside single run.
@@ -95,7 +95,7 @@
 
 - **stem:** `long`
 - **display_name:** Fast-finish long (race-pace touch)
-- **sme_status:** `approved`
+- **sme_status:** `draft`
 - **volume_family:** `composite`
 - **definition:** Easy bulk with a **short** finish at **goal race pace or slightly faster**—race-specific **touch**, not a second time trial inside the long run.
 - **execution:** Preserve large easy majority; final **~2–4 mi** (or ~10–15 min) at **goal pace** only when athlete tolerates; requires fueling discipline and honest easy pace early.
@@ -116,7 +116,7 @@
 
 - **stem:** `medium_long`
 - **display_name:** Medium-long run (aerobic)
-- **sme_status:** `approved`
+- **sme_status:** `draft`
 - **volume_family:** `long`
 - **definition:** Mid-week **endurance sandwich**—longer than daily easy, shorter than weekend long; **all easy** unless a different variant is explicitly chosen.
 - **execution:** Conversational easy; typically **~70–75%** of weekend long distance conceptually (engine uses tier/week context); no quality bolt-on unless programmed elsewhere.
@@ -137,7 +137,7 @@
 
 - **stem:** `long_mp`
 - **display_name:** Long run with continuous marathon-pace block
-- **sme_status:** `approved`
+- **sme_status:** `draft`
 - **volume_family:** `composite`
 - **definition:** Long run containing a **continuous** segment at **marathon goal pace** after easy warm-up—marathon **specific endurance**.
 - **execution:** Aligns with scaler progression concept (easy WU, then MP block, easy CD); total run capped by **peak long** and engine **MP volume limits**. Narrative must state **MP is goal race pace**, not threshold.
@@ -158,7 +158,7 @@
 
 - **stem:** `long_mp` (engine may surface structured option as `long_mp_intervals` in option payloads—treat as same family)
 - **display_name:** Long run with MP intervals (easy between)
-- **sme_status:** `approved`
+- **sme_status:** `draft`
 - **volume_family:** `composite`
 - **definition:** Same marathon specificity intent as continuous MP block, but **fractionated**—e.g. **2×3 mi @ MP** with **1 mi easy** between—lower continuous MP stress, useful early in MP introduction or for athletes who break on long continuous MP.
 - **execution:** Warm up easy; MP reps with **honest** easy jog between; cool down easy. Total MP miles still capped by weekly rules.
@@ -179,7 +179,7 @@
 
 - **stem:** `long_hmp`
 - **display_name:** Long run with half-marathon pace finish
-- **sme_status:** `approved`
+- **sme_status:** `draft`
 - **volume_family:** `composite`
 - **definition:** Long run where the **final segment** is at **half-marathon goal pace**—**higher** intensity than MP work; **not** threshold prescription.
 - **execution:** Easy for early miles; **HMP** segment grows through phase (engine: ~3→4→6→8 mi caps vs total long). Pace from **HMP / race calculator**, not T pace.
@@ -200,7 +200,7 @@
 
 - **stem:** `long`
 - **display_name:** Cutdown long (segments pick up pace)
-- **sme_status:** `approved`
+- **sme_status:** `draft`
 - **volume_family:** `composite`
 - **definition:** Multiple **segments** within the long run, each **slightly faster** than the last—starts very easy, ends **steady hard** but still **controlled** (not an all-out sprint finish unless SME explicitly programs SFF separately).
 - **execution:** Example pattern: 4–6 segments with **small** pace steps; must remain **aerobic-to-steady** unless labeled as race-pace variant. Requires strong pacing literacy.
