@@ -115,7 +115,7 @@ def resolve_workout_variant_id(
         return _coerce_variant_id("easy_run_hill_sprints_neuromuscular")
 
     if wt in ("long", "long_run"):
-        if ttl == "Long Run":
+        if ttl == "Long Run" or ttl.startswith("Long Run:"):
             return _coerce_variant_id("long_easy_aerobic_staple")
         return None
 

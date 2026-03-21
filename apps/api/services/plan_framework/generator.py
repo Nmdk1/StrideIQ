@@ -41,6 +41,47 @@ from .cache import PlanCacheService
 logger = logging.getLogger(__name__)
 
 
+def _history_override_easy_long_spike(db: Session, athlete_id: UUID) -> bool:
+    """
+    D4 (PLAN_COACHED_OUTPUT_AND_LOAD_CONTRACT): ≥8 runs ≥15mi lifetime window
+    and ≥18mi within last 120 days — musculoskeletal 'memory' for long distance.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        from services.mileage_aggregation import get_canonical_run_activities
+
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=730)
+        acts, _ = get_canonical_run_activities(
+            athlete_id,
+            db,
+            start_time=start,
+            require_trusted_duplicate_flags=False,
+        )
+        count15 = 0
+        last18 = None
+        for a in acts:
+            wt_raw = getattr(a, "workout_type", None) or ""
+            wt = str(wt_raw).lower()
+            if wt == "race":
+                continue
+            if getattr(a, "is_race_candidate", False):
+                continue
+            mi = (a.distance_m or 0) / 1609.344
+            if mi >= 15:
+                count15 += 1
+            if mi >= 18:
+                d = a.start_time.date()
+                if last18 is None or d > last18:
+                    last18 = d
+        if count15 < 8 or last18 is None:
+            return False
+        days = (date.today() - last18).days
+        return days <= 120
+    except Exception:
+        return False
+
+
 @dataclass
 class GeneratedWorkout:
     """A single workout in the generated plan."""
@@ -717,7 +758,12 @@ class PlanGenerator:
         # Track MP/HMP long run weeks for progressive loading
         mp_long_run_count = 0
         hmp_long_run_count = 0
-        
+
+        easy_long_state: Dict[str, Any] = {"previous_mi": None}
+        history_override = False
+        if athlete_id and self.db:
+            history_override = _history_override_easy_long_spike(self.db, athlete_id)
+
         for week in range(1, duration_weeks + 1):
             # Get phase for this week
             phase = self.phase_builder.get_phase_for_week(phases, week)
@@ -774,6 +820,9 @@ class PlanGenerator:
                 is_cutback=is_cutback,
                 mp_week=mp_long_run_count,
                 athlete_ctx=athlete_ctx,
+                duration_weeks=duration_weeks,
+                easy_long_state=easy_long_state,
+                history_override=history_override,
             )
             
             workouts.extend(week_workouts)
@@ -843,10 +892,14 @@ class PlanGenerator:
         is_cutback: bool = False,
         mp_week: int = 1,
         athlete_ctx: Optional[Dict[str, Any]] = None,
+        duration_weeks: int = 18,
+        easy_long_state: Optional[Dict[str, Any]] = None,
+        history_override: bool = False,
     ) -> List[GeneratedWorkout]:
         """Generate workouts for a single week."""
         week_workouts = []
         athlete_ctx = athlete_ctx or {"experienced_high_volume": False}
+        easy_long_state = easy_long_state if easy_long_state is not None else {"previous_mi": None}
         structure = structure or {}
         
         for day in range(7):
@@ -906,6 +959,10 @@ class PlanGenerator:
                 mp_week=mp_week,
                 athlete_ctx=athlete_ctx,
                 plan_week=week,
+                duration_weeks=duration_weeks,
+                is_cutback=is_cutback,
+                previous_easy_long_mi=easy_long_state.get("previous_mi"),
+                history_override=history_override,
             )
             
             # Add pace description if paces available
@@ -963,6 +1020,9 @@ class PlanGenerator:
                 )
             
             week_workouts.append(workout)
+
+            if actual_workout_type == "long":
+                easy_long_state["previous_mi"] = float(workout.distance_miles or 0)
         
         # --- Volume Fill: scale easy runs to hit weekly volume target ---
         # Quality and long-run distances are set by the scaler based on

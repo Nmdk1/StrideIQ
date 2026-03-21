@@ -1,6 +1,6 @@
 # Plan: coached output & load contract (spec)
 
-**Status:** Draft for implementation  
+**Status:** P1 implemented in `workout_scaler` + `generator` (2026-03-22); P2+ pending  
 **Date:** 2026-03-22  
 **Read with:** `docs/PLAN_CUTBACK_MP_POLICY.md`, `docs/TRAINING_PLAN_REBUILD_PLAN.md`, Vega notes (long-run curve, weighted easy fill, progression copy)
 
@@ -33,22 +33,28 @@ This spec separates:
 
 ## Definitions
 
-### D1 — Easy long (for spike baseline)
+### D1 — Easy long (for spike baseline) — **resolved (Vega)**
 
-Runs that count toward **“longest easy long in rolling window”** for **spike** checks:
-
-- **Primary:** `Activity` classified as easy / endurance / long_easy (exact `workout_type` set TBD with classifier team) **or** HR/pace band vs athlete threshold when streams exist.  
-- **Fallback (conservative):** if classification missing, use **duration ≥ 90 min** and **not** tagged threshold/interval/race (`workout_type` / zone).
+- **Planned:** only `workout_type == "long"` for easy-long spike chaining; `long_mp` / `long_hmp` use MP/HMP rules.  
+- **Historical (synced):** `duration >= 90 min`, not race (`workout_type` / candidate flags); no pace-based “easy” until per-athlete easy thresholds exist.
 
 ### D2 — Rolling baseline for distance spike
 
 - **Window:** **30 calendar days** (product default; cite Nguyen-style “recent max session” logic in copy — see founder [Forget the 10% Rule](https://mbshaf.substack.com/p/forget-the-10-rule)).  
-- **Baseline metric:** `L30_max_easy_long` = max distance (mi) of runs satisfying D1 in window.  
-- **Planned spike check:** next planned easy long `L_planned` must satisfy  
-  `L_planned <= L30_max_easy_long * (1 + spike_allowance)` unless **history override** (D4) applies.
+- **Baseline metric:** `L30_max_easy_long` = max distance (mi) of runs satisfying D1 in window (**P4** — not yet merged into scaler; P1 uses in-plan chain).  
 
-**Default `spike_allowance`:** **10%** for typical runners (align with article framing).  
-**Step rule (easy-only progression):** prefer **+2 mi** steps when the long is **easy-only** (no fast finish, no strides on that session) — can coexist with % cap as **soft** check.
+**Spike rule (Vega) — in-plan (P1):** **Step is primary**, **% is secondary**. Each week’s allowed ceiling vs the previous **planned** easy long:  
+`min(previous + step_mi, previous * (1 + spike_pct))` (more conservative of the two).  
+
+| Tier | Step | % guard (secondary) |
+|------|------|---------------------|
+| builder | +1.5 mi | 15% |
+| low | +2 mi | 12% |
+| mid | +2 mi | 10% |
+| high / elite | +2 mi | 10% |
+| history override (D4) | +3 mi | 15% |
+
+**Planned progression (Q3 — resolved):** Yes — Week *N* easy long is checked against Week *N−1* **planned** easy long. With history: `baseline = max(L30_max_easy_long, previous_planned_long)` when P4 wires L30 (P1 uses in-plan chain only; D4 override already uses activity history for tier loosening).
 
 ### D3 — Intensity envelope (reinjury vector)
 
@@ -84,15 +90,16 @@ Current validators use **long ≤ ~30% of week**. Treat as:
 
 ## Product behaviors (priority order)
 
-### P1 — Long-run progression curve (template + scaler)
+### P1 — Long-run progression curve (template + scaler) — **implemented**
 
-**Intent:** Long run follows a **planned curve** toward `peak_long` by phase/week, not only `weekly_volume * 0.28`.
+**Intent:** Easy long follows a **curve** from `start_long` → `peak_long` over build weeks, with **cutback** and **taper** shaping, **in-plan spike** vs last planned easy long, **weekly soft cap** 35% of week (matches relaxed `B1-LR-PCT`), **`MIN_STANDARD_EASY_LONG_MILES = 8`** (founder: never 5 mi builder long).
 
-- Inputs: `plan_week`, `duration_weeks`, `phase`, `is_cutback`, `is_taper`, `peak_long` (tier/distance), optional `L30_max_easy_long` / `start_long`.  
-- **Order of application:** target from curve → **clamp D2** → clamp **soft % of week** → clamp **absolute peak**.  
-- Cutback long: **~70%** of current week target (Vega) unless N=1 says hold.
+- **Start (standard, no history):** `max(8, min_weekly_miles * 0.25)` from `VOLUME_TIER_THRESHOLDS` (Vega table → builder 20→**8** not 5).  
+- **Curve:** linear in `plan_week` over `duration_weeks - 2` build weeks; taper weeks use `peak * 0.52` / `peak * 0.38`; **cutback × 0.70** on curve target.  
+- **Legacy scaler calls** (no `plan_week` / `duration_weeks`): old `% of week` behavior for tests.  
+- **Code:** `workout_scaler._scale_long_run`, `WorkoutScaler.scale_workout(..., duration_weeks, is_cutback, previous_easy_long_mi, history_override)`, `generator._generate_week` + `easy_long_state`.
 
-**Tests:** golden weeks for marathon mid 18w; monotonicity except cutback/taper; spike respected when history injected.
+**Remaining (P4):** merge `L30_max_easy_long` into baseline when generating from synced history.
 
 ### P2 — Weighted easy fill (`generator.py`)
 
@@ -123,6 +130,8 @@ Current validators use **long ≤ ~30% of week**. Treat as:
 - If `soreness_1_5` or `leg_feel` crosses threshold → **repeat long week**, **remove +2 step**, or **shorten quality** next week.  
 - Requires job or **on plan refresh** hook — not only at generation time.
 
+**Minimum completion before acting on check-ins (Q4 — resolved):** **3 weeks** at **≥ 70%** workout completion; until then log signals only.
+
 ---
 
 ## Non-goals (this phase)
@@ -141,19 +150,16 @@ Current validators use **long ≤ ~30% of week**. Treat as:
 
 ---
 
-## Open questions for Vega / founder
+## Resolved Q&A (Vega + founder, 2026-03-22)
 
-1. Exact **workout_type** whitelist for D1 (easy long) from classifier.  
-2. **spike_allowance** for builder vs mid vs history override.  
-3. Whether **planned** longs in the **future** week count toward “next spike” pre-validation (recommended: yes for schedule coherence).  
-4. Minimum **completion** before trusting check-ins for adaptation (avoid adapting on empty weeks).
+See **D1**, **D2** table, **D4** gates, **P1**, **P5** above. Founder amendment: **minimum easy long = 8 mi** for standard plans (not 5 mi on builder).
 
 ---
 
 ## Implementation order (recommended)
 
-1. P1 scaler curve + clamps (template-only baseline).  
+1. ~~P1 scaler curve + clamps~~ **done**  
 2. P2 weighted easy fill.  
 3. P3 narrative templates.  
-4. P4 `LoadContext` + 30d spike + history override on personalized paths.  
-5. P5 adaptation hook.
+4. P4 `LoadContext` + 30d spike + `max(L30, previous_planned)` baseline.  
+5. P5 adaptation hook (≥3wk / 70% gate).

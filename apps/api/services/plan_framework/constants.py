@@ -149,6 +149,12 @@ LONG_RUN_PEAKS = {
     },
 }
 
+# Standard-plan easy long run: minimum miles (founder: never 5 mi; builder uses 8+).
+MIN_STANDARD_EASY_LONG_MILES = 8.0
+
+# Default taper weeks aligned with volume progression (see volume_tiers.calculate_volume_progression).
+PLAN_TAPER_WEEKS_DEFAULT = 2
+
 # Workout limits as percentage of weekly volume (Source B)
 WORKOUT_LIMITS = {
     "threshold_pct": 0.10,      # Max 10% of weekly in one T session

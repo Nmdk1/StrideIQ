@@ -23,13 +23,72 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
 from .constants import (
-    VolumeTier, 
-    Phase, 
+    VolumeTier,
+    Phase,
     WorkoutCategory,
     WORKOUT_LIMITS,
     LONG_RUN_PEAKS,
-    Distance
+    Distance,
+    VOLUME_TIER_THRESHOLDS,
+    MIN_STANDARD_EASY_LONG_MILES,
+    PLAN_TAPER_WEEKS_DEFAULT,
 )
+
+
+def _parse_goal_distance(distance: str) -> Distance:
+    d = (distance or "marathon").strip().lower().replace("-", "_")
+    aliases = {
+        "5k": Distance.FIVE_K,
+        "10k": Distance.TEN_K,
+        "half": Distance.HALF_MARATHON,
+        "half_marathon": Distance.HALF_MARATHON,
+        "marathon": Distance.MARATHON,
+    }
+    return aliases.get(d, Distance.MARATHON)
+
+
+def _volume_tier(tier: str) -> VolumeTier:
+    try:
+        return VolumeTier((tier or "mid").strip().lower())
+    except ValueError:
+        return VolumeTier.MID
+
+
+def standard_start_long_miles(goal: Distance, tier: str) -> float:
+    """
+    First easy long for standard plans: max(MIN_STANDARD_EASY_LONG_MILES, min_weekly * 0.25).
+    See docs/specs/PLAN_COACHED_OUTPUT_AND_LOAD_CONTRACT.md (Vega + founder floor).
+    """
+    vt = _volume_tier(tier)
+    row = VOLUME_TIER_THRESHOLDS.get(goal) or VOLUME_TIER_THRESHOLDS[Distance.MARATHON]
+    cfg = row.get(vt) or row[VolumeTier.MID]
+    min_w = float(cfg["min"])
+    raw = min_w * 0.25
+    return max(float(MIN_STANDARD_EASY_LONG_MILES), round(raw, 1))
+
+
+def peak_long_miles(goal: Distance, tier: str) -> float:
+    vt = _volume_tier(tier)
+    peaks = LONG_RUN_PEAKS.get(goal) or LONG_RUN_PEAKS[Distance.MARATHON]
+    if vt in peaks:
+        return float(peaks[vt])
+    if vt == VolumeTier.ELITE and VolumeTier.HIGH in peaks:
+        return float(peaks[VolumeTier.HIGH])
+    return float(peaks.get(VolumeTier.MID, 18))
+
+
+def spike_step_miles_and_pct(tier: str, history_override: bool) -> tuple[float, float]:
+    """Primary step + secondary % guard for easy-long spike (Vega table)."""
+    if history_override:
+        return 3.0, 0.15
+    t = (tier or "mid").strip().lower()
+    if t == "builder":
+        return 1.5, 0.15
+    if t == "low":
+        return 2.0, 0.12
+    if t in ("high", "elite"):
+        return 2.0, 0.10
+    return 2.0, 0.10
 
 
 @dataclass
@@ -81,6 +140,10 @@ class WorkoutScaler:
         mp_week: int = 1,  # For tracking MP long run progression
         athlete_ctx: Optional[Dict[str, Any]] = None,
         plan_week: Optional[int] = None,
+        duration_weeks: Optional[int] = None,
+        is_cutback: bool = False,
+        previous_easy_long_mi: Optional[float] = None,
+        history_override: bool = False,
     ) -> ScaledWorkout:
         """
         Scale any workout type to athlete capacity.
@@ -105,7 +168,17 @@ class WorkoutScaler:
             return self._scale_easy_with_strides(weekly_volume)
         
         elif workout_type in ["long", "long_run"]:
-            return self._scale_long_run(weekly_volume, tier, distance)
+            return self._scale_long_run(
+                weekly_volume,
+                tier,
+                distance,
+                plan_week=plan_week,
+                duration_weeks=duration_weeks,
+                phase=phase,
+                is_cutback=is_cutback,
+                previous_easy_long_mi=previous_easy_long_mi,
+                history_override=history_override,
+            )
         
         elif workout_type in ["threshold_intervals", "t_intervals"]:
             return self._scale_threshold_intervals(weekly_volume, tier, week_in_phase)
@@ -180,37 +253,91 @@ class WorkoutScaler:
         self,
         weekly_volume: float,
         tier: str,
-        distance: str
+        distance: str,
+        *,
+        plan_week: Optional[int] = None,
+        duration_weeks: Optional[int] = None,
+        phase: str = "",
+        is_cutback: bool = False,
+        previous_easy_long_mi: Optional[float] = None,
+        history_override: bool = False,
     ) -> ScaledWorkout:
-        """Scale easy long run (no workout component)."""
-        try:
-            dist = Distance(distance)
-            vol_tier = VolumeTier(tier)
-        except ValueError:
-            dist = Distance.MARATHON
-            vol_tier = VolumeTier.MID
-        
-        # Get peak long run for this tier/distance
-        peak = LONG_RUN_PEAKS.get(dist, {}).get(vol_tier, 18)
-        
-        # Long run target (default): ~28% of weekly.
-        # For high-volume marathon training, allow slightly higher by default
-        # (durability requirement), but still cap by tier/distance peak.
-        pct = 0.28
-        if (distance or "").strip().lower() in ("marathon",) and weekly_volume >= 60:
-            pct = 0.30
-        target = min(weekly_volume * pct, peak)
-        
+        """Scale easy long run (`workout_type` long / long_run) — aerobic only."""
+        goal = _parse_goal_distance(distance)
+        peak = peak_long_miles(goal, tier)
+        start_long = min(standard_start_long_miles(goal, tier), peak)
+        tw = max(float(weekly_volume), 1.0)
+        # Secondary soft guard vs weekly volume (aligns with relaxed validator long_run_pct 0.35).
+        weekly_soft_cap = tw * 0.35
+
+        # Legacy path when plan context omitted (unit tests, ad-hoc scaler calls).
+        if plan_week is None or duration_weeks is None:
+            pct = 0.28
+            if (distance or "").strip().lower() in ("marathon",) and tw >= 60:
+                pct = 0.30
+            target = min(tw * pct, peak, weekly_soft_cap)
+            target = max(float(MIN_STANDARD_EASY_LONG_MILES), target)
+            target = min(target, peak)
+            mi = math.floor(target)
+            return ScaledWorkout(
+                workout_type="long_run",
+                category=WorkoutCategory.LONG,
+                title="Long Run",
+                description="Easy effort throughout. Build endurance through time on feet.",
+                total_distance_miles=float(mi),
+                duration_minutes=int(mi * 9.5),
+                segments=None,
+                pace_description="easy conversational pace, 60-90 sec slower than marathon pace",
+                option="A",
+            )
+
+        taper_w = PLAN_TAPER_WEEKS_DEFAULT
+        build_end = max(1, int(duration_weeks) - taper_w)
+        pw = int(plan_week)
+
+        if pw > build_end:
+            if pw >= int(duration_weeks):
+                curve = peak * 0.38
+            else:
+                curve = peak * 0.52
+        else:
+            span = max(1, build_end - 1)
+            frac = (pw - 1) / span
+            curve = start_long + (peak - start_long) * frac
+
+        if is_cutback:
+            curve *= 0.70
+
+        if previous_easy_long_mi is not None:
+            prev = float(previous_easy_long_mi)
+            step, sp_pct = spike_step_miles_and_pct(tier, history_override)
+            spike_cap = min(prev + step, prev * (1.0 + sp_pct))
+            target = min(curve, spike_cap)
+        else:
+            target = curve
+
+        target = min(target, weekly_soft_cap, peak)
+        target = max(float(MIN_STANDARD_EASY_LONG_MILES), target)
+        target = min(target, peak)
+        mi = math.floor(target)
+
+        desc = "Easy effort throughout. Build endurance through time on feet."
+        if previous_easy_long_mi is not None and mi > int(previous_easy_long_mi):
+            desc = (
+                f"Easy long progressing from {previous_easy_long_mi:.0f} mi — "
+                f"{mi} mi aerobic. Keep effort truly easy; time on feet is the stimulus."
+            )
+
         return ScaledWorkout(
             workout_type="long_run",
             category=WorkoutCategory.LONG,
-            title="Long Run",
-            description="Easy effort throughout. Build endurance through time on feet.",
-            total_distance_miles=round(target, 0),
-            duration_minutes=int(target * 9.5),
+            title=f"Long Run: {mi} mi",
+            description=desc,
+            total_distance_miles=float(mi),
+            duration_minutes=int(mi * 9.5),
             segments=None,
             pace_description="easy conversational pace, 60-90 sec slower than marathon pace",
-            option="A"
+            option="A",
         )
     
     def _scale_threshold_intervals(
