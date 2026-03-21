@@ -14,8 +14,11 @@
 ## StrideIQ long-run principles (draft — for SME review)
 
 - **Easy long** is the **weekly structural anchor** for most athletes—time on feet, aerobic load, durability. Pace is **easy conversational**; use **Training Pace Calculator** (goal race or best recent race anchor) and RPE as context, not race effort on the easy bulk.
+- **Most runners should have a long run** in the week; what counts as “long” **scales with the athlete**. For **newer** runners, a pragmatic floor is **more than double** a typical **single** easy day (when daily volume is small). For **high-mileage** athletes, “double daily” stops being meaningful—long is **no longer linear** off daily miles; use **time on feet**, recent longest session, and plan caps instead.
+- **Stops are normal:** brief stops for **fluid, fuel, bathroom, or regrouping** (including short walking) do not invalidate an easy long—the session is defined by **easy effort and duration**, not uninterrupted clock continuity.
 - **Total distance** scales with weekly volume and race distance; internal scaler uses ~**28–30%** of weekly volume toward long-run target with **tier/distance peaks**—variants describe **structure**, not replace safety caps.
 - **Post-run analysis:** same as threshold pilot—**elevation, temperature, wind, sun, surface, fatigue** affect realized pace; judgment needs context.
+- **Injury return and tolerance** are **N=1**; do not treat any exemplar below as a universal rule.
 
 ---
 
@@ -52,21 +55,21 @@
 ## `long_easy_aerobic_staple`
 
 - **stem:** `long`
-- **display_name:** Easy aerobic long run
+- **display_name:** Easy long run
 - **sme_status:** `draft`
-- **volume_family:** `long` (aerobic accounting often `E`)
-- **definition:** The default long run—**steady easy** effort start to finish, no deliberate race-pace block. Builds endurance and fat oxidation without adding race-specific stress.
-- **execution:** Warm up into easy conversational pace; hold easy throughout; optional walk breaks only if athlete/program uses them. Fuel and hydrate for duration; cap distance per weekly volume and peak rules.
+- **volume_family:** `long` (aerobic accounting often `E` in volume summaries—keep **`long`** as stem family here)
+- **definition:** The default **weekly** long run—**steady easy** effort for the moving portions, **no deliberate race-pace block**. Builds endurance and fat oxidation without adding race-specific stress. **Stops** for fluid, fuel, bathroom, or brief regrouping (including short walking) are **normal** and compatible with this variant.
+- **execution:** Ease into conversational pace; hold easy for the run as a whole. **Stop as needed** for hydration and fuel on longer outings—especially heat or high sweat loss—without treating the session as “broken.” Cap distance/time per weekly volume, peak rules, and **recent longest-run progression** (avoid abrupt single-session spikes vs what the athlete has tolerated in the prior few weeks). Narrative: prioritize **effort + context**, not uninterrupted clock purity.
 - **primary_adaptations:** Aerobic base; musculoskeletal durability; metabolic efficiency.
 - **systems_stressed:** Time on feet; repetitive load; low cardiac stress relative to quality days.
-- **benefits:** Highest ROI for most athletes most weeks; recovery-friendly structure.
-- **risks:** Pace creep into moderate; dehydration; returning too fast on downhills when tired.
-- **when_to_avoid:** Acute injury where long duration aggravates; replace with split easy or bike per medical guidance.
-- **n1_selection_notes:** Default for **`base_building`**, **`durability_rebuild`**, **`injury_return`** (shortened volume), and many **`full_featured_healthy`** weeks when race-specific long is not indicated.
-- **typical_build_context_tags:** `base_building`, `durability_rebuild`, `injury_return`, `full_featured_healthy`, `minimal_sharpen` (shortened), `race_specific` (when keeping long easy before/after key races)
-- **typical_placement:** Weekly; often weekend; backbone of marathon and half plans.
+- **benefits:** Highest ROI for most athletes most weeks; recovery-friendly structure; supports durable volume when progression is sane.
+- **risks:** Pace creep into moderate; dehydration; returning too fast on downhills when tired; **one-off** long that jumps far beyond recent longest sessions (injury risk) even if weekly totals look tame.
+- **when_to_avoid:** Acute injury or medical guidance where long duration or impact is contraindicated—use split easy, cross-train, or shorter bouts per **clinical direction**. **`injury_return`:** length and tolerance are **highly individual**; shorten or defer until load is re-established—no universal week template.
+- **n1_selection_notes:** **Default long** for most weeks in **`base_building`**, **`durability_rebuild`**, **`full_featured_healthy`**, and often **`race_specific`** when the long stays **easy** (quality lives elsewhere). **`minimal_sharpen`:** usually shortened. **`injury_return`:** only when cleared for progressing duration—scale to N=1. **“Long” definition:** for newer/low-daily-volume athletes, often **> ~2×** a typical easy day; for high-daily-mileage athletes, use **time on feet** and plan caps instead of doubling daily miles. **Time heuristic (illustrative):** many experienced athletes anchor “long” at **~2+ hours**; others may be shorter or longer at the same fitness. **SME exemplar (not a universal prescription):** ~**15–18 mi** when not in marathon-specific build (often **15**, occasional **18**); marathon build may reach **~22–24 mi** at peak when tolerance supports it.
+- **typical_build_context_tags:** `base_building`, `durability_rebuild`, `injury_return`, `full_featured_healthy`, `minimal_sharpen` (shortened), `race_specific` (easy long while quality is expressed on other days or as embedded work elsewhere)
+- **typical_placement:** Weekly for most competitive distance runners; often weekend; backbone from 5K through marathon **when** a long day fits the athlete’s architecture.
 - **pairs_poorly_with:** Heavy VO2 or long MP block **same day**; racing long hard mid-week without recovery context.
-- **source_notes:** Tier B — licensed endurance corpus; easy long as weekly structural staple (internal QA — spec §4.4).
+- **source_notes:** Tier A — SME primary for stop tolerance, scalable “long” definition, session-spike caution, and injury-return N=1 framing. Internal builder ref (not athlete-facing bibliography): load/injury synthesis [`forget-the-10-rule`](https://mbshaf.substack.com/p/forget-the-10-rule) — spec §4.4 (no third-party program names in user surfaces).
 
 ---
 
