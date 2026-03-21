@@ -16,11 +16,11 @@
 |-------|-------------------|---------------|
 | Threshold | **Approved** (9 variants) | `threshold_pilot_v1.md` |
 | Long / medium-long / MP / HMP | **Approved** (8 variants) | `long_run_pilot_v1.md` |
-| Easy / recovery / easy+strides / rest | **Draft KB** (4 variants, all `draft`) | `easy_pilot_v1.md` |
+| Easy / recovery / easy+strides / rest | **Approved** (4 variants) | `easy_pilot_v1.md` |
 | VO2 intervals | Not started | future `intervals_pilot_v1.md` |
 | Reps / strides / hills | Deferred per spec | after core pilots stable |
 
-**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry v0.2.15:** threshold + long-family pilots **fully** **`approved`**; **easy** pilot KB **exists** but rows are **`draft`** until founder promotes each `id`; **VO2** and any other **v1** tracks still **required** before Phase 3. KB variants are **inputs to deterministic plan construction** (spec §7.0).
+**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry v0.2.16:** threshold, long-family, and easy-family pilots **fully** **`approved`**; **VO2** and any other **v1** tracks still **required** before Phase 3. KB variants are **inputs to deterministic plan construction** (spec §7.0).
 
 ---
 

@@ -1,11 +1,11 @@
 # Easy / recovery / rest pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.15  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.16  
 **Stems covered:** `easy`, `recovery`, `easy_strides`, `rest`
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `scale_workout` accepts **`easy`**, **`easy_run`**, **`recovery`** (all routed through `_scale_easy`), **`easy_strides`** (`_scale_easy_with_strides`), **`rest`** (`_scale_rest`). Treat **`easy_run`** as an alias of **`easy`** for mapping tables; do not invent a separate variant id for the alias.
 
-**SME approval:** **All rows below are `sme_status: draft`** until the founder explicitly promotes each `id` (same rule as Pilots 1–2). KB-only until spec §2 P0 gate allows runtime wiring.
+**SME approval:** **Founder approved** all **four** Pilot 3 easy-family variants **2026-03-20** (session: batch “approve”). Each row below is **`sme_status: approved`** for KB / product-copy purposes; runtime wiring remains gated per spec §2. Future edits: **do not** infer promotion—explicit founder sign-off per `id`.
 
 ---
 
@@ -31,7 +31,7 @@
 
 - **stem:** `easy` (alias input: `easy_run` → same intent)
 - **display_name:** Easy run
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `E`
 - **definition:** Default **aerobic** day—conversational effort, **at or below** easy ceiling, distance scaled to weekly structure. Not disguised steady-state “sort of hard”; not race-specific work.
 - **execution:** Continuous easy running (or walk breaks only if athlete-led or protocol allows). **Pace:** relaxed; **breathing** should stay comfortable; **finish** feeling like more miles were possible. **Terrain / conditions:** same ceiling rule—ease off before violating easy definition.
@@ -73,7 +73,7 @@
 
 - **stem:** `easy_strides`
 - **display_name:** Easy run with strides
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `E`
 - **definition:** **Easy run** plus **short, controlled strides** after the aerobic portion—**neuromuscular** and turnover touch, **not** a VO2 or threshold session.
 - **execution:** **Easy** main volume at or below easy ceiling. **Strides:** very short (e.g. **~20–30 s**) accelerations to **fast but relaxed** mechanics—**not** all-out sprints; **full** walk/jog recovery so breathing returns to easy before the next. Engine sketch today: easy miles + **6×** short strides with generous rest (`workout_scaler._scale_easy_with_strides`)—treat as **illustrative** until registry wiring; N=1 may reduce reps or omit.
@@ -94,7 +94,7 @@
 
 - **stem:** `rest`
 - **display_name:** Rest day
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `composite`
 - **definition:** **No running** prescribed; complete rest or optional **non-impact** cross-training only if athlete and policy allow—**not** a stealth easy run.
 - **execution:** **Zero** run miles. Copy should reinforce **adaptation happens on rest** without moralizing. If the product allows optional cross-training, it must **not** rewrite this variant into a run.
@@ -115,9 +115,9 @@
 
 | `id` | `stem` | `volume_family` | `sme_status` |
 |------|--------|-----------------|--------------|
-| `easy_conversational_staple` | `easy` | `E` | `draft` |
-| `recovery_run_aerobic` | `recovery` | `E` | `draft` |
-| `easy_strides_neuromuscular_touch` | `easy_strides` | `E` | `draft` |
-| `rest_day_complete` | `rest` | `composite` | `draft` |
+| `easy_conversational_staple` | `easy` | `E` | `approved` |
+| `recovery_run_aerobic` | `recovery` | `E` | `approved` |
+| `easy_strides_neuromuscular_touch` | `easy_strides` | `E` | `approved` |
+| `rest_day_complete` | `rest` | `composite` | `approved` |
 
-**Counts:** 0 approved / 4 draft (until founder promotes rows explicitly).
+**Counts:** 4 approved / 0 draft.
