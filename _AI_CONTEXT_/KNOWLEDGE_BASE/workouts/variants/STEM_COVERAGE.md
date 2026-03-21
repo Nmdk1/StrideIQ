@@ -14,6 +14,7 @@
 | `long_run` | `long_run_pilot_v1.md` | **`ScaledWorkout.workout_type`** from `_scale_long_run` when input is `long` or `long_run` — same easy-long intent as `long`. |
 | `medium_long` | `long_run_pilot_v1.md` | Mid-week endurance |
 | `long_mp` | `long_run_pilot_v1.md` | Option B may emit `long_mp_intervals` — same family |
+| `mp_touch` | `long_run_pilot_v1.md` | Short mid-week run with small MP block (`_scale_mp_touch`) — cutback consolidation for mid/high marathon |
 | `long_hmp` | `long_run_pilot_v1.md` | |
 | `easy` | `easy_pilot_v1.md` | Generator / default easy slot. |
 | `easy_run` | `easy_pilot_v1.md` | Scaler input alias for **`easy`** (`_scale_easy` pass-through). |
@@ -27,4 +28,4 @@
 
 **Not a separate pilot (variants live inside pilots above):** `long_mp_intervals` (MP long option B — document under long/MP family; scaler emits explicitly).
 
-**Last reviewed:** 2026-03-22 (added explicit `long_run` scaler emission)
+**Last reviewed:** 2026-03-22 (`mp_touch` stem; `long_run` scaler emission)
