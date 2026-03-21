@@ -548,6 +548,7 @@ def _plan_to_preview(plan: GeneratedPlan, show_paces: bool = False) -> PlanPrevi
                 "pace_description": w.pace_description if show_paces else None,
                 "segments": w.segments,
                 "option": w.option,
+                "workout_variant_id": w.workout_variant_id,
                 "has_option_b": w.option_b is not None,
             }
             for w in plan.workouts
@@ -621,6 +622,7 @@ def _save_plan(
             target_duration_minutes=workout.duration_minutes,
             target_distance_km=round(workout.distance_miles * 1.609, 2) if workout.distance_miles else None,
             segments=workout.segments,
+            workout_variant_id=workout.workout_variant_id,
             coach_notes=workout.pace_description,
         )
         db.add(db_workout)

@@ -1,6 +1,6 @@
-# Workout fluency — build sequence (define → tools → wire)
+# Workout fluency — build sequence (four-phase ladder)
 
-**Intent:** Do the work in **three waves** so we do not wire half-baked definitions into live plan generation.
+**Intent:** Do the work in **four phases** (define → tools → wire → post-wire enrichment) so we do not wire half-baked definitions into live plan generation.
 
 **Governing specs:** `WORKOUT_FLUENCY_REGISTRY_SPEC.md` (§2 P0 gate), `WORKOUT_FLUENCY_REGISTRY_PR_CHECKLIST.md`, `PLAN_GENERATION_VISION_ALIGNMENT_RECOVERY_SPEC.md`.
 

@@ -1445,6 +1445,9 @@ class PlannedWorkout(Base):
     # Structured workout segments (for intervals, etc.)
     # Format: [{"type": "warmup", "duration_min": 10}, {"type": "interval", "reps": 6, "distance_m": 800, "rest_min": 2}, ...]
     segments = Column(JSONB, nullable=True)
+
+    # Workout fluency: registry variant id when framework generation resolves one (nullable)
+    workout_variant_id = Column(Text, nullable=True)
     
     # Execution tracking
     completed = Column(Boolean, default=False, nullable=False)

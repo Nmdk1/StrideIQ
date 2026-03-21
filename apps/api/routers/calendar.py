@@ -72,6 +72,7 @@ class PlannedWorkoutResponse(BaseModel):
     target_distance_km: Optional[float] = None
     target_duration_minutes: Optional[int] = None
     segments: Optional[list] = None  # List of workout segments
+    workout_variant_id: Optional[str] = None
     completed: bool
     skipped: bool
     coach_notes: Optional[str] = None  # Pace description or guidance
@@ -1209,7 +1210,8 @@ def _build_coach_context(
                 "title": planned.title,
                 "description": planned.description,
                 "target_distance_km": planned.target_distance_km,
-                "segments": planned.segments
+                "segments": planned.segments,
+                "workout_variant_id": planned.workout_variant_id,
             } if planned else None,
             "activities": [
                 {

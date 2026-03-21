@@ -34,6 +34,7 @@ from .constants import Distance, VolumeTier, PlanTier
 from .volume_tiers import VolumeTierClassifier
 from .phase_builder import PhaseBuilder, TrainingPhase
 from .workout_scaler import WorkoutScaler, ScaledWorkout
+from .workout_variant_dispatch import resolve_workout_variant_id
 from .pace_engine import PaceEngine, TrainingPaces
 from .cache import PlanCacheService
 
@@ -63,6 +64,7 @@ class GeneratedWorkout:
     
     # Option A/B
     option: str
+    workout_variant_id: Optional[str] = None
     option_b: Optional['GeneratedWorkout'] = None
 
 
@@ -147,6 +149,7 @@ class GeneratedPlan:
                     "pace_description": w.pace_description,
                     "segments": w.segments,
                     "option": w.option,
+                    "workout_variant_id": w.workout_variant_id,
                     "has_option_b": w.option_b is not None,
                 }
                 for w in self.workouts
@@ -924,7 +927,10 @@ class PlanGenerator:
                 duration_minutes=scaled.duration_minutes,
                 pace_description=pace_desc,
                 segments=scaled.segments,
-                option="A"
+                option="A",
+                workout_variant_id=resolve_workout_variant_id(
+                    actual_workout_type, scaled.title, scaled.segments
+                ),
             )
             
             # Add Option B if available
@@ -947,7 +953,12 @@ class PlanGenerator:
                     duration_minutes=scaled.option_b.duration_minutes,
                     pace_description=option_b_pace,
                     segments=scaled.option_b.segments,
-                    option="B"
+                    option="B",
+                    workout_variant_id=resolve_workout_variant_id(
+                        scaled.option_b.workout_type,
+                        scaled.option_b.title,
+                        scaled.option_b.segments,
+                    ),
                 )
             
             week_workouts.append(workout)
