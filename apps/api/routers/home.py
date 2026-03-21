@@ -214,6 +214,9 @@ class HomeResponse(BaseModel):
     strava_status: Optional[StravaStatusDetail] = None
     coach_briefing: Optional[dict] = None  # LLM-generated coaching narratives for all cards
     briefing_state: Optional[str] = None  # ADR-065: fresh | stale | missing | refreshing
+    briefing_is_interim: bool = False
+    briefing_last_updated_at: Optional[str] = None
+    briefing_source: Optional[str] = None  # llm | deterministic_fallback
     # --- RSI Layer 1 ---
     last_run: Optional[LastRun] = None  # Most recent run within 96h for hero canvas
     # --- Path A surfaces ---
@@ -3035,6 +3038,9 @@ async def get_home_data(
     # If cache is stale or missing, a Celery task is enqueued (fire-and-forget).
     coach_briefing = None
     briefing_state = "missing"
+    briefing_is_interim = False
+    briefing_last_updated_at = None
+    briefing_source = None
 
     # P1-D: Consent gate — no AI processing without explicit opt-in.
     from services.consent import has_ai_consent as _has_consent
@@ -3048,11 +3054,14 @@ async def get_home_data(
                 "lane_2a_cache_briefing", str(current_user.id), db
             )
             if _use_cache_briefing:
-                from services.home_briefing_cache import read_briefing_cache, BriefingState
+                from services.home_briefing_cache import read_briefing_cache_with_meta, BriefingState
                 from tasks.home_briefing_tasks import enqueue_briefing_refresh
 
-                cached_payload, b_state = read_briefing_cache(str(current_user.id))
+                cached_payload, b_state, b_meta = read_briefing_cache_with_meta(str(current_user.id))
                 briefing_state = b_state.value
+                briefing_is_interim = bool(b_meta.get("briefing_is_interim", False))
+                briefing_last_updated_at = b_meta.get("briefing_last_updated_at")
+                briefing_source = b_meta.get("briefing_source")
                 _garmin_sleep_h = None
                 _checkin_sleep_h = today_checkin.sleep_h if today_checkin else None
                 try:
@@ -3067,7 +3076,7 @@ async def get_home_data(
                     checkin_sleep_h=_checkin_sleep_h,
                 )
 
-                if b_state in (BriefingState.STALE, BriefingState.MISSING):
+                if b_state in (BriefingState.STALE, BriefingState.MISSING) or briefing_is_interim:
                     try:
                         enqueue_briefing_refresh(str(current_user.id), priority="high")
                     except Exception as enq_err:
@@ -3243,6 +3252,9 @@ async def get_home_data(
         strava_status=strava_status_detail,
         coach_briefing=coach_briefing,
         briefing_state=briefing_state,
+        briefing_is_interim=briefing_is_interim,
+        briefing_last_updated_at=briefing_last_updated_at,
+        briefing_source=briefing_source,
         last_run=last_run,
         finding=home_finding,
         has_correlations=has_correlations,

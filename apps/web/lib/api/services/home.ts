@@ -167,6 +167,9 @@ export interface HomeData {
   last_run?: LastRun | null;
   // Async briefing state machine — drives polling and pending UI
   briefing_state?: BriefingState | null;
+  briefing_is_interim?: boolean;
+  briefing_last_updated_at?: string | null;
+  briefing_source?: 'llm' | 'deterministic_fallback' | null;
   // Path A surfaces
   finding?: HomeFinding | null;
   has_correlations?: boolean;

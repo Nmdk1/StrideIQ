@@ -40,6 +40,7 @@ from services.home_briefing_cache import (
     _lock_key,
     acquire_task_lock,
     read_briefing_cache,
+    read_briefing_cache_with_meta,
     record_task_failure,
     release_task_lock,
     reset_circuit,
@@ -992,6 +993,63 @@ class TestCeleryTask:
         assert acquire_task_lock(athlete_id) is False
 
         release_task_lock(athlete_id)
+
+    def test_fallback_sets_briefing_is_interim_true(self, fake_redis):
+        """Fallback writes interim=true and deterministic_fallback metadata."""
+        athlete_id = str(uuid4())
+        mock_db = MagicMock()
+
+        with patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp-fallback"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=None), \
+             patch("tasks.home_briefing_tasks._build_deterministic_briefing", return_value={
+                 "coach_noticed": "Latest run synced.",
+                 "today_context": "Sync completed.",
+                 "week_assessment": "Data is current.",
+                 "morning_voice": "Briefing refreshed from synced data.",
+                 "workout_why": "Fresh data anchors decisions.",
+             }), \
+             patch("services.consent.has_ai_consent", return_value=True):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+
+        assert result["status"] == "degraded"
+        _payload, _state, meta = read_briefing_cache_with_meta(athlete_id)
+        assert meta["briefing_is_interim"] is True
+        assert meta["briefing_source"] == "deterministic_fallback"
+
+    def test_successful_llm_clears_briefing_is_interim(self, fake_redis):
+        """A successful grounded LLM write must clear interim metadata."""
+        athlete_id = str(uuid4())
+        mock_db = MagicMock()
+        llm_payload = {
+            "coach_noticed": "Strong consistency this week.",
+            "today_context": "Easy day to absorb yesterday's work.",
+            "week_assessment": "You're progressing on plan.",
+            "morning_voice": "48 miles across 6 runs this week.",
+            "workout_why": "Active recovery supports adaptation.",
+        }
+
+        with patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp-llm"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=llm_payload), \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("routers.home.validate_voice_output", return_value={"valid": True}), \
+             patch("routers.home.validate_sleep_claims", return_value={"valid": True}), \
+             patch("services.consent.has_ai_consent", return_value=True):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+
+        assert result["status"] == "success"
+        _payload, _state, meta = read_briefing_cache_with_meta(athlete_id)
+        assert meta["briefing_is_interim"] is False
+        assert meta["briefing_source"] == "llm"
 
 
 class TestProviderTimeout:

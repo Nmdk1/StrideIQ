@@ -585,3 +585,59 @@ class TestHealthBriefingRefreshTrigger:
         assert result["processed"] == 0
         mock_dirty.assert_not_called()
         mock_enq.assert_not_called()
+
+
+class _FakeRedisCoalesce:
+    def __init__(self):
+        self._store = {}
+
+    def set(self, key, value, nx=False, ex=None):
+        if nx and key in self._store:
+            return False
+        self._store[key] = value
+        return True
+
+    def setex(self, key, ttl, value):
+        self._store[key] = value
+
+    def exists(self, key):
+        return 1 if key in self._store else 0
+
+    def delete(self, key):
+        self._store.pop(key, None)
+
+    def get(self, key):
+        return self._store.get(key)
+
+
+class TestHealthWebhookBurstCoalescing:
+    def test_webhook_burst_coalesces_refreshes(self):
+        """
+        Burst of health webhooks should enqueue at most one active refresh
+        plus one follow-up task.
+        """
+        from tasks.garmin_webhook_tasks import process_garmin_health_task
+        mock_db = _make_mock_db()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        fake_r = _FakeRedisCoalesce()
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks.get_redis_client", return_value=fake_r), \
+             patch("services.home_briefing_cache.mark_briefing_dirty"), \
+             patch("services.home_briefing_cache.is_task_lock_held", return_value=False), \
+             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq, \
+             patch("tasks.garmin_webhook_tasks.flush_home_briefing_followup_task") as mock_followup:
+            mock_enq.return_value = True
+            mock_followup.apply_async = MagicMock()
+
+            # First event in burst
+            r1 = process_garmin_health_task.run(ATHLETE_ID, "hrv", _HRV_RAW)
+            # Second event in same burst window
+            r2 = process_garmin_health_task.run(ATHLETE_ID, "stress", _STRESS_RAW)
+
+        assert r1["processed"] == 1
+        assert r2["processed"] == 1
+        # One active enqueue only inside the coalesce window.
+        assert mock_enq.call_count == 1
+        # One queued follow-up only.
+        mock_followup.apply_async.assert_called_once()

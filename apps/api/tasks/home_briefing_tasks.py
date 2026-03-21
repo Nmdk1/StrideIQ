@@ -34,6 +34,7 @@ from services.home_briefing_cache import (
     BriefingState,
     acquire_task_lock,
     read_briefing_cache,
+    read_briefing_cache_with_meta,
     record_task_failure,
     release_task_lock,
     reset_circuit,
@@ -425,7 +426,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
 
         fingerprint = _build_data_fingerprint(athlete_id, db)
 
-        cached_payload, cached_state = read_briefing_cache(athlete_id)
+        cached_payload, cached_state, cached_meta = read_briefing_cache_with_meta(athlete_id)
         if cached_state in (BriefingState.FRESH, BriefingState.STALE) and cached_payload:
             r = get_redis_client()
             if r:
@@ -448,6 +449,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                                 payload=cached_payload,
                                 source_model=str(cached_source_model),
                                 data_fingerprint=fingerprint,
+                                briefing_source=str(cached_meta.get("briefing_source") or "llm"),
+                                briefing_is_interim=bool(cached_meta.get("briefing_is_interim")),
                             )
                             reset_circuit(athlete_id)
                             return {"status": "success", "reason": "fingerprint_unchanged_cache_refreshed"}
@@ -466,6 +469,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                 payload=fallback_payload,
                 source_model="deterministic-fallback",
                 data_fingerprint=fingerprint,
+                briefing_source="deterministic_fallback",
+                briefing_is_interim=True,
             )
             reset_circuit(athlete_id)
             return {"status": "degraded", "reason": "prompt_build_failed", "model": "deterministic-fallback"}
@@ -484,6 +489,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                 payload=fallback_payload,
                 source_model="deterministic-fallback",
                 data_fingerprint=fingerprint,
+                briefing_source="deterministic_fallback",
+                briefing_is_interim=True,
             )
             reset_circuit(athlete_id)
             return {"status": "degraded", "reason": "llm_unavailable", "model": "deterministic-fallback"}
@@ -504,6 +511,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                 payload=fallback_payload,
                 source_model="deterministic-fallback",
                 data_fingerprint=fingerprint,
+                briefing_source="deterministic_fallback",
+                briefing_is_interim=True,
             )
             reset_circuit(athlete_id)
             return {"status": "degraded", "reason": "contract_validation_failed", "model": "deterministic-fallback"}
@@ -585,6 +594,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             payload=result,
             source_model=source_model,
             data_fingerprint=fingerprint,
+            briefing_source="llm",
+            briefing_is_interim=False,
         )
 
         # Finding-level cooldown: after briefing generation, set cooldown keys

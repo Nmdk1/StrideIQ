@@ -35,6 +35,7 @@ import {
   Footprints,
   Flame,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 
 // --- Workout styling ---
@@ -387,10 +388,12 @@ export default function HomePage() {
 
   // Briefing pending state + 30s timeout fallback
   const briefingState = data?.briefing_state;
+  const isInterimBriefing = Boolean(data?.briefing_is_interim);
   const isBriefingPending =
     briefingState === 'stale' ||
     briefingState === 'missing' ||
-    briefingState === 'refreshing';
+    briefingState === 'refreshing' ||
+    isInterimBriefing;
 
   const [briefingTimedOut, setBriefingTimedOut] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -449,7 +452,12 @@ export default function HomePage() {
     today_checkin,
     coach_briefing,
     last_run,
+    briefing_last_updated_at,
   } = data;
+
+  const formattedBriefingUpdatedAt = briefing_last_updated_at
+    ? new Date(briefing_last_updated_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : null;
 
   const hasAnyData = has_any_activities || week.completed_mi > 0;
   const workoutConfig = getWorkoutConfig(today.workout_type);
@@ -485,13 +493,41 @@ export default function HomePage() {
           {/* 2. The Voice — single paragraph only (morning_voice primary) */}
           {(coach_briefing?.morning_voice || coach_briefing?.coach_noticed) ? (
             <div data-testid="morning-voice" className="px-1 py-2 space-y-2">
+              {isInterimBriefing ? (
+                <div
+                  data-testid="briefing-interim-banner"
+                  className="rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-3.5 w-3.5 text-blue-300 animate-spin" />
+                    <p className="text-xs text-blue-200">
+                      Updating your morning insight from newly synced sleep/HRV data...
+                    </p>
+                  </div>
+                </div>
+              ) : null}
               {coach_briefing.morning_voice ? (
-                <p className="text-base text-slate-300 leading-relaxed" data-testid="morning-voice-primary">
+                <p
+                  className={`text-base leading-relaxed ${
+                    isInterimBriefing ? 'text-slate-400 italic' : 'text-slate-300'
+                  }`}
+                  data-testid="morning-voice-primary"
+                >
                   {coach_briefing.morning_voice}
                 </p>
               ) : coach_briefing.coach_noticed ? (
-                <p className="text-base text-slate-300 leading-relaxed" data-testid="morning-voice-primary">
+                <p
+                  className={`text-base leading-relaxed ${
+                    isInterimBriefing ? 'text-slate-400 italic' : 'text-slate-300'
+                  }`}
+                  data-testid="morning-voice-primary"
+                >
                   {coach_briefing.coach_noticed}
+                </p>
+              ) : null}
+              {formattedBriefingUpdatedAt ? (
+                <p className="text-[11px] text-slate-500" data-testid="briefing-last-updated">
+                  Last updated: {formattedBriefingUpdatedAt}
                 </p>
               ) : null}
               {coach_briefing.morning_voice && coach_briefing.coach_noticed ? (

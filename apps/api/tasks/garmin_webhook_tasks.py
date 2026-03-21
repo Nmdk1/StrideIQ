@@ -49,6 +49,8 @@ from services.garmin_backfill import request_deep_garmin_backfill, request_garmi
 logger = logging.getLogger(__name__)
 _BACKFILL_PROGRESS_TTL_S = 24 * 60 * 60
 _FIRST_SESSION_SWEEP_LOCK_TTL_S = 600
+_BRIEFING_COALESCE_WINDOW_S = 45
+_BRIEFING_PENDING_TTL_S = 180
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +134,14 @@ def _first_session_lock_key(athlete_id: str) -> str:
     return f"first_session_sweep_lock:{athlete_id}"
 
 
+def _briefing_coalesce_key(athlete_id: str) -> str:
+    return f"home_briefing_coalesce:{athlete_id}"
+
+
+def _briefing_pending_key(athlete_id: str) -> str:
+    return f"home_briefing_pending:{athlete_id}"
+
+
 def _progress_hincr(athlete_id: str, field: str, amount: int) -> None:
     if amount <= 0:
         return
@@ -201,6 +211,46 @@ def _create_activity_from_adapted(adapted: Dict[str, Any], athlete_id) -> Activi
         start_lat=adapted.get("start_lat"),
         start_lng=adapted.get("start_lng"),
         is_race_candidate=False,
+    )
+
+
+def _coalesced_home_briefing_refresh(athlete_id: str) -> None:
+    """
+    Coalesce burst health events into:
+      - at most one active enqueue inside the coalesce window
+      - at most one queued follow-up after the window
+    """
+    r = get_redis_client()
+    if not r:
+        # Fail open if Redis unavailable.
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        enqueue_briefing_refresh(str(athlete_id), force=True)
+        return
+
+    coalesce_key = _briefing_coalesce_key(str(athlete_id))
+    pending_key = _briefing_pending_key(str(athlete_id))
+    try:
+        first_event_in_window = bool(r.set(coalesce_key, "1", nx=True, ex=_BRIEFING_COALESCE_WINDOW_S))
+        r.setex(pending_key, _BRIEFING_PENDING_TTL_S, "1")
+    except Exception:
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        enqueue_briefing_refresh(str(athlete_id), force=True)
+        return
+
+    if not first_event_in_window:
+        return
+
+    from services.home_briefing_cache import is_task_lock_held
+    from tasks.home_briefing_tasks import enqueue_briefing_refresh
+
+    # First event in burst: enqueue immediately when no active task.
+    if not is_task_lock_held(str(athlete_id)):
+        enqueue_briefing_refresh(str(athlete_id), force=True)
+
+    # Always queue one bounded follow-up after window to pick up late health events.
+    flush_home_briefing_followup_task.apply_async(
+        args=[str(athlete_id)],
+        countdown=_BRIEFING_COALESCE_WINDOW_S,
     )
 
 
@@ -924,10 +974,9 @@ def process_garmin_health_task(
                 pass
             try:
                 from services.home_briefing_cache import mark_briefing_dirty
-                from tasks.home_briefing_tasks import enqueue_briefing_refresh
 
                 mark_briefing_dirty(str(athlete_id))
-                enqueue_briefing_refresh(str(athlete_id), force=True)
+                _coalesced_home_briefing_refresh(str(athlete_id))
             except Exception as refresh_exc:
                 logger.warning(
                     "Garmin health briefing refresh trigger failed for athlete %s: %s",
@@ -955,6 +1004,41 @@ def process_garmin_health_task(
         raise self.retry(exc=exc)
     finally:
         db.close()
+
+
+@celery_app.task(
+    name="flush_home_briefing_followup_task",
+    bind=True,
+    max_retries=8,
+    default_retry_delay=15,
+)
+def flush_home_briefing_followup_task(self, athlete_id: str) -> Dict[str, Any]:
+    """
+    Execute one bounded follow-up refresh after a webhook burst.
+    Retries while an active briefing generation lock is held.
+    """
+    from services.home_briefing_cache import is_task_lock_held
+    from tasks.home_briefing_tasks import enqueue_briefing_refresh
+
+    r = get_redis_client()
+    if not r:
+        enqueue_briefing_refresh(str(athlete_id), force=True)
+        return {"status": "ok", "reason": "redis_unavailable_fail_open"}
+
+    pending_key = _briefing_pending_key(str(athlete_id))
+    try:
+        if not r.exists(pending_key):
+            return {"status": "ok", "reason": "no_pending"}
+
+        if is_task_lock_held(str(athlete_id)):
+            raise self.retry()
+
+        enqueue_briefing_refresh(str(athlete_id), force=True)
+        r.delete(pending_key)
+        return {"status": "ok", "reason": "followup_enqueued"}
+    except self.MaxRetriesExceededError:
+        logger.warning("Follow-up briefing flush exceeded retries for athlete %s", athlete_id)
+        return {"status": "error", "reason": "max_retries_exceeded"}
 
 
 @celery_app.task(

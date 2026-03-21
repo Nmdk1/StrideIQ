@@ -102,6 +102,8 @@ const baseHomeData = {
   today_checkin: { readiness_label: 'Good', sleep_label: 'OK', soreness_label: 'None' },
   coach_briefing: null,
   last_run: null,
+  briefing_is_interim: false,
+  briefing_last_updated_at: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -194,24 +196,30 @@ describe('Test 6: pending briefing_state shows thinking placeholder', () => {
 // ---------------------------------------------------------------------------
 
 describe('Test 7: refetchInterval activates for non-fresh states', () => {
-  it('returns 2000 when briefing_state is refreshing', () => {
+  it('returns 2000 while pending or interim, else false', () => {
     const pendingStates = ['stale', 'missing', 'refreshing'];
     const freshStates = ['fresh', 'consent_required', null, undefined];
 
-    // The refetchInterval fn: state in pending → 2000, else false
-    const refetchInterval = (query: { state: { data?: { briefing_state?: string | null } } }) => {
+    // The refetchInterval fn: keep polling while pending OR interim.
+    const refetchInterval = (query: { state: { data?: { briefing_state?: string | null; briefing_is_interim?: boolean } } }) => {
       const state = query.state.data?.briefing_state;
+      const isInterim = Boolean(query.state.data?.briefing_is_interim);
       const BRIEFING_PENDING_STATES = new Set(['stale', 'missing', 'refreshing']);
-      return state && BRIEFING_PENDING_STATES.has(state) ? 2000 : false;
+      if (state === 'fresh' && !isInterim) return false;
+      if ((state && BRIEFING_PENDING_STATES.has(state)) || isInterim) return 2000;
+      return false;
     };
 
     pendingStates.forEach((s) => {
-      expect(refetchInterval({ state: { data: { briefing_state: s } } })).toBe(2000);
+      expect(refetchInterval({ state: { data: { briefing_state: s, briefing_is_interim: false } } })).toBe(2000);
     });
 
     freshStates.forEach((s) => {
-      expect(refetchInterval({ state: { data: { briefing_state: s } } })).toBe(false);
+      expect(refetchInterval({ state: { data: { briefing_state: s, briefing_is_interim: false } } })).toBe(false);
     });
+
+    // Core fix: fresh + interim must continue polling.
+    expect(refetchInterval({ state: { data: { briefing_state: 'fresh', briefing_is_interim: true } } })).toBe(2000);
   });
 });
 
@@ -253,6 +261,62 @@ describe('Test 8: fresh state hides placeholder and shows briefing', () => {
 
     expect(screen.queryByTestId('briefing-thinking')).not.toBeInTheDocument();
     expect(screen.queryByTestId('briefing-timeout-fallback')).not.toBeInTheDocument();
+  });
+});
+
+describe('Interim UI: banner + spinner + auto replace', () => {
+  it('shows interim banner/spinner and last-updated timestamp while interim=true', () => {
+    mockUseHomeData.mockReturnValue({
+      data: {
+        ...baseHomeData,
+        briefing_state: 'fresh',
+        briefing_is_interim: true,
+        briefing_last_updated_at: '2026-03-21T07:35:00Z',
+        coach_briefing: { morning_voice: 'Interim fallback copy.' },
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<HomePage />);
+    expect(screen.getByTestId('briefing-interim-banner')).toBeInTheDocument();
+    expect(screen.getByText(/Updating your morning insight/i)).toBeInTheDocument();
+    expect(screen.getByTestId('briefing-last-updated')).toBeInTheDocument();
+    expect(screen.getByText(/Interim fallback copy/i)).toBeInTheDocument();
+  });
+
+  it('final payload replaces interim copy without navigation', () => {
+    mockUseHomeData
+      .mockReturnValueOnce({
+        data: {
+          ...baseHomeData,
+          briefing_state: 'fresh',
+          briefing_is_interim: true,
+          coach_briefing: { morning_voice: 'Interim fallback copy.' },
+        },
+        isLoading: false,
+        error: null,
+      })
+      .mockReturnValueOnce({
+        data: {
+          ...baseHomeData,
+          briefing_state: 'fresh',
+          briefing_is_interim: false,
+          coach_briefing: { morning_voice: 'Final grounded morning voice.' },
+        },
+        isLoading: false,
+        error: null,
+      });
+
+    const { rerender } = render(<HomePage />);
+    expect(screen.getByText('Interim fallback copy.')).toBeInTheDocument();
+    expect(screen.getByTestId('briefing-interim-banner')).toBeInTheDocument();
+
+    rerender(<HomePage />);
+
+    expect(screen.getByText('Final grounded morning voice.')).toBeInTheDocument();
+    expect(screen.queryByText('Interim fallback copy.')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('briefing-interim-banner')).not.toBeInTheDocument();
   });
 });
 
