@@ -124,6 +124,9 @@ class FitnessBank:
     recent_quality_sessions_28d: int = 0
     recent_8w_median_weekly_miles: float = 0.0
     recent_16w_p90_weekly_miles: float = 0.0
+    recent_8w_p75_long_run_miles: float = 0.0
+    recent_16w_p50_long_run_miles: float = 0.0
+    recent_16w_run_count: int = 0
     peak_confidence: str = "medium"
     
     def to_dict(self) -> Dict:
@@ -162,6 +165,9 @@ class FitnessBank:
             "volume_contract": {
                 "recent_8w_median_weekly_miles": round(self.recent_8w_median_weekly_miles, 1),
                 "recent_16w_p90_weekly_miles": round(self.recent_16w_p90_weekly_miles, 1),
+                "recent_8w_p75_long_run_miles": round(self.recent_8w_p75_long_run_miles, 1),
+                "recent_16w_p50_long_run_miles": round(self.recent_16w_p50_long_run_miles, 1),
+                "recent_16w_run_count": int(self.recent_16w_run_count),
                 "peak_confidence": self.peak_confidence,
             }
         }
@@ -279,6 +285,9 @@ def _fitness_bank_to_dict(bank: "FitnessBank") -> dict:
         "recent_quality_sessions_28d": bank.recent_quality_sessions_28d,
         "recent_8w_median_weekly_miles": bank.recent_8w_median_weekly_miles,
         "recent_16w_p90_weekly_miles": bank.recent_16w_p90_weekly_miles,
+        "recent_8w_p75_long_run_miles": bank.recent_8w_p75_long_run_miles,
+        "recent_16w_p50_long_run_miles": bank.recent_16w_p50_long_run_miles,
+        "recent_16w_run_count": bank.recent_16w_run_count,
         "peak_confidence": bank.peak_confidence,
     }
 
@@ -332,6 +341,9 @@ def _fitness_bank_from_dict(d: dict) -> "FitnessBank":
         recent_quality_sessions_28d=int(d.get("recent_quality_sessions_28d", 0)),
         recent_8w_median_weekly_miles=float(d.get("recent_8w_median_weekly_miles", 0.0)),
         recent_16w_p90_weekly_miles=float(d.get("recent_16w_p90_weekly_miles", 0.0)),
+        recent_8w_p75_long_run_miles=float(d.get("recent_8w_p75_long_run_miles", 0.0)),
+        recent_16w_p50_long_run_miles=float(d.get("recent_16w_p50_long_run_miles", 0.0)),
+        recent_16w_run_count=int(d.get("recent_16w_run_count", 0)),
         peak_confidence=str(d.get("peak_confidence", "medium")),
     )
 
@@ -477,6 +489,7 @@ class FitnessBankCalculator:
         
         # Calculate current and average long run (ADR-038: N=1 long run progression)
         current_long, average_long = self._calculate_current_long_run(activities)
+        p75_long_8w, p50_long_16w, run_count_16w = self._calculate_recent_long_run_floor_metrics(activities)
         recent_quality_sessions = self._calculate_recent_quality_sessions(activities)
         
         result = FitnessBank(
@@ -511,6 +524,9 @@ class FitnessBankCalculator:
             recent_quality_sessions_28d=recent_quality_sessions,
             recent_8w_median_weekly_miles=recent_8w_median,
             recent_16w_p90_weekly_miles=recent_16w_p90,
+            recent_8w_p75_long_run_miles=p75_long_8w,
+            recent_16w_p50_long_run_miles=p50_long_16w,
+            recent_16w_run_count=run_count_16w,
             peak_confidence=peak_confidence,
         )
         try:
@@ -780,6 +796,48 @@ class FitnessBankCalculator:
         
         return current, average
 
+    def _calculate_recent_long_run_floor_metrics(self, activities: List) -> Tuple[float, float, int]:
+        """
+        Return:
+        - recent_8w_p75_long_run_miles
+        - recent_16w_p50_long_run_miles
+        - recent_16w_run_count
+        """
+        today = date.today()
+        cutoff_8w = today - timedelta(weeks=8)
+        cutoff_16w = today - timedelta(weeks=16)
+
+        long_runs_8w: List[float] = []
+        long_runs_16w: List[float] = []
+        run_count_16w = 0
+
+        for activity in activities:
+            activity_date = activity.start_time.date()
+            miles = (activity.distance_m or 0) / 1609.344
+            duration_min = (activity.duration_s or 0) / 60.0
+            if activity_date < cutoff_16w:
+                continue
+            run_count_16w += 1
+            is_long_run = miles >= 10 or duration_min >= 90
+            if is_long_run:
+                long_runs_16w.append(miles)
+                if activity_date >= cutoff_8w:
+                    long_runs_8w.append(miles)
+
+        def _percentile(values: List[float], pct: float) -> float:
+            if not values:
+                return 0.0
+            s = sorted(values)
+            if len(s) == 1:
+                return s[0]
+            idx = int(round((len(s) - 1) * pct))
+            idx = max(0, min(len(s) - 1, idx))
+            return s[idx]
+
+        p75_8w = _percentile(long_runs_8w, 0.75)
+        p50_16w = _percentile(long_runs_16w, 0.50)
+        return p75_8w, p50_16w, run_count_16w
+
     def _calculate_recent_quality_sessions(self, activities: List) -> int:
         """Count quality sessions in the trailing 28 days."""
         today = date.today()
@@ -990,6 +1048,9 @@ class FitnessBankCalculator:
             recent_quality_sessions_28d=0,
             recent_8w_median_weekly_miles=0.0,
             recent_16w_p90_weekly_miles=0.0,
+            recent_8w_p75_long_run_miles=0.0,
+            recent_16w_p50_long_run_miles=0.0,
+            recent_16w_run_count=0,
             peak_confidence="low",
         )
 

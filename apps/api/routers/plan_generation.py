@@ -2371,8 +2371,14 @@ async def create_constraint_aware_plan(
                 raise HTTPException(
                     status_code=422,
                     detail={
-                        "reason": "Plan quality gate failed after one fallback regeneration.",
-                        "quality_gate_reasons": second_gate.reasons,
+                        "error_code": "quality_gate_failed",
+                        "quality_gate_failed": True,
+                        "quality_gate_fallback": bool(plan.quality_gate_fallback),
+                        "reasons": second_gate.reasons,
+                        "invariant_conflicts": second_gate.invariant_conflicts,
+                        "suggested_safe_bounds": second_gate.suggested_safe_bounds,
+                        "volume_contract_snapshot": plan.volume_contract,
+                        "next_action": "adjust_inputs_or_accept_safe_bounds",
                     },
                 )
         
@@ -2425,6 +2431,8 @@ async def create_constraint_aware_plan(
             "generated_at": datetime.now().isoformat()
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Constraint-aware plan generation failed for {athlete.id}: {e}")
         import traceback
