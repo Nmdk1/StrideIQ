@@ -33,7 +33,7 @@ import re
 # Workout type classifications
 QUALITY_TYPES = {
     "threshold", "threshold_intervals", "intervals",
-    "long_mp", "long_hmp", "hills", "repetitions", "tempo",
+    "long_mp", "long_hmp", "mp_touch", "hills", "repetitions", "tempo",
 }
 # long_mp is already in QUALITY_TYPES; HARD_TYPES is an alias here,
 # kept separate for clarity if the sets ever diverge.
@@ -46,7 +46,9 @@ LONG_TYPES = {"long"}
 THRESHOLD_TYPES = {"threshold", "threshold_intervals", "tempo"}
 INTERVAL_TYPES = {"intervals"}
 REP_TYPES = {"repetitions"}
-MP_TYPES = {"long_mp"}
+# long_mp: primary MP long; mp_touch: small MP block in a shorter mid-week session
+# (e.g. cutback consolidation for mid/high volume — see generator policy).
+MP_TYPES = {"long_mp", "mp_touch"}
 HMP_TYPES = {"long_hmp"}
 
 # Phases where threshold work should NOT appear
@@ -551,7 +553,11 @@ class PlanValidator:
         # Tier-aware cutback detection threshold
         # Builder uses a gentle 10% cutback → detect at > 7%
         # Standard tiers use 25% cutback → detect at > 15%
-        if self.profile and self.profile.volume_tier.value == "builder":
+        tier_builder = (
+            (self.profile and self.profile.volume_tier.value == "builder")
+            or getattr(self.plan, "volume_tier", "") == "builder"
+        )
+        if tier_builder:
             cutback_threshold = 0.07
         else:
             cutback_threshold = 0.15
@@ -649,16 +655,24 @@ class PlanValidator:
 
         mp_min = self._t["mp_total_min_mi"]
 
-        # Tier-aware MP total targets when profile is available
+        # Tier-aware MP total: profile OR plan.volume_tier (standard plans have no profile)
+        tier_val = None
         if self.profile:
             tier_val = self.profile.volume_tier.value
-            if tier_val == "builder":
-                mp_min = 15 if self.strict else 10
-            elif tier_val == "low":
-                mp_min = 25 if self.strict else 15
+        else:
+            vt = getattr(self.plan, "volume_tier", None)
+            if vt:
+                tier_val = str(vt).strip().lower()
 
+        if tier_val == "builder":
+            mp_min = 15 if self.strict else 10
+        elif tier_val == "low":
+            # Relaxed floor matches segment-based MP accounting (true @MP miles only).
+            mp_min = 25 if self.strict else 12
+
+        # Miles *at marathon pace* only (segment-aware when present)
         total_mp = sum(
-            w.distance_miles or 0
+            self._quality_miles(w, {"mp", "marathon_pace"})
             for w in self.plan.workouts
             if w.workout_type in MP_TYPES
         )

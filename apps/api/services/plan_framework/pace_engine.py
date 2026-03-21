@@ -59,7 +59,7 @@ class TrainingPaces:
             # Medium-long slightly quicker than easy
             pace = f"{self._format_pace(self.easy_pace_low)}-{self._format_pace(self.easy_pace_high)}/mi"
             return f"{pace} (easy to steady)"
-        elif workout_type in ["marathon", "mp", "marathon_pace", "long_mp"]:
+        elif workout_type in ["marathon", "mp", "marathon_pace", "long_mp", "mp_touch"]:
             pace = f"{self._format_pace(self.marathon_pace)}/mi"
             return f"{pace} (goal race pace)"
         elif workout_type in ["long_hmp"]:

@@ -124,7 +124,7 @@ def resolve_workout_variant_id(
             return _coerce_variant_id("medium_long_aerobic_staple")
         return None
 
-    if wt in ("long_mp", "marathon_pace_long"):
+    if wt in ("long_mp", "marathon_pace_long", "mp_touch"):
         return _coerce_variant_id("long_mp_continuous_marathon")
 
     if wt == "long_mp_intervals":

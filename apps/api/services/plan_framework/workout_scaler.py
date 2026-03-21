@@ -124,6 +124,9 @@ class WorkoutScaler:
         
         elif workout_type in ["medium_long", "medium_long_mp"]:
             return self._scale_medium_long(weekly_volume, tier, week_in_phase)
+
+        elif workout_type == "mp_touch":
+            return self._scale_mp_touch(weekly_volume)
         
         elif workout_type in ["interval", "intervals", "vo2max"]:
             return self._scale_intervals(weekly_volume, tier, phase, athlete_ctx=athlete_ctx, plan_week=plan_week, distance=distance)
@@ -497,6 +500,37 @@ class WorkoutScaler:
             segments=None,
             pace_description="easy to steady, slightly quicker than long run pace",
             option="A"
+        )
+
+    def _scale_mp_touch(self, weekly_volume: float) -> ScaledWorkout:
+        """
+        Small MP block inside a shortened mid-week run — used on cutback weeks only
+        for mid/high-volume marathon plans (consolidation week: no full MP long,
+        optional race-pace touch so the athlete doesn't go cold on feel).
+        """
+        cap = weekly_volume * 0.20  # Source B: MP work ≤ 20% of week
+        mp_miles = min(4.0, cap)
+        mp_miles = max(2.5, round(mp_miles, 1))
+        warmup = 2.0
+        cooldown = 2.0
+        total_miles = round(warmup + mp_miles + cooldown, 1)
+        return ScaledWorkout(
+            workout_type="mp_touch",
+            category=WorkoutCategory.RACE_PACE,
+            title=f"Medium long with MP touch: {mp_miles:.0f} mi @ MP",
+            description=(
+                f"{total_miles:.0f} mi total — easy warmup/cooldown with "
+                f"{mp_miles:.0f} mi at goal marathon pace (cutback consolidation)."
+            ),
+            total_distance_miles=total_miles,
+            duration_minutes=int(total_miles * 8.8),
+            segments=[
+                {"type": "warmup", "distance_miles": warmup, "pace": "easy"},
+                {"type": "marathon_pace", "distance_miles": mp_miles, "pace": "MP"},
+                {"type": "cooldown", "distance_miles": cooldown, "pace": "easy"},
+            ],
+            pace_description="goal marathon race pace in the middle, easy bookends",
+            option="A",
         )
     
     def _scale_intervals(

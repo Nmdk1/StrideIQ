@@ -285,7 +285,7 @@ class PlanGenerator:
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
             "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp",
-            "repetitions"
+            "mp_touch", "repetitions"
         ]])
         
         return GeneratedPlan(
@@ -384,7 +384,7 @@ class PlanGenerator:
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
             "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp",
-            "repetitions"
+            "mp_touch", "repetitions"
         ]])
         
         return GeneratedPlan(
@@ -623,7 +623,7 @@ class PlanGenerator:
         total_miles = sum(w.distance_miles or 0 for w in workouts)
         quality_count = len([w for w in workouts if w.workout_type in [
             "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp",
-            "repetitions"
+            "mp_touch", "repetitions"
         ]])
         
         return GeneratedPlan(
@@ -892,6 +892,7 @@ class PlanGenerator:
                 distance=distance,
                 weekly_volume=weekly_volume,
                 athlete_ctx=athlete_ctx,
+                tier=tier,
             )
             
             # Scale the workout
@@ -1000,6 +1001,7 @@ class PlanGenerator:
         distance: str,
         weekly_volume: float,
         athlete_ctx: Dict[str, Any],
+        tier: str = "mid",
     ) -> str:
         """
         Determine actual workout type based on structure slot and phase.
@@ -1027,6 +1029,20 @@ class PlanGenerator:
             return "easy_strides"
         
         if structure_type == "medium_long":
+            # Cutback + marathon specific: consolidation week — no MP *long*, but
+            # mid/high (and elite) runners may keep a small MP block in a shorter
+            # mid-week run so race pace doesn't go dormant (founder policy).
+            if (
+                is_cutback
+                and distance == "marathon"
+                and phase.phase_type.value in ("marathon_specific", "race_specific")
+                and tier in ("mid", "high", "elite")
+                and (
+                    weekly_volume >= 50
+                    or athlete_ctx.get("experienced_high_volume")
+                )
+            ):
+                return "mp_touch"
             # If the phase calls for 2 quality sessions and the athlete can handle it,
             # convert the mid-week medium long to the "touch" session.
             # This is the focus+touch model: the second session is a touch, not another sledgehammer.
@@ -1125,6 +1141,9 @@ class PlanGenerator:
             # 10K cutback: strides for neuromuscular touch without adding quality load.
             if distance == "10k":
                 return "strides"
+            # Marathon / half: consolidation — easy + strides, no threshold on cutback.
+            if distance in ("marathon", "half_marathon"):
+                return "easy_strides"
             return "threshold"
         
         if phase_type == "base_speed":
