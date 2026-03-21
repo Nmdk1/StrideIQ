@@ -113,7 +113,7 @@ def test_no_marathon_style_session_sizes_in_10k_block():
     )
     long_run = max((d.target_miles for d in week.days if d.workout_type == "long"), default=0.0)
     thresholds = [d.target_miles for d in week.days if d.workout_type == "threshold"]
-    assert long_run <= 16.0
+    assert long_run <= 18.0
     assert all(t <= 8.0 for t in thresholds)
 
 

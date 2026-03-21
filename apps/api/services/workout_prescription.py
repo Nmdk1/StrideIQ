@@ -382,7 +382,7 @@ class WorkoutPrescriptionGenerator:
         self.long_run_cap = self.long_run_peak
         if self.race_distance == "10k":
             # Keep high-mileage athletes high-mileage, but avoid marathon-style long-run dominance.
-            self.long_run_cap = min(self.long_run_cap, 16.0)
+            self.long_run_cap = min(self.long_run_cap, 18.0)
         
         self.use_mp_long_runs = self.USE_RACE_PACE_LONG_RUNS.get(self.race_distance, True)
         self.quality_focus = self.QUALITY_FOCUS.get(self.race_distance, ["threshold"])
