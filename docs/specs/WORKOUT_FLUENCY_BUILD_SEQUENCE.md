@@ -21,7 +21,7 @@
 | Repetitions | **2** `approved` | `repetitions_pilot_v1.md` |
 | Long hill-repeat progressions (sustained VO2 hills) | Deferred per spec | after core pilots + Phase 2 map stable |
 
-**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry v0.2.22 (2026-03-22):** v1-scoped pilot KB has **no** remaining **`draft`** rows in threshold, long, easy, intervals, or repetitions pilots (**38** variant rows **`approved`** in those files). Long **sustained VO2 hill-repeat** progressions remain **deferred** per table (not a pilot-file stub). Phase 2 tools + §2 P0 gate still apply before Phase 3 wiring. KB variants are **inputs to deterministic plan construction** (spec §7.0).
+**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry spec v0.2.23 (2026-03-22; Phase 1 closure landed in rev 0.2.22):** v1-scoped pilot KB has **no** remaining **`draft`** rows in threshold, long, easy, intervals, or repetitions pilots (**38** variant rows **`approved`** in those files). Long **sustained VO2 hill-repeat** progressions remain **deferred** per table (not a pilot-file stub). Phase 2 tools + §2 P0 gate still apply before Phase 3 wiring. KB variants are **inputs to deterministic plan construction** (spec §7.0).
 
 ---
 

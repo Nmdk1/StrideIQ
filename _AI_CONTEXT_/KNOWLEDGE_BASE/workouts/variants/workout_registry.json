@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1",
-  "spec_ref": "docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md v0.2.22",
+  "spec_ref": "docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md v0.2.23",
   "description": "Phase 2 machine index of SME-approved v1 pilot variants. Prose remains canonical in *_pilot_v1.md; this file is for CI validation and future registry loaders.",
   "variants": [
     {"id": "threshold_continuous_progressive", "stem": "threshold", "volume_family": "T", "sme_status": "approved", "pilot": "threshold_pilot_v1.md"},

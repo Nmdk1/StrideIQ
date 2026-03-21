@@ -1,6 +1,6 @@
 # Intervals / VO2 pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.22 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.23 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
 **Stems covered:** `intervals` (engine aliases: `interval`, `vo2max` — same dispatch in `workout_scaler.scale_workout`)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `_scale_intervals` routes by **goal distance** (`5k`, `10k`, marathon default) and **phase** / **plan_week** / **athlete_ctx** (e.g. high-volume marathon base). Rep lengths **400m → 800m → 1000m** (5K/10K progressions); **1200m @ ~10K race rhythm** in late **10K** paths. **~8%** of weekly volume cap applies to interval prescription in scaler—treat as **engineering guardrail** until registry wiring; N=1 may need stricter caps.
