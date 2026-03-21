@@ -355,6 +355,8 @@ class WorkoutPrescriptionGenerator:
             distance_minimums.get(self.race_distance, 8.0)
         )
 
+        self.personal_long_floor = 0.0
+
         # High-mileage athletes with proven long-run history should not get
         # artificially low long-run starts from noisy recent slices.
         if self.race_distance == "10k":
@@ -382,6 +384,7 @@ class WorkoutPrescriptionGenerator:
                 if bank.constraint_type == ConstraintType.INJURY:
                     personal_floor = max(10.0, personal_floor * 0.90)
                 if personal_floor > 0:
+                    self.personal_long_floor = max(self.personal_long_floor, personal_floor)
                     self.long_run_current = max(self.long_run_current, personal_floor)
         
         # Peak target: use proven capability but respect distance-specific appropriateness
@@ -600,7 +603,10 @@ class WorkoutPrescriptionGenerator:
             
             for d in available_days:
                 if d == long_day:
-                    assignments[d] = ("easy_long", progressive_long)
+                    assignments[d] = (
+                        "easy_long",
+                        self._enforce_10k_personal_floor(progressive_long, target_miles, week_number),
+                    )
                 else:
                     assignments[d] = ("easy", miles_per_easy)
         
@@ -614,7 +620,10 @@ class WorkoutPrescriptionGenerator:
             
             for d in available_days:
                 if d == long_day:
-                    assignments[d] = ("easy_long", progressive_long)
+                    assignments[d] = (
+                        "easy_long",
+                        self._enforce_10k_personal_floor(progressive_long, target_miles, week_number),
+                    )
                 elif d == quality_day:
                     assignments[d] = ("easy_strides", miles_per_easy)
                 else:
@@ -623,19 +632,19 @@ class WorkoutPrescriptionGenerator:
         elif theme == WeekTheme.BUILD_T_EMPHASIS:
             # Threshold focus + long run
             self._assign_standard_week(assignments, target_miles, long_day, quality_day, 
-                                      primary_rest, quality_type="threshold", 
+                                      primary_rest, quality_type="threshold", week_number=week_number,
                                       progressive_long=progressive_long)
         
         elif theme == WeekTheme.BUILD_MP_EMPHASIS:
             # MP long run + secondary threshold
             self._assign_mp_week(assignments, target_miles, long_day, quality_day, primary_rest,
-                                progressive_long=progressive_long)
+                                week_number=week_number, progressive_long=progressive_long)
         
         elif theme == WeekTheme.BUILD_MIXED:
             # Both quality types
             self._assign_standard_week(assignments, target_miles, long_day, quality_day,
                                       primary_rest, quality_type="threshold", add_mp=True,
-                                      progressive_long=progressive_long)
+                                      week_number=week_number, progressive_long=progressive_long)
         
         elif theme == WeekTheme.RECOVERY:
             # Easy only, extra rest
@@ -651,7 +660,7 @@ class WorkoutPrescriptionGenerator:
         elif theme == WeekTheme.PEAK:
             # Maximum quality
             self._assign_peak_week(assignments, target_miles, long_day, quality_day, primary_rest,
-                                  progressive_long=progressive_long)
+                                  week_number=week_number, progressive_long=progressive_long)
         
         elif theme == WeekTheme.SHARPEN:
             # Race-specific sharpening
@@ -681,7 +690,7 @@ class WorkoutPrescriptionGenerator:
         return assignments
     
     def _assign_standard_week(self, assignments, target, long_day, quality_day, 
-                             rest_day, quality_type, add_mp=False, progressive_long=None):
+                             rest_day, quality_type, add_mp=False, week_number=1, progressive_long=None):
         """
         Assign a standard build week with quality + long.
         
@@ -694,6 +703,7 @@ class WorkoutPrescriptionGenerator:
         long_miles = progressive_long if progressive_long is not None else target * 0.28
         if self.race_distance == "10k":
             long_miles = min(long_miles, target * 0.24)
+        long_miles = self._enforce_10k_personal_floor(long_miles, target, week_number)
         
         # Quality: ~15% of weekly
         quality_miles = target * 0.15
@@ -764,7 +774,7 @@ class WorkoutPrescriptionGenerator:
                 assignments[d] = ("easy", miles)
     
     def _assign_mp_week(self, assignments, target, long_day, quality_day, rest_day,
-                        progressive_long=None):
+                        week_number=1, progressive_long=None):
         """
         Assign MP-emphasis week: MP long run + threshold.
         
@@ -774,6 +784,7 @@ class WorkoutPrescriptionGenerator:
         long_miles = progressive_long if progressive_long is not None else target * 0.30
         if self.race_distance == "10k":
             long_miles = min(long_miles, target * 0.24)
+        long_miles = self._enforce_10k_personal_floor(long_miles, target, week_number)
         
         # Threshold: ~10%
         threshold_miles = target * 0.10
@@ -803,12 +814,13 @@ class WorkoutPrescriptionGenerator:
                 assignments[d] = ("easy", miles)
     
     def _assign_peak_week(self, assignments, target, long_day, quality_day, rest_day,
-                         progressive_long=None):
+                         week_number=1, progressive_long=None):
         """Assign peak week: maximum quality."""
         # Peak long run: Use progressive calculation (peak should be longest)
         long_miles = progressive_long if progressive_long is not None else target * 0.32
         if self.race_distance == "10k":
             long_miles = min(long_miles, target * 0.25)
+        long_miles = self._enforce_10k_personal_floor(long_miles, target, week_number)
         
         # Full threshold: ~15%
         threshold_miles = target * 0.15
@@ -832,6 +844,15 @@ class WorkoutPrescriptionGenerator:
         
         for i, d in enumerate(easy_days):
             assignments[d] = ("easy", easy_miles_list[i])
+
+    def _enforce_10k_personal_floor(self, long_miles: float, week_target: float, week_number: int) -> float:
+        """Apply locked first-two-weeks personal-floor invariant for 10K plans."""
+        if self.race_distance != "10k":
+            return long_miles
+        if self.personal_long_floor <= 0 or week_number > 2:
+            return long_miles
+        capped_floor = min(self.personal_long_floor, week_target * 0.33, self.long_run_cap)
+        return max(long_miles, capped_floor)
     
     def _assign_sharpen_week(self, assignments, target, long_day, quality_day, rest_day,
                             progressive_long=None):
