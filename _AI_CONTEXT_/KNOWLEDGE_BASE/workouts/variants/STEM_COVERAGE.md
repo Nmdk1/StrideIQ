@@ -4,7 +4,7 @@
 
 **Source of truth for shapes:** `apps/api/services/plan_framework/workout_scaler.py` (`scale_workout`) and `generator.py` (`_get_workout_for_day` return values).
 
-**Drift check:** `apps/api/tests/test_stem_coverage_sync.py` — run `pytest tests/test_stem_coverage_sync.py` from `apps/api` after changing this file or plan_framework `workout_type` strings.
+**Drift check:** `apps/api/tests/test_stem_coverage_sync.py` — run `pytest tests/test_stem_coverage_sync.py` from `apps/api` after changing this file or plan_framework `workout_type` strings. **Variant id index:** `workout_registry.json` + `apps/api/tests/test_workout_registry.py` (stem → scaler `workout_type` aliases; parity with pilot markdown).
 
 | `workout_type` | Pilot KB file | Notes |
 |----------------|---------------|--------|

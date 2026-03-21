@@ -4,6 +4,8 @@
 
 **Purpose:** Per-variant depth (execution, risks, N=1 notes, closed `build_context_tag` set) for **deterministic plan construction**—selection matrix, future registry rows, and tests. **Canonical consumer is code**, not casual reading (see spec §7.0). This directory is **KB**, not runtime code.
 
+**Machine index (Phase 2):** [`workout_registry.json`](workout_registry.json) — **38** v1 rows; CI-validated against pilot `## \`id\`` headers and `workout_scaler` stem aliases via `apps/api/tests/test_workout_registry.py`.
+
 **Build order (define → tools → wire):** [`docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`](../../../../docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md)
 
 ## Index

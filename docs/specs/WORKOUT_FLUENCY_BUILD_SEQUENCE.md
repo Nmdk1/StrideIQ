@@ -29,13 +29,19 @@
 
 **Goal:** Machine-readable registry + checks so definitions cannot drift silently.
 
-1. **Single registry artifact** (e.g. YAML/JSON) generated from or validated against the markdown pilots—or authored once and mirrored in KB.
-2. **Schema validation** — unique ids, required fields, `build_context_tag` ⊆ §6.3, `volume_family` enum, `sme_status` only `approved` in any “shipping” slice.
-3. **ID → engine map** — table: `workout_variant_id` → `workout_type` / scaler entry / aliases (matches `workout_scaler.scale_workout`).
-4. **Contract tests** — given fixture athlete + resolved primary tag, expected **eligible** variant set (or suppressed) is stable; no LLM.
-5. **Optional:** CLI or `pytest` module that fails CI when approved rows violate rules.
+**Shipped (2026-03-22):**
 
-**Exit Phase 2 when:** CI runs the validator + mapping tests green on `main`.
+- **Artifact:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/workout_registry.json` — v1 **38** SME-**`approved`** rows (`id`, `stem`, `volume_family`, `sme_status`, `pilot` source file). Prose stays in `*_pilot_v1.md`.
+- **CI tests:** `apps/api/tests/test_workout_registry.py` — unique ids; closed **`volume_family`** / **`sme_status`**; **`stem` → `workout_type`** ⊆ `WorkoutScaler.scale_workout` dispatch; **`## \`id\``** header set matches JSON per pilot.
+- **Engine stem inventory (existing):** `STEM_COVERAGE.md` + `test_stem_coverage_sync.py` — scaler/generator emission strings.
+
+**Still open (v0.3+ / wiring):**
+
+1. **`build_context_tag`** validation against §6.3 on every row (today: KB prose only).
+2. **Eligibility matrix contract tests** — fixture athlete + resolved primary tag → expected eligible variant set (or suppressed); no LLM.
+3. **Optional:** CLI or codegen that regenerates JSON from markdown.
+
+**Exit Phase 2 when:** CI runs **`test_workout_registry.py`** + **`test_stem_coverage_sync.py`** green on `main` (and repo’s standard API test job includes them — they live under `apps/api/tests/`).
 
 ---
 
