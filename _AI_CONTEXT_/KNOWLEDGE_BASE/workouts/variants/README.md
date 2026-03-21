@@ -1,12 +1,12 @@
 # Workout variant KB (pilot)
 
-**Spec:** [`docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md`](../../../../docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md) (v0.2.24)
+**Spec:** [`docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md`](../../../../docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md) (v0.2.25)
 
 **Purpose:** Per-variant depth (execution, risks, N=1 notes, closed `build_context_tag` set) for **deterministic plan construction**—selection matrix, future registry rows, and tests. **Canonical consumer is code**, not casual reading (see spec §7.0). This directory is **KB**, not runtime code.
 
 **Machine index (Phase 2):** [`workout_registry.json`](workout_registry.json) — schema **0.2**, **38** v1 rows incl. sorted **`build_context_tags`** (§6.3); CI-validated against pilot headers, tags, and `workout_scaler` stem aliases via `apps/api/tests/test_workout_registry.py`.
 
-**Build order (define → tools → wire):** [`docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`](../../../../docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md)
+**Build order:** [`docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`](../../../../docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md) — Phase **1–2** done; Phase **3** (runtime wire) active; Phase **4** (mandatory deep enrichment) **after** Phase 3 exit.
 
 ## Index
 

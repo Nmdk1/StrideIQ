@@ -1,6 +1,6 @@
 # Workout fluency registry — PR checklist & gate attestation
 
-**Canonical spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` **v0.2.24** (§2 / §2.1 execution gate + CI limits, §7 schema, §8 machine index + Phase 2 tests incl. `build_context_tags`, §11 wiring acceptance, §13 watch mode).
+**Canonical spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` **v0.2.25** (§2 / §2.1 execution gate + CI limits, §7 schema, §8 machine index + Phase 4 post–Phase 3 enrichment note, §11 wiring acceptance, §13 watch mode).
 
 This document is the **operational** companion: what to paste in PRs and who may approve content.
 
@@ -75,4 +75,4 @@ Before opening a PR that touches gated runtime paths:
 
 ---
 
-*Last updated: 2026-03-22 — aligned with registry spec v0.2.24 / Phase 2 `workout_registry.json` + `build_context_tags` CI tests.*
+*Last updated: 2026-03-22 — aligned with registry spec v0.2.25; fluency **Phase 3 active**; Phase 4 enrichment mandatory after Phase 3 (`WORKOUT_FLUENCY_BUILD_SEQUENCE.md`).*

@@ -1,6 +1,6 @@
 {
   "schema_version": "0.2",
-  "spec_ref": "docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md v0.2.24",
+  "spec_ref": "docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md v0.2.25",
   "description": "Phase 2 machine index of SME-approved v1 pilot variants (schema 0.2: adds build_context_tags mirrored from pilot typical_build_context_tags). Prose remains canonical in *_pilot_v1.md.",
   "variants": [
     {

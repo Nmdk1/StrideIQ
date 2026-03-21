@@ -1,6 +1,6 @@
 # Long-run pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.24 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.25 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
 **Stems covered:** `long`, `medium_long`, `long_mp`, `long_hmp` (aliases per `workout_scaler.py`: `long_run`, `marathon_pace_long`, etc.)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `_scale_long_run`, `_scale_medium_long`, `_scale_mp_long_run`, `_scale_hmp_long_run`.

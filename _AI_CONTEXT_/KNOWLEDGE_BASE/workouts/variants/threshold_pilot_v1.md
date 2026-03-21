@@ -1,6 +1,6 @@
 # Threshold pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.24  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.25  
 **Stems covered:** `threshold` (continuous or broken continuous T-pace work), `threshold_intervals` (repetitions at ~threshold with recoveries)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — canonical emission **`threshold`** / **`threshold_intervals`**. A legacy **`tempo`** string may still be accepted internally for backward compatibility; it is **not** StrideIQ vocabulary (see below).
