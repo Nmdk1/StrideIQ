@@ -4,6 +4,8 @@
 
 **Governing specs:** `WORKOUT_FLUENCY_REGISTRY_SPEC.md` (§2 P0 gate), `WORKOUT_FLUENCY_REGISTRY_PR_CHECKLIST.md`, `PLAN_GENERATION_VISION_ALIGNMENT_RECOVERY_SPEC.md`.
 
+**Founder gate (2026-03-22):** **Phase 3 wiring does not start** until **every run-type track in v1 scope** has SME-**approved** variant KB (or explicit stub) — not only threshold + long. Complete Phase 1 for **easy / VO2 / …** per scoped v1 table below, **then** Phase 2 tools, **then** Phase 3 (still subject to §2 P0).
+
 ---
 
 ## Phase 1 — Define (knowledge base only)
@@ -13,13 +15,13 @@
 | Track | Status (rolling) | Files / notes |
 |-------|-------------------|---------------|
 | Threshold | **Approved** (9 variants) | `threshold_pilot_v1.md` |
-| Long / medium-long / MP / HMP | **Partial SME** (1/8 **approved**, 7 **`draft`**) | `long_run_pilot_v1.md` |
+| Long / medium-long / MP / HMP | **Approved** (8 variants) | `long_run_pilot_v1.md` |
 | Easy / recovery / easy+strides | Not started | future `easy_pilot_v1.md` |
 | VO2 intervals | Not started | future `intervals_pilot_v1.md` |
 | Reps / strides / hills | Deferred per spec | after core pilots stable |
 | Rest | Optional one-liner | trivial |
 
-**Exit Phase 1 when:** Founder SME has **`approved`** each pilot file you care about for v1 product scope (not every stem on day one—scope v1 explicitly). **As of registry v0.2.13:** threshold pilot **approved**; long-family pilot **per-variant SME** — **1** **`approved`**, **7** **`draft`** (`long_run_pilot_v1.md` rollup is authoritative); KB variants are **inputs to deterministic plan construction** (see spec §7.0); easy / VO2 / etc. still **not started** until scoped.
+**Exit Phase 1 when:** Founder SME has **`approved`** **each pilot file in v1 scope** (explicitly list which stems ship in v1—may exclude deferred rows). **As of registry v0.2.14:** threshold + long-family pilots **fully** **`approved`**; **easy**, **VO2**, and any other **v1** tracks still **required** before Phase 3. KB variants are **inputs to deterministic plan construction** (spec §7.0).
 
 ---
 
@@ -38,6 +40,8 @@
 ---
 
 ## Phase 3 — Wire (runtime)
+
+**Prerequisite:** Phase 1 **complete for all v1-scoped stems** (founder gate above) **and** Phase 2 **green** — do not wire half the toolbox.
 
 **Goal:** Planner / scaler / narrative use the registry **without** breaking athlete-truth or P0 recovery contracts.
 

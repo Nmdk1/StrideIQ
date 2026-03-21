@@ -1,6 +1,6 @@
 # Workout variant KB (pilot)
 
-**Spec:** [`docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md`](../../../../docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md) (v0.2.13)
+**Spec:** [`docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md`](../../../../docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md) (v0.2.14)
 
 **Purpose:** Per-variant depth (execution, risks, N=1 notes, closed `build_context_tag` set) for **deterministic plan construction**—selection matrix, future registry rows, and tests. **Canonical consumer is code**, not casual reading (see spec §7.0). This directory is **KB**, not runtime code.
 
@@ -16,7 +16,7 @@
 ## Authority
 
 - Breadth taxonomy remains in [`../WORKOUT_LIBRARY.md`](../WORKOUT_LIBRARY.md); **where a variant exists here, these definitions override** population-style summaries in the library for that variant ID.
-- Pilot 1 threshold rows are **`approved`** (see `threshold_pilot_v1.md`). Pilot 2 long-family: **per-variant** SME sign-off in `long_run_pilot_v1.md` (header lists approved ids); remaining rows stay **`draft`**. Additional pilots remain **`draft`** until founder sign-off. Runtime wiring still follows spec §2 (P0 gate).
+- Pilot 1 threshold and Pilot 2 long-family rows are **`approved`** (see respective pilot files). Additional pilots (**easy**, **VO2**, …) remain **`draft`** until founder sign-off. **Phase 3 wiring** waits on **all v1-scoped** pilots per `WORKOUT_FLUENCY_BUILD_SEQUENCE.md`. Runtime wiring still follows spec §2 (P0 gate).
 
 ## PR / gate
 

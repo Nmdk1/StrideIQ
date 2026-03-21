@@ -1,4 +1,4 @@
-# Workout Fluency Registry — Specification v0.2.13
+# Workout Fluency Registry — Specification v0.2.14
 
 **Status:** Draft — **builder-safe for pilot KB work**; production wiring remains gated (see §2).  
 **Date:** 2026-03-20  
@@ -202,7 +202,7 @@ Agents must **not** copy these as defaults for all users; they inform **tags** a
 
 ---
 
-## 7. Schema: required fields per variant (v0.2.13)
+## 7. Schema: required fields per variant (v0.2.14)
 
 ### 7.0 Consumption model (deterministic plan construction)
 
@@ -268,7 +268,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ## 8. Machine registry (phase 2 — format TBD)
 
-**v0.2.13 KB pilot delivers:** Threshold variant markdown **SME-approved**; long-family markdown with §7 fields and valid tags under `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/`—**per-variant** `sme_status` (Pilot 2: **1** **`approved`**, **7** **`draft`** as of **2026-03-20** — **`long_easy_aerobic_staple`** only promoted; see `long_run_pilot_v1.md` header + summary rollup; **never** treat Pilot 2 as “all eight approved” unless that file shows **8**× **`approved`**). See **§7.0** — KB prose is input to **deterministic** plan construction, not founder reading material.
+**v0.2.14 KB pilot delivers:** Threshold variant markdown **SME-approved**; long-family markdown with §7 fields and valid tags under `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/`—Pilot 2 **`long_run_pilot_v1.md`**: **8**× **`sme_status: approved`** (founder SME **2026-03-20** + **2026-03-22** — see file header + rollup). **§7.0** — KB prose is input to **deterministic** plan construction. **Remaining v1 stems** (easy, VO2, etc.) per `WORKOUT_FLUENCY_BUILD_SEQUENCE.md` — **not** complete until those pilots exist and SME-**approve** per founder scope **before** Phase 3 wiring.
 
 **v0.3+ delivers:** Single validated artifact (`workout_registry.yaml` or JSON) with schema version, consumed by tests first, then optionally by Python loader — **subject to §2**.
 
@@ -280,7 +280,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 **Pilot 1 (default, highest leverage):** **Threshold** stems and variants — **`threshold`**, **`threshold_intervals`**. Legacy code may still map a historical **`tempo`** input string to continuous threshold work (**§4.2**); product language does **not** use “tempo.” Target **≥8** approved variant rows (can span multiple markdown files).
 
-**Pilot 2 (second):** **Long run** variants (easy, progression, MP-embedded)—after Pilot 1 SME-approved baseline. **KB:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/long_run_pilot_v1.md` (**8** variants). **`sme_status` is per row:** promote only with explicit founder sign-off for that `id` (file header lists **approved** ids so far); agents must **not** infer approval for remaining **`draft`** rows.
+**Pilot 2 (second):** **Long run** variants (easy, progression, MP-embedded)—after Pilot 1 SME-approved baseline. **KB:** `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/long_run_pilot_v1.md` (**8** variants, **all** **`sme_status: approved`** founder SME **2026-03-20** / **2026-03-22**). Future edits: **do not** infer promotion—explicit founder sign-off per `id`.
 
 **Build sequencing:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md` — **define all (in scope) → build tools (registry, validators, tests) → wire runtime** (§2 / P0).
 
@@ -288,21 +288,21 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 10. Acceptance criteria (v0.2.13 doc + KB pilot)
+## 10. Acceptance criteria (v0.2.14 doc + KB pilot)
 
 - [x] Founder confirms **`build_context_tag` enum** (§6.3) as used in Pilot 1 — **2026-03-22** (implicit in approval of tagged pilot content).
 - [x] Founder confirms **`sme_status` enum** and rule: only **`approved`** in any shipping wiring path — **2026-03-22**.
 - [x] Founder confirms **source policy** (§4.1) as applied in Pilot 1 — **2026-03-22**.
 - [x] Agents add **Pilot 1** threshold variant docs (≥8 variants), each tagged with §6.3 values and `sme_status` on every variant — see `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/threshold_pilot_v1.md` (**9** variants, **`approved`** founder SME **2026-03-22**).
-- [x] Agents maintain **Pilot 2** long-family variant docs (8 variants), each tagged with §6.3 values and `sme_status` on every variant — see `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/long_run_pilot_v1.md` (**mixed:** **`long_easy_aerobic_staple`** **`approved`** founder SME **2026-03-20**; **7** ids remain **`draft`** — authoritative counts in that file’s header + summary rollup, not “all draft” / not “all approved”).
-- [ ] Founder SME **explicitly approves** all remaining Pilot 2 rows (each **`approved`** only after line-by-line sign-off) — **in progress** (`long_easy_aerobic_staple` approved **2026-03-20**; do not infer for other ids).
+- [x] Agents maintain **Pilot 2** long-family variant docs (8 variants), each tagged with §6.3 values and `sme_status` on every variant — see `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/long_run_pilot_v1.md` (**all 8** **`approved`** — **`long_easy_aerobic_staple`** **2026-03-20**; remaining **seven** **2026-03-22**; rollup in that file).
+- [x] Founder SME **explicitly approves** all Pilot 2 rows — **2026-03-22** (batch promotion of seven ids; do not infer for **other** pilots).
 - [x] Cross-links from `WORKOUT_LIBRARY.md` to variant docs (index + authority note—no mass rewrite).
 - [x] **§2 execution gate** operationalized: PR checklist (`WORKOUT_FLUENCY_REGISTRY_PR_CHECKLIST.md`) + CI job `p0-plan-registry-gate` (see §2.1).
 - [ ] Authors of **runtime** PRs still must paste **`P0-GATE:`** attestation in the PR body when CI applies (human process; CI enforces presence only).
 
 ---
 
-## 11. Acceptance criteria (wiring phase — beyond v0.2.13 KB)
+## 11. Acceptance criteria (wiring phase — beyond v0.2.14 KB)
 
 - [ ] **Mapping table** checked in: registry `id` → current `workout_type` strings (and aliases) as accepted by `WorkoutScaler.scale_workout` and any `phase_builder` call sites — **before** merge of consumer code.
 - [ ] `workout_scaler` methods or dispatch reference `workout_variant_id` (internal) even if API still exposes stem.
@@ -312,7 +312,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 12. Explicit non-goals (v0.2.13)
+## 12. Explicit non-goals (v0.2.14)
 
 - Replacing `plan_validation_helpers.py` with prose.
 - LLM-generated definitions without SME sign-off.
@@ -356,7 +356,8 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 | 0.2.11 | 2026-03-20 | Pilot 2 **per-variant** SME: `long_easy_aerobic_staple` **`approved`** (founder session); §9–§10, §8, README, `source_notes` founder attribution for Tier A ref; remaining long ids stay **`draft`**. |
 | 0.2.12 | 2026-03-20 | **Reconcile Pilot 2 authority:** `long_run_pilot_v1.md` header + rollup explicitly state **1** **`approved`** / **7** **`draft`**; note **v0.2.9** “all approved” error reverted in v0.2.10; fix §10 checklist line that implied entire Pilot 2 was **`draft`**; align §10/§12 version headers; **`draft`** = gate not promoted, prose may still be session-informed. |
 | 0.2.13 | 2026-03-20 | **§7.0 consumption model:** KB variants are **inputs to deterministic plan construction** (matrix + constants + tests), not founder reading material; `long_run_pilot_v1.md` header aligned; `definition`/`execution` table notes tie fields to selection/dispatch. |
+| 0.2.14 | 2026-03-22 | Pilot 2 **complete SME approval:** all **8** long-family variants **`approved`** (`long_run_pilot_v1.md`); §8–§10, rollup; **founder gate:** Phase 3 wiring waits on **all v1-scoped** run-type pilots SME-**approved** per `WORKOUT_FLUENCY_BUILD_SEQUENCE.md` (easy, VO2, etc.—not just threshold + long). |
 
 ---
 
-*End of v0.2.13 — Pilot 1 threshold KB **approved**; Pilot 2 long-run KB **partial** SME (**1** **`approved`**, **7** **`draft`** — see `long_run_pilot_v1.md`); product voice is StrideIQ synthesis, not third-party bibliography.*
+*End of v0.2.14 — Pilot 1 threshold KB **approved**; Pilot 2 long-run KB **fully** SME-**approved** (**8** variants); remaining v1 stems per build sequence **before** Phase 3 wiring; product voice is StrideIQ synthesis, not third-party bibliography.*

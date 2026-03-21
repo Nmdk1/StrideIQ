@@ -1,23 +1,23 @@
 # Long-run pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.13 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.14 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
 **Stems covered:** `long`, `medium_long`, `long_mp`, `long_hmp` (aliases per `workout_scaler.py`: `long_run`, `marathon_pace_long`, etc.)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `_scale_long_run`, `_scale_medium_long`, `_scale_mp_long_run`, `_scale_hmp_long_run`.
 
 **Primary consumer:** **Deterministic planning pipelines** (selection matrix → plan constants → **CI**). This file is **SME-grounded machine-ingestible spec**: a **toolbox** of blocks mapped by tags, athlete signals, caps, and `pairs_poorly_with` / `when_to_avoid`. Prose must stay **extractable**—stable **`id`**, closed **`typical_build_context_tags`**, explicit constraints—so Phase 2 can compile Markdown → validated registry without reinterpretation drift. **Human-readable narrative is secondary** to that goal, except **`display_name`** and other **athlete-facing** strings derived from these rows (product copy).
 
-**SME approval:** Each row carries its own **`sme_status`**. **Do not** promote to `approved` without **explicit** founder sign-off for that id (session, PR comment, or direct edit)—not inferred from agent momentum. **Approved so far:** `long_easy_aerobic_staple` — founder SME **2026-03-20** (session). Runtime wiring remains gated per `WORKOUT_FLUENCY_REGISTRY_SPEC.md` §2 regardless.
+**SME approval:** All **eight** Pilot 2 long-family variant ids are **`sme_status: approved`** — founder SME **`long_easy_aerobic_staple`** **2026-03-20** (session); remaining **seven** ids **2026-03-22** (explicit “approve all 7”). **Do not** promote future rows without **explicit** founder sign-off. Runtime wiring remains gated per `WORKOUT_FLUENCY_REGISTRY_SPEC.md` §2 regardless.
 
-**Authoritative status (this file + summary table):** Pilot 2 is **not** “all eight approved.” **Truth:** **1** row **`approved`**, **7** **`draft`** (counts below). Git/spec history **v0.2.9** briefly claimed full Pilot 2 approval without explicit Q&A—**reverted in v0.2.10**. If any handoff, PR, or memory says “all 8 long-run variants approved,” treat that as **stale** unless this table shows eight **`approved`**.
+**Authoritative status (this file + summary table):** **Truth:** **8** rows **`approved`**, **0** **`draft`** (rollup below). This table is the **source of truth** for Pilot 2 counts. (Historical: spec **v0.2.9** briefly claimed full approval without Q&A—**reverted** in v0.2.10; current state supersedes.)
 
-**`draft` semantics:** **`draft`** = not yet promoted to **`approved`** for registry / shipping gates. It does **not** mean “empty placeholder”—prose may already reflect founder session direction; promotion is an explicit **second** step.
+**`draft` / `approved` (general):** Other pilot files may still use **`draft`** until promoted; **`approved`** means SME-cleared for KB / registry **shipping slice** (Phase 2+)—not permission to bypass §2 for runtime wiring.
 
 **Cross-reference:** Embedded **threshold** quality in the **last** portion of a long day is also described in `threshold_pilot_v1.md` (`progressive_threshold_25_40`). Prefer **one** canonical variant for “quality in the long run” unless SME splits long-stem vs threshold-stem dispatch.
 
 ---
 
-## StrideIQ long-run principles (founder Q&A incorporated 2026-03-20; full-file `sme_status` still mixed — see rollup)
+## StrideIQ long-run principles (founder Q&A incorporated; Pilot 2 all rows **`approved`** — see rollup)
 
 - **Easy long** is the **weekly structural anchor** for most athletes—time on feet, aerobic load, durability. Pace is **easy conversational**; use **Training Pace Calculator** (goal race or best recent race anchor) and RPE as context, not race effort on the easy bulk.
 - **Most runners should have a long run** in the week; what counts as “long” **scales with the athlete**. For **newer** runners, a pragmatic floor is **more than double** a typical **single** easy day (when daily volume is small). For **high-mileage** athletes, “double daily” stops being meaningful—long is **no longer linear** off daily miles; use **time on feet**, recent longest session, and plan caps instead.
@@ -31,7 +31,7 @@
 
 ## StrideIQ prescription & environment (long-family)
 
-**Cross-cutting (SME session):** MP/HMP from **Training Pace Calculator** / goal race—not threshold. **±5 s/mi** band when numeric ranges are shown. Seven variants below (except **`long_easy_aerobic_staple`**, already **`approved`**) incorporate **2026-03-20** founder Q&A while rows remain **`draft`** until explicit per-id promotion.
+**Cross-cutting (SME session):** MP/HMP from **Training Pace Calculator** / goal race—not threshold. **±5 s/mi** band when numeric ranges are shown. All eight rows incorporate **2026-03-20** founder Q&A (plus **2026-03-22** promotion of the final seven ids).
 
 **Marathon-pace (MP) and half-marathon-pace (HMP) segments in long runs:**
 
@@ -84,7 +84,7 @@
 
 - **stem:** `long`
 - **display_name:** Progressive long (easy → moderate)
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `composite`
 - **definition:** **Why this exists:** for athletes who are **adding mileage and long-run base** but show **durability drift** on long easy days—e.g. **loss of efficiency** late, **pace falling** in the final third when effort should still be easy, or **cardiac drift** that is **outsized** for the context. This session teaches a **controlled late pick-up to steady moderate** without jumping to **marathon/half race pace** and without **threshold** work (no “tempo” vocabulary—§4.2). **What it is:** mostly **easy** long run; final **~15–25%** of the run **smoothly** progresses to **moderate/steady**—**not** a race-pace finish variant.
 - **execution:** Early bulk **easy** at true conversational effort—**stops** for fluid/fuel/bathroom on the easy bulk are fine (same philosophy as **`long_easy_aerobic_staple`**). Final **~15–25%** of the run (**distance- or time-based, pick one consistent method for the athlete**): **gradual** shift toward **moderate/steady**; **no** kick or sprint. If the top feels like **threshold**, the progression was too aggressive or started too early. Post-run: judge effort and pace with **terrain, weather, and fatigue** context.
@@ -105,7 +105,7 @@
 
 - **stem:** `long`
 - **display_name:** Fast-finish long (marathon — final ~2 mi)
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `composite`
 - **definition:** **Marathon-specific** long run: **large easy bulk**, then **~2 miles** at **marathon goal pace or slightly faster** (from **Training Pace Calculator** / marathon goal)—to rehearse **pushing hard on tired legs** and the **feel of late-race marathon** (e.g. miles **~24–26.2**), **not** to run a second marathon inside the workout. **Not** a continuous **MP long** (see **`long_mp_continuous_marathon`**) and **not** **threshold**. **Why:** for athletes who have **already built durability** and are sharpening **race-day characteristics**—**not** the default for a **first-time** marathon breakthrough (e.g. “break 4 for the first time”) or athletes still earning easy-long discipline.
 - **execution:** Keep the **majority** truly easy—**stops** for fuel/fluid on the easy bulk are compatible (brief stops to **get hydration down** are **smart**, not a failure). Final **~2 mi** at **MP or faster** when tolerance and week structure support it—**two miles is enough** for this purpose; **±5 s/mi** band around calculator MP when numbers are shown—**conditions** still explain splits. Requires **early** discipline so the finish is the **only** hard segment. **Practice** marathon fueling/hydration on the easy bulk as for race day (**N=1** products/timing).
@@ -126,7 +126,7 @@
 
 - **stem:** `medium_long`
 - **display_name:** Medium-long run (aerobic)
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `long` (stem family **`medium_long`**; aerobic accounting often `E`)
 - **definition:** Mid-week **endurance layer**—**longer than** a typical **single** easy day, **shorter than** the **peak** weekly long. In **marathon and half** blocks this is often a **staple** day. Default flavor: **all easy / aerobic** unless another variant is explicitly selected. Same **stop tolerance** as **`long_easy_aerobic_staple`** (fluid, fuel, bathroom, brief regrouping).
 - **execution:** **Aerobic** running—**easy** but **not necessarily recovery-easy** when that’s the intent for the day. The engine may use **~70–75%** of the **athlete’s peak weekly long distance** as a **conceptual** scaler anchor—**shorthand only**; **every runner is different**. **Founder exemplar (one N=1, not a rule):** mid-long often **~15 mi** and ~**75%** of **that** week’s long in **that** build; weekend longs in the same period might land **~18–22 mi** while key longs included **MP** work—**do not** copy those numbers as universal. **Optional progression (SME):** a **few** times per build, the same mid-long architecture can be run **~20 s/mi slower than marathon goal pace**—**high durability benefit** and **relatively lower injury risk** vs race-pace longs, but it **loads cumulative fatigue** and needs **time to adapt**; not for early in a relationship with mid-long volume. **Strides:** **not** on day one—after the athlete **has adapted** to the mid-long, **occasional** strides at the end are fine; **not every time**—**vary** the stimulus so the runner doesn’t dread or stale the day. **Practice** fuel/hydration on longer MLRs as for race prep (**N=1**). Avoid **pace creep** when the day is supposed to stay **true easy / aerobic**.
@@ -147,7 +147,7 @@
 
 - **stem:** `long_mp`
 - **display_name:** Long run with continuous marathon-pace block
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `composite`
 - **definition:** Long run with a **continuous** block at **marathon goal pace** after an **easy** warm-up—**marathon-specific endurance**. **MP** comes from **Training Pace Calculator** / marathon goal anchor—**not** **threshold** pace and **not** “tempo” language (§4.2).
 - **execution:** Easy warm-up—**brief stops** to get **fluid/fuel down** before or during MP are **acceptable** (execution quality beats stopwatch purity). **MP** segment: **±5 s/mi** band around calculator MP when numeric ranges are shown—**effort + context** over split-chasing. **Practice** race fueling and hydration on **every** long run that includes meaningful MP (**N=1** plan). Easy cool-down. Total run and **MP minutes/miles** capped by **peak long** rules and engine **MP volume limits**; progression should respect **recent longest run** and **recent MP exposure** (avoid **single-session** and **single-block** spikes vs what the athlete has tolerated).
@@ -168,7 +168,7 @@
 
 - **stem:** `long_mp` (engine may surface structured option as `long_mp_intervals` in option payloads—treat as same family)
 - **display_name:** Long run with MP intervals (easy between)
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `composite`
 - **definition:** Same **marathon specificity** as **`long_mp_continuous_marathon`**, but **broken** into reps with **easy** running between—e.g. **2 × 3 mi @ MP** with **~1 mi easy** between (illustrative). Reduces **continuous** MP musculoskeletal and metabolic stress; common **bridge** when introducing MP in-long or when an athlete does **not** tolerate **one long continuous** MP segment well.
 - **execution:** Warm up easy. **MP** reps at calculator MP (**±5 s/mi** when surfaced); **honest** easy **jog** between—**not** a steady moderate “float.” **Stops** for fuel, fluid, or safety between reps are **fine** if **easy** running between stays **honest**—forcing “no stopping” is **counterproductive** for real-world execution. Cool down easy. **Total MP** miles/minutes still capped by weekly / session rules; watch **transitions** (they add **mechanical** load). **Practice** fueling/hydration as for race day (**N=1**).
@@ -189,7 +189,7 @@
 
 - **stem:** `long_hmp`
 - **display_name:** Long run with half-marathon pace finish
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `composite`
 - **definition:** Long run with a **late** segment at **half-marathon goal pace**—**harder** than **MP** work and **distinct** from **threshold** prescription (do **not** derive HMP from **threshold** pace; §4.2—no “tempo” vocabulary).
 - **execution:** Early miles **easy**—**stops** on the easy bulk OK. **HMP** finish: pace from **Training Pace Calculator** / HM goal (**±5 s/mi** when surfaced). **Brief stops** for fluid/fuel during the quality portion are **acceptable** if execution quality is preserved. Engine may progress **~3 → 4 → 6 → 8 mi** style caps **vs** total long—treat as **illustrative**; **N=1** tolerance governs. Cool down easy after the HMP segment when programmed. **Practice** fueling/hydration as for race prep (**N=1**).
@@ -210,7 +210,7 @@
 
 - **stem:** `long`
 - **display_name:** Cutdown long (segments pick up pace)
-- **sme_status:** `draft`
+- **sme_status:** `approved`
 - **volume_family:** `composite`
 - **definition:** **Several** segments in **one** long run, each **a bit faster** than the last—starts **very easy**, ends **steady hard** but **controlled**. **Not** an interval session and **not** **threshold** reps; **not** the **`long_hmp_finish_half_marathon`** or **`long_fast_finish_race_pace_touch`** variant unless explicitly **re-labeled**. **No** all-out sprint finish here. **Scope (SME):** for athletes typically **>** **~65 mpw** with **durability already built**, **many** long runs under their belt, **time goals** in the **BQ-class** conversation (illustrative—not a gate on who “deserves” the workout), and **plateau-busting** phases—**not** a default for low-mileage or early-base runners.
 - **execution:** Example: **4–6** segments with **small** pace steps; early segments must stay **truly easy**. **Stops** between segments for fuel/fluid are acceptable if they don’t turn the run into **interval** training psychologically. **“Steady hard” (SME anchor):** **below threshold**, **above marathon goal pace** when both are known from the calculator—**not** threshold. **Founder exemplar (one N=1):** when **threshold** was **~6:30/mi**, **steady hard** was **~6:45/mi**—faster than **MP** in that cycle, **not** threshold; perceived “**~10–15%**” offset is an **effort/pace shorthand**, not a universal formula—**N=1** calibration. If the top becomes **threshold**, steps were too large or easy baseline was too fast. Requires **strong** pacing literacy and conservative **first** segment.
@@ -232,15 +232,15 @@
 | `id` | `stem` | `volume_family` | `sme_status` |
 |------|--------|-----------------|--------------|
 | `long_easy_aerobic_staple` | long | long | approved |
-| `long_progressive_moderate_finish` | long | composite | draft |
-| `long_fast_finish_race_pace_touch` | long | composite | draft |
-| `medium_long_aerobic_staple` | medium_long | long | draft |
-| `long_mp_continuous_marathon` | long_mp | composite | draft |
-| `long_mp_intervals_in_long` | long_mp | composite | draft |
-| `long_hmp_finish_half_marathon` | long_hmp | composite | draft |
-| `long_cutdown_aerobic_to_steady` | long | composite | draft |
+| `long_progressive_moderate_finish` | long | composite | approved |
+| `long_fast_finish_race_pace_touch` | long | composite | approved |
+| `medium_long_aerobic_staple` | medium_long | long | approved |
+| `long_mp_continuous_marathon` | long_mp | composite | approved |
+| `long_mp_intervals_in_long` | long_mp | composite | approved |
+| `long_hmp_finish_half_marathon` | long_hmp | composite | approved |
+| `long_cutdown_aerobic_to_steady` | long | composite | approved |
 
-**Rollup:** **`approved`** = **1** (`long_easy_aerobic_staple`). **`draft`** = **7** (all other ids in this table).
+**Rollup:** **`approved`** = **8** (all ids in this table). **`draft`** = **0**.
 
 ---
 
