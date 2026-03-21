@@ -35,7 +35,7 @@
 - **stem:** `repetitions`
 - **display_name:** Reps — 200m (early pattern)
 - **sme_status:** `approved`
-- **volume_family:** `R` (repetition — align with registry enum when Phase 2 adds it; until then treat as speed-family for accounting)
+- **volume_family:** `R` — repetition family per **`WORKOUT_FLUENCY_REGISTRY_SPEC.md`** §7 schema enum (`E`, `M`, `T`, `I`, `R`, `long`, `composite`).
 - **definition:** **Early-build** repetition set: **200m** reps, **full** recovery, **repetition** pace — teaches **quick, controlled** mechanics without long anaerobic reps.
 - **execution:** Warm-up easy **~2 mi**. Main: **8–10×200m** (volume-capped per engine) with **~200m jog** or **~1 min** easy between — **smooth**, not all-out sprint. Cool-down **~1 mi**. Matches `_scale_repetitions` when `plan_week` early / not yet in late progression.
 - **primary_adaptations:** Neuromuscular coordination; **economy** at faster-than-easy speeds; low **total** hard time vs VO2 day.
@@ -56,7 +56,7 @@
 - **stem:** `repetitions`
 - **display_name:** Reps — 300m (build / sharpen)
 - **sme_status:** `approved`
-- **volume_family:** `R`
+- **volume_family:** `R` — same enum as **`reps_200m_neuromuscular_early`** (registry spec §7).
 - **definition:** **Later** repetition progression: **300m** reps at **repetition** pace with **full** recovery — slightly **longer** neuromuscular demand than 200m, still **not** VO2 intervals.
 - **execution:** Warm-up **~2 mi**. Main: **6–8×300m** with **~200m jog** or **~1.5 min** easy between. Cool-down **~1 mi**. Matches `_scale_repetitions` late / **race_specific** branch in code.
 - **primary_adaptations:** **Power endurance** in short windows; **rhythm** at faster speeds; bridges toward **race sharpness** for **5K** without replacing **interval** day.
