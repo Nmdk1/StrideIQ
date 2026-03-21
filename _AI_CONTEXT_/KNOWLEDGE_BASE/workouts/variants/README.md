@@ -1,6 +1,6 @@
 # Workout variant KB (pilot)
 
-**Spec:** [`docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md`](../../../../docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md) (v0.2.9)
+**Spec:** [`docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md`](../../../../docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md) (v0.2.10)
 
 **Purpose:** Per-variant depth (execution, risks, N=1 notes, closed `build_context_tag` set) for plan intelligence and future registry wiring. This directory is **KB**, not runtime code.
 
@@ -16,7 +16,7 @@
 ## Authority
 
 - Breadth taxonomy remains in [`../WORKOUT_LIBRARY.md`](../WORKOUT_LIBRARY.md); **where a variant exists here, these definitions override** population-style summaries in the library for that variant ID.
-- Pilot 1 threshold and Pilot 2 long-family rows are **`approved`** (see file headers). Additional pilots remain **`draft`** until founder sign-off. Runtime wiring still follows spec §2 (P0 gate).
+- Pilot 1 threshold rows are **`approved`** (see `threshold_pilot_v1.md`). Pilot 2 long-family rows are **`draft`** until founder explicit SME sign-off (`long_run_pilot_v1.md`). Additional pilots remain **`draft`** until founder sign-off. Runtime wiring still follows spec §2 (P0 gate).
 
 ## PR / gate
 

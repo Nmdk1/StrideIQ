@@ -1,17 +1,17 @@
 # Long-run pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.9 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.10 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
 **Stems covered:** `long`, `medium_long`, `long_mp`, `long_hmp` (aliases per `workout_scaler.py`: `long_run`, `marathon_pace_long`, etc.)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `_scale_long_run`, `_scale_medium_long`, `_scale_mp_long_run`, `_scale_hmp_long_run`.
 
-**SME approval:** **Founder approved** all eight Pilot 2 long-family variants **2026-03-20** (session). Each row below is **`sme_status: approved`** for KB / product-copy purposes; runtime wiring remains gated per `WORKOUT_FLUENCY_REGISTRY_SPEC.md` §2.
+**SME approval:** All eight rows are **`sme_status: draft`** until the founder **explicitly** signs off (PR comment, session note, or direct edit)—not inferred from agent momentum. **Do not** promote to `approved` without that. Runtime wiring remains gated per `WORKOUT_FLUENCY_REGISTRY_SPEC.md` §2 regardless.
 
 **Cross-reference:** Embedded **threshold** quality in the **last** portion of a long day is also described in `threshold_pilot_v1.md` (`progressive_threshold_25_40`). Prefer **one** canonical variant for “quality in the long run” unless SME splits long-stem vs threshold-stem dispatch.
 
 ---
 
-## StrideIQ long-run principles (SME-aligned, KB)
+## StrideIQ long-run principles (draft — for SME review)
 
 - **Easy long** is the **weekly structural anchor** for most athletes—time on feet, aerobic load, durability. Pace is **easy conversational**; use **Training Pace Calculator** (goal race or best recent race anchor) and RPE as context, not race effort on the easy bulk.
 - **Total distance** scales with weekly volume and race distance; internal scaler uses ~**28–30%** of weekly volume toward long-run target with **tier/distance peaks**—variants describe **structure**, not replace safety caps.
@@ -19,7 +19,9 @@
 
 ---
 
-## StrideIQ prescription & environment (long-family SME — product intent)
+## StrideIQ prescription & environment (long-family — **draft / builder proposal**)
+
+*This section and the variant rows below are **editorial draft**. Treat claims here as **unapproved** until you confirm or correct them—especially MP/HMP anchors, the ±5 s/mi band for long quality, and cross-cutting copy.*
 
 **Marathon-pace (MP) and half-marathon-pace (HMP) segments in long runs:**
 
@@ -219,15 +221,15 @@
 
 | `id` | `stem` | `volume_family` | `sme_status` |
 |------|--------|-----------------|--------------|
-| `long_easy_aerobic_staple` | long | long | approved |
-| `long_progressive_moderate_finish` | long | composite | approved |
-| `long_fast_finish_race_pace_touch` | long | composite | approved |
-| `medium_long_aerobic_staple` | medium_long | long | approved |
-| `long_mp_continuous_marathon` | long_mp | composite | approved |
-| `long_mp_intervals_in_long` | long_mp | composite | approved |
-| `long_hmp_finish_half_marathon` | long_hmp | composite | approved |
-| `long_cutdown_aerobic_to_steady` | long | composite | approved |
+| `long_easy_aerobic_staple` | long | long | draft |
+| `long_progressive_moderate_finish` | long | composite | draft |
+| `long_fast_finish_race_pace_touch` | long | composite | draft |
+| `medium_long_aerobic_staple` | medium_long | long | draft |
+| `long_mp_continuous_marathon` | long_mp | composite | draft |
+| `long_mp_intervals_in_long` | long_mp | composite | draft |
+| `long_hmp_finish_half_marathon` | long_hmp | composite | draft |
+| `long_cutdown_aerobic_to_steady` | long | composite | draft |
 
 ---
 
-*Pilot v1 — 8 long-family variants. **SME approved** 2026-03-20; runtime wiring still §2 / P0.*
+*Pilot v1 — 8 long-family variants. **`draft`** until founder explicit SME sign-off; runtime wiring still §2 / P0.*
