@@ -477,6 +477,27 @@ jobs:
         continue-on-error: true  # Report but don't block
 
   # ============================================================
+  # P0 plan / workout registry execution gate (PR attestation)
+  # ============================================================
+  p0-plan-registry-gate:
+    name: P0 plan registry gate (PR body)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout (full history for diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require P0-GATE attestation when gated paths change
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python .github/scripts/ci_p0_registry_gate.py
+
+  # ============================================================
   # Docker Build Test
   # ============================================================
   docker-build:
