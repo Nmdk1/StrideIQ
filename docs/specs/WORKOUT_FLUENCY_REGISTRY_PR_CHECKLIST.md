@@ -8,12 +8,14 @@ This document is the **operational** companion: what to paste in PRs and who may
 
 ## 1. When CI enforces the P0 / registry gate
 
-On **pull requests**, if the diff touches either:
+On **pull requests** and **pushes to `main` / `develop`**, if the diff touches either:
 
 - `apps/api/services/plan_framework/**`, or  
 - `apps/api/routers/plan_generation.py`,
 
-then **GitHub Actions** runs `.github/scripts/ci_p0_registry_gate.py` and **fails** unless the PR description contains an attestation (see §2).
+then **GitHub Actions** runs `.github/scripts/ci_p0_registry_gate.py` and **fails** unless an attestation is present (see §2).
+
+**Solo maintainer (push-to-main, no PR):** put the same `P0-GATE:` / `P0-GATE-NOTES:` / `P0-WAIVER-REF:` lines in the **commit message** of any commit in the push (CI concatenates messages in the pushed range). Empty pushes and changes that do not touch the paths above do not require attestation.
 
 **KB-only** changes under `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/**` do **not** trigger this check by themselves.
 
@@ -21,9 +23,9 @@ then **GitHub Actions** runs `.github/scripts/ci_p0_registry_gate.py` and **fail
 
 ---
 
-## 2. PR description template (copy when gated paths change)
+## 2. Attestation template (PR description **or** commit message when pushing to main)
 
-Paste into the PR body (edit the bracketed parts):
+Paste into the PR body **or** into your commit message when you push directly to `main` (edit the bracketed parts):
 
 ```text
 ## P0 / workout registry gate
