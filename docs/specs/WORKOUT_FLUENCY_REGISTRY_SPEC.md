@@ -1,4 +1,4 @@
-# Workout Fluency Registry — Specification v0.2.11
+# Workout Fluency Registry — Specification v0.2.12
 
 **Status:** Draft — **builder-safe for pilot KB work**; production wiring remains gated (see §2).  
 **Date:** 2026-03-20  
@@ -202,7 +202,7 @@ Agents must **not** copy these as defaults for all users; they inform **tags** a
 
 ---
 
-## 7. Schema: required fields per variant (v0.2.11)
+## 7. Schema: required fields per variant (v0.2.12)
 
 Each `workout_variant_id` MUST have the following (prose in KB; structured row in machine registry when introduced).
 
@@ -260,7 +260,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ## 8. Machine registry (phase 2 — format TBD)
 
-**v0.2.11 KB pilot delivers:** Threshold variant markdown **SME-approved**; long-family markdown with §7 fields and valid tags under `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/`—**per-variant** `sme_status` (Pilot 2: at least **`long_easy_aerobic_staple`** **`approved`** founder SME **2026-03-20**; other ids **`draft`** until explicit sign-off).
+**v0.2.12 KB pilot delivers:** Threshold variant markdown **SME-approved**; long-family markdown with §7 fields and valid tags under `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/`—**per-variant** `sme_status` (Pilot 2: **1** **`approved`**, **7** **`draft`** as of **2026-03-20** — **`long_easy_aerobic_staple`** only promoted; see `long_run_pilot_v1.md` header + summary rollup; **never** treat Pilot 2 as “all eight approved” unless that file shows **8**× **`approved`**).
 
 **v0.3+ delivers:** Single validated artifact (`workout_registry.yaml` or JSON) with schema version, consumed by tests first, then optionally by Python loader — **subject to §2**.
 
@@ -280,13 +280,13 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 10. Acceptance criteria (v0.2.10 doc + KB pilot)
+## 10. Acceptance criteria (v0.2.12 doc + KB pilot)
 
 - [x] Founder confirms **`build_context_tag` enum** (§6.3) as used in Pilot 1 — **2026-03-22** (implicit in approval of tagged pilot content).
 - [x] Founder confirms **`sme_status` enum** and rule: only **`approved`** in any shipping wiring path — **2026-03-22**.
 - [x] Founder confirms **source policy** (§4.1) as applied in Pilot 1 — **2026-03-22**.
 - [x] Agents add **Pilot 1** threshold variant docs (≥8 variants), each tagged with §6.3 values and `sme_status` on every variant — see `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/threshold_pilot_v1.md` (**9** variants, **`approved`** founder SME **2026-03-22**).
-- [x] Agents maintain **Pilot 2** long-family variant docs (8 variants), each tagged with §6.3 values and `sme_status` on every variant — see `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/long_run_pilot_v1.md` (currently **`draft`**).
+- [x] Agents maintain **Pilot 2** long-family variant docs (8 variants), each tagged with §6.3 values and `sme_status` on every variant — see `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/long_run_pilot_v1.md` (**mixed:** **`long_easy_aerobic_staple`** **`approved`** founder SME **2026-03-20**; **7** ids remain **`draft`** — authoritative counts in that file’s header + summary rollup, not “all draft” / not “all approved”).
 - [ ] Founder SME **explicitly approves** all remaining Pilot 2 rows (each **`approved`** only after line-by-line sign-off) — **in progress** (`long_easy_aerobic_staple` approved **2026-03-20**; do not infer for other ids).
 - [x] Cross-links from `WORKOUT_LIBRARY.md` to variant docs (index + authority note—no mass rewrite).
 - [x] **§2 execution gate** operationalized: PR checklist (`WORKOUT_FLUENCY_REGISTRY_PR_CHECKLIST.md`) + CI job `p0-plan-registry-gate` (see §2.1).
@@ -294,7 +294,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 11. Acceptance criteria (wiring phase — beyond v0.2.11 KB)
+## 11. Acceptance criteria (wiring phase — beyond v0.2.12 KB)
 
 - [ ] **Mapping table** checked in: registry `id` → current `workout_type` strings (and aliases) as accepted by `WorkoutScaler.scale_workout` and any `phase_builder` call sites — **before** merge of consumer code.
 - [ ] `workout_scaler` methods or dispatch reference `workout_variant_id` (internal) even if API still exposes stem.
@@ -304,7 +304,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 12. Explicit non-goals (v0.2.10)
+## 12. Explicit non-goals (v0.2.12)
 
 - Replacing `plan_validation_helpers.py` with prose.
 - LLM-generated definitions without SME sign-off.
@@ -346,7 +346,8 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 | 0.2.9 | 2026-03-20 | Pilot 2 **`long_run_pilot_v1.md`** expanded (prescription/environment aligned with Pilot 1 themes). **Error:** recorded as SME-**`approved`** without explicit founder Q&A — **corrected in v0.2.10**. |
 | 0.2.10 | 2026-03-20 | Pilot 2 back to **`draft`** everywhere; explicit “no inferred approval” in §9, §10, pilot file header; builder-proposed prescription block labeled **draft**; indexes + build sequence aligned. |
 | 0.2.11 | 2026-03-20 | Pilot 2 **per-variant** SME: `long_easy_aerobic_staple` **`approved`** (founder session); §9–§10, §8, README, `source_notes` founder attribution for Tier A ref; remaining long ids stay **`draft`**. |
+| 0.2.12 | 2026-03-20 | **Reconcile Pilot 2 authority:** `long_run_pilot_v1.md` header + rollup explicitly state **1** **`approved`** / **7** **`draft`**; note **v0.2.9** “all approved” error reverted in v0.2.10; fix §10 checklist line that implied entire Pilot 2 was **`draft`**; align §10/§12 version headers; **`draft`** = gate not promoted, prose may still be session-informed. |
 
 ---
 
-*End of v0.2.11 — Pilot 1 threshold KB **approved**; Pilot 2 long-run KB **partial** SME (`long_easy_aerobic_staple` **approved**); product voice is StrideIQ synthesis, not third-party bibliography.*
+*End of v0.2.12 — Pilot 1 threshold KB **approved**; Pilot 2 long-run KB **partial** SME (**1** **`approved`**, **7** **`draft`** — see `long_run_pilot_v1.md`); product voice is StrideIQ synthesis, not third-party bibliography.*

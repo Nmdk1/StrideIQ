@@ -19,7 +19,7 @@
 | Reps / strides / hills | Deferred per spec | after core pilots stable |
 | Rest | Optional one-liner | trivial |
 
-**Exit Phase 1 when:** Founder SME has **`approved`** each pilot file you care about for v1 product scope (not every stem on day one—scope v1 explicitly). **As of registry v0.2.11:** threshold pilot **approved**; long-family pilot **per-variant SME** (`long_easy_aerobic_staple` **approved** 2026-03-20; other ids **`draft`**); easy / VO2 / etc. still **not started** until scoped.
+**Exit Phase 1 when:** Founder SME has **`approved`** each pilot file you care about for v1 product scope (not every stem on day one—scope v1 explicitly). **As of registry v0.2.12:** threshold pilot **approved**; long-family pilot **per-variant SME** — **1** **`approved`**, **7** **`draft`** (`long_run_pilot_v1.md` rollup is authoritative); easy / VO2 / etc. still **not started** until scoped.
 
 ---
 

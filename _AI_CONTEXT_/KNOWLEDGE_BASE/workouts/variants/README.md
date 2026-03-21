@@ -1,6 +1,6 @@
 # Workout variant KB (pilot)
 
-**Spec:** [`docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md`](../../../../docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md) (v0.2.11)
+**Spec:** [`docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md`](../../../../docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md) (v0.2.12)
 
 **Purpose:** Per-variant depth (execution, risks, N=1 notes, closed `build_context_tag` set) for plan intelligence and future registry wiring. This directory is **KB**, not runtime code.
 
@@ -11,7 +11,7 @@
 | File | Scope | Status |
 |------|--------|--------|
 | [`threshold_pilot_v1.md`](threshold_pilot_v1.md) | Pilot 1 — threshold / threshold_intervals | **9 variants `sme_status: approved`** (founder 2026-03-22) |
-| [`long_run_pilot_v1.md`](long_run_pilot_v1.md) | Pilot 2 — long / medium_long / long_mp / long_hmp | **1/8 `approved`** (`long_easy_aerobic_staple`, 2026-03-20); **7 `draft`** — see file header |
+| [`long_run_pilot_v1.md`](long_run_pilot_v1.md) | Pilot 2 — long / medium_long / long_mp / long_hmp | **1/8 `approved`** (`long_easy_aerobic_staple`, 2026-03-20); **7 `draft`** — see file header + summary **rollup** (authoritative; overrides any stale “all 8 approved” claim) |
 
 ## Authority
 

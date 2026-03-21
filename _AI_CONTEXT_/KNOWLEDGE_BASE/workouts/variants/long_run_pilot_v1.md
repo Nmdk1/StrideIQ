@@ -1,11 +1,15 @@
 # Long-run pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.11 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.12 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
 **Stems covered:** `long`, `medium_long`, `long_mp`, `long_hmp` (aliases per `workout_scaler.py`: `long_run`, `marathon_pace_long`, etc.)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `_scale_long_run`, `_scale_medium_long`, `_scale_mp_long_run`, `_scale_hmp_long_run`.
 
 **SME approval:** Each row carries its own **`sme_status`**. **Do not** promote to `approved` without **explicit** founder sign-off for that id (session, PR comment, or direct edit)—not inferred from agent momentum. **Approved so far:** `long_easy_aerobic_staple` — founder SME **2026-03-20** (session). Runtime wiring remains gated per `WORKOUT_FLUENCY_REGISTRY_SPEC.md` §2 regardless.
+
+**Authoritative status (this file + summary table):** Pilot 2 is **not** “all eight approved.” **Truth:** **1** row **`approved`**, **7** **`draft`** (counts below). Git/spec history **v0.2.9** briefly claimed full Pilot 2 approval without explicit Q&A—**reverted in v0.2.10**. If any handoff, PR, or memory says “all 8 long-run variants approved,” treat that as **stale** unless this table shows eight **`approved`**.
+
+**`draft` semantics:** **`draft`** = not yet promoted to **`approved`** for registry / shipping gates. It does **not** mean “empty placeholder”—prose may already reflect founder session direction; promotion is an explicit **second** step.
 
 **Cross-reference:** Embedded **threshold** quality in the **last** portion of a long day is also described in `threshold_pilot_v1.md` (`progressive_threshold_25_40`). Prefer **one** canonical variant for “quality in the long run” unless SME splits long-stem vs threshold-stem dispatch.
 
@@ -233,6 +237,8 @@
 | `long_hmp_finish_half_marathon` | long_hmp | composite | draft |
 | `long_cutdown_aerobic_to_steady` | long | composite | draft |
 
+**Rollup:** **`approved`** = **1** (`long_easy_aerobic_staple`). **`draft`** = **7** (all other ids in this table).
+
 ---
 
-*Pilot v1 — 8 long-family variants. **`sme_status` per row** (see header + table); runtime wiring still §2 / P0.*
+*Pilot v1 — 8 long-family variants. **`sme_status` per row** (header + table + rollup above); runtime wiring still §2 / P0.*
