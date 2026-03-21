@@ -1,9 +1,11 @@
 # Long-run pilot — variant definitions (v1)
 
-**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.12 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
+**Spec:** `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` v0.2.13 · **Sequence:** `docs/specs/WORKOUT_FLUENCY_BUILD_SEQUENCE.md`  
 **Stems covered:** `long`, `medium_long`, `long_mp`, `long_hmp` (aliases per `workout_scaler.py`: `long_run`, `marathon_pace_long`, etc.)
 
 **Engine reference:** `apps/api/services/plan_framework/workout_scaler.py` — `_scale_long_run`, `_scale_medium_long`, `_scale_mp_long_run`, `_scale_hmp_long_run`.
+
+**Primary consumer (non-negotiable framing):** This file is **not** written for the founder to reread for pleasure. It is **SME-grounded input** to **deterministic plan construction**: a **toolbox** of blocks that a **selection matrix** (tags + athlete signals + caps + `pairs_poorly_with` / `when_to_avoid`) will map to **concrete plan constants** and tests. Prose must stay **extractable**—stable **`id`**, closed **`typical_build_context_tags`**, explicit constraints—so Phase 2 can compile Markdown → validated registry without reinterpretation drift. **`display_name`** and any athlete-surfaced copy derived from these rows are the exception (human UI); everything else optimizes for **the algorithm and CI**, not bedside reading.
 
 **SME approval:** Each row carries its own **`sme_status`**. **Do not** promote to `approved` without **explicit** founder sign-off for that id (session, PR comment, or direct edit)—not inferred from agent momentum. **Approved so far:** `long_easy_aerobic_staple` — founder SME **2026-03-20** (session). Runtime wiring remains gated per `WORKOUT_FLUENCY_REGISTRY_SPEC.md` §2 regardless.
 

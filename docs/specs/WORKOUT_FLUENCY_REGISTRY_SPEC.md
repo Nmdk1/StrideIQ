@@ -1,4 +1,4 @@
-# Workout Fluency Registry — Specification v0.2.12
+# Workout Fluency Registry — Specification v0.2.13
 
 **Status:** Draft — **builder-safe for pilot KB work**; production wiring remains gated (see §2).  
 **Date:** 2026-03-20  
@@ -202,7 +202,15 @@ Agents must **not** copy these as defaults for all users; they inform **tags** a
 
 ---
 
-## 7. Schema: required fields per variant (v0.2.12)
+## 7. Schema: required fields per variant (v0.2.13)
+
+### 7.0 Consumption model (deterministic plan construction)
+
+Pilot markdown in `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/` is an **interim carrier**. The **canonical consumer** is **code**: eligibility rules, phase/scaler dispatch, and **contract tests** that pin outputs for fixture athletes. Founders and SMEs **author** truth here; they are **not** the runtime audience. Edit guidance:
+
+- Prefer **stable, enumerable signals** (`typical_build_context_tags`, explicit **`when_to_avoid`** / **`pairs_poorly_with`** hints, clear **`stem`**) over essay-only nuance that cannot become registry fields.
+- **`display_name`** and athlete-visible strings are **human product copy**; other fields should read as **machine-ingestible spec** (still plain language—no obfuscation—just **unambiguous** for compilation).
+- Phase 2 **compiles** this content into a validated artifact (§8); Phase 3 **wires** consumers—§2 gate unchanged.
 
 Each `workout_variant_id` MUST have the following (prose in KB; structured row in machine registry when introduced).
 
@@ -226,8 +234,8 @@ Each `workout_variant_id` MUST have the following (prose in KB; structured row i
 | `id` | Stable snake_case identifier; **globally unique** in registry. |
 | `stem` | Parent stem. |
 | `display_name` | Athlete-facing short name. |
-| `definition` | What the session **is** in one tight paragraph. |
-| `execution` | How to run it (warmup, main set, cooldown, terrain notes). |
+| `definition` | What the session **is** in one tight paragraph—**selection / eligibility context** for the matrix as well as human summary. |
+| `execution` | How to run it (warmup, main set, cooldown, terrain notes)—**dispatch and validation** hooks as Phase 2+ harden. |
 | `primary_adaptations` | Physiological targets (aerobic, lactate clearance, VO2, neuromuscular, economy, durability). |
 | `systems_stressed` | Cardiovascular, musculoskeletal, CNS load, metabolic—plain language. |
 | `benefits` | Why a coach might assign it—**conditional** on appropriate load. |
@@ -260,7 +268,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ## 8. Machine registry (phase 2 — format TBD)
 
-**v0.2.12 KB pilot delivers:** Threshold variant markdown **SME-approved**; long-family markdown with §7 fields and valid tags under `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/`—**per-variant** `sme_status` (Pilot 2: **1** **`approved`**, **7** **`draft`** as of **2026-03-20** — **`long_easy_aerobic_staple`** only promoted; see `long_run_pilot_v1.md` header + summary rollup; **never** treat Pilot 2 as “all eight approved” unless that file shows **8**× **`approved`**).
+**v0.2.13 KB pilot delivers:** Threshold variant markdown **SME-approved**; long-family markdown with §7 fields and valid tags under `_AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/`—**per-variant** `sme_status` (Pilot 2: **1** **`approved`**, **7** **`draft`** as of **2026-03-20** — **`long_easy_aerobic_staple`** only promoted; see `long_run_pilot_v1.md` header + summary rollup; **never** treat Pilot 2 as “all eight approved” unless that file shows **8**× **`approved`**). See **§7.0** — KB prose is input to **deterministic** plan construction, not founder reading material.
 
 **v0.3+ delivers:** Single validated artifact (`workout_registry.yaml` or JSON) with schema version, consumed by tests first, then optionally by Python loader — **subject to §2**.
 
@@ -280,7 +288,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 10. Acceptance criteria (v0.2.12 doc + KB pilot)
+## 10. Acceptance criteria (v0.2.13 doc + KB pilot)
 
 - [x] Founder confirms **`build_context_tag` enum** (§6.3) as used in Pilot 1 — **2026-03-22** (implicit in approval of tagged pilot content).
 - [x] Founder confirms **`sme_status` enum** and rule: only **`approved`** in any shipping wiring path — **2026-03-22**.
@@ -294,7 +302,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 11. Acceptance criteria (wiring phase — beyond v0.2.12 KB)
+## 11. Acceptance criteria (wiring phase — beyond v0.2.13 KB)
 
 - [ ] **Mapping table** checked in: registry `id` → current `workout_type` strings (and aliases) as accepted by `WorkoutScaler.scale_workout` and any `phase_builder` call sites — **before** merge of consumer code.
 - [ ] `workout_scaler` methods or dispatch reference `workout_variant_id` (internal) even if API still exposes stem.
@@ -304,7 +312,7 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 
 ---
 
-## 12. Explicit non-goals (v0.2.12)
+## 12. Explicit non-goals (v0.2.13)
 
 - Replacing `plan_validation_helpers.py` with prose.
 - LLM-generated definitions without SME sign-off.
@@ -347,7 +355,8 @@ Registry artifacts MUST be validated by automated checks (tests or schema):
 | 0.2.10 | 2026-03-20 | Pilot 2 back to **`draft`** everywhere; explicit “no inferred approval” in §9, §10, pilot file header; builder-proposed prescription block labeled **draft**; indexes + build sequence aligned. |
 | 0.2.11 | 2026-03-20 | Pilot 2 **per-variant** SME: `long_easy_aerobic_staple` **`approved`** (founder session); §9–§10, §8, README, `source_notes` founder attribution for Tier A ref; remaining long ids stay **`draft`**. |
 | 0.2.12 | 2026-03-20 | **Reconcile Pilot 2 authority:** `long_run_pilot_v1.md` header + rollup explicitly state **1** **`approved`** / **7** **`draft`**; note **v0.2.9** “all approved” error reverted in v0.2.10; fix §10 checklist line that implied entire Pilot 2 was **`draft`**; align §10/§12 version headers; **`draft`** = gate not promoted, prose may still be session-informed. |
+| 0.2.13 | 2026-03-20 | **§7.0 consumption model:** KB variants are **inputs to deterministic plan construction** (matrix + constants + tests), not founder reading material; `long_run_pilot_v1.md` header aligned; `definition`/`execution` table notes tie fields to selection/dispatch. |
 
 ---
 
-*End of v0.2.12 — Pilot 1 threshold KB **approved**; Pilot 2 long-run KB **partial** SME (**1** **`approved`**, **7** **`draft`** — see `long_run_pilot_v1.md`); product voice is StrideIQ synthesis, not third-party bibliography.*
+*End of v0.2.13 — Pilot 1 threshold KB **approved**; Pilot 2 long-run KB **partial** SME (**1** **`approved`**, **7** **`draft`** — see `long_run_pilot_v1.md`); product voice is StrideIQ synthesis, not third-party bibliography.*
