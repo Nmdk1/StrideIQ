@@ -145,7 +145,7 @@ def test_checkout_ignores_tier_and_forces_single_paid_tier(monkeypatch):
         price_strideiq_annual_id="price_strideiq_a",
     )
 
-    def _fake_create_checkout_session(self, *, athlete, tier="premium", billing_period="annual"):
+    def _fake_create_checkout_session(self, *, athlete, tier="subscriber", billing_period="annual"):
         captured["tier"] = tier
         captured["billing_period"] = billing_period
         return "https://stripe.test/checkout"
@@ -173,9 +173,9 @@ def test_checkout_ignores_tier_and_forces_single_paid_tier(monkeypatch):
         )
         assert resp.status_code == 200, resp.text
         payload = resp.json()
-        assert payload["tier"] == "premium"
+        assert payload["tier"] == "subscriber"
         assert payload["billing_period"] == "monthly"
-        assert captured["tier"] == "premium"
+        assert captured["tier"] == "subscriber"
         assert captured["billing_period"] == "monthly"
     finally:
         _cleanup_athlete(athlete.email)

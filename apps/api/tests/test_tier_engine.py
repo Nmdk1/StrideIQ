@@ -2,7 +2,7 @@
 
 These tests are pure logic: no database, no Stripe, no FastAPI.
 They cover every path through normalize_tier, tier_level, and tier_satisfies
-including all legacy tier strings and the fail-closed unknown-tier behavior.
+under the two-tier contract with backward-compatible normalization.
 """
 import pytest
 import sys
@@ -24,21 +24,24 @@ class TestNormalizeTier:
     def test_free_passthrough(self):
         assert normalize_tier("free") == "free"
 
-    def test_guided_passthrough(self):
-        assert normalize_tier("guided") == "guided"
+    def test_subscriber_passthrough(self):
+        assert normalize_tier("subscriber") == "subscriber"
 
-    def test_premium_passthrough(self):
-        assert normalize_tier("premium") == "premium"
+    # Legacy paid labels all collapse to subscriber.
+    def test_guided_maps_to_subscriber(self):
+        assert normalize_tier("guided") == "subscriber"
 
-    # Legacy tiers all collapse to premium.
-    def test_pro_maps_to_premium(self):
-        assert normalize_tier("pro") == "premium"
+    def test_premium_maps_to_subscriber(self):
+        assert normalize_tier("premium") == "subscriber"
 
-    def test_elite_maps_to_premium(self):
-        assert normalize_tier("elite") == "premium"
+    def test_pro_maps_to_subscriber(self):
+        assert normalize_tier("pro") == "subscriber"
 
-    def test_subscription_maps_to_premium(self):
-        assert normalize_tier("subscription") == "premium"
+    def test_elite_maps_to_subscriber(self):
+        assert normalize_tier("elite") == "subscriber"
+
+    def test_subscription_maps_to_subscriber(self):
+        assert normalize_tier("subscription") == "subscriber"
 
     # Fail-closed: unknown strings → free.
     def test_unknown_string_maps_to_free(self):
@@ -51,14 +54,14 @@ class TestNormalizeTier:
         assert normalize_tier(None) == "free"
 
     # Case insensitivity.
-    def test_uppercase_pro_maps_to_premium(self):
-        assert normalize_tier("PRO") == "premium"
+    def test_uppercase_pro_maps_to_subscriber(self):
+        assert normalize_tier("PRO") == "subscriber"
 
     def test_mixed_case_guided(self):
-        assert normalize_tier("Guided") == "guided"
+        assert normalize_tier("Guided") == "subscriber"
 
     def test_whitespace_stripped(self):
-        assert normalize_tier("  premium  ") == "premium"
+        assert normalize_tier("  subscriber  ") == "subscriber"
 
 
 # ===========================================================================
@@ -71,21 +74,18 @@ class TestTierLevel:
     def test_free_is_zero(self):
         assert tier_level("free") == 0
 
-    def test_guided_is_one(self):
-        assert tier_level("guided") == 1
+    def test_subscriber_is_one(self):
+        assert tier_level("subscriber") == 1
 
-    def test_premium_is_two(self):
-        assert tier_level("premium") == 2
+    # Legacy paid labels map to subscriber level.
+    def test_pro_level_equals_subscriber(self):
+        assert tier_level("pro") == 1
 
-    # Legacy tiers map to premium level.
-    def test_pro_level_equals_premium(self):
-        assert tier_level("pro") == 2
+    def test_elite_level_equals_subscriber(self):
+        assert tier_level("elite") == 1
 
-    def test_elite_level_equals_premium(self):
-        assert tier_level("elite") == 2
-
-    def test_subscription_level_equals_premium(self):
-        assert tier_level("subscription") == 2
+    def test_subscription_level_equals_subscriber(self):
+        assert tier_level("subscription") == 1
 
     # Fail-closed: unknown → 0 (same as free).
     def test_unknown_level_is_zero(self):
@@ -106,53 +106,31 @@ class TestTierSatisfies:
     def test_free_satisfies_free(self):
         assert tier_satisfies("free", "free") is True
 
-    def test_guided_satisfies_guided(self):
-        assert tier_satisfies("guided", "guided") is True
+    def test_subscriber_satisfies_subscriber(self):
+        assert tier_satisfies("subscriber", "subscriber") is True
 
-    def test_premium_satisfies_premium(self):
-        assert tier_satisfies("premium", "premium") is True
+    def test_subscriber_satisfies_free(self):
+        assert tier_satisfies("subscriber", "free") is True
 
-    # Higher tier satisfies lower requirement.
-    def test_premium_satisfies_guided(self):
-        assert tier_satisfies("premium", "guided") is True
+    def test_free_does_not_satisfy_subscriber(self):
+        assert tier_satisfies("free", "subscriber") is False
 
-    def test_premium_satisfies_free(self):
-        assert tier_satisfies("premium", "free") is True
+    # Legacy tier backward compat through normalization.
+    def test_pro_satisfies_subscriber(self):
+        assert tier_satisfies("pro", "subscriber") is True
 
-    def test_guided_satisfies_free(self):
-        assert tier_satisfies("guided", "free") is True
+    def test_premium_satisfies_subscriber(self):
+        assert tier_satisfies("premium", "subscriber") is True
 
-    # Lower tier does NOT satisfy higher requirement.
-    def test_guided_does_not_satisfy_premium(self):
-        assert tier_satisfies("guided", "premium") is False
+    def test_guided_satisfies_subscriber(self):
+        assert tier_satisfies("guided", "subscriber") is True
 
-    def test_free_does_not_satisfy_guided(self):
-        assert tier_satisfies("free", "guided") is False
+    # Fail-closed: None / unknown does not satisfy paid tier.
+    def test_none_does_not_satisfy_subscriber(self):
+        assert tier_satisfies(None, "subscriber") is False
 
-    def test_free_does_not_satisfy_premium(self):
-        assert tier_satisfies("free", "premium") is False
-
-    # Legacy tier backward compat.
-    def test_pro_satisfies_guided(self):
-        """Legacy 'pro' maps to premium (level 2) which satisfies guided (level 1)."""
-        assert tier_satisfies("pro", "guided") is True
-
-    def test_pro_satisfies_premium(self):
-        """Legacy 'pro' maps to premium — satisfies premium check."""
-        assert tier_satisfies("pro", "premium") is True
-
-    def test_elite_satisfies_premium(self):
-        assert tier_satisfies("elite", "premium") is True
-
-    def test_subscription_satisfies_guided(self):
-        assert tier_satisfies("subscription", "guided") is True
-
-    # Fail-closed: None / unknown does not satisfy paid tiers.
-    def test_none_does_not_satisfy_guided(self):
-        assert tier_satisfies(None, "guided") is False
-
-    def test_unknown_does_not_satisfy_guided(self):
-        assert tier_satisfies("diamond", "guided") is False
+    def test_unknown_does_not_satisfy_subscriber(self):
+        assert tier_satisfies("diamond", "subscriber") is False
 
     def test_none_satisfies_free(self):
         """None → free → satisfies free requirement."""

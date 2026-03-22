@@ -75,7 +75,7 @@ def test_checkout_and_portal_endpoints(monkeypatch):
     monkeypatch.setattr(
         ss.StripeService,
         "create_checkout_session",
-        lambda self, athlete, tier="premium", billing_period="annual": "https://stripe.test/checkout",
+        lambda self, athlete, tier="subscriber", billing_period="annual": "https://stripe.test/checkout",
     )
     monkeypatch.setattr(ss.StripeService, "create_portal_session", lambda self, athlete: "https://stripe.test/portal")
     monkeypatch.setattr(ss.StripeService, "best_effort_sync_customer_subscription", lambda self, db, athlete: None)
@@ -150,7 +150,7 @@ def test_webhook_idempotency_and_entitlement_update(monkeypatch):
     try:
         updated = db.query(Athlete).filter(Athlete.email.like("stripe_evt_%@example.com")).first()
         assert updated is not None
-        assert updated.subscription_tier == "premium"
+        assert updated.subscription_tier == "subscriber"
 
         ev_count = db.query(StripeEvent).filter(StripeEvent.event_id == "evt_1").count()
         assert ev_count == 1

@@ -173,10 +173,9 @@ def get_insights(
     Get active insights for the current athlete.
     
     Returns personalized, ranked insights generated from recent activity.
-    Elite members see the full product. (We intentionally avoid "premium" tier fragmentation.)
+    Paid subscribers see the full product.
     """
-    # Treat all paid tiers as "elite access" (until we migrate old tier labels).
-    is_elite = getattr(current_user, "has_active_subscription", False) or current_user.subscription_tier == "elite"
+    is_elite = getattr(current_user, "has_active_subscription", False) or current_user.subscription_tier == "subscriber"
     
     # Get persisted insights
     insights = get_active_insights(
@@ -285,15 +284,15 @@ def get_build_status(
 
 @router.get("/intelligence", response_model=AthleteIntelligenceResponse)
 def get_athlete_intelligence(
-    current_user: Athlete = Depends(require_tier(["guided"])),
+    current_user: Athlete = Depends(require_tier(["subscriber"])),
     db: Session = Depends(get_db),
 ):
     """
     Get athlete intelligence bank.
 
-    Requires Guided or above tier.  Returns banked learnings: what works,
-    what doesn't, patterns, injury history.  Guided + Premium tiers get N=1
-    personalized insights (Phase 3C) when eligibility gates are met.
+    Requires an active paid subscription. Returns banked learnings: what works,
+    what doesn't, patterns, injury history. Subscribers get N=1 personalized
+    insights (Phase 3C) when eligibility gates are met.
     """
 
     aggregator = InsightAggregator(db, current_user)

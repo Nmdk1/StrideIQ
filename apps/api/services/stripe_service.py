@@ -24,7 +24,7 @@ class StripeConfig:
     checkout_success_url: str
     checkout_cancel_url: str
     portal_return_url: str
-    # 4-tier price IDs (all Optional; flows fail closed if required ID is absent)
+    # Legacy multi-tier price IDs (all Optional; retained for migration inputs)
     price_plan_onetime_id: Optional[str] = None
     price_guided_monthly_id: Optional[str] = None
     price_guided_annual_id: Optional[str] = None
@@ -83,21 +83,20 @@ def _get_stripe_config() -> StripeConfig:
 def build_price_to_tier(cfg: StripeConfig) -> dict[str, str]:
     """Build price_id → canonical tier mapping from config.
 
-    Only subscription prices are mapped here (guided / premium).
+    Only subscription prices are mapped here.
     One-time prices are NOT in this map — they follow a separate entitlement path.
     Unknown price IDs will never appear in this dict, enforcing fail-closed behavior:
     any price_id not present here grants no entitlement.
     """
     mapping: dict[str, str] = {}
     pairs: list[tuple[Optional[str], str]] = [
-        (getattr(cfg, "price_strideiq_monthly_id", None), "premium"),
-        (getattr(cfg, "price_strideiq_annual_id", None), "premium"),
-        (getattr(cfg, "price_guided_monthly_id", None), "guided"),
-        (getattr(cfg, "price_guided_annual_id", None), "guided"),
-        (getattr(cfg, "price_premium_monthly_id", None), "premium"),
-        (getattr(cfg, "price_premium_annual_id", None), "premium"),
-        # Legacy pro price maps to premium (existing subscribers retain access)
-        (getattr(cfg, "price_legacy_pro_monthly_id", None), "premium"),
+        (getattr(cfg, "price_strideiq_monthly_id", None), "subscriber"),
+        (getattr(cfg, "price_strideiq_annual_id", None), "subscriber"),
+        (getattr(cfg, "price_guided_monthly_id", None), "subscriber"),
+        (getattr(cfg, "price_guided_annual_id", None), "subscriber"),
+        (getattr(cfg, "price_premium_monthly_id", None), "subscriber"),
+        (getattr(cfg, "price_premium_annual_id", None), "subscriber"),
+        (getattr(cfg, "price_legacy_pro_monthly_id", None), "subscriber"),
     ]
     for price_id, tier in pairs:
         if price_id:
@@ -154,14 +153,14 @@ class StripeService:
         self,
         *,
         athlete: Athlete,
-        tier: str = "premium",
+        tier: str = "subscriber",
         billing_period: str = "annual",
     ) -> str:
         """Create a Stripe Checkout session for a subscription tier.
 
         Args:
             athlete: The athlete subscribing.
-            tier: "guided" or "premium". Defaults to "premium" for backward compat.
+            tier: paid tier. Defaults to "subscriber".
             billing_period: "monthly" or "annual". Defaults to "annual".
 
         Raises:
@@ -169,8 +168,8 @@ class StripeService:
             ValueError: If tier or billing_period is invalid.
         """
         canonical = normalize_tier(tier)
-        if canonical not in ("guided", "premium"):
-            raise ValueError(f"Subscription tier must be 'guided' or 'premium', got: {tier!r}")
+        if canonical != "subscriber":
+            raise ValueError(f"Subscription tier must be 'subscriber', got: {tier!r}")
         if billing_period not in ("monthly", "annual"):
             raise ValueError(f"billing_period must be 'monthly' or 'annual', got: {billing_period!r}")
 
@@ -252,10 +251,16 @@ class StripeService:
         This ensures the service never silently falls back to an unrelated price.
         """
         lookup: dict[tuple[str, str], Optional[str]] = {
-            ("guided", "monthly"): self.cfg.price_guided_monthly_id,
-            ("guided", "annual"): self.cfg.price_guided_annual_id,
-            ("premium", "monthly"): self.cfg.price_strideiq_monthly_id or self.cfg.price_premium_monthly_id,
-            ("premium", "annual"): self.cfg.price_strideiq_annual_id or self.cfg.price_premium_annual_id,
+            ("subscriber", "monthly"): (
+                self.cfg.price_strideiq_monthly_id
+                or self.cfg.price_premium_monthly_id
+                or self.cfg.price_guided_monthly_id
+            ),
+            ("subscriber", "annual"): (
+                self.cfg.price_strideiq_annual_id
+                or self.cfg.price_premium_annual_id
+                or self.cfg.price_guided_annual_id
+            ),
         }
         price_id = lookup.get((canonical_tier, billing_period))
         if not price_id:
@@ -563,8 +568,8 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
         price_id = metadata.get("price_id") or _extract_price_id_from_session(obj)
         granted_tier = tier_for_price_and_status(price_id, "active", price_to_tier)
         # Fallback: if metadata explicitly carries canonical tier, use it.
-        if granted_tier == "free" and metadata.get("tier") in ("guided", "premium"):
-            granted_tier = metadata["tier"]
+        if granted_tier == "free" and metadata.get("tier") in ("subscriber", "guided", "premium"):
+            granted_tier = "subscriber"
 
         _apply_stripe_tier(athlete, granted_tier)
         db.add(athlete)

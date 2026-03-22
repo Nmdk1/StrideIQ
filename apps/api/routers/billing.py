@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 
 from core.auth import get_current_active_user
 from core.database import get_db
-from core.tier_utils import normalize_tier
 from models import Activity, Athlete, AthleteFact, CorrelationFinding, Subscription
 from services.stripe_service import StripeService, process_stripe_event
 
@@ -69,7 +68,7 @@ class CheckoutRequest(BaseModel):
         {"billing_period": "annual"}
 
     Monetization reset:
-    - Single paid StrideIQ subscription tier.
+    - Single paid subscriber tier.
     - ``tier`` is accepted for backward compatibility and ignored.
     """
     billing_period: str = Field(
@@ -84,22 +83,18 @@ def create_checkout(
     request: CheckoutRequest = None,
     current_user: Athlete = Depends(get_current_active_user),
 ):
-    """Create a Stripe Checkout Session for a subscription tier.
+    """Create a Stripe Checkout Session for the paid subscription tier.
 
     Monetization reset behavior:
-    - All subscriptions checkout into a single paid tier (premium/StrideIQ).
+    - All subscriptions checkout into a single paid tier (subscriber/StrideIQ).
     - Deprecated ``tier`` request value is accepted for backward compatibility.
     """
     billing_period = (request.billing_period if request else "annual") or "annual"
     if billing_period not in ("annual", "monthly"):
         raise HTTPException(status_code=400, detail="billing_period must be 'annual' or 'monthly'")
 
-    # Deprecated field handling: accept known historical values, ignore for routing.
-    if request and request.tier is not None:
-        normalized = normalize_tier(request.tier)
-        if normalized not in ("guided", "premium"):
-            raise HTTPException(status_code=400, detail="tier must be 'guided' or 'premium'")
-    canonical_tier = "premium"
+    # Deprecated field handling: accepted but ignored.
+    canonical_tier = "subscriber"
 
     try:
         url = StripeService().create_checkout_session(

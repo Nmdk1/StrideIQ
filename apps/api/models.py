@@ -46,14 +46,13 @@ class Athlete(Base):
     # (JSONB) until Phase 6+ stabilizes billing/employee auth architecture.
     admin_permissions = Column(JSONB, nullable=False, default=list)
     
-    # Paid subscription tiers that grant Elite access.
-    # We keep legacy values for backward compatibility while converging on a single paid tier ("elite").
-    PAID_TIERS = {'elite', 'pro', 'premium', 'guided', 'subscription'}
+    # Paid subscription tiers (two-tier contract).
+    PAID_TIERS = {"subscriber"}
     
     @property
     def has_active_subscription(self) -> bool:
         """Check if athlete has an active paid subscription."""
-        # Stripe / DB-tier based access (legacy + current)
+        # Stripe / DB-tier based access
         if self.subscription_tier in self.PAID_TIERS:
             return True
         # Trial access (time-bound)
