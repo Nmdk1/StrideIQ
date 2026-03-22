@@ -1248,18 +1248,16 @@ def _generate_coach_response(message: str, context: dict, history: list) -> str:
     For now, returns a placeholder response.
     """
     # Placeholder - will be replaced with actual GPT integration
-    athlete_name = context.get("athlete", {}).get("display_name", "there")
-    
     if "ready" in message.lower():
-        return f"Based on your recent training, you're tracking well. Your consistency is building the foundation for a strong performance. Trust the work you've put in."
+        return "Based on your recent training, you're tracking well. Your consistency is building the foundation for a strong performance. Trust the work you've put in."
     
     if "pace" in message.lower():
-        return f"For your current fitness level, focus on effort over pace. Easy runs should feel conversational - if you can't talk, you're too fast. Save the speed for the quality sessions."
+        return "For your current fitness level, focus on effort over pace. Easy runs should feel conversational - if you can't talk, you're too fast. Save the speed for the quality sessions."
     
     if "tired" in message.lower() or "fatigue" in message.lower():
-        return f"Fatigue is expected during a build phase. The key question: is it productive fatigue (from training) or accumulated fatigue (needs attention)? How's your sleep been? Any unusual soreness?"
+        return "Fatigue is expected during a build phase. The key question: is it productive fatigue (from training) or accumulated fatigue (needs attention)? How's your sleep been? Any unusual soreness?"
     
-    return f"I see your question about your training. Based on your recent workouts and current phase, let me help you think through this. What specific aspect would you like to explore further?"
+    return "I see your question about your training. Based on your recent workouts and current phase, let me help you think through this. What specific aspect would you like to explore further?"
 
 
 @router.get("/week/{week_number}", response_model=WeekSummaryResponse)

@@ -10,10 +10,9 @@ Tone: Sparse, forensic, non-prescriptive.
 "Data hints X preceded Y. Test it."
 """
 
-from typing import List, Optional
-from uuid import UUID
+from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session
 
@@ -22,11 +21,7 @@ from core.auth import get_current_user
 from models import Athlete
 from services.causal_attribution import (
     CausalAttributionEngine,
-    CausalAnalysisResult,
-    LeadingIndicator,
     CausalConfidence,
-    ImpactDirection,
-    FrequencyLoop,
 )
 
 
