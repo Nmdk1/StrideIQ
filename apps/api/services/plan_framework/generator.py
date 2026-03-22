@@ -23,7 +23,7 @@ Usage:
 """
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import date, timedelta
 from uuid import UUID
 from dataclasses import dataclass
@@ -151,6 +151,32 @@ def _extract_mp_miles_from_long_mp(workout: GeneratedWorkout) -> Optional[int]:
         if dm is None:
             return None
         return int(round(float(dm)))
+    return None
+
+
+def _extract_threshold_continuous_minutes(workout: GeneratedWorkout) -> Optional[int]:
+    if workout.workout_type != "threshold" or not workout.segments:
+        return None
+    for seg in workout.segments:
+        if not isinstance(seg, dict) or seg.get("type") != "threshold":
+            continue
+        dm = seg.get("duration_min")
+        if dm is None:
+            return None
+        return int(dm)
+    return None
+
+
+def _extract_threshold_intervals_shape(workout: GeneratedWorkout) -> Optional[Tuple[int, int]]:
+    if workout.workout_type != "threshold_intervals" or not workout.segments:
+        return None
+    for seg in workout.segments:
+        if not isinstance(seg, dict) or seg.get("type") != "intervals":
+            continue
+        r, d = seg.get("reps"), seg.get("duration_min")
+        if r is None or d is None:
+            return None
+        return (int(r), int(d))
     return None
 
 
@@ -810,6 +836,8 @@ class PlanGenerator:
             history_override = _history_override_easy_long_spike(self.db, athlete_id)
 
         prev_mp_miles: Optional[int] = None
+        prev_threshold_continuous_min: Optional[int] = None
+        prev_threshold_intervals: Optional[Tuple[int, int]] = None
 
         for week in range(1, duration_weeks + 1):
             # Get phase for this week
@@ -871,6 +899,8 @@ class PlanGenerator:
                 easy_long_state=easy_long_state,
                 history_override=history_override,
                 prev_mp_miles=prev_mp_miles,
+                prev_threshold_continuous_min=prev_threshold_continuous_min,
+                prev_threshold_intervals=prev_threshold_intervals,
             )
             
             workouts.extend(week_workouts)
@@ -878,6 +908,12 @@ class PlanGenerator:
                 extracted = _extract_mp_miles_from_long_mp(w)
                 if extracted is not None:
                     prev_mp_miles = extracted
+                tc = _extract_threshold_continuous_minutes(w)
+                if tc is not None:
+                    prev_threshold_continuous_min = tc
+                ti = _extract_threshold_intervals_shape(w)
+                if ti is not None:
+                    prev_threshold_intervals = ti
         
         return workouts
     
@@ -948,6 +984,8 @@ class PlanGenerator:
         easy_long_state: Optional[Dict[str, Any]] = None,
         history_override: bool = False,
         prev_mp_miles: Optional[int] = None,
+        prev_threshold_continuous_min: Optional[int] = None,
+        prev_threshold_intervals: Optional[Tuple[int, int]] = None,
     ) -> List[GeneratedWorkout]:
         """Generate workouts for a single week."""
         week_workouts = []
@@ -1017,6 +1055,8 @@ class PlanGenerator:
                 previous_easy_long_mi=easy_long_state.get("previous_mi"),
                 history_override=history_override,
                 prev_mp_miles=prev_mp_miles,
+                prev_threshold_continuous_min=prev_threshold_continuous_min,
+                prev_threshold_intervals=prev_threshold_intervals,
             )
             
             # Add pace description if paces available

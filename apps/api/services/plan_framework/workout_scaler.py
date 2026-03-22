@@ -19,10 +19,15 @@ Usage:
 """
 
 import math
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
-from .workout_narrative import mp_long_option_a_copy, mp_long_option_b_copy
+from .workout_narrative import (
+    mp_long_option_a_copy,
+    mp_long_option_b_copy,
+    threshold_continuous_description,
+    threshold_intervals_description,
+)
 from .constants import (
     VolumeTier,
     Phase,
@@ -146,6 +151,8 @@ class WorkoutScaler:
         previous_easy_long_mi: Optional[float] = None,
         history_override: bool = False,
         prev_mp_miles: Optional[int] = None,
+        prev_threshold_continuous_min: Optional[int] = None,
+        prev_threshold_intervals: Optional[Tuple[int, int]] = None,
     ) -> ScaledWorkout:
         """
         Scale any workout type to athlete capacity.
@@ -183,13 +190,23 @@ class WorkoutScaler:
             )
         
         elif workout_type in ["threshold_intervals", "t_intervals"]:
-            return self._scale_threshold_intervals(weekly_volume, tier, week_in_phase)
+            return self._scale_threshold_intervals(
+                weekly_volume,
+                tier,
+                week_in_phase,
+                prev_intervals=prev_threshold_intervals,
+            )
         
         # Canonical: "threshold" is the Training Pace Calculator threshold (T pace).
         # We treat continuous threshold runs as workout_type="threshold" (not "tempo").
         # Back-compat: accept "tempo" as an alias but DO NOT emit it.
         elif workout_type in ["threshold", "t_run", "tempo"]:
-            return self._scale_threshold_continuous(weekly_volume, tier, week_in_phase)
+            return self._scale_threshold_continuous(
+                weekly_volume,
+                tier,
+                week_in_phase,
+                prev_continuous_min=prev_threshold_continuous_min,
+            )
         
         elif workout_type in ["long_mp", "marathon_pace_long"]:
             return self._scale_mp_long_run(
@@ -353,7 +370,9 @@ class WorkoutScaler:
         self,
         weekly_volume: float,
         tier: str,
-        week_in_phase: int
+        week_in_phase: int,
+        *,
+        prev_intervals: Optional[Tuple[int, int]] = None,
     ) -> ScaledWorkout:
         """
         Scale threshold intervals with progression.
@@ -396,12 +415,16 @@ class WorkoutScaler:
              "pace": "threshold", "distance_miles": t_miles},
             {"type": "cooldown", "distance_miles": 1.5, "pace": "easy"},
         ]
-        
+
+        description = threshold_intervals_description(
+            reps, duration, prev_intervals
+        )
+
         return ScaledWorkout(
             workout_type="threshold_intervals",
             category=WorkoutCategory.THRESHOLD,
             title=f"Threshold Intervals: {reps}x{duration} min",
-            description=f"{reps}x{duration} min at threshold pace with 2 min jog recovery",
+            description=description,
             total_distance_miles=round(3.5 + (reps * duration * 0.17), 1),
             duration_minutes=int(25 + reps * (duration + 2)),
             segments=segments,
@@ -413,7 +436,9 @@ class WorkoutScaler:
         self,
         weekly_volume: float,
         tier: str,
-        week_in_phase: int
+        week_in_phase: int,
+        *,
+        prev_continuous_min: Optional[int] = None,
     ) -> ScaledWorkout:
         """Scale continuous threshold run (T pace)."""
         # Max threshold volume
@@ -430,17 +455,22 @@ class WorkoutScaler:
         tempo_duration = max(tempo_duration, min_duration)
         
         total_distance = 3 + (tempo_duration * 0.17)  # WU/CD + tempo
-        
+
+        nmin = int(tempo_duration)
+        description = threshold_continuous_description(
+            nmin, prev_continuous_min
+        )
+
         return ScaledWorkout(
             workout_type="threshold",
             category=WorkoutCategory.THRESHOLD,
-            title=f"Threshold Run: {int(tempo_duration)} min",
-            description=f"Continuous {int(tempo_duration)} min at threshold pace",
+            title=f"Threshold Run: {nmin} min",
+            description=description,
             total_distance_miles=round(total_distance, 1),
             duration_minutes=int(25 + tempo_duration),
             segments=[
                 {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-                {"type": "threshold", "duration_min": int(tempo_duration), "pace": "threshold",
+                {"type": "threshold", "duration_min": nmin, "pace": "threshold",
                  "distance_miles": min(round(tempo_duration * 0.17, 1), math.floor(max_t_miles * 10) / 10.0)},
                 {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
             ],
