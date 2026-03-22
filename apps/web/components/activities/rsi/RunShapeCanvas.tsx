@@ -201,6 +201,57 @@ function computePaceDomainSmoothedSecPerKm(paces: number[]): [number, number] | 
   return [dMin, dMax];
 }
 
+/** Robust center for a small list of paces (s/km). */
+function medianOfNumbers(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 === 1 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
+}
+
+/**
+ * Display-only: median smooth + cap neighbor deltas so LTTB + GPS velocity glitches
+ * do not draw full-height "V" artifacts (see RSI visual QA).
+ */
+function applyRobustPaceSmoothingForDisplay(raw: ChartPoint[]): void {
+  const n = raw.length;
+  if (n === 0) return;
+
+  const window = Math.max(15, Math.round(n / 12));
+  const halfW = Math.floor(window / 2);
+
+  for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i - halfW);
+    const hi = Math.min(n - 1, i + halfW);
+    const chunk: number[] = [];
+    for (let j = lo; j <= hi; j++) {
+      if (raw[j].pace != null) chunk.push(raw[j].pace!);
+    }
+    const med = medianOfNumbers(chunk);
+    raw[i].smoothedPace = med;
+  }
+
+  const PACE_CHAIN_MAX_DELTA_S_KM = 20;
+  for (let i = 1; i < n; i++) {
+    const prev = raw[i - 1].smoothedPace;
+    let cur = raw[i].smoothedPace;
+    if (prev == null || cur == null) continue;
+    if (Math.abs(cur - prev) > PACE_CHAIN_MAX_DELTA_S_KM) {
+      cur = prev + Math.sign(cur - prev) * PACE_CHAIN_MAX_DELTA_S_KM;
+      raw[i].smoothedPace = cur;
+    }
+  }
+  for (let i = n - 2; i >= 0; i--) {
+    const next = raw[i + 1].smoothedPace;
+    let cur = raw[i].smoothedPace;
+    if (next == null || cur == null) continue;
+    if (Math.abs(cur - next) > PACE_CHAIN_MAX_DELTA_S_KM) {
+      cur = next + Math.sign(cur - next) * PACE_CHAIN_MAX_DELTA_S_KM;
+      raw[i].smoothedPace = cur;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // EffortGradientCanvas (AC-2: Canvas 2D, no SVG rects)
 // ---------------------------------------------------------------------------
@@ -862,19 +913,7 @@ export function RunShapeCanvas({
       adjustedPace: null as number | null,
     }));
 
-    // Centered moving average so the line reflects the run's shape, not GPS noise
-    const window = Math.max(3, Math.round(raw.length / 30));
-    const halfW = Math.floor(window / 2);
-    for (let i = 0; i < raw.length; i++) {
-      const lo = Math.max(0, i - halfW);
-      const hi = Math.min(raw.length - 1, i + halfW);
-      let sum = 0;
-      let count = 0;
-      for (let j = lo; j <= hi; j++) {
-        if (raw[j].pace != null) { sum += raw[j].pace!; count++; }
-      }
-      raw[i].smoothedPace = count > 0 ? sum / count : null;
-    }
+    applyRobustPaceSmoothingForDisplay(raw);
 
     if (heatAdjustmentPct != null && heatAdjustmentPct > 3) {
       const factor = 1 + (heatAdjustmentPct / 100);
