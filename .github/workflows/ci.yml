@@ -165,6 +165,41 @@ jobs:
           flags: backend
           fail_ci_if_error: false
 
+  plan-validation-strict:
+    name: Plan Validation Strict
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: apps/api/requirements.txt
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run strict plan validation matrix
+        working-directory: apps/api
+        env:
+          SECRET_KEY: test-secret-key-for-ci-at-least-32-chars
+          DEBUG: "false"
+          RATE_LIMIT_ENABLED: "false"
+          STRAVA_CLIENT_ID: "12345"
+          STRAVA_CLIENT_SECRET: "test-strava-secret-for-ci"
+          STRAVA_REDIRECT_URI: "http://localhost:3000/connect/strava/callback"
+          SENTRY_DSN: ""
+        run: |
+          pytest -q tests/test_plan_validation_matrix.py::TestPlanValidationMatrixStrict
+
   # ============================================================
   # Migration Integrity
   # ============================================================
