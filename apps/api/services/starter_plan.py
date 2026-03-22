@@ -264,6 +264,8 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
                 tier=tier.value,
                 days_per_week=days_per_week,
                 start_date=start_date,
+                athlete_id=athlete.id,
+                use_history=True,
             )
         if is_cold_start:
             plan = _apply_cold_start_guardrails(plan)
@@ -281,6 +283,8 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
                     tier=tier.value,
                     days_per_week=days_per_week,
                     start_date=start_date,
+                    athlete_id=athlete.id,
+                    use_history=True,
                 )
                 plan = _apply_cold_start_guardrails(plan)
                 gate2 = evaluate_starter_plan_quality(plan)

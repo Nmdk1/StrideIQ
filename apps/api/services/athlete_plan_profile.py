@@ -39,6 +39,9 @@ logger = logging.getLogger(__name__)
 # The physiological threshold where glycogen depletion drives long-run-specific
 # adaptations: mitochondrial biogenesis, fat oxidation, capillarization.
 # See ADR-061 Question 1 for the science.
+# NOTE (P4 dual threshold): plan_framework `load_context` uses **90 min** for
+# L30 easy-long max (PLAN_COACHED D1). This 105 min gate is **profile-only**;
+# do not merge without a spec revision.
 LONG_RUN_DURATION_THRESHOLD_MIN = 105
 
 # Data sufficiency thresholds

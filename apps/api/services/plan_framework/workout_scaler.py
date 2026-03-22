@@ -152,6 +152,7 @@ class WorkoutScaler:
         is_cutback: bool = False,
         previous_easy_long_mi: Optional[float] = None,
         history_override: bool = False,
+        easy_long_floor_mi: Optional[float] = None,
         prev_mp_miles: Optional[int] = None,
         prev_threshold_continuous_min: Optional[int] = None,
         prev_threshold_intervals: Optional[Tuple[int, int]] = None,
@@ -189,6 +190,7 @@ class WorkoutScaler:
                 is_cutback=is_cutback,
                 previous_easy_long_mi=previous_easy_long_mi,
                 history_override=history_override,
+                easy_long_floor_mi=easy_long_floor_mi,
             )
         
         elif workout_type in ["threshold_intervals", "t_intervals"]:
@@ -289,6 +291,7 @@ class WorkoutScaler:
         is_cutback: bool = False,
         previous_easy_long_mi: Optional[float] = None,
         history_override: bool = False,
+        easy_long_floor_mi: Optional[float] = None,
     ) -> ScaledWorkout:
         """Scale easy long run (`workout_type` long / long_run) — aerobic only."""
         goal = _parse_goal_distance(distance)
@@ -343,6 +346,10 @@ class WorkoutScaler:
             target = min(curve, spike_cap)
         else:
             target = curve
+
+        # P4: first planned easy long — floor from L30 vs tier start (generator passes once).
+        if easy_long_floor_mi is not None and previous_easy_long_mi is None:
+            target = max(target, float(easy_long_floor_mi))
 
         target = min(target, weekly_soft_cap, peak)
         target = max(float(MIN_STANDARD_EASY_LONG_MILES), target)

@@ -37,6 +37,12 @@ from .workout_scaler import WorkoutScaler, ScaledWorkout
 from .workout_variant_dispatch import resolve_workout_variant_id
 from .pace_engine import PaceEngine, TrainingPaces
 from .cache import PlanCacheService
+from .load_context import (
+    build_load_context,
+    compute_d4_long_run_override_and_stats,
+    easy_long_floor_miles_from_l30,
+    effective_starting_weekly_miles_semi_custom,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,47 +76,6 @@ def _easy_fill_adjacency_weight(day: int, by_day: Dict[int, Any]) -> float:
     if before_long:
         return 0.8
     return 1.2
-
-
-def _history_override_easy_long_spike(db: Session, athlete_id: UUID) -> bool:
-    """
-    D4 (PLAN_COACHED_OUTPUT_AND_LOAD_CONTRACT): ≥8 runs ≥15mi lifetime window
-    and ≥18mi within last 120 days — musculoskeletal 'memory' for long distance.
-    """
-    try:
-        from datetime import datetime, timezone, timedelta
-        from services.mileage_aggregation import get_canonical_run_activities
-
-        end = datetime.now(timezone.utc)
-        start = end - timedelta(days=730)
-        acts, _ = get_canonical_run_activities(
-            athlete_id,
-            db,
-            start_time=start,
-            require_trusted_duplicate_flags=False,
-        )
-        count15 = 0
-        last18 = None
-        for a in acts:
-            wt_raw = getattr(a, "workout_type", None) or ""
-            wt = str(wt_raw).lower()
-            if wt == "race":
-                continue
-            if getattr(a, "is_race_candidate", False):
-                continue
-            mi = (a.distance_m or 0) / 1609.344
-            if mi >= 15:
-                count15 += 1
-            if mi >= 18:
-                d = a.start_time.date()
-                if last18 is None or d > last18:
-                    last18 = d
-        if count15 < 8 or last18 is None:
-            return False
-        days = (date.today() - last18).days
-        return days <= 120
-    except Exception:
-        return False
 
 
 @dataclass
@@ -335,6 +300,8 @@ class PlanGenerator:
         start_date: date = None,
         recent_race_distance: str = None,
         recent_race_time_seconds: int = None,
+        athlete_id: Optional[UUID] = None,
+        use_history: bool = False,
     ) -> GeneratedPlan:
         """
         Generate a standard (free) training plan.
@@ -362,6 +329,34 @@ class PlanGenerator:
             VolumeTier(tier),
             distance
         )
+
+        starting_volume = float(tier_params["min_weekly_miles"])
+        p4_floor: Optional[float] = None
+        p4_ho: Optional[bool] = None
+        std_athlete_id: Optional[UUID] = None
+        if (
+            use_history
+            and athlete_id is not None
+            and self.db is not None
+        ):
+            std_athlete_id = athlete_id
+            plan_ref = start_date if start_date is not None else date.today()
+            try:
+                lc = build_load_context(athlete_id, self.db, plan_ref)
+                if lc.observed_recent_weekly_miles is not None:
+                    obs = float(lc.observed_recent_weekly_miles)
+                    raw = max(starting_volume, obs)
+                    cap = min(
+                        obs * 1.15,
+                        float(tier_params["max_weekly_miles"]),
+                    )
+                    starting_volume = min(raw, cap)
+                p4_floor = easy_long_floor_miles_from_l30(
+                    lc.l30_max_easy_long_mi, distance, tier
+                )
+                p4_ho = lc.history_override_easy_long
+            except Exception as ex:
+                logger.warning("P4 load_context (standard) failed, cold template: %s", ex)
         
         # Build phases
         phases = self.phase_builder.build_phases(
@@ -374,7 +369,7 @@ class PlanGenerator:
         weekly_volumes = self.tier_classifier.calculate_volume_progression(
             tier=VolumeTier(tier),
             distance=distance,
-            starting_volume=tier_params["min_weekly_miles"],
+            starting_volume=starting_volume,
             plan_weeks=duration_weeks,
             taper_weeks=2
         )
@@ -389,8 +384,10 @@ class PlanGenerator:
             weekly_volumes=weekly_volumes,
             start_date=start_date,
             paces=paces,
-            athlete_id=None,
-            current_weekly_miles=None,
+            athlete_id=std_athlete_id,
+            current_weekly_miles=starting_volume if std_athlete_id else None,
+            p4_easy_long_floor_mi=p4_floor,
+            p4_history_override=p4_ho,
         )
         
         # Calculate totals
@@ -440,14 +437,59 @@ class PlanGenerator:
         - Environmental considerations
         """
         logger.info(f"Generating semi-custom plan: {distance} for {race_date}")
-        
-        # Classify volume tier
-        tier = self.tier_classifier.classify(
-            current_weekly_miles=current_weekly_miles,
-            goal_distance=distance,
-            athlete_id=athlete_id
-        )
-        
+
+        start_date = race_date - timedelta(weeks=duration_weeks - 1, days=6)
+
+        p4_floor: Optional[float] = None
+        p4_ho: Optional[bool] = None
+        load_ctx = None
+        effective_mpw = float(current_weekly_miles)
+
+        if athlete_id is not None and self.db is not None:
+            try:
+                load_ctx = build_load_context(athlete_id, self.db, start_date)
+                obs = load_ctx.observed_recent_weekly_miles
+                quick_mpw = (
+                    max(float(current_weekly_miles), float(obs))
+                    if obs is not None
+                    else float(current_weekly_miles)
+                )
+                tier_guess = self.tier_classifier.classify(
+                    current_weekly_miles=quick_mpw,
+                    goal_distance=distance,
+                    athlete_id=None,
+                    consider_history=False,
+                )
+                tmax = self.tier_classifier.get_tier_params(tier_guess, distance)[
+                    "max_weekly_miles"
+                ]
+                effective_mpw = effective_starting_weekly_miles_semi_custom(
+                    float(current_weekly_miles), load_ctx, float(tmax)
+                )
+                tier = self.tier_classifier.classify(
+                    current_weekly_miles=effective_mpw,
+                    goal_distance=distance,
+                    athlete_id=None,
+                    consider_history=False,
+                )
+                p4_floor = easy_long_floor_miles_from_l30(
+                    load_ctx.l30_max_easy_long_mi, distance, tier.value
+                )
+                p4_ho = load_ctx.history_override_easy_long
+            except Exception as ex:
+                logger.warning("P4 load_context (semi-custom) failed: %s", ex)
+                load_ctx = None
+
+        if load_ctx is None:
+            tier = self.tier_classifier.classify(
+                current_weekly_miles=current_weekly_miles,
+                goal_distance=distance,
+                athlete_id=athlete_id,
+            )
+            effective_mpw = float(current_weekly_miles)
+            p4_floor = None
+            p4_ho = None
+
         # Calculate paces if race time provided
         paces = None
         rpi = None
@@ -458,26 +500,23 @@ class PlanGenerator:
             )
             if paces:
                 rpi = paces.rpi
-        
-        # Calculate start date from race date
-        start_date = race_date - timedelta(weeks=duration_weeks - 1, days=6)
-        
+
         # Build phases
         phases = self.phase_builder.build_phases(
             distance=distance,
             duration_weeks=duration_weeks,
             tier=tier.value
         )
-        
-        # Calculate volume progression from current
+
+        # Calculate volume progression from effective start (P4 merge when present)
         weekly_volumes = self.tier_classifier.calculate_volume_progression(
             tier=tier,
             distance=distance,
-            starting_volume=current_weekly_miles,
+            starting_volume=effective_mpw,
             plan_weeks=duration_weeks,
             taper_weeks=2
         )
-        
+
         # Generate workouts
         workouts = self._generate_workouts(
             distance=distance,
@@ -489,7 +528,9 @@ class PlanGenerator:
             start_date=start_date,
             paces=paces,
             athlete_id=athlete_id,
-            current_weekly_miles=current_weekly_miles,
+            current_weekly_miles=effective_mpw,
+            p4_easy_long_floor_mi=p4_floor,
+            p4_history_override=p4_ho,
         )
         
         # Calculate totals
@@ -780,9 +821,13 @@ class PlanGenerator:
         paces: Optional[TrainingPaces],
         athlete_id: Optional[UUID] = None,
         current_weekly_miles: Optional[float] = None,
+        p4_easy_long_floor_mi: Optional[float] = None,
+        p4_history_override: Optional[bool] = None,
     ) -> List[GeneratedWorkout]:
         """Generate all workouts for the plan."""
         workouts = []
+
+        plan_ref_date = start_date if start_date is not None else date.today()
 
         # Lightweight athlete context for rule-based personalization.
         athlete_ctx = {"experienced_high_volume": False, "age_years": None}
@@ -830,10 +875,19 @@ class PlanGenerator:
         mp_long_run_count = 0
         hmp_long_run_count = 0
 
-        easy_long_state: Dict[str, Any] = {"previous_mi": None}
-        history_override = False
-        if athlete_id and self.db:
-            history_override = _history_override_easy_long_spike(self.db, athlete_id)
+        easy_long_state: Dict[str, Any] = {
+            "previous_mi": None,
+            "floor_mi": p4_easy_long_floor_mi,
+            "floor_applied": False,
+        }
+        if p4_history_override is not None:
+            history_override = bool(p4_history_override)
+        elif athlete_id and self.db:
+            history_override = compute_d4_long_run_override_and_stats(
+                self.db, athlete_id, plan_ref_date
+            )[0]
+        else:
+            history_override = False
 
         prev_mp_miles: Optional[int] = None
         prev_threshold_continuous_min: Optional[int] = None
@@ -1039,6 +1093,14 @@ class PlanGenerator:
                 tier=tier,
             )
             
+            easy_long_floor_for: Optional[float] = None
+            if (
+                not easy_long_state.get("floor_applied")
+                and easy_long_state.get("floor_mi") is not None
+                and easy_long_state.get("previous_mi") is None
+            ):
+                easy_long_floor_for = easy_long_state.get("floor_mi")
+
             # Scale the workout
             scaled = self.workout_scaler.scale_workout(
                 workout_type=actual_workout_type,
@@ -1054,6 +1116,7 @@ class PlanGenerator:
                 is_cutback=is_cutback,
                 previous_easy_long_mi=easy_long_state.get("previous_mi"),
                 history_override=history_override,
+                easy_long_floor_mi=easy_long_floor_for,
                 prev_mp_miles=prev_mp_miles,
                 prev_threshold_continuous_min=prev_threshold_continuous_min,
                 prev_threshold_intervals=prev_threshold_intervals,
@@ -1117,6 +1180,7 @@ class PlanGenerator:
 
             if actual_workout_type == "long":
                 easy_long_state["previous_mi"] = float(workout.distance_miles or 0)
+                easy_long_state["floor_applied"] = True
         
         # --- Volume Fill: weighted easy miles (P2) — same weekly total, textured days ---
         self._apply_weighted_easy_volume_fill(week_workouts, weekly_volume)

@@ -265,6 +265,8 @@ async def preview_standard_plan(
         tier=request.volume_tier,
         days_per_week=request.days_per_week,
         start_date=request.start_date,
+        athlete_id=athlete.id if athlete else None,
+        use_history=athlete is not None,
     )
 
     show_paces = (
@@ -295,6 +297,8 @@ async def create_standard_plan(
         tier=request.volume_tier,
         days_per_week=request.days_per_week,
         start_date=request.start_date or date.today(),
+        athlete_id=athlete.id,
+        use_history=True,
     )
     
     # Save to database

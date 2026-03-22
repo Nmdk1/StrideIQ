@@ -101,7 +101,7 @@ Current validators use **long ≤ ~30% of week**. Treat as:
 
 **8 mi floor vs 35% weekly soft cap (explicit):** Order in scaler is `min(..., weekly_soft_cap)` **then** `max(MIN_STANDARD_EASY_LONG_MILES, ...)`. On very low-volume weeks the **8 mi floor can exceed 35% of weekly miles** (founder policy: no shorter standard easy long). Relaxed `B1-LR-PCT` may warn/fail until validator tiering matches this policy — do not “fix” by silently dropping below 8 without founder sign-off.
 
-**Remaining (P4):** merge `L30_max_easy_long` into baseline when generating from synced history.
+**P4 (implemented):** `L30_max_easy_long` + observed mpw merge for **semi-custom** and **authenticated standard** (`use_history`) per `docs/specs/P4_LOAD_CONTEXT_TECHNICAL_SPEC.md`. **Delivery / process:** `docs/specs/P4_LOAD_CONTEXT_SCOPE_AND_PROCESS.md`.
 
 ### P2 — Weighted easy fill (`generator.py`) — **implemented**
 
