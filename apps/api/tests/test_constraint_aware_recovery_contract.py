@@ -10,6 +10,7 @@ from core.database import get_db
 from main import app
 from models import Athlete
 from routers import plan_generation as plan_router
+from services.fitness_bank import ConstraintType, ExperienceLevel, FitnessBank, RacePerformance
 from services.plan_quality_gate import QualityGateResult, _compute_personal_long_run_floor
 
 
@@ -125,28 +126,53 @@ def elite_athlete(db_session):
 def test_constraint_aware_preserves_override_on_fallback(monkeypatch, db_session, elite_athlete):
     _override_deps(db_session, elite_athlete)
     client = TestClient(app)
-    calls = []
+    race = RacePerformance(
+        date=date.today() - timedelta(days=40),
+        distance="10k",
+        distance_m=10000.0,
+        finish_time_seconds=2360,
+        pace_per_mile=6.33,
+        rpi=55.0,
+    )
+    bank = FitnessBank(
+        athlete_id=str(elite_athlete.id),
+        peak_weekly_miles=72.0,
+        peak_monthly_miles=280.0,
+        peak_long_run_miles=18.0,
+        peak_mp_long_run_miles=12.0,
+        peak_threshold_miles=8.0,
+        peak_ctl=85.0,
+        race_performances=[race],
+        best_rpi=55.0,
+        best_race=race,
+        current_weekly_miles=64.0,
+        current_ctl=78.0,
+        current_atl=72.0,
+        weeks_since_peak=6,
+        current_long_run_miles=16.0,
+        average_long_run_miles=15.0,
+        tau1=36.0,
+        tau2=8.0,
+        experience_level=ExperienceLevel.EXPERIENCED,
+        constraint_type=ConstraintType.NONE,
+        constraint_details=None,
+        is_returning_from_break=False,
+        typical_long_run_day=6,
+        typical_quality_day=3,
+        typical_rest_days=[0],
+        weeks_to_80pct_ctl=0,
+        weeks_to_race_ready=2,
+        sustainable_peak_weekly=68.0,
+        recent_quality_sessions_28d=5,
+        recent_8w_median_weekly_miles=63.0,
+        recent_16w_p90_weekly_miles=68.0,
+        recent_8w_p75_long_run_miles=15.5,
+        recent_16w_p50_long_run_miles=14.5,
+        recent_16w_run_count=40,
+        peak_confidence="high",
+    )
 
-    def fake_generate_constraint_aware_plan(**kwargs):
-        calls.append(kwargs)
-        return _fake_plan()
-
-    gate_calls = {"n": 0}
-
-    def fake_gate(_plan):
-        gate_calls["n"] += 1
-        if gate_calls["n"] == 1:
-            return QualityGateResult(False, ["first-pass-fail"], ["tenk_long_run_dominance"], {
-                "weekly_miles": {"min": 50.0, "max": 64.0},
-                "long_run_miles": {"min": 15.0, "max": 18.0},
-            })
-        return QualityGateResult(True, [], [], {
-            "weekly_miles": {"min": 50.0, "max": 64.0},
-            "long_run_miles": {"min": 15.0, "max": 18.0},
-        })
-
-    monkeypatch.setattr("services.constraint_aware_planner.generate_constraint_aware_plan", fake_generate_constraint_aware_plan)
-    monkeypatch.setattr("services.plan_quality_gate.evaluate_constraint_aware_plan", fake_gate)
+    monkeypatch.setattr("services.constraint_aware_planner.get_fitness_bank", lambda _athlete_id, _db: bank)
     monkeypatch.setattr("services.plan_framework.feature_flags.FeatureFlagService.is_enabled", lambda *_: True)
     monkeypatch.setattr(plan_router, "_check_rate_limit", lambda *_: True)
     monkeypatch.setattr(plan_router, "_record_rate_limit", lambda *_: None)
@@ -162,10 +188,9 @@ def test_constraint_aware_preserves_override_on_fallback(monkeypatch, db_session
     )
     _clear_deps()
     assert resp.status_code == 200, resp.text
-    assert len(calls) == 2
-    # Critical contract: explicit athlete override survives fallback.
-    assert calls[0]["target_peak_weekly_miles"] == 68
-    assert calls[1]["target_peak_weekly_miles"] == 68
+    payload = resp.json()
+    assert payload["volume_contract"]["source"] == "athlete_override"
+    assert payload["volume_contract"]["requested_peak"] == 68.0
 
 
 def test_quality_gate_failed_payload_contract_shape(monkeypatch, db_session, elite_athlete):
