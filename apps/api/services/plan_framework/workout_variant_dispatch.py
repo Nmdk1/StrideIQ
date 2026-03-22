@@ -13,15 +13,29 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-REGISTRY_PATH = (
-    REPO_ROOT
-    / "_AI_CONTEXT_"
-    / "KNOWLEDGE_BASE"
-    / "workouts"
-    / "variants"
-    / "workout_registry.json"
-)
+
+def _resolve_registry_path() -> Path:
+    """
+    Monorepo dev: registry lives at repo root under _AI_CONTEXT_/...
+    Docker (context apps/api): tree stops at /app — walk parents until found or
+    return a non-existent path (resolve_workout_variant_id returns None).
+    """
+    here = Path(__file__).resolve()
+    for anc in here.parents:
+        cand = (
+            anc
+            / "_AI_CONTEXT_"
+            / "KNOWLEDGE_BASE"
+            / "workouts"
+            / "variants"
+            / "workout_registry.json"
+        )
+        if cand.is_file():
+            return cand
+    return here.parent / ".workout_registry_not_bundled.json"
+
+
+REGISTRY_PATH = _resolve_registry_path()
 
 _THR_INT_TITLE_RE = re.compile(
     r"Threshold Intervals:\s*(\d+)x(\d+)\s*min", re.IGNORECASE
