@@ -77,7 +77,7 @@ Let `L = l30_max_easy_long_mi`.
 
 - If `L is None`: `seed_long = tier_start_long` (no change).
 - Else: `seed_long = max(L, tier_start_long)`.
-- Pass **`easy_long_floor_mi`** into `_scale_long_run` for the **first** easy long only (`previous_easy_long_mi is None`). **Ordering vs 35% soft cap:** apply **`min(..., weekly_soft_cap, peak)`** then **`max(MIN_STANDARD_EASY_LONG_MILES, ...)`** then **`max(..., easy_long_floor_mi)`** then **`min(..., peak)`** — same “floor may exceed soft cap” contract as the 8 mi policy in `PLAN_COACHED_OUTPUT_AND_LOAD_CONTRACT.md`.
+- Pass **`easy_long_floor_mi`** into `_scale_long_run` for the **first** easy long only (`previous_easy_long_mi is None`). **Ordering vs 35% soft cap:** apply **`min(..., weekly_soft_cap, peak)`** then **`max(MIN_STANDARD_EASY_LONG_MILES, ...)`** then **`max(..., easy_long_floor_mi)`** then **`min(..., max(peak, easy_long_floor_mi))`** — floor may exceed both soft cap and nominal tier peak when history proves a higher easy long.
 
 **In-plan weeks 2+:** Unchanged P1 chain: compare to **previous planned** easy long.
 
@@ -87,7 +87,7 @@ Let `L = l30_max_easy_long_mi`.
 
 ### 4.4 Athlete context signal (experienced / VO2 gates)
 
-`effective_start_mpw` may be **capped below** the questionnaire when `min(raw, obs × C_upper)` applies. **Rule:** `experienced_high_volume` (and similar gates in `_generate_workouts`) use **`max(effective_start_mpw, questionnaire_mpw)`** so a self-reported high-mileage athlete is not misclassified when observed 4w mpw is lower.
+`effective_start_mpw` may be **capped below** the questionnaire when `min(raw, obs × C_upper)` applies. **Rule:** `experienced_high_volume` (and similar gates in `_generate_workouts`) use **`max(effective_start_mpw, questionnaire_mpw)`** (`quality_volume_signal` in code) so a self-reported high-mileage athlete is not misclassified when observed 4w mpw is lower. **VO2 “touch” scheduling** in `WorkoutScaler._scale_intervals` / `_get_primary_quality` uses the same signal vs **`weekly_volume`** for the ≥60 mpw gate so early-week progression volume does not suppress intervals.
 
 ---
 

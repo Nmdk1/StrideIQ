@@ -870,6 +870,7 @@ class PlanGenerator:
                     else vol
                 )
                 ctx_vol_signal = max(vol, rep)
+                athlete_ctx["quality_volume_signal"] = ctx_vol_signal
                 athlete_ctx["experienced_high_volume"] = bool(
                     ctx_vol_signal >= 60
                     and (age_years is None or age_years < 50)
@@ -1445,7 +1446,8 @@ class PlanGenerator:
                 return "easy_strides"
             # Marathon / Half marathon base: strides/hills.
             # For high-mileage, experienced athletes, include periodic VO2 touches early.
-            if athlete_ctx.get("experienced_high_volume") and weekly_volume >= 60 and week_in_phase % 2 == 0:
+            qv = float(athlete_ctx.get("quality_volume_signal") or weekly_volume)
+            if athlete_ctx.get("experienced_high_volume") and qv >= 60 and week_in_phase % 2 == 0:
                 return "intervals"
             return "hills" if week_in_phase % 2 == 0 else "easy_strides"
         
@@ -1517,7 +1519,8 @@ class PlanGenerator:
 
         # For Marathon, secondary quality is usually a "touch" session.
         # Use VO2 touches early in the specific block for experienced high-volume athletes.
-        if athlete_ctx.get("experienced_high_volume") and weekly_volume >= 60 and phase_type == "marathon_specific":
+        qv = float(athlete_ctx.get("quality_volume_signal") or weekly_volume)
+        if athlete_ctx.get("experienced_high_volume") and qv >= 60 and phase_type == "marathon_specific":
             # Every other week early in MP integration (touch only).
             if week_in_phase <= 2 and week_in_phase % 2 == 1:
                 return "intervals"

@@ -352,8 +352,13 @@ class WorkoutScaler:
         # P4 week-1 seed max(L30, tier_start): apply after soft cap, same contract as
         # MIN_STANDARD_EASY_LONG_MILES vs 35% (PLAN_COACHED — floor may exceed soft cap).
         if easy_long_floor_mi is not None and previous_easy_long_mi is None:
-            target = max(target, float(easy_long_floor_mi))
-        target = min(target, peak)
+            fl = float(easy_long_floor_mi)
+            target = max(target, fl)
+            # Tier peak can sit below L30 seed (e.g. low peak_long_miles); do not clip floor.
+            peak_cap = max(float(peak), fl)
+        else:
+            peak_cap = float(peak)
+        target = min(target, peak_cap)
         mi = math.floor(target)
 
         desc = "Easy effort throughout. Build endurance through time on feet."
@@ -747,6 +752,7 @@ class WorkoutScaler:
 
         athlete_ctx = athlete_ctx or {}
         experienced_high_volume = bool(athlete_ctx.get("experienced_high_volume"))
+        qv = float(athlete_ctx.get("quality_volume_signal") or weekly_volume)
 
         # --- 5K VO2max progression (Phase 1G): caps at 1000m ---
         if distance == "5k":
@@ -762,7 +768,7 @@ class WorkoutScaler:
 
         # For high-volume contexts early in cycle, short reps are a safer VO2 “touch”
         # while still delivering meaningful ceiling work.
-        if phase_norm in ("base_speed", "base") and weekly_volume >= 60 and experienced_high_volume:
+        if phase_norm in ("base_speed", "base") and qv >= 60 and experienced_high_volume:
             rep_miles = 400 / 1609.344  # 400m in miles
             reps = int(max_i_miles / rep_miles) if rep_miles > 0 else 12
             reps = max(10, min(16, reps))
