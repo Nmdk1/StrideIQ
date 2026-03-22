@@ -5,7 +5,7 @@ New plan generation system using the modular framework.
 
 Endpoints for:
 - Standard plans (free, fixed templates)
-- Semi-custom plans ($5, personalized)
+- Semi-custom plans (subscriber personalization)
 - Custom plans (subscription)
 - Plan previews (for review before purchase)
 """
@@ -82,7 +82,7 @@ class SemiCustomPlanRequest(BaseModel):
 
 
 class CustomPlanRequest(BaseModel):
-    """Request for a fully custom plan (subscription required)."""
+    """Request for a fully custom plan (subscriber access required)."""
     distance: str
     race_date: date
     days_per_week: int = Field(6, ge=4, le=7)
@@ -172,6 +172,26 @@ class EntitlementsResponse(BaseModel):
 
 # ============ Endpoints ============
 
+
+def _has_paid_subscription_access(athlete: Optional[Athlete]) -> bool:
+    """Canonical paid-access check for plan pace/modification/model gates.
+
+    Uses active-subscription state first, then tier aliases for migration safety.
+    """
+    if athlete is None:
+        return False
+    if getattr(athlete, "role", None) in ("admin", "owner"):
+        return True
+    if getattr(athlete, "has_active_subscription", False):
+        return True
+
+    tier_raw = str(getattr(athlete, "subscription_tier", "") or "").strip().lower()
+    if tier_raw in {"subscriber", "guided", "premium", "elite", "pro", "subscription"}:
+        return True
+
+    from core.tier_utils import tier_satisfies
+    return tier_satisfies(getattr(athlete, "subscription_tier", None), "guided")
+
 @router.get("/entitlements", response_model=EntitlementsResponse)
 async def get_entitlements(
     athlete: Athlete = Depends(get_current_athlete),
@@ -236,8 +256,8 @@ async def preview_standard_plan(
     """
     Generate a preview of a standard plan.
 
-    Public endpoint — no auth required.  Paces are blurred for unauthenticated
-    users and free-tier athletes.  Guided/Premium athletes see full paces.
+    Public endpoint — no auth required. Pace targets are hidden for
+    unauthenticated and free-tier athletes.
     """
     # Validate inputs
     try:
@@ -257,7 +277,6 @@ async def preview_standard_plan(
         )
     
     # Generate plan
-    from core.tier_utils import tier_satisfies as _ts
     generator = PlanGenerator(db)
     plan = generator.generate_standard(
         distance=request.distance,
@@ -269,14 +288,7 @@ async def preview_standard_plan(
         use_history=athlete is not None,
     )
 
-    show_paces = (
-        athlete is not None
-        and (
-            getattr(athlete, "role", None) in ("admin", "owner")
-            or getattr(athlete, "has_active_subscription", False)
-            or _ts(getattr(athlete, "subscription_tier", None), "guided")
-        )
-    )
+    show_paces = _has_paid_subscription_access(athlete)
     return _plan_to_preview(plan, show_paces=show_paces)
 
 
@@ -321,11 +333,8 @@ async def preview_semi_custom_plan(
     Generate a preview of a semi-custom plan.
 
     Includes personalized paces if race time provided.
-    Authentication optional. Paces shown only for Guided/Premium athletes;
-    blurred for free/unauthenticated users.
+    Authentication optional. Pace targets are shown only for eligible tiers.
     """
-    from core.tier_utils import tier_satisfies as _ts
-
     # Calculate duration from race date
     today = date.today()
     if request.race_date <= today:
@@ -347,14 +356,7 @@ async def preview_semi_custom_plan(
         athlete_id=athlete.id if athlete else None,
     )
 
-    show_paces = (
-        athlete is not None
-        and (
-            getattr(athlete, "role", None) in ("admin", "owner")
-            or getattr(athlete, "has_active_subscription", False)
-            or _ts(getattr(athlete, "subscription_tier", None), "guided")
-        )
-    )
+    show_paces = _has_paid_subscription_access(athlete)
     return _plan_to_preview(plan, show_paces=show_paces)
 
 
@@ -366,8 +368,8 @@ async def create_semi_custom_plan(
 ):
     """
     Create and save a semi-custom plan.
-    
-    Requires payment ($5).
+
+    Requires an eligible paid tier.
     """
     # Check entitlements
     flags = FeatureFlagService(db)
@@ -502,7 +504,7 @@ async def get_plan_options():
         ],
         "tiers": [
             {"value": "standard", "label": "Standard", "price": 0, "description": "Fixed template, effort descriptions"},
-            {"value": "semi_custom", "label": "Semi-Custom", "price": 5, "description": "Personalized paces, fitted to race date"},
+            {"value": "semi_custom", "label": "Semi-Custom", "price": "subscription", "description": "Personalized paces, fitted to race date"},
             {"value": "custom", "label": "Custom", "price": "subscription", "description": "Full personalization, dynamic adaptation"},
         ],
     }
@@ -514,8 +516,8 @@ def _plan_to_preview(plan: GeneratedPlan, show_paces: bool = False) -> PlanPrevi
     """Convert GeneratedPlan to preview response.
 
     ``show_paces`` controls whether pace_description is included in workout
-    dicts.  Defaults to False (blurred) — callers must explicitly opt in by
-    checking the athlete's tier or purchase status.
+    dicts. Defaults to False — callers must explicitly opt in by
+    checking athlete entitlements.
     """
     return PlanPreview(
         plan_tier=plan.plan_tier.value,
@@ -1019,8 +1021,8 @@ async def get_plan(
     Get full plan details.
 
     Returns the plan with all weeks and workouts.  Pace target fields
-    (coach_notes) are nulled for free athletes who have not purchased this
-    plan.  Plan structure (workout type, title, description, distance) is
+    (coach_notes) are hidden for ineligible tiers. Plan structure
+    (workout type, title, description, distance) is
     always returned.
     """
     from core.pace_access import can_access_plan_paces
@@ -1368,16 +1370,14 @@ async def get_week_workouts(
 # ============ Full Workout Control (Paid Tier) ============
 
 def _check_paid_tier(athlete: Athlete, db: Session) -> bool:
-    """Check if athlete has paid tier access for plan modifications (guided+).
+    """Check if athlete has paid-tier access for plan modifications.
 
     Uses the canonical tier hierarchy from core.tier_utils so that legacy tier
-    names (pro, elite, subscription) are normalised correctly.  Falls back to a
+    names are normalized correctly. Falls back to a
     DB check for athletes who paid for a semi-custom/custom plan before the
     subscription model existed.
     """
-    from core.tier_utils import tier_satisfies
-
-    if tier_satisfies(athlete.subscription_tier, "guided"):
+    if _has_paid_subscription_access(athlete):
         return True
 
     # Legacy fallback: athletes who bought a semi-custom or custom plan
@@ -1888,7 +1888,7 @@ async def create_model_driven_plan(
     3. Personalize taper based on pre-race fingerprint
     4. Predict race time from fitness trajectory
     
-    ELITE TIER ONLY. Rate limited to 5 requests/day.
+    Paid subscription required. Rate limited to 5 requests/day.
     """
     import logging
     from datetime import datetime
@@ -1902,17 +1902,17 @@ async def create_model_driven_plan(
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Model-driven plans require Elite subscription",
+                "reason": "Model-driven plans require an active paid subscription",
                 "upgrade_path": "/pricing"
             }
         )
     
-    # Check tier
-    if athlete.subscription_tier not in ("elite", "premium", "guided"):
+    # Check paid entitlement
+    if not _has_paid_subscription_access(athlete):
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Model-driven plans require Elite subscription",
+                "reason": "Model-driven plans require an active paid subscription",
                 "upgrade_path": "/pricing"
             }
         )
@@ -2243,7 +2243,7 @@ async def create_constraint_aware_plan(
     5. Prescribe specific workouts ("2x3mi @ 6:25" not "threshold work")
     6. Handle tune-up races with proper coordination
     
-    ELITE TIER ONLY. Rate limited to 5 requests/day.
+    Paid subscription required. Rate limited to 5 requests/day.
     
     Key Features:
     - Respects your detected training patterns (Sunday long runs, Thursday quality)
@@ -2263,17 +2263,17 @@ async def create_constraint_aware_plan(
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Constraint-aware plans require Elite subscription",
+                "reason": "Constraint-aware plans require an active paid subscription",
                 "upgrade_path": "/pricing"
             }
         )
     
-    # Check tier
-    if athlete.subscription_tier not in ("elite", "premium", "guided"):
+    # Check paid entitlement
+    if not _has_paid_subscription_access(athlete):
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Constraint-aware plans require Elite subscription",
+                "reason": "Constraint-aware plans require an active paid subscription",
                 "upgrade_path": "/pricing"
             }
         )

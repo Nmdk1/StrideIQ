@@ -12,8 +12,8 @@ from typing import Dict, List
 class PlanTier(str, Enum):
     """Plan pricing/access tiers."""
     STANDARD = "standard"      # Free, fixed templates
-    SEMI_CUSTOM = "semi"       # $5, questionnaire-based
-    CUSTOM = "custom"          # Subscription, full personalization
+    SEMI_CUSTOM = "semi"       # Guided personalization
+    CUSTOM = "custom"          # Premium personalization
 
 
 class VolumeTier(str, Enum):

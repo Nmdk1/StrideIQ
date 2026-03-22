@@ -681,6 +681,22 @@ class PlanGenerator:
                         logger.info(f"Calculated RPI from Strava race: {rpi:.1f}")
         
         # Priority 3: Strava training estimate (conservative)
+        recent_activities = []
+        if not paces:
+            if self.db is not None:
+                recent_activities = (
+                    self.db.query(Activity)
+                    .filter(
+                        Activity.athlete_id == athlete_id,
+                        Activity.sport.ilike("run"),
+                        Activity.start_time >= race_date - td(weeks=12),
+                    )
+                    .order_by(Activity.start_time.desc())
+                    .limit(20)
+                    .all()
+                )
+            else:
+                recent_activities = []
         if not paces and recent_activities:
             best_run = max(recent_activities, key=lambda a: (a.distance_m or 0) / (a.moving_time_s or 1))
             if best_run.distance_m and best_run.moving_time_s:

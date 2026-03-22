@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from datetime import date
 from uuid import uuid4
 
 from core.database import SessionLocal
 from models import Athlete, TrainingPlan, AthleteRaceResultAnchor, IntakeQuestionnaire
-from services.starter_plan import ensure_starter_plan
+from services.starter_plan import _goal_date_from_intake, ensure_starter_plan
+
+
+def test_goal_date_from_intake_parses_valid_iso_date():
+    parsed = _goal_date_from_intake({"goal_event_date": "2026-05-02"})
+    assert parsed == date(2026, 5, 2)
 
 
 def test_existing_effort_starter_plan_is_upgraded_to_paced_when_race_anchor_exists():

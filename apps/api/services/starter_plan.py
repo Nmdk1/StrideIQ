@@ -67,6 +67,10 @@ def _goal_date_from_intake(responses: dict) -> Optional[date]:
     s = responses.get("goal_event_date")
     if not s:
         return None
+    try:
+        return date.fromisoformat(str(s))
+    except Exception:
+        return None
 
 
 def _apply_cold_start_guardrails(plan):
@@ -150,10 +154,6 @@ def _apply_cold_start_guardrails(plan):
         if weekly:
             plan.peak_volume = max(weekly)
     return plan
-    try:
-        return date.fromisoformat(str(s))
-    except Exception:
-        return None
 
 
 def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPlan]:

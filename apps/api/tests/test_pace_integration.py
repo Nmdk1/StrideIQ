@@ -11,9 +11,12 @@ Tests the full data flow:
 import pytest
 from datetime import date, timedelta
 from uuid import uuid4
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from services.plan_framework.pace_engine import PaceEngine, TrainingPaces
 from services.plan_framework.generator import PlanGenerator
+from services.plan_framework.constants import VolumeTier
 
 
 class TestPaceEngine:
@@ -228,3 +231,107 @@ class TestPlanGeneratorWithPaces:
             pace_desc = easy_workouts[0].pace_description
             # Should be effort-based
             assert "conversational" in pace_desc.lower() or "relaxed" in pace_desc.lower()
+
+    def test_generate_custom_without_user_or_race_anchor_does_not_nameerror(self, monkeypatch):
+        """Regression: Priority-3 training fallback must not reference undefined recent_activities."""
+        from models import Activity, Athlete
+
+        athlete_id = uuid4()
+        generator = PlanGenerator(db=MagicMock())
+
+        class _Q:
+            def __init__(self, rows=None, first_obj=None):
+                self._rows = rows or []
+                self._first = first_obj
+
+            def filter(self, *args, **kwargs):
+                return self
+
+            def order_by(self, *args, **kwargs):
+                return self
+
+            def limit(self, *args, **kwargs):
+                return self
+
+            def all(self):
+                return list(self._rows)
+
+            def first(self):
+                if self._first is not None:
+                    return self._first
+                return self._rows[0] if self._rows else None
+
+        athlete_obj = SimpleNamespace(id=athlete_id, birthdate=None)
+        run_obj = SimpleNamespace(distance_m=10000.0, moving_time_s=2600, start_time=date.today(), workout_type="Run")
+
+        def _query(model):
+            if model is Athlete:
+                return _Q(first_obj=athlete_obj)
+            if model is Activity:
+                return _Q(rows=[run_obj])
+            return _Q()
+
+        generator.db.query.side_effect = _query
+
+        profile = SimpleNamespace(
+            current_weekly_miles=42.0,
+            volume_tier=VolumeTier.MID,
+            data_sufficiency="high",
+            long_run_confidence=0.9,
+            recovery_confidence=0.8,
+            suggested_cutback_frequency=4,
+        )
+
+        monkeypatch.setattr(
+            "services.athlete_plan_profile.AthletePlanProfileService.derive_profile",
+            lambda self, athlete_id, db, goal_distance: profile,
+        )
+        monkeypatch.setattr(
+            "services.pre_race_fingerprinting.derive_pre_race_taper_pattern",
+            lambda activities, races: None,
+        )
+        monkeypatch.setattr(
+            "services.individual_performance_model.get_or_calibrate_model",
+            lambda athlete_id, db: None,
+        )
+        monkeypatch.setattr(
+            generator.phase_builder,
+            "build_phases",
+            lambda *args, **kwargs: [],
+        )
+        monkeypatch.setattr(
+            generator.tier_classifier,
+            "calculate_volume_progression",
+            lambda **kwargs: [42.0] * 8,
+        )
+        monkeypatch.setattr(
+            generator,
+            "_generate_workouts",
+            lambda **kwargs: [],
+        )
+
+        pace_calls = iter([None, SimpleNamespace(rpi=50.0)])
+        monkeypatch.setattr(
+            generator.pace_engine,
+            "calculate_from_race",
+            lambda **kwargs: next(pace_calls),
+        )
+
+        class _TaperCalc:
+            def calculate(self, **kwargs):
+                return SimpleNamespace(taper_days=10, source="default", confidence=0.5)
+
+        monkeypatch.setattr("services.taper_calculator.TaperCalculator", _TaperCalc)
+
+        plan = generator.generate_custom(
+            distance="10k",
+            race_date=date.today() + timedelta(weeks=12),
+            days_per_week=6,
+            athlete_id=athlete_id,
+            athlete_preferences={},
+            recent_race_distance=None,
+            recent_race_time_seconds=None,
+        )
+
+        assert plan is not None
+        assert plan.rpi == pytest.approx(47.5, rel=1e-3)

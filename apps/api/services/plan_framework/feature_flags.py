@@ -45,7 +45,7 @@ class FeatureFlagService:
     - Global enable/disable
     - Subscription requirement
     - Tier requirement (legacy tiers are mapped to Elite access)
-    - One-time payment
+    - Legacy one-time payment flags (migration support)
     - Rollout percentage
     - Beta tester list
     """
@@ -299,27 +299,11 @@ class FeatureFlagService:
         return tier_satisfies(athlete_tier, required_tier)
 
     def _has_purchased(self, athlete_id: UUID, flag_key: str) -> bool:
-        """Check if athlete has purchased a one-time feature.
+        """Legacy check for one-time purchased feature flags.
 
-        Checks PlanPurchase (new model, plan_snapshot_id) first.
-        Falls back to the legacy Purchase model (product_key) for backward
-        compatibility with any older feature flags that predate the
-        PlanPurchase model.
+        Retained only for backward compatibility during monetization migration.
         """
-        from models import PlanPurchase
-
-        new_purchase = (
-            self.db.query(PlanPurchase)
-            .filter(
-                PlanPurchase.athlete_id == athlete_id,
-                PlanPurchase.plan_snapshot_id == str(flag_key),
-            )
-            .first()
-        )
-        if new_purchase is not None:
-            return True
-
-        # Legacy fallback: old Purchase model keyed by product_key
+        # Legacy fallback: old Purchase model keyed by product_key.
         try:
             from models import Purchase
             legacy = self.db.query(Purchase).filter_by(
