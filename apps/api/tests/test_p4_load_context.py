@@ -146,7 +146,7 @@ def test_l30_half_open_window_excludes_next_local_midnight(db_session):
         Activity(
             athlete_id=athlete.id,
             name="inside_ref_day",
-            start_time=datetime(2026, 6, 15, 12, 0, 0, tzinfo=tz_mod.UTC),
+            start_time=datetime(2026, 6, 15, 12, 0, 0, tzinfo=timezone.utc),
             sport="run",
             source="manual",
             duration_s=int(95 * 60),
@@ -414,6 +414,14 @@ def test_semi_custom_low_questionnaire_high_history_raises_first_long(db_session
         )
     )
     db_session.commit()
+
+    start_date = race_date - timedelta(weeks=duration_weeks - 1, days=6)
+    anchor = history_anchor_date(start_date, db_session, athlete.id)
+    ctx = build_load_context(athlete.id, db_session, anchor)
+    assert ctx.l30_max_easy_long_mi is not None and ctx.l30_max_easy_long_mi >= 13.5, (
+        "P4 L30 must see the 95min/14mi fixture; check athlete-local window + half-open bounds. "
+        f"disclosures={ctx.disclosures!r} anchor={anchor!r} ref_in_ctx={ctx.reference_date!r}"
+    )
 
     gen = PlanGenerator(db_session)
     plan = gen.generate_semi_custom(
