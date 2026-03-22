@@ -17,6 +17,7 @@ import logging
 import random
 
 from services.fitness_bank import ConstraintType, FitnessBank, ExperienceLevel
+from services.plan_quality_gate import compute_athlete_long_run_floor
 from services.rpi_calculator import calculate_training_paces
 from services.week_theme_generator import WeekTheme
 
@@ -317,11 +318,24 @@ class WorkoutPrescriptionGenerator:
         "hill_strides",     # 6x100m on gentle hill (power + form)
     ]
     
-    def __init__(self, bank: FitnessBank, race_distance: str = "marathon"):
+    def __init__(
+        self,
+        bank: FitnessBank,
+        race_distance: str = "marathon",
+        load_easy_long_floor_mi: Optional[float] = None,
+        load_history_override_easy_long: bool = False,
+        load_count_long_15plus: int = 0,
+        load_count_long_18plus: int = 0,
+        load_recency_last_18plus_days: Optional[int] = None,
+    ):
         self.bank = bank
         self.race_distance = race_distance.lower()
         self.paces = _calculate_paces_from_training_paces(bank.best_rpi)
         self.experience = bank.experience_level
+        self.load_history_override_easy_long = bool(load_history_override_easy_long)
+        self.load_count_long_15plus = int(load_count_long_15plus or 0)
+        self.load_count_long_18plus = int(load_count_long_18plus or 0)
+        self.load_recency_last_18plus_days = load_recency_last_18plus_days
         
         # =====================================================================
         # ADR-038: N=1 Long Run Progression
@@ -354,38 +368,21 @@ class WorkoutPrescriptionGenerator:
             self.long_run_current,
             distance_minimums.get(self.race_distance, 8.0)
         )
+        if load_easy_long_floor_mi is not None:
+            self.long_run_current = max(self.long_run_current, float(load_easy_long_floor_mi))
 
-        self.personal_long_floor = 0.0
-
-        # High-mileage athletes with proven long-run history should not get
-        # artificially low long-run starts from noisy recent slices.
-        if self.race_distance == "10k":
-            # Locked personal-floor contract for high-data athletes.
-            def _as_float(value, default=0.0):
-                try:
-                    return float(value)
-                except Exception:
-                    return default
-
-            run_count_16w = int(_as_float(getattr(bank, "recent_16w_run_count", 0), 0.0))
-            peak_long = _as_float(getattr(bank, "peak_long_run_miles", 0.0), 0.0)
-            current_weekly = _as_float(getattr(bank, "current_weekly_miles", 0.0), 0.0)
-
-            has_high_data = run_count_16w >= 24 and peak_long >= 13
-            has_high_mileage_history = current_weekly >= 45 and peak_long >= 15
-
-            if has_high_data or has_high_mileage_history:
-                personal_floor = max(
-                    _as_float(getattr(bank, "recent_8w_p75_long_run_miles", 0.0), 0.0),
-                    _as_float(getattr(bank, "recent_16w_p50_long_run_miles", 0.0), 0.0),
-                )
-                if personal_floor <= 0 and has_high_mileage_history:
-                    personal_floor = min(15.0, peak_long * 0.85)
-                if bank.constraint_type == ConstraintType.INJURY:
-                    personal_floor = max(10.0, personal_floor * 0.90)
-                if personal_floor > 0:
-                    self.personal_long_floor = max(self.personal_long_floor, personal_floor)
-                    self.long_run_current = max(self.long_run_current, personal_floor)
+        self.personal_long_floor = compute_athlete_long_run_floor(
+            l30_max_easy_long_mi=float(getattr(bank, "current_long_run_miles", 0.0) or 0.0),
+            recent_8w_p75_long_run_miles=float(getattr(bank, "recent_8w_p75_long_run_miles", 0.0) or 0.0),
+            recent_16w_p50_long_run_miles=float(getattr(bank, "recent_16w_p50_long_run_miles", 0.0) or 0.0),
+            recent_16w_run_count=int(float(getattr(bank, "recent_16w_run_count", 0) or 0)),
+            peak_long_run_miles=float(getattr(bank, "peak_long_run_miles", 0.0) or 0.0),
+            current_weekly_miles=float(getattr(bank, "current_weekly_miles", 0.0) or 0.0),
+            constraint_type=getattr(getattr(bank, "constraint_type", None), "value", str(getattr(bank, "constraint_type", ""))),
+            race_distance=self.race_distance,
+        )
+        if self.personal_long_floor > 0:
+            self.long_run_current = max(self.long_run_current, self.personal_long_floor)
         
         # Peak target: use proven capability but respect distance-specific appropriateness
         distance_peak_target = self.LONG_RUN_PEAK_TARGETS.get(self.race_distance, 18)
@@ -476,7 +473,7 @@ class WorkoutPrescriptionGenerator:
         if week_number > 1:
             prev_progress = min(1.0, (week_number - 2) / build_weeks)
             prev_target = self.long_run_current + (self.long_run_peak - self.long_run_current) * prev_progress
-            max_increase = 2.0  # miles per week
+            max_increase = 3.0 if self.load_history_override_easy_long else 2.0
             target = min(target, prev_target + max_increase)
         
         # Apply time safety (3 hours max)

@@ -36,6 +36,7 @@ from services.workout_prescription import (
     WeekPlan,
     DayPlan
 )
+from services.plan_framework.load_context import build_load_context, history_anchor_date
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,26 @@ class ConstraintAwarePlanner:
         )
         if volume_contract.get("source") == "trusted_recent_band":
             rationale_tags.append("untrusted_peak_suppressed")
+
+        # Optional P5 bridge: bring the same L30/D4 context used in semi-custom
+        # into constraint-aware generation so experienced athletes get a sane week-1
+        # easy-long seed and history override behavior.
+        load_ctx = None
+        try:
+            if self.db is not None:
+                try:
+                    reference_date = history_anchor_date(None, self.db, athlete_id)
+                except Exception:
+                    reference_date = date.today()
+                load_ctx = build_load_context(
+                    athlete_id,
+                    self.db,
+                    reference_date,
+                )
+                if load_ctx.history_override_easy_long:
+                    rationale_tags.append("d4_history_override")
+        except Exception as ex:
+            logger.warning("constraint-aware load_context unavailable, continuing with fitness-bank only: %s", ex)
         
         # 2. Generate week themes
         themes = self.theme_generator.generate(
@@ -165,7 +186,15 @@ class ConstraintAwarePlanner:
         themes = self._apply_constraint_overrides(themes, bank, tune_up_races)
         
         # 4. Fill workouts for each week
-        workout_generator = WorkoutPrescriptionGenerator(bank, race_distance=race_distance)
+        workout_generator = WorkoutPrescriptionGenerator(
+            bank,
+            race_distance=race_distance,
+            load_easy_long_floor_mi=(load_ctx.l30_max_easy_long_mi if load_ctx is not None else None),
+            load_history_override_easy_long=bool(load_ctx.history_override_easy_long) if load_ctx is not None else False,
+            load_count_long_15plus=int(load_ctx.count_long_15plus) if load_ctx is not None else 0,
+            load_count_long_18plus=int(load_ctx.count_long_18plus) if load_ctx is not None else 0,
+            load_recency_last_18plus_days=load_ctx.recency_last_18plus_days if load_ctx is not None else None,
+        )
         weeks = []
         
         for theme_plan in themes:
