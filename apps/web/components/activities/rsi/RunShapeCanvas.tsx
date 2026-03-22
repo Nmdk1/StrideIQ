@@ -104,8 +104,8 @@ const ALTITUDE_MIN_SPAN_METERS = 10;
 const ALTITUDE_PAD_RATIO = 0.05;
 
 /** RSI chart scaling — pace (seconds per km) */
-const PACE_MIN_SPAN_S_PER_KM = 75;
-const PACE_PAD_RATIO = 0.2;
+const PACE_MIN_SPAN_S_PER_KM = 30;
+const PACE_PAD_RATIO = 0.12;
 
 /** RSI chart scaling — optional traces */
 const CADENCE_MIN_SPAN_SPM = 8;
@@ -190,16 +190,17 @@ function computeGradeDomainPercent(values: number[]): [number, number] | undefin
 function computePaceDomainSmoothedSecPerKm(paces: number[]): [number, number] | undefined {
   if (paces.length < 6) return undefined;
   const sorted = [...paces].sort((a, b) => a - b);
-  const lo = sorted[Math.floor((sorted.length - 1) * 0.10)] ?? sorted[0];
-  const hi = sorted[Math.floor((sorted.length - 1) * 0.90)] ?? sorted[sorted.length - 1];
-  const dataSpan = Math.max(1, hi - lo);
-  const effectiveSpan = Math.max(dataSpan, PACE_MIN_SPAN_S_PER_KM);
-  const center = (lo + hi) / 2;
-  const pad = Math.max(2, effectiveSpan * PACE_PAD_RATIO);
-  const half = effectiveSpan / 2 + pad;
-  const dMin = Math.max(0, center - half);
-  const dMax = center + half;
-  return [dMin, dMax];
+  let lo = sorted[Math.floor((sorted.length - 1) * 0.05)] ?? sorted[0];
+  let hi = sorted[Math.floor((sorted.length - 1) * 0.95)] ?? sorted[sorted.length - 1];
+  const span = Math.max(1, hi - lo);
+  if (span < PACE_MIN_SPAN_S_PER_KM) {
+    const center = (lo + hi) / 2;
+    lo = center - PACE_MIN_SPAN_S_PER_KM / 2;
+    hi = center + PACE_MIN_SPAN_S_PER_KM / 2;
+  }
+  const domainSpan = Math.max(1, hi - lo);
+  const pad = Math.max(2, domainSpan * PACE_PAD_RATIO);
+  return [Math.max(0, lo - pad), hi + pad];
 }
 
 /** Robust center for a small list of paces (s/km). */
@@ -218,37 +219,30 @@ function applyRobustPaceSmoothingForDisplay(raw: ChartPoint[]): void {
   const n = raw.length;
   if (n === 0) return;
 
-  const window = Math.max(21, Math.round(n / 8));
+  const base = raw
+    .map((p) => p.pace)
+    .filter((p): p is number => p != null && p > 0);
+  if (base.length === 0) return;
+  const sorted = [...base].sort((a, b) => a - b);
+  const quantileLo = sorted[Math.floor((sorted.length - 1) * 0.05)] ?? sorted[0];
+  const quantileHi = sorted[Math.floor((sorted.length - 1) * 0.95)] ?? sorted[sorted.length - 1];
+  const window = Math.max(7, Math.round(n / 30));
   const halfW = Math.floor(window / 2);
 
   for (let i = 0; i < n; i++) {
-    const lo = Math.max(0, i - halfW);
-    const hi = Math.min(n - 1, i + halfW);
+    const winStart = Math.max(0, i - halfW);
+    const winEnd = Math.min(n - 1, i + halfW);
     const chunk: number[] = [];
-    for (let j = lo; j <= hi; j++) {
-      if (raw[j].pace != null) chunk.push(raw[j].pace!);
+    for (let j = winStart; j <= winEnd; j++) {
+      if (raw[j].pace != null) {
+        chunk.push(clamp(raw[j].pace!, quantileLo, quantileHi));
+      }
     }
-    const med = medianOfNumbers(chunk);
-    raw[i].smoothedPace = med;
-  }
-
-  const PACE_CHAIN_MAX_DELTA_S_KM = 12;
-  for (let i = 1; i < n; i++) {
-    const prev = raw[i - 1].smoothedPace;
-    let cur = raw[i].smoothedPace;
-    if (prev == null || cur == null) continue;
-    if (Math.abs(cur - prev) > PACE_CHAIN_MAX_DELTA_S_KM) {
-      cur = prev + Math.sign(cur - prev) * PACE_CHAIN_MAX_DELTA_S_KM;
-      raw[i].smoothedPace = cur;
-    }
-  }
-  for (let i = n - 2; i >= 0; i--) {
-    const next = raw[i + 1].smoothedPace;
-    let cur = raw[i].smoothedPace;
-    if (next == null || cur == null) continue;
-    if (Math.abs(cur - next) > PACE_CHAIN_MAX_DELTA_S_KM) {
-      cur = next + Math.sign(cur - next) * PACE_CHAIN_MAX_DELTA_S_KM;
-      raw[i].smoothedPace = cur;
+    if (chunk.length === 0) {
+      raw[i].smoothedPace = null;
+    } else {
+      const avg = chunk.reduce((acc, v) => acc + v, 0) / chunk.length;
+      raw[i].smoothedPace = avg;
     }
   }
 }
