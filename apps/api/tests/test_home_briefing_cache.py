@@ -957,6 +957,65 @@ class TestCeleryTask:
         assert refreshed_payload is not None
         assert refreshed_payload.get("morning_voice") == payload["morning_voice"]
 
+    def test_interim_fingerprint_match_forces_llm_regeneration(self, fake_redis):
+        """Regression: unchanged fingerprint must not pin deterministic interim text forever."""
+        from services.home_briefing_cache import _cache_key, read_briefing_cache_with_meta
+
+        athlete_id = str(uuid4())
+        fingerprint = "fp_interim_same"
+        interim_payload = {
+            "coach_noticed": "Latest run synced: 9.2 mi at 8:49/mi. Signals will refine.",
+            "today_context": "Sync completed.",
+            "week_assessment": "Data is current.",
+            "morning_voice": "Your home briefing is refreshed from synced activity data.",
+            "workout_why": "Fresh synced data keeps decisions anchored.",
+        }
+        llm_payload = {
+            "coach_noticed": "You handled yesterday's load well; keep today's effort controlled.",
+            "today_context": "Recovery and sleep quality are the biggest levers today.",
+            "week_assessment": "Your week is on track with stable load and good absorption.",
+            "morning_voice": "9.2 miles at 8:49/mi yesterday — keep today's run easy to lock in adaptation.",
+            "workout_why": "Easy aerobic work today preserves quality for your next key session.",
+        }
+
+        stale_interim_entry = {
+            "payload": interim_payload,
+            "generated_at": (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=40)).isoformat(),
+            "source_model": "deterministic-fallback",
+            "briefing_source": "deterministic_fallback",
+            "briefing_is_interim": True,
+            "version": 1,
+            "data_fingerprint": fingerprint,
+        }
+        fake_redis.setex(_cache_key(athlete_id), 3600, json.dumps(stale_interim_entry))
+
+        with patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
+             patch("tasks.home_briefing_tasks.get_redis_client", return_value=fake_redis), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value=fingerprint), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)) as mock_prompt, \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=llm_payload) as mock_llm, \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("routers.home.validate_voice_output", return_value={"valid": True}), \
+             patch("routers.home.validate_sleep_claims", return_value={"valid": True}), \
+             patch("services.consent.has_ai_consent", return_value=True):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+
+        assert result["status"] == "success"
+        assert result["model"] in ("claude-sonnet-4-6", "gemini-2.5-flash")
+        mock_prompt.assert_called_once()
+        mock_llm.assert_called_once()
+
+        refreshed_payload, refreshed_state, refreshed_meta = read_briefing_cache_with_meta(athlete_id)
+        assert refreshed_state == BriefingState.FRESH
+        assert refreshed_payload is not None
+        assert refreshed_payload.get("morning_voice") == llm_payload["morning_voice"]
+        assert refreshed_meta["briefing_is_interim"] is False
+        assert refreshed_meta["briefing_source"] == "llm"
+
     def test_celery_task_writes_deterministic_fallback_when_llm_unavailable(self, fake_redis):
         """LLM outage should still write a deterministic refreshed briefing."""
         athlete_id = str(uuid4())

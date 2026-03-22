@@ -427,6 +427,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         fingerprint = _build_data_fingerprint(athlete_id, db)
 
         cached_payload, cached_state, cached_meta = read_briefing_cache_with_meta(athlete_id)
+        cached_is_interim = bool(cached_meta.get("briefing_is_interim", False))
         if cached_state in (BriefingState.FRESH, BriefingState.STALE) and cached_payload:
             r = get_redis_client()
             if r:
@@ -435,25 +436,42 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                     if raw:
                         entry = json.loads(raw)
                         if entry.get("data_fingerprint") == fingerprint:
+                            entry_source = str(entry.get("briefing_source") or "").strip().lower()
+                            source_model = str(entry.get("source_model") or "").strip().lower()
+                            entry_is_interim = bool(
+                                entry.get("briefing_is_interim", cached_is_interim)
+                            )
+                            is_deterministic = (
+                                entry_source == "deterministic_fallback"
+                                or "deterministic" in source_model
+                            )
+                            if not entry_is_interim and not is_deterministic:
+                                logger.info(
+                                    "Home briefing fingerprint unchanged for %s — refreshing cache without LLM call",
+                                    athlete_id,
+                                )
+                                # Critical: refresh generated_at/expires_at so unchanged
+                                # fingerprints do not decay into stale->missing.
+                                # This keeps morning voice + coach insight available
+                                # when source data has not changed.
+                                cached_source_model = entry.get("source_model") or "cache-refresh"
+                                write_briefing_cache(
+                                    athlete_id=athlete_id,
+                                    payload=cached_payload,
+                                    source_model=str(cached_source_model),
+                                    data_fingerprint=fingerprint,
+                                    briefing_source=str(cached_meta.get("briefing_source") or "llm"),
+                                    briefing_is_interim=bool(cached_meta.get("briefing_is_interim")),
+                                )
+                                reset_circuit(athlete_id)
+                                return {
+                                    "status": "success",
+                                    "reason": "fingerprint_unchanged_cache_refreshed",
+                                }
                             logger.info(
-                                "Home briefing fingerprint unchanged for %s — refreshing cache without LLM call",
+                                "Home briefing fingerprint unchanged for %s but cached briefing is interim; forcing LLM regeneration",
                                 athlete_id,
                             )
-                            # Critical: refresh generated_at/expires_at so unchanged
-                            # fingerprints do not decay into stale->missing.
-                            # This keeps morning voice + coach insight available
-                            # when source data has not changed.
-                            cached_source_model = entry.get("source_model") or "cache-refresh"
-                            write_briefing_cache(
-                                athlete_id=athlete_id,
-                                payload=cached_payload,
-                                source_model=str(cached_source_model),
-                                data_fingerprint=fingerprint,
-                                briefing_source=str(cached_meta.get("briefing_source") or "llm"),
-                                briefing_is_interim=bool(cached_meta.get("briefing_is_interim")),
-                            )
-                            reset_circuit(athlete_id)
-                            return {"status": "success", "reason": "fingerprint_unchanged_cache_refreshed"}
                 except (json.JSONDecodeError, TypeError, Exception):
                     pass
 
