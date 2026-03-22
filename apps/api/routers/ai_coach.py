@@ -4,7 +4,7 @@ AI Coach API Router
 Provides chat interface to the AI running coach.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -202,7 +202,7 @@ async def new_conversation(
     db.query(CoachChat).filter(
         CoachChat.athlete_id == athlete.id,
         CoachChat.context_type == "open",
-        CoachChat.is_active == True,
+        CoachChat.is_active.is_(True),
     ).update({"is_active": False})
     db.commit()
     return NewConversationResponse(ok=True)

@@ -7,11 +7,10 @@ This is the core product differentiator.
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import Optional
-from datetime import date, timedelta
+from datetime import date
 from core.database import get_db
 from core.auth import get_current_user
-from core.cache import cached, cache_key, get_cache, set_cache
+from core.cache import cache_key, get_cache, set_cache
 from core.feature_flags import is_feature_enabled
 from models import Athlete
 from services.efficiency_analytics import get_efficiency_trends

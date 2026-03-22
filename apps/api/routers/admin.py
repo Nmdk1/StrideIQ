@@ -13,6 +13,7 @@ from uuid import UUID
 from datetime import datetime, timedelta, date
 from datetime import timezone
 
+from core.config import settings
 from core.database import get_db
 from core.auth import require_admin, require_owner, require_permission, deny_impersonation_mutation
 from models import (
@@ -51,7 +52,6 @@ from models import (
     AdminAuditEvent,
     WorkoutSelectionAuditEvent,
 )
-from schemas import AthleteResponse
 from pydantic import BaseModel, Field
 from services.plan_framework.feature_flags import FeatureFlagService
 import logging
@@ -1513,7 +1513,7 @@ def regenerate_starter_plan(
         db.query(PlannedWorkout).filter(
             PlannedWorkout.plan_id == p.id,
             PlannedWorkout.scheduled_date >= today,
-            PlannedWorkout.completed == False,
+            PlannedWorkout.completed.is_(False),
         ).update({"skipped": True})
 
     db.commit()
@@ -1766,7 +1766,6 @@ def start_impersonation(
         raise HTTPException(status_code=404, detail="User not found")
 
     from core.security import create_access_token, decode_access_token
-    from core.config import settings
     from datetime import timedelta, datetime, timezone
 
     ttl_min = int(getattr(settings, "IMPERSONATION_TOKEN_TTL_MINUTES", 20))
@@ -2304,7 +2303,7 @@ def list_race_promo_codes(
     """List all race promo codes with usage stats."""
     query = db.query(RacePromoCode)
     if not include_inactive:
-        query = query.filter(RacePromoCode.is_active == True)
+        query = query.filter(RacePromoCode.is_active.is_(True))
     
     codes = query.order_by(RacePromoCode.created_at.desc()).all()
     

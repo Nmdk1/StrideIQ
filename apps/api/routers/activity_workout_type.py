@@ -16,7 +16,6 @@ from uuid import UUID
 from core.database import get_db
 from core.auth import get_current_athlete
 from models import Athlete, Activity
-from services.workout_classifier import WorkoutZone
 
 router = APIRouter(prefix="/v1/activities", tags=["Activity Workout Type"])
 
