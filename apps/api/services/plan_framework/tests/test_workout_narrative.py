@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import List, Optional, Tuple
+
 import pytest
 
 from services.plan_framework.generator import (
@@ -224,6 +226,32 @@ def test_scaled_threshold_variant_ids_unchanged():
         "threshold_intervals_8_to_12_min",
     )
     assert s.title.startswith("Threshold Intervals:")
+
+
+def test_generate_workouts_passes_prev_threshold_intervals_across_weeks(monkeypatch):
+    """
+    Regression (P3.1): `prev_threshold_intervals` must be passed from `_generate_workouts`
+    into each `_generate_week` and refreshed after each week — not only initialized.
+    """
+    calls: List[Tuple[int, Optional[Tuple[int, int]]]] = []
+    orig = PlanGenerator._generate_week
+
+    def spy(self, *a, **kw):
+        calls.append((kw["week"], kw.get("prev_threshold_intervals")))
+        return orig(self, *a, **kw)
+
+    monkeypatch.setattr(PlanGenerator, "_generate_week", spy)
+    gen = PlanGenerator(None)
+    gen.generate_standard(
+        distance="marathon",
+        duration_weeks=24,
+        tier="mid",
+        days_per_week=6,
+    )
+    by_week = dict(calls)
+    # Canonical template: first threshold_intervals in week 5 (4x5); week 6 must see (4, 5).
+    assert by_week.get(5) is None
+    assert by_week.get(6) == (4, 5)
 
 
 def test_marathon_plan_threshold_intervals_progression_after_first():
