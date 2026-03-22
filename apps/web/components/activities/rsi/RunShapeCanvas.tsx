@@ -99,6 +99,20 @@ interface ChartPoint {
 const MAX_DISPLAY_POINTS = 500;
 const CHART_HEIGHT = 256;
 
+/** RSI chart scaling — altitude relief (meters, MSL) */
+const ALTITUDE_MIN_SPAN_METERS = 10;
+const ALTITUDE_PAD_RATIO = 0.05;
+
+/** RSI chart scaling — pace (seconds per km) */
+const PACE_MIN_SPAN_S_PER_KM = 30;
+const PACE_PAD_RATIO = 0.12;
+
+/** RSI chart scaling — optional traces */
+const CADENCE_MIN_SPAN_SPM = 8;
+const CADENCE_PAD_RATIO = 0.05;
+const GRADE_MIN_SPAN_PCT = 4;
+const GRADE_PAD_RATIO = 0.05;
+
 const TIER4_CAVEAT =
   'Effort colors show the shape of this run. Connect a heart rate monitor for personalized effort zones.';
 
@@ -133,6 +147,50 @@ function clamp(val: number, min: number, max: number): number {
 
 function hasPhysiologicalData(tierUsed: string): boolean {
   return !tierUsed.startsWith('tier4');
+}
+
+/** Linear-interpolation quantile on a sorted array (q in [0, 1]). */
+function quantile(sorted: number[], q: number): number {
+  if (sorted.length === 0) return NaN;
+  if (sorted.length === 1) return sorted[0];
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (pos - lo) * (sorted[hi] - sorted[lo]);
+}
+
+function computeAltitudeDomainMeters(alts: number[]): [number, number] | undefined {
+  const valid = alts.filter((a) => Number.isFinite(a));
+  if (valid.length < 2) return undefined;
+  const minAlt = Math.min(...valid);
+  const maxAlt = Math.max(...valid);
+  const span = maxAlt - minAlt;
+  const effectiveSpan = Math.max(span, ALTITUDE_MIN_SPAN_METERS);
+  const pad = Math.max(1, effectiveSpan * ALTITUDE_PAD_RATIO);
+  return [minAlt - pad, maxAlt + pad];
+}
+
+function computeCadenceDomainSpm(values: number[]): [number, number] | undefined {
+  const v = values.filter((c) => Number.isFinite(c) && c > 0);
+  if (v.length < 2) return undefined;
+  const minC = Math.min(...v);
+  const maxC = Math.max(...v);
+  const span = maxC - minC;
+  const effectiveSpan = Math.max(span, CADENCE_MIN_SPAN_SPM);
+  const pad = Math.max(1, effectiveSpan * CADENCE_PAD_RATIO);
+  return [minC - pad, maxC + pad];
+}
+
+function computeGradeDomainPercent(values: number[]): [number, number] | undefined {
+  const v = values.filter((g) => Number.isFinite(g));
+  if (v.length < 2) return undefined;
+  const minG = Math.min(...v);
+  const maxG = Math.max(...v);
+  const span = maxG - minG;
+  const effectiveSpan = Math.max(span, GRADE_MIN_SPAN_PCT);
+  const pad = Math.max(0.5, effectiveSpan * GRADE_PAD_RATIO);
+  return [minG - pad, maxG + pad];
 }
 
 // ---------------------------------------------------------------------------
@@ -838,19 +896,44 @@ export function RunShapeCanvas({
     return chartData.some((p) => p.pace != null && p.pace > 0);
   }, [chartData]);
 
-  // Compute explicit pace domain from the smoothed data's full min/max range.
-  // Uses the smoothed values (which the line actually renders) so the line
-  // never extends beyond the chart area.
+  // Altitude: local relief domain so terrain fill is legible (not crushed by implicit scale).
+  const altitudeDomain = useMemo<[number, number] | undefined>(() => {
+    const alts = chartData
+      .map((p) => p.altitude)
+      .filter((a): a is number => a != null && Number.isFinite(a));
+    return computeAltitudeDomainMeters(alts);
+  }, [chartData]);
+
+  // Pace: percentile-trimmed domain + minimum span so steady runs are not visually noisy.
   const paceDomain = useMemo<[number, number] | undefined>(() => {
     const paces = chartData
       .map((p) => p.smoothedPace)
       .filter((p): p is number => p != null && p > 0);
-    if (paces.length < 4) return undefined;
-    const pMin = Math.min(...paces);
-    const pMax = Math.max(...paces);
-    const range = pMax - pMin || 30;
-    const pad = range * 0.15;
-    return [Math.max(0, pMin - pad), pMax + pad];
+    if (paces.length < 6) return undefined;
+    const sorted = [...paces].sort((a, b) => a - b);
+    const p05 = quantile(sorted, 0.05);
+    const p95 = quantile(sorted, 0.95);
+    const trimmedSpan = Math.max(1, p95 - p05);
+    const targetSpan = Math.max(trimmedSpan, PACE_MIN_SPAN_S_PER_KM);
+    const center = (p05 + p95) / 2;
+    const pad = Math.max(2, targetSpan * PACE_PAD_RATIO);
+    const dMin = Math.max(0, center - targetSpan / 2 - pad);
+    const dMax = center + targetSpan / 2 + pad;
+    return [dMin, dMax];
+  }, [chartData]);
+
+  const cadenceDomain = useMemo<[number, number] | undefined>(() => {
+    const vals = chartData
+      .map((p) => p.cadence)
+      .filter((c): c is number => c != null && Number.isFinite(c) && c > 0);
+    return computeCadenceDomainSpm(vals);
+  }, [chartData]);
+
+  const gradeDomain = useMemo<[number, number] | undefined>(() => {
+    const vals = chartData
+      .map((p) => p.grade)
+      .filter((g): g is number => g != null && Number.isFinite(g));
+    return computeGradeDomainPercent(vals);
   }, [chartData]);
 
   // Boost an effortToColor for the pace line — needs to pop over segment bands
@@ -1123,14 +1206,34 @@ export function RunShapeCanvas({
               domain={paceDomain ?? ['auto', 'auto']}
               allowDataOverflow={!!paceDomain}
             />
-            <YAxis yAxisId="altitude" orientation="left" hide />
-            <YAxis yAxisId="secondary" orientation="right" hide />
+            <YAxis
+              yAxisId="altitude"
+              orientation="left"
+              hide
+              domain={altitudeDomain ?? ['auto', 'auto']}
+              allowDataOverflow={!!altitudeDomain}
+            />
+            <YAxis
+              yAxisId="cadence"
+              orientation="right"
+              hide
+              domain={cadenceDomain ?? ['auto', 'auto']}
+              allowDataOverflow={!!cadenceDomain}
+            />
+            <YAxis
+              yAxisId="grade"
+              orientation="right"
+              hide
+              domain={gradeDomain ?? ['auto', 'auto']}
+              allowDataOverflow={!!gradeDomain}
+            />
 
             {/* AC-5: Terrain fill — FIRST in JSX = behind in SVG paint order */}
             <Area
               yAxisId="altitude"
               type="monotone"
               dataKey="altitude"
+              baseValue="dataMin"
               fill="rgba(16,185,129,0.2)"
               stroke="rgba(16,185,129,0.4)"
               isAnimationActive={false}
@@ -1173,7 +1276,7 @@ export function RunShapeCanvas({
             {/* AC-4: Optional cadence trace */}
             {showCadence && (
               <Line
-                yAxisId="secondary"
+                yAxisId="cadence"
                 type="monotone"
                 dataKey="cadence"
                 stroke="#fbbf24"
@@ -1186,7 +1289,7 @@ export function RunShapeCanvas({
             {/* AC-4: Optional grade trace */}
             {showGrade && (
               <Line
-                yAxisId="secondary"
+                yAxisId="grade"
                 type="monotone"
                 dataKey="grade"
                 stroke="#a78bfa"
@@ -1201,6 +1304,42 @@ export function RunShapeCanvas({
         {/* Testability markers: data-testid contract for tests.
             Positioned after Recharts layer to preserve terrain-before-trace ordering. */}
         <div data-testid="terrain-fill" style={{ display: 'none' }} aria-hidden="true" />
+        <div
+          data-testid="terrain-basevalue-marker"
+          data-basevalue="dataMin"
+          style={{ display: 'none' }}
+          aria-hidden="true"
+        />
+        {paceDomain != null && (
+          <div
+            data-testid="pace-domain-marker"
+            data-min={String(paceDomain[0])}
+            data-max={String(paceDomain[1])}
+            style={{ display: 'none' }}
+            aria-hidden="true"
+          />
+        )}
+        {altitudeDomain != null && (
+          <div
+            data-testid="altitude-domain-marker"
+            data-min={String(altitudeDomain[0])}
+            data-max={String(altitudeDomain[1])}
+            style={{ display: 'none' }}
+            aria-hidden="true"
+          />
+        )}
+        <div
+          data-testid="axis-marker-cadence"
+          data-axis-id="cadence"
+          style={{ display: 'none' }}
+          aria-hidden="true"
+        />
+        <div
+          data-testid="axis-marker-grade"
+          data-axis-id="grade"
+          style={{ display: 'none' }}
+          aria-hidden="true"
+        />
         {showHR && (
           <div data-testid="trace-hr" style={{ display: 'none' }} aria-hidden="true" />
         )}
