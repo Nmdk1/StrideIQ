@@ -140,6 +140,20 @@ class GeneratedWorkout:
     option_b: Optional['GeneratedWorkout'] = None
 
 
+def _extract_mp_miles_from_long_mp(workout: GeneratedWorkout) -> Optional[int]:
+    """MP miles from option A segments (single marathon_pace block)."""
+    if workout.workout_type != "long_mp" or not workout.segments:
+        return None
+    for seg in workout.segments:
+        if not isinstance(seg, dict) or seg.get("type") != "marathon_pace":
+            continue
+        dm = seg.get("distance_miles")
+        if dm is None:
+            return None
+        return int(round(float(dm)))
+    return None
+
+
 @dataclass
 class GeneratedPlan:
     """Complete generated training plan."""
@@ -795,6 +809,8 @@ class PlanGenerator:
         if athlete_id and self.db:
             history_override = _history_override_easy_long_spike(self.db, athlete_id)
 
+        prev_mp_miles: Optional[int] = None
+
         for week in range(1, duration_weeks + 1):
             # Get phase for this week
             phase = self.phase_builder.get_phase_for_week(phases, week)
@@ -854,9 +870,14 @@ class PlanGenerator:
                 duration_weeks=duration_weeks,
                 easy_long_state=easy_long_state,
                 history_override=history_override,
+                prev_mp_miles=prev_mp_miles,
             )
             
             workouts.extend(week_workouts)
+            for w in week_workouts:
+                extracted = _extract_mp_miles_from_long_mp(w)
+                if extracted is not None:
+                    prev_mp_miles = extracted
         
         return workouts
     
@@ -926,6 +947,7 @@ class PlanGenerator:
         duration_weeks: int = 18,
         easy_long_state: Optional[Dict[str, Any]] = None,
         history_override: bool = False,
+        prev_mp_miles: Optional[int] = None,
     ) -> List[GeneratedWorkout]:
         """Generate workouts for a single week."""
         week_workouts = []
@@ -994,6 +1016,7 @@ class PlanGenerator:
                 is_cutback=is_cutback,
                 previous_easy_long_mi=easy_long_state.get("previous_mi"),
                 history_override=history_override,
+                prev_mp_miles=prev_mp_miles,
             )
             
             # Add pace description if paces available

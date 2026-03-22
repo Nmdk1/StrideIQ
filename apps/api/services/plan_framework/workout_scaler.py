@@ -22,6 +22,7 @@ import math
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
+from .workout_narrative import mp_long_option_a_copy, mp_long_option_b_copy
 from .constants import (
     VolumeTier,
     Phase,
@@ -144,6 +145,7 @@ class WorkoutScaler:
         is_cutback: bool = False,
         previous_easy_long_mi: Optional[float] = None,
         history_override: bool = False,
+        prev_mp_miles: Optional[int] = None,
     ) -> ScaledWorkout:
         """
         Scale any workout type to athlete capacity.
@@ -190,7 +192,14 @@ class WorkoutScaler:
             return self._scale_threshold_continuous(weekly_volume, tier, week_in_phase)
         
         elif workout_type in ["long_mp", "marathon_pace_long"]:
-            return self._scale_mp_long_run(weekly_volume, tier, distance, week_in_phase, mp_week)
+            return self._scale_mp_long_run(
+                weekly_volume,
+                tier,
+                distance,
+                week_in_phase,
+                mp_week,
+                prev_mp_miles=prev_mp_miles,
+            )
         
         elif workout_type in ["long_hmp", "half_marathon_pace_long"]:
             return self._scale_hmp_long_run(weekly_volume, tier, distance, week_in_phase)
@@ -445,7 +454,9 @@ class WorkoutScaler:
         tier: str,
         distance: str,
         week_in_phase: int,
-        mp_week: int = 1  # Overall MP workout number (1, 2, 3, 4...)
+        mp_week: int = 1,  # Overall MP workout number (1, 2, 3, 4...)
+        *,
+        prev_mp_miles: Optional[int] = None,
     ) -> ScaledWorkout:
         """
         Scale marathon pace long run with progression.
@@ -488,12 +499,16 @@ class WorkoutScaler:
         
         # Total run length
         total_miles = min(mp_miles + 6, peak_long)  # MP + warmup/cooldown
-        
+
+        title, description = mp_long_option_a_copy(
+            mp_week, mp_miles, mp_structure, total_miles, prev_mp_miles
+        )
+
         return ScaledWorkout(
             workout_type="long_mp",
             category=WorkoutCategory.RACE_PACE,
-            title=f"Long Run with MP: {mp_structure}",
-            description=f"{int(total_miles)} miles total with {mp_structure}",
+            title=title,
+            description=description,
             total_distance_miles=total_miles,
             duration_minutes=int(total_miles * 8.5),
             segments=[
@@ -503,13 +518,18 @@ class WorkoutScaler:
             ],
             pace_description="goal marathon race pace",
             option="A",
-            option_b=self._create_mp_option_b(mp_miles, total_miles)
+            option_b=self._create_mp_option_b(
+                mp_miles, total_miles, mp_week=mp_week, prev_mp_miles=prev_mp_miles
+            ),
         )
     
     def _create_mp_option_b(
         self,
         mp_miles: float,
-        total_miles: float
+        total_miles: float,
+        *,
+        mp_week: int,
+        prev_mp_miles: Optional[int] = None,
     ) -> 'ScaledWorkout':
         """Create Option B for MP long run (intervals instead of continuous)."""
         # Break continuous MP into intervals
@@ -519,12 +539,16 @@ class WorkoutScaler:
         else:
             reps = int(mp_miles / 4)
             rep_distance = 4
-        
+
+        title, description = mp_long_option_b_copy(
+            mp_week, reps, rep_distance, total_miles, mp_miles, prev_mp_miles
+        )
+
         return ScaledWorkout(
             workout_type="long_mp_intervals",
             category=WorkoutCategory.RACE_PACE,
-            title=f"Long Run with MP: {reps}x{rep_distance} mi at MP",
-            description=f"{int(total_miles)} miles total with {reps}x{rep_distance} mi at MP, 1 mi easy between",
+            title=title,
+            description=description,
             total_distance_miles=total_miles,
             duration_minutes=int(total_miles * 8.5),
             segments=[

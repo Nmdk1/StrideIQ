@@ -1,6 +1,6 @@
 # Plan: coached output & load contract (spec)
 
-**Status:** P1–P2 implemented in `workout_scaler` + `generator` (2026-03-22); P3 scoped below; P4+ pending  
+**Status:** P1–P2 implemented in `workout_scaler` + `generator` (2026-03-22); **P3.0** (MP long narrative) implemented; P3.1+ pending; P4+ pending  
 **Date:** 2026-03-22  
 **Read with:** `docs/PLAN_CUTBACK_MP_POLICY.md`, `docs/TRAINING_PLAN_REBUILD_PLAN.md`, Vega notes (long-run curve, weighted easy fill, progression copy)
 
@@ -115,7 +115,7 @@ Current validators use **long ≤ ~30% of week**. Treat as:
 
 **Code:** `PlanGenerator._apply_weighted_easy_volume_fill`, `_easy_fill_adjacency_weight`, `_EASY_FILL_*` type sets in `generator.py`.
 
-### P3 — Progression narrative (scaler titles/descriptions) — **scoped (2026-03-22)**
+### P3 — Progression narrative (scaler titles/descriptions)
 
 **Intent:** Grounded copy only — e.g. “Building from **8 mi MP** last cycle to **12 mi** continuous — fueling practice at race pace.” **No LLM** for this layer (templates + numbers from scaler / explicit plan state only).
 
@@ -150,17 +150,19 @@ These are enforced by regex or prefix checks in `apps/api/services/plan_framewor
 - **MP long:** `mp_week` (1 = first MP long in plan, 2 = second, …) and derived `mp_miles`, `mp_structure`, `total_miles`.  
 - **`mp_touch`:** `weekly_volume`, computed `mp_miles`, `total_miles`; always in **cutback consolidation** semantics.
 
-**Not available today but required for spec-grade “last cycle” copy**
+**MP “last cycle” copy — implemented (P3.0)**
 
-- **Previous MP prescription:** last plan week’s **`mp_miles`** (or equivalent discrete label: e.g. “2×3 mi @ MP” vs “8 mi continuous”) for the **most recent `long_mp`** week.  
-- **Previous threshold prescription:** last week’s **continuous minutes** or **interval reps × duration** when the same family appeared (generator may need to track per-plan-week “last threshold snapshot” because phase boundaries can reset `week_in_phase`).
+- **`prev_mp_miles`:** optional **`int`**, last planned **`long_mp`** session’s MP miles (from option A `marathon_pace` segment). Maintained in `PlanGenerator` after each week (ignores **`mp_touch`**), passed into `scale_workout` → `_scale_mp_long_run` and option B. First `long_mp` in plan: `None` → non-comparative intro copy only.
 
-**Recommended state (generator-owned, passed into scaler)**
+**Threshold — still pending (P3.1)**
 
-1. **`mp_narrative_prev`:** optional `dict` or small dataclass: `{ "mp_miles": float, "structure_kind": str }` updated when a week containing `long_mp` is finalized (ignore `mp_touch`). Pass into `_scale_mp_long_run` / option B builder only when non-`None`.  
-2. **`threshold_narrative_prev`:** optional snapshot with `mode` = `continuous` or `intervals`, plus optional `minutes` / `reps` / `interval_min`, updated when a threshold workout is placed for that week. Match **stem** (`threshold` vs `threshold_intervals`) for “same workout family.”
+- **Previous threshold prescription:** last week’s **continuous minutes** or **interval reps × duration** when the same stem appeared (generator may need to track a “last threshold snapshot” because phase boundaries can reset `week_in_phase`).
 
-**Explicit non-fabrication rule:** If `*_narrative_prev` is missing (week 1 of stem, or first occurrence), use **non-comparative** templates (“Introduce …”, “First MP block in this plan …”) — never imply a prior week’s numbers.
+**Recommended state for P3.1 (generator-owned)**
+
+- **`threshold_narrative_prev`:** optional snapshot with `mode` = `continuous` or `intervals`, plus optional `minutes` / `reps` / `interval_min`, updated when a threshold workout is placed for that week. Match **stem** (`threshold` vs `threshold_intervals`) for “same workout family.”
+
+**Explicit non-fabrication rule:** If `prev_mp_miles` / threshold prev is missing, use **non-comparative** templates — never imply prior-week numbers.
 
 #### Copy placement (implementation detail)
 
@@ -171,7 +173,7 @@ These are enforced by regex or prefix checks in `apps/api/services/plan_framewor
 
 | Phase | Scope | Outcome |
 |-------|--------|--------|
-| **P3.0** | **MP long (+ option B)** only: comparative copy when `mp_narrative_prev` present; safe intros when absent. | Highest visual impact for marathon plans; lowest risk to threshold regex contracts. |
+| **P3.0** | **MP long (+ option B)** — **implemented:** `prev_mp_miles: Optional[int]`; `workout_narrative.py`; comparative copy when prev set; first-MP intro when `None`. | Marathon plan readability; variant ids unchanged (`workout_type`-based for `long_mp`). |
 | **P3.1** | **Continuous threshold + threshold intervals** + `threshold_narrative_prev`. | Fulfills original “threshold / MP blocks” line item across both T formats. |
 | **P3.2 (optional)** | **`mp_touch` one-liner** tied to consolidation; **HMP** only if title prefix `Long Run with HMP:` preserved. | Polish; HMP needs prefix discipline. |
 
@@ -233,6 +235,6 @@ See **D1**, **D2** table, **D4** gates, **P1**, **P5** above. Founder amendment:
 
 1. ~~P1 scaler curve + clamps~~ **done**  
 2. ~~P2 weighted easy fill~~ **done**  
-3. P3 narrative templates (**P3.0** MP long + option B, then **P3.1** threshold stems — see §P3 phased table).  
+3. ~~P3.0 MP narrative~~ **done**; **P3.1** threshold narrative (see §P3 phased table).  
 4. P4 `LoadContext` + 30d spike + `max(L30, previous_planned)` baseline.  
 5. P5 adaptation hook (≥3wk / 70% gate).
