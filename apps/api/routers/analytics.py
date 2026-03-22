@@ -289,10 +289,10 @@ def get_diagnostic_report_endpoint(
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.warning(f"Diagnostic narrative generation failed for {athlete.id}: {type(e).__name__}: {e}")
+                logger.warning(f"Diagnostic narrative generation failed for {current_user.id}: {type(e).__name__}: {e}")
                 try:
                     from services.audit_logger import log_narrative_error
-                    log_narrative_error(athlete.id, "diagnostic", str(e))
+                    log_narrative_error(current_user.id, "diagnostic", str(e))
                 except Exception:
                     pass
                 response["narratives"] = []

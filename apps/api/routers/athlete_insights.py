@@ -13,18 +13,17 @@ This provides the "self-query" functionality discussed in requirements:
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Optional, List
-from uuid import UUID
+from typing import List
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from core.database import get_db
-from core.auth import get_current_athlete, require_query_access
+from core.auth import get_current_athlete
 from core.tier_utils import tier_satisfies
 from models import Athlete, Activity
 from services.query_engine import (
     QueryEngine, QuerySpec, QueryFilter, QueryScope,
-    QueryTemplates, AggregationType, SortOrder
+    AggregationType, SortOrder
 )
 import logging
 
@@ -394,8 +393,6 @@ def _get_weather_impact(engine: QueryEngine, athlete: Athlete, days: int) -> dic
 
 def _get_weekly_volume(db: Session, athlete: Athlete, weeks: int) -> dict:
     """Get weekly training volume"""
-    from sqlalchemy import func, extract
-    
     cutoff = datetime.now() - timedelta(weeks=weeks)
     
     # Query activities grouped by week

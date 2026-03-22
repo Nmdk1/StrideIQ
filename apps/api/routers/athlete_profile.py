@@ -7,10 +7,10 @@ Includes:
 - Mindset summary (Snow-inspired)
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, Dict
 from datetime import date, datetime
 
 from core.database import get_db
