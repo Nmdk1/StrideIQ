@@ -7,7 +7,7 @@ from uuid import UUID
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy.orm import Session

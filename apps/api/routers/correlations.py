@@ -9,7 +9,6 @@ between inputs (nutrition, sleep, work patterns, body composition) and outputs
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import Optional
 from core.database import get_db
 from core.auth import get_current_user
 from core.cache import cache_key, get_cache, set_cache

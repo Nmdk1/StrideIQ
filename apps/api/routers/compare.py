@@ -8,10 +8,9 @@ Enables powerful workout comparisons that Garmin/Strava don't offer:
 - See trends within workout types
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from datetime import datetime, timedelta
 from uuid import UUID
 from pydantic import BaseModel, Field
 
@@ -185,7 +184,7 @@ async def classify_all_activities(
             activity.workout_confidence = classification.confidence
             activity.intensity_score = classification.intensity_score
             classified_count += 1
-        except Exception as e:
+        except Exception:
             # Skip activities that fail classification
             continue
     

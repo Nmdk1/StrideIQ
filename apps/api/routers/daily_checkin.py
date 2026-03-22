@@ -7,12 +7,11 @@ Must be lightning fast - this is the data that feeds the correlation engine.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
-from datetime import date, datetime
+from datetime import date
 from uuid import UUID
 
 from core.database import get_db
