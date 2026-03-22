@@ -104,8 +104,8 @@ const ALTITUDE_MIN_SPAN_METERS = 10;
 const ALTITUDE_PAD_RATIO = 0.05;
 
 /** RSI chart scaling — pace (seconds per km) */
-const PACE_MIN_SPAN_S_PER_KM = 30;
-const PACE_PAD_RATIO = 0.12;
+const PACE_MIN_SPAN_S_PER_KM = 75;
+const PACE_PAD_RATIO = 0.2;
 
 /** RSI chart scaling — optional traces */
 const CADENCE_MIN_SPAN_SPM = 8;
@@ -189,11 +189,12 @@ function computeGradeDomainPercent(values: number[]): [number, number] | undefin
  */
 function computePaceDomainSmoothedSecPerKm(paces: number[]): [number, number] | undefined {
   if (paces.length < 6) return undefined;
-  const pMin = Math.min(...paces);
-  const pMax = Math.max(...paces);
-  const dataSpan = pMax - pMin;
+  const sorted = [...paces].sort((a, b) => a - b);
+  const lo = sorted[Math.floor((sorted.length - 1) * 0.10)] ?? sorted[0];
+  const hi = sorted[Math.floor((sorted.length - 1) * 0.90)] ?? sorted[sorted.length - 1];
+  const dataSpan = Math.max(1, hi - lo);
   const effectiveSpan = Math.max(dataSpan, PACE_MIN_SPAN_S_PER_KM);
-  const center = (pMin + pMax) / 2;
+  const center = (lo + hi) / 2;
   const pad = Math.max(2, effectiveSpan * PACE_PAD_RATIO);
   const half = effectiveSpan / 2 + pad;
   const dMin = Math.max(0, center - half);
@@ -217,7 +218,7 @@ function applyRobustPaceSmoothingForDisplay(raw: ChartPoint[]): void {
   const n = raw.length;
   if (n === 0) return;
 
-  const window = Math.max(15, Math.round(n / 12));
+  const window = Math.max(21, Math.round(n / 8));
   const halfW = Math.floor(window / 2);
 
   for (let i = 0; i < n; i++) {
@@ -231,7 +232,7 @@ function applyRobustPaceSmoothingForDisplay(raw: ChartPoint[]): void {
     raw[i].smoothedPace = med;
   }
 
-  const PACE_CHAIN_MAX_DELTA_S_KM = 20;
+  const PACE_CHAIN_MAX_DELTA_S_KM = 12;
   for (let i = 1; i < n; i++) {
     const prev = raw[i - 1].smoothedPace;
     let cur = raw[i].smoothedPace;
@@ -973,12 +974,12 @@ export function RunShapeCanvas({
     return computeGradeDomainPercent(vals);
   }, [chartData]);
 
-  // Boost an effortToColor for the pace line — needs to pop over segment bands
+  // Slightly boost effort color for pace line readability without overpowering terrain.
   const boostColor = useCallback((intensity: number): string => {
     const base = effortToColor(intensity);
     const match = base.match(/rgb\((\d+),(\d+),(\d+)\)/);
     if (!match) return base;
-    const boost = 1.5; // 50% brighter so it reads over segment bands
+    const boost = 1.1;
     const r = Math.min(255, Math.round(parseInt(match[1]) * boost));
     const g = Math.min(255, Math.round(parseInt(match[2]) * boost));
     const b = Math.min(255, Math.round(parseInt(match[3]) * boost));
@@ -993,17 +994,18 @@ export function RunShapeCanvas({
     const validPaces = smoothedPaces.filter((p): p is number => p != null && p > 0);
     if (validPaces.length === 0) return [];
 
-    const paceMin = Math.min(...validPaces);
-    const paceMax = Math.max(...validPaces);
-    const paceRange = paceMax - paceMin || 1;
+    const domainMin = paceDomain?.[0] ?? Math.min(...validPaces);
+    const domainMax = paceDomain?.[1] ?? Math.max(...validPaces);
+    const paceRange = Math.max(1, domainMax - domainMin);
 
     const maxStops = 60;
     const step = Math.max(1, Math.floor(chartData.length / maxStops));
     const stops: Array<{ offset: string; color: string }> = [];
     for (let i = 0; i < chartData.length; i += step) {
       const offset = (i / (chartData.length - 1)) * 100;
-      const pace = smoothedPaces[i] ?? paceMax;
-      const intensity = 1 - (pace - paceMin) / paceRange;
+      const pace = smoothedPaces[i] ?? domainMax;
+      const normalized = 1 - (pace - domainMin) / paceRange;
+      const intensity = clamp(normalized, 0.2, 0.8);
       stops.push({
         offset: `${offset.toFixed(1)}%`,
         color: boostColor(intensity),
@@ -1012,15 +1014,16 @@ export function RunShapeCanvas({
     const lastIdx = chartData.length - 1;
     const lastOffset = '100%';
     if (stops.length === 0 || stops[stops.length - 1].offset !== lastOffset) {
-      const lastPace = smoothedPaces[lastIdx] ?? paceMax;
-      const lastIntensity = 1 - (lastPace - paceMin) / paceRange;
+      const lastPace = smoothedPaces[lastIdx] ?? domainMax;
+      const lastNormalized = 1 - (lastPace - domainMin) / paceRange;
+      const lastIntensity = clamp(lastNormalized, 0.2, 0.8);
       stops.push({
         offset: lastOffset,
         color: boostColor(lastIntensity),
       });
     }
     return stops;
-  }, [hasEffortGradient, chartData, boostColor]);
+  }, [hasEffortGradient, chartData, boostColor, paceDomain]);
 
   // --- Crosshair handlers ---
   // Chart → Row highlighting via ref (no state re-render at 60fps)
@@ -1290,21 +1293,21 @@ export function RunShapeCanvas({
             )}
             <Line
               yAxisId="pace"
-              type="monotone"
+              type="linear"
               dataKey="smoothedPace"
               stroke={paceStroke}
               dot={false}
-              strokeWidth={2.5}
+              strokeWidth={2}
               isAnimationActive={false}
             />
             {showAdjustedOverlay && (
               <Line
                 yAxisId="pace"
-                type="monotone"
+                type="linear"
                 dataKey="adjustedPace"
                 stroke="rgba(255,255,255,0.55)"
                 dot={false}
-                strokeWidth={1.6}
+                strokeWidth={1.4}
                 strokeDasharray="6 4"
                 isAnimationActive={false}
               />
