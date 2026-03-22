@@ -386,9 +386,8 @@ def get_workout_narrative(
     - gate_open=True → global 90%-for-4-weeks gate is met; all premium athletes
       can receive narratives.
     """
-    import os
     from services.phase3_eligibility import (
-        get_3b_eligibility, _is_kill_switched, KILL_SWITCH_3B_ENV, NARRATION_QUALITY_GATE,
+        get_3b_eligibility, _is_kill_switched, KILL_SWITCH_3B_ENV,
     )
 
     # Compute kill_switch_active via the shared _is_kill_switched helper so
@@ -542,7 +541,6 @@ def founder_review_narratives(
     if not _is_founder_3b(current_user):
         raise HTTPException(status_code=403, detail="Founder-only endpoint.")
 
-    import os
     from datetime import datetime as _dt
     from services.phase3_eligibility import _is_kill_switched, KILL_SWITCH_3B_ENV, NARRATION_QUALITY_GATE
 

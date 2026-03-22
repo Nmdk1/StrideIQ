@@ -12,7 +12,7 @@ Trust & readiness view:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, List, Optional, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel

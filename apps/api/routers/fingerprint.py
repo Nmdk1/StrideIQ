@@ -23,7 +23,6 @@ from schemas_fingerprint import (
     WeekData,
     FingerprintFindingsResponse,
 )
-from services.effort_classification import classify_effort_bulk
 from services.fingerprint_analysis import (
     extract_fingerprint_findings,
     store_findings,

@@ -18,12 +18,11 @@ See docs/PHASE2_GARMIN_INTEGRATION_AC.md §D2
 """
 
 import logging
-from datetime import datetime, timezone
 from typing import Optional
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from core.auth import get_current_user
