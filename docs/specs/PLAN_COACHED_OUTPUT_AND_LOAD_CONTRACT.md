@@ -169,6 +169,38 @@ These are enforced by regex or prefix checks in `apps/api/services/plan_framewor
 - **Default:** keep the **machine-readable title prefix** intact; put the **richer sentence** in **`description`** first. Optionally **append** a short clause to **`title`** after the stable prefix if UX needs a scannable headline (still within variant regex rules).  
 - **`mp_touch`:** Narrative must stay **consistent with cutback consolidation** (not “dress rehearsal”, not “main MP long”).
 
+#### P3.1 — StrideIQ voice (threshold copy) — **sounds-like contract**
+
+Ground in **`docs/PRODUCT_MANIFESTO.md`** and **`docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md`**: the plan line should **teach this session** with **real numbers**, not decorate it. Aligned with coach discipline (**`docs/BUILDER_INSTRUCTIONS_2026-03-17_COACH_PROMPT_TIGHTENING.md`**): **plain sentences**, **no emojis**, **no markdown document formatting** in API strings (no `##`, tables, or bold-as-headings—readable prose only).
+
+| Do | Don’t |
+|----|--------|
+| Name **minutes / reps / recovery** from the scaler | Claim “last week” without `threshold_narrative_prev` |
+| Say **threshold** / **sustainably hard** / **short phrases** (execution) | Use **tempo** as the primary label (pace calc is **T**; code already avoids emitting `tempo`) |
+| Connect to **purpose** (learn the effort, repeat quality, accumulate time at threshold) | Cheerlead (“crush it”, “you’ve got this”) or generic praise |
+| Keep lead **1–2 sentences**, then existing factual tail | Essay-length copy |
+
+**Title:** keep required prefixes (`Threshold Run: {N} min`, `Threshold Intervals: {reps}x{dur} min`); put coach voice in **`description`** first (or append after `min` only if regex still matches).
+
+**Continuous threshold — example shapes (placeholders = scaler-only):**
+
+- **First in plan (`prev` absent):**  
+  `First threshold block in this plan: {N} minutes at a sustainably hard effort—not race pace. Learn what threshold feels like while you can still speak in short phrases.`  
+  → then factual line (warmup / continuous block / cooldown as today).
+- **Progression (`prev_minutes` present):**  
+  `Building from {prev_minutes} to {N} minutes at the same effort—more accumulated time at threshold without changing the feel.`  
+  → then factual line.
+
+**Threshold intervals — example shapes:**
+
+- **First in plan:**  
+  `First threshold intervals in this plan: {reps}×{dur} min with jog recovery between. Aim for even pacing on each rep; controlled beats heroic.`  
+  → then factual line.
+- **Progression (snapshot had prior reps × dur):**  
+  If structure changed:  
+  `Progressing from {pr}×{pd} min to {reps}×{dur} min at threshold—more stimulus at the same quality bar.`  
+  If only one dimension changed, say the honest delta in one short clause (still only if `prev` exists).
+
 #### Phased delivery
 
 | Phase | Scope | Outcome |
