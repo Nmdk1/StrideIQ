@@ -101,15 +101,15 @@ def test_register_with_invite_marks_used():
         db.close()
 
 
-def test_register_with_grant_tier_applies_pro():
+def test_register_with_grant_tier_applies_subscriber():
     """
-    When an invite has grant_tier='pro', the registered user should
-    automatically get subscription_tier='pro' instead of 'free'.
+    When an invite has a paid grant_tier alias, the registered user should
+    automatically get canonical subscription_tier='subscriber'.
     """
     db = SessionLocal()
     email = f"beta_tester_{uuid4()}@example.com".lower()
     try:
-        # Create invite with grant_tier='pro' (beta tester)
+        # Create invite with legacy paid grant_tier alias.
         inv = InviteAllowlist(email=email, is_active=True, grant_tier="pro", note="Beta tester")
         db.add(inv)
         db.commit()
@@ -122,10 +122,10 @@ def test_register_with_grant_tier_applies_pro():
         body = resp.json()
         assert body.get("access_token")
         
-        # Verify the athlete was created with pro tier
+        # Verify the athlete was created with canonical subscriber tier.
         athlete = db.query(Athlete).filter(Athlete.email == email).first()
         assert athlete is not None
-        assert athlete.subscription_tier == "pro", f"Expected 'pro', got '{athlete.subscription_tier}'"
+        assert athlete.subscription_tier == "subscriber", f"Expected 'subscriber', got '{athlete.subscription_tier}'"
         
         # Verify invite was marked as used
         db.refresh(inv)

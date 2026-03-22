@@ -23,7 +23,7 @@ def _create_user(db, *, role: str) -> Athlete:
     athlete = Athlete(
         email=f"phase8_audit_{role}_{uuid4()}@example.com",
         display_name=f"Phase8 Audit {role}",
-        subscription_tier="elite" if role in ("admin", "owner") else "free",
+        subscription_tier="subscriber" if role in ("admin", "owner") else "free",
         role=role,
     )
     db.add(athlete)
@@ -109,7 +109,7 @@ def test_audit_event_emitted_for_billing_comp():
         resp = client.post(
             f"/v1/admin/users/{target.id}/comp",
             headers=_headers(owner),
-            json={"tier": "pro", "reason": reason},
+            json={"tier": "subscriber", "reason": reason},
         )
         assert resp.status_code == 200, resp.text
 
@@ -117,8 +117,8 @@ def test_audit_event_emitted_for_billing_comp():
         assert ev is not None
         assert str(ev.target_athlete_id) == str(target.id)
         assert isinstance(ev.payload, dict)
-        assert ev.payload.get("before", {}).get("subscription_tier") in ("free", "pro", "elite", "premium", "guided", "subscription", None)
-        assert ev.payload.get("after", {}).get("subscription_tier") == "pro"
+        assert ev.payload.get("before", {}).get("subscription_tier") in ("free", "subscriber", None)
+        assert ev.payload.get("after", {}).get("subscription_tier") == "subscriber"
     finally:
         try:
             ids = [x.id for x in (owner, target) if x is not None]

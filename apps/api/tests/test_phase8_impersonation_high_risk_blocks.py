@@ -23,7 +23,7 @@ def owner_user():
     athlete = Athlete(
         email=f"owner_{uuid4()}@example.com",
         display_name="Owner",
-        subscription_tier="elite",
+        subscription_tier="subscriber",
         role="owner",
     )
     db.add(athlete)
@@ -42,7 +42,7 @@ def admin_user_with_perms():
     athlete = Athlete(
         email=f"admin_{uuid4()}@example.com",
         display_name="Admin",
-        subscription_tier="elite",
+        subscription_tier="subscriber",
         role="admin",
     )
     athlete.admin_permissions = [
@@ -107,7 +107,7 @@ def test_impersonation_token_cannot_call_high_risk_admin_mutations(owner_user, a
         (
             "POST",
             f"/v1/admin/users/{target_user.id}/comp",
-            {"tier": "pro", "reason": "test"},
+            {"tier": "subscriber", "reason": "test"},
         ),
         (
             "POST",

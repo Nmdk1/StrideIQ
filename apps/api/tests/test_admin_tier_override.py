@@ -31,7 +31,7 @@ def admin_user():
     athlete = Athlete(
         email=f"admin_override_{uuid4()}@example.com",
         display_name="Admin",
-        subscription_tier="pro",
+        subscription_tier="subscriber",
         role="admin",
     )
     db.add(athlete)
@@ -90,22 +90,22 @@ def _cleanup(*athletes):
 def test_admin_comp_sets_override_fields(admin_headers, admin_user, target_user):
     resp = client.post(
         f"/v1/admin/users/{target_user.id}/comp",
-        json={"tier": "premium", "reason": "sponsor deal"},
+        json={"tier": "subscriber", "reason": "sponsor deal"},
         headers=admin_headers,
     )
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["success"] is True
-    assert payload["user"]["subscription_tier"] == "premium"
-    assert payload["user"]["admin_tier_override"] == "premium"
+    assert payload["user"]["subscription_tier"] == "subscriber"
+    assert payload["user"]["admin_tier_override"] == "subscriber"
     assert payload["user"]["admin_tier_override_set_at"] is not None
 
     db = SessionLocal()
     try:
         row = db.query(Athlete).filter(Athlete.id == target_user.id).first()
         assert row is not None
-        assert row.subscription_tier == "premium"
-        assert row.admin_tier_override == "premium"
+        assert row.subscription_tier == "subscriber"
+        assert row.admin_tier_override == "subscriber"
         assert row.admin_tier_override_set_by == admin_user.id
         assert row.admin_tier_override_set_at is not None
         assert row.admin_tier_override_reason == "sponsor deal"
@@ -134,14 +134,14 @@ def test_stripe_sync_does_not_override_manual_comp(target_user):
     """
     Athlete has admin_tier_override='premium'.
     Stripe best_effort_sync would derive 'free' (canceled sub).
-    Effective subscription_tier must remain 'premium'.
+    Effective subscription_tier must remain 'subscriber'.
     """
     # Set up override directly in DB.
     db = SessionLocal()
     try:
         row = db.query(Athlete).filter(Athlete.id == target_user.id).first()
-        row.subscription_tier = "premium"
-        row.admin_tier_override = "premium"
+        row.subscription_tier = "subscriber"
+        row.admin_tier_override = "subscriber"
         db.commit()
         db.refresh(row)
     finally:
@@ -191,8 +191,8 @@ def test_stripe_sync_does_not_override_manual_comp(target_user):
             svc.best_effort_sync_customer_subscription(db2, athlete=row2)
 
         db2.refresh(row2)
-        # Must remain premium — override locks the tier.
-        assert row2.subscription_tier == "premium", (
+        # Must remain subscriber — override locks the tier.
+        assert row2.subscription_tier == "subscriber", (
             f"Stripe sync reverted comp override: tier is {row2.subscription_tier!r}"
         )
     finally:
@@ -209,8 +209,8 @@ def test_clear_override_reenables_stripe_authority(admin_headers, admin_user, ta
     db = SessionLocal()
     try:
         row = db.query(Athlete).filter(Athlete.id == target_user.id).first()
-        row.subscription_tier = "premium"
-        row.admin_tier_override = "premium"
+        row.subscription_tier = "subscriber"
+        row.admin_tier_override = "subscriber"
         db.commit()
     finally:
         db.close()
@@ -293,7 +293,7 @@ def test_vip_toggle_does_not_mutate_subscription_tier(admin_headers, admin_user,
     db = SessionLocal()
     try:
         row = db.query(Athlete).filter(Athlete.id == target_user.id).first()
-        row.subscription_tier = "premium"
+        row.subscription_tier = "subscriber"
         row.is_coach_vip = False
         db.commit()
     finally:
@@ -313,7 +313,7 @@ def test_vip_toggle_does_not_mutate_subscription_tier(admin_headers, admin_user,
     try:
         row2 = db2.query(Athlete).filter(Athlete.id == target_user.id).first()
         assert row2.is_coach_vip is True
-        assert row2.subscription_tier == "premium", (
+        assert row2.subscription_tier == "subscriber", (
             f"VIP toggle mutated subscription_tier: {row2.subscription_tier!r}"
         )
     finally:
@@ -331,7 +331,7 @@ def test_vip_toggle_does_not_mutate_subscription_tier(admin_headers, admin_user,
     try:
         row3 = db3.query(Athlete).filter(Athlete.id == target_user.id).first()
         assert row3.is_coach_vip is False
-        assert row3.subscription_tier == "premium", (
+        assert row3.subscription_tier == "subscriber", (
             f"VIP unset mutated subscription_tier: {row3.subscription_tier!r}"
         )
     finally:

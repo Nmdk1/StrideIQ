@@ -1,16 +1,9 @@
 """
-Knowledge Base Query API
+Knowledge Base Query API.
 
-Tier-based access to queryable knowledge base:
-- Tier 3+ (Guided Coaching & Premium): Full access to search endpoints
-- Internal/Admin: Full access + admin endpoints
-
-Endpoints:
-- GET /v1/knowledge/search - Search entries by tags, methodology, concept
-- GET /v1/knowledge/concepts/{concept} - Get all entries about a concept
-- GET /v1/knowledge/compare - Compare methodologies on a concept
-- GET /v1/knowledge/rpi/formula - Get exact RPI formula
-- GET /v1/knowledge/rpi/pace-tables - Get training pace tables
+Knowledge content is currently available to all authenticated athletes.
+Tier checks are normalized to the two-tier contract (`free` / `subscriber`)
+for downstream analytics and response metadata consistency.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -21,23 +14,21 @@ import json
 
 from core.database import get_db
 from core.auth import get_current_user
+from core.tier_utils import normalize_tier
 from models import CoachingKnowledgeEntry, Athlete
-from core.config import settings
 
 router = APIRouter(prefix="/v1/knowledge", tags=["Knowledge Base"])
 
 
 def check_tier_access(athlete: Athlete) -> str:
     """
-    Check if user has access to knowledge base (Tier 3+).
+    Resolve the caller's canonical tier.
     
     Returns tier level or raises HTTPException if access denied.
     """
-    tier = athlete.subscription_tier or "free"
-    if tier in ["guided", "premium", "admin"]:
-        return tier
-    # Allow free tier access to knowledge base (read-only educational content)
-    return tier
+    if bool(getattr(athlete, "has_active_subscription", False)):
+        return "subscriber"
+    return normalize_tier(getattr(athlete, "subscription_tier", "free"))
 
 
 @router.get("/search")
@@ -59,10 +50,10 @@ def search_knowledge(
     - Principle type
     - Concept (searches text content)
     
-    Tier: 3+ (Guided Coaching & Premium)
+    Access: authenticated athletes
     """
     # Check tier access
-    tier = check_tier_access(current_user)
+    check_tier_access(current_user)
     
     query = db.query(CoachingKnowledgeEntry)
     
@@ -130,9 +121,9 @@ def get_concept_entries(
     
     Searches for entries tagged with the concept or containing the concept in text.
     
-    Tier: 3+ (Guided Coaching & Premium)
+    Access: authenticated athletes
     """
-    tier = check_tier_access(current_user)
+    check_tier_access(current_user)
     
     query = db.query(CoachingKnowledgeEntry).filter(
         or_(
@@ -184,9 +175,9 @@ def compare_methodologies(
     
     Returns side-by-side excerpts from each methodology.
     
-    Tier: 3+ (Guided Coaching & Premium)
+    Access: authenticated athletes
     """
-    tier = check_tier_access(current_user)
+    check_tier_access(current_user)
     
     # Find entries tagged with concept
     query = db.query(CoachingKnowledgeEntry).filter(
@@ -233,9 +224,9 @@ def get_rpi_formula(
     """
     Get exact RPI calculation formula from Daniels' Running Formula.
     
-    Tier: 3+ (Guided Coaching & Premium)
+    Access: authenticated athletes
     """
-    tier = check_tier_access(current_user)
+    check_tier_access(current_user)
     
     entry = db.query(CoachingKnowledgeEntry).filter(
         CoachingKnowledgeEntry.principle_type == "rpi_exact",
@@ -263,9 +254,9 @@ def get_rpi_pace_tables(
     """
     Get training pace tables (E, M, T, I, R paces) from Daniels' Running Formula.
     
-    Tier: 3+ (Guided Coaching & Premium)
+    Access: authenticated athletes
     """
-    tier = check_tier_access(current_user)
+    check_tier_access(current_user)
     
     entry = db.query(CoachingKnowledgeEntry).filter(
         CoachingKnowledgeEntry.principle_type == "rpi_exact",
@@ -294,9 +285,9 @@ def list_all_tags(
     """
     List all available tags in the knowledge base.
     
-    Tier: 3+ (Guided Coaching & Premium)
+    Access: authenticated athletes
     """
-    tier = check_tier_access(current_user)
+    check_tier_access(current_user)
     
     query = db.query(CoachingKnowledgeEntry)
     

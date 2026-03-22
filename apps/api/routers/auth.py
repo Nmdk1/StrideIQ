@@ -33,6 +33,7 @@ from core.account_security import (
     is_account_locked,
     get_remaining_attempts
 )
+from core.tier_utils import normalize_tier
 from models import Athlete, RacePromoCode
 from services.invite_service import is_invited, mark_invite_used, normalize_email
 from services.system_flags import are_invites_required
@@ -146,7 +147,7 @@ def register(
     # Determine subscription tier: use invite's grant_tier if set, otherwise "free"
     subscription_tier = "free"
     if invite and invite.grant_tier:
-        subscription_tier = invite.grant_tier
+        subscription_tier = normalize_tier(invite.grant_tier)
     
     # Check for race promo code (QR activation from packet pickup)
     race_promo = None

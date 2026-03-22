@@ -27,6 +27,7 @@ import logging
 from sqlalchemy import func, and_, or_, desc
 from sqlalchemy.orm import Session
 
+from core.tier_utils import normalize_tier
 from models import (
     Activity,
     Athlete,
@@ -212,8 +213,10 @@ class InsightAggregator:
     def __init__(self, db: Session, athlete: Athlete):
         self.db = db
         self.athlete = athlete
-        # Elite is the single paid tier; legacy paid tiers still grant Elite access for now.
-        self.is_elite = bool(getattr(athlete, "has_active_subscription", False)) or athlete.subscription_tier == "elite"
+        # Paid access is canonicalized to the subscriber tier.
+        self.is_elite = bool(getattr(athlete, "has_active_subscription", False)) or (
+            normalize_tier(getattr(athlete, "subscription_tier", "free")) == "subscriber"
+        )
     
     def generate_insights(
         self,

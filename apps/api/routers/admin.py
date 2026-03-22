@@ -97,9 +97,9 @@ class ThreeDSelectionModeRequest(BaseModel):
 class InviteCreateRequest(BaseModel):
     email: str
     note: Optional[str] = None
-    grant_tier: Optional[Literal["free", "pro"]] = Field(
+    grant_tier: Optional[Literal["free", "subscriber", "pro", "guided", "premium", "elite"]] = Field(
         default=None, 
-        description="Subscription tier to grant on signup (e.g., 'pro' for beta testers)"
+        description="Subscription tier to grant on signup (normalized to two-tier contract)"
     )
 
 
@@ -653,7 +653,7 @@ def create_invite_endpoint(
     Create or re-activate an invite allowlist entry.
     Admin/owner only.
     
-    Use grant_tier="pro" to give beta testers automatic pro access on signup.
+    Use grant_tier="subscriber" (or any paid legacy alias) to grant paid access on signup.
     """
     from services.invite_service import create_invite
 
