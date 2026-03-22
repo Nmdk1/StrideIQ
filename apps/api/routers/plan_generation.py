@@ -1902,7 +1902,7 @@ async def create_model_driven_plan(
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Model-driven plans require an active paid subscription",
+                "reason": "Model-driven plans require Elite (active paid subscription)",
                 "upgrade_path": "/pricing"
             }
         )
@@ -1912,7 +1912,7 @@ async def create_model_driven_plan(
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Model-driven plans require an active paid subscription",
+                "reason": "Model-driven plans require Elite (active paid subscription)",
                 "upgrade_path": "/pricing"
             }
         )
