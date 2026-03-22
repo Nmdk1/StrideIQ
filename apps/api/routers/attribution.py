@@ -122,7 +122,6 @@ def get_activity_attribution(
     Use this when you want a quick "why was this run good/bad?" answer.
     """
     from services.contextual_comparison import ContextualComparisonService
-    from datetime import datetime, timedelta
     from models import Activity
     
     # Get the target activity

@@ -22,7 +22,6 @@ from core.security import (
     verify_password,
     get_password_hash,
     create_access_token,
-    decode_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
     SECRET_KEY,
     ALGORITHM,
@@ -157,7 +156,7 @@ def register(
         now = datetime.now(timezone.utc)
         race_promo = db.query(RacePromoCode).filter(
             RacePromoCode.code == code,
-            RacePromoCode.is_active == True
+            RacePromoCode.is_active.is_(True),
         ).first()
         
         if race_promo:

@@ -14,7 +14,7 @@ Endpoints:
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import func
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from uuid import UUID
@@ -26,8 +26,8 @@ from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
 from models import (
-    Athlete, Activity, TrainingPlan, PlannedWorkout,
-    CalendarNote, CoachChat, CalendarInsight, ActivityFeedback
+    Athlete, Activity, PlannedWorkout,
+    CalendarNote, CoachChat, CalendarInsight
 )
 from services.ai_coach import AICoach
 from services import coach_tools
@@ -760,7 +760,7 @@ def get_calendar(
         CalendarInsight.athlete_id == current_user.id,
         CalendarInsight.insight_date >= start_date,
         CalendarInsight.insight_date <= end_date,
-        CalendarInsight.is_dismissed == False
+        CalendarInsight.is_dismissed.is_(False)
     ).order_by(CalendarInsight.priority.desc()).all()
     
     for i in insights:
@@ -906,7 +906,7 @@ def get_calendar_day(
     insights = db.query(CalendarInsight).filter(
         CalendarInsight.athlete_id == current_user.id,
         CalendarInsight.insight_date == calendar_date,
-        CalendarInsight.is_dismissed == False
+        CalendarInsight.is_dismissed.is_(False)
     ).order_by(CalendarInsight.priority.desc()).all()
     
     status = get_day_status(planned, activities, calendar_date)
