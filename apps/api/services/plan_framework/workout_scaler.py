@@ -351,15 +351,22 @@ class WorkoutScaler:
         target = max(float(MIN_STANDARD_EASY_LONG_MILES), target)
         # P4 week-1 seed max(L30, tier_start): apply after soft cap, same contract as
         # MIN_STANDARD_EASY_LONG_MILES vs 35% (PLAN_COACHED — floor may exceed soft cap).
+        floor_min_int: Optional[int] = None
         if easy_long_floor_mi is not None and previous_easy_long_mi is None:
             fl = float(easy_long_floor_mi)
             target = max(target, fl)
+            # Preserve "minimum" semantics after integer-mile quantization.
+            # Example: 14mi activity stored as meters can surface as 13.99.. miles.
+            # floor(13.99..) would undercut the intended floor by 1 mile.
+            floor_min_int = int(math.ceil(fl - 1e-9))
             # Tier peak can sit below L30 seed (e.g. low peak_long_miles); do not clip floor.
             peak_cap = max(float(peak), fl)
         else:
             peak_cap = float(peak)
         target = min(target, peak_cap)
         mi = math.floor(target)
+        if floor_min_int is not None:
+            mi = max(mi, floor_min_int)
 
         desc = "Easy effort throughout. Build endurance through time on feet."
         if previous_easy_long_mi is not None and mi > int(previous_easy_long_mi):

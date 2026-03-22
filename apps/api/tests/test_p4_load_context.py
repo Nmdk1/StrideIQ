@@ -508,3 +508,23 @@ def test_p4_week1_easy_long_floor_survives_weekly_soft_cap():
         easy_long_floor_mi=14.0,
     )
     assert (sw.total_distance_miles or 0) >= 13.5
+
+
+def test_p4_week1_easy_long_floor_handles_meter_precision_fraction():
+    """History-derived floor must survive float precision + integer-mile quantization."""
+    from services.plan_framework.workout_scaler import WorkoutScaler
+
+    scaler = WorkoutScaler()
+    sw = scaler._scale_long_run(
+        28.0,
+        "mid",
+        "marathon",
+        plan_week=1,
+        duration_weeks=18,
+        is_cutback=False,
+        previous_easy_long_mi=None,
+        history_override=False,
+        # Typical meters→miles precision artifact for a true 14mi activity.
+        easy_long_floor_mi=13.9996,
+    )
+    assert (sw.total_distance_miles or 0) >= 14.0
