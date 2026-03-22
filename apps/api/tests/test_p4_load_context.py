@@ -221,16 +221,18 @@ def test_d4_override_true_when_n_and_m_satisfied(db_session):
     )
     db_session.commit()
 
-    ok, c15, last18 = compute_d4_long_run_override_and_stats(
+    ok, c15, last18, c18 = compute_d4_long_run_override_and_stats(
         db_session, athlete.id, ref
     )
     assert c15 >= P4_D4_N
+    assert c18 >= 1
     assert last18 is not None
     assert (ref - last18).days <= P4_D4_M_DAYS
     assert ok is True
 
     ctx = build_load_context(athlete.id, db_session, ref)
     assert ctx.history_override_easy_long is True
+    assert ctx.count_long_18plus >= 1
 
 
 def test_d4_override_false_when_count_low(db_session):
@@ -276,7 +278,9 @@ def test_d4_override_false_when_count_low(db_session):
     )
     db_session.commit()
 
-    ok, c15, _ = compute_d4_long_run_override_and_stats(db_session, athlete.id, ref)
+    ok, c15, _, _c18 = compute_d4_long_run_override_and_stats(
+        db_session, athlete.id, ref
+    )
     assert c15 < P4_D4_N
     assert ok is False
 
@@ -415,3 +419,22 @@ def test_generate_standard_use_history_false_vs_true_volume_shift(db_session):
         use_history=True,
     )
     assert p0.weekly_volumes[0] <= p1.weekly_volumes[0]
+
+
+def test_p4_week1_easy_long_floor_survives_weekly_soft_cap():
+    """D1/P4: seed max(L, tier_start) must not be clipped by 35% soft cap (tech review)."""
+    from services.plan_framework.workout_scaler import WorkoutScaler
+
+    scaler = WorkoutScaler()
+    sw = scaler._scale_long_run(
+        28.0,
+        "mid",
+        "marathon",
+        plan_week=1,
+        duration_weeks=18,
+        is_cutback=False,
+        previous_easy_long_mi=None,
+        history_override=False,
+        easy_long_floor_mi=14.0,
+    )
+    assert (sw.total_distance_miles or 0) >= 13.5

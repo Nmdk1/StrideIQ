@@ -347,12 +347,12 @@ class WorkoutScaler:
         else:
             target = curve
 
-        # P4: first planned easy long — floor from L30 vs tier start (generator passes once).
-        if easy_long_floor_mi is not None and previous_easy_long_mi is None:
-            target = max(target, float(easy_long_floor_mi))
-
         target = min(target, weekly_soft_cap, peak)
         target = max(float(MIN_STANDARD_EASY_LONG_MILES), target)
+        # P4 week-1 seed max(L30, tier_start): apply after soft cap, same contract as
+        # MIN_STANDARD_EASY_LONG_MILES vs 35% (PLAN_COACHED — floor may exceed soft cap).
+        if easy_long_floor_mi is not None and previous_easy_long_mi is None:
+            target = max(target, float(easy_long_floor_mi))
         target = min(target, peak)
         mi = math.floor(target)
 

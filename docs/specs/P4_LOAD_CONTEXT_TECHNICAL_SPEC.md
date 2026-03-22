@@ -76,7 +76,7 @@ Let `L = l30_max_easy_long_mi`.
 
 - If `L is None`: `seed_long = tier_start_long` (no change).
 - Else: `seed_long = max(L, tier_start_long)`.
-- Pass into existing **easy-long state** / first call to `_scale_long_run` as **`previous_easy_long_mi`** **or** equivalent first-week target input **exactly as** technical review aligns with current `easy_long_state` initialization (implementation detail: must match one defined behavior in tests).
+- Pass **`easy_long_floor_mi`** into `_scale_long_run` for the **first** easy long only (`previous_easy_long_mi is None`). **Ordering vs 35% soft cap:** apply **`min(..., weekly_soft_cap, peak)`** then **`max(MIN_STANDARD_EASY_LONG_MILES, ...)`** then **`max(..., easy_long_floor_mi)`** then **`min(..., peak)`** — same “floor may exceed soft cap” contract as the 8 mi policy in `PLAN_COACHED_OUTPUT_AND_LOAD_CONTRACT.md`.
 
 **In-plan weeks 2+:** Unchanged P1 chain: compare to **previous planned** easy long.
 

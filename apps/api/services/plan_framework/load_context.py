@@ -51,12 +51,12 @@ def compute_d4_long_run_override_and_stats(
     db: Session,
     athlete_id: UUID,
     reference_date: date,
-) -> Tuple[bool, int, Optional[date]]:
+) -> Tuple[bool, int, Optional[date], int]:
     """
     D4: count_long_15plus >= P4_D4_N in trailing 24 months (non-race),
     and last >=18 mi within P4_D4_M_DAYS before reference_date.
 
-    Returns (override_bool, count_15plus, last_18mi_date_or_none).
+    Returns (override_bool, count_15plus, last_18mi_date_or_none, count_18plus_runs).
     """
     from services.mileage_aggregation import get_canonical_run_activities
 
@@ -159,15 +159,13 @@ def build_load_context(
             observed = float(cur)
             disclosures.append("observed_4w_mpw")
 
-    d4_ok, count15, last18 = compute_d4_long_run_override_and_stats(
+    d4_ok, count15, last18, count18 = compute_d4_long_run_override_and_stats(
         db, athlete_id, reference_date
     )
-    count18 = 0
     if last18 is not None:
         recency_days = (reference_date - last18).days
     else:
         recency_days = None
-    # count 18+ in same 24mo window — approximate from D4 scan would duplicate; optional debug
     if d4_ok:
         disclosures.append("d4_history_override")
 
