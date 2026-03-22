@@ -19,6 +19,7 @@ AC coverage: AC-1 (endpoint contract)
 """
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -37,6 +38,7 @@ router = APIRouter(prefix="/v1/activities", tags=["stream-analysis"])
 
 # Max points returned in the stream array (LTTB downsampled if needed)
 MAX_STREAM_POINTS = 500
+GARMIN_PENDING_STALE_MINUTES = 30
 
 
 def _prepare_stream_points(
@@ -203,6 +205,26 @@ def get_stream_analysis(
         return {"status": "unavailable"}
 
     if fetch_status in ("pending", "fetching", "failed", None):
+        # Garmin detail payloads are push-driven; if they never arrive, activities
+        # can remain pending indefinitely. Fail closed after a bounded window so
+        # the client does not show "Analyzing your run..." forever.
+        if str(getattr(activity, "provider", "") or "").lower() == "garmin":
+            stale_anchor = (
+                getattr(activity, "stream_fetch_attempted_at", None)
+                or getattr(activity, "start_time", None)
+            )
+            if stale_anchor:
+                stale_cutoff = datetime.now(timezone.utc) - timedelta(
+                    minutes=GARMIN_PENDING_STALE_MINUTES
+                )
+                if stale_anchor < stale_cutoff:
+                    stream_row = (
+                        db.query(ActivityStream)
+                        .filter(ActivityStream.activity_id == activity_id)
+                        .first()
+                    )
+                    if stream_row is None:
+                        return {"status": "unavailable"}
         return {"status": "pending"}
 
     # --- Load stream data ---
