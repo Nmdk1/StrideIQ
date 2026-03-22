@@ -1,6 +1,6 @@
 # Plan: coached output & load contract (spec)
 
-**Status:** P1–P2 implemented in `workout_scaler` + `generator` (2026-03-22); **P3.0–P3.1** (MP + threshold narrative) implemented; P3.2+ optional; P4+ pending  
+**Status:** P1–P2 implemented in `workout_scaler` + `generator` (2026-03-22); **P3.0–P3.2** (plan narrative + prod registry bundle) implemented; P4+ pending  
 **Date:** 2026-03-22  
 **Read with:** `docs/PLAN_CUTBACK_MP_POLICY.md`, `docs/TRAINING_PLAN_REBUILD_PLAN.md`, Vega notes (long-run curve, weighted easy fill, progression copy)
 
@@ -140,7 +140,7 @@ These are enforced by regex or prefix checks in `apps/api/services/plan_framewor
 | `threshold` (continuous) | Title must **still match** `_THR_RUN_TITLE_RE`: leading `Threshold Run: {N} min`. **Suffix allowed** after `min` (e.g. em dash or middle dot + narrative). **Prefix before `Threshold Run:` is not allowed** without updating the regex + tests. |
 | `threshold_intervals` | Leading pattern `Threshold Intervals: {reps}x{dur} min`; same suffix rule. |
 | `long_mp`, `long_mp_intervals` (option B), `mp_touch` | Variant id is resolved from **`workout_type`** (and segments where applicable); **titles may change freely** for copy — still verify `resolve_workout_variant_id` and any STEM/title-based validators after edits. |
-| `long_hmp` | Title must **`startswith("Long Run with HMP:")`** for id resolution — **defer HMP narrative to P3.1 or later** unless this prefix is preserved. |
+| `long_hmp` | Title must **`startswith("Long Run with HMP:")`** for id resolution — **P3.2** adds description copy; prefix preserved. |
 
 #### Inputs — what exists today vs what to add
 
@@ -205,7 +205,7 @@ Ground in **`docs/PRODUCT_MANIFESTO.md`** and **`docs/DESIGN_PHILOSOPHY_AND_SITE
 |-------|--------|--------|
 | **P3.0** | **MP long (+ option B)** — **implemented:** `prev_mp_miles: Optional[int]`; `workout_narrative.py`; comparative copy when prev set; first-MP intro when `None`. | Marathon plan readability; variant ids unchanged (`workout_type`-based for `long_mp`). |
 | **P3.1** | **Continuous threshold + threshold intervals** — **implemented:** `prev_threshold_continuous_min`, `prev_threshold_intervals` in generator; narrative in `workout_narrative.py`; titles keep regex prefixes. | Same “coach read” bar as P3.0 for T-work. |
-| **P3.2 (optional)** | **`mp_touch` one-liner** tied to consolidation; **HMP** only if title prefix `Long Run with HMP:` preserved. | Polish; HMP needs prefix discipline. |
+| **P3.2** | **`mp_touch`** consolidation coach copy; **`long_hmp`** coach copy with required title prefix `Long Run with HMP:`. **Docker:** API image build context = repo root; **`workout_registry.json`** copied into image at `_AI_CONTEXT_/...` so prod resolves `workout_variant_id`. Dev compose: bind-mount `./_AI_CONTEXT_` → `/app/_AI_CONTEXT_` alongside `./apps/api` → `/app`. | Polish + prod variant parity. |
 
 #### Code organization
 
@@ -265,6 +265,6 @@ See **D1**, **D2** table, **D4** gates, **P1**, **P5** above. Founder amendment:
 
 1. ~~P1 scaler curve + clamps~~ **done**  
 2. ~~P2 weighted easy fill~~ **done**  
-3. ~~P3.0–P3.1 plan narrative (MP + threshold)~~ **done** (see §P3 phased table).  
+3. ~~P3.0–P3.2 plan narrative + prod registry bundle~~ **done** (see §P3 phased table).  
 4. P4 `LoadContext` + 30d spike + `max(L30, previous_planned)` baseline.  
 5. P5 adaptation hook (≥3wk / 70% gate).

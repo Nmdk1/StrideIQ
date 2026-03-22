@@ -74,6 +74,49 @@ def threshold_intervals_description(
     return f"{narrative} {factual}"
 
 
+def mp_touch_copy(mp_miles: float, total_miles: float) -> Tuple[str, str]:
+    """Cutback consolidation MP touch — not a dress rehearsal (P3.2)."""
+    mp_i = int(round(mp_miles))
+    tot = int(round(total_miles))
+    title = f"Medium long with MP touch: {mp_i} mi @ MP"
+    narrative = (
+        "Cutback consolidation: a short block at goal marathon pace so race rhythm does not go cold "
+        "without loading a full MP long this week."
+    )
+    detail = f"{tot} mi total — easy bookends around {mp_i} mi at MP."
+    return title, f"{narrative} {detail}"
+
+
+def hmp_long_copy(
+    total_miles: float,
+    easy_warmup: float,
+    hmp_miles: float,
+    week_in_phase: int,
+) -> Tuple[str, str]:
+    """
+    Title MUST start with ``Long Run with HMP:`` for ``workout_variant_dispatch`` (P3.2).
+    """
+    tot = int(round(total_miles))
+    ew = int(round(easy_warmup))
+    hm = int(round(hmp_miles))
+    title = f"Long Run with HMP: last {hm} mi @ HMP"
+    if week_in_phase <= 1:
+        lead = (
+            f"First HMP segment in this plan: {ew} mi easy, then {hm} mi at half marathon pace — "
+            "faster than threshold, still controlled."
+        )
+    elif week_in_phase == 2:
+        lead = (
+            f"Progressing the HMP finish: {ew} mi easy, then {hm} mi at HMP to rehearse race rhythm on tired legs."
+        )
+    else:
+        lead = (
+            f"Race-specific long: {ew} mi easy, then {hm} mi at HMP — practice the second half of your long run."
+        )
+    detail = f"{tot} mi total."
+    return title, f"{lead} {detail}"
+
+
 def mp_long_option_a_copy(
     mp_week: int,
     mp_miles: float,

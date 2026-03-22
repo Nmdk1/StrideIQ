@@ -64,7 +64,8 @@ services:
 
   api:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     container_name: strideiq_api
     restart: unless-stopped
     env_file:
@@ -96,7 +97,8 @@ services:
 
   worker:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     container_name: strideiq_worker
     restart: unless-stopped
     env_file:
@@ -121,7 +123,8 @@ services:
 
   beat:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     container_name: strideiq_beat
     restart: unless-stopped
     env_file:

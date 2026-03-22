@@ -14,8 +14,10 @@ from services.plan_framework.generator import (
     _extract_threshold_intervals_shape,
 )
 from services.plan_framework.workout_narrative import (
+    hmp_long_copy,
     mp_long_option_a_copy,
     mp_long_option_b_copy,
+    mp_touch_copy,
     threshold_continuous_description,
     threshold_intervals_description,
 )
@@ -286,3 +288,33 @@ def test_marathon_plan_threshold_intervals_have_coach_opening():
         "first threshold intervals" in ints[0].description.lower()
         or "progressing from" in ints[0].description.lower()
     )
+
+
+def test_mp_touch_copy_consolidation_tone():
+    _, desc = mp_touch_copy(3.0, 7.0)
+    assert "cutback consolidation" in desc.lower()
+    assert "dress rehearsal" not in desc.lower()
+
+
+def test_hmp_long_title_prefix_for_variant_dispatch():
+    title, desc = hmp_long_copy(14.0, 11.0, 3.0, week_in_phase=1)
+    assert title.startswith("Long Run with HMP:")
+    assert "first hmp segment" in desc.lower()
+    from services.plan_framework.workout_variant_dispatch import resolve_workout_variant_id
+
+    assert (
+        resolve_workout_variant_id("long_hmp", title, None)
+        == "long_hmp_finish_half_marathon"
+    )
+
+
+def test_scaled_mp_touch_variant_id_stable():
+    scaler = WorkoutScaler()
+    s = scaler.scale_workout("mp_touch", weekly_volume=50, tier="mid", phase="build", week_in_phase=1)
+    from services.plan_framework.workout_variant_dispatch import resolve_workout_variant_id
+
+    assert (
+        resolve_workout_variant_id(s.workout_type, s.title, s.segments)
+        == "long_mp_continuous_marathon"
+    )
+    assert "cutback consolidation" in s.description.lower()

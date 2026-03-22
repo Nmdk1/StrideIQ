@@ -23,8 +23,10 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
 from .workout_narrative import (
+    hmp_long_copy,
     mp_long_option_a_copy,
     mp_long_option_b_copy,
+    mp_touch_copy,
     threshold_continuous_description,
     threshold_intervals_description,
 )
@@ -634,15 +636,15 @@ class WorkoutScaler:
         hmp_miles = round(hmp_miles, 0)
         easy_warmup = round(total_miles - hmp_miles, 0)
 
+        title, description = hmp_long_copy(
+            total_miles, easy_warmup, hmp_miles, week_in_phase
+        )
+
         return ScaledWorkout(
             workout_type="long_hmp",
             category=WorkoutCategory.RACE_PACE,
-            title=f"Long Run with HMP: last {int(hmp_miles)} mi @ HMP",
-            description=(
-                f"{int(total_miles)} miles total. Easy for the first "
-                f"{int(easy_warmup)} miles, then {int(hmp_miles)} miles "
-                f"at half marathon pace."
-            ),
+            title=title,
+            description=description,
             total_distance_miles=total_miles,
             duration_minutes=int(total_miles * 8.5),
             segments=[
@@ -695,14 +697,12 @@ class WorkoutScaler:
         warmup = 2.0
         cooldown = 2.0
         total_miles = round(warmup + mp_miles + cooldown, 1)
+        title, description = mp_touch_copy(mp_miles, total_miles)
         return ScaledWorkout(
             workout_type="mp_touch",
             category=WorkoutCategory.RACE_PACE,
-            title=f"Medium long with MP touch: {mp_miles:.0f} mi @ MP",
-            description=(
-                f"{total_miles:.0f} mi total — easy warmup/cooldown with "
-                f"{mp_miles:.0f} mi at goal marathon pace (cutback consolidation)."
-            ),
+            title=title,
+            description=description,
             total_distance_miles=total_miles,
             duration_minutes=int(total_miles * 8.8),
             segments=[
