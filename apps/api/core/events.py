@@ -5,7 +5,7 @@ Provides a simple event emitter pattern for hooks and extensibility.
 Not a full plugin registry - just enough for clean extensibility.
 """
 import logging
-from typing import Callable, Dict, List, Any
+from typing import Callable, Dict, List
 from functools import wraps
 
 logger = logging.getLogger(__name__)

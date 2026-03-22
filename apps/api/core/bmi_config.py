@@ -5,7 +5,6 @@ Backend-configurable settings for BMI correlation analysis and display.
 Allows adjustment of correlation thresholds and display logic without code changes.
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
 
 
 class BMIConfig(BaseSettings):

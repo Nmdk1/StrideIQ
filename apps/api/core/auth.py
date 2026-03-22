@@ -13,7 +13,7 @@ from typing import Optional
 from uuid import UUID
 
 from core.database import get_db
-from core.security import decode_access_token, get_user_id_from_token
+from core.security import decode_access_token
 from core.tier_utils import tier_level, tier_satisfies
 from models import Athlete
 
