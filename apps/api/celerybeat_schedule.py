@@ -37,6 +37,13 @@ beat_schedule = {
         'task': 'tasks.check_garmin_ingestion_health',
         'schedule': crontab(hour=7, minute=0),
     },
+    # Garmin stream backlog auto-heal — every 10 minutes.
+    # Fail-closes stale push-driven pending/fetching/failed rows with no stream
+    # to unavailable so chart surfaces do not remain in perpetual "analyzing".
+    'garmin-stream-stale-cleanup': {
+        'task': 'tasks.cleanup_stale_garmin_pending_streams',
+        'schedule': crontab(minute='*/10'),
+    },
     # Daily correlation sweep — after morning intelligence.
     # Runs analyze_correlations() for all 9 output metrics for athletes
     # with new data in the last 24h.
