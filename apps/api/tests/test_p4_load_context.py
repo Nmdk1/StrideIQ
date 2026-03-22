@@ -328,10 +328,11 @@ def test_semi_custom_low_questionnaire_high_history_raises_first_long(db_session
 
     race_date = date.today() + timedelta(weeks=20)
     duration_weeks = 18
-    start_date = race_date - timedelta(weeks=duration_weeks - 1, days=6)
-
+    # Synced runs must sit in the **past** relative to history_anchor_date(today);
+    # do not tie fixtures to future plan start_date or L30 windows stay empty.
+    hist = date.today()
     for w in range(4):
-        ws = start_date - timedelta(days=7 * (w + 1))
+        ws = hist - timedelta(days=7 * (w + 1))
         for d in range(5):
             db_session.add(
                 Activity(
@@ -350,7 +351,7 @@ def test_semi_custom_low_questionnaire_high_history_raises_first_long(db_session
         Activity(
             athlete_id=athlete.id,
             name="l30long",
-            start_time=_dt(start_date - timedelta(days=3)),
+            start_time=_dt(hist - timedelta(days=3)),
             sport="run",
             source="manual",
             duration_s=int(95 * 60),

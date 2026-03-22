@@ -85,6 +85,10 @@ Let `L = l30_max_easy_long_mi`.
 
 `VolumeTierClassifier.classify` today uses `current_weekly_miles`. Use **`effective_start_mpw`** for classification when LoadContext applied.
 
+### 4.4 Athlete context signal (experienced / VO2 gates)
+
+`effective_start_mpw` may be **capped below** the questionnaire when `min(raw, obs × C_upper)` applies. **Rule:** `experienced_high_volume` (and similar gates in `_generate_workouts`) use **`max(effective_start_mpw, questionnaire_mpw)`** so a self-reported high-mileage athlete is not misclassified when observed 4w mpw is lower.
+
 ---
 
 ## 5. D4 — `history_override` for easy-long spike

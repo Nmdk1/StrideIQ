@@ -441,11 +441,12 @@ class PlanGenerator:
         logger.info(f"Generating semi-custom plan: {distance} for {race_date}")
 
         start_date = race_date - timedelta(weeks=duration_weeks - 1, days=6)
+        requested_mpw = float(current_weekly_miles)
 
         p4_floor: Optional[float] = None
         p4_ho: Optional[bool] = None
         load_ctx = None
-        effective_mpw = float(current_weekly_miles)
+        effective_mpw = requested_mpw
 
         if athlete_id is not None and self.db is not None:
             try:
@@ -454,9 +455,9 @@ class PlanGenerator:
                 )
                 obs = load_ctx.observed_recent_weekly_miles
                 quick_mpw = (
-                    max(float(current_weekly_miles), float(obs))
+                    max(requested_mpw, float(obs))
                     if obs is not None
-                    else float(current_weekly_miles)
+                    else requested_mpw
                 )
                 tier_guess = self.tier_classifier.classify(
                     current_weekly_miles=quick_mpw,
@@ -468,7 +469,7 @@ class PlanGenerator:
                     "max_weekly_miles"
                 ]
                 effective_mpw = effective_starting_weekly_miles_semi_custom(
-                    float(current_weekly_miles), load_ctx, float(tmax)
+                    requested_mpw, load_ctx, float(tmax)
                 )
                 tier = self.tier_classifier.classify(
                     current_weekly_miles=effective_mpw,
@@ -486,11 +487,11 @@ class PlanGenerator:
 
         if load_ctx is None:
             tier = self.tier_classifier.classify(
-                current_weekly_miles=current_weekly_miles,
+                current_weekly_miles=requested_mpw,
                 goal_distance=distance,
                 athlete_id=athlete_id,
             )
-            effective_mpw = float(current_weekly_miles)
+            effective_mpw = requested_mpw
             p4_floor = None
             p4_ho = None
 
@@ -533,6 +534,7 @@ class PlanGenerator:
             paces=paces,
             athlete_id=athlete_id,
             current_weekly_miles=effective_mpw,
+            reported_weekly_miles=requested_mpw,
             p4_easy_long_floor_mi=p4_floor,
             p4_history_override=p4_ho,
         )
@@ -825,6 +827,7 @@ class PlanGenerator:
         paces: Optional[TrainingPaces],
         athlete_id: Optional[UUID] = None,
         current_weekly_miles: Optional[float] = None,
+        reported_weekly_miles: Optional[float] = None,
         p4_easy_long_floor_mi: Optional[float] = None,
         p4_history_override: Optional[bool] = None,
     ) -> List[GeneratedWorkout]:
@@ -861,7 +864,17 @@ class PlanGenerator:
                 )
 
                 vol = float(current_weekly_miles or 0.0)
-                athlete_ctx["experienced_high_volume"] = bool(vol >= 60 and (age_years is None or age_years < 50) and run_count >= 40)
+                rep = (
+                    float(reported_weekly_miles)
+                    if reported_weekly_miles is not None
+                    else vol
+                )
+                ctx_vol_signal = max(vol, rep)
+                athlete_ctx["experienced_high_volume"] = bool(
+                    ctx_vol_signal >= 60
+                    and (age_years is None or age_years < 50)
+                    and run_count >= 40
+                )
             except Exception:
                 athlete_ctx = {"experienced_high_volume": False, "age_years": None}
         

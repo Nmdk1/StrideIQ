@@ -39,6 +39,7 @@ def test_plan_framework_high_volume_experienced_gets_vo2_touch_and_year_round_st
                 source="manual",
                 duration_s=45 * 60,
                 distance_m=int(7 * 1609.344),
+                is_duplicate=False,
             )
         )
     db_session.commit()
