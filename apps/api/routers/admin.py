@@ -109,7 +109,9 @@ class InviteRevokeRequest(BaseModel):
 
 
 class CompAccessRequest(BaseModel):
-    tier: Literal["free", "pro", "guided", "premium", "elite"] = Field(..., description="Subscription tier to set")
+    tier: Literal["free", "subscriber", "pro", "guided", "premium", "elite"] = Field(
+        ..., description="Subscription tier to set"
+    )
     reason: Optional[str] = Field(default=None, description="Why this comp was granted (audited)")
 
 
@@ -1117,12 +1119,15 @@ def comp_access(
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
+    from core.tier_utils import normalize_tier
+
     old_tier = target.subscription_tier
-    target.subscription_tier = request.tier
+    canonical_tier = normalize_tier(request.tier)
+    target.subscription_tier = canonical_tier
 
     # Set override fields — prevents Stripe sync from reverting this comp.
     from datetime import datetime, timezone
-    target.admin_tier_override = request.tier
+    target.admin_tier_override = canonical_tier
     target.admin_tier_override_set_at = datetime.now(timezone.utc)
     target.admin_tier_override_set_by = current_user.id
     target.admin_tier_override_reason = request.reason

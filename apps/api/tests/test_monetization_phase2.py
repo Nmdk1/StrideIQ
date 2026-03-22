@@ -618,7 +618,8 @@ class TestFeatureFlagTierConsolidation:
         assert self.flags._tier_satisfies("guided", "guided") is True
 
     def test_guided_does_not_satisfy_premium(self):
-        assert self.flags._tier_satisfies("guided", "premium") is False
+        # Two-tier normalization: guided/premium both collapse to subscriber.
+        assert self.flags._tier_satisfies("guided", "premium") is True
 
     def test_premium_satisfies_all(self):
         assert self.flags._tier_satisfies("premium", "free") is True

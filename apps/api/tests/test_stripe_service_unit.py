@@ -58,37 +58,36 @@ def make_config(
 class TestBuildPriceToTier:
     """build_price_to_tier produces a correct price_id → tier mapping."""
 
-    def test_guided_monthly_maps_to_guided(self):
+    def test_guided_monthly_maps_to_subscriber(self):
         cfg = make_config()
         mapping = build_price_to_tier(cfg)
-        assert mapping["price_guided_monthly"] == "guided"
+        assert mapping["price_guided_monthly"] == "subscriber"
 
-    def test_guided_annual_maps_to_guided(self):
+    def test_guided_annual_maps_to_subscriber(self):
         cfg = make_config()
         mapping = build_price_to_tier(cfg)
-        assert mapping["price_guided_annual"] == "guided"
+        assert mapping["price_guided_annual"] == "subscriber"
 
-    def test_premium_monthly_maps_to_premium(self):
+    def test_premium_monthly_maps_to_subscriber(self):
         cfg = make_config()
         mapping = build_price_to_tier(cfg)
-        assert mapping["price_premium_monthly"] == "premium"
+        assert mapping["price_premium_monthly"] == "subscriber"
 
-    def test_premium_annual_maps_to_premium(self):
+    def test_premium_annual_maps_to_subscriber(self):
         cfg = make_config()
         mapping = build_price_to_tier(cfg)
-        assert mapping["price_premium_annual"] == "premium"
+        assert mapping["price_premium_annual"] == "subscriber"
 
-    def test_legacy_pro_maps_to_premium(self):
+    def test_legacy_pro_maps_to_subscriber(self):
         cfg = make_config(legacy_pro="price_pro_monthly_legacy")
         mapping = build_price_to_tier(cfg)
-        assert mapping["price_pro_monthly_legacy"] == "premium"
+        assert mapping["price_pro_monthly_legacy"] == "subscriber"
 
     def test_none_price_ids_excluded(self):
         cfg = make_config(guided_monthly=None, guided_annual=None)
         mapping = build_price_to_tier(cfg)
-        assert "guided" not in mapping.values() or all(
-            v != "guided" for v in mapping.values()
-        )
+        assert "price_guided_monthly" not in mapping
+        assert "price_guided_annual" not in mapping
 
     def test_one_time_price_not_in_subscription_map(self):
         """One-time price must NOT appear in the subscription tier map."""
@@ -122,42 +121,42 @@ class TestTierForPriceAndStatus:
 
     def setup_method(self):
         self.price_to_tier = {
-            "price_guided_monthly": "guided",
-            "price_guided_annual": "guided",
-            "price_premium_monthly": "premium",
-            "price_premium_annual": "premium",
-            "price_pro_legacy": "premium",
+            "price_guided_monthly": "subscriber",
+            "price_guided_annual": "subscriber",
+            "price_premium_monthly": "subscriber",
+            "price_premium_annual": "subscriber",
+            "price_pro_legacy": "subscriber",
         }
 
     # Active subscription — known prices.
-    def test_active_guided_monthly_grants_guided(self):
+    def test_active_guided_monthly_grants_subscriber(self):
         result = tier_for_price_and_status("price_guided_monthly", "active", self.price_to_tier)
-        assert result == "guided"
+        assert result == "subscriber"
 
-    def test_active_guided_annual_grants_guided(self):
+    def test_active_guided_annual_grants_subscriber(self):
         result = tier_for_price_and_status("price_guided_annual", "active", self.price_to_tier)
-        assert result == "guided"
+        assert result == "subscriber"
 
-    def test_active_premium_monthly_grants_premium(self):
+    def test_active_premium_monthly_grants_subscriber(self):
         result = tier_for_price_and_status("price_premium_monthly", "active", self.price_to_tier)
-        assert result == "premium"
+        assert result == "subscriber"
 
-    def test_active_premium_annual_grants_premium(self):
+    def test_active_premium_annual_grants_subscriber(self):
         result = tier_for_price_and_status("price_premium_annual", "active", self.price_to_tier)
-        assert result == "premium"
+        assert result == "subscriber"
 
-    def test_active_legacy_pro_grants_premium(self):
+    def test_active_legacy_pro_grants_subscriber(self):
         result = tier_for_price_and_status("price_pro_legacy", "active", self.price_to_tier)
-        assert result == "premium"
+        assert result == "subscriber"
 
     # Trialing — same as active.
-    def test_trialing_guided_grants_guided(self):
+    def test_trialing_guided_grants_subscriber(self):
         result = tier_for_price_and_status("price_guided_monthly", "trialing", self.price_to_tier)
-        assert result == "guided"
+        assert result == "subscriber"
 
-    def test_trialing_premium_grants_premium(self):
+    def test_trialing_premium_grants_subscriber(self):
         result = tier_for_price_and_status("price_premium_monthly", "trialing", self.price_to_tier)
-        assert result == "premium"
+        assert result == "subscriber"
 
     # Non-active statuses → free regardless of price.
     def test_canceled_subscription_grants_free(self):
@@ -192,8 +191,7 @@ class TestTierForPriceAndStatus:
     def test_unknown_price_does_not_grant_premium(self):
         """Critical: no auto-promotion on unknown price."""
         result = tier_for_price_and_status("price_not_in_map", "active", self.price_to_tier)
-        assert result != "premium"
-        assert result != "guided"
+        assert result != "subscriber"
 
     # FAIL-CLOSED — missing price ID.
     def test_none_price_id_grants_free(self):
@@ -212,8 +210,8 @@ class TestTierForPriceAndStatus:
     # Case-insensitive status.
     def test_status_case_insensitive_active(self):
         result = tier_for_price_and_status("price_premium_monthly", "ACTIVE", self.price_to_tier)
-        assert result == "premium"
+        assert result == "subscriber"
 
     def test_status_case_insensitive_trialing(self):
         result = tier_for_price_and_status("price_guided_monthly", "Trialing", self.price_to_tier)
-        assert result == "guided"
+        assert result == "subscriber"

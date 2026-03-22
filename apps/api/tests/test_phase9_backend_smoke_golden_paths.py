@@ -156,7 +156,7 @@ def test_stripe_webhook_accepts_valid_signature_and_records_event(monkeypatch):
 def test_admin_comp_transitions_paid_to_free():
     """
     Phase 9 backend smoke: entitlement transitions remain deterministic.
-    Owner can comp a user to pro and back to free.
+    Owner can comp a user to subscriber and back to free.
     """
     db = SessionLocal()
     owner = None
@@ -168,12 +168,12 @@ def test_admin_comp_transitions_paid_to_free():
         r1 = client.post(
             f"/v1/admin/users/{target.id}/comp",
             headers=_headers(owner),
-            json={"tier": "pro", "reason": "phase9 entitlement pro"},
+            json={"tier": "subscriber", "reason": "phase9 entitlement subscriber"},
         )
         assert r1.status_code == 200, r1.text
 
         db.refresh(target)
-        assert target.subscription_tier == "pro"
+        assert target.subscription_tier == "subscriber"
         assert bool(getattr(target, "has_active_subscription", False)) is True
 
         r2 = client.post(

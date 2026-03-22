@@ -108,12 +108,12 @@ def _fake_plan():
 
 
 @pytest.fixture
-def elite_athlete(db_session):
+def subscriber_athlete(db_session):
     athlete = Athlete(
         id=uuid4(),
-        email=f"elite_{uuid4()}@example.com",
-        display_name="Elite Athlete",
-        subscription_tier="elite",
+        email=f"subscriber_{uuid4()}@example.com",
+        display_name="Subscriber Athlete",
+        subscription_tier="subscriber",
         birthdate=date(1990, 1, 1),
         sex="M",
     )
@@ -123,8 +123,8 @@ def elite_athlete(db_session):
     return athlete
 
 
-def test_constraint_aware_preserves_override_on_fallback(monkeypatch, db_session, elite_athlete):
-    _override_deps(db_session, elite_athlete)
+def test_constraint_aware_preserves_override_on_fallback(monkeypatch, db_session, subscriber_athlete):
+    _override_deps(db_session, subscriber_athlete)
     client = TestClient(app)
     race = RacePerformance(
         date=date.today() - timedelta(days=40),
@@ -135,7 +135,7 @@ def test_constraint_aware_preserves_override_on_fallback(monkeypatch, db_session
         rpi=55.0,
     )
     bank = FitnessBank(
-        athlete_id=str(elite_athlete.id),
+        athlete_id=str(subscriber_athlete.id),
         peak_weekly_miles=72.0,
         peak_monthly_miles=280.0,
         peak_long_run_miles=18.0,
@@ -193,8 +193,8 @@ def test_constraint_aware_preserves_override_on_fallback(monkeypatch, db_session
     assert payload["volume_contract"]["requested_peak"] == 68.0
 
 
-def test_quality_gate_failed_payload_contract_shape(monkeypatch, db_session, elite_athlete):
-    _override_deps(db_session, elite_athlete)
+def test_quality_gate_failed_payload_contract_shape(monkeypatch, db_session, subscriber_athlete):
+    _override_deps(db_session, subscriber_athlete)
     client = TestClient(app)
 
     monkeypatch.setattr("services.constraint_aware_planner.generate_constraint_aware_plan", lambda **_kwargs: _fake_plan())

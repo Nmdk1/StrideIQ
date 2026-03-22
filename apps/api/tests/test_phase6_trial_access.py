@@ -87,7 +87,7 @@ def test_trial_denied_if_already_paid_tier():
         email=f"trial_paid_{uuid4()}@example.com",
         display_name="PaidUser",
         role="athlete",
-        subscription_tier="pro",
+        subscription_tier="subscriber",
     )
     db.add(athlete)
     db.commit()
