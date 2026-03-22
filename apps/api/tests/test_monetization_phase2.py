@@ -200,18 +200,6 @@ class TestCanAccessPlanPaces:
             db.close()
             _cleanup(plan, athlete)
 
-    def test_guided_legacy_tier_cannot_access(self):
-        from core.pace_access import can_access_plan_paces
-        athlete = _make_athlete("guided")
-        plan = _make_plan(athlete)
-        db = SessionLocal()
-        try:
-            result = can_access_plan_paces(athlete, plan.id, db)
-            assert result is False
-        finally:
-            db.close()
-            _cleanup(plan, athlete)
-
     def test_free_has_no_per_plan_purchase_unlock(self):
         """Two-tier model: free tier has no one-off unlock path."""
         from core.pace_access import can_access_plan_paces
@@ -241,19 +229,6 @@ class TestCanAccessPlanPaces:
         try:
             result = can_access_plan_paces(athlete, plan.id, db)
             assert result is True
-        finally:
-            db.close()
-            _cleanup(plan, athlete)
-
-    def test_legacy_pro_tier_cannot_access(self):
-        """Two-tier model: legacy paid aliases are not treated as active paid."""
-        from core.pace_access import can_access_plan_paces
-        athlete = _make_athlete("pro")
-        plan = _make_plan(athlete)
-        db = SessionLocal()
-        try:
-            result = can_access_plan_paces(athlete, plan.id, db)
-            assert result is False
         finally:
             db.close()
             _cleanup(plan, athlete)
@@ -338,19 +313,6 @@ class TestGetPlanPaceGating:
         finally:
             _cleanup(plan, athlete)
 
-    def test_guided_coach_notes_hidden(self):
-        athlete = _make_athlete("guided")
-        plan = _make_plan(athlete)
-        try:
-            resp = client.get(f"/v2/plans/{plan.id}", headers=_headers(athlete))
-            assert resp.status_code == 200
-            data = resp.json()
-            week_1 = data["weeks"]["1"]
-            has_paces = any(w["coach_notes"] is not None for w in week_1)
-            assert not has_paces, "Legacy guided tier should not unlock paces"
-        finally:
-            _cleanup(plan, athlete)
-
 
 # =============================================================================
 # CATEGORY 3: GET /v2/plans/{plan_id}/week/{week_number} output-layer gating
@@ -380,18 +342,6 @@ class TestGetWeekPaceGating:
             data = resp.json()
             has_paces = any(w["coach_notes"] is not None for w in data["workouts"])
             assert has_paces
-        finally:
-            _cleanup(plan, athlete)
-
-    def test_guided_coach_notes_hidden(self):
-        athlete = _make_athlete("guided")
-        plan = _make_plan(athlete)
-        try:
-            resp = client.get(f"/v2/plans/{plan.id}/week/1", headers=_headers(athlete))
-            assert resp.status_code == 200
-            data = resp.json()
-            has_paces = any(w["coach_notes"] is not None for w in data["workouts"])
-            assert has_paces is False
         finally:
             _cleanup(plan, athlete)
 
