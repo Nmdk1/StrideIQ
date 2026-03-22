@@ -49,6 +49,7 @@ Minimum fields:
 - **`build_load_context(athlete_id, db, reference_date) -> LoadContext`**
 - **Deterministic** for the same DB snapshot.
 - **No side effects** (read-only queries).
+- **Anchor rule:** For plans whose **calendar start is in the future**, use **`history_anchor_date(plan_start)`** (today when `plan_start > today`) so L30 / 4w windows intersect **synced** activities. Backdated plans (`start <= today`) anchor on **plan start**.
 
 **Module location (proposed):** `apps/api/services/plan_framework/load_context.py`
 

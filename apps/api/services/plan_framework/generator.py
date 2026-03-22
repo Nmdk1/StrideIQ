@@ -42,6 +42,7 @@ from .load_context import (
     compute_d4_long_run_override_and_stats,
     easy_long_floor_miles_from_l30,
     effective_starting_weekly_miles_semi_custom,
+    history_anchor_date,
 )
 
 logger = logging.getLogger(__name__)
@@ -340,9 +341,10 @@ class PlanGenerator:
             and self.db is not None
         ):
             std_athlete_id = athlete_id
-            plan_ref = start_date if start_date is not None else date.today()
             try:
-                lc = build_load_context(athlete_id, self.db, plan_ref)
+                lc = build_load_context(
+                    athlete_id, self.db, history_anchor_date(start_date)
+                )
                 if lc.observed_recent_weekly_miles is not None:
                     obs = float(lc.observed_recent_weekly_miles)
                     raw = max(starting_volume, obs)
@@ -447,7 +449,9 @@ class PlanGenerator:
 
         if athlete_id is not None and self.db is not None:
             try:
-                load_ctx = build_load_context(athlete_id, self.db, start_date)
+                load_ctx = build_load_context(
+                    athlete_id, self.db, history_anchor_date(start_date)
+                )
                 obs = load_ctx.observed_recent_weekly_miles
                 quick_mpw = (
                     max(float(current_weekly_miles), float(obs))
@@ -827,7 +831,9 @@ class PlanGenerator:
         """Generate all workouts for the plan."""
         workouts = []
 
+        raw_plan_start = start_date
         plan_ref_date = start_date if start_date is not None else date.today()
+        d4_reference_date = history_anchor_date(raw_plan_start)
 
         # Lightweight athlete context for rule-based personalization.
         athlete_ctx = {"experienced_high_volume": False, "age_years": None}
@@ -884,7 +890,7 @@ class PlanGenerator:
             history_override = bool(p4_history_override)
         elif athlete_id and self.db:
             history_override = compute_d4_long_run_override_and_stats(
-                self.db, athlete_id, plan_ref_date
+                self.db, athlete_id, d4_reference_date
             )[0]
         else:
             history_override = False

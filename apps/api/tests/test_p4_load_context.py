@@ -14,6 +14,7 @@ from services.plan_framework.load_context import (
     compute_d4_long_run_override_and_stats,
     easy_long_floor_miles_from_l30,
     effective_starting_weekly_miles_semi_custom,
+    history_anchor_date,
 )
 from services.plan_framework.load_context import LoadContext
 
@@ -283,6 +284,13 @@ def test_d4_override_false_when_count_low(db_session):
     )
     assert c15 < P4_D4_N
     assert ok is False
+
+
+def test_history_anchor_future_plan_uses_today():
+    future = date.today() + timedelta(weeks=20)
+    assert history_anchor_date(future) == date.today()
+    past = date.today() - timedelta(days=7)
+    assert history_anchor_date(past) == past
 
 
 def test_effective_starting_weekly_miles_cap():

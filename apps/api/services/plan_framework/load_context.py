@@ -22,6 +22,19 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+
+def history_anchor_date(plan_start_date: Optional[date]) -> date:
+    """
+    Activity history lives in the past. If the plan starts in the future, L30 / 4w
+    windows must still intersect synced runs — anchor on **today** (UTC calendar
+    date). If the plan is backdated (start <= today), anchor on plan start.
+    """
+    today = date.today()
+    if plan_start_date is None or plan_start_date > today:
+        return today
+    return plan_start_date
+
+
 # Locked 2026-03-22 (BUILDER_INSTRUCTIONS_2026-03-22_P4_LOAD_CONTEXT.md)
 P4_C_UPPER = 1.15
 P4_D4_N = 8
