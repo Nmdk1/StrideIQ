@@ -126,6 +126,55 @@ def test_build_load_context_race_excluded_from_l30(db_session):
     assert ctx.l30_max_easy_long_mi is None
 
 
+def test_l30_half_open_window_excludes_next_local_midnight(db_session):
+    """Upper bound is exclusive (local_day_bounds end); no microsecond <= hacks."""
+    from models import Activity, Athlete
+
+    athlete = Athlete(
+        email=f"lc_half_{uuid4()}@example.com",
+        display_name="LCHalf",
+        subscription_tier="free",
+        role="athlete",
+        timezone="UTC",
+    )
+    db_session.add(athlete)
+    db_session.commit()
+    db_session.refresh(athlete)
+
+    ref = date(2026, 6, 15)
+    db_session.add(
+        Activity(
+            athlete_id=athlete.id,
+            name="inside_ref_day",
+            start_time=datetime(2026, 6, 15, 12, 0, 0, tzinfo=tz_mod.UTC),
+            sport="run",
+            source="manual",
+            duration_s=int(95 * 60),
+            distance_m=int(12 * 1609.344),
+            workout_type="Run",
+            is_duplicate=False,
+        )
+    )
+    db_session.add(
+        Activity(
+            athlete_id=athlete.id,
+            name="exactly_next_midnight_utc",
+            start_time=datetime(2026, 6, 16, 0, 0, 0, tzinfo=timezone.utc),
+            sport="run",
+            source="manual",
+            duration_s=int(95 * 60),
+            distance_m=int(25 * 1609.344),
+            workout_type="Run",
+            is_duplicate=False,
+        )
+    )
+    db_session.commit()
+
+    ctx = build_load_context(athlete.id, db_session, ref)
+    assert ctx.l30_max_easy_long_mi is not None
+    assert abs(float(ctx.l30_max_easy_long_mi) - 12.0) < 0.2
+
+
 def test_l30_boundary_30_days_before_reference_excluded(db_session):
     from models import Activity, Athlete
 

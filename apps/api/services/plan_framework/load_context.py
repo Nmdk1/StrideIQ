@@ -8,7 +8,9 @@ Dual threshold policy (document in code; see ADR-061 vs PLAN_COACHED D1):
 H2 window: 30 **athlete-local calendar days** inclusive ending at reference_date:
   [reference_date - 29 days, reference_date] inclusive (IANA tz from athlete;
   GPS-backed when `infer_and_persist_athlete_timezone` has run).
-  Query bounds are derived via `local_day_bounds_utc`, not UTC midnight hacks.
+  Query bounds: half-open UTC ``[start, end)`` from ``local_day_bounds_utc`` via
+  ``get_canonical_run_activities(..., end_time_exclusive=True)`` — no inclusive-end
+  microsecond hacks (avoids PG/timestamptz edge cases and empty L30 on CI).
 """
 
 from __future__ import annotations
@@ -57,16 +59,18 @@ def _athlete_query_window_utc(
     first_local_day: date,
 ) -> Tuple[datetime, datetime]:
     """
-    Inclusive UTC [start, end] for SQL filters on Activity.start_time, spanning
-    athlete-local calendar days first_local_day .. reference_date (inclusive).
+    Half-open UTC window [start, end) for Activity.start_time, spanning athlete-local
+    calendar days first_local_day .. reference_date (inclusive on the calendar).
+
+    ``end`` is ``local_day_bounds_utc(reference_date)[1]`` (exclusive next local midnight).
+    Callers must use ``get_canonical_run_activities(..., end_time_exclusive=True)``.
     """
     from services.timezone_utils import get_athlete_timezone_from_db, local_day_bounds_utc
 
     tz = get_athlete_timezone_from_db(db, athlete_id)
     window_start_utc, _ = local_day_bounds_utc(first_local_day, tz)
-    _, ref_next_local_midnight_utc = local_day_bounds_utc(reference_date, tz)
-    window_end_inclusive = ref_next_local_midnight_utc - timedelta(microseconds=1)
-    return window_start_utc, window_end_inclusive
+    _, window_end_exclusive_utc = local_day_bounds_utc(reference_date, tz)
+    return window_start_utc, window_end_exclusive_utc
 
 
 # Locked 2026-03-22 (BUILDER_INSTRUCTIONS_2026-03-22_P4_LOAD_CONTEXT.md)
@@ -110,14 +114,14 @@ def compute_d4_long_run_override_and_stats(
     from services.timezone_utils import get_athlete_timezone_from_db, local_day_bounds_utc
 
     tz = get_athlete_timezone_from_db(db, athlete_id)
-    _, ref_next = local_day_bounds_utc(reference_date, tz)
-    end = ref_next - timedelta(microseconds=1)
-    start = end - timedelta(days=730)
+    _, ref_end_exclusive = local_day_bounds_utc(reference_date, tz)
+    start = ref_end_exclusive - timedelta(days=730)
     acts, _ = get_canonical_run_activities(
         athlete_id,
         db,
         start_time=start,
-        end_time=end,
+        end_time=ref_end_exclusive,
+        end_time_exclusive=True,
         require_trusted_duplicate_flags=False,
     )
     count15 = 0
@@ -169,7 +173,7 @@ def build_load_context(
     disclosures: List[str] = []
 
     l30_first_local = reference_date - timedelta(days=P4_L30_INCLUSIVE_DAYS - 1)
-    l30_start_dt, ref_end = _athlete_query_window_utc(
+    l30_start_dt, ref_end_exclusive = _athlete_query_window_utc(
         db, athlete_id, reference_date, l30_first_local
     )
 
@@ -177,7 +181,8 @@ def build_load_context(
         athlete_id,
         db,
         start_time=l30_start_dt,
-        end_time=ref_end,
+        end_time=ref_end_exclusive,
+        end_time_exclusive=True,
         require_trusted_duplicate_flags=True,
     )
 
@@ -204,7 +209,8 @@ def build_load_context(
         athlete_id,
         db,
         start_time=four_week_start_dt,
-        end_time=ref_end,
+        end_time=ref_end_exclusive,
+        end_time_exclusive=True,
         require_trusted_duplicate_flags=True,
     )
 

@@ -84,16 +84,22 @@ def get_canonical_run_activities(
     *,
     start_time: Optional[datetime] = None,
     end_time: Optional[datetime] = None,
+    end_time_exclusive: bool = False,
     require_trusted_duplicate_flags: bool = True,
 ) -> Tuple[List, Dict[str, int]]:
     """
     Canonical run-activity read path for mileage totals.
 
     Returns (activities, telemetry) where telemetry includes:
-    - source_count
-    - output_count
-    - fallback_dedupe_used (0/1)
-    - dedupe_pairs_collapsed
+      - source_count
+      - output_count
+      - fallback_dedupe_used (0/1)
+      - dedupe_pairs_collapsed
+
+    When ``end_time_exclusive`` is True, the filter is ``start_time < end_time``
+    (half-open upper bound). Use this with ``local_day_bounds_utc``'s exclusive
+    end instant so athlete-local calendar windows are exact on Postgres/timestamptz.
+    Default ``False`` preserves legacy ``<= end_time`` inclusive semantics.
     """
     from models import Activity
 
@@ -105,7 +111,10 @@ def get_canonical_run_activities(
     if start_time is not None:
         query = query.filter(Activity.start_time >= start_time)
     if end_time is not None:
-        query = query.filter(Activity.start_time <= end_time)
+        if end_time_exclusive:
+            query = query.filter(Activity.start_time < end_time)
+        else:
+            query = query.filter(Activity.start_time <= end_time)
 
     if require_trusted_duplicate_flags:
         query = query.filter(Activity.is_duplicate == False)  # noqa: E712
