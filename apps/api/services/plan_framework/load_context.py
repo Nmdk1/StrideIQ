@@ -5,16 +5,17 @@ Dual threshold policy (document in code; see ADR-061 vs PLAN_COACHED D1):
 - AthletePlanProfile long-run identification: 105 min (physiology gate) — elsewhere.
 - P4 L30 easy-long max: 90 min + not-race (recent session ceiling for spike baseline).
 
-H2 window: 30 **calendar days** inclusive ending at reference_date:
-  [reference_date - 29 days, reference_date] inclusive.
-  An activity on (reference_date - 30 days) is **out** (31-day gap from window start).
+H2 window: 30 **athlete-local calendar days** inclusive ending at reference_date:
+  [reference_date - 29 days, reference_date] inclusive (IANA tz from athlete;
+  GPS-backed when `infer_and_persist_athlete_timezone` has run).
+  Query bounds are derived via `local_day_bounds_utc`, not UTC midnight hacks.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import List, Optional, Tuple
 from uuid import UUID
 
@@ -23,16 +24,49 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 
-def history_anchor_date(plan_start_date: Optional[date]) -> date:
+def history_anchor_date(
+    plan_start_date: Optional[date],
+    db: Optional[Session] = None,
+    athlete_id: Optional[UUID] = None,
+) -> date:
     """
     Activity history lives in the past. If the plan starts in the future, L30 / 4w
-    windows must still intersect synced runs — anchor on **today** (UTC calendar
-    date). If the plan is backdated (start <= today), anchor on plan start.
+    windows must still intersect synced runs — anchor on the athlete's **local today**
+    when `db` + `athlete_id` are provided (`athlete_local_today`), else `date.today()`
+    (tests / callers without an athlete).
+    If the plan is backdated (start <= that today), anchor on plan start.
     """
-    today = date.today()
+    if db is not None and athlete_id is not None:
+        from services.timezone_utils import (
+            athlete_local_today,
+            get_athlete_timezone_from_db,
+        )
+
+        today = athlete_local_today(get_athlete_timezone_from_db(db, athlete_id))
+    else:
+        today = date.today()
     if plan_start_date is None or plan_start_date > today:
         return today
     return plan_start_date
+
+
+def _athlete_query_window_utc(
+    db: Session,
+    athlete_id: UUID,
+    reference_date: date,
+    first_local_day: date,
+) -> Tuple[datetime, datetime]:
+    """
+    Inclusive UTC [start, end] for SQL filters on Activity.start_time, spanning
+    athlete-local calendar days first_local_day .. reference_date (inclusive).
+    """
+    from services.timezone_utils import get_athlete_timezone_from_db, local_day_bounds_utc
+
+    tz = get_athlete_timezone_from_db(db, athlete_id)
+    window_start_utc, _ = local_day_bounds_utc(first_local_day, tz)
+    _, ref_next_local_midnight_utc = local_day_bounds_utc(reference_date, tz)
+    window_end_inclusive = ref_next_local_midnight_utc - timedelta(microseconds=1)
+    return window_start_utc, window_end_inclusive
 
 
 # Locked 2026-03-22 (BUILDER_INSTRUCTIONS_2026-03-22_P4_LOAD_CONTEXT.md)
@@ -43,10 +77,11 @@ P4_L30_INCLUSIVE_DAYS = 30  # span: ref - (30-1) .. ref
 P4_EASY_LONG_MIN_DURATION_MIN = 90.0
 
 
-def _activity_calendar_date_utc(start_time: datetime) -> date:
-    if start_time.tzinfo is not None:
-        return start_time.astimezone(timezone.utc).date()
-    return start_time.date()
+def _activity_local_calendar_date(start_time: datetime, tz) -> date:
+    """Instant → athlete-local calendar date (not UTC calendar)."""
+    from services.timezone_utils import to_athlete_local_date
+
+    return to_athlete_local_date(start_time, tz)
 
 
 def is_activity_excluded_as_race_for_p4(activity) -> bool:
@@ -72,8 +107,11 @@ def compute_d4_long_run_override_and_stats(
     Returns (override_bool, count_15plus, last_18mi_date_or_none, count_18plus_runs).
     """
     from services.mileage_aggregation import get_canonical_run_activities
+    from services.timezone_utils import get_athlete_timezone_from_db, local_day_bounds_utc
 
-    end = datetime.combine(reference_date, time(23, 59, 59), tzinfo=timezone.utc)
+    tz = get_athlete_timezone_from_db(db, athlete_id)
+    _, ref_next = local_day_bounds_utc(reference_date, tz)
+    end = ref_next - timedelta(microseconds=1)
     start = end - timedelta(days=730)
     acts, _ = get_canonical_run_activities(
         athlete_id,
@@ -93,7 +131,7 @@ def compute_d4_long_run_override_and_stats(
             count15 += 1
         if mi >= 18:
             count18 += 1
-            d = _activity_calendar_date_utc(a.start_time)
+            d = _activity_local_calendar_date(a.start_time, tz)
             if last18 is None or d > last18:
                 last18 = d
     if count15 < P4_D4_N or last18 is None:
@@ -130,9 +168,10 @@ def build_load_context(
 
     disclosures: List[str] = []
 
-    ref_end = datetime.combine(reference_date, time(23, 59, 59), tzinfo=timezone.utc)
-    l30_start = reference_date - timedelta(days=P4_L30_INCLUSIVE_DAYS - 1)
-    l30_start_dt = datetime.combine(l30_start, time.min, tzinfo=timezone.utc)
+    l30_first_local = reference_date - timedelta(days=P4_L30_INCLUSIVE_DAYS - 1)
+    l30_start_dt, ref_end = _athlete_query_window_utc(
+        db, athlete_id, reference_date, l30_first_local
+    )
 
     acts_l30, _ = get_canonical_run_activities(
         athlete_id,
@@ -157,8 +196,10 @@ def build_load_context(
     if max_l30 is None:
         disclosures.append("cold_start_l30")
 
-    four_week_start = reference_date - timedelta(days=28)
-    four_week_start_dt = datetime.combine(four_week_start, time.min, tzinfo=timezone.utc)
+    four_week_first_local = reference_date - timedelta(days=28)
+    four_week_start_dt, _ = _athlete_query_window_utc(
+        db, athlete_id, reference_date, four_week_first_local
+    )
     acts_4w, _ = get_canonical_run_activities(
         athlete_id,
         db,

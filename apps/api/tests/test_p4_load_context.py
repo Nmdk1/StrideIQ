@@ -6,6 +6,8 @@ from uuid import uuid4
 
 import pytest
 
+from services.timezone_utils import athlete_local_today
+
 from services.plan_framework.load_context import (
     P4_D4_M_DAYS,
     P4_D4_N,
@@ -321,6 +323,9 @@ def test_semi_custom_low_questionnaire_high_history_raises_first_long(db_session
         display_name="Semi",
         subscription_tier="free",
         role="athlete",
+        # Align fixture calendar with P4 windows (athlete-local bounds); avoids
+        # server-local date.today() vs athlete_local_today(UTC) skew on dev machines.
+        timezone="UTC",
     )
     db_session.add(athlete)
     db_session.commit()
@@ -328,9 +333,8 @@ def test_semi_custom_low_questionnaire_high_history_raises_first_long(db_session
 
     race_date = date.today() + timedelta(weeks=20)
     duration_weeks = 18
-    # Synced runs must sit in the **past** relative to history_anchor_date(today);
-    # do not tie fixtures to future plan start_date or L30 windows stay empty.
-    hist = date.today()
+    # Same "today" semantics as history_anchor_date(..., db, athlete_id).
+    hist = athlete_local_today(athlete)
     for w in range(4):
         ws = hist - timedelta(days=7 * (w + 1))
         for d in range(5):

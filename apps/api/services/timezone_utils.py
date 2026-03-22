@@ -1,13 +1,22 @@
 """
 Canonical timezone utilities for athlete-local date calculations.
 
-All athlete-facing date logic MUST use these helpers — never date.today()
-or datetime.utcnow().date() for athlete-local context.
+**Storage vs calendar**
+- Activity `start_time` and DB timestamps are **UTC instants** (timestamptz).
+- **Calendar-day semantics** (today, L30 windows, “runs this week”) MUST use the
+  athlete’s **IANA timezone**, not the server clock and not “helpful” UTC midnight.
 
-Root cause of the "yesterday" label bug:
-  UTC rolls to next day (e.g. 00:30 UTC) while athlete is still on the
-  previous calendar day (e.g. 18:30 Chicago). Using date.today() on the
-  server returns the UTC date, labeling same-local-day runs as "yesterday".
+**Source of truth for `Athlete.timezone`**
+- Prefer provider IANA strings (e.g. Strava) when valid.
+- Otherwise infer from **GPS** (`infer_timezone_from_coordinates` /
+  `infer_and_persist_athlete_timezone` from recent `start_lat`/`start_lng`).
+- **UTC (`ZoneInfo("UTC")`) is only a last-resort fallback** when no zone can be
+  resolved — never substitute server `date.today()` or UTC calendar boundaries
+  for athlete-relative windows; that causes system-wide trust bugs (see Adam
+  relative-date incident: `docs/BUILDER_INSTRUCTIONS_2026-03-17_ADAM_TIMEZONE_RELATIVE_DATE_FIX.md`).
+
+All athlete-facing date logic MUST use these helpers — never bare `date.today()`
+on the server for athlete-local context.
 """
 
 from __future__ import annotations
@@ -38,7 +47,9 @@ def get_athlete_timezone(athlete_or_tz_str) -> ZoneInfo:
     Accepts:
       - an Athlete ORM object (reads .timezone)
       - a plain string (IANA timezone name, e.g. "America/Chicago")
-      - None / empty string → falls back to UTC
+      - None / empty string → falls back to UTC (unknown zone only; callers should
+        run `infer_and_persist_athlete_timezone` when GPS exists so athletes are
+        not permanently pinned to UTC calendar).
 
     Never raises; returns UTC on any invalid/missing value.
     """

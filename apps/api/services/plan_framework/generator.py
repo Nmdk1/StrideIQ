@@ -343,7 +343,9 @@ class PlanGenerator:
             std_athlete_id = athlete_id
             try:
                 lc = build_load_context(
-                    athlete_id, self.db, history_anchor_date(start_date)
+                    athlete_id,
+                    self.db,
+                    history_anchor_date(start_date, self.db, athlete_id),
                 )
                 if lc.observed_recent_weekly_miles is not None:
                     obs = float(lc.observed_recent_weekly_miles)
@@ -447,12 +449,20 @@ class PlanGenerator:
         p4_ho: Optional[bool] = None
         load_ctx = None
         effective_mpw = requested_mpw
+        tier: Optional[VolumeTier] = None
 
         if athlete_id is not None and self.db is not None:
             try:
                 load_ctx = build_load_context(
-                    athlete_id, self.db, history_anchor_date(start_date)
+                    athlete_id,
+                    self.db,
+                    history_anchor_date(start_date, self.db, athlete_id),
                 )
+            except Exception as ex:
+                logger.warning("P4 load_context (semi-custom) snapshot failed: %s", ex)
+                load_ctx = None
+
+            if load_ctx is not None:
                 obs = load_ctx.observed_recent_weekly_miles
                 quick_mpw = (
                     max(requested_mpw, float(obs))
@@ -465,25 +475,30 @@ class PlanGenerator:
                     athlete_id=None,
                     consider_history=False,
                 )
-                tmax = self.tier_classifier.get_tier_params(tier_guess, distance)[
-                    "max_weekly_miles"
-                ]
-                effective_mpw = effective_starting_weekly_miles_semi_custom(
-                    requested_mpw, load_ctx, float(tmax)
-                )
-                tier = self.tier_classifier.classify(
-                    current_weekly_miles=effective_mpw,
-                    goal_distance=distance,
-                    athlete_id=None,
-                    consider_history=False,
-                )
                 p4_floor = easy_long_floor_miles_from_l30(
-                    load_ctx.l30_max_easy_long_mi, distance, tier.value
+                    load_ctx.l30_max_easy_long_mi, distance, tier_guess.value
                 )
                 p4_ho = load_ctx.history_override_easy_long
-            except Exception as ex:
-                logger.warning("P4 load_context (semi-custom) failed: %s", ex)
-                load_ctx = None
+                try:
+                    tmax = self.tier_classifier.get_tier_params(tier_guess, distance)[
+                        "max_weekly_miles"
+                    ]
+                    effective_mpw = effective_starting_weekly_miles_semi_custom(
+                        requested_mpw, load_ctx, float(tmax)
+                    )
+                    tier = self.tier_classifier.classify(
+                        current_weekly_miles=effective_mpw,
+                        goal_distance=distance,
+                        athlete_id=None,
+                        consider_history=False,
+                    )
+                    p4_floor = easy_long_floor_miles_from_l30(
+                        load_ctx.l30_max_easy_long_mi, distance, tier.value
+                    )
+                except Exception as ex:
+                    logger.warning("P4 semi-custom volume/tier merge failed: %s", ex)
+                    tier = tier_guess
+                    effective_mpw = requested_mpw
 
         if load_ctx is None:
             tier = self.tier_classifier.classify(
@@ -836,7 +851,11 @@ class PlanGenerator:
 
         raw_plan_start = start_date
         plan_ref_date = start_date if start_date is not None else date.today()
-        d4_reference_date = history_anchor_date(raw_plan_start)
+        d4_reference_date = history_anchor_date(
+            raw_plan_start,
+            self.db if athlete_id else None,
+            athlete_id,
+        )
 
         # Lightweight athlete context for rule-based personalization.
         athlete_ctx = {"experienced_high_volume": False, "age_years": None}
