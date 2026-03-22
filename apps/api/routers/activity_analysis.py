@@ -10,7 +10,7 @@ from typing import Dict
 from core.database import get_db
 from core.auth import get_current_user
 from models import Activity, Athlete, ActivityFeedback
-from services.activity_analysis import analyze_activity, ActivityAnalysis
+from services.activity_analysis import ActivityAnalysis
 from services.perception_prompts import get_perception_prompts
 
 router = APIRouter(prefix="/v1/activities", tags=["activity-analysis"])

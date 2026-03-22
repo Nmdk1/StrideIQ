@@ -18,7 +18,6 @@ from core.config import settings
 from core.database import check_db_connection
 from core.database import engine
 from core.logging import setup_logging
-from core.exceptions import APIException
 from core.rate_limit import RateLimitMiddleware
 from core.security_headers import SecurityHeadersMiddleware
 import logging

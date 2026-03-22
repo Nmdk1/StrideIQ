@@ -152,16 +152,16 @@ def list_activities(
             # Show races: either user verified OR candidate
             query = query.filter(
                 or_(
-                    Activity.user_verified_race == True,
-                    Activity.is_race_candidate == True
+                    Activity.user_verified_race.is_(True),
+                    Activity.is_race_candidate.is_(True),
                 )
             )
         else:
             # Show training only: NOT a race (both flags must be False/None)
             query = query.filter(
                 and_(
-                    or_(Activity.user_verified_race == False, Activity.user_verified_race.is_(None)),
-                    or_(Activity.is_race_candidate == False, Activity.is_race_candidate.is_(None))
+                    or_(Activity.user_verified_race.is_(False), Activity.user_verified_race.is_(None)),
+                    or_(Activity.is_race_candidate.is_(False), Activity.is_race_candidate.is_(None)),
                 )
             )
     
@@ -179,7 +179,6 @@ def list_activities(
         query = query.order_by(desc(sort_field))
     
     # Pagination
-    total = query.count()
     activities = query.offset(offset).limit(limit).all()
     
     # Convert to response format
@@ -270,7 +269,7 @@ def get_activities_summary(
         ).label('avg_pace_per_mile'),
         func.sum(
             case(
-                ((Activity.user_verified_race == True) | (Activity.is_race_candidate == True), 1),
+                (Activity.user_verified_race.is_(True) | Activity.is_race_candidate.is_(True), 1),
                 else_=0
             )
         ).label('race_count')
