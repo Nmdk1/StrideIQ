@@ -70,6 +70,7 @@ def compute_d4_long_run_override_and_stats(
         require_trusted_duplicate_flags=False,
     )
     count15 = 0
+    count18 = 0
     last18: Optional[date] = None
     for a in acts:
         if is_activity_excluded_as_race_for_p4(a):
@@ -78,13 +79,14 @@ def compute_d4_long_run_override_and_stats(
         if mi >= 15:
             count15 += 1
         if mi >= 18:
+            count18 += 1
             d = _activity_calendar_date_utc(a.start_time)
             if last18 is None or d > last18:
                 last18 = d
     if count15 < P4_D4_N or last18 is None:
-        return False, count15, last18
+        return False, count15, last18, count18
     days = (reference_date - last18).days
-    return days <= P4_D4_M_DAYS, count15, last18
+    return days <= P4_D4_M_DAYS, count15, last18, count18
 
 
 @dataclass
