@@ -149,17 +149,6 @@ function hasPhysiologicalData(tierUsed: string): boolean {
   return !tierUsed.startsWith('tier4');
 }
 
-/** Linear-interpolation quantile on a sorted array (q in [0, 1]). */
-function quantile(sorted: number[], q: number): number {
-  if (sorted.length === 0) return NaN;
-  if (sorted.length === 1) return sorted[0];
-  const pos = (sorted.length - 1) * q;
-  const lo = Math.floor(pos);
-  const hi = Math.ceil(pos);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (pos - lo) * (sorted[hi] - sorted[lo]);
-}
-
 function computeAltitudeDomainMeters(alts: number[]): [number, number] | undefined {
   const valid = alts.filter((a) => Number.isFinite(a));
   if (valid.length < 2) return undefined;
@@ -191,6 +180,25 @@ function computeGradeDomainPercent(values: number[]): [number, number] | undefin
   const effectiveSpan = Math.max(span, GRADE_MIN_SPAN_PCT);
   const pad = Math.max(0.5, effectiveSpan * GRADE_PAD_RATIO);
   return [minG - pad, maxG + pad];
+}
+
+/**
+ * Pace Y domain: always contains all smoothed points (no edge-clipping).
+ * If the run is steady (narrow s/km range), expand symmetrically to PACE_MIN_SPAN_S_PER_KM
+ * so GPS noise does not use the full chart height.
+ */
+function computePaceDomainSmoothedSecPerKm(paces: number[]): [number, number] | undefined {
+  if (paces.length < 6) return undefined;
+  const pMin = Math.min(...paces);
+  const pMax = Math.max(...paces);
+  const dataSpan = pMax - pMin;
+  const effectiveSpan = Math.max(dataSpan, PACE_MIN_SPAN_S_PER_KM);
+  const center = (pMin + pMax) / 2;
+  const pad = Math.max(2, effectiveSpan * PACE_PAD_RATIO);
+  const half = effectiveSpan / 2 + pad;
+  const dMin = Math.max(0, center - half);
+  const dMax = center + half;
+  return [dMin, dMax];
 }
 
 // ---------------------------------------------------------------------------
@@ -904,22 +912,12 @@ export function RunShapeCanvas({
     return computeAltitudeDomainMeters(alts);
   }, [chartData]);
 
-  // Pace: percentile-trimmed domain + minimum span so steady runs are not visually noisy.
+  // Pace: min/max of smoothed series + minimum span (steady runs); never clip points to chart edges.
   const paceDomain = useMemo<[number, number] | undefined>(() => {
     const paces = chartData
       .map((p) => p.smoothedPace)
       .filter((p): p is number => p != null && p > 0);
-    if (paces.length < 6) return undefined;
-    const sorted = [...paces].sort((a, b) => a - b);
-    const p05 = quantile(sorted, 0.05);
-    const p95 = quantile(sorted, 0.95);
-    const trimmedSpan = Math.max(1, p95 - p05);
-    const targetSpan = Math.max(trimmedSpan, PACE_MIN_SPAN_S_PER_KM);
-    const center = (p05 + p95) / 2;
-    const pad = Math.max(2, targetSpan * PACE_PAD_RATIO);
-    const dMin = Math.max(0, center - targetSpan / 2 - pad);
-    const dMax = center + targetSpan / 2 + pad;
-    return [dMin, dMax];
+    return computePaceDomainSmoothedSecPerKm(paces);
   }, [chartData]);
 
   const cadenceDomain = useMemo<[number, number] | undefined>(() => {
@@ -1204,7 +1202,7 @@ export function RunShapeCanvas({
               hide
               reversed
               domain={paceDomain ?? ['auto', 'auto']}
-              allowDataOverflow={!!paceDomain}
+              allowDataOverflow={false}
             />
             <YAxis
               yAxisId="altitude"

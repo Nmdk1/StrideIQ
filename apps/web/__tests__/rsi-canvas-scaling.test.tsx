@@ -61,6 +61,37 @@ describe('RSI canvas scaling honesty', () => {
     mockUseStreamAnalysis.mockReset();
   });
 
+  test('pace domain includes full smoothed range (no percentile edge pinning)', () => {
+    const points: StreamPoint[] = [];
+    for (let i = 0; i < 60; i++) {
+      const pace = i < 30 ? 385 : 305;
+      points.push({
+        time: i,
+        hr: 140,
+        pace,
+        altitude: 100,
+        grade: 0,
+        cadence: 175,
+        effort: 0.5,
+      });
+    }
+    mockUseStreamAnalysis.mockReturnValue({
+      data: { ...mockTier1Result, stream: points },
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+    } as any);
+
+    render(<RunShapeCanvas activityId="bimodal-pace" />);
+
+    const marker = screen.getByTestId('pace-domain-marker');
+    const lo = parseFloat(marker.getAttribute('data-min') || '0');
+    const hi = parseFloat(marker.getAttribute('data-max') || '0');
+    expect(hi - lo).toBeGreaterThanOrEqual(PACE_MIN_SPAN);
+    expect(lo).toBeLessThanOrEqual(320);
+    expect(hi).toBeGreaterThanOrEqual(375);
+  });
+
   test('pace domain enforces minimum span for steady pace', () => {
     const stream = steadyPaceNarrowStream(40);
     mockUseStreamAnalysis.mockReturnValue({
