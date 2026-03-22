@@ -176,7 +176,7 @@ class EntitlementsResponse(BaseModel):
 def _has_paid_subscription_access(athlete: Optional[Athlete]) -> bool:
     """Canonical paid-access check for plan pace/modification/model gates.
 
-    Uses active-subscription state first, then tier aliases for migration safety.
+    Two-tier model: paid access is subscription-backed only.
     """
     if athlete is None:
         return False
@@ -186,11 +186,7 @@ def _has_paid_subscription_access(athlete: Optional[Athlete]) -> bool:
         return True
 
     tier_raw = str(getattr(athlete, "subscription_tier", "") or "").strip().lower()
-    if tier_raw in {"subscriber", "guided", "premium", "elite", "pro", "subscription"}:
-        return True
-
-    from core.tier_utils import tier_satisfies
-    return tier_satisfies(getattr(athlete, "subscription_tier", None), "guided")
+    return tier_raw == "subscriber"
 
 @router.get("/entitlements", response_model=EntitlementsResponse)
 async def get_entitlements(
@@ -1372,23 +1368,9 @@ async def get_week_workouts(
 def _check_paid_tier(athlete: Athlete, db: Session) -> bool:
     """Check if athlete has paid-tier access for plan modifications.
 
-    Uses the canonical tier hierarchy from core.tier_utils so that legacy tier
-    names are normalized correctly. Falls back to a
-    DB check for athletes who paid for a semi-custom/custom plan before the
-    subscription model existed.
+    Two-tier model: paid access maps to active subscription/subscriber only.
     """
-    if _has_paid_subscription_access(athlete):
-        return True
-
-    # Legacy fallback: athletes who bought a semi-custom or custom plan
-    # before the subscription model existed retain workout-control access.
-    from models import TrainingPlan
-    paid_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == athlete.id,
-        TrainingPlan.generation_method.in_(["semi_custom", "custom", "framework_v2"]),
-    ).first()
-
-    return paid_plan is not None
+    return _has_paid_subscription_access(athlete)
 
 
 @router.post("/{plan_id}/workouts/{workout_id}/move")
@@ -1902,7 +1884,7 @@ async def create_model_driven_plan(
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Model-driven plans require Elite (active paid subscription)",
+                "reason": "Model-driven plans require an active paid subscription",
                 "upgrade_path": "/pricing"
             }
         )
@@ -1912,7 +1894,7 @@ async def create_model_driven_plan(
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Model-driven plans require Elite (active paid subscription)",
+                "reason": "Model-driven plans require an active paid subscription",
                 "upgrade_path": "/pricing"
             }
         )

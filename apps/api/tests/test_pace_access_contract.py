@@ -15,14 +15,14 @@ def test_active_subscription_has_pace_access():
     assert can_access_plan_paces(athlete, uuid4(), MagicMock()) is True
 
 
-def test_guided_tier_has_pace_access():
-    athlete = SimpleNamespace(role="athlete", has_active_subscription=False, subscription_tier="guided")
-    assert can_access_plan_paces(athlete, uuid4(), MagicMock()) is True
-
-
 def test_subscriber_tier_has_pace_access():
     athlete = SimpleNamespace(role="athlete", has_active_subscription=False, subscription_tier="subscriber")
     assert can_access_plan_paces(athlete, uuid4(), MagicMock()) is True
+
+
+def test_legacy_tier_does_not_have_pace_access():
+    athlete = SimpleNamespace(role="athlete", has_active_subscription=False, subscription_tier="guided")
+    assert can_access_plan_paces(athlete, uuid4(), MagicMock()) is False
 
 
 def test_free_tier_without_subscription_has_no_pace_access():

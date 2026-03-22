@@ -46,8 +46,8 @@ def export_plan_pdf(
 
     Access rules (mirrors pace-access entitlement):
     - 404  plan missing or not owned by this athlete
-    - 403  owned but paces not unlocked (free tier, no purchase)
-    - 200  one-time purchaser, guided, or premium
+    - 403  owned but paces not unlocked (free tier)
+    - 200  subscriber / active subscription / admin-owner
 
     Returns a streaming application/pdf response.
     """
@@ -66,7 +66,7 @@ def export_plan_pdf(
     if not can_access_plan_paces(current_user, plan_id, db):
         raise HTTPException(
             status_code=403,
-            detail="Unlock this plan to export as PDF. Visit the plan page to purchase access.",
+            detail="PDF export requires an active paid subscription.",
         )
 
     # Fetch workouts ordered for consistent rendering

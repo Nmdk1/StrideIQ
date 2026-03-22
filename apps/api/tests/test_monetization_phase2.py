@@ -186,57 +186,42 @@ class TestCanAccessPlanPaces:
             db.close()
             _cleanup(plan, athlete)
 
-    def test_free_athlete_with_purchase_can_access(self):
+    def test_subscriber_athlete_can_access(self):
         from core.pace_access import can_access_plan_paces
-        athlete = _make_athlete("free")
+        athlete = _make_athlete("subscriber")
         plan = _make_plan(athlete)
-        purchase = _make_purchase(athlete, plan)
         db = SessionLocal()
         try:
             result = can_access_plan_paces(athlete, plan.id, db)
             assert result is True
         finally:
             db.close()
-            _cleanup(purchase, plan, athlete)
+            _cleanup(plan, athlete)
 
-    def test_guided_athlete_no_purchase_can_access(self):
+    def test_guided_legacy_tier_cannot_access(self):
         from core.pace_access import can_access_plan_paces
         athlete = _make_athlete("guided")
         plan = _make_plan(athlete)
         db = SessionLocal()
         try:
             result = can_access_plan_paces(athlete, plan.id, db)
-            assert result is True
-        finally:
-            db.close()
-            _cleanup(plan, athlete)
-
-    def test_premium_athlete_no_purchase_can_access(self):
-        from core.pace_access import can_access_plan_paces
-        athlete = _make_athlete("premium")
-        plan = _make_plan(athlete)
-        db = SessionLocal()
-        try:
-            result = can_access_plan_paces(athlete, plan.id, db)
-            assert result is True
-        finally:
-            db.close()
-            _cleanup(plan, athlete)
-
-    def test_purchase_for_different_plan_does_not_unlock(self):
-        """A purchase for plan A does NOT unlock plan B."""
-        from core.pace_access import can_access_plan_paces
-        athlete = _make_athlete("free")
-        plan_a = _make_plan(athlete)
-        plan_b = _make_plan(athlete)
-        purchase = _make_purchase(athlete, plan_a)  # purchase for plan_a only
-        db = SessionLocal()
-        try:
-            result = can_access_plan_paces(athlete, plan_b.id, db)  # check plan_b
             assert result is False
         finally:
             db.close()
-            _cleanup(purchase, plan_a, plan_b, athlete)
+            _cleanup(plan, athlete)
+
+    def test_free_has_no_per_plan_purchase_unlock(self):
+        """Two-tier model: free tier has no one-off unlock path."""
+        from core.pace_access import can_access_plan_paces
+        athlete = _make_athlete("free")
+        plan_b = _make_plan(athlete)
+        db = SessionLocal()
+        try:
+            result = can_access_plan_paces(athlete, plan_b.id, db)
+            assert result is False
+        finally:
+            db.close()
+            _cleanup(plan_b, athlete)
 
     def test_admin_can_always_access(self):
         from core.pace_access import can_access_plan_paces
@@ -258,15 +243,15 @@ class TestCanAccessPlanPaces:
             db.close()
             _cleanup(plan, athlete)
 
-    def test_legacy_pro_tier_can_access(self):
-        """Legacy 'pro' tier normalizes to premium-level access."""
+    def test_legacy_pro_tier_cannot_access(self):
+        """Two-tier model: legacy paid aliases are not treated as active paid."""
         from core.pace_access import can_access_plan_paces
         athlete = _make_athlete("pro")
         plan = _make_plan(athlete)
         db = SessionLocal()
         try:
             result = can_access_plan_paces(athlete, plan.id, db)
-            assert result is True
+            assert result is False
         finally:
             db.close()
             _cleanup(plan, athlete)
@@ -338,21 +323,20 @@ class TestGetPlanPaceGating:
         finally:
             _cleanup(plan, athlete)
 
-    def test_free_with_purchase_coach_notes_visible(self):
-        athlete = _make_athlete("free")
+    def test_subscriber_coach_notes_visible(self):
+        athlete = _make_athlete("subscriber")
         plan = _make_plan(athlete)
-        purchase = _make_purchase(athlete, plan)
         try:
             resp = client.get(f"/v2/plans/{plan.id}", headers=_headers(athlete))
             assert resp.status_code == 200
             data = resp.json()
             week_1 = data["weeks"]["1"]
             has_paces = any(w["coach_notes"] is not None for w in week_1)
-            assert has_paces, "Free athlete with purchase must see pace data in coach_notes"
+            assert has_paces, "Subscriber athlete must see pace data in coach_notes"
         finally:
-            _cleanup(purchase, plan, athlete)
+            _cleanup(plan, athlete)
 
-    def test_guided_coach_notes_visible(self):
+    def test_guided_coach_notes_hidden(self):
         athlete = _make_athlete("guided")
         plan = _make_plan(athlete)
         try:
@@ -361,20 +345,7 @@ class TestGetPlanPaceGating:
             data = resp.json()
             week_1 = data["weeks"]["1"]
             has_paces = any(w["coach_notes"] is not None for w in week_1)
-            assert has_paces, "Guided athlete must see pace data"
-        finally:
-            _cleanup(plan, athlete)
-
-    def test_premium_coach_notes_visible(self):
-        athlete = _make_athlete("premium")
-        plan = _make_plan(athlete)
-        try:
-            resp = client.get(f"/v2/plans/{plan.id}", headers=_headers(athlete))
-            assert resp.status_code == 200
-            data = resp.json()
-            week_1 = data["weeks"]["1"]
-            has_paces = any(w["coach_notes"] is not None for w in week_1)
-            assert has_paces, "Premium athlete must see pace data"
+            assert not has_paces, "Legacy guided tier should not unlock paces"
         finally:
             _cleanup(plan, athlete)
 
@@ -398,10 +369,9 @@ class TestGetWeekPaceGating:
         finally:
             _cleanup(plan, athlete)
 
-    def test_free_with_purchase_coach_notes_visible(self):
-        athlete = _make_athlete("free")
+    def test_subscriber_coach_notes_visible(self):
+        athlete = _make_athlete("subscriber")
         plan = _make_plan(athlete)
-        purchase = _make_purchase(athlete, plan)
         try:
             resp = client.get(f"/v2/plans/{plan.id}/week/1", headers=_headers(athlete))
             assert resp.status_code == 200
@@ -409,9 +379,9 @@ class TestGetWeekPaceGating:
             has_paces = any(w["coach_notes"] is not None for w in data["workouts"])
             assert has_paces
         finally:
-            _cleanup(purchase, plan, athlete)
+            _cleanup(plan, athlete)
 
-    def test_guided_coach_notes_visible(self):
+    def test_guided_coach_notes_hidden(self):
         athlete = _make_athlete("guided")
         plan = _make_plan(athlete)
         try:
@@ -419,7 +389,7 @@ class TestGetWeekPaceGating:
             assert resp.status_code == 200
             data = resp.json()
             has_paces = any(w["coach_notes"] is not None for w in data["workouts"])
-            assert has_paces
+            assert has_paces is False
         finally:
             _cleanup(plan, athlete)
 

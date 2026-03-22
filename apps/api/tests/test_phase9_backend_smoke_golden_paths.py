@@ -337,12 +337,12 @@ def test_v2_standard_plan_create_succeeds_for_authenticated_athlete():
             db.close()
 
 
-def test_v2_model_driven_plan_requires_elite_tier(monkeypatch):
+def test_v2_model_driven_plan_requires_paid_subscription(monkeypatch):
     """
     Phase 9 backend smoke: tier gating for model-driven plan generation.
 
     We force the feature flag ON to ensure we’re testing the *tier gate* (not flag gate),
-    and then assert non-elite athletes are denied with stable 403 semantics.
+    and then assert free-tier athletes are denied with stable 403 semantics.
     """
     import routers.plan_generation as pg
 
@@ -363,7 +363,7 @@ def test_v2_model_driven_plan_requires_elite_tier(monkeypatch):
         assert resp.status_code == 403, resp.text
         detail = resp.json().get("detail")
         assert isinstance(detail, dict)
-        assert "Elite" in (detail.get("reason") or "")
+        assert "active paid subscription" in (detail.get("reason") or "")
         assert detail.get("upgrade_path")
     finally:
         try:

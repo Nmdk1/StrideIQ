@@ -15,9 +15,6 @@ Usage::
 
 from uuid import UUID
 
-from core.tier_utils import tier_satisfies
-from models import PlanPurchase
-
 
 def can_access_plan_paces(athlete, plan_id: UUID, db) -> bool:
     """Return True if the athlete may see pace target fields for this plan.
@@ -25,8 +22,7 @@ def can_access_plan_paces(athlete, plan_id: UUID, db) -> bool:
     Access is granted when ANY of the following conditions hold:
     1. Role is admin or owner.
     2. Athlete has an active trial or subscription (has_active_subscription=True).
-    3. Athlete subscription tier is paid (subscriber or legacy paid aliases).
-    4. Athlete has a legacy one-time purchase for this specific plan.
+    3. Athlete subscription tier is exactly "subscriber".
 
     The check is fail-closed: any unexpected state (None tier, missing model)
     resolves to False.
@@ -42,23 +38,5 @@ def can_access_plan_paces(athlete, plan_id: UUID, db) -> bool:
     tier = str(getattr(athlete, "subscription_tier", "") or "").strip().lower()
     if tier == "subscriber":
         return True
-
-    # Backward-compatibility during tier vocabulary migration.
-    if tier_satisfies(getattr(athlete, "subscription_tier", None), "guided"):
-        return True
-
-    # Legacy fallback: one-time unlock of a specific plan.
-    athlete_id = getattr(athlete, "id", None)
-    if athlete_id is not None:
-        purchase = (
-            db.query(PlanPurchase.id)
-            .filter(
-                PlanPurchase.athlete_id == athlete_id,
-                PlanPurchase.plan_snapshot_id == str(plan_id),
-            )
-            .first()
-        )
-        if purchase is not None:
-            return True
 
     return False

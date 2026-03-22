@@ -8,9 +8,8 @@ Categories:
   3. Unit: generation guardrails (scope cap, byte-size cap, timeout)
   4. Integration: GET /v1/plans/{plan_id}/pdf endpoint access control
      - 404 for missing / non-owned plan
-     - 403 for free athlete without purchase
-     - 200 + PDF bytes for one-time purchaser
-     - 200 + PDF bytes for guided / premium athlete
+     - 403 for free athlete
+     - 200 + PDF bytes for subscriber athlete
 """
 
 import io
@@ -601,8 +600,8 @@ class TestPdfEndpointAccessControl:
         finally:
             _cleanup(None, athlete)
 
-    def test_pdf_endpoint_403_for_free_without_purchase(self):
-        """Free athlete without a purchase record is blocked with 403."""
+    def test_pdf_endpoint_403_for_free(self):
+        """Free athlete is blocked with 403."""
         athlete = _make_athlete("free")
         plan    = _make_plan(athlete)
         try:
@@ -611,35 +610,20 @@ class TestPdfEndpointAccessControl:
         finally:
             _cleanup(plan, athlete)
 
-    def test_pdf_endpoint_200_for_plan_purchaser(self):
-        """Free athlete who purchased this specific plan gets the PDF."""
+    def test_pdf_endpoint_403_for_plan_purchaser(self):
+        """One-time purchase does not unlock PDF export in the two-tier model."""
         athlete  = _make_athlete("free")
         plan     = _make_plan(athlete)
-        purchase = _make_purchase(athlete, plan)
         try:
-            with patch("services.plan_pdf.generate_plan_pdf", return_value=FAKE_PDF):
-                resp = client.get(f"/v1/plans/{plan.id}/pdf", headers=_headers(athlete))
-            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
-            assert resp.headers["content-type"] == "application/pdf"
-            assert resp.content == FAKE_PDF
+            _make_purchase(athlete, plan)
+            resp = client.get(f"/v1/plans/{plan.id}/pdf", headers=_headers(athlete))
+            assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"
         finally:
             _cleanup(plan, athlete)
 
-    def test_pdf_endpoint_200_for_guided_athlete(self):
-        """Guided-tier athlete gets PDF for their own plan."""
-        athlete = _make_athlete("guided")
-        plan    = _make_plan(athlete)
-        try:
-            with patch("services.plan_pdf.generate_plan_pdf", return_value=FAKE_PDF):
-                resp = client.get(f"/v1/plans/{plan.id}/pdf", headers=_headers(athlete))
-            assert resp.status_code == 200
-            assert resp.headers["content-type"] == "application/pdf"
-        finally:
-            _cleanup(plan, athlete)
-
-    def test_pdf_endpoint_200_for_premium_athlete(self):
-        """Premium-tier athlete gets PDF for their own plan."""
-        athlete = _make_athlete("premium")
+    def test_pdf_endpoint_200_for_subscriber_athlete(self):
+        """Subscriber athlete gets PDF for their own plan."""
+        athlete = _make_athlete("subscriber")
         plan    = _make_plan(athlete)
         try:
             with patch("services.plan_pdf.generate_plan_pdf", return_value=FAKE_PDF):
@@ -652,7 +636,7 @@ class TestPdfEndpointAccessControl:
     def test_pdf_endpoint_returns_correct_content_disposition(self):
         """Content-Disposition header contains a safe filename."""
         import re
-        athlete = _make_athlete("guided")
+        athlete = _make_athlete("subscriber")
         plan    = _make_plan(athlete)
         try:
             with patch("services.plan_pdf.generate_plan_pdf", return_value=FAKE_PDF):
