@@ -30,7 +30,7 @@ Categories:
 """
 
 from uuid import uuid4
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -59,6 +59,8 @@ def _make_athlete(tier: str = "free") -> Athlete:
         display_name=f"P2Test-{tier}",
         role="athlete",
         subscription_tier=tier,
+        # Keep baseline helper deterministic: no active trial unless explicitly set.
+        trial_ends_at=datetime.now(timezone.utc) - timedelta(days=1),
     )
     db.add(athlete)
     db.commit()
