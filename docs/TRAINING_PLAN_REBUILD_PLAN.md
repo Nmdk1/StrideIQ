@@ -38,6 +38,14 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 > - Feature flag `lane_2a_cache_briefing` live for founder only. 24-48h stability soak before wider rollout.
 > - 42 tests covering cache states, triggers (runtime integration), admin auth, provider timeouts, schema contract.
 > - Lane 2B (non-LLM compute optimization) scoped but not started — needed if p95 margin stays tight.
+>
+> **Operational Update — March 22, 2026 (Plan generation stabilization)**
+> - Phases 0-5 of the plan-generation completion loop executed and validated locally.
+> - Constraint-aware generation now consumes LoadContext (L30 easy-long seed + D4 history bridge).
+> - Strict validation matrix (`PlanValidator(strict=True)`) is now a dedicated CI workflow job:
+>   `Plan Validation Strict`.
+> - Current strict matrix result: 15 pass, 6 explicit policy-waiver xfails (marathon low-volume MP/LR percentage cases), 0 unexpected failures.
+> - Monetization baseline note: legacy "Monetization CONTRACT ONLY" snapshot is historical and superseded by the 2-tier model decision in this document.
 
 ---
 
@@ -57,7 +65,7 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 
 7. **Self-regulation is a signal, not a problem.** When the athlete modifies a workout (planned 15 easy, did 10 at MP), that is first-class data. Log the delta, log the outcome, study the pattern. An experienced athlete who overrides "rest" and gets a breakthrough is not non-compliant — they are self-regulating. The system learns from these overrides to refine its model of the individual.
 
-8. **Paid tier = N=1 intelligence + daily insight.** Free/one-time plans give you the "what." Subscription gives you the "why this works for YOU" — your supercompensation patterns, your recovery timelines, your load-response relationship.
+8. **Paid tier = N=1 intelligence + daily insight.** Free plans give you the calendar and structure. StrideIQ Subscriber ($24.99/mo or $199/yr) gives you the "why this works for YOU" — the coach, your supercompensation patterns, your recovery timelines, your load-response relationship.
 
 9. **The system doesn't coach you on running. It coaches you on YOU.** The value is being the data analyst of your body — surfacing patterns, correlations, and insights from your own data that you can't hold in your head across 2+ years of training. 150+ tools and growing.
 
@@ -67,8 +75,8 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 
 These are decided. No revisiting during the build.
 
-1. **Standard tier pace injection:** ~~YES — show paces on free plans if the athlete has RPI from signup or Strava. Paces are expected, not a differentiator. N=1 intelligence and daily adaptation are the paid differentiators.~~
-   **SUPERSEDED by Monetization Decision (2026-02-26):** Paces are gated behind the $5 one-time purchase (or Guided/Premium subscription). Free plans return full plan structure (phases, weeks, workout types, distances, effort descriptions) with pace target fields set to `null`. The "$5 to unlock" CTA on blurred paces is the primary free→paid conversion moment. See Monetization Mapping below.
+1. **Standard tier pace injection:** ~~YES — show paces on free plans if the athlete has RPI from signup or Strava.~~ ~~SUPERSEDED by 4-tier model (2026-02-26).~~
+   **CURRENT (Monetization Reset, 2026-03-19):** Two tiers only — Free and StrideIQ Subscriber ($24.99/mo or $199/yr). Paces are included in all plans. Coach access is gated behind paid subscription. Free users get a 30-day auto-trial with full coach access on signup. See Monetization Mapping below.
 
 2. **50K timeline:** Deferred until after 5K is complete (Phase 1 scope ends at 5K). 50K requires new primitives (back-to-back long runs, time-on-feet, RPE, nutrition, strength) that shouldn't block the core distances.
 
@@ -610,29 +618,33 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 | **3B** | Contextual workout narratives. | Narration accuracy > 90% for 4 weeks | ✅ CODE COMPLETE — gate accruing |
 | **3C** | N=1 personalized insights. | 3+ months data + significant correlations | ✅ CODE COMPLETE — gate accruing |
 | **4** | 50K ultra: new primitives. | Phases 1-2 complete | 📋 CONTRACT ONLY — ready to build |
-| **Monetization** | Tier mapping: Free / One-time / Guided / Premium. | Phases 1-2 complete | ✅ v1 COMPLETE — tier gating + frontend 4-tier UI + PDF export + register intent carry-through (2026-02-26) |
+| **Monetization** | Tier mapping: Free (30-day trial) / StrideIQ Subscriber ($24.99/mo or $199/yr). | Phases 1-2 complete | ✅ v2 COMPLETE — 2-tier model, coach gated by subscription, 30-day auto-trial (2026-03-19) |
 | **Parallel** | Coach trust: test harness, HRV study, narration scoring, advisory mode, autonomy. | Starts Day 1 | ✅ COMPLETE (ongoing accrual) |
 
 ---
 
-## Monetization Mapping — CONTRACT TESTS ONLY (29 xfail)
+## Monetization Mapping — ✅ v2 COMPLETE (2026-03-19)
 
-**Gating architecture (decided 2026-02-26):** Hybrid model.
-- **Plan endpoints** (`/v2/plans`): Always return plan structure. If athlete is free with no `PlanPurchase` record for this plan, set pace target fields to `null` in the response. Frontend blurs and shows "$5 to unlock" CTA.
-- **Adaptation/intelligence endpoints**: Endpoint gate — 403 for below-guided tier.
-- **Narratives/advisory/premium-only**: Endpoint gate — 403 for below-premium tier.
+**Architecture (Monetization Reset, 2026-03-19):** Simplified 2-tier model.
+- **Free tier:** Full plan structure with paces. 30-day auto-trial grants full coach access on signup. After trial expiry, coach is gated — all other features remain accessible.
+- **StrideIQ Subscriber ($24.99/mo or $199/yr):** Full access to everything including AI coach.
+- **Trial fields:** `trial_started_at`, `trial_ends_at`, `trial_source` on `Athlete` model. Auto-populated on signup.
 
-| Tier | What They Get | Plan Paces | Adaptation | Intelligence |
-|------|--------------|------------|------------|--------------|
-| **Free** | RPI calculator, plan structure (phases, weeks, workout types, distances, effort descriptions) | **null** — blurred in UI, "$5 to unlock" CTA | None — 403 on all adaptation endpoints | None — 403 on intelligence endpoints |
-| **One-time ($5)** | Complete race plan with calculated paces | **Full paces** — unlocked per `PlanPurchase` record tied to `plan_snapshot_id` | None (static plan, no daily adaptation) | None |
-| **Guided Self-Coaching ($15/mo)** | The coached experience | **Full paces** — tier satisfies | Full daily adaptation (readiness, intelligence bank, replan) | Intelligence bank (`/v1/insights/intelligence`) |
-| **Premium ($25/mo)** | Everything + conversational coach | **Full paces** — tier satisfies | All above + coach proposals | All above + contextual narratives, advisory mode, workout narratives, dashboard |
+| Tier | What They Get | Plan Paces | Coach | Adaptation / Intelligence |
+|------|--------------|------------|-------|--------------------------|
+| **Free** (with 30-day trial) | Plans, paces, calendar, activity detail, progress page, all data surfaces | **Full paces** — always included | **30-day trial** — full access during trial, gated after expiry | Available during trial, gated after |
+| **StrideIQ Subscriber** ($24.99/mo or $199/yr) | Everything | **Full paces** | **Full access** | **Full access** |
 
-**Pace fields nulled for unauthorized tiers:**
-- `target_pace_per_km_seconds` (integer)
-- `target_pace_per_km_seconds_max` (integer)
-- `pace_description` (string)
+**Stripe products:**
+- Monthly: `STRIPE_PRICE_SUBSCRIBER_MONTHLY` ($24.99/mo)
+- Annual: `STRIPE_PRICE_SUBSCRIBER_ANNUAL` ($199/yr)
+
+**Superseded concepts (no longer in production):**
+- ~~$5 one-time plan unlock / PlanPurchase records~~
+- ~~Pace blurring / null pace fields for free tier~~
+- ~~Guided ($15/mo) / Premium ($25/mo) distinction~~
+- ~~4-tier pricing page~~
+- ~~Endpoint-level 403 by tier (guided vs premium)~~
 
 **`PlanTier` enum (standard/semi_custom/custom/model_driven) is a generation-quality axis — NOT a monetization tier. Do not conflate.**
 
@@ -644,12 +656,13 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 
 ---
 
-## Build Priority (from baseline snapshot)
+## Build Priority (updated 2026-03-22)
 
-1. **Monetization tier mapping** — direct revenue unlock, smaller surface area
-2. **Phase 4 (50K Ultra)** — new user segment + differentiation
-3. **Phase 3B** — when 4-week narration quality gate clears (monitor `/v1/intelligence/narration/quality`)
-4. **Phase 3C** — when 3+ month data/stat gates clear
+1. ~~**Monetization tier mapping**~~ — ✅ COMPLETE (2-tier model shipped 2026-03-19)
+2. **Coached plan output quality (P1-P5)** — long-run progression, weighted easy fill, narrative, load context, adaptive modulation
+3. **Phase 4 (50K Ultra)** — new user segment + differentiation
+4. **Phase 3B** — when 4-week narration quality gate clears (monitor `/v1/intelligence/narration/quality`)
+5. **Phase 3C** — when 3+ month data/stat gates clear
 
 ---
 
