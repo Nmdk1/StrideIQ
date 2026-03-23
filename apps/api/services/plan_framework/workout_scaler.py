@@ -680,8 +680,12 @@ class WorkoutScaler:
         tier: str,
         week_in_phase: int
     ) -> ScaledWorkout:
-        """Scale medium-long run (mid-week endurance)."""
-        # Typically 10-15 miles
+        """Scale medium-long run (mid-week endurance).
+
+        Hard cap: 15 miles regardless of weekly volume.
+        Source: _AI_CONTEXT_/KNOWLEDGE_BASE/03_WORKOUT_TYPES.md §3.
+        """
+        # Proportion of weekly volume, capped at 15 miles always
         if weekly_volume >= 70:
             distance = 15
         elif weekly_volume >= 55:
@@ -690,6 +694,9 @@ class WorkoutScaler:
             distance = 11
         else:
             distance = 10
+
+        # Enforce the absolute 15-mile cap (coaching rule, not a safety concern)
+        distance = min(distance, 15)
         
         return ScaledWorkout(
             workout_type="medium_long",

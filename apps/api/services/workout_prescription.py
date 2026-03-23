@@ -320,8 +320,22 @@ class WorkoutPrescriptionGenerator:
     }
     
     # Long run constraints (safety, not arbitrary caps)
-    LONG_RUN_MAX_MINUTES = 180      # 3 hours is reasonable upper limit
+    # 150 min = 2:30 hard ceiling per coaching KB (03_WORKOUT_TYPES.md).
+    # Do not raise this — elite marathoners don't train 3-hour runs.
+    LONG_RUN_MAX_MINUTES = 150      # 2:30 is the hard ceiling
     LONG_RUN_MAX_VOLUME_PCT = 0.35  # Single run shouldn't exceed 35% of weekly
+
+    # Medium-long hard cap: 15 miles regardless of weekly volume (04_RECOVERY.md).
+    MEDIUM_LONG_HARD_CAP_MILES = 15.0
+
+    # Time-based long run floor thresholds (minutes) by weekly mileage tier.
+    # Source: 03_WORKOUT_TYPES.md. Derived from pace × time, not hardcoded mileage.
+    LONG_RUN_TIME_FLOOR_MINUTES = {
+        "new":         0,    # <25 mpw: double-daily-average rule applies instead
+        "building":    90,   # 25-40 mpw: 1:30 floor
+        "established": 105,  # 40-60 mpw: 1:45 floor
+        "high":        120,  # 60+ mpw: 2:00 floor
+    }
     
     # Whether to include race-pace long runs for this distance
     USE_RACE_PACE_LONG_RUNS = {
@@ -404,6 +418,14 @@ class WorkoutPrescriptionGenerator:
         if load_easy_long_floor_mi is not None:
             self.long_run_current = max(self.long_run_current, float(load_easy_long_floor_mi))
 
+        # Time-based floor: 03_WORKOUT_TYPES.md §2a.
+        # Convert minimum time thresholds to miles using athlete's easy pace.
+        # This ensures plans never prescribe a "long run" that's really just a
+        # medium run in time terms for the athlete's fitness level.
+        time_floor = self._compute_time_based_long_run_floor(bank)
+        if time_floor > 0:
+            self.long_run_current = max(self.long_run_current, time_floor)
+
         self.personal_long_floor = compute_athlete_long_run_floor(
             l30_max_easy_long_mi=float(getattr(bank, "current_long_run_miles", 0.0) or 0.0),
             recent_8w_p75_long_run_miles=float(getattr(bank, "recent_8w_p75_long_run_miles", 0.0) or 0.0),
@@ -470,6 +492,59 @@ class WorkoutPrescriptionGenerator:
             f"proven={proven_peak:.1f}mi, distance={self.race_distance}"
         )
     
+    def _compute_time_based_long_run_floor(self, bank: "FitnessBank") -> float:
+        """
+        Compute the time-based long run floor in miles.
+
+        Source: _AI_CONTEXT_/KNOWLEDGE_BASE/03_WORKOUT_TYPES.md §2a.
+
+        Uses the athlete's easy pace (min/mi) and their weekly volume tier to
+        derive a minimum long run distance from a minimum time threshold.
+        This ensures a "long run" is actually long in time terms for that athlete,
+        not just a percentage of weekly volume.
+
+        Also applies the double-daily-average rule for lower-mileage runners.
+        """
+        easy_pace = float(self.paces.get("long", 0.0) or 0.0)
+        if easy_pace <= 0:
+            return 0.0
+
+        weekly_miles = float(getattr(bank, "current_weekly_miles", 0.0) or 0.0)
+
+        # Double-daily-average rule: only for new/lower-mileage runners (< 35 mpw).
+        # Uses 5 running days/week as the baseline — not derived from run count,
+        # which is unreliable for comeback/injury athletes.
+        # Source: "if they're doing 5 a day, start them at 10" — founder, 2026-03-18.
+        if weekly_miles < 35:
+            double_daily = (weekly_miles / 5.0) * 2.0
+        else:
+            double_daily = 0.0  # Higher mileage: time threshold drives, not this
+
+        # Time-based floor by tier
+        if weekly_miles >= 60:
+            tier_minutes = self.LONG_RUN_TIME_FLOOR_MINUTES["high"]
+        elif weekly_miles >= 40:
+            tier_minutes = self.LONG_RUN_TIME_FLOOR_MINUTES["established"]
+        elif weekly_miles >= 25:
+            tier_minutes = self.LONG_RUN_TIME_FLOOR_MINUTES["building"]
+        else:
+            tier_minutes = self.LONG_RUN_TIME_FLOOR_MINUTES["new"]
+
+        time_floor = (tier_minutes / easy_pace) if tier_minutes > 0 else 0.0
+
+        floor = max(time_floor, double_daily)
+
+        # Safety cap: floor cannot exceed 30% of current weekly volume.
+        # This prevents inflating week 1 for comeback athletes — the time floor
+        # is a target for where the plan should get the athlete, not an immediate
+        # starting point if the athlete isn't there yet.
+        if weekly_miles > 0:
+            floor = min(floor, weekly_miles * 0.30)
+
+        # Never exceed the hard ceiling
+        hard_ceiling = self.LONG_RUN_MAX_MINUTES / easy_pace
+        return min(floor, hard_ceiling)
+
     def calculate_long_run_for_week(self, week_number: int, total_weeks: int, 
                                      theme: WeekTheme) -> float:
         """
