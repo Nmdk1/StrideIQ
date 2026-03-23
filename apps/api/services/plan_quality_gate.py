@@ -206,19 +206,29 @@ def _enforce_personal_floor_in_early_weeks(
     if floor <= 0:
         return
     long_run_max = _suggested_long_run_max(race_distance)
+    floor_tolerance = _early_week_floor_tolerance(race_distance)
     for week in weeks:
         if int(getattr(week, "week_number", 999)) > 2:
             continue
         week_total = float(getattr(week, "total_miles", 0) or 0)
         effective_floor = min(floor, long_run_max, week_total * 0.33) if week_total > 0 else min(floor, long_run_max)
+        required_floor = max(0.0, effective_floor - floor_tolerance)
         long_miles = _week_long_miles(week)
-        if long_miles > 0 and long_miles + 1e-6 < effective_floor:
+        if long_miles > 0 and long_miles + 1e-6 < required_floor:
             reasons.append(
                 f"{race_distance.upper()} personal long-run floor breach in week {week.week_number}: "
-                f"{long_miles:.1f} < {effective_floor:.1f}."
+                f"{long_miles:.1f} < {required_floor:.1f} (target floor {effective_floor:.1f})."
             )
             invariant_conflicts.append("personal_long_run_floor_breach")
             return
+
+
+def _early_week_floor_tolerance(race_distance: str) -> float:
+    # Week-level mileage allocation is quantized; avoid hard-failing near-miss floors.
+    d = str(race_distance).lower()
+    if d in ("5k", "10k", "half", "half_marathon", "10_mile"):
+        return 0.75
+    return 0.5
 
 
 def _suggested_long_run_max(race_distance: str) -> float:

@@ -280,3 +280,34 @@ def test_quality_gate_caps_personal_floor_to_weekly_share_for_10k():
 
     result = evaluate_constraint_aware_plan(plan)
     assert "personal_long_run_floor_breach" not in result.invariant_conflicts
+
+
+def test_quality_gate_allows_small_early_week_floor_near_miss_for_10k():
+    week = type("Week", (), {})()
+    week.week_number = 1
+    week.total_miles = 54.0
+    long_day = type("Day", (), {})()
+    long_day.workout_type = "long"
+    long_day.target_miles = 17.2  # Slightly below 33% floor (17.8) but within tolerance.
+    threshold_day = type("Day", (), {})()
+    threshold_day.workout_type = "threshold"
+    threshold_day.target_miles = 7.0
+    week.days = [long_day, threshold_day]
+
+    plan = type("Plan", (), {})()
+    plan.weeks = [week]
+    plan.race_distance = "10k"
+    plan.volume_contract = {"band_min": 45.0, "band_max": 65.0}
+    plan.fitness_bank = {
+        "current": {"weekly_miles": 60.0, "long_run": 22.0},
+        "peak": {"long_run": 24.0},
+        "volume_contract": {
+            "recent_8w_p75_long_run_miles": 18.5,
+            "recent_16w_p50_long_run_miles": 17.0,
+            "recent_16w_run_count": 36,
+        },
+        "constraint": {"type": "none"},
+    }
+
+    result = evaluate_constraint_aware_plan(plan)
+    assert "personal_long_run_floor_breach" not in result.invariant_conflicts
