@@ -285,3 +285,75 @@ def test_race_day_uses_distance_specific_race_pace():
     race_sec = _pace_to_seconds(race_day.paces["race"])
     marathon_sec = _pace_to_seconds(gen.pace_strs["marathon"])
     assert race_sec < marathon_sec
+
+
+def test_10k_constraint_aware_has_intervals(monkeypatch):
+    """10K plans must include interval sessions by the peak week.
+
+    This is WS-C C1 from PLAN_INTEGRITY_SYSTEMIC_RECOVERY spec.
+    QUALITY_FOCUS must be wired — not just defined as a dead attribute.
+    """
+    athlete_id = uuid4()
+    bank = _make_bank(
+        athlete_id=str(athlete_id),
+        peak_mpw=55.0,
+        current_mpw=50.0,
+        experience=ExperienceLevel.EXPERIENCED,
+        injury=False,
+    )
+    monkeypatch.setattr("services.constraint_aware_planner.get_fitness_bank", lambda _id, _db: bank)
+
+    plan = generate_constraint_aware_plan(
+        athlete_id=athlete_id,
+        race_date=date.today() + timedelta(weeks=12),
+        race_distance="10k",
+        tune_up_races=[],
+        db=MagicMock(),
+    )
+
+    interval_days = [
+        d
+        for w in plan.weeks
+        for d in w.days
+        if d.workout_type == "intervals"
+    ]
+    assert interval_days, (
+        "10K plan must contain interval sessions. "
+        "Check QUALITY_FOCUS wiring in _assign_peak_week."
+    )
+
+
+def test_5k_no_marathon_pace_work(monkeypatch):
+    """5K plans must never contain marathon pace long runs or mp_medium sessions.
+
+    This is WS-C C1 from PLAN_INTEGRITY_SYSTEMIC_RECOVERY spec.
+    5K plans get VO2max/speed work, not marathon specificity.
+    """
+    athlete_id = uuid4()
+    bank = _make_bank(
+        athlete_id=str(athlete_id),
+        peak_mpw=50.0,
+        current_mpw=45.0,
+        experience=ExperienceLevel.INTERMEDIATE,
+        injury=False,
+    )
+    monkeypatch.setattr("services.constraint_aware_planner.get_fitness_bank", lambda _id, _db: bank)
+
+    plan = generate_constraint_aware_plan(
+        athlete_id=athlete_id,
+        race_date=date.today() + timedelta(weeks=10),
+        race_distance="5k",
+        tune_up_races=[],
+        db=MagicMock(),
+    )
+
+    mp_days = [
+        d
+        for w in plan.weeks
+        for d in w.days
+        if d.workout_type in ("long_mp", "mp_medium")
+    ]
+    assert not mp_days, (
+        f"5K plan must not contain marathon pace work. "
+        f"Found: {[(d.workout_type, d.name) for d in mp_days]}"
+    )

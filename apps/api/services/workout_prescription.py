@@ -794,9 +794,11 @@ class WorkoutPrescriptionGenerator:
         
         assignments[long_day] = ("long", long_miles)
         assignments[quality_day] = (quality_type, quality_miles)
-        
+
         if add_mp:
-            assignments[secondary_day] = ("mp_medium", secondary_miles)
+            # 5K/10K: no marathon pace work ever. Use intervals as second quality session.
+            secondary_type = "intervals" if self.race_distance in ("5k", "10k") else "mp_medium"
+            assignments[secondary_day] = (secondary_type, secondary_miles)
         
         # Assign easy days with neuromuscular variety
         for i, d in enumerate(easy_days):
@@ -814,31 +816,35 @@ class WorkoutPrescriptionGenerator:
                         week_number=1, progressive_long=None):
         """
         Assign MP-emphasis week: MP long run + threshold.
-        
-        Uses threshold work (NOT tempo - tempo is an ambiguous term).
+
+        For 5K/10K: marathon pace work is never appropriate. Degrades to a
+        standard threshold week with an easy long run.
         """
+        is_speed_distance = self.race_distance in ("5k", "10k")
+
         # MP long run: Use progressive calculation
         long_miles = progressive_long if progressive_long is not None else target * 0.30
         if self.race_distance == "10k":
             long_miles = min(long_miles, target * 0.24)
         long_miles = self._enforce_10k_personal_floor(long_miles, target, week_number)
-        
+
         # Threshold: ~10%
         threshold_miles = target * 0.10
         if self.race_distance == "10k":
             threshold_miles = min(threshold_miles, target * 0.12)
-        
+
         # Easy fills rest
         remaining = target - long_miles - threshold_miles
         easy_days = [d for d in range(7) if d not in [rest_day, long_day, quality_day]]
-        
+
         # Neuromuscular work with variety
         neuro_days = easy_days[:2] if len(easy_days) >= 2 else easy_days[:1]
         neuro_types = [self._select_neuromuscular_type() for _ in neuro_days]
-        
+
         easy_miles_list = self._distribute_easy_miles(remaining, easy_days, quality_day, long_day)
-        
-        assignments[long_day] = ("long_mp", long_miles)
+
+        # 5K/10K: easy long only (no MP work). Half/Marathon: MP long run.
+        assignments[long_day] = ("long", long_miles) if is_speed_distance else ("long_mp", long_miles)
         assignments[quality_day] = ("threshold", threshold_miles)
         
         for i, d in enumerate(easy_days):
@@ -852,31 +858,38 @@ class WorkoutPrescriptionGenerator:
     
     def _assign_peak_week(self, assignments, target, long_day, quality_day, rest_day,
                          week_number=1, progressive_long=None):
-        """Assign peak week: maximum quality."""
+        """Assign peak week: maximum quality.
+
+        5K/10K: race-specific phase uses intervals (VO2max work), not threshold.
+                Long run stays easy — no marathon pace work for speed distances.
+        Half/Marathon: threshold quality + MP long run.
+        """
         # Peak long run: Use progressive calculation (peak should be longest)
         long_miles = progressive_long if progressive_long is not None else target * 0.32
         if self.race_distance == "10k":
             long_miles = min(long_miles, target * 0.25)
         long_miles = self._enforce_10k_personal_floor(long_miles, target, week_number)
-        
-        # Full threshold: ~15%
-        threshold_miles = target * 0.15
+
+        # Quality type: intervals for speed distances (race-specific phase), threshold for endurance
+        is_speed_distance = self.race_distance in ("5k", "10k")
+        quality_miles = target * 0.15
         if self.race_distance == "10k":
-            threshold_miles = min(threshold_miles, target * 0.13)
-        
+            quality_miles = min(quality_miles, target * 0.13)
+
         # Easy + strides on one day
         strides_day = (quality_day - 2) % 7
         if strides_day == rest_day:
             strides_day = (strides_day + 1) % 7
-        
-        remaining = target - long_miles - threshold_miles
+
+        remaining = target - long_miles - quality_miles
         strides_miles = remaining * 0.22  # ~22% of remaining for strides day
         easy_remaining = remaining - strides_miles
         easy_days = [d for d in range(7) if d not in [rest_day, long_day, quality_day, strides_day]]
         easy_miles_list = self._distribute_easy_miles(easy_remaining, easy_days, quality_day, long_day)
-        
-        assignments[long_day] = ("long_mp", long_miles)
-        assignments[quality_day] = ("threshold", threshold_miles)
+
+        # 5K/10K: intervals + easy long. Half/Marathon: threshold + MP long.
+        assignments[long_day] = ("long", long_miles) if is_speed_distance else ("long_mp", long_miles)
+        assignments[quality_day] = ("intervals", quality_miles) if is_speed_distance else ("threshold", quality_miles)
         assignments[strides_day] = ("easy_strides", strides_miles)
         
         for i, d in enumerate(easy_days):
