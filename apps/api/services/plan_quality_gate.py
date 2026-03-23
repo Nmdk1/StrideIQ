@@ -359,7 +359,7 @@ def _evaluate_5k_rules(weeks: List[Any], reasons: List[str], invariant_conflicts
             wt = (day.workout_type or "").lower()
             if wt in ("long_mp", "long_hmp"):
                 distance_artifact = True
-            if race_like_theme and wt in ("intervals", "repetitions"):
+            if race_like_theme and _is_5k_sharpening_workout(wt):
                 race_specific_speed = True
 
     if not race_specific_speed:
@@ -369,6 +369,19 @@ def _evaluate_5k_rules(weeks: List[Any], reasons: List[str], invariant_conflicts
     if distance_artifact:
         reasons.append("5K plan contains long-distance artifacts (long_mp/long_hmp).")
         invariant_conflicts.append("fivek_distance_artifact")
+
+
+def _is_5k_sharpening_workout(workout_type: str) -> bool:
+    wt = str(workout_type or "").lower()
+    return wt in (
+        "intervals",
+        "repetitions",
+        "threshold_short",
+        "hill_sprints",
+        "hill_strides",
+        "easy_strides",
+        "tune_up_race",
+    )
 
 
 def _exceeds_with_tolerance(value: float, ceiling: float, *, miles_eps: float) -> bool:

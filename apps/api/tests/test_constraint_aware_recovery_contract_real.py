@@ -125,3 +125,9 @@ def test_prediction_contract_unchanged_real_generation(monkeypatch):
     assert "rationale_tags" in prediction
     assert "scenarios" in prediction
     assert "uncertainty_reason" in prediction
+
+
+def test_5k_real_generation_not_false_flagged(monkeypatch):
+    plan = _gen("5k", _bank(), monkeypatch)
+    gate = evaluate_constraint_aware_plan(plan)
+    assert gate.passed is True, gate.reasons

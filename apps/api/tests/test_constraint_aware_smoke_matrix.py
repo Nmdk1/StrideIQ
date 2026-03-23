@@ -165,13 +165,25 @@ def test_5k_gate_requires_sharpen_speed_sessions():
     plan = _mk_plan(
         "5k",
         [
-            _mk_week(1, 42.0, "build_t", [_mk_day("threshold", 5.0), _mk_day("long", 10.0)]),
-            _mk_week(2, 40.0, "peak", [_mk_day("threshold_short", 4.0), _mk_day("long", 9.0)]),
+            _mk_week(1, 42.0, "build_t", [_mk_day("threshold", 5.0), _mk_day("long", 14.0)]),
+            _mk_week(2, 40.0, "peak", [_mk_day("threshold", 4.0), _mk_day("long", 14.0)]),
         ],
     )
     gate = evaluate_constraint_aware_plan(plan)
     assert gate.passed is False
     assert "fivek_speed_sharpen_missing" in gate.invariant_conflicts
+
+
+def test_5k_gate_accepts_sharpen_competency_variants():
+    plan = _mk_plan(
+        "5k",
+        [
+            _mk_week(1, 44.0, "build_t", [_mk_day("threshold", 5.5), _mk_day("long", 11.0)]),
+            _mk_week(2, 42.0, "peak", [_mk_day("threshold_short", 4.0), _mk_day("hill_sprints", 6.0)]),
+        ],
+    )
+    gate = evaluate_constraint_aware_plan(plan)
+    assert "fivek_speed_sharpen_missing" not in gate.invariant_conflicts
 
 
 def test_marathon_gate_tolerates_boundary_quantization_near_contract_limits():
