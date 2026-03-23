@@ -31,6 +31,7 @@ import statistics
 import logging
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import ProgrammingError, OperationalError
 from sqlalchemy import func, and_
 
 from models import Activity, Athlete
@@ -814,11 +815,17 @@ def get_or_calibrate_model(
     from models import AthleteCalibratedModel
     from datetime import datetime, date, timezone
     
-    # Check for existing cached model
+    # Check for existing cached model.
+    # Production-safe fallback: if cache table is unavailable, continue with runtime calibration.
     if not force_recalibrate:
-        cached = db.query(AthleteCalibratedModel).filter(
-            AthleteCalibratedModel.athlete_id == athlete_id
-        ).first()
+        try:
+            cached = db.query(AthleteCalibratedModel).filter(
+                AthleteCalibratedModel.athlete_id == athlete_id
+            ).first()
+        except (ProgrammingError, OperationalError) as e:
+            logger.warning("Model cache lookup unavailable; falling back to live calibration: %s", e)
+            db.rollback()
+            cached = None
         
         if cached:
             # Check if still valid
