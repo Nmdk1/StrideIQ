@@ -109,7 +109,7 @@ Resolutions: **512px, 1K, 2K, 4K**. For social sharing, 1K (1080px) is the stand
 | 2 regenerations (max allowed) | $0.067 | 2 | $0.201 | $6.03 |
 | **Blended estimate** (1.3 avg attempts) | $0.067 | 0.3 | **$0.087** | **$2.61** |
 
-At $9.99/mo standalone or included in Guided ($15/mo), gross margin is 74-83% even with regenerations.
+At the StrideIQ Subscriber tier ($24.99/mo), gross margin is 89%+ even with regenerations. *(Note: originally spec'd against old Guided $15/mo tier; monetization was reset to 2-tier in March 2026.)*
 
 **Phase 0 cost:** 15 test images × $0.067 = **$1.01**. Negligible.
 
@@ -337,16 +337,16 @@ Phase 0 is strictly: **can the model produce share-worthy images from our data, 
 
 ---
 
-## 8. Monetization Recommendation (Revised)
+## 8. Monetization Recommendation (Updated for 2-tier model)
 
 | Tier | Runtoon Access | Rationale |
 |---|---|---|
-| **Free** | 1 Runtoon on first run only | Onboarding delight + conversion hook |
-| **One-time ($5)** | No Runtoon | One-time doesn't justify ongoing generation cost |
-| **Guided ($15/mo)** | Unlimited Runtoons (1 per activity, 2 regenerations) | Makes Guided dramatically more attractive |
-| **Premium ($25/mo)** | Unlimited Runtoons + 4K resolution option | Premium perk |
+| **Free** (30-day trial) | 1 Runtoon on first run only (or unlimited during trial) | Onboarding delight + conversion hook |
+| **StrideIQ Subscriber** ($24.99/mo or $199/yr) | Unlimited Runtoons (1 per activity, 2 regenerations) | Adds perceived value to subscription |
 
-**No standalone $9.99/mo tier.** Runtoon should be a reason to subscribe to StrideIQ, not a substitute for it. Bundling it into Guided increases perceived tier value and drives upgrades rather than cannibalization.
+Runtoon should be a reason to subscribe to StrideIQ, not a standalone product. Bundling it increases perceived tier value and drives upgrades.
+
+> *Original spec referenced 4-tier model (Free/$5/Guided $15/Premium $25). Monetization was reset to 2-tier in March 2026.*
 
 ---
 
