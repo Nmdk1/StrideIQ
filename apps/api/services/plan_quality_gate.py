@@ -260,10 +260,12 @@ def _suggested_long_run_max(race_distance: str) -> float:
 
 
 def _evaluate_10k_rules(weeks: List[Any], reasons: List[str], invariant_conflicts: List[str]) -> None:
+    has_marathon_pace_work = False
     for week in weeks:
         week_total = max(float(getattr(week, "total_miles", 0) or 0), 1.0)
         for day in getattr(week, "days", []):
-            if day.workout_type == "long":
+            wt = (day.workout_type or "").lower()
+            if wt == "long":
                 long_miles = float(day.target_miles or 0)
                 if _exceeds_with_tolerance(long_miles, 18.0, miles_eps=MILES_EPS) or _exceeds_ratio_with_tolerance(
                     long_miles / week_total, TENK_LONG_DOMINANCE_RATIO_CEILING, ratio_eps=RATIO_EPS
@@ -274,7 +276,7 @@ def _evaluate_10k_rules(weeks: List[Any], reasons: List[str], invariant_conflict
                     )
                     invariant_conflicts.append("tenk_long_run_dominance")
                     return
-            if day.workout_type in ("threshold", "threshold_short") and _exceeds_with_tolerance(
+            if wt in ("threshold", "threshold_short") and _exceeds_with_tolerance(
                 float(day.target_miles or 0), 8.0, miles_eps=MILES_EPS
             ):
                 reasons.append(
@@ -283,6 +285,16 @@ def _evaluate_10k_rules(weeks: List[Any], reasons: List[str], invariant_conflict
                 )
                 invariant_conflicts.append("tenk_threshold_oversize")
                 return
+            # Marathon pace work is never appropriate for a 10K plan.
+            if wt in ("long_mp", "mp_medium"):
+                has_marathon_pace_work = True
+
+    if has_marathon_pace_work:
+        reasons.append(
+            "10K plan contains marathon pace work (long_mp/mp_medium). "
+            "MP work is never appropriate for 10K training."
+        )
+        invariant_conflicts.append("tenk_marathon_pace_artifact")
 
 
 def _evaluate_marathon_rules(
@@ -364,6 +376,7 @@ def _evaluate_half_rules(weeks: List[Any], reasons: List[str], invariant_conflic
 def _evaluate_5k_rules(weeks: List[Any], reasons: List[str], invariant_conflicts: List[str]) -> None:
     race_specific_speed = False
     distance_artifact = False
+    has_any_interval = False
     for week in weeks:
         theme = str(getattr(getattr(week, "theme", None), "value", "")).lower()
         race_like_theme = theme in ("sharpen", "peak", "race", "taper_1", "taper_2")
@@ -373,6 +386,8 @@ def _evaluate_5k_rules(weeks: List[Any], reasons: List[str], invariant_conflicts
                 distance_artifact = True
             if race_like_theme and _is_5k_sharpening_workout(wt):
                 race_specific_speed = True
+            if wt == "intervals":
+                has_any_interval = True
 
     if not race_specific_speed:
         reasons.append("5K race-specific sharpening missing intervals/repetitions.")
@@ -381,6 +396,12 @@ def _evaluate_5k_rules(weeks: List[Any], reasons: List[str], invariant_conflicts
     if distance_artifact:
         reasons.append("5K plan contains long-distance artifacts (long_mp/long_hmp).")
         invariant_conflicts.append("fivek_distance_artifact")
+        return
+    # A 5K plan must contain at least one explicit interval session somewhere.
+    # Threshold-only 5K plans are a coaching error.
+    if not has_any_interval:
+        reasons.append("5K plan contains no interval sessions. A threshold-only 5K plan is a coaching error.")
+        invariant_conflicts.append("fivek_no_intervals")
 
 
 def _is_5k_sharpening_workout(workout_type: str) -> bool:
