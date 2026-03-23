@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { planService } from '@/lib/api/services/plans';
+import { ApiClientError } from '@/lib/api/client';
 import { useAuth } from '@/lib/context/AuthContext';
 import { parseTimeToSeconds } from '@/lib/utils/time';
 import { calendarKeys } from '@/lib/hooks/queries/calendar';
@@ -65,6 +66,32 @@ interface ModelDrivenPreview {
     notes: string[];
     summary: string;
   };
+}
+
+function formatPlanCreateError(err: unknown): string {
+  if (err instanceof ApiClientError) {
+    const detail = (err.data as { detail?: unknown } | undefined)?.detail;
+    if (detail && typeof detail === 'object') {
+      const payload = detail as {
+        error_code?: string;
+        reasons?: string[];
+        next_action?: string;
+      };
+      if (payload.error_code === 'quality_gate_failed') {
+        const reasons = Array.isArray(payload.reasons) ? payload.reasons : [];
+        const reasonText = reasons.length > 0
+          ? reasons.map((r, i) => `${i + 1}. ${r}`).join('\n')
+          : 'The generated plan violated quality invariants.';
+        const nextAction = payload.next_action
+          ? payload.next_action.replaceAll('_', ' ')
+          : 'adjust plan inputs';
+        return `Plan quality gate blocked this draft.\n${reasonText}\nNext step: ${nextAction}.`;
+      }
+      return `Request failed (${err.status}).`;
+    }
+    return err.message;
+  }
+  return err instanceof Error ? err.message : 'Failed to create plan';
 }
 
 const DISTANCES = [
@@ -154,8 +181,7 @@ export default function CreatePlanPage() {
       
     } catch (err) {
       console.error('[Plan Create] Error creating model-driven plan:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create plan';
-      setError(errorMessage);
+      setError(formatPlanCreateError(err));
     } finally {
       setIsLoading(false);
     }
@@ -193,8 +219,7 @@ export default function CreatePlanPage() {
       
     } catch (err) {
       console.error('[Plan Create] Error creating constraint-aware plan:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create plan';
-      setError(errorMessage);
+      setError(formatPlanCreateError(err));
     } finally {
       setIsLoading(false);
     }
@@ -339,8 +364,7 @@ export default function CreatePlanPage() {
       
     } catch (err) {
       console.error('[Plan Create] Error creating plan:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create plan';
-      setError(errorMessage);
+      setError(formatPlanCreateError(err));
       // Stay on page - don't redirect
       return;
     } finally {
@@ -651,7 +675,7 @@ export default function CreatePlanPage() {
               </div>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400">
+                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400 whitespace-pre-line text-sm">
                   {error}
                 </div>
               )}
@@ -904,7 +928,7 @@ export default function CreatePlanPage() {
               </div>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400">
+                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400 whitespace-pre-line text-sm">
                   {error}
                 </div>
               )}
@@ -1458,7 +1482,7 @@ export default function CreatePlanPage() {
               </div>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400">
+                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400 whitespace-pre-line text-sm">
                   {error}
                 </div>
               )}

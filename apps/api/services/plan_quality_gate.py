@@ -18,9 +18,11 @@ def evaluate_constraint_aware_plan(plan: Any) -> QualityGateResult:
     fitness_bank: Dict[str, Any] = getattr(plan, "fitness_bank", {}) or {}
     band_max = float(vc.get("band_max", 0) or 0)
     band_min = float(vc.get("band_min", 0) or 0)
+    race_distance = str(getattr(plan, "race_distance", "")).lower()
+    long_run_max = _suggested_long_run_max(race_distance)
     suggested_safe_bounds = {
         "weekly_miles": {"min": round(max(8.0, band_min * 0.85), 1), "max": round(max(12.0, band_max * 1.05), 1)},
-        "long_run_miles": {"min": 8.0, "max": 18.0},
+        "long_run_miles": {"min": 8.0, "max": long_run_max},
     }
 
     if not weeks:
@@ -38,10 +40,9 @@ def evaluate_constraint_aware_plan(plan: Any) -> QualityGateResult:
                 invariant_conflicts.append("weekly_volume_exceeds_trusted_band")
                 break
 
-    race_distance = str(getattr(plan, "race_distance", "")).lower()
     floor = _compute_personal_long_run_floor(fitness_bank, race_distance=race_distance)
     if floor > 0:
-        suggested_safe_bounds["long_run_miles"]["min"] = round(floor, 1)
+        suggested_safe_bounds["long_run_miles"]["min"] = round(min(floor, long_run_max), 1)
     _enforce_personal_floor_in_early_weeks(
         weeks=weeks,
         floor=floor,
@@ -204,17 +205,31 @@ def _enforce_personal_floor_in_early_weeks(
 ) -> None:
     if floor <= 0:
         return
+    long_run_max = _suggested_long_run_max(race_distance)
     for week in weeks:
         if int(getattr(week, "week_number", 999)) > 2:
             continue
+        week_total = float(getattr(week, "total_miles", 0) or 0)
+        effective_floor = min(floor, long_run_max, week_total * 0.33) if week_total > 0 else min(floor, long_run_max)
         long_miles = _week_long_miles(week)
-        if long_miles > 0 and long_miles + 1e-6 < floor:
+        if long_miles > 0 and long_miles + 1e-6 < effective_floor:
             reasons.append(
                 f"{race_distance.upper()} personal long-run floor breach in week {week.week_number}: "
-                f"{long_miles:.1f} < {floor:.1f}."
+                f"{long_miles:.1f} < {effective_floor:.1f}."
             )
             invariant_conflicts.append("personal_long_run_floor_breach")
             return
+
+
+def _suggested_long_run_max(race_distance: str) -> float:
+    d = str(race_distance).lower()
+    if d == "marathon":
+        return 22.0
+    if d in ("half", "half_marathon", "10_mile", "10k"):
+        return 18.0
+    if d == "5k":
+        return 16.0
+    return 18.0
 
 
 def _evaluate_10k_rules(weeks: List[Any], reasons: List[str], invariant_conflicts: List[str]) -> None:

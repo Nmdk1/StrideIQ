@@ -410,7 +410,7 @@ export const planService = {
   },
 
   /**
-   * Create a constraint-aware plan (Elite tier only)
+   * Create a constraint-aware plan (paid subscription required)
    * Uses the Fitness Bank Framework (ADR-030, ADR-031):
    * - Analyzes full training history
    * - Detects constraints (injury, reduced volume)

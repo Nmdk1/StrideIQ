@@ -249,3 +249,34 @@ def test_quality_gate_allows_reasonable_high_mileage_10k_long_run():
 
     result = evaluate_constraint_aware_plan(plan)
     assert result.passed is True, result.reasons
+
+
+def test_quality_gate_caps_personal_floor_to_weekly_share_for_10k():
+    week = type("Week", (), {})()
+    week.week_number = 1
+    week.total_miles = 52.0
+    long_day = type("Day", (), {})()
+    long_day.workout_type = "long"
+    long_day.target_miles = 17.2  # exactly 33% of week
+    threshold_day = type("Day", (), {})()
+    threshold_day.workout_type = "threshold"
+    threshold_day.target_miles = 7.0
+    week.days = [long_day, threshold_day]
+
+    plan = type("Plan", (), {})()
+    plan.weeks = [week]
+    plan.race_distance = "10k"
+    plan.volume_contract = {"band_min": 45.0, "band_max": 60.0}
+    plan.fitness_bank = {
+        "current": {"weekly_miles": 55.0, "long_run": 26.4},
+        "peak": {"long_run": 30.0},
+        "volume_contract": {
+            "recent_8w_p75_long_run_miles": 20.0,
+            "recent_16w_p50_long_run_miles": 18.0,
+            "recent_16w_run_count": 36,
+        },
+        "constraint": {"type": "none"},
+    }
+
+    result = evaluate_constraint_aware_plan(plan)
+    assert "personal_long_run_floor_breach" not in result.invariant_conflicts
