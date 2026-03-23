@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 
 
 AUTHORITATIVE_RACE_WORKOUT_TYPES = {"race", "race_effort"}
@@ -43,9 +43,10 @@ def activity_is_authoritative_race(activity) -> bool:
 
 def authoritative_race_filter(ActivityModel):
     """Return SQLAlchemy OR expression for authoritative race activities."""
+    normalized_workout_type = func.lower(func.coalesce(ActivityModel.workout_type, ""))
     return or_(
         ActivityModel.user_verified_race == True,  # noqa: E712
-        ActivityModel.workout_type.in_(tuple(AUTHORITATIVE_RACE_WORKOUT_TYPES)),
+        normalized_workout_type.in_(tuple(AUTHORITATIVE_RACE_WORKOUT_TYPES)),
         and_(
             ActivityModel.is_race_candidate == True,  # noqa: E712
             ActivityModel.race_confidence >= 0.7,

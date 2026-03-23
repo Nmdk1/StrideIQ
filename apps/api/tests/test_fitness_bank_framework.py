@@ -557,6 +557,31 @@ class TestRaceAnchorSync:
         assert anchor is not None
         assert anchor.distance_key == "5k"
 
+    def test_anchor_sync_treats_workout_type_case_insensitively(self, db_session, test_athlete):
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=datetime.now(timezone.utc) - timedelta(days=2),
+                sport="run",
+                source="manual",
+                duration_s=2400,
+                distance_m=10000,
+                workout_type="Race",
+                race_confidence=0.8,
+            )
+        )
+        db_session.commit()
+
+        calc = FitnessBankCalculator(db_session)
+        calc.calculate(test_athlete.id)
+        anchor = (
+            db_session.query(AthleteRaceResultAnchor)
+            .filter(AthleteRaceResultAnchor.athlete_id == test_athlete.id)
+            .one_or_none()
+        )
+        assert anchor is not None
+        assert anchor.distance_key == "10k"
+
     def test_anchor_sync_skips_low_quality_candidates_with_diagnostic(self, db_session, test_athlete):
         db_session.add(
             Activity(
