@@ -376,7 +376,8 @@ class ModelDrivenPlanGenerator:
             athlete_id=athlete_id,
             race_date=race_date,
             current_ctl=current_ctl,
-            current_atl=current_atl
+            current_atl=current_atl,
+            race_distance=race_distance,
         )
 
         # Step 4: Get training paces

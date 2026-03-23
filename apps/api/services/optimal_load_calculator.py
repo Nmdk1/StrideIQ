@@ -190,7 +190,8 @@ class OptimalLoadCalculator:
         current_atl: float,
         target_tsb: Optional[float] = None,
         max_weekly_tss: Optional[float] = None,
-        min_weekly_tss: Optional[float] = None
+        min_weekly_tss: Optional[float] = None,
+        race_distance: str = "marathon",
     ) -> LoadTrajectory:
         """
         Calculate optimal load trajectory to race day.
@@ -238,8 +239,8 @@ class OptimalLoadCalculator:
         
         # Build phase weeks
         build_weeks = max(1, weeks_to_race - taper_weeks)
-        # Compute base weeks (0–2, distance-aware if caller passes race_distance)
-        base_weeks = self._base_weeks_for_cycle(build_weeks)
+        # Compute base weeks (0–2, distance-aware)
+        base_weeks = self._base_weeks_for_cycle(build_weeks, race_distance)
         
         # ========================================
         # CRITICAL: Calculate weeks BACKWARDS from race date
@@ -553,12 +554,15 @@ class OptimalLoadCalculator:
             return min(taper, 2)
         return min(taper, 3)
 
-    def _base_weeks_for_cycle(self, build_weeks: int) -> int:
+    def _base_weeks_for_cycle(self, build_weeks: int, race_distance: str = "marathon") -> int:
         """Keep at least one build week (quality-capable) even in short cycles.
 
-        For very short plans: skip base phase entirely so the athlete gets
-        quality sessions from week 1 rather than a block of pure easy runs.
+        For speed-dominant events (5K/10K), skip the base phase entirely so the
+        athlete gets quality sessions from week 1; pure easy running for 2 weeks
+        is actively wrong for these distances.
         """
+        if race_distance in ("5k", "10k"):
+            return 0
         bw = max(1, int(build_weeks))
         if bw <= 2:
             return 0
