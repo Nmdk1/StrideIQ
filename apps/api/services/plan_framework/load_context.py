@@ -265,6 +265,12 @@ def easy_long_floor_miles_from_l30(
 ) -> Optional[float]:
     """max(L30, tier start long) when L30 present; else None.
 
+    Phase 3 note: this function provides the L30 component to the upstream
+    caller (WorkoutPrescriptionGenerator), where it is combined with p75_8w
+    and p50_16w from FitnessBank to produce the full Option A floor:
+      floor = max(L30, p75_8w, p50_16w)
+    via compute_athlete_long_run_floor in plan_quality_gate.py.
+
     Guard: cap floor to 42% of recent weekly band to prevent one-off ultra/marathon
     long runs from seeding an absurd week-1 long run target. Preserves the tier
     start_long minimum so inexperienced athletes still get a meaningful seed.

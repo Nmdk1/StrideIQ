@@ -440,8 +440,17 @@ class WorkoutPrescriptionGenerator:
         if time_floor > 0:
             self.long_run_current = max(self.long_run_current, time_floor)
 
+        # Phase 3: Unified floor using full Option A formula: max(L30, p75_8w, p50_16w).
+        # L30 comes from LoadContext when available; falls back to current_long_run_miles.
+        # p75_8w and p50_16w come from FitnessBank directly.
+        # Source: PLAN_GENERATION_COMPREHENSIVE_PATH.md Phase 3 / compute_athlete_long_run_floor.
+        l30_for_floor = (
+            float(load_easy_long_floor_mi)
+            if load_easy_long_floor_mi is not None
+            else float(getattr(bank, "current_long_run_miles", 0.0) or 0.0)
+        )
         self.personal_long_floor = compute_athlete_long_run_floor(
-            l30_max_easy_long_mi=float(getattr(bank, "current_long_run_miles", 0.0) or 0.0),
+            l30_max_easy_long_mi=l30_for_floor,
             recent_8w_p75_long_run_miles=float(getattr(bank, "recent_8w_p75_long_run_miles", 0.0) or 0.0),
             recent_16w_p50_long_run_miles=float(getattr(bank, "recent_16w_p50_long_run_miles", 0.0) or 0.0),
             recent_16w_run_count=int(float(getattr(bank, "recent_16w_run_count", 0) or 0)),
