@@ -279,7 +279,7 @@ STRICT_WAIVER_IDS = {
     "marathon-low-18w-5d",
     "marathon-builder-18w-5d",
     "marathon-mid-18w-5d",
-    "half-mid-16w-6d",
+    # "half-mid-16w-6d" — removed: half plan now passes strict mode (XPASS cleared)
     "n1-beginner-25mpw-marathon",
 }
 
