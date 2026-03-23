@@ -29,7 +29,7 @@ These must be cleared in order. Do not start a lower-numbered item while a highe
 
 | # | Issue | Status |
 |---|---|---|
-| 1 | `QUALITY_FOCUS` dict in `workout_prescription.py` is dead code. 5K/10K plans produce threshold-only quality work because the attribute is defined but never read during workout assignment (`_assign_standard_week`, `_assign_peak_week` both hardcode `threshold`). | **OPEN** |
+| 1 | `QUALITY_FOCUS` dict in `workout_prescription.py` is dead code. 5K/10K plans produce threshold-only quality work because the attribute is defined but never read during workout assignment (`_assign_standard_week`, `_assign_peak_week` both hardcode `threshold`). | **CLOSED** — commit bf6eaa2 |
 | 2 | No test suite exercises real plan content against realistic athlete profiles. Every passing test checks that the generator doesn't crash, not that it produces a rational plan. The synthetic athlete population requested by the founder has not been built as a persistent test fixture. | **OPEN** |
 | 3 | Floor logic is duplicated, not unified. `plan_framework/load_context.py` and `plan_quality_gate.py` use separate floor formulas. Phase 3 (unified floor) is incomplete. | **OPEN** |
 
@@ -82,10 +82,7 @@ Status: **DONE** = evidence pasted. **PARTIAL** = code exists, not fully proven.
 - `test_pace_order_invariants_hold_across_rpi_range` — NOT written
 - `test_all_generator_paths_enforce_pace_order_invariants` — NOT written
 
-**WS-C C1: Distance-specific workout composition in constraint-aware (10K gets intervals, 5K no marathon pace work)**
-- `QUALITY_FOCUS` dict defined in `workout_prescription.py` but **never read during workout assignment** — dead attribute
-- `_assign_standard_week` and `_assign_peak_week` hardcode `threshold` regardless of distance
-- Status: **NOT DONE** — this is Blocking Issue #1
+| WS-C C1: Distance-specific workout composition in constraint-aware (10K gets intervals, 5K no marathon pace work) | DONE — commit bf6eaa2. `test_10k_constraint_aware_has_intervals` PASSES. `test_5k_no_marathon_pace_work` PASSES. 34/34 smoke matrix. |
 
 ---
 
@@ -222,3 +219,5 @@ Every session that touches plan code must add a row here before its last commit.
 | Date | Session | Commits | What changed | What test proved it | New blocking issues opened |
 |---|---|---|---|---|---|
 | 2026-03-18 | [Plan Generator Status Audit](6a788801-3485-41ed-b1d1-e3e188525078) | e56c81f (last) | Saturday medium_long reverted to easy, pre-long TSS% reduced to 0.12, medium_long handler removed from `_create_day_plan` | `test_model_driven_short_cycle_contract.py`: 20 passed 3 skipped | QUALITY_FOCUS dead code confirmed; real quality test suite still absent |
+| 2026-03-18 | [Plan Generator Status Audit](6a788801-3485-41ed-b1d1-e3e188525078) | b4d5496, b559085 | Created `PLAN_GENERATOR_STATUS.md` living ledger + `plan-generator-status.mdc` cursor rule. Committed Saturday revert. | — | — |
+| 2026-03-18 | [Plan Generator Status Audit](6a788801-3485-41ed-b1d1-e3e188525078) | bf6eaa2 | Wired QUALITY_FOCUS: `_assign_peak_week` uses intervals for 5K/10K; `_assign_mp_week` blocks marathon pace for 5K/10K; `_assign_standard_week` BUILD_MIXED secondary uses intervals not mp_medium. Added `test_10k_constraint_aware_has_intervals` and `test_5k_no_marathon_pace_work`. | `test_constraint_aware_smoke_matrix.py`: 34 passed. Full suite: 239 passed, 8 skipped, 8 xfailed, 0 failures. | Blocking Issue #1 CLOSED. Blocking Issues #2 (real test suite) and #3 (unified floor) remain. |
