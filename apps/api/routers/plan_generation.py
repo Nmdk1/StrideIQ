@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import date, datetime, timedelta
+import re
 
 from core.database import get_db
 from core.auth import get_current_athlete, get_current_athlete_optional
@@ -221,6 +222,60 @@ def _constraint_aware_plan_has_pace_order_violation(plan) -> bool:
                 return True
     return False
 
+
+def _extract_first_pace_seconds(text: Optional[str]) -> Optional[int]:
+    if not text:
+        return None
+    match = re.search(r"(\d+):(\d{2})", str(text))
+    if not match:
+        return None
+    return int(match.group(1)) * 60 + int(match.group(2))
+
+
+def _generated_plan_has_pace_order_violation(plan) -> bool:
+    marathon = None
+    threshold = None
+    interval = None
+    for w in getattr(plan, "workouts", []):
+        wt = str(getattr(w, "workout_type", "") or "").lower()
+        pace_sec = _extract_first_pace_seconds(getattr(w, "pace_description", None))
+        if pace_sec is None:
+            continue
+        if wt in ("long_mp", "mp_touch", "marathon_pace", "race"):
+            marathon = pace_sec if marathon is None else min(marathon, pace_sec)
+        elif wt in ("threshold", "threshold_intervals"):
+            threshold = pace_sec if threshold is None else min(threshold, pace_sec)
+        elif wt in ("intervals", "repetitions"):
+            interval = pace_sec if interval is None else min(interval, pace_sec)
+    if marathon is not None and threshold is not None and threshold >= marathon:
+        return True
+    if threshold is not None and interval is not None and interval >= threshold:
+        return True
+    return False
+
+
+def _model_driven_plan_has_pace_order_violation(plan) -> bool:
+    marathon = None
+    threshold = None
+    interval = None
+    for week in getattr(plan, "weeks", []):
+        for day in getattr(week, "days", []):
+            wt = str(getattr(day, "workout_type", "") or "").lower()
+            pace_sec = _extract_first_pace_seconds(getattr(day, "target_pace", None))
+            if pace_sec is None:
+                continue
+            if wt in ("race", "race_pace"):
+                marathon = pace_sec if marathon is None else min(marathon, pace_sec)
+            elif wt in ("threshold", "threshold_intervals"):
+                threshold = pace_sec if threshold is None else min(threshold, pace_sec)
+            elif wt in ("intervals", "repetitions", "sharpening"):
+                interval = pace_sec if interval is None else min(interval, pace_sec)
+    if marathon is not None and threshold is not None and threshold >= marathon:
+        return True
+    if threshold is not None and interval is not None and interval >= threshold:
+        return True
+    return False
+
 @router.get("/entitlements", response_model=EntitlementsResponse)
 async def get_entitlements(
     athlete: Athlete = Depends(get_current_athlete),
@@ -341,6 +396,8 @@ async def create_standard_plan(
         athlete_id=athlete.id,
         use_history=True,
     )
+    if _generated_plan_has_pace_order_violation(plan):
+        raise HTTPException(status_code=422, detail="Generated plan violates pace-order contract")
     
     # Save to database
     saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
@@ -432,6 +489,8 @@ async def create_semi_custom_plan(
         recent_race_time_seconds=request.recent_race_time_seconds,
         athlete_id=athlete.id,
     )
+    if _generated_plan_has_pace_order_violation(plan):
+        raise HTTPException(status_code=422, detail="Generated plan violates pace-order contract")
     
     # Save to database
     saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
@@ -492,6 +551,8 @@ async def create_custom_plan(
         recent_race_distance=request.recent_race_distance,
         recent_race_time_seconds=request.recent_race_time_seconds,
     )
+    if _generated_plan_has_pace_order_violation(plan):
+        raise HTTPException(status_code=422, detail="Generated plan violates pace-order contract")
     
     # Save to database
     saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
@@ -2002,6 +2063,14 @@ async def create_model_driven_plan(
             goal_time_seconds=request.goal_time_seconds,
             tune_up_races=tune_ups
         )
+        if _model_driven_plan_has_pace_order_violation(plan):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "pace_order_invariant_failed",
+                    "reason": "Generated plan violates pace-order contract (interval<threshold<marathon).",
+                },
+            )
         
         # Save plan to database
         saved_plan = _save_model_driven_plan(db, athlete.id, plan)

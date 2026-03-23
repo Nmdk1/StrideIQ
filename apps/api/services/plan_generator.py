@@ -253,7 +253,7 @@ class ArchetypePlanGenerator:
         # Interval pace (roughly 75% of easy)
         interval = easy * 0.75
         
-        return {
+        paces = {
             'easy': int(easy),
             'long': int(easy * 1.02),  # Slightly slower than easy
             'marathon': int(marathon),
@@ -262,6 +262,17 @@ class ArchetypePlanGenerator:
             'recovery': int(easy * 1.10),  # Slower than easy
             'strides': int(threshold * 0.85),  # Fast but controlled
         }
+        return self._enforce_pace_order_contract(paces)
+
+    def _enforce_pace_order_contract(self, paces: Dict[str, int]) -> Dict[str, int]:
+        out = dict(paces)
+        if out["threshold"] >= out["marathon"]:
+            out["threshold"] = max(1, out["marathon"] - 2)
+        if out["interval"] >= out["threshold"]:
+            out["interval"] = max(1, out["threshold"] - 2)
+        if out["strides"] >= out["interval"]:
+            out["strides"] = max(1, out["interval"] - 2)
+        return out
     
     def _generate_workouts_from_archetype(
         self,

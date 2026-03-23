@@ -291,6 +291,13 @@ class PlanGenerator:
         self.phase_builder = PhaseBuilder()
         self.workout_scaler = WorkoutScaler()
         self.pace_engine = PaceEngine()
+
+    def _ensure_pace_order_contract(self, paces: Optional[TrainingPaces]) -> Optional[TrainingPaces]:
+        if paces is None:
+            return None
+        if hasattr(paces, "enforce_pace_order_contract"):
+            paces.enforce_pace_order_contract()
+        return paces
     
     def generate_standard(
         self,
@@ -322,6 +329,7 @@ class PlanGenerator:
                 distance=recent_race_distance,
                 time_seconds=recent_race_time_seconds
             )
+            paces = self._ensure_pace_order_contract(paces)
             if paces:
                 rpi = paces.rpi
         
@@ -518,6 +526,7 @@ class PlanGenerator:
                 distance=recent_race_distance,
                 time_seconds=recent_race_time_seconds
             )
+            paces = self._ensure_pace_order_contract(paces)
             if paces:
                 rpi = paces.rpi
 
@@ -652,6 +661,7 @@ class PlanGenerator:
                 distance=recent_race_distance,
                 time_seconds=recent_race_time_seconds
             )
+            paces = self._ensure_pace_order_contract(paces)
             if paces:
                 rpi = paces.rpi
                 pace_source = "user_input"
@@ -675,6 +685,7 @@ class PlanGenerator:
                         distance=self._distance_to_code(race_dist_miles),
                         time_seconds=race_time
                     )
+                    paces = self._ensure_pace_order_contract(paces)
                     if paces:
                         rpi = paces.rpi
                         pace_source = "strava_race"
@@ -704,6 +715,7 @@ class PlanGenerator:
                     distance=self._distance_to_code(best_run.distance_m / 1609.344),
                     time_seconds=best_run.moving_time_s
                 )
+                paces = self._ensure_pace_order_contract(paces)
                 if paces:
                     rpi = paces.rpi * 0.95  # Conservative estimate from training
                     pace_source = "strava_training"

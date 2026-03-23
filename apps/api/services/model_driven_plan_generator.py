@@ -1110,13 +1110,54 @@ class ModelDrivenPlanGenerator:
                 return f"{pace_dict}/mi" if not pace_dict.endswith("/mi") else pace_dict
             return None
         
-        return {
+        paces = {
             "e_pace": extract_pace("easy") or "9:00/mi",
             "m_pace": extract_pace("marathon") or "8:00/mi",
             "t_pace": extract_pace("threshold") or "7:15/mi",
             "i_pace": extract_pace("interval") or "6:30/mi",
             "r_pace": extract_pace("repetition") or "6:00/mi"
         }
+        return self._enforce_pace_order_strings(paces)
+
+    def _parse_mile_pace(self, pace: Optional[str]) -> Optional[int]:
+        if not pace:
+            return None
+        raw = str(pace).strip().replace("/mi", "")
+        parts = raw.split(":")
+        if len(parts) != 2:
+            return None
+        try:
+            minutes = int(parts[0])
+            seconds = int(parts[1])
+        except ValueError:
+            return None
+        if minutes < 0 or seconds < 0 or seconds >= 60:
+            return None
+        return minutes * 60 + seconds
+
+    def _fmt_mile_pace(self, sec: int) -> str:
+        minutes = max(0, int(sec)) // 60
+        seconds = max(0, int(sec)) % 60
+        return f"{minutes}:{seconds:02d}/mi"
+
+    def _enforce_pace_order_strings(self, paces: Dict[str, str]) -> Dict[str, str]:
+        out = dict(paces)
+        marathon = self._parse_mile_pace(out.get("m_pace"))
+        threshold = self._parse_mile_pace(out.get("t_pace"))
+        interval = self._parse_mile_pace(out.get("i_pace"))
+        repetition = self._parse_mile_pace(out.get("r_pace"))
+        if marathon is None or threshold is None or interval is None:
+            return out
+        if threshold >= marathon:
+            threshold = max(1, marathon - 2)
+            out["t_pace"] = self._fmt_mile_pace(threshold)
+        if interval >= threshold:
+            interval = max(1, threshold - 2)
+            out["i_pace"] = self._fmt_mile_pace(interval)
+        if repetition is not None and repetition >= interval:
+            repetition = max(1, interval - 2)
+            out["r_pace"] = self._fmt_mile_pace(repetition)
+        return out
     
     def _default_paces(self) -> Dict[str, str]:
         """Return default training paces."""

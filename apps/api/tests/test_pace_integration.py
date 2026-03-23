@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 from services.plan_framework.pace_engine import PaceEngine, TrainingPaces
 from services.plan_framework.generator import PlanGenerator
 from services.plan_framework.constants import VolumeTier
+from services.model_driven_plan_generator import ModelDrivenPlanGenerator
 
 
 class TestPaceEngine:
@@ -146,6 +147,15 @@ class TestTrainingPaces:
         """Test unknown workout type returns default."""
         desc = self.paces.get_pace_description("unknown_type")
         assert "conversational" in desc.lower()
+
+    def test_enforce_pace_order_contract_corrects_inversion(self):
+        self.paces.marathon_pace = 450
+        self.paces.threshold_pace = 455
+        self.paces.interval_pace = 460
+        self.paces.repetition_pace = 465
+        self.paces.enforce_pace_order_contract()
+        assert self.paces.interval_pace < self.paces.threshold_pace < self.paces.marathon_pace
+        assert self.paces.repetition_pace < self.paces.interval_pace
 
 
 class TestPaceFormat:
@@ -335,3 +345,20 @@ class TestPlanGeneratorWithPaces:
 
         assert plan is not None
         assert plan.rpi == pytest.approx(47.5, rel=1e-3)
+
+
+class TestModelDrivenPaceContract:
+    def test_model_driven_enforces_pace_order_strings(self):
+        gen = ModelDrivenPlanGenerator(db=MagicMock())
+        corrected = gen._enforce_pace_order_strings(
+            {
+                "e_pace": "9:00/mi",
+                "m_pace": "8:00/mi",
+                "t_pace": "8:05/mi",
+                "i_pace": "8:10/mi",
+                "r_pace": "8:15/mi",
+            }
+        )
+        to_sec = lambda p: int(p.split(":")[0]) * 60 + int(p.split(":")[1].split("/")[0])
+        assert to_sec(corrected["i_pace"]) < to_sec(corrected["t_pace"]) < to_sec(corrected["m_pace"])
+        assert to_sec(corrected["r_pace"]) < to_sec(corrected["i_pace"])
