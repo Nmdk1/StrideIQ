@@ -1732,8 +1732,11 @@ class ModelDrivenPlanGenerator:
             else:
                 miles = typical_long_target * 0.80
             
-            # Apply minimum floor
-            miles = max(miles, caps["min"])
+            # Apply minimum floor, but don't exceed 32% of weekly volume.
+            # Prevents hardcoded minimums (e.g. 14mi for marathon) from being
+            # imposed on low-volume comeback runners who can't safely support them.
+            volume_aware_min = min(float(caps["min"]), athlete_weekly * 0.32)
+            miles = max(miles, volume_aware_min)
             
             if phase == TrainingPhase.BUILD and race_distance in ("marathon", "half_marathon"):
                 # ========================================
