@@ -173,7 +173,13 @@ def compute_athlete_long_run_floor(
 
     if str(constraint_type or "").lower() == "injury":
         floor *= 0.90
-        floor = max(_injury_floor_minimum(race_distance), floor)
+        injury_min = _injury_floor_minimum(race_distance)
+        # Volume guard: injury minimum must not exceed 32% of current weekly volume.
+        # A 28mpw comeback runner cannot safely do a 12mi long run.
+        if current_weekly_miles > 0:
+            volume_cap = current_weekly_miles * 0.32
+            injury_min = min(injury_min, volume_cap)
+        floor = max(injury_min, floor)
     return round(floor, 1)
 
 
