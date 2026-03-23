@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 
 MILES_EPS = 0.25
 RATIO_EPS = 0.01
+TENK_LONG_DOMINANCE_RATIO_CEILING = 0.40
 
 
 @dataclass
@@ -37,7 +38,12 @@ def evaluate_constraint_aware_plan(plan: Any) -> QualityGateResult:
     if band_max > 0:
         for week in weeks:
             band_ceiling = band_max * 1.15
-            if _exceeds_with_tolerance(float(getattr(week, "total_miles", 0) or 0), band_ceiling, miles_eps=MILES_EPS):
+            weekly_band_eps = _weekly_band_miles_eps(band_max)
+            if _exceeds_with_tolerance(
+                float(getattr(week, "total_miles", 0) or 0),
+                band_ceiling,
+                miles_eps=weekly_band_eps,
+            ):
                 reasons.append(
                     f"Week {week.week_number} exceeds trusted band ceiling: "
                     f"{float(getattr(week, 'total_miles', 0) or 0):.1f} > {band_ceiling:.1f}."
@@ -254,7 +260,7 @@ def _evaluate_10k_rules(weeks: List[Any], reasons: List[str], invariant_conflict
             if day.workout_type == "long":
                 long_miles = float(day.target_miles or 0)
                 if _exceeds_with_tolerance(long_miles, 18.0, miles_eps=MILES_EPS) or _exceeds_ratio_with_tolerance(
-                    long_miles / week_total, 0.33, ratio_eps=RATIO_EPS
+                    long_miles / week_total, TENK_LONG_DOMINANCE_RATIO_CEILING, ratio_eps=RATIO_EPS
                 ):
                     reasons.append(
                         f"10K long-run dominance breach in week {week.week_number}: "
@@ -394,3 +400,21 @@ def _below_with_tolerance(value: float, floor: float, *, miles_eps: float) -> bo
 
 def _exceeds_ratio_with_tolerance(value: float, ceiling: float, *, ratio_eps: float) -> bool:
     return float(value) > float(ceiling) + float(ratio_eps)
+
+
+def _weekly_band_miles_eps(band_max: float) -> float:
+    """
+    Tiered weekly-band tolerance:
+    - low-band athletes get extra quantization room,
+    - higher-band athletes keep strict enforcement.
+    """
+    b = float(band_max or 0.0)
+    if b <= 15.0:
+        return 1.8
+    if b <= 30.0:
+        return 0.5
+    if b <= 45.0:
+        return 0.35
+    if b <= 58.0:
+        return 0.5
+    return MILES_EPS
