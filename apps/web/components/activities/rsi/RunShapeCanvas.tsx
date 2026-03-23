@@ -100,12 +100,12 @@ const MAX_DISPLAY_POINTS = 500;
 const CHART_HEIGHT = 256;
 
 /** RSI chart scaling — altitude relief (meters, MSL) */
-const ALTITUDE_MIN_SPAN_METERS = 10;
+const ALTITUDE_MIN_SPAN_METERS = 40;
 const ALTITUDE_PAD_RATIO = 0.05;
 
 /** RSI chart scaling — pace (seconds per km) */
-const PACE_MIN_SPAN_S_PER_KM = 30;
-const PACE_PAD_RATIO = 0.12;
+const PACE_MIN_SPAN_S_PER_KM = 60;
+const PACE_PAD_RATIO = 0.08;
 
 /** RSI chart scaling — optional traces */
 const CADENCE_MIN_SPAN_SPM = 8;
@@ -190,8 +190,8 @@ function computeGradeDomainPercent(values: number[]): [number, number] | undefin
 function computePaceDomainSmoothedSecPerKm(paces: number[]): [number, number] | undefined {
   if (paces.length < 6) return undefined;
   const sorted = [...paces].sort((a, b) => a - b);
-  let lo = sorted[Math.floor((sorted.length - 1) * 0.05)] ?? sorted[0];
-  let hi = sorted[Math.floor((sorted.length - 1) * 0.95)] ?? sorted[sorted.length - 1];
+  let lo = sorted[Math.floor((sorted.length - 1) * 0.02)] ?? sorted[0];
+  let hi = sorted[Math.floor((sorted.length - 1) * 0.98)] ?? sorted[sorted.length - 1];
   const span = Math.max(1, hi - lo);
   if (span < PACE_MIN_SPAN_S_PER_KM) {
     const center = (lo + hi) / 2;
@@ -219,30 +219,66 @@ function applyRobustPaceSmoothingForDisplay(raw: ChartPoint[]): void {
   const n = raw.length;
   if (n === 0) return;
 
-  const base = raw
-    .map((p) => p.pace)
-    .filter((p): p is number => p != null && p > 0);
-  if (base.length === 0) return;
-  const sorted = [...base].sort((a, b) => a - b);
-  const quantileLo = sorted[Math.floor((sorted.length - 1) * 0.05)] ?? sorted[0];
-  const quantileHi = sorted[Math.floor((sorted.length - 1) * 0.95)] ?? sorted[sorted.length - 1];
-  const window = Math.max(7, Math.round(n / 30));
-  const halfW = Math.floor(window / 2);
+  // Step 1: local spike guard (clip only short GPS speed spikes, keep real trend shifts).
+  const sanitized: Array<number | null> = raw.map((p) => p.pace);
+  const LOCAL_WINDOW = 4;
+  const LOCAL_SPIKE_MAX_DELTA = 45; // s/km, enough to keep true pace shifts.
+  for (let i = 0; i < n; i++) {
+    const p = sanitized[i];
+    if (p == null || p <= 0) continue;
+    const start = Math.max(0, i - LOCAL_WINDOW);
+    const end = Math.min(n - 1, i + LOCAL_WINDOW);
+    const neighborhood: number[] = [];
+    for (let j = start; j <= end; j++) {
+      if (j === i) continue;
+      const v = sanitized[j];
+      if (v != null && v > 0) neighborhood.push(v);
+    }
+    const localMedian = medianOfNumbers(neighborhood);
+    if (localMedian == null) continue;
+    if (Math.abs(p - localMedian) > LOCAL_SPIKE_MAX_DELTA) {
+      sanitized[i] = localMedian + Math.sign(p - localMedian) * LOCAL_SPIKE_MAX_DELTA;
+    }
+  }
+
+  // Step 2: bidirectional EMA smoothing (stable shape without flat plateaus).
+  const EMA_ALPHA = 0.28;
+  const forward: Array<number | null> = new Array(n).fill(null);
+  const backward: Array<number | null> = new Array(n).fill(null);
+
+  let ema: number | null = null;
+  for (let i = 0; i < n; i++) {
+    const p = sanitized[i];
+    if (p == null || p <= 0) {
+      forward[i] = ema;
+      continue;
+    }
+    ema = ema == null ? p : EMA_ALPHA * p + (1 - EMA_ALPHA) * ema;
+    forward[i] = ema;
+  }
+
+  ema = null;
+  for (let i = n - 1; i >= 0; i--) {
+    const p = sanitized[i];
+    if (p == null || p <= 0) {
+      backward[i] = ema;
+      continue;
+    }
+    ema = ema == null ? p : EMA_ALPHA * p + (1 - EMA_ALPHA) * ema;
+    backward[i] = ema;
+  }
 
   for (let i = 0; i < n; i++) {
-    const winStart = Math.max(0, i - halfW);
-    const winEnd = Math.min(n - 1, i + halfW);
-    const chunk: number[] = [];
-    for (let j = winStart; j <= winEnd; j++) {
-      if (raw[j].pace != null) {
-        chunk.push(clamp(raw[j].pace!, quantileLo, quantileHi));
-      }
-    }
-    if (chunk.length === 0) {
+    const f = forward[i];
+    const b = backward[i];
+    if (f == null && b == null) {
       raw[i].smoothedPace = null;
+    } else if (f == null) {
+      raw[i].smoothedPace = b;
+    } else if (b == null) {
+      raw[i].smoothedPace = f;
     } else {
-      const avg = chunk.reduce((acc, v) => acc + v, 0) / chunk.length;
-      raw[i].smoothedPace = avg;
+      raw[i].smoothedPace = (f + b) / 2;
     }
   }
 }
