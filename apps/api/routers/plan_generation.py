@@ -188,6 +188,39 @@ def _has_paid_subscription_access(athlete: Optional[Athlete]) -> bool:
     tier_raw = str(getattr(athlete, "subscription_tier", "") or "").strip().lower()
     return tier_raw == "subscriber"
 
+
+def _pace_to_seconds_per_mile(pace: Optional[str]) -> Optional[int]:
+    if not pace or not isinstance(pace, str):
+        return None
+    parts = pace.strip().split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        minutes = int(parts[0])
+        seconds = int(parts[1])
+    except ValueError:
+        return None
+    if minutes < 0 or seconds < 0 or seconds >= 60:
+        return None
+    return minutes * 60 + seconds
+
+
+def _constraint_aware_plan_has_pace_order_violation(plan) -> bool:
+    for week in getattr(plan, "weeks", []):
+        for day in getattr(week, "days", []):
+            paces = getattr(day, "paces", {}) or {}
+            interval = _pace_to_seconds_per_mile(paces.get("interval"))
+            threshold = _pace_to_seconds_per_mile(paces.get("threshold"))
+            marathon = _pace_to_seconds_per_mile(paces.get("marathon"))
+            race = _pace_to_seconds_per_mile(paces.get("race"))
+            if interval is not None and threshold is not None and interval >= threshold:
+                return True
+            if threshold is not None and marathon is not None and threshold >= marathon:
+                return True
+            if race is not None and marathon is not None and race >= marathon:
+                return True
+    return False
+
 @router.get("/entitlements", response_model=EntitlementsResponse)
 async def get_entitlements(
     athlete: Athlete = Depends(get_current_athlete),
@@ -2143,7 +2176,20 @@ def _save_constraint_aware_plan(
         plan_end_date=plan.race_date,
         total_weeks=plan.total_weeks,
         baseline_rpi=fb.get("best_rpi") if isinstance(fb, dict) else None,
-        baseline_weekly_volume_km=round(fb.get("peak", {}).get("weekly_miles", 0) * 1.609, 1) if isinstance(fb, dict) else None,
+        baseline_weekly_volume_km=(
+            round(
+                float(
+                    (fb.get("volume_contract", {}) or {}).get("recent_8w_median_weekly_miles")
+                    or (fb.get("current", {}) or {}).get("weekly_miles")
+                    or (fb.get("peak", {}) or {}).get("weekly_miles")
+                    or 0
+                )
+                * 1.609,
+                1,
+            )
+            if isinstance(fb, dict)
+            else None
+        ),
         plan_type=plan.race_distance,
         generation_method="constraint_aware",
     )
@@ -2333,6 +2379,14 @@ async def create_constraint_aware_plan(
             target_peak_weekly_miles=request.target_peak_weekly_miles,
             target_peak_weekly_range=request.target_peak_weekly_range,
         )
+        if _constraint_aware_plan_has_pace_order_violation(plan):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "pace_order_invariant_failed",
+                    "reason": "Generated plan violates pace-order contract (interval<threshold<marathon and race<marathon).",
+                },
+            )
 
         gate = evaluate_constraint_aware_plan(plan)
         if not gate.passed:
@@ -2354,6 +2408,14 @@ async def create_constraint_aware_plan(
                 quality_gate_fallback=True,
                 quality_gate_reasons=gate.reasons,
             )
+            if _constraint_aware_plan_has_pace_order_violation(plan):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error_code": "pace_order_invariant_failed",
+                        "reason": "Generated plan violates pace-order contract (interval<threshold<marathon and race<marathon).",
+                    },
+                )
             second_gate = evaluate_constraint_aware_plan(plan)
             if not second_gate.passed:
                 raise HTTPException(

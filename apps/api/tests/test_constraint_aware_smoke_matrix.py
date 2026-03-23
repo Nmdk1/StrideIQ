@@ -8,6 +8,8 @@ import pytest
 from services.constraint_aware_planner import generate_constraint_aware_plan
 from services.fitness_bank import ConstraintType, ExperienceLevel, FitnessBank, RacePerformance
 from services.plan_quality_gate import evaluate_constraint_aware_plan
+from services.workout_prescription import WorkoutPrescriptionGenerator
+from services.week_theme_generator import WeekTheme
 
 
 def _make_bank(*, athlete_id: str, peak_mpw: float, current_mpw: float, experience: ExperienceLevel, injury: bool) -> FitnessBank:
@@ -200,3 +202,86 @@ def test_marathon_gate_tolerates_boundary_quantization_near_contract_limits():
     assert "marathon_mp_total_too_low" not in gate.invariant_conflicts
     assert "marathon_long_run_progression_stall" not in gate.invariant_conflicts
     assert "marathon_cutback_missing" not in gate.invariant_conflicts
+
+
+def _pace_to_seconds(pace: str) -> int:
+    minutes, seconds = pace.split(":")
+    return int(minutes) * 60 + int(seconds)
+
+
+def test_tuneup_distance_preserved_from_request(monkeypatch):
+    athlete_id = uuid4()
+    bank = _make_bank(
+        athlete_id=str(athlete_id),
+        peak_mpw=70.0,
+        current_mpw=60.0,
+        experience=ExperienceLevel.EXPERIENCED,
+        injury=False,
+    )
+    monkeypatch.setattr("services.constraint_aware_planner.get_fitness_bank", lambda _athlete_id, _db: bank)
+
+    tune_up_date = date.today() + timedelta(weeks=8)
+    plan = generate_constraint_aware_plan(
+        athlete_id=athlete_id,
+        race_date=date.today() + timedelta(weeks=12),
+        race_distance="10k",
+        tune_up_races=[{"date": tune_up_date, "distance": "5k", "name": "Tuneup 5K", "purpose": "threshold"}],
+        db=MagicMock(),
+    )
+
+    tuneup_days = [
+        d
+        for w in plan.weeks
+        for d in w.days
+        if d.workout_type == "tune_up_race" and d.day_of_week == tune_up_date.weekday()
+    ]
+    assert tuneup_days
+    assert tuneup_days[0].target_miles == pytest.approx(3.1, abs=0.05)
+
+
+def test_distance_alias_normalization_half_marathon(monkeypatch):
+    athlete_id = uuid4()
+    bank = _make_bank(
+        athlete_id=str(athlete_id),
+        peak_mpw=55.0,
+        current_mpw=50.0,
+        experience=ExperienceLevel.INTERMEDIATE,
+        injury=False,
+    )
+    monkeypatch.setattr("services.constraint_aware_planner.get_fitness_bank", lambda _athlete_id, _db: bank)
+
+    plan_half = generate_constraint_aware_plan(
+        athlete_id=athlete_id,
+        race_date=date.today() + timedelta(weeks=10),
+        race_distance="half",
+        db=MagicMock(),
+    )
+    plan_half_full = generate_constraint_aware_plan(
+        athlete_id=athlete_id,
+        race_date=date.today() + timedelta(weeks=10),
+        race_distance="half_marathon",
+        db=MagicMock(),
+    )
+    assert plan_half.predicted_time == plan_half_full.predicted_time
+
+
+def test_race_day_uses_distance_specific_race_pace():
+    bank = _make_bank(
+        athlete_id=str(uuid4()),
+        peak_mpw=70.0,
+        current_mpw=60.0,
+        experience=ExperienceLevel.EXPERIENCED,
+        injury=False,
+    )
+    gen = WorkoutPrescriptionGenerator(bank, race_distance="10k")
+    week = gen.generate_week(
+        theme=WeekTheme.RACE,
+        week_number=10,
+        total_weeks=10,
+        target_miles=40.0,
+        start_date=date.today(),
+    )
+    race_day = next(d for d in week.days if d.workout_type == "race")
+    race_sec = _pace_to_seconds(race_day.paces["race"])
+    marathon_sec = _pace_to_seconds(gen.pace_strs["marathon"])
+    assert race_sec < marathon_sec

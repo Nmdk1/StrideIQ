@@ -131,3 +131,17 @@ def test_5k_real_generation_not_false_flagged(monkeypatch):
     plan = _gen("5k", _bank(), monkeypatch)
     gate = evaluate_constraint_aware_plan(plan)
     assert gate.passed is True, gate.reasons
+
+
+def test_peak_confidence_low_recent_band_governor_applies(monkeypatch):
+    bank = _bank(peak_mpw=114.0, current_mpw=58.0)
+    bank.peak_confidence = "low"
+    bank.recent_16w_p90_weekly_miles = 62.0
+    monkeypatch.setattr("services.constraint_aware_planner.get_fitness_bank", lambda _athlete_id, _db: bank)
+    plan = generate_constraint_aware_plan(
+        athlete_id=uuid4(),
+        race_date=date.today() + timedelta(weeks=12),
+        race_distance="10k",
+        db=MagicMock(),
+    )
+    assert float(plan.volume_contract.get("applied_peak", 0.0)) <= float(bank.recent_16w_p90_weekly_miles) + 1e-6

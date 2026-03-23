@@ -18,6 +18,7 @@ import random
 
 from services.fitness_bank import ConstraintType, FitnessBank, ExperienceLevel
 from services.plan_quality_gate import compute_athlete_long_run_floor
+from services.race_signal_contract import normalize_distance_alias
 from services.rpi_calculator import calculate_training_paces
 from services.week_theme_generator import WeekTheme
 
@@ -132,6 +133,37 @@ def format_pace_range(pace_minutes: float, range_sec: int = 10) -> str:
     low = pace_minutes - (range_sec / 120)
     high = pace_minutes + (range_sec / 120)
     return f"{format_pace(low)}-{format_pace(high)}"
+
+
+def _enforce_pace_order_contract(paces: Dict[str, float]) -> Tuple[Dict[str, float], List[str]]:
+    """
+    Hard contract:
+    interval < threshold < marathon (faster pace = lower min/mi).
+    """
+    out = dict(paces)
+    diagnostics: List[str] = []
+    min_gap = 0.03  # ~2s/mi minimum separation to avoid ties/inversions from rounding.
+
+    if out["threshold"] >= out["marathon"]:
+        out["threshold"] = max(out["marathon"] - min_gap, 1.0)
+        diagnostics.append("pace_order_corrected_threshold_vs_marathon")
+    if out["interval"] >= out["threshold"]:
+        out["interval"] = max(out["threshold"] - min_gap, 1.0)
+        diagnostics.append("pace_order_corrected_interval_vs_threshold")
+
+    return out, diagnostics
+
+
+def _distance_adjusted_race_pace(paces: Dict[str, float], race_distance: str) -> float:
+    d = normalize_distance_alias(race_distance)
+    adjustments = {
+        "5k": -0.45,
+        "10k": -0.30,
+        "10_mile": -0.20,
+        "half_marathon": -0.12,
+        "marathon": 0.0,
+    }
+    return paces["marathon"] + adjustments.get(d, 0.0)
 
 
 # =============================================================================
@@ -329,8 +361,9 @@ class WorkoutPrescriptionGenerator:
         load_recency_last_18plus_days: Optional[int] = None,
     ):
         self.bank = bank
-        self.race_distance = race_distance.lower()
-        self.paces = _calculate_paces_from_training_paces(bank.best_rpi)
+        self.race_distance = normalize_distance_alias(race_distance)
+        base_paces = _calculate_paces_from_training_paces(bank.best_rpi)
+        self.paces, self.pace_order_diagnostics = _enforce_pace_order_contract(base_paces)
         self.experience = bank.experience_level
         self.load_history_override_easy_long = bool(load_history_override_easy_long)
         self.load_count_long_15plus = int(load_count_long_15plus or 0)
@@ -418,6 +451,13 @@ class WorkoutPrescriptionGenerator:
         
         # Format paces for display
         self.pace_strs = {k: format_pace(v) for k, v in self.paces.items()}
+        self.race_pace_str = format_pace(_distance_adjusted_race_pace(self.paces, self.race_distance))
+        if self.pace_order_diagnostics:
+            logger.warning(
+                "workout_prescription pace-order contract corrected: athlete=%s tags=%s",
+                getattr(bank, "athlete_id", "unknown"),
+                ",".join(self.pace_order_diagnostics),
+            )
         
         # Track recent neuromuscular work for variety
         self._recent_neuro_types: List[str] = []
@@ -923,8 +963,15 @@ class WorkoutPrescriptionGenerator:
         pre_race_strides = race_day - 1
         post_race_recovery = long_day if long_day == 6 else (race_day + 1) % 7
         
-        race_miles = 10  # Tune-up race
-        pre_race_miles = 6
+        default_tune_up_miles = {
+            "5k": 3.1,
+            "10k": 3.1,
+            "10_mile": 6.2,
+            "half_marathon": 6.2,
+            "marathon": 10.0,
+        }.get(self.race_distance, 6.2)
+        race_miles = default_tune_up_miles
+        pre_race_miles = 5
         post_race_miles = 4
         
         remaining = target - race_miles - pre_race_miles - post_race_miles
@@ -1398,7 +1445,7 @@ class WorkoutPrescriptionGenerator:
             description=f"{miles:.1f}mi @ race effort",
             target_miles=miles,
             intensity="race",
-            paces={"race": self.pace_strs["marathon"]},
+            paces={"race": self.race_pace_str},
             notes=["Trust your training"],
             tss_estimate=miles * 15
         )

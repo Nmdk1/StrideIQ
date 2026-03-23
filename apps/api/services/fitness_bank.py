@@ -22,6 +22,10 @@ from services.mileage_aggregation import (
     compute_recent_weekly_band,
     get_canonical_run_activities,
 )
+from services.race_signal_contract import (
+    activity_is_authoritative_race,
+    normalize_distance_alias,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -456,6 +460,7 @@ class FitnessBankCalculator:
         )
         
         # Extract race performances
+        self._sync_anchor_from_authoritative_race_signals(athlete_id=athlete_id, activities=activities)
         races = self._extract_race_performances(activities)
         best_rpi, best_race = self._find_best_race(races)
         
@@ -608,7 +613,7 @@ class FitnessBankCalculator:
         }
     
     def _extract_race_performances(self, activities: List) -> List[RacePerformance]:
-        """Extract all race performances from activities."""
+        """Extract race performances from authoritative race signals only."""
         races = []
         
         for a in activities:
@@ -618,43 +623,14 @@ class FitnessBankCalculator:
             if duration_sec <= 0 or miles <= 0:
                 continue
             
+            if not activity_is_authoritative_race(a):
+                continue
+
             pace = (duration_sec / 60) / miles
             name_lower = (a.name or "").lower()
-            
-            # Detect race by various signals
-            is_race = False
-            distance_type = None
+            distance_type = self._infer_distance_type(miles)
             conditions = None
-            
-            # By exact distance
-            if 3.0 <= miles <= 3.2:
-                is_race = True
-                distance_type = "5k"
-            elif 6.0 <= miles <= 6.4 and pace < 8.0:
-                is_race = True
-                distance_type = "10k"
-            elif 9.8 <= miles <= 10.2 and pace < 8.0:
-                is_race = True
-                distance_type = "10_mile"
-            elif 13.0 <= miles <= 13.3:
-                is_race = True
-                distance_type = "half"
-            elif 26.0 <= miles <= 26.5:
-                is_race = True
-                distance_type = "marathon"
-            
-            # By name keywords
-            if any(kw in name_lower for kw in ["race", "pr", "pb", "record"]):
-                is_race = True
-                if not distance_type:
-                    distance_type = self._infer_distance_type(miles)
-            
-            # By workout type
-            if a.workout_type and "race" in a.workout_type.lower():
-                is_race = True
-                if not distance_type:
-                    distance_type = self._infer_distance_type(miles)
-            
+
             # Check for condition notes
             if "limp" in name_lower or "injured" in name_lower:
                 conditions = "limping"
@@ -663,7 +639,7 @@ class FitnessBankCalculator:
             elif "hill" in name_lower:
                 conditions = "hilly"
             
-            if is_race and distance_type:
+            if distance_type:
                 rpi = calculate_rpi(a.distance_m, duration_sec)
                 
                 # Adjust confidence based on conditions
@@ -728,8 +704,115 @@ class FitnessBankCalculator:
         
         best_race = weighted_races[0][1]
         
-        # Return the actual (unadjusted) best RPI from recent good races
-        return best_race.rpi * best_race.confidence, best_race
+        # Return the actual best-race RPI (confidence only influences selection).
+        return best_race.rpi, best_race
+
+    def _sync_anchor_from_authoritative_race_signals(self, athlete_id: UUID, activities: List) -> None:
+        """
+        Upsert the single canonical AthleteRaceResultAnchor row from authoritative races.
+
+        Selection policy (single-row schema):
+        1) prefer the most recent high-confidence race at standard distance,
+        2) tie-break by confidence and then stronger RPI,
+        3) never replace user/admin-entered anchors unless new evidence is strictly better.
+        """
+        from models import AthleteRaceResultAnchor
+
+        candidates = []
+        for a in activities:
+            if not activity_is_authoritative_race(a):
+                continue
+            duration_sec = int(getattr(a, "duration_s", 0) or 0)
+            distance_m = int(getattr(a, "distance_m", 0) or 0)
+            if duration_sec <= 0 or distance_m <= 0:
+                continue
+            miles = distance_m / 1609.344
+            distance_key = normalize_distance_alias(self._infer_distance_type(miles))
+            race_date = a.start_time.date() if getattr(a, "start_time", None) is not None else None
+            confidence = self._anchor_candidate_confidence(a)
+            rpi = calculate_rpi(distance_m, duration_sec)
+            candidates.append(
+                {
+                    "distance_key": distance_key,
+                    "distance_meters": distance_m,
+                    "time_seconds": duration_sec,
+                    "race_date": race_date,
+                    "confidence": confidence,
+                    "rpi": rpi,
+                }
+            )
+
+        if not candidates:
+            return
+
+        best = sorted(
+            candidates,
+            key=lambda c: (
+                c["race_date"] is not None,
+                c["race_date"] or date.min,
+                c["confidence"] >= 0.8,
+                c["confidence"],
+                c["rpi"],
+            ),
+            reverse=True,
+        )[0]
+
+        if best["confidence"] < 0.7:
+            logger.info(
+                "Race anchor sync skipped (low-confidence candidate): athlete=%s confidence=%.2f",
+                athlete_id,
+                best["confidence"],
+            )
+            return
+
+        current = (
+            self.db.query(AthleteRaceResultAnchor)
+            .filter(AthleteRaceResultAnchor.athlete_id == athlete_id)
+            .one_or_none()
+        )
+        if current is None:
+            current = AthleteRaceResultAnchor(
+                athlete_id=athlete_id,
+                distance_key=best["distance_key"],
+                distance_meters=best["distance_meters"],
+                time_seconds=best["time_seconds"],
+                race_date=best["race_date"],
+                source="import",
+            )
+            self.db.add(current)
+            self.db.flush()
+            return
+
+        if not self._should_replace_existing_anchor(current, best):
+            return
+
+        current.distance_key = best["distance_key"]
+        current.distance_meters = best["distance_meters"]
+        current.time_seconds = best["time_seconds"]
+        current.race_date = best["race_date"]
+        if current.source not in ("user", "admin"):
+            current.source = "import"
+        self.db.flush()
+
+    def _anchor_candidate_confidence(self, activity) -> float:
+        if bool(getattr(activity, "user_verified_race", False)):
+            return 1.0
+        if str(getattr(activity, "workout_type", "") or "").strip().lower() in ("race", "race_effort"):
+            return max(0.8, float(getattr(activity, "race_confidence", 0.0) or 0.0))
+        return float(getattr(activity, "race_confidence", 0.0) or 0.0)
+
+    def _should_replace_existing_anchor(self, existing, candidate: Dict[str, object]) -> bool:
+        existing_distance_m = int(getattr(existing, "distance_meters", 0) or 0)
+        existing_time = int(getattr(existing, "time_seconds", 0) or 0)
+        if existing_distance_m <= 0 or existing_time <= 0:
+            return True
+
+        existing_rpi = calculate_rpi(existing_distance_m, existing_time)
+        candidate_rpi = float(candidate["rpi"])
+        existing_source = str(getattr(existing, "source", "") or "").strip().lower()
+        if existing_source in ("user", "admin"):
+            return candidate_rpi > existing_rpi + 0.15
+        return candidate_rpi >= existing_rpi - 0.1
     
     def _calculate_current_weekly(self, activities: List) -> float:
         """Calculate current weekly mileage (last 4 weeks average)."""

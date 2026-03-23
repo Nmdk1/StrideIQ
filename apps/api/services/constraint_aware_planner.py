@@ -37,6 +37,7 @@ from services.workout_prescription import (
     DayPlan
 )
 from services.plan_framework.load_context import build_load_context, history_anchor_date
+from services.race_signal_contract import normalize_distance_alias
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,7 @@ class ConstraintAwarePlanner:
         Generate a complete constraint-aware plan.
         """
         logger.info(f"Generating constraint-aware plan for athlete {athlete_id}")
+        race_distance = normalize_distance_alias(race_distance)
         
         # 1. Get Fitness Bank
         bank = get_fitness_bank(athlete_id, self.db)
@@ -454,7 +456,7 @@ class ConstraintAwarePlanner:
                     if day.day_of_week == day_idx:
                         # Replace with tune-up race
                         purpose = tune_up.get("purpose", "sharpening")
-                        distance = tune_up.get("distance", "10_mile")
+                        distance = normalize_distance_alias(tune_up.get("distance", "10_mile"))
                         name = tune_up.get("name", f"{distance} tune-up")
                         
                         if purpose == "threshold":
@@ -469,8 +471,11 @@ class ConstraintAwarePlanner:
                         
                         # Estimate miles from distance
                         dist_miles = {
-                            "5k": 3.1, "10k": 6.2, "10_mile": 10.0,
-                            "half": 13.1, "marathon": 26.2
+                            "5k": 3.1,
+                            "10k": 6.2,
+                            "10_mile": 10.0,
+                            "half_marathon": 13.1,
+                            "marathon": 26.2,
                         }.get(distance, 10.0)
                         
                         week.days[i] = DayPlan(
@@ -509,6 +514,7 @@ class ConstraintAwarePlanner:
         """Estimate race pace for a distance from RPI."""
         from services.workout_prescription import calculate_paces_from_rpi, format_pace
         
+        distance = normalize_distance_alias(distance)
         paces = calculate_paces_from_rpi(bank.best_rpi)
         
         # Shorter distances = faster than marathon pace
@@ -516,7 +522,7 @@ class ConstraintAwarePlanner:
             "5k": -0.45,
             "10k": -0.30,
             "10_mile": -0.20,
-            "half": -0.12,
+            "half_marathon": -0.12,
             "marathon": 0.0
         }
         
@@ -621,9 +627,13 @@ class ConstraintAwarePlanner:
         """Predict race time using conservative/base/aggressive scenarios."""
         from services.fitness_bank import rpi_equivalent_time
 
+        distance = normalize_distance_alias(distance)
         distance_m = {
-            "5k": 5000, "10k": 10000, "10_mile": 16093,
-            "half": 21097, "marathon": 42195
+            "5k": 5000,
+            "10k": 10000,
+            "10_mile": 16093,
+            "half_marathon": 21097,
+            "marathon": 42195,
         }.get(distance, 42195)
 
         races_count = len(bank.race_performances)
