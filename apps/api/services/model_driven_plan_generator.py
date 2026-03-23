@@ -1276,7 +1276,7 @@ class ModelDrivenPlanGenerator:
             {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday) 
             {"day": 3, "type": "easy_strides", "tss_pct": 0.12},  # Easy + strides (Thursday) - NOT threshold
             {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday)
-            {"day": 5, "type": "medium_long", "tss_pct": 0.18},  # Medium-long easy (Saturday)
+            {"day": 5, "type": "easy", "tss_pct": 0.12},    # Easy (Saturday) — day before long; must stay easy
             {"day": 6, "type": "long", "tss_pct": 0.30},    # Long run easy (Sunday) - 30% max
         ]
     
@@ -1300,7 +1300,7 @@ class ModelDrivenPlanGenerator:
             {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday) - pre-quality rest
             {"day": 3, "type": "quality", "tss_pct": 0.14}, # Threshold (Thursday) - single quality
             {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday) - recovery
-            {"day": 5, "type": "medium_long", "tss_pct": 0.16},  # Medium-long easy (Saturday)
+            {"day": 5, "type": "easy", "tss_pct": 0.12},    # Easy (Saturday) — day before long; must stay easy
             {"day": 6, "type": "long", "tss_pct": 0.30},    # Long run (Sunday) - can have MP finish
         ]
     
@@ -1323,7 +1323,7 @@ class ModelDrivenPlanGenerator:
             {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday) - pre-quality
             {"day": 3, "type": "quality", "tss_pct": 0.14}, # Race pace (Thursday)
             {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday) - recovery
-            {"day": 5, "type": "medium_long", "tss_pct": 0.16},  # Medium easy (Saturday) - pre-long run
+            {"day": 5, "type": "easy", "tss_pct": 0.12},    # Easy (Saturday) — day before long; must stay easy
             {"day": 6, "type": "long", "tss_pct": 0.30},    # Long run with MP (Sunday)
         ]
     
@@ -1646,42 +1646,18 @@ class ModelDrivenPlanGenerator:
                 )
             return legacy
         
-        elif workout_type in ("long", "medium_long"):
-            # ========================================
-            # CRITICAL: Use athlete's ACTUAL baseline, not fixed caps
-            # A 55-70 mpw runner should do 18-22 mile long runs, not 10-15!
-            # ========================================
-            
+        elif workout_type == "long":
             # Get distance-specific caps as FALLBACK only
             caps = dict(LONG_RUN_CAPS.get(race_distance, LONG_RUN_CAPS["marathon"]))
-            
-            # High-volume athletes targeting shorter distances still need long aerobic runs.
-            # A 70mpw 10K runner will absolutely do 16-18mi long runs for their aerobic base.
+
+            # High-volume athletes targeting shorter distances still need long aerobic runs
             athlete_weekly = baseline.get("weekly_miles", 40)
             athlete_peak_long = baseline.get("peak_long_run_miles", caps["peak"])
             if athlete_weekly >= 55 and race_distance in ("5k", "10k"):
                 caps["max"] = min(18.0, max(caps["max"], athlete_peak_long))
             elif athlete_weekly >= 45 and race_distance == "half_marathon":
                 caps["max"] = min(20.0, max(caps["max"], athlete_peak_long))
-            
-            # For medium_long (Saturday): cap at 70% of long run target, max 13mi
-            if workout_type == "medium_long":
-                long_run_ref = baseline.get("long_run_miles", 14.0)
-                ml_cap = min(long_run_ref * 0.70, 13.0)
-                ml_cap = max(ml_cap, 6.0)
-                miles = min(target_tss * TSS_TO_MILES_EASY, ml_cap)
-                return DayPlan(
-                    date=date,
-                    day_of_week=day_of_week,
-                    workout_type="easy",
-                    name="Medium Long Run",
-                    description=f"Steady aerobic effort at {paces.get('e_pace', 'easy pace')}.",
-                    target_tss=target_tss,
-                    target_miles=round(miles, 1),
-                    target_pace=paces.get('e_pace'),
-                    intensity="easy",
-                )
-            
+
             # Use athlete's established long run distances
             athlete_typical_long = baseline.get("long_run_miles", caps["peak"])
 
