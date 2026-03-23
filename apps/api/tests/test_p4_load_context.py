@@ -363,6 +363,30 @@ def test_easy_long_floor_from_l30():
     assert f is not None and f >= 14.0
 
 
+def test_easy_long_floor_outlier_cap_applied():
+    """A 26-mi outlier run should NOT drive week-1 long run target to 26 mi
+    when recent weekly mileage is modest (e.g. 45 mpw => cap = 45 * 0.42 = 18.9)."""
+    f = easy_long_floor_miles_from_l30(
+        l30_max_mi=26.4,
+        distance="marathon",
+        tier="mid",
+        observed_recent_weekly_miles=45.0,
+    )
+    assert f is not None
+    assert f <= 19.0, f"Expected ≤19 mi but got {f}"
+
+
+def test_easy_long_floor_outlier_cap_preserves_tier_minimum():
+    """Cap must never go below the tier's standard start_long."""
+    f = easy_long_floor_miles_from_l30(
+        l30_max_mi=26.4,
+        distance="5k",
+        tier="low",
+        observed_recent_weekly_miles=20.0,
+    )
+    assert f is not None and f >= 1.0, f"Floor collapsed to {f}"
+
+
 def test_semi_custom_low_questionnaire_high_history_raises_first_long(db_session):
     from models import Activity, Athlete
     from services.plan_framework.generator import PlanGenerator

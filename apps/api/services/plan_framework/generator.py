@@ -364,7 +364,10 @@ class PlanGenerator:
                     )
                     starting_volume = min(raw, cap)
                 p4_floor = easy_long_floor_miles_from_l30(
-                    lc.l30_max_easy_long_mi, distance, tier
+                    lc.l30_max_easy_long_mi,
+                    distance,
+                    tier,
+                    observed_recent_weekly_miles=lc.observed_recent_weekly_miles,
                 )
                 p4_ho = lc.history_override_easy_long
             except Exception as ex:
@@ -484,7 +487,10 @@ class PlanGenerator:
                     consider_history=False,
                 )
                 p4_floor = easy_long_floor_miles_from_l30(
-                    load_ctx.l30_max_easy_long_mi, distance, tier_guess.value
+                    load_ctx.l30_max_easy_long_mi,
+                    distance,
+                    tier_guess.value,
+                    observed_recent_weekly_miles=load_ctx.observed_recent_weekly_miles,
                 )
                 p4_ho = load_ctx.history_override_easy_long
                 try:
@@ -501,7 +507,10 @@ class PlanGenerator:
                         consider_history=False,
                     )
                     p4_floor = easy_long_floor_miles_from_l30(
-                        load_ctx.l30_max_easy_long_mi, distance, tier.value
+                        load_ctx.l30_max_easy_long_mi,
+                        distance,
+                        tier.value,
+                        observed_recent_weekly_miles=load_ctx.observed_recent_weekly_miles,
                     )
                 except Exception as ex:
                     logger.warning("P4 semi-custom volume/tier merge failed: %s", ex)

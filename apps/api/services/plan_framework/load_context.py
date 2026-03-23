@@ -261,8 +261,14 @@ def easy_long_floor_miles_from_l30(
     l30_max_mi: Optional[float],
     distance: str,
     tier: str,
+    observed_recent_weekly_miles: Optional[float] = None,
 ) -> Optional[float]:
-    """max(L30, tier start long) when L30 present; else None."""
+    """max(L30, tier start long) when L30 present; else None.
+
+    Guard: cap floor to 42% of recent weekly band to prevent one-off ultra/marathon
+    long runs from seeding an absurd week-1 long run target. Preserves the tier
+    start_long minimum so inexperienced athletes still get a meaningful seed.
+    """
     if l30_max_mi is None:
         return None
     from .constants import Distance as DistEnum
@@ -273,4 +279,10 @@ def easy_long_floor_miles_from_l30(
     except ValueError:
         goal = DistEnum.MARATHON
     start_long = min(standard_start_long_miles(goal, tier), peak_long_miles(goal, tier))
-    return max(float(l30_max_mi), float(start_long))
+    floor = max(float(l30_max_mi), float(start_long))
+    # Prevent a single outlier long run (e.g. a 26-mi marathon 8 days ago) from
+    # forcing week-1 of a 10K or 5K plan to match that distance.
+    if observed_recent_weekly_miles is not None and observed_recent_weekly_miles > 0:
+        band_cap = float(observed_recent_weekly_miles) * 0.42
+        floor = min(floor, max(float(start_long), band_cap))
+    return floor
