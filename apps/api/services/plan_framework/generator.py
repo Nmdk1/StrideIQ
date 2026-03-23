@@ -1054,22 +1054,25 @@ class PlanGenerator:
         is_cutback: bool,
         distance: str
     ) -> bool:
-        """Determine if this week will have an MP long run."""
-        if is_cutback:
-            return False
-        
+        """Determine if this week will have an MP long run.
+
+        Cutback weeks in marathon_specific/race_specific phases KEEP their MP long run.
+        The MP long run IS the appropriate stimulus for a cutback week — it's a shorter
+        structured effort at reduced total distance. Cutback affects easy volume elsewhere.
+        Source: BUILDER_INSTRUCTIONS_2026-03-22_PLAN_BRIDGE_ITEMS_1_THROUGH_5.md §Item3.
+        """
         if distance != "marathon":
             return False
-        
+
         phase_type = phase.phase_type.value
-        
+
         if phase_type in ["marathon_specific", "race_specific"]:
             # Alternating: MP long, then easy long
             if week_in_phase % 2 == 1:
                 return True
-        
+
         return False
-    
+
     def _will_week_have_hmp_long(
         self,
         phase: TrainingPhase,
@@ -1077,20 +1080,21 @@ class PlanGenerator:
         is_cutback: bool,
         distance: str
     ) -> bool:
-        """Determine if this week will have an HMP long run (half marathon)."""
-        if is_cutback:
-            return False
-        
+        """Determine if this week will have an HMP long run (half marathon).
+
+        Same cutback rationale as _will_week_have_mp_long — HMP long on cutback weeks
+        is the correct stimulus; volume reduction is absorbed by easy days.
+        """
         if distance != "half_marathon":
             return False
-        
+
         phase_type = phase.phase_type.value
-        
+
         if phase_type == "race_specific":
             # Alternating: HMP long, then easy long
             if week_in_phase % 2 == 1:
                 return True
-        
+
         return False
     
     def _generate_week(
@@ -1438,27 +1442,29 @@ class PlanGenerator:
         distance: str
     ) -> str:
         """Determine long run type based on phase and goal distance."""
-        if is_cutback:
-            return "long"  # Easy long run on cutback
-        
         phase_type = phase.phase_type.value
-        
+
         # --- Marathon: MP long runs in specific phases ---
+        # Cutback weeks in marathon_specific/race_specific KEEP their MP long run.
+        # The MP long IS the week's quality stimulus — just shorter due to reduced weekly volume.
+        # Easy volume elsewhere absorbs the cutback reduction.
         if distance == "marathon":
             if phase_type in ["marathon_specific", "race_specific"]:
-                # Alternating: MP long, then easy long
                 if week_in_phase % 2 == 1:
                     return "long_mp"
             return "long"
-        
+
         # --- Half marathon: HMP long runs in race-specific phase ---
         if distance == "half_marathon":
             if phase_type == "race_specific":
-                # Alternating: HMP long, then easy long
                 if week_in_phase % 2 == 1:
                     return "long_hmp"
             return "long"
-        
+
+        # Non-specific phases and other distances: easy long on cutback
+        if is_cutback:
+            return "long"
+
         # --- 10K / 5K: easy long runs only (quality comes from intervals) ---
         return "long"
     

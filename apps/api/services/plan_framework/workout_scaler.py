@@ -305,11 +305,14 @@ class WorkoutScaler:
         if plan_week is None or duration_weeks is None:
             pct = 0.28
             if (distance or "").strip().lower() in ("marathon",) and tw >= 60:
-                pct = 0.30
+                pct = 0.29  # Buffer so floor() stays under the 30% validator hard cap
             target = min(tw * pct, peak, weekly_soft_cap)
             target = max(float(MIN_STANDARD_EASY_LONG_MILES), target)
             target = min(target, peak)
             mi = math.floor(target)
+            # Hard cap: long run must not exceed 30% of weekly volume (Source B)
+            mi = min(mi, math.floor(tw * 0.30))
+            mi = max(mi, int(MIN_STANDARD_EASY_LONG_MILES))
             return ScaledWorkout(
                 workout_type="long_run",
                 category=WorkoutCategory.LONG,
@@ -367,6 +370,9 @@ class WorkoutScaler:
         mi = math.floor(target)
         if floor_min_int is not None:
             mi = max(mi, floor_min_int)
+        # Hard cap: long run must not exceed 30% of weekly volume (Source B)
+        mi = min(mi, math.floor(tw * 0.30))
+        mi = max(mi, int(MIN_STANDARD_EASY_LONG_MILES))
 
         desc = "Easy effort throughout. Build endurance through time on feet."
         if previous_easy_long_mi is not None and mi > int(previous_easy_long_mi):
@@ -530,7 +536,11 @@ class WorkoutScaler:
         
         # MP volume limits (Source B)
         max_mp_miles = min(self.limits["mp_max_miles"], peak_long * 0.75)
-        
+
+        # Source B: MP work may not exceed 20% of weekly volume.
+        # Progression table drives ideal session length; weekly cap is the hard ceiling.
+        mp_pct_cap = weekly_volume * 0.20
+
         # Progress MP work based on total MP workout count
         if mp_week <= 1:
             mp_miles = 6
@@ -547,7 +557,14 @@ class WorkoutScaler:
         else:
             mp_miles = min(16, max_mp_miles)
             mp_structure = f"{int(mp_miles)} miles continuous at MP (dress rehearsal)"
-        
+
+        mp_miles = min(mp_miles, mp_pct_cap)
+        # Floor to 1dp: serialized segment distance_miles rounds to 1dp,
+        # so we must pre-floor to ensure stored value stays ≤ 20% of weekly.
+        mp_miles = math.floor(mp_miles * 10) / 10
+        mp_miles = max(mp_miles, 4)  # <4mi MP is not a meaningful session
+        mp_structure = mp_structure if mp_miles >= 4 else f"{mp_miles:.0f} miles at MP"
+
         # Total run length
         total_miles = min(mp_miles + 6, peak_long)  # MP + warmup/cooldown
 
@@ -786,6 +803,9 @@ class WorkoutScaler:
             rep_miles = 400 / 1609.344  # 400m in miles
             reps = int(max_i_miles / rep_miles) if rep_miles > 0 else 12
             reps = max(10, min(16, reps))
+            # Source B hard cap
+            while reps > 6 and reps * rep_miles > max_i_miles:
+                reps -= 1
 
             return ScaledWorkout(
                 workout_type="intervals",
@@ -806,6 +826,9 @@ class WorkoutScaler:
 
         # Default: 1K reps (classic VO2)
         reps = min(6, max(4, int(max_i_miles / 0.62)))  # 1km = 0.62 mi
+        # Source B hard cap
+        while reps > 2 and reps * 0.62 > max_i_miles:
+            reps -= 1
 
         return ScaledWorkout(
             workout_type="intervals",
@@ -878,6 +901,11 @@ class WorkoutScaler:
             pace_desc = "hard effort, controlled — smooth mechanics, not a sprint"
             pace_label = "interval"
 
+        # Source B hard cap: interval work ≤ 8% of weekly volume
+        rep_miles_each = rep_m / 1609.344
+        while reps > 2 and reps * rep_miles_each > max_i_miles:
+            reps -= 1
+
         total_interval_miles = round(reps * rep_m / 1609.344, 1)
         total_distance = round(3 + total_interval_miles, 1)
 
@@ -939,6 +967,11 @@ class WorkoutScaler:
             rest_desc = "200m jog recovery"
             rest_val = 1.0
             pace_desc = "hard effort, controlled — smooth mechanics, not a sprint"
+
+        # Source B hard cap: interval work ≤ 8% of weekly volume
+        rep_miles_each_5k = rep_m / 1609.344
+        while reps > 2 and reps * rep_miles_each_5k > max_i_miles:
+            reps -= 1
 
         total_interval_miles = round(reps * rep_m / 1609.344, 1)
         total_distance = round(3 + total_interval_miles, 1)

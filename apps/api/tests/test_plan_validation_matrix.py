@@ -232,15 +232,15 @@ def _xfail_by_id(params, xfail_ids, reason):
 # Full validation: only builder still fails (MP % at very low weekly volume)
 MARATHON_XFAIL_FULL = _xfail_by_id(
     MARATHON_VARIANTS,
-    {"marathon-builder-18w-5d"},
+    set(),  # marathon-builder-18w-5d: REMOVED — passes after Bridge Items 1+3
     reason="Builder tier Source B MP % violation at very low weekly volume — "
            "real limitation, not a generator bug (requires N=1 volume scaling, Phase 1C)",
 )
 
-# Source B limits: only builder still fails
+# Source B limits: builder now passes after Bridge Items 1+3
 MARATHON_XFAIL_SOURCE_B = _xfail_by_id(
     MARATHON_VARIANTS,
-    {"marathon-builder-18w-5d"},
+    set(),  # marathon-builder-18w-5d: REMOVED — passes after Bridge Items 1+3
     reason="Builder tier Source B MP % violation at very low weekly volume",
 )
 
@@ -250,11 +250,10 @@ MARATHON_XFAIL_SOURCE_B = _xfail_by_id(
 # Quality day limit: FIXED — all 6 marathon variants pass
 # (kept as plain MARATHON_VARIANTS, no xfails)
 
-# Volume progression: builder cutback still xfail (10% reduction meets
-# the taper test but volume progression validator expects steeper drops)
+# Volume progression: builder now passes after Bridge Items 1+3
 MARATHON_VOLUME_GATED = _xfail_by_id(
     MARATHON_VARIANTS,
-    {"marathon-builder-18w-5d"},
+    set(),  # marathon-builder-18w-5d: REMOVED — passes after Bridge Items 1+3
     reason="Builder tier volume progression: 10% cutback is gentler than "
            "other tiers by design (consistency > recovery for early builders)",
 )
@@ -276,19 +275,22 @@ ALL_WITH_N1_GATED = (
 STRICT_WAIVER_IDS = {
     "marathon-mid-18w-6d",
     "marathon-mid-12w-6d",
-    "marathon-low-18w-5d",
-    "marathon-builder-18w-5d",
+    # marathon-low-18w-5d: REMOVED — passes after Bridge Items 1+3
+    # marathon-builder-18w-5d: REMOVED — passes after Bridge Items 1+3
     "marathon-mid-18w-5d",
     # "half-mid-16w-6d" — removed: half plan now passes strict mode (XPASS cleared)
-    "n1-beginner-25mpw-marathon",
+    # "n1-beginner-25mpw-marathon" — REMOVED: now passes strict after Bridge Items 1+3
 }
 
 STRICT_MATRIX_VARIANTS = _xfail_by_id(
     ALL_WITH_N1,
     STRICT_WAIVER_IDS,
     reason=(
-        "Strict Source B MP/LR percentage thresholds over-constrain low-volume "
-        "marathon variants; tracked Phase-6 policy waiver pending threshold redesign."
+        "Bridge Item 1 (20% per-session MP cap) reduces individual session size, "
+        "causing total MP miles to fall below the 40mi plan-minimum for marathon-mid "
+        "variants (which already had 4 sessions before cutback-guard removal). "
+        "Resolving requires Phase 3 unified floor redesign or progressive MP target "
+        "that accounts for per-session caps accumulating across the plan."
     ),
 )
 
