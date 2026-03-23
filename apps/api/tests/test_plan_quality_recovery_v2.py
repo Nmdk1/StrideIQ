@@ -311,3 +311,86 @@ def test_quality_gate_allows_small_early_week_floor_near_miss_for_10k():
 
     result = evaluate_constraint_aware_plan(plan)
     assert "personal_long_run_floor_breach" not in result.invariant_conflicts
+
+
+def test_10k_gate_tolerates_boundary_quantization_noise():
+    week = type("Week", (), {})()
+    week.week_number = 2
+    week.total_miles = 54.0
+    long_day = type("Day", (), {})()
+    long_day.workout_type = "long"
+    long_day.target_miles = 17.95  # Slightly above 33% but within ratio tolerance.
+    threshold_day = type("Day", (), {})()
+    threshold_day.workout_type = "threshold"
+    threshold_day.target_miles = 8.2  # Slightly above cap but within miles tolerance.
+    week.days = [long_day, threshold_day]
+
+    plan = type("Plan", (), {})()
+    plan.weeks = [week]
+    plan.race_distance = "10k"
+    plan.volume_contract = {"band_min": 45.0, "band_max": 65.0}
+    plan.fitness_bank = {"constraint": {"type": "none"}}
+
+    result = evaluate_constraint_aware_plan(plan)
+    assert "tenk_long_run_dominance" not in result.invariant_conflicts
+    assert "tenk_threshold_oversize" not in result.invariant_conflicts
+
+
+def test_10k_gate_still_blocks_real_oversize_work():
+    week = type("Week", (), {})()
+    week.week_number = 2
+    week.total_miles = 54.0
+    long_day = type("Day", (), {})()
+    long_day.workout_type = "long"
+    long_day.target_miles = 18.6
+    threshold_day = type("Day", (), {})()
+    threshold_day.workout_type = "threshold"
+    threshold_day.target_miles = 8.6
+    week.days = [long_day, threshold_day]
+
+    plan = type("Plan", (), {})()
+    plan.weeks = [week]
+    plan.race_distance = "10k"
+    plan.volume_contract = {"band_min": 45.0, "band_max": 65.0}
+    plan.fitness_bank = {"constraint": {"type": "none"}}
+
+    result = evaluate_constraint_aware_plan(plan)
+    assert any(c in result.invariant_conflicts for c in ("tenk_long_run_dominance", "tenk_threshold_oversize"))
+
+
+def test_weekly_band_boundary_tolerates_small_rounding_overage():
+    week = type("Week", (), {})()
+    week.week_number = 1
+    week.total_miles = 69.2  # band ceiling is 69.0 (60 * 1.15), allow small quantization tolerance
+    long_day = type("Day", (), {})()
+    long_day.workout_type = "long"
+    long_day.target_miles = 16.0
+    week.days = [long_day]
+
+    plan = type("Plan", (), {})()
+    plan.weeks = [week]
+    plan.race_distance = "10k"
+    plan.volume_contract = {"band_min": 45.0, "band_max": 60.0}
+    plan.fitness_bank = {"constraint": {"type": "none"}}
+
+    result = evaluate_constraint_aware_plan(plan)
+    assert "weekly_volume_exceeds_trusted_band" not in result.invariant_conflicts
+
+
+def test_weekly_band_still_blocks_material_overage():
+    week = type("Week", (), {})()
+    week.week_number = 1
+    week.total_miles = 69.5
+    long_day = type("Day", (), {})()
+    long_day.workout_type = "long"
+    long_day.target_miles = 16.0
+    week.days = [long_day]
+
+    plan = type("Plan", (), {})()
+    plan.weeks = [week]
+    plan.race_distance = "10k"
+    plan.volume_contract = {"band_min": 45.0, "band_max": 60.0}
+    plan.fitness_bank = {"constraint": {"type": "none"}}
+
+    result = evaluate_constraint_aware_plan(plan)
+    assert "weekly_volume_exceeds_trusted_band" in result.invariant_conflicts

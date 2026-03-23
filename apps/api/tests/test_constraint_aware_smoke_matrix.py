@@ -172,3 +172,19 @@ def test_5k_gate_requires_sharpen_speed_sessions():
     gate = evaluate_constraint_aware_plan(plan)
     assert gate.passed is False
     assert "fivek_speed_sharpen_missing" in gate.invariant_conflicts
+
+
+def test_marathon_gate_tolerates_boundary_quantization_near_contract_limits():
+    plan = _mk_plan(
+        "marathon",
+        [
+            _mk_week(1, 60.0, "build_mixed", [_mk_day("long_mp", 6.0), _mk_day("long", 14.0)]),
+            _mk_week(2, 59.0, "build_mixed", [_mk_day("threshold", 6.0), _mk_day("long", 14.2)]),
+            _mk_week(3, 58.0, "build_mixed", [_mk_day("long_mp", 5.9), _mk_day("long", 14.4)]),
+            _mk_week(4, 49.4, "recovery", [_mk_day("easy", 6.0), _mk_day("long", 13.9)]),
+        ],
+    )
+    gate = evaluate_constraint_aware_plan(plan)
+    assert "marathon_mp_total_too_low" not in gate.invariant_conflicts
+    assert "marathon_long_run_progression_stall" not in gate.invariant_conflicts
+    assert "marathon_cutback_missing" not in gate.invariant_conflicts

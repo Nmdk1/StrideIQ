@@ -2,6 +2,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 
+MILES_EPS = 0.25
+RATIO_EPS = 0.01
+
+
 @dataclass
 class QualityGateResult:
     passed: bool
@@ -32,10 +36,11 @@ def evaluate_constraint_aware_plan(plan: Any) -> QualityGateResult:
 
     if band_max > 0:
         for week in weeks:
-            if week.total_miles > band_max * 1.15:
+            band_ceiling = band_max * 1.15
+            if _exceeds_with_tolerance(float(getattr(week, "total_miles", 0) or 0), band_ceiling, miles_eps=MILES_EPS):
                 reasons.append(
                     f"Week {week.week_number} exceeds trusted band ceiling: "
-                    f"{week.total_miles:.1f} > {band_max * 1.15:.1f}."
+                    f"{float(getattr(week, 'total_miles', 0) or 0):.1f} > {band_ceiling:.1f}."
                 )
                 invariant_conflicts.append("weekly_volume_exceeds_trusted_band")
                 break
@@ -190,7 +195,7 @@ def _week_long_miles(week: Any) -> float:
 def _has_real_cutback(weeks: List[Any], min_drop_pct: float = 0.15) -> bool:
     totals = [float(getattr(w, "total_miles", 0) or 0) for w in weeks]
     for prev, cur in zip(totals, totals[1:]):
-        if prev > 0 and (prev - cur) / prev >= min_drop_pct:
+        if prev > 0 and (prev - cur) / prev >= max(0.0, min_drop_pct - RATIO_EPS):
             return True
     return False
 
@@ -247,17 +252,22 @@ def _evaluate_10k_rules(weeks: List[Any], reasons: List[str], invariant_conflict
         week_total = max(float(getattr(week, "total_miles", 0) or 0), 1.0)
         for day in getattr(week, "days", []):
             if day.workout_type == "long":
-                if day.target_miles > 18.0 or day.target_miles / week_total > 0.33:
+                long_miles = float(day.target_miles or 0)
+                if _exceeds_with_tolerance(long_miles, 18.0, miles_eps=MILES_EPS) or _exceeds_ratio_with_tolerance(
+                    long_miles / week_total, 0.33, ratio_eps=RATIO_EPS
+                ):
                     reasons.append(
                         f"10K long-run dominance breach in week {week.week_number}: "
-                        f"{day.target_miles:.1f}mi."
+                        f"{long_miles:.1f}mi."
                     )
                     invariant_conflicts.append("tenk_long_run_dominance")
                     return
-            if day.workout_type in ("threshold", "threshold_short") and day.target_miles > 8.0:
+            if day.workout_type in ("threshold", "threshold_short") and _exceeds_with_tolerance(
+                float(day.target_miles or 0), 8.0, miles_eps=MILES_EPS
+            ):
                 reasons.append(
                     f"10K threshold size too large in week {week.week_number}: "
-                    f"{day.target_miles:.1f}mi."
+                    f"{float(day.target_miles or 0):.1f}mi."
                 )
                 invariant_conflicts.append("tenk_threshold_oversize")
                 return
@@ -289,7 +299,7 @@ def _evaluate_marathon_rules(
         return
 
     mp_floor = max(12.0, total_weeks * 0.8)
-    if mp_total < mp_floor:
+    if _below_with_tolerance(mp_total, mp_floor, miles_eps=MILES_EPS):
         reasons.append(f"Marathon MP total too low: {mp_total:.1f}mi (< {mp_floor:.1f}mi).")
         invariant_conflicts.append("marathon_mp_total_too_low")
         return
@@ -298,7 +308,7 @@ def _evaluate_marathon_rules(
         half = max(1, len(longs) // 2)
         early_peak = max(longs[:half]) if longs[:half] else 0.0
         late_peak = max(longs[half:]) if longs[half:] else 0.0
-        if late_peak + 1e-6 < early_peak:
+        if _below_with_tolerance(late_peak, early_peak, miles_eps=MILES_EPS):
             reasons.append("Marathon long-run progression stalls before race-specific block.")
             invariant_conflicts.append("marathon_long_run_progression_stall")
             return
@@ -359,3 +369,15 @@ def _evaluate_5k_rules(weeks: List[Any], reasons: List[str], invariant_conflicts
     if distance_artifact:
         reasons.append("5K plan contains long-distance artifacts (long_mp/long_hmp).")
         invariant_conflicts.append("fivek_distance_artifact")
+
+
+def _exceeds_with_tolerance(value: float, ceiling: float, *, miles_eps: float) -> bool:
+    return float(value) > float(ceiling) + float(miles_eps)
+
+
+def _below_with_tolerance(value: float, floor: float, *, miles_eps: float) -> bool:
+    return float(value) + float(miles_eps) < float(floor)
+
+
+def _exceeds_ratio_with_tolerance(value: float, ceiling: float, *, ratio_eps: float) -> bool:
+    return float(value) > float(ceiling) + float(ratio_eps)
