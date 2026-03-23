@@ -607,6 +607,86 @@ class TestRaceAnchorSync:
         )
         assert anchor is None
 
+    def test_race_anchor_backfill_populates_existing_tagged_races(self, db_session, test_athlete):
+        """
+        WS-A: Anchor backfill must populate ALL pre-existing race-tagged activities,
+        not just the most recently processed one.
+
+        Scenario: athlete has three historical race activities across two distances
+        (10K × 2, half × 1). After calculate(), there must be anchors for both
+        distance keys and the anchor for each distance must reflect the BEST result.
+        """
+        now = datetime.now(timezone.utc)
+
+        # Older 10K — slower (2600s ≈ 43:20)
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=now - timedelta(days=120),
+                sport="run",
+                source="strava",
+                duration_s=2600,
+                distance_m=10000,
+                workout_type="race",
+                is_race_candidate=True,
+                race_confidence=0.9,
+            )
+        )
+        # Newer 10K — faster (2354s ≈ 39:14)
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=now - timedelta(days=60),
+                sport="run",
+                source="strava",
+                duration_s=2354,
+                distance_m=10000,
+                workout_type="race",
+                is_race_candidate=True,
+                race_confidence=0.95,
+            )
+        )
+        # Half marathon — single result (5700s ≈ 1:35)
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=now - timedelta(days=30),
+                sport="run",
+                source="strava",
+                duration_s=5700,
+                distance_m=21097,
+                workout_type="race",
+                is_race_candidate=True,
+                race_confidence=0.9,
+            )
+        )
+        db_session.commit()
+
+        calc = FitnessBankCalculator(db_session)
+        calc.calculate(test_athlete.id)
+
+        anchors = (
+            db_session.query(AthleteRaceResultAnchor)
+            .filter(AthleteRaceResultAnchor.athlete_id == test_athlete.id)
+            .all()
+        )
+        distance_keys = {a.distance_key for a in anchors}
+
+        # Both distances must have been backfilled
+        assert "10k" in distance_keys, (
+            f"Anchor backfill missed 10K. Got keys: {distance_keys}"
+        )
+        assert "half_marathon" in distance_keys, (
+            f"Anchor backfill missed half marathon. Got keys: {distance_keys}"
+        )
+
+        # 10K anchor must reflect the faster race (2354s, not 2600s)
+        anchor_10k = next(a for a in anchors if a.distance_key == "10k")
+        assert anchor_10k.finish_time_seconds <= 2400, (
+            f"10K anchor has wrong time: {anchor_10k.finish_time_seconds}s. "
+            f"Expected the faster result (2354s), not the slower (2600s)."
+        )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
