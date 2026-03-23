@@ -311,18 +311,32 @@ class WorkoutPrescriptionGenerator:
     
     # Long run targets by race distance (where we need to GET TO, not cap)
     LONG_RUN_PEAK_TARGETS = {
-        "5k": 14,           # Don't need 20 milers for 5K
+        "5k": 14,
         "10k": 16,
         "10_mile": 18,
         "half": 18,
         "half_marathon": 18,
-        "marathon": 22      # Need to get to 20-22 for marathon
+        "marathon": 22,          # Standard high-mileage marathon peak
+        "marathon_elite": 24,    # Advanced elites only — N=1, not a default
     }
-    
-    # Long run constraints (safety, not arbitrary caps)
-    # 150 min = 2:30 hard ceiling per coaching KB (03_WORKOUT_TYPES.md).
-    # Do not raise this — elite marathoners don't train 3-hour runs.
-    LONG_RUN_MAX_MINUTES = 150      # 2:30 is the hard ceiling
+
+    # Long run ceiling is DISTANCE-based, not time-based.
+    # A 22-mile easy run on hills at 10:00/mi is 3:40+ and is correct.
+    # Time is irrelevant as the ceiling — history, mileage, and race goals drive this.
+    # Source: founder instruction 2026-03-18.
+    # 22 miles is the standard marathon peak cap. Many athletes peak at 20.
+    # Never use a time ceiling to cut a long run short.
+    LONG_RUN_MAX_MILES_BY_DISTANCE = {
+        "5k": 14,
+        "10k": 16,
+        "10_mile": 18,
+        "half": 18,
+        "half_marathon": 18,
+        "marathon": 22,
+    }
+    # Retain for legacy callers that reference this constant; set to a high value
+    # so it never prematurely terminates a run that is correctly sized by distance.
+    LONG_RUN_MAX_MINUTES = 360      # 6 hrs — effectively no time ceiling; distance caps apply
     LONG_RUN_MAX_VOLUME_PCT = 0.35  # Single run shouldn't exceed 35% of weekly
 
     # Medium-long hard cap: 15 miles regardless of weekly volume (04_RECOVERY.md).
@@ -541,9 +555,7 @@ class WorkoutPrescriptionGenerator:
         if weekly_miles > 0:
             floor = min(floor, weekly_miles * 0.30)
 
-        # Never exceed the hard ceiling
-        hard_ceiling = self.LONG_RUN_MAX_MINUTES / easy_pace
-        return min(floor, hard_ceiling)
+        return floor
 
     def calculate_long_run_for_week(self, week_number: int, total_weeks: int, 
                                      theme: WeekTheme) -> float:

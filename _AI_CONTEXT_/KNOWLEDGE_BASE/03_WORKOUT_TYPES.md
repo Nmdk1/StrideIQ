@@ -72,17 +72,28 @@ Formula: `weekly_miles / running_days_per_week × 2`
 
 ### 2b. Long Run Ceilings
 
-| Context | Hard Cap |
+The ceiling is **distance-based, not time-based.** A 22-mile run at easy pace on hilly
+terrain can take 3:40+ and is entirely correct. Time is not a cap — athlete history,
+weekly volume, handling of training, and race goals drive the ceiling.
+Source: founder instruction 2026-03-18.
+
+| Context | Distance Cap |
 |---|---|
-| Marathon build peak | 22 miles |
-| Non-marathon training (any distance) | 18–20 miles |
-| Time ceiling (any context) | 150 minutes (2:30) |
-| 10K training | 18 miles (long-run dominance rule) |
+| Marathon build peak (standard high-mileage) | 22 miles |
+| Marathon build peak (advanced elite only) | 24 miles |
+| Non-marathon training in regular training blocks | 15–18 miles |
+| Many athletes' practical tolerance | 20 miles |
+| 10K training | 18 miles |
 | 5K training | 15 miles |
 | Half marathon training | 16–18 miles |
 
-**The 150-minute time ceiling is absolute.** If the floor calculation exceeds 150 min
-at the athlete's easy pace, cap at 150 min. Do not use 180 min (3 hrs) as a ceiling.
+**There is no time ceiling.** Do not cut a long run short because it will take 3+ hours.
+A 9:00/mi runner doing 22 miles runs 3:18. That is correct.
+
+**How the cap is applied:** `LONG_RUN_MAX_MILES_BY_DISTANCE` in `workout_prescription.py`
+sets the distance cap per race goal. The plan uses that to size peak-week long runs.
+For athletes who have historically only tolerated 20 miles, their 8–16w history is
+the input — not a global time ceiling.
 
 ### 2c. Long Run Progression
 
@@ -207,7 +218,7 @@ is the implementation of this principle.
 | Easy + strides | 2.5 | same as easy | same + 6×20s | Neuromuscular touch |
 | Easy + hills | 2.5 | same as easy | same + 8×10s | Neuromuscular/economy |
 | Medium-long | 3 | 1:30 | **15 miles** | Aerobic durability |
-| Long run (easy) | 4 | 1:45 (40+ mpw) | 150 min / 22 mi marathon | Aerobic endurance |
+| Long run (easy) | 4 | 1:45 (40+ mpw) | 22 mi marathon / 18 mi non-marathon | Aerobic endurance |
 | Threshold | 4 | — | 10% weekly volume | Lactate threshold |
 | Intervals | 4 | — | 8% weekly volume | VO2 / speed |
 | MP long run | 5 | — | 20% weekly volume or 18 mi | Race-specific endurance |
