@@ -43,6 +43,7 @@ See docs/garmin-portal/HEALTH_API.md §Backfill Endpoints
 """
 
 import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
@@ -117,7 +118,7 @@ def _request_single_backfill(
     """
     Make a single backfill request with 429 retry logic.
 
-    Returns {"status": "ok"|"failed"|"duplicate"|"rate_limited", "code": int}
+    Returns {"status": "ok"|"failed"|"duplicate"|"rate_limited"|"permission_denied", "code": int}
     """
     url = f"{_GARMIN_WELLNESS_BASE}{endpoint}"
     attempt = 0
@@ -153,6 +154,36 @@ def _request_single_backfill(
             )
             time.sleep(_RATE_LIMIT_BACKOFF_S)
             continue
+        if resp.status_code == 429:
+            logger.warning(
+                "Backfill persistent rate limit: %s → 429 (attempt %d/%d, body=%r)",
+                endpoint,
+                attempt,
+                max_attempts,
+                body_preview,
+            )
+            return {"status": "rate_limited", "code": 429, "body": body_preview}
+
+        if resp.status_code == 412:
+            required_permission = None
+            try:
+                match = re.search(r"required\s+([A-Z_]+)", body_preview, flags=re.IGNORECASE)
+                if match:
+                    required_permission = str(match.group(1)).upper()
+            except Exception:
+                required_permission = None
+            logger.warning(
+                "Backfill permission denied: %s → 412 required_permission=%s body=%r",
+                endpoint,
+                required_permission,
+                body_preview,
+            )
+            return {
+                "status": "permission_denied",
+                "code": 412,
+                "required_permission": required_permission,
+                "body": body_preview,
+            }
 
         logger.warning(
             "Backfill unexpected: %s → %d (attempt %d/%d, body=%r)",
@@ -181,8 +212,8 @@ def request_garmin_backfill(athlete: Any, db: Any) -> Dict[str, Any]:
 
     Returns:
         {
-            "status": "ok" | "aborted",
-            "reason": str (only when status="aborted"),
+            "status": "ok" | "aborted" | "deferred",
+            "reason": str (when status!="ok"),
             "requested": int,   # number of 202 responses
             "failed": int,      # number of non-202 or exception responses
         }
@@ -208,6 +239,34 @@ def request_garmin_backfill(athlete: Any, db: Any) -> Dict[str, Any]:
             requested += 1
         elif result["status"] == "duplicate":
             pass  # already processed, not a failure
+        elif result["status"] == "rate_limited":
+            failed += 1
+            logger.warning(
+                "Garmin backfill deferred for athlete %s due to persistent rate limit",
+                athlete.id,
+            )
+            return {
+                "status": "deferred",
+                "reason": "rate_limited",
+                "retry_after_s": _RATE_LIMIT_BACKOFF_S,
+                "requested": requested,
+                "failed": failed,
+            }
+        elif result["status"] == "permission_denied":
+            failed += 1
+            required_permission = result.get("required_permission")
+            logger.warning(
+                "Garmin backfill aborted for athlete %s due to missing permission: %s",
+                athlete.id,
+                required_permission,
+            )
+            return {
+                "status": "aborted",
+                "reason": "permission_denied",
+                "required_permission": required_permission,
+                "requested": requested,
+                "failed": failed,
+            }
         else:
             failed += 1
 

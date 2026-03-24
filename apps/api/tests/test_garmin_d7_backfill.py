@@ -202,16 +202,31 @@ class TestBackfillService:
         assert max_sleep > 1, f"Expected an extended sleep on 429 (got max={max_sleep}s)"
 
     def test_429_after_max_retries_counts_as_failed(self):
-        """If endpoint keeps returning 429, count one failed endpoint and continue."""
+        """If endpoint keeps returning 429, backfill is deferred early."""
         responses = (
             [_non_202_response(429), _non_202_response(429), _non_202_response(429)]
-            + [_202_response()] * 6
         )
         result, mock_get, _ = self._run(mock_responses=responses)
+        assert result["status"] == "deferred"
+        assert result["reason"] == "rate_limited"
         assert result["failed"] == 1
-        assert result["requested"] == 6
-        # 3 attempts for first endpoint + 6 successful single-attempt endpoints
-        assert mock_get.call_count == 9
+        assert result["requested"] == 0
+        # 3 attempts for first endpoint, then stop.
+        assert mock_get.call_count == 3
+
+    def test_412_historical_permission_denied_aborts_without_spam(self):
+        """Missing HISTORICAL_DATA_EXPORT should abort immediately after first endpoint."""
+        denied = _non_202_response(412)
+        denied.text = (
+            '{"errorMessage":"Access denied for abc required HISTORICAL_DATA_EXPORT"}'
+        )
+        result, mock_get, _ = self._run(mock_responses=[denied])
+        assert result["status"] == "aborted"
+        assert result["reason"] == "permission_denied"
+        assert result["required_permission"] == "HISTORICAL_DATA_EXPORT"
+        assert result["failed"] == 1
+        assert result["requested"] == 0
+        assert mock_get.call_count == 1
 
     def test_status_ok_on_all_success(self):
         result, _, _ = self._run()
