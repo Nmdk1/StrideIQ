@@ -24,13 +24,26 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Drop the old single-athlete unique index (named uq_race_anchor_athlete in production).
-    # Use IF EXISTS so this is safe whether the index name is the production variant or
-    # the SQLAlchemy-generated default from a fresh schema.
-    op.execute(
-        "DROP INDEX IF EXISTS uq_race_anchor_athlete;"
-        "DROP INDEX IF EXISTS ix_athlete_race_result_anchor_athlete_id;"
-    )
+    # Drop the old single-athlete unique constraint.
+    # Production: named "uq_race_anchor_athlete" (a named constraint + backing index).
+    # Fresh schema: may be named "ix_athlete_race_result_anchor_athlete_id" (plain unique index,
+    # no separate constraint object). We handle both with conditional DDL.
+    op.execute("""
+        DO $$
+        BEGIN
+            -- Named constraint path (production)
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'uq_race_anchor_athlete'
+                  AND conrelid = 'athlete_race_result_anchor'::regclass
+            ) THEN
+                ALTER TABLE athlete_race_result_anchor DROP CONSTRAINT uq_race_anchor_athlete;
+            END IF;
+            -- Plain unique index path (fresh schema / CI)
+            DROP INDEX IF EXISTS ix_athlete_race_result_anchor_athlete_id;
+        END
+        $$;
+    """)
     # Add composite unique: one anchor row per (athlete, distance)
     op.create_unique_constraint(
         "uq_anchor_athlete_distance",
@@ -41,10 +54,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_constraint("uq_anchor_athlete_distance", "athlete_race_result_anchor", type_="unique")
-    # Restore single-athlete uniqueness under the production index name.
-    op.create_index(
+    # Restore single-athlete uniqueness under the production constraint name.
+    op.create_unique_constraint(
         "uq_race_anchor_athlete",
         "athlete_race_result_anchor",
         ["athlete_id"],
-        unique=True,
     )
