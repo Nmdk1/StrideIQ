@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Optional
-from uuid import UUID
 import json
 
 from core.database import get_db

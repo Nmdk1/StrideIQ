@@ -17,7 +17,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 from uuid import UUID
-from typing import Optional
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -82,7 +81,7 @@ def export_plan_pdf(
     except RuntimeError as exc:
         logger.error("PDF generation failed for plan=%s: %s", plan_id, exc)
         raise HTTPException(status_code=503, detail="PDF generation is temporarily unavailable.")
-    except Exception as exc:
+    except Exception:
         logger.exception("Unexpected PDF generation error for plan=%s", plan_id)
         raise HTTPException(status_code=500, detail="Failed to generate PDF.")
 

@@ -10,7 +10,7 @@ Endpoints for:
 - Plan previews (for review before purchase)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field, ConfigDict
@@ -27,8 +27,6 @@ from services.plan_framework import (
     PlanGenerator,
     GeneratedPlan,
     VolumeTierClassifier,
-    PaceEngine,
-    PlanTier,
     VolumeTier,
     Distance,
 )
@@ -900,7 +898,7 @@ async def withdraw_from_plan(
     db.query(PlannedWorkout).filter(
         PlannedWorkout.plan_id == plan_id,
         PlannedWorkout.scheduled_date >= today,
-        PlannedWorkout.completed == False,
+        PlannedWorkout.completed.is_(False),
     ).update({"skipped": True})
     
     db.commit()
@@ -1624,7 +1622,7 @@ async def update_workout(
 
     if request.title is not None:
         workout.title = normalize_text(request.title)
-        changes.append(f"title updated")
+        changes.append("title updated")
     
     if request.description is not None:
         workout.description = normalize_text(request.description)

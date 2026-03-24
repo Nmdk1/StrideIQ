@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
 from decimal import Decimal
-from datetime import date, datetime
+from datetime import date
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -100,8 +100,6 @@ def create_nutrition_entry(
     Used for correlation analysis: nutrition patterns vs performance efficiency.
     """
     # Use authenticated user's ID
-    athlete = current_user
-    
     # Validate activity_id based on entry_type
     if nutrition.entry_type in ['pre_activity', 'during_activity', 'post_activity']:
         if not nutrition.activity_id:
