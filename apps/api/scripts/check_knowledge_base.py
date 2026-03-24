@@ -27,9 +27,9 @@ daniels_principles = db.query(CoachingKnowledgeEntry).filter(
     CoachingKnowledgeEntry.extracted_principles.isnot(None)
 ).count()
 
-print(f"📚 Knowledge Base Status:")
+print("📚 Knowledge Base Status:")
 print(f"   Total entries: {total}")
-print(f"")
+print("")
 
 # Get all unique sources
 all_sources = db.query(CoachingKnowledgeEntry.source).distinct().all()
