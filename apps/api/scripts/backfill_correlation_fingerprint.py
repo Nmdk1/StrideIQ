@@ -27,10 +27,8 @@ Usage (on production server):
 
 import argparse
 import logging
-import os
 import sys
 import time
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
