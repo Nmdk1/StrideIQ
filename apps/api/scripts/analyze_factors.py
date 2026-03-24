@@ -2,9 +2,6 @@
 
 import sys
 sys.path.insert(0, '/app')
-
-from services.wma_age_factors import get_wma_age_factor
-
 print("=" * 70)
 print("FACTOR ANALYSIS")
 print("=" * 70)
@@ -53,7 +50,7 @@ print()
 # Linear interpolation between our values
 interp_wma_79 = our_wma_75 + (our_wma_80 - our_wma_75) * (79 - 75) / (80 - 75)
 print(f"Linear interpolation for age 79: {interp_wma_79:.4f}")
-print(f"Official age 79: 0.6334")
+print("Official age 79: 0.6334")
 print(f"Difference: {abs(interp_wma_79 - 0.6334):.4f}")
 print()
 
@@ -94,7 +91,7 @@ wma_80 = 0.6158
 needed_wma_75 = (0.6334 - 0.8 * wma_80) / 0.2
 print(f"WMA at age 75 would need to be: {needed_wma_75:.4f}")
 print(f"But we have: {our_wma_75:.4f}")
-print(f"And official age 75 factor is likely: 0.6711 (matches our value)")
+print("And official age 75 factor is likely: 0.6711 (matches our value)")
 print()
 
 print("CONCLUSION: The official calculator does NOT use simple linear interpolation.")

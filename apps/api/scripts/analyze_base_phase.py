@@ -131,7 +131,7 @@ def main():
         long_runs = [r for r in runs if r['distance_km'] > 15]
         long_runs.sort(key=lambda x: x['elevation'], reverse=True)
         
-        print(f"\nLong runs (>15km) with most elevation:")
+        print("\nLong runs (>15km) with most elevation:")
         for r in long_runs[:15]:
             hr_str = f"HR:{r['avg_hr']:.0f}" if r['avg_hr'] else "HR:N/A"
             print(f"  {r['date'].strftime('%m/%d %a')} | {r['distance_km']:.0f}km | {r['pace_min_km']:.1f}/km | {hr_str} | ↑{r['elevation']:.0f}m")
@@ -158,7 +158,7 @@ def main():
         all_5k_ish = [r for r in runs if 4.8 <= r['distance_km'] <= 5.3]
         all_5k_ish.sort(key=lambda x: x['pace_min_km'])
         
-        print(f"\nAll ~5K runs (4.8-5.3km) sorted by pace:")
+        print("\nAll ~5K runs (4.8-5.3km) sorted by pace:")
         for r in all_5k_ish[:10]:
             hr_str = f"HR:{r['avg_hr']:.0f}" if r['avg_hr'] else "HR:N/A"
             time_str = f"{int(r['duration_min'])}:{int((r['duration_min'] % 1) * 60):02d}"

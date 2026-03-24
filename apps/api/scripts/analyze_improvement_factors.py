@@ -8,10 +8,7 @@ Yes: Training patterns, volume progression, intensity distribution, consistency
 
 import os
 import sys
-import json
-from datetime import datetime, timedelta
 from collections import defaultdict
-from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -448,7 +445,6 @@ def summarize_findings(weekly: list, activities: list):
     
     print("\nRANKED CORRELATIONS (strongest first):\n")
     for name, r, n in findings:
-        direction = "+" if r > 0 else "-"
         strength = "STRONG" if abs(r) > 0.5 else "MODERATE" if abs(r) > 0.3 else "WEAK"
         print(f"  {name}")
         print(f"    r = {r:+.3f} (n={n}) [{strength}]")
