@@ -228,7 +228,7 @@ function applyRobustPaceSmoothingForDisplay(raw: ChartPoint[]): void {
   // Step 1: local spike guard (clip only short GPS speed spikes, keep real trend shifts).
   const sanitized: Array<number | null> = raw.map((p) => p.pace);
   const LOCAL_WINDOW = 4;
-  const LOCAL_SPIKE_MAX_DELTA = 45; // s/km, enough to keep true pace shifts.
+  const LOCAL_SPIKE_MAX_DELTA = 120; // s/km — GPS noise is 10-30, real intervals/strides are 50-300+
   for (let i = 0; i < n; i++) {
     const p = sanitized[i];
     if (p == null || p <= 0) continue;
@@ -248,7 +248,7 @@ function applyRobustPaceSmoothingForDisplay(raw: ChartPoint[]): void {
   }
 
   // Step 2: bidirectional EMA smoothing (stable shape without flat plateaus).
-  const EMA_ALPHA = 0.28;
+  const EMA_ALPHA = 0.45;
   const forward: Array<number | null> = new Array(n).fill(null);
   const backward: Array<number | null> = new Array(n).fill(null);
 
