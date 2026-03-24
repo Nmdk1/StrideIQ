@@ -11,13 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
-from datetime import date
 from pydantic import BaseModel
 
 from core.database import get_db
 from core.auth import get_current_athlete
 from models import Athlete
-from services.training_load import TrainingLoadCalculator, DailyLoad, LoadSummary
+from services.training_load import TrainingLoadCalculator
 
 router = APIRouter(prefix="/v1/training-load", tags=["Training Load"])
 

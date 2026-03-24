@@ -73,7 +73,7 @@ def create_availability_slot(
     if not validate_time_block(availability.time_block):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"time_block must be one of: morning, afternoon, evening"
+            detail="time_block must be one of: morning, afternoon, evening"
         )
     
     if not validate_status(availability.status):

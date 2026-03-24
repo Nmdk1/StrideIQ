@@ -17,8 +17,7 @@ Response shape (success):
 
 AC coverage: AC-1 (endpoint contract)
 """
-from dataclasses import asdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -30,7 +29,6 @@ from core.auth import get_current_user
 from models import Activity, ActivityStream, Athlete, PlannedWorkout
 from services.run_stream_analysis import (
     AthleteContext,
-    analyze_stream,
 )
 from services.stream_analysis_cache import get_or_compute_analysis
 

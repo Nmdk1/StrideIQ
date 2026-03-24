@@ -10,7 +10,6 @@ Endpoints for:
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from uuid import UUID
