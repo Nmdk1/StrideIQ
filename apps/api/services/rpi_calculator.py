@@ -129,7 +129,7 @@ def calculate_training_paces(rpi: float) -> Dict:
     Returns:
         Dictionary with training paces in MM:SS format (both mi and km)
     """
-    if rpi <= 0:
+    if rpi is None or rpi <= 0:
         return {
             "easy": {"mi": None, "km": None},
             "marathon": {"mi": None, "km": None},

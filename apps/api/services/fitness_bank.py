@@ -151,7 +151,7 @@ class FitnessBank:
                 "avg_long_run": round(self.average_long_run_miles, 1),
                 "quality_sessions_28d": int(self.recent_quality_sessions_28d),
             },
-            "best_rpi": round(self.best_rpi, 1),
+            "best_rpi": round(self.best_rpi, 1) if self.best_rpi is not None else None,
             "races": [r.to_dict() for r in self.race_performances[:5]],
             "tau1": round(self.tau1, 1),
             "tau2": round(self.tau2, 1),

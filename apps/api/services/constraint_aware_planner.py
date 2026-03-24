@@ -54,6 +54,11 @@ class ConstraintAwarePlan:
     # Race info
     race_date: date
     race_distance: str
+
+    @property
+    def distance(self) -> str:
+        """Alias for race_distance — satisfies PlanValidator interface."""
+        return self.race_distance
     tune_up_races: List[Dict]
     
     # Fitness Bank data
@@ -654,6 +659,10 @@ class ConstraintAwarePlanner:
             rationale_tags.append("quality_gap")
 
         base_rpi = bank.best_rpi
+        if base_rpi is None:
+            # No race history — use a conservative estimate from volume
+            base_rpi = max(25.0, min(45.0, 30.0 + bank.current_weekly_miles * 0.20))
+            rationale_tags.append("no_race_history")
         if is_injury_return:
             base_rpi -= 1.0
         if current_ratio < 0.6:
@@ -669,7 +678,7 @@ class ConstraintAwarePlanner:
             base_rpi -= 0.4
 
         conservative_rpi = base_rpi - (1.0 if is_injury_return else 0.5)
-        aggressive_rpi = max(base_rpi + (0.5 if quality_sessions_28d >= 3 else 0.15), bank.best_rpi - 0.2)
+        aggressive_rpi = max(base_rpi + (0.5 if quality_sessions_28d >= 3 else 0.15), (bank.best_rpi or base_rpi) - 0.2)
 
         # Keep ranges sane.
         conservative_rpi = max(20.0, conservative_rpi)
