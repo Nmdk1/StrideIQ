@@ -16,9 +16,9 @@ Every agent that touches any file matching `apps/api/services/plan*`,
 
 | Field | Value |
 |---|---|
-| Date | 2026-03-18 |
-| Session | [Plan Generator Status Audit](6a788801-3485-41ed-b1d1-e3e188525078) |
-| Commit | e56c81f |
+| Date | 2026-03-23 |
+| Session | Bridge Items 1-5 + Phase 3 + Tests |
+| Commit | 6b98bf2 |
 | Who verified | Rook |
 
 ---
@@ -31,7 +31,7 @@ These must be cleared in order. Do not start a lower-numbered item while a highe
 |---|---|---|
 | 1 | `QUALITY_FOCUS` dict in `workout_prescription.py` is dead code. 5K/10K plans produce threshold-only quality work because the attribute is defined but never read during workout assignment (`_assign_standard_week`, `_assign_peak_week` both hardcode `threshold`). | **CLOSED** — commit bf6eaa2 |
 | 2 | No test suite exercises real plan content against realistic athlete profiles. Every passing test checks that the generator does not crash, not that it produces a rational plan. The synthetic athlete population requested by the founder has not been built as a persistent test fixture. | **CLOSED** - commit f981529. 4 archetypes x 4 distances (16 CA) + 5 model-driven = 21 content assertions. Volume-aware injury floor bug fixed in same commit. |
-| 3 | Floor logic is duplicated, not unified. `plan_framework/load_context.py` and `plan_quality_gate.py` use separate floor formulas. Phase 3 (unified floor) is incomplete. | **OPEN** |
+| 3 | Floor logic is duplicated, not unified. `plan_framework/load_context.py` and `plan_quality_gate.py` use separate floor formulas. Phase 3 (unified floor) is incomplete. | **CLOSED** - commit db9af8e. compute_athlete_long_run_floor (Option A: max(L30, p75_8w, p50_16w)) is canonical. WorkoutPrescriptionGenerator uses L30 from LoadContext + p75_8w + p50_16w from FitnessBank. All 3 paths converge. |
 
 ---
 
