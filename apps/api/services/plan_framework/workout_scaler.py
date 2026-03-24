@@ -370,8 +370,15 @@ class WorkoutScaler:
         mi = math.floor(target)
         if floor_min_int is not None:
             mi = max(mi, floor_min_int)
-        # Hard cap: long run must not exceed 30% of weekly volume (Source B)
-        mi = min(mi, math.floor(tw * 0.30))
+        # Hard cap: long run must not exceed 30% of weekly volume (Source B).
+        # P4 floor exception: when athlete history (L30) mandates a higher floor,
+        # the floor wins over the percentage cap — trust actual training history.
+        hard_cap = math.floor(tw * 0.30)
+        if floor_min_int is not None and mi >= floor_min_int:
+            # Floor is active — only apply hard cap if it doesn't undercut the floor.
+            mi = max(mi, min(mi, hard_cap) if hard_cap >= floor_min_int else floor_min_int)
+        else:
+            mi = min(mi, hard_cap)
         mi = max(mi, int(MIN_STANDARD_EASY_LONG_MILES))
 
         desc = "Easy effort throughout. Build endurance through time on feet."
