@@ -225,67 +225,22 @@ function applyRobustPaceSmoothingForDisplay(raw: ChartPoint[]): void {
   const n = raw.length;
   if (n === 0) return;
 
-  // Step 1: local spike guard (clip only short GPS speed spikes, keep real trend shifts).
-  const sanitized: Array<number | null> = raw.map((p) => p.pace);
-  const LOCAL_WINDOW = 4;
-  const LOCAL_SPIKE_MAX_DELTA = 120; // s/km — GPS noise is 10-30, real intervals/strides are 50-300+
+  // Median filter: kills single-point GPS glitches while preserving sharp
+  // pace transitions (strides, intervals). Window of 3 keeps edges crisp —
+  // a real pace change lasting 2+ consecutive points survives the median.
+  const MEDIAN_RADIUS = 1; // window = 2*radius+1 = 3
+  const medianPass: Array<number | null> = new Array(n).fill(null);
   for (let i = 0; i < n; i++) {
-    const p = sanitized[i];
-    if (p == null || p <= 0) continue;
-    const start = Math.max(0, i - LOCAL_WINDOW);
-    const end = Math.min(n - 1, i + LOCAL_WINDOW);
-    const neighborhood: number[] = [];
-    for (let j = start; j <= end; j++) {
-      if (j === i) continue;
-      const v = sanitized[j];
-      if (v != null && v > 0) neighborhood.push(v);
+    const vals: number[] = [];
+    for (let j = Math.max(0, i - MEDIAN_RADIUS); j <= Math.min(n - 1, i + MEDIAN_RADIUS); j++) {
+      const v = raw[j].pace;
+      if (v != null && v > 0) vals.push(v);
     }
-    const localMedian = medianOfNumbers(neighborhood);
-    if (localMedian == null) continue;
-    if (Math.abs(p - localMedian) > LOCAL_SPIKE_MAX_DELTA) {
-      sanitized[i] = localMedian + Math.sign(p - localMedian) * LOCAL_SPIKE_MAX_DELTA;
-    }
-  }
-
-  // Step 2: bidirectional EMA smoothing (stable shape without flat plateaus).
-  const EMA_ALPHA = 0.45;
-  const forward: Array<number | null> = new Array(n).fill(null);
-  const backward: Array<number | null> = new Array(n).fill(null);
-
-  let ema: number | null = null;
-  for (let i = 0; i < n; i++) {
-    const p = sanitized[i];
-    if (p == null || p <= 0) {
-      forward[i] = ema;
-      continue;
-    }
-    ema = ema == null ? p : EMA_ALPHA * p + (1 - EMA_ALPHA) * ema;
-    forward[i] = ema;
-  }
-
-  ema = null;
-  for (let i = n - 1; i >= 0; i--) {
-    const p = sanitized[i];
-    if (p == null || p <= 0) {
-      backward[i] = ema;
-      continue;
-    }
-    ema = ema == null ? p : EMA_ALPHA * p + (1 - EMA_ALPHA) * ema;
-    backward[i] = ema;
+    medianPass[i] = vals.length > 0 ? medianOfNumbers(vals) : null;
   }
 
   for (let i = 0; i < n; i++) {
-    const f = forward[i];
-    const b = backward[i];
-    if (f == null && b == null) {
-      raw[i].smoothedPace = null;
-    } else if (f == null) {
-      raw[i].smoothedPace = b;
-    } else if (b == null) {
-      raw[i].smoothedPace = f;
-    } else {
-      raw[i].smoothedPace = (f + b) / 2;
-    }
+    raw[i].smoothedPace = medianPass[i];
   }
 }
 
