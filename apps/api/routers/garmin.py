@@ -34,7 +34,6 @@ from models import Activity, ActivitySplit, ActivityStream, Athlete, ConsentAudi
 from services.garmin_oauth import (
     build_auth_url,
     deregister_user,
-    ensure_fresh_garmin_token,
     exchange_code_for_token,
     generate_pkce_pair,
     get_garmin_user_id,

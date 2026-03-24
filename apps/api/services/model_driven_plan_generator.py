@@ -1275,9 +1275,9 @@ class ModelDrivenPlanGenerator:
             {"day": 1, "type": "easy", "tss_pct": 0.14},    # Easy (Tuesday)
             {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday) 
             {"day": 3, "type": "easy_strides", "tss_pct": 0.12},  # Easy + strides (Thursday) - NOT threshold
-            {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday)
-            {"day": 5, "type": "easy", "tss_pct": 0.12},    # Easy (Saturday) — day before long; must stay easy
-            {"day": 6, "type": "long", "tss_pct": 0.30},    # Long run easy (Sunday) - 30% max
+            {"day": 4, "type": "easy", "tss_pct": 0.14},    # Easy (Friday)
+            {"day": 5, "type": "easy", "tss_pct": 0.10},    # Easy (Saturday) — day before long; must stay easy
+            {"day": 6, "type": "long", "tss_pct": 0.36},    # Long run easy (Sunday) — base phase emphasizes aerobic
         ]
     
     def _get_build_week_structure(self) -> List[Dict]:
@@ -1301,7 +1301,7 @@ class ModelDrivenPlanGenerator:
             {"day": 3, "type": "quality", "tss_pct": 0.14}, # Threshold (Thursday) - single quality
             {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday) - recovery
             {"day": 5, "type": "easy", "tss_pct": 0.12},    # Easy (Saturday) — day before long; must stay easy
-            {"day": 6, "type": "long", "tss_pct": 0.30},    # Long run (Sunday) - can have MP finish
+            {"day": 6, "type": "long", "tss_pct": 0.34},    # Long run (Sunday) - can have MP finish
         ]
     
     def _get_peak_week_structure(self) -> List[Dict]:

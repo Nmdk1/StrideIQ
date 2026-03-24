@@ -682,8 +682,8 @@ class TestRaceAnchorSync:
 
         # 10K anchor must reflect the faster race (2354s, not 2600s)
         anchor_10k = next(a for a in anchors if a.distance_key == "10k")
-        assert anchor_10k.finish_time_seconds <= 2400, (
-            f"10K anchor has wrong time: {anchor_10k.finish_time_seconds}s. "
+        assert anchor_10k.time_seconds <= 2400, (
+            f"10K anchor has wrong time: {anchor_10k.time_seconds}s. "
             f"Expected the faster result (2354s), not the slower (2600s)."
         )
 

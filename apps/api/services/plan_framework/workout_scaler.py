@@ -432,9 +432,10 @@ class WorkoutScaler:
             reps = max(2, int(max_t_minutes / duration))
         
         # Hard cap: t_miles must not exceed Source B 10% limit.
-        # Floor the cap to prevent rounding from pushing over the threshold.
+        # Use (floor - 1) to stay strictly below the cap on all platforms
+        # regardless of how the validator computes week_miles * 0.10.
         t_miles = round(reps * duration * 0.17, 1)
-        t_miles_cap = math.floor(max_t_miles * 10) / 10.0
+        t_miles_cap = (math.floor(max_t_miles * 10) - 1) / 10.0
         t_miles = min(t_miles, t_miles_cap)
         segments = [
             {"type": "warmup", "distance_miles": 2, "pace": "easy"},

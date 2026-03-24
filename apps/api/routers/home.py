@@ -20,7 +20,6 @@ from sqlalchemy import desc
 from pydantic import BaseModel, ConfigDict
 import asyncio
 import logging
-import redis
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -2731,7 +2730,7 @@ async def get_home_data(
         stored_insight = db.query(CalendarInsight).filter(
             CalendarInsight.athlete_id == current_user.id,
             CalendarInsight.insight_date == yesterday,
-            CalendarInsight.is_dismissed == False
+            CalendarInsight.is_dismissed.is_(False)
         ).order_by(desc(CalendarInsight.priority)).first()
 
         if stored_insight:
@@ -3337,7 +3336,6 @@ async def admin_refresh_briefing(
     Manually trigger a home briefing refresh for an athlete.
     Requires admin or owner role. Audit-logged.
     """
-    from core.auth import require_admin
     from services.audit_logger import log_audit
     from uuid import UUID
 

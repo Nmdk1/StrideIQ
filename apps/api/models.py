@@ -941,9 +941,12 @@ class AthleteRaceResultAnchor(Base):
     """
 
     __tablename__ = "athlete_race_result_anchor"
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "distance_key", name="uq_anchor_athlete_distance"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, unique=True, index=True)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
 
     # e.g., "5k" | "10k" | "half_marathon" | "marathon" | "other"
     distance_key = Column(Text, nullable=False)

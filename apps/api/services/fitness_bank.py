@@ -709,16 +709,19 @@ class FitnessBankCalculator:
 
     def _sync_anchor_from_authoritative_race_signals(self, athlete_id: UUID, activities: List) -> None:
         """
-        Upsert the single canonical AthleteRaceResultAnchor row from authoritative races.
+        Upsert one AthleteRaceResultAnchor row per distance key from authoritative races.
 
-        Selection policy (single-row schema):
-        1) prefer the most recent high-confidence race at standard distance,
-        2) tie-break by confidence and then stronger RPI,
+        WS-A spec: store the best result for each distance independently (10K, HM, marathon, etc.)
+        so that pace prescriptions for each distance use the athlete's actual PR for that distance.
+
+        Selection policy (per-distance schema):
+        1) for each distance_key, prefer the fastest (lowest time_seconds) authoritative result,
+        2) tie-break by confidence, then most recent date,
         3) never replace user/admin-entered anchors unless new evidence is strictly better.
         """
         from models import AthleteRaceResultAnchor
 
-        candidates = []
+        candidates: Dict[str, list] = {}
         for a in activities:
             if not activity_is_authoritative_race(a):
                 continue
@@ -731,7 +734,7 @@ class FitnessBankCalculator:
             race_date = a.start_time.date() if getattr(a, "start_time", None) is not None else None
             confidence = self._anchor_candidate_confidence(a)
             rpi = calculate_rpi(distance_m, duration_sec)
-            candidates.append(
+            candidates.setdefault(distance_key, []).append(
                 {
                     "distance_key": distance_key,
                     "distance_meters": distance_m,
@@ -745,53 +748,44 @@ class FitnessBankCalculator:
         if not candidates:
             return
 
-        best = sorted(
-            candidates,
-            key=lambda c: (
-                c["race_date"] is not None,
-                c["race_date"] or date.min,
-                c["confidence"] >= 0.8,
-                c["confidence"],
-                c["rpi"],
-            ),
-            reverse=True,
-        )[0]
-
-        if best["confidence"] < 0.7:
-            logger.info(
-                "Race anchor sync skipped (low-confidence candidate): athlete=%s confidence=%.2f",
-                athlete_id,
-                best["confidence"],
-            )
-            return
-
-        current = (
-            self.db.query(AthleteRaceResultAnchor)
+        existing_rows = {
+            r.distance_key: r
+            for r in self.db.query(AthleteRaceResultAnchor)
             .filter(AthleteRaceResultAnchor.athlete_id == athlete_id)
-            .one_or_none()
-        )
-        if current is None:
-            current = AthleteRaceResultAnchor(
-                athlete_id=athlete_id,
-                distance_key=best["distance_key"],
-                distance_meters=best["distance_meters"],
-                time_seconds=best["time_seconds"],
-                race_date=best["race_date"],
-                source="import",
-            )
-            self.db.add(current)
-            self.db.flush()
-            return
+            .all()
+        }
 
-        if not self._should_replace_existing_anchor(current, best):
-            return
+        for distance_key, dist_candidates in candidates.items():
+            qualified = [c for c in dist_candidates if c["confidence"] >= 0.7]
+            if not qualified:
+                continue
+            best = sorted(
+                qualified,
+                key=lambda c: (
+                    c["time_seconds"],          # fastest time is best (ascending)
+                    -(c["confidence"]),          # higher confidence breaks ties (descending)
+                ),
+            )[0]
 
-        current.distance_key = best["distance_key"]
-        current.distance_meters = best["distance_meters"]
-        current.time_seconds = best["time_seconds"]
-        current.race_date = best["race_date"]
-        if current.source not in ("user", "admin"):
-            current.source = "import"
+            current = existing_rows.get(distance_key)
+            if current is None:
+                new_row = AthleteRaceResultAnchor(
+                    athlete_id=athlete_id,
+                    distance_key=best["distance_key"],
+                    distance_meters=best["distance_meters"],
+                    time_seconds=best["time_seconds"],
+                    race_date=best["race_date"],
+                    source="import",
+                )
+                self.db.add(new_row)
+            elif self._should_replace_existing_anchor(current, best):
+                current.distance_key = best["distance_key"]
+                current.distance_meters = best["distance_meters"]
+                current.time_seconds = best["time_seconds"]
+                current.race_date = best["race_date"]
+                if current.source not in ("user", "admin"):
+                    current.source = "import"
+
         self.db.flush()
 
     def _anchor_candidate_confidence(self, activity) -> float:
