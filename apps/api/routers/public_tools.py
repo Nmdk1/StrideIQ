@@ -10,10 +10,8 @@ the foundational exercise physiology behind most training methodologies.
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 from services.rpi_calculator import calculate_rpi_comprehensive
 from services.rpi_enhanced import calculate_rpi_enhanced
-from services.performance_engine import calculate_age_graded_performance
 
 router = APIRouter(prefix="/v1/public", tags=["Public Tools"])
 
@@ -137,7 +135,7 @@ def calculate_paces(request: PaceCalculatorRequest):
             raise HTTPException(status_code=400, detail=result["error"])
         
         return result
-    except Exception as e:
+    except Exception:
         # Fallback to basic calculator if enhanced fails
         result = calculate_rpi_comprehensive(
             distance_meters=request.distance_meters,
@@ -211,9 +209,8 @@ def calculate_age_grade(request: AgeGradeRequest):
     from services.performance_engine import get_wma_age_factor
     from services.wma_age_factors import get_wma_open_standard_seconds, get_wma_world_record_pace
     
-    # Calculate pace per mile from time and distance
+    # Calculate distance in miles for open-standard fallback conversions.
     distance_miles = request.distance_meters / 1609.34
-    pace_per_mile = request.time_seconds / 60 / distance_miles
     
     # Get age factor
     age_factor = get_wma_age_factor(request.age, request.sex, request.distance_meters)

@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.database import get_db
-from models import Athlete, Activity, DailyCheckin, CorrelationFinding, TrainingPlan
+from models import Athlete, Activity, DailyCheckin, CorrelationFinding, TrainingPlan, PerformanceEvent
 from services.n1_insight_generator import friendly_signal_name
 from routers.auth import get_current_user
 from core.cache import get_cache, set_cache as _set_cache
@@ -1588,7 +1588,6 @@ def _assemble_looking_ahead(db: Session, athlete_id: UUID) -> LookingAheadRespon
                             continue
                         pred_info = p.get("prediction", {})
                         if pred_info.get("time_formatted"):
-                            short_dist = dist_name.replace(" Marathon", "").replace("Half", "Half")
                             conf = pred_info.get("confidence", "low")
                             if isinstance(conf, str):
                                 conf = "high" if conf.lower() in ("high", "race-anchored") else "moderate" if conf.lower() in ("moderate", "estimate") else "low"
@@ -1659,7 +1658,7 @@ def _assemble_data_coverage(db: Session, athlete_id: UUID) -> DataCoverageRespon
         from models import CorrelationFinding
         coverage.correlation_findings = (
             db.query(CorrelationFinding)
-            .filter(CorrelationFinding.athlete_id == athlete_id, CorrelationFinding.is_active == True)  # noqa: E712
+            .filter(CorrelationFinding.athlete_id == athlete_id, CorrelationFinding.is_active.is_(True))
             .count()
         )
     except Exception:
@@ -2023,7 +2022,7 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
         db.query(CorrelationFinding)
         .filter(
             CorrelationFinding.athlete_id == athlete_id,
-            CorrelationFinding.is_active == True,
+            CorrelationFinding.is_active.is_(True),
             CorrelationFinding.times_confirmed >= 1,
         )
         .order_by(
@@ -2327,7 +2326,7 @@ def get_training_story(
 
     events = db.query(PerformanceEvent).filter(
         PerformanceEvent.athlete_id == athlete_id,
-        PerformanceEvent.user_confirmed == True,  # noqa: E712
+        PerformanceEvent.user_confirmed.is_(True),
     ).order_by(PerformanceEvent.event_date).all()
 
     story = synthesize_training_story(findings, events)
