@@ -711,9 +711,23 @@ def enqueue_briefing_refresh(
         should_enqueue_refresh,
         set_enqueue_cooldown,
         is_circuit_open,
+        is_enqueue_cooldown_active,
+        is_task_lock_held,
     )
 
+    if is_task_lock_held(athlete_id):
+        logger.debug("Home briefing enqueue skipped (task lock held): %s", athlete_id)
+        return False
+
     if force:
+        # Force mode is intended for data-change recovery, not burst replay.
+        # Suppress repeated force-enqueues during cooldown for background traffic.
+        if priority != "high" and is_enqueue_cooldown_active(athlete_id):
+            logger.debug(
+                "Home briefing force-enqueue skipped (cooldown active): %s",
+                athlete_id,
+            )
+            return False
         if is_circuit_open(athlete_id) and not allow_circuit_probe:
             logger.debug("Home briefing force-enqueue blocked (circuit open): %s", athlete_id)
             return False

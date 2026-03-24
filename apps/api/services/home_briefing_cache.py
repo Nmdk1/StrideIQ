@@ -237,6 +237,21 @@ def set_enqueue_cooldown(athlete_id: str) -> None:
         pass
 
 
+def is_enqueue_cooldown_active(athlete_id: str) -> bool:
+    """
+    Public read for enqueue cooldown state.
+    Returns True when a recent enqueue happened and another enqueue should be
+    suppressed to avoid bursty duplicate work.
+    """
+    r = get_redis_client()
+    if not r:
+        return False
+    try:
+        return bool(r.exists(_cooldown_key(athlete_id)))
+    except Exception:
+        return False
+
+
 def acquire_task_lock(athlete_id: str) -> bool:
     """
     Acquire an in-flight lock for this athlete's briefing task.

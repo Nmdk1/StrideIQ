@@ -359,8 +359,8 @@ class TestForceEnqueueBehavior:
         assert result is False, "force=False + cooldown must skip enqueue"
         mock_task.apply_async.assert_not_called()
 
-    def test_force_true_with_cooldown_enqueues(self):
-        """Test 7: force=True bypasses cooldown when circuit is closed."""
+    def test_force_true_with_cooldown_skips_for_normal_priority(self):
+        """Test 7: force=True still honors cooldown for normal-priority traffic."""
         from tasks.home_briefing_tasks import enqueue_briefing_refresh
         from services.home_briefing_cache import _cooldown_key
 
@@ -372,8 +372,24 @@ class TestForceEnqueueBehavior:
              patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
             result = enqueue_briefing_refresh(athlete_id, force=True)
 
-        assert result is True, "force=True + closed circuit must allow enqueue"
-        mock_task.apply_async.assert_called_once_with(args=[athlete_id], queue="briefing")
+        assert result is False, "force=True + cooldown + normal priority must skip enqueue"
+        mock_task.apply_async.assert_not_called()
+
+    def test_force_true_with_cooldown_enqueues_for_high_priority(self):
+        """force=True bypasses cooldown only for high-priority user-blocking refreshes."""
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        from services.home_briefing_cache import _cooldown_key
+
+        athlete_id = str(uuid4())
+        fake_r = FakeRedis()
+        fake_r.setex(_cooldown_key(athlete_id), 60, "1")
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r), \
+             patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+            result = enqueue_briefing_refresh(athlete_id, force=True, priority="high")
+
+        assert result is True
+        mock_task.apply_async.assert_called_once_with(args=[athlete_id], queue="briefing_high")
 
     def test_force_true_with_open_circuit_blocks(self):
         """Test 8: force=True is still blocked when circuit is open."""
