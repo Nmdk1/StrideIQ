@@ -225,6 +225,16 @@ class ConstraintAwarePlanner:
                 target_miles=target_miles,
                 start_date=theme_plan.start_date
             )
+
+            # T3-4: Cap W1 long run — prevent a beginner from receiving a long run
+            # that exceeds 40% of their recent median weekly volume in week 1.
+            # This is the most dangerous single-week miscalibration point.
+            if theme_plan.week_number == 1 and bank.recent_8w_median_weekly_miles:
+                w1_cap = bank.recent_8w_median_weekly_miles * 0.40
+                long_types = {"long", "easy_long", "long_mp", "long_hmp"}
+                for day in week_plan.days:
+                    if day.workout_type in long_types and day.target_miles > w1_cap:
+                        day.target_miles = round(w1_cap, 1)
             
             # Add theme notes to week
             week_plan.notes.extend(theme_plan.notes)
