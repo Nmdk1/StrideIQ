@@ -362,3 +362,111 @@ class TestModelDrivenPaceContract:
         to_sec = lambda p: int(p.split(":")[0]) * 60 + int(p.split(":")[1].split("/")[0])
         assert to_sec(corrected["i_pace"]) < to_sec(corrected["t_pace"]) < to_sec(corrected["m_pace"])
         assert to_sec(corrected["r_pace"]) < to_sec(corrected["i_pace"])
+
+
+class TestPaceOrderInvariants:
+    """
+    WS-D / spec test: pace order must hold across the full realistic RPI range.
+    interval < threshold < marathon (lower value = faster pace in min/mi).
+    Source: BUILDER_INSTRUCTIONS_2026-03-23_PLAN_INTEGRITY_SYSTEMIC_RECOVERY.md §WS-D.
+    """
+
+    RPI_RANGE = [35, 40, 45, 50, 55, 60, 65, 70]  # sec/km — spans 7:30 to ~4:45/mi easy
+
+    @pytest.mark.parametrize("rpi", RPI_RANGE)
+    def test_pace_order_invariants_hold_across_rpi_range(self, rpi):
+        """For every RPI in the realistic training range, interval < threshold < marathon.
+        Values are minutes/mile floats — lower = faster."""
+        from services.workout_prescription import calculate_paces_from_rpi
+        paces = calculate_paces_from_rpi(rpi)
+
+        interval_mpmi = paces.get("interval")
+        threshold_mpmi = paces.get("threshold")
+        marathon_mpmi = paces.get("marathon")
+
+        assert interval_mpmi is not None, f"RPI={rpi}: interval pace not set"
+        assert threshold_mpmi is not None, f"RPI={rpi}: threshold pace not set"
+        assert marathon_mpmi is not None, f"RPI={rpi}: marathon pace not set"
+
+        assert interval_mpmi < threshold_mpmi, (
+            f"RPI={rpi}: interval ({interval_mpmi:.2f} min/mi) must be faster than "
+            f"threshold ({threshold_mpmi:.2f} min/mi)"
+        )
+        assert threshold_mpmi < marathon_mpmi, (
+            f"RPI={rpi}: threshold ({threshold_mpmi:.2f} min/mi) must be faster than "
+            f"marathon ({marathon_mpmi:.2f} min/mi)"
+        )
+
+    def test_all_generator_paths_enforce_pace_order_invariants(self):
+        """
+        All active generator backends must produce paces where interval < threshold < marathon.
+        Tests:
+          - PaceEngine raw output (standard/semi-custom basis)
+          - ModelDrivenPlanGenerator._enforce_pace_order_strings
+          - WorkoutPrescriptionGenerator._enforce_pace_order_contract
+        """
+        from services.workout_prescription import calculate_paces_from_rpi, _enforce_pace_order_contract
+
+        rpi = 50  # Mid-range
+
+        # 1. Raw pace engine output (used by standard/semi-custom)
+        paces = calculate_paces_from_rpi(rpi)
+        assert paces["interval"] < paces["threshold"] < paces["marathon"], (
+            f"calculate_paces_from_rpi: order violated: {paces}"
+        )
+
+        # 2. After _enforce_pace_order_contract (used by WorkoutPrescriptionGenerator)
+        enforced, diagnostics = _enforce_pace_order_contract(paces)
+        assert enforced["interval"] < enforced["threshold"] < enforced["marathon"], (
+            f"_enforce_pace_order_contract output: order violated: {enforced}; diagnostics: {diagnostics}"
+        )
+
+        # 3. ModelDrivenPlanGenerator path (string-based)
+        gen = ModelDrivenPlanGenerator(db=MagicMock())
+        from services.workout_prescription import format_pace
+
+        pace_strs = {
+            "e_pace": f"{format_pace(paces['easy'])}/mi",
+            "m_pace": f"{format_pace(paces['marathon'])}/mi",
+            "t_pace": f"{format_pace(paces['threshold'])}/mi",
+            "i_pace": f"{format_pace(paces['interval'])}/mi",
+            "r_pace": f"{format_pace(paces.get('interval', paces['interval']) * 0.93)}/mi",
+        }
+        corrected = gen._enforce_pace_order_strings(pace_strs)
+
+        def str_to_sec(p: str) -> float:
+            clean = p.split("/")[0].strip()
+            parts = clean.split(":")
+            return int(parts[0]) * 60 + float(parts[1]) if len(parts) == 2 else float(parts[0])
+
+        assert str_to_sec(corrected["i_pace"]) < str_to_sec(corrected["t_pace"]) < str_to_sec(corrected["m_pace"]), (
+            f"ModelDrivenPlanGenerator: pace order violated after enforcement: {corrected}"
+        )
+
+        # 4. WorkoutPrescriptionGenerator (constraint-aware path) — mock bank
+        from services.workout_prescription import WorkoutPrescriptionGenerator
+
+        bank = MagicMock()
+        bank.best_rpi = rpi
+        bank.current_long_run_miles = 14.0
+        bank.average_long_run_miles = 13.0
+        bank.peak_long_run_miles = 18.0
+        bank.current_weekly_miles = 50.0
+        bank.recent_8w_p75_long_run_miles = 14.0
+        bank.recent_16w_p50_long_run_miles = 13.0
+        bank.recent_16w_run_count = 48
+        bank.constraint_type.value = "none"
+        bank.experience_level.value = "experienced"
+        bank.race_performances = []
+
+        wpg = WorkoutPrescriptionGenerator(bank, race_distance="marathon")
+        wpg_interval = wpg.paces.get("interval")
+        wpg_threshold = wpg.paces.get("threshold")
+        wpg_marathon = wpg.paces.get("marathon")
+
+        assert wpg_interval is not None and wpg_threshold is not None and wpg_marathon is not None, (
+            f"WorkoutPrescriptionGenerator: missing paces: {wpg.paces}"
+        )
+        assert wpg_interval < wpg_threshold < wpg_marathon, (
+            f"WorkoutPrescriptionGenerator: pace order violated: {wpg.paces}"
+        )
