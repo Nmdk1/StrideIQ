@@ -27,10 +27,10 @@ Sources:
 
 import logging
 import time
-from dataclasses import dataclass, field
-from datetime import date, timedelta
+from dataclasses import dataclass
+from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from services.narration_scorer import NarrationScorer, NarrationScoreResult
 from core.config import settings
